@@ -1,0 +1,14 @@
+{
+  "name": "insighted-esf7-official-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "dev:full": "npm run dev",
+    "prompt": "node .agents/scripts/refine_prompt.js",
+    "build": "npm run build --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

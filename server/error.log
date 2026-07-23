@@ -1,0 +1,12 @@
+[2026-07-07T01:01:56.861Z] ADD PERSONNEL ERROR: duplicate key value violates unique constraint "personnel_deped_email_key"
+error: duplicate key value violates unique constraint "personnel_deped_email_key"
+    at E:\InsightED - ESF7 Official\server\node_modules\pg\lib\client.js:652:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async E:\InsightED - ESF7 Official\server\controllers\personnel\index.js:144:26
+
+[2026-07-07T01:02:56.047Z] ADD PERSONNEL ERROR: duplicate key value violates unique constraint "personnel_deped_email_key"
+error: duplicate key value violates unique constraint "personnel_deped_email_key"
+    at E:\InsightED - ESF7 Official\server\node_modules\pg\lib\client.js:652:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async E:\InsightED - ESF7 Official\server\controllers\personnel\index.js:144:26
+

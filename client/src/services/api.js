@@ -1,0 +1,333 @@
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const fetchWithAuth = async (url, options = {}) => {
+  const token = localStorage.getItem('token');
+  const headers = {
+    ...options.headers,
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+  return fetch(url, { ...options, headers });
+};
+
+export const api = {
+  // School Profile
+  getSchool: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/school`);
+    return res.json();
+  },
+  updateSchool: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/school`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  // Personnel Roster
+  getPersonnel: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel`);
+    return res.json();
+  },
+  getAutofillTemplate: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/autofill-template`);
+    return res.json();
+  },
+  saveBulkPersonnel: async (personnelList) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelList })
+    });
+    return res.json();
+  },
+  addPersonnel: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  deletePersonnel: async (id) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/${id}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+  updatePersonnel: async (id, data) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  verifyPersonnel: async (id, field, value) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/verify`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field, value })
+    });
+    return res.json();
+  },
+  toggleSchoolHead: async (id, isSchoolHead) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/school-head`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isSchoolHead })
+    });
+    return res.json();
+  },
+
+  // Employment Tab Details
+  updateEmployment: async (personnelId, data) => {
+    const res = await fetchWithAuth(`${API_BASE}/employment/${personnelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  // Qualifications Tab Details
+  updateQualifications: async (personnelId, data) => {
+    const res = await fetchWithAuth(`${API_BASE}/qualifications/${personnelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  // Trainings (NEAP, Certifications, Other)
+  addTraining: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/trainings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  updatePersonnelTrainings: async (personnelId, data) => {
+    const res = await fetchWithAuth(`${API_BASE}/trainings/personnel/${personnelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  deleteTraining: async (id) => {
+    const res = await fetchWithAuth(`${API_BASE}/trainings/${id}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+
+  // Class Sections
+  getSections: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/sections`);
+    return res.json();
+  },
+  addSection: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  updateSectionAdviser: async (id, advisorId, advisory_minutes = 300) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ advisorId, advisory_minutes })
+    });
+    return res.json();
+  },
+  deleteSection: async (id) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/${id}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+
+  // Workload Schedules
+  addWorkloadRow: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/workloads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  updatePersonnelWorkloadRows: async (personnelId, workloadRows, teachingRelatedRows, administrativeRows) => {
+    const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${personnelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workloadRows, teachingRelatedRows, administrativeRows })
+    });
+    return res.json();
+  },
+  deleteWorkloadRow: async (id) => {
+    const res = await fetchWithAuth(`${API_BASE}/workloads/${id}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+
+  // Workload Coverage / Substitution transfers
+  getTransfers: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/transfers`);
+    return res.json();
+  },
+  createBatchTransfers: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/transfers/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  updateTransferStatus: async (id, status) => {
+    const res = await fetchWithAuth(`${API_BASE}/transfers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    return res.json();
+  },
+
+  // Absences management
+  getAbsences: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/absences`);
+    return res.json();
+  },
+
+  sharePersonnelToClusteredSchools: async (prn, target_school_ids, first_name, last_name) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prn, target_school_ids, first_name, last_name })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  addAbsence: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/absences`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  deleteAbsence: async (id) => {
+    const res = await fetchWithAuth(`${API_BASE}/absences/${id}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+  getSalaryMatrix: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/salary-matrix`);
+    return res.json();
+  },
+  submitSchoolWorkload: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  getSubmissionStatus: async (jobId) => {
+    const res = await fetchWithAuth(`${API_BASE}/submissions/status/${jobId}`);
+    return res.json();
+  },
+  getSchoolDraft: async (schoolYear) => {
+    const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}`);
+    return res.json();
+  },
+  saveSchoolDraft: async (schoolYear, payload) => {
+    const res = await fetchWithAuth(`${API_BASE}/school/draft`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolYear, payload })
+    });
+    return res.json();
+  },
+  deleteSchoolDraft: async (schoolYear) => {
+    const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+  getIncomingRequests: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/incoming`);
+    return res.json();
+  },
+  getOutgoingRequests: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/outgoing`);
+    return res.json();
+  },
+  getDistrictSchools: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/district-schools`);
+    return res.json();
+  },
+  createRequest: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  respondToRequest: async (id, action) => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/${id}/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    });
+    return res.json();
+  },
+  getSubmissionHistory: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/submissions/history`);
+    return res.json();
+  },
+  downloadESF7XLSB: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/reports/esf7-xlsb`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Failed to download report');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `eSF7_Report.xlsb`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  getCalendarTerms: async (schoolId, schoolYear) => {
+    const res = await fetchWithAuth(`${API_BASE}/reports/calendar-terms/${schoolId || '123456'}?school_year=${encodeURIComponent(schoolYear || 'SY 2026-2027')}`);
+    return res.json();
+  },
+  saveCalendarTerms: async (schoolId, schoolYear, terms) => {
+    const res = await fetchWithAuth(`${API_BASE}/reports/calendar-terms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ school_id: schoolId, school_year: schoolYear, terms })
+    });
+    return res.json();
+  },
+  generateOverloadPayReport: async (payload) => {
+    const res = await fetchWithAuth(`${API_BASE}/reports/generate-overload-pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  }
+};
