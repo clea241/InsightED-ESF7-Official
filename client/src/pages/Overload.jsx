@@ -77,20 +77,57 @@ export default function Overload() {
     return 0.000781 * 12 * salary;
   };
 
-  const [activeTab, setActiveTab] = useState('roster'); // 'roster' | 'absences' | 'transfers'
+  const checkSubstituteConflict = (candidateTeacher, slotRow) => {
+    if (!candidateTeacher || !slotRow || !slotRow.startTime || !slotRow.endTime) {
+      return { hasConflict: false };
+    }
+    const slotStartMins = timeToMins(slotRow.startTime);
+    const slotEndMins = timeToMins(slotRow.endTime);
+    const slotDays = Array.isArray(slotRow.days) 
+      ? slotRow.days 
+      : String(slotRow.days || '').split(/[\s,]+/).filter(Boolean);
+
+    for (const subRow of candidateTeacher.workloadRows || []) {
+      if (!subRow.startTime || !subRow.endTime) continue;
+      const subDays = Array.isArray(subRow.days) 
+        ? subRow.days 
+        : String(subRow.days || '').split(/[\s,]+/).filter(Boolean);
+      const hasCommonDay = slotDays.some(d => subDays.includes(d));
+
+      if (hasCommonDay) {
+        const subStartMins = timeToMins(subRow.startTime);
+        const subEndMins = timeToMins(subRow.endTime);
+        if (subStartMins < slotEndMins && subEndMins > slotStartMins) {
+          return {
+            hasConflict: true,
+            conflictingSubject: subRow.subject || 'Class',
+            conflictingTime: `${subRow.startTime} - ${subRow.endTime}`
+          };
+        }
+      }
+    }
+    return { hasConflict: false };
+  };
+
+  const [activeStep, setActiveStep] = useState(1); // 1: Tardiness Log, 2: Absences & Leave, 3: Workload Transfers, 4: Overload Computation
   
   // Roster Tab filters
   const [selectedMonth, setSelectedMonth] = useState('June');
   const [selectedQuarter, setSelectedQuarter] = useState('Term 1');
   const [teacherSearch, setTeacherSearch] = useState('');
 
-  // Absences Log form state
-  const [absentTeacherId, setAbsentTeacherId] = useState('');
-  const [absenceStartDate, setAbsenceStartDate] = useState('');
-  const [absenceEndDate, setAbsenceEndDate] = useState('');
-  const [leaveType, setLeaveType] = useState('Sick Leave');
+  // Tardiness & Late Log form state (Step 1)
+  const [tardinessTeacherId, setTardinessTeacherId] = useState('');
+  const [tardinessMonth, setTardinessMonth] = useState('June');
 
-  // Workload Transfer form state
+  // Absences & Leave Log form state (Step 2)
+  const [leaveType, setLeaveType] = useState('Sick Leave');
+  const [absentTeacherId, setAbsentTeacherId] = useState('');
+  const [absenceMonth, setAbsenceMonth] = useState('June');
+  const [rangeStartDate, setRangeStartDate] = useState(null);
+  const [rangeEndDate, setRangeEndDate] = useState(null);
+
+  // Workload Transfer form state (Step 3)
   const [transferAbsentTeacherId, setTransferAbsentTeacherId] = useState('');
   const [transferStartDate, setTransferStartDate] = useState('');
   const [transferEndDate, setTransferEndDate] = useState('');
@@ -209,8 +246,7 @@ export default function Overload() {
       // Gross daily overload
       const grossDailyOverload = Math.max(0, dailyHours - 6.0);
       
-      // If teacher has a general absence logged on this date
-      const isAbsent = absences.some(a => a.personnelId === teacher.id && a.absenceDate === dateStr);
+      const isAbsent = absences.some(a => String(a.personnelId || a.personnel_id) === String(teacher.id) && (a.absenceDate || a.absence_date) === dateStr);
       
       if (grossDailyOverload > 0) {
         grossOverloadTotal += grossDailyOverload;
@@ -278,16 +314,84 @@ export default function Overload() {
     return fullName.includes(teacherSearch.toLowerCase().trim());
   });
 
+  const handleAddTardinessSubmit = async (e) => {
+    e.preventDefault();
+    if (!tardinessTeacherId || !tardinessStartDate || !tardinessEndDate) {
+      await showAlert("Missing Fields", "Please select a teacher, start date, and end date for tardiness logging.");
+      return;
+    }
+    if (new Date(tardinessEndDate) < new Date(tardinessStartDate)) {
+      await showAlert("Invalid Range", "End date cannot be before start date.");
+      return;
+    }
+
+    const teacherAbsences = absences.filter(a => String(a.personnelId) === String(tardinessTeacherId));
+    let hasConflict = false;
+    let conflictDate = '';
+
+    let cur = new Date(tardinessStartDate);
+    const end = new Date(tardinessEndDate);
+    while (cur <= end) {
+      const dStr = getLocalDateString(cur);
+      if (teacherAbsences.some(a => a.absenceDate === dStr)) {
+        hasConflict = true;
+        conflictDate = dStr;
+        break;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    if (hasConflict) {
+      await showAlert("Record Conflict", `This teacher already has an absence or tardiness logged on ${conflictDate}. Duplicate records on the same date are not allowed.`);
+      return;
+    }
+
+    const res = await addPersonnelAbsence({
+      personnelId: tardinessTeacherId,
+      startDate: tardinessStartDate,
+      endDate: tardinessEndDate,
+      leaveType: 'Tardiness / Late'
+    });
+    if (res.success) {
+      setTardinessTeacherId('');
+      setTardinessStartDate('');
+      setTardinessEndDate('');
+    }
+  };
+
   const handleAddAbsenceSubmit = async (e) => {
     e.preventDefault();
     if (!absentTeacherId || !absenceStartDate || !absenceEndDate || !leaveType) {
-      await showAlert("Missing Fields", "Please select a teacher, start date, end date, and type of leave.");
+      await showAlert("Missing Fields", "Please select a type of leave, teacher, start date, and end date.");
       return;
     }
     if (new Date(absenceEndDate) < new Date(absenceStartDate)) {
       await showAlert("Invalid Range", "End date cannot be before start date.");
       return;
     }
+
+    // Guard against duplicate / overlapping absence dates for this teacher across all leave types
+    const teacherAbsences = absences.filter(a => String(a.personnelId) === String(absentTeacherId));
+    let hasConflict = false;
+    let conflictDate = '';
+
+    let cur = new Date(absenceStartDate);
+    const end = new Date(absenceEndDate);
+    while (cur <= end) {
+      const dStr = getLocalDateString(cur);
+      if (teacherAbsences.some(a => a.absenceDate === dStr)) {
+        hasConflict = true;
+        conflictDate = dStr;
+        break;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    if (hasConflict) {
+      await showAlert("Absence Conflict", `This teacher already has an absence logged on ${conflictDate}. Duplicate absence dates across leave types are not allowed.`);
+      return;
+    }
+
     const res = await addPersonnelAbsence({
       personnelId: absentTeacherId,
       startDate: absenceStartDate,
@@ -324,6 +428,16 @@ export default function Overload() {
     if (slotsToTransfer.length === 0) {
       await showAlert("No Slots Assigned", "Please select at least one class slot and assign a substitute teacher to it.");
       return;
+    }
+
+    // Schedule conflict check for all assigned slots
+    for (const slot of slotsToTransfer) {
+      const subTeacher = activePersonnel.find(p => p.id === slot.substituteTeacherId);
+      const conflict = checkSubstituteConflict(subTeacher, slot);
+      if (conflict.hasConflict) {
+        await showAlert("Schedule Conflict Detected", `Cannot assign ${subTeacher.firstName} ${subTeacher.lastName} to ${slot.subject} (${slot.startTime}-${slot.endTime}) because they have a conflicting schedule (${conflict.conflictingSubject} ${conflict.conflictingTime}).`);
+        return;
+      }
     }
 
     // Group transfers by substitute
@@ -503,33 +617,796 @@ export default function Overload() {
         </div>
       </header>
 
-      {/* Tabs Menu */}
-      <div className="tabs" style={{ display: 'flex', gap: '8px', borderBottom: '1.5px solid var(--line)', paddingBottom: '1px' }}>
+      {/* 4-Step Wizard Navigation Stepper */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '8px' }}>
         <button 
-          className={`tab-btn ${activeTab === 'roster' ? 'active' : ''}`}
-          onClick={() => setActiveTab('roster')}
-          style={{ padding: '10px 16px', fontWeight: 'bold', border: 0, background: 'none', borderBottom: activeTab === 'roster' ? '3px solid var(--blue)' : 'none', cursor: 'pointer' }}
+          onClick={() => setActiveStep(1)}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '14px',
+            border: '2px solid',
+            borderColor: activeStep === 1 ? 'var(--blue)' : 'var(--line)',
+            background: activeStep === 1 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+            color: activeStep === 1 ? 'var(--navy)' : 'var(--muted)',
+            fontWeight: 'bold',
+            textAlign: 'left',
+            cursor: 'pointer',
+            boxShadow: activeStep === 1 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
+          }}
         >
-          📈 Overload Roster
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 1</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness & Late</div>
         </button>
+
         <button 
-          className={`tab-btn ${activeTab === 'absences' ? 'active' : ''}`}
-          onClick={() => setActiveTab('absences')}
-          style={{ padding: '10px 16px', fontWeight: 'bold', border: 0, background: 'none', borderBottom: activeTab === 'absences' ? '3px solid var(--blue)' : 'none', cursor: 'pointer' }}
+          onClick={() => setActiveStep(2)}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '14px',
+            border: '2px solid',
+            borderColor: activeStep === 2 ? 'var(--blue)' : 'var(--line)',
+            background: activeStep === 2 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+            color: activeStep === 2 ? 'var(--navy)' : 'var(--muted)',
+            fontWeight: 'bold',
+            textAlign: 'left',
+            cursor: 'pointer',
+            boxShadow: activeStep === 2 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
+          }}
         >
-          📅 Absences Log
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 2</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📅 Absences & Leave</div>
         </button>
+
         <button 
-          className={`tab-btn ${activeTab === 'transfers' ? 'active' : ''}`}
-          onClick={() => setActiveTab('transfers')}
-          style={{ padding: '10px 16px', fontWeight: 'bold', border: 0, background: 'none', borderBottom: activeTab === 'transfers' ? '3px solid var(--blue)' : 'none', cursor: 'pointer' }}
+          onClick={() => setActiveStep(3)}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '14px',
+            border: '2px solid',
+            borderColor: activeStep === 3 ? 'var(--blue)' : 'var(--line)',
+            background: activeStep === 3 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+            color: activeStep === 3 ? 'var(--navy)' : 'var(--muted)',
+            fontWeight: 'bold',
+            textAlign: 'left',
+            cursor: 'pointer',
+            boxShadow: activeStep === 3 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
+          }}
         >
-          🔄 Workload Transfers
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 3</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🔄 Workload Transfers</div>
+        </button>
+
+        <button 
+          onClick={() => setActiveStep(4)}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '14px',
+            border: '2px solid',
+            borderColor: activeStep === 4 ? 'var(--blue)' : 'var(--line)',
+            background: activeStep === 4 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+            color: activeStep === 4 ? 'var(--navy)' : 'var(--muted)',
+            fontWeight: 'bold',
+            textAlign: 'left',
+            cursor: 'pointer',
+            boxShadow: activeStep === 4 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
+          }}
+        >
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 4</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📈 Overload Computation</div>
         </button>
       </div>
 
-      {/* Roster Tab */}
-      {activeTab === 'roster' && (
+      {/* STEP 1: Tardiness & Late Log */}
+      {activeStep === 1 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
+          {/* Interactive Calendar Selector Card */}
+          <article className="card" style={{ height: 'fit-content' }}>
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>⏰ Interactive Tardiness Picker</h2>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Select a teacher and click any weekday on the calendar below to toggle them as Tardy / Late on that day.</p>
+
+              {/* Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>1. SELECT TEACHER</label>
+                  <SearchableDropdown 
+                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
+                    value={activePersonnel.find(p => p.id === tardinessTeacherId) ? (() => {
+                      const p = activePersonnel.find(p => p.id === tardinessTeacherId);
+                      return `${p.firstName} ${p.lastName} · ${p.position}`;
+                    })() : ''}
+                    onChange={(val) => {
+                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
+                      setTardinessTeacherId(p ? p.id : '');
+                    }}
+                    placeholder="Select teacher to log tardiness..."
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>2. SELECT MONTH</label>
+                  <select 
+                    value={tardinessMonth}
+                    onChange={(e) => setTardinessMonth(e.target.value)}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
+                  >
+                    {MONTHS_LIST.map(m => (
+                      <option key={m.name} value={m.name}>{m.name} ({m.quarter})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⏰ Tardy / Late
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef3c7', border: '1px solid #fde68a' }}></span> 🏖️ Leave
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Regular
+                </span>
+              </div>
+
+              {/* Interactive Calendar Grid */}
+              {!tardinessTeacherId ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
+                  👈 Please select a teacher above to enable the interactive calendar picker.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{tardinessMonth} 2026 Workdays Calendar</span>
+                    <small style={{ color: 'var(--muted)', fontWeight: 'normal' }}>Click date to toggle</small>
+                  </div>
+
+                  {/* Calendar Grid (5 Weekdays) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
+                      <div key={day} style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', padding: '4px', background: '#e2e8f0', borderRadius: '4px' }}>
+                        {day}
+                      </div>
+                    ))}
+                    {(() => {
+                      const monthDates = getWeekdaysInMonth(tardinessMonth, 'SY 26-27');
+                      const teacherAbsences = absences.filter(a => String(a.personnelId || a.personnel_id) === String(tardinessTeacherId));
+
+                      return monthDates.map((dateObj, idx) => {
+                        const dateStr = getLocalDateString(dateObj);
+                        const dayNum = dateObj.getDate();
+                        const existingLog = teacherAbsences.find(a => (a.absenceDate || a.absence_date) === dateStr);
+                        const lType = existingLog?.leaveType || existingLog?.leave_type || '';
+                        const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
+                        const isLeave = existingLog && !isTardy;
+
+                        let bg = 'white';
+                        let border = '1.5px solid var(--line)';
+                        let color = 'var(--navy)';
+                        let badgeText = '';
+
+                        if (isTardy) {
+                          bg = '#fee2e2';
+                          border = '1.5px solid #fca5a5';
+                          color = '#991b1b';
+                          badgeText = '⏰ LATE';
+                        } else if (isLeave) {
+                          bg = '#fef3c7';
+                          border = '1.5px solid #fde68a';
+                          color = '#92400e';
+                          badgeText = '🏖️ LEAVE';
+                        }
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={async () => {
+                              if (isLeave) {
+                                await showAlert("Official Leave Logged", `This teacher is already logged for ${existingLog.leaveType} on ${dateStr} in Step 2.`);
+                                return;
+                              }
+                              if (isTardy) {
+                                if (await showConfirm("Remove Tardiness?", `Remove tardiness entry for ${dateStr}?`)) {
+                                  await removePersonnelAbsence(existingLog.id);
+                                }
+                              } else {
+                                await addPersonnelAbsence({
+                                  personnelId: tardinessTeacherId,
+                                  startDate: dateStr,
+                                  endDate: dateStr,
+                                  leaveType: 'Tardiness / Late'
+                                });
+                              }
+                            }}
+                            style={{
+                              padding: '10px 4px',
+                              borderRadius: '10px',
+                              background: bg,
+                              border: border,
+                              color: color,
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minHeight: '52px',
+                              boxShadow: isTardy ? '0 2px 6px rgba(185, 28, 28, 0.15)' : 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <span style={{ fontSize: '15px' }}>{dayNum}</span>
+                            <span style={{ fontSize: '9px', textTransform: 'uppercase', marginTop: '2px', fontWeight: '800' }}>
+                              {badgeText || 'Normal'}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          </article>
+
+          {/* Tardiness Log List */}
+          <article className="card">
+            <div className="card-inner" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Tardiness & Late Log History</h2>
+                <button 
+                  className="btn" 
+                  onClick={() => setActiveStep(2)}
+                  style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
+                >
+                  Proceed to Step 2: Absences & Leave →
+                </button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date of Tardiness</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Record Type</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '80px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {absences.filter(abs => {
+                      const lType = abs.leaveType || abs.leave_type || '';
+                      return lType.includes('Late') || lType.includes('Tardiness');
+                    }).map((abs, idx) => {
+                      const teacher = activePersonnel.find(p => String(p.id) === String(abs.personnelId || abs.personnel_id));
+                      const teacherName = teacher ? `${teacher.lastName}, ${teacher.firstName}` : (abs.lastName ? `${abs.lastName}, ${abs.firstName}` : 'Unknown Teacher');
+                      const aDate = abs.absenceDate || abs.absence_date || '';
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{teacherName}</td>
+                          <td style={{ padding: '12px 10px' }}>{aDate}</td>
+                          <td style={{ padding: '12px 10px' }}>
+                            <span style={{
+                              background: '#fee2e2',
+                              color: '#b91c1c',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 'bold'
+                            }}>
+                              ⏰ Tardiness / Late (Overload Pay Deduction)
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                            <button 
+                              className="btn danger"
+                              onClick={async () => {
+                                if (await showConfirm("Remove Log?", `Are you sure you want to remove this tardiness log for ${teacherName}?`)) {
+                                  await removePersonnelAbsence(abs.id);
+                                }
+                              }}
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              ✕ Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {absences.filter(abs => abs.leaveType?.includes('Late') || abs.leaveType?.includes('Tardiness')).length === 0 && (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No tardiness / late entries logged yet. Select a teacher on the left and click calendar days to log tardiness.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {/* STEP 2: Absences & Leave Log */}
+      {activeStep === 2 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
+          {/* Interactive Range Picker Card */}
+          <article className="card" style={{ height: 'fit-content' }}>
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>🏖️ Interactive Leave Range Picker</h2>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Select teacher and leave type, then click a **Start Date** and **End Date** on the calendar to select a range.</p>
+
+              {/* Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>1. LEAVE / ABSENCE TYPE</label>
+                  <select 
+                    value={leaveType} 
+                    onChange={(e) => setLeaveType(e.target.value)}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
+                  >
+                    <option value="Sick Leave">Sick Leave</option>
+                    <option value="Wellness Leave">Wellness Leave</option>
+                    <option value="Maternity Leave">Maternity Leave</option>
+                    <option value="Paternity Leave">Paternity Leave</option>
+                    <option value="Vacation Leave">Vacation Leave</option>
+                    <option value="Unexcused Absence">Unexcused Absence</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>2. SELECT TEACHER</label>
+                  <SearchableDropdown 
+                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
+                    value={activePersonnel.find(p => p.id === absentTeacherId) ? (() => {
+                      const p = activePersonnel.find(p => p.id === absentTeacherId);
+                      return `${p.firstName} ${p.lastName} · ${p.position}`;
+                    })() : ''}
+                    onChange={(val) => {
+                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
+                      setAbsentTeacherId(p ? p.id : '');
+                      setRangeStartDate(null);
+                      setRangeEndDate(null);
+                    }}
+                    placeholder="Select absent teacher..."
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>3. SELECT MONTH</label>
+                  <select 
+                    value={absenceMonth}
+                    onChange={(e) => {
+                      setAbsenceMonth(e.target.value);
+                      setRangeStartDate(null);
+                      setRangeEndDate(null);
+                    }}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
+                  >
+                    {MONTHS_LIST.map(m => (
+                      <option key={m.name} value={m.name}>{m.name} ({m.quarter})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> Selected Range
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⏰ Tardy
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Available
+                </span>
+              </div>
+
+              {/* Interactive Calendar Range Grid */}
+              {!absentTeacherId ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
+                  👈 Please select a teacher above to enable the interactive calendar range picker.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{absenceMonth} 2026 Workdays Calendar</span>
+                    <small style={{ color: 'var(--muted)', fontWeight: 'normal' }}>
+                      {!rangeStartDate ? 'Click 1st date for Start Date' : (!rangeEndDate ? 'Click 2nd date for End Date' : 'Range selected!')}
+                    </small>
+                  </div>
+
+                  {/* Calendar Grid (5 Weekdays) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
+                      <div key={day} style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', padding: '4px', background: '#e2e8f0', borderRadius: '4px' }}>
+                        {day}
+                      </div>
+                    ))}
+                    {(() => {
+                      const monthDates = getWeekdaysInMonth(absenceMonth, 'SY 26-27');
+                      const teacherAbsences = absences.filter(a => String(a.personnelId || a.personnel_id) === String(absentTeacherId));
+
+                      return monthDates.map((dateObj, idx) => {
+                        const dateStr = getLocalDateString(dateObj);
+                        const dayNum = dateObj.getDate();
+                        const existingLog = teacherAbsences.find(a => (a.absenceDate || a.absence_date) === dateStr);
+                        const lType = existingLog?.leaveType || existingLog?.leave_type || '';
+                        const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
+                        const isLoggedLeave = existingLog && !isTardy;
+
+                        // Range calculation
+                        const effectiveStart = rangeStartDate;
+                        const effectiveEnd = rangeEndDate || rangeStartDate;
+                        const isInSelectedRange = effectiveStart && dateStr >= effectiveStart && dateStr <= effectiveEnd;
+
+                        let bg = 'white';
+                        let border = '1.5px solid var(--line)';
+                        let color = 'var(--navy)';
+                        let badgeText = '';
+
+                        if (isInSelectedRange) {
+                          bg = '#fef08a';
+                          border = '2px solid #ca8a04';
+                          color = '#854d0e';
+                          badgeText = 'SELECTED';
+                        } else if (isLoggedLeave) {
+                          bg = '#fef3c7';
+                          border = '1.5px solid #fde68a';
+                          color = '#92400e';
+                          badgeText = '🏖️ ' + (lType.split(' ')[0].toUpperCase());
+                        } else if (isTardy) {
+                          bg = '#fee2e2';
+                          border = '1.5px solid #fca5a5';
+                          color = '#991b1b';
+                          badgeText = '⏰ LATE';
+                        }
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              if (!rangeStartDate || (rangeStartDate && rangeEndDate)) {
+                                setRangeStartDate(dateStr);
+                                setRangeEndDate(null);
+                              } else {
+                                if (dateStr < rangeStartDate) {
+                                  setRangeEndDate(rangeStartDate);
+                                  setRangeStartDate(dateStr);
+                                } else {
+                                  setRangeEndDate(dateStr);
+                                }
+                              }
+                            }}
+                            style={{
+                              padding: '10px 4px',
+                              borderRadius: '10px',
+                              background: bg,
+                              border: border,
+                              color: color,
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minHeight: '52px',
+                              boxShadow: isInSelectedRange ? '0 2px 8px rgba(202, 138, 4, 0.25)' : 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <span style={{ fontSize: '15px' }}>{dayNum}</span>
+                            <span style={{ fontSize: '9px', textTransform: 'uppercase', marginTop: '2px', fontWeight: '800' }}>
+                              {badgeText || 'Normal'}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+
+                  {/* Range Status & Action Panel */}
+                  {rangeStartDate && (
+                    <div style={{ marginTop: '10px', background: '#fefce8', border: '1.5px solid #fef08a', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#854d0e' }}>
+                        📅 Selected Range: <strong>{rangeStartDate}</strong> {rangeEndDate ? `to ${rangeEndDate}` : '(1 day range)'}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={async () => {
+                            const res = await addPersonnelAbsence({
+                              personnelId: absentTeacherId,
+                              startDate: rangeStartDate,
+                              endDate: rangeEndDate || rangeStartDate,
+                              leaveType: leaveType
+                            });
+                            if (res.success) {
+                              setRangeStartDate(null);
+                              setRangeEndDate(null);
+                            }
+                          }}
+                          style={{ flex: 1, padding: '8px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+                        >
+                          Confirm & Log {leaveType}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() => {
+                            setRangeStartDate(null);
+                            setRangeEndDate(null);
+                          }}
+                          style={{ padding: '8px 12px', fontSize: '12px', background: 'white', border: '1px solid var(--line)' }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </article>
+
+          {/* Absences Log List */}
+          <article className="card">
+            <div className="card-inner" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Absence & Leave Log History</h2>
+                <button 
+                  className="btn" 
+                  onClick={() => setActiveStep(3)}
+                  style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
+                >
+                  Proceed to Step 3: Workload Transfers →
+                </button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date of Absence</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Leave Type</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '80px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {absences.filter(abs => {
+                      const lType = abs.leaveType || abs.leave_type || '';
+                      return !lType.includes('Late') && !lType.includes('Tardiness');
+                    }).map((abs, idx) => {
+                      const teacher = activePersonnel.find(p => String(p.id) === String(abs.personnelId || abs.personnel_id));
+                      const teacherName = teacher ? `${teacher.lastName}, ${teacher.firstName}` : (abs.lastName ? `${abs.lastName}, ${abs.firstName}` : 'Unknown Teacher');
+                      const aDate = abs.absenceDate || abs.absence_date || '';
+                      const lType = abs.leaveType || abs.leave_type || '';
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{teacherName}</td>
+                          <td style={{ padding: '12px 10px' }}>{aDate}</td>
+                          <td style={{ padding: '12px 10px' }}>
+                            <span style={{
+                              background: '#fef3c7',
+                              color: '#b45309',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 'bold'
+                            }}>
+                              {lType}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                            <button 
+                              className="btn danger"
+                              onClick={async () => {
+                                if (await showConfirm("Remove Log?", `Are you sure you want to remove this absence log for ${teacherName}?`)) {
+                                  await removePersonnelAbsence(abs.id);
+                                }
+                              }}
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              ✕ Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {absences.filter(abs => !abs.leaveType?.includes('Late') && !abs.leaveType?.includes('Tardiness')).length === 0 && (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No absences logged yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {/* STEP 3: Workload Transfers */}
+      {activeStep === 3 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '20px' }}>
+          {/* Create Transfer Form */}
+          <article className="card" style={{ height: 'fit-content' }}>
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Create Workload Transfer</h2>
+              <form onSubmit={handleCreateTransfer} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>ABSENT TEACHER</label>
+                  <SearchableDropdown 
+                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
+                    value={activePersonnel.find(p => p.id === transferAbsentTeacherId) ? (() => {
+                      const p = activePersonnel.find(p => p.id === transferAbsentTeacherId);
+                      return `${p.firstName} ${p.lastName} · ${p.position}`;
+                    })() : ''}
+                    onChange={(val) => {
+                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
+                      setTransferAbsentTeacherId(p ? p.id : '');
+                      setSelectedTransferSlots({}); // reset slots
+                    }}
+                    placeholder="Select absent teacher..."
+                  />
+                </div>
+                
+                {transferAbsentTeacherId && (
+                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>ASSIGN SUBSTITUTE PER CLASS SLOT</label>
+                    {(() => {
+                      const absentTeacher = activePersonnel.find(p => p.id === transferAbsentTeacherId);
+                      const slots = absentTeacher?.workloadRows || [];
+                      if (slots.length === 0) {
+                        return <span style={{ fontSize: '12px', color: 'var(--muted)' }}>This teacher has no active workloads scheduled.</span>;
+                      }
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {slots.map((row, idx) => (
+                            <div key={idx} style={{ background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
+                              <strong style={{ color: 'var(--navy)' }}>{row.subject} ({row.gradeLevel})</strong>
+                              <div style={{ color: 'var(--muted)', marginBottom: '4px' }}>Time: {row.startTime} - {row.endTime} [{(row.days || []).join(', ')}]</div>
+                              <select 
+                                value={selectedTransferSlots[idx] || ''}
+                                onChange={(e) => setSelectedTransferSlots(prev => ({ ...prev, [idx]: e.target.value }))}
+                                style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '4px', border: '1.5px solid var(--line)', fontWeight: 'bold' }}
+                              >
+                                <option value="">Select substitute teacher...</option>
+                                {activePersonnel.filter(p => p.id !== transferAbsentTeacherId).map(p => {
+                                  const conflictInfo = checkSubstituteConflict(p, row);
+                                  return (
+                                    <option 
+                                      key={p.id} 
+                                      value={p.id} 
+                                      disabled={conflictInfo.hasConflict}
+                                      style={{ color: conflictInfo.hasConflict ? '#b91c1c' : '#15803d' }}
+                                    >
+                                      {conflictInfo.hasConflict 
+                                        ? `⚠️ WITH CONFLICT: ${p.lastName}, ${p.firstName} (${p.position}) — Conflict: ${conflictInfo.conflictingSubject} (${conflictInfo.conflictingTime})`
+                                        : `✓ AVAILABLE: ${p.lastName}, ${p.firstName} (${p.position})`
+                                      }
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>START DATE</label>
+                    <input 
+                      type="date" 
+                      value={transferStartDate} 
+                      onChange={(e) => setTransferStartDate(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 6px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontSize: '12px', minWidth: 0 }}
+                    />
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>END DATE</label>
+                    <input 
+                      type="date" 
+                      value={transferEndDate} 
+                      onChange={(e) => setTransferEndDate(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 6px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontSize: '12px', minWidth: 0 }}
+                    />
+                  </div>
+                </div>
+                
+                <button type="submit" className="btn" style={{ padding: '10px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '6px' }}>
+                  Create Transfer
+                </button>
+              </form>
+            </div>
+          </article>
+
+          {/* Active Transfers List */}
+          <article className="card">
+            <div className="card-inner" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Active Workload Transfers</h2>
+                <button 
+                  className="btn" 
+                  onClick={() => setActiveStep(4)}
+                  style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
+                >
+                  Proceed to Step 4: Computation →
+                </button>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Absent Teacher</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Substitute Teacher</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Transferred Classes</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Duration</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '90px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workloadTransfers.filter(t => t.status !== 'ended').map((t, idx) => {
+                      const absentee = activePersonnel.find(p => p.id === t.absentTeacherId);
+                      const substitute = activePersonnel.find(p => p.id === t.substituteTeacherId);
+                      const classSummary = (t.workloadRows || []).map(r => `${r.subject} (${r.gradeLevel})`).join(', ');
+
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#b91c1c' }}>
+                            {absentee ? `${absentee.lastName}, ${absentee.firstName}` : 'Unknown'}
+                          </td>
+                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#15803d' }}>
+                            {substitute ? `${substitute.lastName}, ${substitute.firstName}` : 'Unknown'}
+                          </td>
+                          <td style={{ padding: '12px 10px', color: 'var(--navy)' }}>{classSummary || 'All workloads'}</td>
+                          <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
+                            {t.startDate ? new Date(t.startDate).toLocaleDateString() : ''} - {t.endDate ? new Date(t.endDate).toLocaleDateString() : ''}
+                          </td>
+                          <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                            <button 
+                              className="btn danger"
+                              onClick={async () => {
+                                if (await showConfirm("End Transfer?", "Are you sure you want to end this workload transfer and return the classes to the original teacher?")) {
+                                  await removeWorkloadTransfer(t.id);
+                                }
+                              }}
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              End Transfer
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {workloadTransfers.filter(t => t.status !== 'ended').length === 0 && (
+                      <tr>
+                        <td colSpan="5" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No active workload transfers.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {/* STEP 4: Computation of Teaching Overload */}
+      {activeStep === 4 && (
         <article className="card">
           <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
@@ -619,276 +1496,6 @@ export default function Overload() {
             </div>
           </div>
         </article>
-      )}
-
-      {/* Absences Log Tab */}
-      {activeTab === 'absences' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '20px' }}>
-          {/* Add Absence Form */}
-          <article className="card" style={{ height: 'fit-content' }}>
-            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Log Teacher Absence / Leave</h2>
-              <form onSubmit={handleAddAbsenceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>SELECT TEACHER</label>
-                  <SearchableDropdown 
-                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
-                    value={activePersonnel.find(p => p.id === absentTeacherId) ? (() => {
-                      const p = activePersonnel.find(p => p.id === absentTeacherId);
-                      return `${p.firstName} ${p.lastName} · ${p.position}`;
-                    })() : ''}
-                    onChange={(val) => {
-                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
-                      setAbsentTeacherId(p ? p.id : '');
-                    }}
-                    placeholder="Select absent teacher..."
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>START DATE</label>
-                    <input 
-                      type="date" 
-                      value={absenceStartDate} 
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setAbsenceStartDate(val);
-                        if (!absenceEndDate || absenceEndDate < val) {
-                          setAbsenceEndDate(val);
-                        }
-                      }}
-                      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>END DATE</label>
-                    <input 
-                      type="date" 
-                      value={absenceEndDate} 
-                      onChange={(e) => setAbsenceEndDate(e.target.value)}
-                      style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>LEAVE / ABSENCE TYPE</label>
-                  <select 
-                    value={leaveType} 
-                    onChange={(e) => setLeaveType(e.target.value)}
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}
-                  >
-                    <option value="Sick Leave">Sick Leave</option>
-                    <option value="Maternity Leave">Maternity Leave</option>
-                    <option value="Paternity Leave">Paternity Leave</option>
-                    <option value="Vacation Leave">Vacation Leave</option>
-                    <option value="Unexcused Absence">Unexcused Absence</option>
-                  </select>
-                </div>
-                <button type="submit" className="btn" style={{ padding: '10px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '6px' }}>
-                  Log Absence
-                </button>
-              </form>
-            </div>
-          </article>
-
-          {/* Absences Log List */}
-          <article className="card">
-            <div className="card-inner" style={{ padding: '20px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: '0 0 16px 0' }}>Absence Log History</h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date of Absence</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Leave Type</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '80px' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {absences.map((abs, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
-                        <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{abs.lastName}, {abs.firstName}</td>
-                        <td style={{ padding: '12px 10px' }}>{abs.absenceDate}</td>
-                        <td style={{ padding: '12px 10px' }}>
-                          <span style={{ background: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                            {abs.leaveType}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                          <button 
-                            className="btn danger"
-                            onClick={async () => {
-                              if (await showConfirm("Remove Log?", `Are you sure you want to remove this absence log for ${abs.firstName} ${abs.lastName}?`)) {
-                                await removePersonnelAbsence(abs.id);
-                              }
-                            }}
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                          >
-                            ✕ Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {absences.length === 0 && (
-                      <tr>
-                        <td colSpan="4" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No absences logged yet.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </article>
-        </div>
-      )}
-
-      {/* Workload Transfers Tab */}
-      {activeTab === 'transfers' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '20px' }}>
-          {/* Create Transfer Form */}
-          <article className="card" style={{ height: 'fit-content' }}>
-            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Create Workload Transfer</h2>
-              <form onSubmit={handleCreateTransfer} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>ABSENT TEACHER</label>
-                  <SearchableDropdown 
-                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
-                    value={activePersonnel.find(p => p.id === transferAbsentTeacherId) ? (() => {
-                      const p = activePersonnel.find(p => p.id === transferAbsentTeacherId);
-                      return `${p.firstName} ${p.lastName} · ${p.position}`;
-                    })() : ''}
-                    onChange={(val) => {
-                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
-                      setTransferAbsentTeacherId(p ? p.id : '');
-                      setSelectedTransferSlots({}); // reset slots
-                    }}
-                    placeholder="Select absent teacher..."
-                  />
-                </div>
-                
-                {transferAbsentTeacherId && (
-                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>ASSIGN SUBSTITUTE PER CLASS SLOT</label>
-                    {(() => {
-                      const absentTeacher = activePersonnel.find(p => p.id === transferAbsentTeacherId);
-                      const slots = absentTeacher?.workloadRows || [];
-                      if (slots.length === 0) {
-                        return <span style={{ fontSize: '12px', color: 'var(--muted)' }}>This teacher has no active workloads scheduled.</span>;
-                      }
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          {slots.map((row, idx) => (
-                            <div key={idx} style={{ background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                              <strong style={{ color: 'var(--navy)' }}>{row.subject} ({row.gradeLevel})</strong>
-                              <div style={{ color: 'var(--muted)', marginBottom: '4px' }}>Time: {row.startTime} - {row.endTime} [{(row.days || []).join(', ')}]</div>
-                              <select 
-                                value={selectedTransferSlots[idx] || ''}
-                                onChange={(e) => setSelectedTransferSlots(prev => ({ ...prev, [idx]: e.target.value }))}
-                                style={{ width: '100%', padding: '6px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--line)' }}
-                              >
-                                <option value="">Select substitute teacher...</option>
-                                {activePersonnel.filter(p => p.id !== transferAbsentTeacherId).map(p => (
-                                  <option key={p.id} value={p.id}>{p.firstName} {p.lastName} ({p.position})</option>
-                                ))}
-                              </select>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>START DATE</label>
-                    <input 
-                      type="date" 
-                      value={transferStartDate} 
-                      onChange={(e) => setTransferStartDate(e.target.value)}
-                      style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>END DATE</label>
-                    <input 
-                      type="date" 
-                      value={transferEndDate} 
-                      onChange={(e) => setTransferEndDate(e.target.value)}
-                      style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}
-                    />
-                  </div>
-                </div>
-                
-                <button type="submit" className="btn" style={{ padding: '10px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '6px' }}>
-                  Create Transfer
-                </button>
-              </form>
-            </div>
-          </article>
-
-          {/* Active Transfers List */}
-          <article className="card">
-            <div className="card-inner" style={{ padding: '20px' }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: '0 0 16px 0' }}>Active Workload Transfers</h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Absent Teacher</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Substitute Teacher</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Transferred Classes</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Duration</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '90px' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workloadTransfers.filter(t => t.status !== 'ended').map((t, idx) => {
-                      const absentee = activePersonnel.find(p => p.id === t.absentTeacherId);
-                      const substitute = activePersonnel.find(p => p.id === t.substituteTeacherId);
-                      const classSummary = (t.workloadRows || []).map(r => `${r.subject} (${r.gradeLevel})`).join(', ');
-
-                      return (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
-                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#b91c1c' }}>
-                            {absentee ? `${absentee.lastName}, ${absentee.firstName}` : 'Unknown'}
-                          </td>
-                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#15803d' }}>
-                            {substitute ? `${substitute.lastName}, ${substitute.firstName}` : 'Unknown'}
-                          </td>
-                          <td style={{ padding: '12px 10px', color: 'var(--navy)' }}>{classSummary || 'All workloads'}</td>
-                          <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
-                            {t.startDate ? new Date(t.startDate).toLocaleDateString() : ''} - {t.endDate ? new Date(t.endDate).toLocaleDateString() : ''}
-                          </td>
-                          <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                            <button 
-                              className="btn danger"
-                              onClick={async () => {
-                                if (await showConfirm("End Transfer?", "Are you sure you want to end this workload transfer and return the classes to the original teacher?")) {
-                                  await removeWorkloadTransfer(t.id);
-                                }
-                              }}
-                              style={{ padding: '4px 8px', fontSize: '11px' }}
-                            >
-                              End Transfer
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {workloadTransfers.filter(t => t.status !== 'ended').length === 0 && (
-                      <tr>
-                        <td colSpan="5" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No active workload transfers.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </article>
-        </div>
       )}
     </main>
   );

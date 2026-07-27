@@ -2373,7 +2373,7 @@ export default function Workload() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [positionFilter, setPositionFilter] = useState('all');
   const [teacherSearch, setTeacherSearch] = useState('');
-  const [layoutType, setLayoutType] = useState('card'); // 'card' | 'list'
+  const [layoutType, setLayoutType] = useState('list'); // 'list' | 'card'
   const [timeSortOrder, setTimeSortOrder] = useState('desc'); // 'added' | 'asc' | 'desc'
   const [newlyAddedWorkloadId, setNewlyAddedWorkloadId] = useState(null);
   const workloadCardRefs = React.useRef({});
@@ -2896,9 +2896,6 @@ export default function Workload() {
     const rows = [...(currentPerson.workloadRows || [])];
     const targetRow = rows[rowIndex];
     if (!targetRow) return;
-    if (isAdvisorySub(targetRow.subject)) {
-      return; // Locked
-    }
     const days = [...(targetRow.days || [])];
     if (days.includes(day)) {
       targetRow.days = days.filter(d => d !== day);
@@ -2988,10 +2985,14 @@ export default function Workload() {
     for (const d of daysList) {
       const intervals = [];
       for (const r of rows) {
-        if ((r.days || []).includes(d) && r.startTime && r.endTime) {
-          const [startH, startM] = r.startTime.split(':').map(Number);
-          const [endH, endM] = r.endTime.split(':').map(Number);
-          intervals.push([startH * 60 + startM, endH * 60 + endM]);
+        if ((r.days || []).includes(d)) {
+          if (r.subject === 'ADVISORY') {
+            totalMins += 60;
+          } else if (r.startTime && r.endTime) {
+            const [startH, startM] = r.startTime.split(':').map(Number);
+            const [endH, endM] = r.endTime.split(':').map(Number);
+            intervals.push([startH * 60 + startM, endH * 60 + endM]);
+          }
         }
       }
 

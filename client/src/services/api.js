@@ -23,6 +23,14 @@ export const api = {
     });
     return res.json();
   },
+  updateSchoolSubjects: async (subjectsConfig) => {
+    const res = await fetchWithAuth(`${API_BASE}/school-info/subjects`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subjectsConfig })
+    });
+    return res.json();
+  },
 
   // Personnel Roster
   getPersonnel: async () => {

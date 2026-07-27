@@ -43,7 +43,8 @@ router.get('/', async (req, res) => {
           district: localRow.district,
           schoolYear: localRow.school_year || 'SY 26-27',
           numberOfShifts: String(localRow.number_of_shifts || 1),
-          curricularOffering: Array.isArray(localRow.curricular_offering) ? localRow.curricular_offering : ['Elementary']
+          curricularOffering: Array.isArray(localRow.curricular_offering) ? localRow.curricular_offering : ['Elementary'],
+          subjectsConfig: localRow.subjects_config || null
         });
       }
 
@@ -56,7 +57,8 @@ router.get('/', async (req, res) => {
         district: "Sample District",
         schoolYear: "SY 26-27",
         numberOfShifts: "1",
-        curricularOffering: ['Elementary', 'JHS', 'SHS']
+        curricularOffering: ['Elementary', 'JHS', 'SHS'],
+        subjectsConfig: null
       });
     }
 
@@ -78,9 +80,9 @@ router.get('/', async (req, res) => {
       offerings.push('Elementary', 'JHS', 'SHS');
     }
 
-    // Fetch certification status from local ESF7 schools table
+    // Fetch certification status and subjects_config from local ESF7 schools table
     const localRes = await db.query(
-      'SELECT certified_by, certified_signature, certified_at FROM schools WHERE school_id = $1 LIMIT 1',
+      'SELECT certified_by, certified_signature, certified_at, subjects_config FROM schools WHERE school_id = $1 LIMIT 1',
       [schoolId || '123456']
     );
     const localRow = localRes.rows[0] || {};
@@ -97,7 +99,8 @@ router.get('/', async (req, res) => {
       curricularOffering: offerings,
       certifiedBy: localRow.certified_by || null,
       certifiedSignature: localRow.certified_signature || null,
-      certifiedAt: localRow.certified_at || null
+      certifiedAt: localRow.certified_at || null,
+      subjectsConfig: localRow.subjects_config || null
     });
 
   } catch (err) {
@@ -169,6 +172,30 @@ router.delete('/draft', async (req, res) => {
     );
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/schools/subjects - Save subjects_config for current school
+router.put('/subjects', async (req, res) => {
+  try {
+    const schoolId = getSchoolIdFromRequest(req) || '123456';
+    const { subjectsConfig } = req.body;
+
+    if (!subjectsConfig) {
+      return res.status(400).json({ error: 'Missing subjectsConfig' });
+    }
+
+    await db.query(
+      `INSERT INTO schools (id, school_id, school_name, region, division, school_year, subjects_config)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (school_id, school_year) DO UPDATE
+       SET subjects_config = EXCLUDED.subjects_config, updated_at = NOW()`,
+      [`SCH-${schoolId}`, schoolId, 'School', 'Region', 'Division', 'SY 26-27', JSON.stringify(subjectsConfig)]
+    );
+
+    res.json({ success: true, subjectsConfig });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

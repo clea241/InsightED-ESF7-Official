@@ -10,7 +10,7 @@ export default function Allowances() {
     { key: 'pera', label: 'PERA', type: 'fixed', defaultVal: 2000.00 },
     { key: 'uniform', label: 'Uniform Allowance', type: 'fixed', defaultVal: 6000.00 },
     { key: 'supplies', label: 'Teaching Supplies', type: 'fixed', defaultVal: 10000.00 },
-    { key: 'medical', label: 'Medical Allowance', type: 'variable', defaultVal: 0.00 },
+    { key: 'medical', label: 'Medical Allowance', type: 'fixed', defaultVal: 7000.00 },
     { key: 'hardship', label: 'Special Hardship', type: 'variable', defaultVal: 0.00 },
     { key: 'overload', label: 'Overload Pay', type: 'variable', defaultVal: 0.00 }
   ]);

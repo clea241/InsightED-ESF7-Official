@@ -613,6 +613,13 @@ export default function PersonnelProfile() {
     localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
   };
 
+  const handleMultipleFieldsChange = (fieldsObj) => {
+    if (!currentPerson) return;
+    const updated = { ...currentPerson, ...fieldsObj };
+    setEditPerson(updated);
+    localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
+  };
+
   // Age calculation
   const getAge = (dobString) => {
     if (!dobString) return null;
@@ -645,7 +652,7 @@ export default function PersonnelProfile() {
     const rows = [...(currentPerson[key] || [])];
     rows[index] = { ...rows[index], [field]: value };
 
-    // Automatically recalculate days and hours
+    // Automatically recalculate NO. OF DAYS only
     if (field === 'startDate' || field === 'endDate') {
       const cleanStart = rows[index].startDate && typeof rows[index].startDate === 'string' ? rows[index].startDate.substring(0, 10) : '';
       const cleanEnd = rows[index].endDate && typeof rows[index].endDate === 'string' ? rows[index].endDate.substring(0, 10) : '';
@@ -656,15 +663,11 @@ export default function PersonnelProfile() {
       if (start && end && end < start) {
         rows[index].endDate = '';
         rows[index].days = 0;
-        rows[index].totalHours = 0;
       } else if (start && end && end >= start) {
         const days = Math.round((end - start) / 86400000) + 1;
         rows[index].days = days;
-        rows[index].hoursPerDay = 8;
-        rows[index].totalHours = days * 8;
       } else {
         rows[index].days = 0;
-        rows[index].totalHours = 0;
       }
     }
 
@@ -674,7 +677,7 @@ export default function PersonnelProfile() {
   const addTrainingRow = (key) => {
     const rows = [...(currentPerson[key] || [])];
     const tempId = `temp-${Date.now()}-${Math.random()}`;
-    rows.push({ clientKey: tempId, title: '', startDate: '', endDate: '', days: 0, hoursPerDay: 0, totalHours: 0 });
+    rows.push({ clientKey: tempId, title: '', startDate: '', endDate: '', days: 0, hoursPerDay: 0, totalHours: '' });
     handleFieldChange(key, rows);
   };
 
@@ -761,6 +764,10 @@ export default function PersonnelProfile() {
     if (totalTrainingsCount === 0) {
       errors.push("AT LEAST ONE PROFESSIONAL DEVELOPMENT / TRAINING RECORD");
     }
+    const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
+    if (allTrainings.some(tr => !tr.totalHours || Number(tr.totalHours) <= 0)) {
+      errors.push("TOTAL HOURS FOR ALL L&D / TRAINING RECORDS (REQUIRED)");
+    }
 
     if (errors.length > 0) {
       await showAlert("Validation Checklist Needed", `Cannot save record. The following fields are empty:\n\n• ${errors.join('\n• ')}`);
@@ -822,6 +829,10 @@ export default function PersonnelProfile() {
       const totalTrainingsCount = (p.neapTrainingRows || []).length + (p.certificationRows || []).length + (p.otherTrainingRows || []).length;
       if (totalTrainingsCount === 0) {
         errors.push("AT LEAST ONE PROFESSIONAL DEVELOPMENT / TRAINING RECORD");
+      }
+      const allDraftTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
+      if (allDraftTrainings.some(tr => !tr.totalHours || Number(tr.totalHours) <= 0)) {
+        errors.push("TOTAL HOURS FOR ALL L&D / TRAINING RECORDS (REQUIRED)");
       }
 
       if (errors.length > 0) {
@@ -894,7 +905,7 @@ export default function PersonnelProfile() {
     { tab: 'personal', label: 'Personal', icon: '👤' },
     { tab: 'employment', label: 'Employment', icon: '💼' },
     { tab: 'education', label: 'Education', icon: '🎓' },
-    { tab: 'development', label: 'Development', icon: '📋' },
+    { tab: 'development', label: 'L&D', icon: '📋' },
     ...(currentPerson && currentPerson.type !== 'non-teaching' ? [{ tab: 'teaching', label: 'Teaching', icon: '📚' }] : [])
   ];
 
@@ -1679,9 +1690,14 @@ export default function PersonnelProfile() {
                               options={COLLEGE_DEGREE_OPTIONS}
                               value={currentPerson.collegeDegree || ''}
                               onChange={(val) => {
-                                handleFieldChange('collegeDegree', val);
-                                if (val && !val.toUpperCase().includes('EDUCATION')) {
-                                  handleFieldChange('major', '');
+                                const d = (val || '').toUpperCase();
+                                const isEdu = val && val !== 'NONE' && val !== 'N/A' && (
+                                  d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                                );
+                                if (!isEdu) {
+                                  handleMultipleFieldsChange({ collegeDegree: val, major: '', minor: '' });
+                                } else {
+                                  handleFieldChange('collegeDegree', val);
                                 }
                               }}
                               placeholder="Select college degree..."
@@ -1689,36 +1705,37 @@ export default function PersonnelProfile() {
                             />
                           </div>
 
-                          {currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree.toUpperCase().includes('EDUCATION') && (
-                            <div>
-                              <label>Major</label>
-                              <SearchableDropdown
-                                options={MINOR_OPTIONS}
-                                value={currentPerson.major || ''}
-                                onChange={(val) => handleFieldChange('major', val)}
-                                placeholder="Select major..."
-                              />
-                            </div>
-                          )}
+                          {(() => {
+                            const d = (currentPerson.collegeDegree || '').toUpperCase();
+                            const isEdu = currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree !== 'N/A' && (
+                              d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                            );
+                            if (!isEdu) return null;
+                            return (
+                              <>
+                                <div>
+                                  <label>Major <span style={{ color: '#EF4444' }}>*</span></label>
+                                  <SearchableDropdown
+                                    options={MAJOR_OPTIONS}
+                                    value={currentPerson.major || ''}
+                                    onChange={(val) => handleFieldChange('major', val)}
+                                    placeholder="Select major..."
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
+                                  <SearchableDropdown
+                                    options={MINOR_OPTIONS}
+                                    value={currentPerson.minor || ''}
+                                    onChange={(val) => handleFieldChange('minor', val)}
+                                    placeholder="Select minor subject (optional)..."
+                                  />
+                                </div>
+                              </>
+                            );
+                          })()}
 
-                          <div>
-                            <label>PRC Specialization</label>
-                            <SearchableDropdown
-                              options={PRC_SPECIALIZATION_OPTIONS}
-                              value={currentPerson.prcSpecialization || ''}
-                              onChange={(val) => handleFieldChange('prcSpecialization', val)}
-                              placeholder="Select specialization..."
-                            />
-                          </div>
-                          <div>
-                            <label>Minor</label>
-                            <SearchableDropdown
-                              options={MINOR_OPTIONS}
-                              value={currentPerson.minor || ''}
-                              onChange={(val) => handleFieldChange('minor', val)}
-                              placeholder="Select minor subject..."
-                            />
-                          </div>
                           <div className="profile-subsection">Post-Graduate and Eligibility</div>
                           <div>
                             <label>Post-Graduate Degree</label>
@@ -1827,6 +1844,24 @@ export default function PersonnelProfile() {
                                 <option value="N/A">N/A</option>
                               </select>
                             </div>
+
+                            {/* PRC Specialization (Conditional on LET / PBET eligibility) */}
+                            {(() => {
+                              const elStr = (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.join(',') : String(currentPerson.eligibility || '')).toUpperCase();
+                              const isLetPbet = elStr.includes('LICENSURE EXAMINATION FOR TEACHERS') || elStr.includes('PROFESSIONAL BOARD EXAMINATION FOR TEACHERS') || elStr.includes('LET') || elStr.includes('PBET');
+                              if (!isLetPbet) return null;
+                              return (
+                                <div style={{ marginTop: '16px' }}>
+                                  <label>PRC Specialization</label>
+                                  <SearchableDropdown
+                                    options={PRC_SPECIALIZATION_OPTIONS}
+                                    value={currentPerson.prcSpecialization || ''}
+                                    onChange={(val) => handleFieldChange('prcSpecialization', val)}
+                                    placeholder="Select specialization..."
+                                  />
+                                </div>
+                              );
+                            })()}
                           </div>
                         </>
                       )}
@@ -1877,8 +1912,8 @@ export default function PersonnelProfile() {
                                     <input value={tr.days || 0} disabled style={{ background: '#f1f5f9' }} />
                                   </div>
                                   <div>
-                                    <label>Total Hours</label>
-                                    <input type="number" value={tr.totalHours || 0} onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'totalHours', Number(e.target.value))} />
+                                    <label>Total Hours <span style={{ color: '#EF4444' }}>*</span></label>
+                                    <input type="number" min="1" placeholder="Hours *" required value={tr.totalHours || ''} onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'totalHours', e.target.value ? Number(e.target.value) : '')} />
                                   </div>
                                   <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('neapTrainingRows', index)}>✕</button>
                                 </div>
@@ -1933,8 +1968,8 @@ export default function PersonnelProfile() {
                                     <input value={tr.days || 0} disabled style={{ background: '#f1f5f9' }} />
                                   </div>
                                   <div>
-                                    <label>Total Hours</label>
-                                    <input type="number" value={tr.totalHours || 0} onChange={(e) => handleTrainingChange('certificationRows', index, 'totalHours', Number(e.target.value))} />
+                                    <label>Total Hours <span style={{ color: '#EF4444' }}>*</span></label>
+                                    <input type="number" min="1" placeholder="Hours *" required value={tr.totalHours || ''} onChange={(e) => handleTrainingChange('certificationRows', index, 'totalHours', e.target.value ? Number(e.target.value) : '')} />
                                   </div>
                                   <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('certificationRows', index)}>✕</button>
                                 </div>
@@ -1998,8 +2033,8 @@ export default function PersonnelProfile() {
                                     <input value={tr.days || 0} disabled style={{ background: '#f1f5f9' }} />
                                   </div>
                                   <div>
-                                    <label>Total Hours</label>
-                                    <input type="number" value={tr.totalHours || 0} onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'totalHours', Number(e.target.value))} />
+                                    <label>Total Hours <span style={{ color: '#EF4444' }}>*</span></label>
+                                    <input type="number" min="1" placeholder="Hours *" required value={tr.totalHours || ''} onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'totalHours', e.target.value ? Number(e.target.value) : '')} />
                                   </div>
                                   <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('otherTrainingRows', index)}>✕</button>
                                 </div>

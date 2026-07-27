@@ -29,7 +29,8 @@ router.get('/', async (req, res) => {
       gradeLevel: row.grade_level,
       sectionName: row.section_name,
       advisorId: row.adviser_id ? String(row.adviser_id) : null,
-      sectionType: row.section_type
+      sectionType: row.section_type,
+      numberOfLearners: row.number_of_learners !== null && row.number_of_learners !== undefined ? Number(row.number_of_learners) : null
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -48,11 +49,15 @@ router.post('/', async (req, res) => {
     advisorId,
     section_type,
     advisory_minutes,
-    advisoryMinutes
+    advisoryMinutes,
+    number_of_learners,
+    numberOfLearners
   } = req.body;
 
   const targetAdvisorId = adviser_id || advisor_id || advisorId || null;
   const advisoryMins = Number(advisory_minutes || advisoryMinutes || 300);
+  const rawLearners = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
+  const targetLearners = rawLearners !== undefined && rawLearners !== null && rawLearners !== '' ? Number(rawLearners) : null;
 
   const client = await db.pool.connect();
   try {
@@ -68,9 +73,9 @@ router.post('/', async (req, res) => {
 
     const newSecId = generateSectionId();
     const result = await client.query(
-      `INSERT INTO class_sections (id, school_id, school_year, grade_level, section_name, adviser_id, section_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [newSecId, school_id || '123456', school_year || '2026-2027', grade_level, section_name, validAdvisorId, section_type || 'MONO GRADE']
+      `INSERT INTO class_sections (id, school_id, school_year, grade_level, section_name, adviser_id, section_type, number_of_learners)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [newSecId, school_id || '123456', school_year || '2026-2027', grade_level, section_name, validAdvisorId, section_type || 'MONO GRADE', targetLearners]
     );
 
     const section = result.rows[0];
@@ -104,7 +109,8 @@ router.post('/', async (req, res) => {
       gradeLevel: section.grade_level,
       sectionName: section.section_name,
       advisorId: section.adviser_id ? String(section.adviser_id) : null,
-      sectionType: section.section_type
+      sectionType: section.section_type,
+      numberOfLearners: section.number_of_learners !== null && section.number_of_learners !== undefined ? Number(section.number_of_learners) : null
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -121,11 +127,15 @@ router.put('/:id', async (req, res) => {
     adviser_id,
     advisor_id,
     advisory_minutes,
-    advisoryMinutes
+    advisoryMinutes,
+    number_of_learners,
+    numberOfLearners
   } = req.body;
 
   const targetAdvisorId = advisorId || adviser_id || advisor_id || null;
   const advisoryMins = Number(advisory_minutes || advisoryMinutes || 300);
+  const rawLearners = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
+  const targetLearners = rawLearners !== undefined && rawLearners !== null && rawLearners !== '' ? Number(rawLearners) : null;
 
   const client = await db.pool.connect();
   try {
@@ -147,10 +157,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // 2. Update the adviser in the class_sections table
+    // 2. Update the adviser and number_of_learners in the class_sections table
     const result = await client.query(
-      `UPDATE class_sections SET adviser_id = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-      [validAdvisorId, req.params.id]
+      `UPDATE class_sections 
+       SET adviser_id = $1, 
+           number_of_learners = COALESCE($2, number_of_learners), 
+           updated_at = NOW() 
+       WHERE id = $3 RETURNING *`,
+      [validAdvisorId, targetLearners, req.params.id]
     );
 
     // 3. Delete existing auto-generated ADVISORY & HGP rows for this section
@@ -191,7 +205,8 @@ router.put('/:id', async (req, res) => {
       gradeLevel: result.rows[0].grade_level,
       sectionName: result.rows[0].section_name,
       advisorId: result.rows[0].adviser_id ? String(result.rows[0].adviser_id) : null,
-      sectionType: result.rows[0].section_type
+      sectionType: result.rows[0].section_type,
+      numberOfLearners: result.rows[0].number_of_learners !== null && result.rows[0].number_of_learners !== undefined ? Number(result.rows[0].number_of_learners) : null
     });
   } catch (err) {
     await client.query('ROLLBACK');

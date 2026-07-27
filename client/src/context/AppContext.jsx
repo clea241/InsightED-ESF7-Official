@@ -658,8 +658,8 @@ export const RELIGION_OPTIONS = ["OTHERS", "BUDDHISM", "CHRISTIANITY", "HINDUISM
 export const ETHNIC_GROUP_OPTIONS = [
   "OTHERS", "ABELING", "ABELLEN", "ABELLING", "ABERLING", "ABIYAN (AETA)", "ADASEN", "AETA", "AGTA-AGAY", "AGTA-CIMARON", "AGTA-DUMAGAT", "AGTA-TABANGNON", "AGTA-TABOY", "AGUTAYNON", "AKEANON", "ALAB", "ALANGAN", "ALANGAN MANGYAN", "AMBALA", "APAYAO", "AROMANEN-MANOBO", "AROMANON", "ATA", "ATA-MANOBO", "ATI", "BADJAO", "BADJAO, SAMA LAUT", "BAGKALOT", "BAGO", "BAGOBO", "BAGOBO-TAGABAWA", "BALATOC", "BALIWON", "BALUGA", "BANAO", "BANGON", "BANTOANON", "BANWAON", "BARLIG", "BASAO", "BATAK", "BATANGAN", "BATANGAN MANGYAN", "BELWANG", "BIKOL/BICOL", "BINONGAN", "BISAYA/BINISAYA", "BLAAN", "BOHOLANO", "BONTOK", "BUGKALOT", "BUHID", "BUHID MANGYAN", "BUKIDNON", "BUTBUT", "CAGALUAN", "CAGAYANEN", "CALINGA", "CAPIZEÑO", "CAVITEÑO", "CEBUANO", "CHAVACANO", "CHINESE", "CIMARON", "COTABATEÑO", "COTABATEÑO-CHAVACANO", "CUYONEN", "CUYUNON", "DACALAN", "DAGAYNEN", "DANAK", "DANANAO", "DAVAO-CHAVACANO", "DAVAWEÑO", "DIANGAN", "DIBABAWON", "DIBABEEN MULITAAN", "DIBABEN", "DIRERAYAAN", "DULANGAN", "DUMAGAT-ALTA", "DUMAGAT-REMONTADO", "ESCAYA", "GADDANG", "GUBANG", "GUBATNON", "GUBATNON MANGYAN", "GUIANGAN", "GUILAYON", "GUINAANG", "HALAWODNON", "HANUNUO", "HANUNUO MANGYAN", "HENANGA", "HIGAONON", "HILIGAYNON/LLONGGO", "IABANAG", "IBALOY", "IBATAN", "IFUGAO", "IKALAHAN", "ILAUD", "ILIANEN", "ILOCANO", "IRANON", "IRAYA", "IRAYA MANGYAN", "ISAROG", "ISINAI", "ISOROKEN", "ITAWES", "ITAWIA", "ITNEG", "ITOM", "IVATAN", "JAMA MAPON", "KABAYUKAN", "KABIHUG", "KADAKLAN/KACHAKRAN", "KAILAWAN/KAYLAWAN", "KALAGAN", "KALANGUYA", "KALIBUGAN", "KALIBUGAN/KOLIBUGAN", "KALINGA", "KAMAYO", "KAMIGIN", "KAMIGUIN", "KANKANAEY", "KANKANAEY IBENGUET", "KANKANAEY IYAPLAY", "KAPAMPANGAN", "KARINTIK", "KARULANO", "KAUNANA", "KEN-EY", "KIRENTEKEN", "KLATA", "KONGKING", "KOROLANON", "LAHITANEN", "LAMBANGIAN", "LAMBANGLAN", "LANGILAN", "LIVUNGANEN", "LLONGOT", "LUBO", "LUBUAGAN", "MABAKA", "MAENG", "MAG-ANTI", "MAG-ANTSI", "MAG-INDI", "MAGAHAT", "MAGBEKIN", "MAGBUKON", "MAGKUNANA", "MAGUINDANAO", "MAJOKAYONG", "MALAWEG/MALAUEG", "MALBONG", "MAMANWA", "MANDAYA", "MANDEK-EY", "MANDUKAYAN", "MANGALI", "MANGGUANGAN", "MANOBO", "MANOBO B\"LIT", "MANOBO-DULANGAN", "MANOBO-UBO", "MANSAKA", "MARANAO", "MASADIIT", "MASBATEÑO/MASBATENON", "MATIGSALOG", "MAYUDAN", "MOLBOG", "NANENG", "NEGRITO", "OBU-MANUVU", "PALA WAN", "PALAWAN-O", "PALAWANI", "PALAWANON", "PAN-AYANON", "PANAY-BUKIDNON", "PANGASINAN/PANGGALATO", "PARANANUM", "PUGOT", "PULANGIEN", "PULANGIYEN", "PULLON", "RATAGNON", "RATAGNON MANGYAN", "REMONTADO", "SADANGA", "SAKKI", "SALEGSEG", "SAMA", "SAMA BADJAO", "SAMA BANGINGI", "SAMA LAUT", "SAMAL", "SANGIL", "SIBUYAN MANGYAN-TAGABUKID", "SUBANEN", "SULOD/BUDIKNON", "SUMADEL", "T-BOLI", "TABANGON", "TADYAWAN", "TADYAWAN MANGYAN", "TAGABAWA", "TAGAKAOLO", "TAGALOG", "TAGANUA", "TAGAWAHANON", "TAGBANUA", "TAGBANUA/KALAMIANEN", "TALAANDIG", "TALAINGOD", "TALAINGOD, LANGILAN", "TALOCTOK", "TAO'T BATO", "TAU-BUID", "TAUSUG", "TAUT-BATO", "TBOLI", "TEDURAY", "TIGWAHANON", "TINANANEN", "TINGGLAN", "TINGGUIAN", "TINGLAYAN", "TIRURAY", "TONGLAYAN", "TULGAO", "UBO MANOBO", "UBO-MANOBO", "UMAYAMNON", "WARAY", "YAKAN", "YAPAYAO", "YBANAG", "YOGAD", "ZAMBAL"
 ];
-export const MAJOR_OPTIONS = ["N/A", "English", "Filipino", "Mathematics", "Science", "Biology", "Chemistry", "Physics", "Social Studies", "MAPEH", "TLE", "Values Education", "Early Childhood Education", "Special Needs Education", "Educational Management"];
-export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS"];
+export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
+export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const DISCIPLINE_OPTIONS = ["N/A", "Educational Management", "Curriculum and Instruction", "Mathematics Education", "Science Education", "Language Education", "Special Education", "Guidance and Counseling", "Public Administration", "Business Administration", "Information Technology"];
 export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 
@@ -1332,6 +1332,21 @@ export const AppProvider = ({ children }) => {
     });
   };
 
+  const saveSchoolSubjects = async (config) => {
+    try {
+      setSchoolInfo(prev => ({ ...prev, subjectsConfig: config }));
+      localStorage.setItem('school_subjects_config', JSON.stringify(config));
+      if (config.disabledMap) {
+        localStorage.setItem('school_disabled_subjects', JSON.stringify(config.disabledMap));
+      }
+      if (config.customSubjects) {
+        localStorage.setItem('school_custom_subjects', JSON.stringify(config.customSubjects));
+      }
+    } catch (e) {
+      console.error('Failed to update school subjects locally:', e);
+    }
+  };
+
   // Fetch and normalize personnel records (maps gradeLevelsTaught to assignedGradeLevels for frontend consistency)
   const fetchAndNormalizePersonnel = async () => {
     const list = await api.getPersonnel();
@@ -1387,7 +1402,8 @@ export const AppProvider = ({ children }) => {
             curricularOffering: school.curricularOffering || [],
             certifiedBy: school.certifiedBy || null,
             certifiedSignature: school.certifiedSignature || null,
-            certifiedAt: school.certifiedAt || null
+            certifiedAt: school.certifiedAt || null,
+            subjectsConfig: school.subjectsConfig || null
           };
         }
 
@@ -1891,7 +1907,7 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const addClassSection = async (gradeLevel, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60) => {
+  const addClassSection = async (gradeLevel, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
     const res = await api.addSection({
       school_id: schoolInfo.schoolId,
       school_year: schoolInfo.schoolYear,
@@ -1900,7 +1916,8 @@ export const AppProvider = ({ children }) => {
       adviser_id: advisorId || null,
       section_type: sectionType || 'MONO GRADE',
       advisory_minutes: advisoryMinutes,
-      hgp_minutes: hgpMinutes
+      hgp_minutes: hgpMinutes,
+      number_of_learners: numberOfLearners !== undefined && numberOfLearners !== null && numberOfLearners !== '' ? Number(numberOfLearners) : null
     });
 
     if (res && res.error) {
@@ -1913,7 +1930,8 @@ export const AppProvider = ({ children }) => {
         gradeLevel: res.gradeLevel || res.grade_level || gradeLevel,
         sectionName: res.sectionName || res.section_name || sectionName,
         advisorId: res.advisorId ? String(res.advisorId) : (res.adviser_id ? String(res.adviser_id) : (advisorId || null)),
-        sectionType: res.sectionType || res.section_type || sectionType
+        sectionType: res.sectionType || res.section_type || sectionType,
+        numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (numberOfLearners ? Number(numberOfLearners) : null)
       };
       setClassSections(prev => [...prev.filter(s => String(s.id) !== String(newSec.id)), newSec]);
 
@@ -1979,18 +1997,34 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPersonnelAbsence = async (absenceData) => {
-    const newId = `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    setAbsences(prev => [
-      ...prev,
-      {
+    const start = new Date(absenceData.startDate);
+    const end = new Date(absenceData.endDate || absenceData.startDate);
+    const newItems = [];
+    
+    let cur = new Date(start);
+    while (cur <= end) {
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, '0');
+      const dd = String(cur.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const newId = `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      newItems.push({
         id: newId,
         personnel_id: absenceData.personnelId,
-        absence_date: absenceData.startDate,
-        end_date: absenceData.endDate,
-        leave_type: absenceData.leaveType
-      }
-    ]);
-    showToast("Absence range logged in draft locally!");
+        personnelId: absenceData.personnelId,
+        absence_date: dateStr,
+        absenceDate: dateStr,
+        end_date: dateStr,
+        endDate: dateStr,
+        leave_type: absenceData.leaveType,
+        leaveType: absenceData.leaveType
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    setAbsences(prev => [...prev, ...newItems]);
+    showToast("Absence record saved.");
     return { success: true };
   };
 
@@ -2316,7 +2350,8 @@ export const AppProvider = ({ children }) => {
       setOutgoingRequests,
       districtSchools,
       refreshRequests,
-      loadDistrictSchools
+      loadDistrictSchools,
+      saveSchoolSubjects
     }}>
       {children}
     </AppContext.Provider>

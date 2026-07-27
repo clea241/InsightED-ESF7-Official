@@ -1,13 +1,535 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 
+const MASTER_SUBJECTS_CATALOG = {
+  Elementary: {
+    Kinder: [
+      'KINDER BLOCKS OF TIME', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+      'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+      'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    ],
+    'Grade 1': [
+      'LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'MATHEMATICS', 'GMRC',
+      'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+      'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+      'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    ],
+    'Grade 2': [
+      'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'GMRC',
+      'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+      'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+      'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    ],
+    'Grade 3': [
+      'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'GMRC',
+      'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+      'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+      'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    ],
+    'Grade 4': [
+      'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+      'EPP/TLE', 'MAPEH', 'GMRC', 'SPECIAL PROGRAM IN SCIENCE',
+      'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT', 'MADRASAH SUBJECTS',
+      'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION'
+    ],
+    'Grade 5': [
+      'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+      'EPP/TLE', 'MAPEH', 'GMRC', 'SPECIAL PROGRAM IN SCIENCE',
+      'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT', 'MADRASAH SUBJECTS',
+      'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION'
+    ],
+    'Grade 6': [
+      'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+      'EPP/TLE', 'MAPEH', 'GMRC', 'SPECIAL PROGRAM IN SCIENCE',
+      'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT', 'MADRASAH SUBJECTS',
+      'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION'
+    ]
+  },
+  'Junior High School': {
+    'All': [
+      'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+      'EPP/TLE', 'MAPEH', 'VALUES EDUCATION', 'GMRC',
+      'SPECIAL PROGRAM IN THE ARTS (SPA)', 'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)',
+      'SPECIAL PROGRAM IN JOURNALISM (SPJ)', 'SPECIAL PROGRAM IN SPORTS (SPS)',
+      'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM',
+      'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)',
+      'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS',
+      'IP RELATED SUBJECT', 'MADRASAH SUBJECTS', 'ARAL - READING',
+      'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    ]
+  },
+  'Senior High School': {
+    'SHS': [
+      'GMRC', 'SPECIAL PROGRAM IN THE ARTS (SPA)', 'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)',
+      'SPECIAL PROGRAM IN JOURNALISM (SPJ)', 'SPECIAL PROGRAM IN SPORTS (SPS)',
+      'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM',
+      'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)',
+      'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS',
+      'IP RELATED SUBJECT', 'MADRASAH SUBJECTS', 'ARAL - READING',
+      'ARAL - MATH', 'ARAL - SCIENCE'
+    ],
+    'SHS-CORE SUBJECTS': [
+      'ORAL COMMUNICATION', 'READING AND WRITING',
+      'KOMUNIKASYON AT PANANALIKSIK SA WIKA AT KULTURANG PILIPINO',
+      'PAGBASA AT PAGSUSURI NG IBA\'T-IBANG TEKSTO TUNGO SA PANANALIKSIK',
+      '21ST CENTURY LITERATURE FROM THE PHILIPPINES AND THE WORLD',
+      'CONTEMPORARY PHILIPPINE ARTS FROM THE REGIONS',
+      'INTRODUCTION TO THE PHILOSOPHY OF THE HUMAN PERSON / PAMBUNGAD SA PILOSOPIYA NG TAO',
+      'UNDERSTANDING CULTURE, SOCIETY AND POLITICS', 'MEDIA AND INFORMATION LITERACY',
+      'GENERAL MATHEMATICS', 'STATISTICS AND PROBABILITY', 'PHYSICAL SCIENCE',
+      'EARTH AND LIFE SCIENCE', 'PERSONAL DEVELOPMENT / PANSARILING KAUNLARAN',
+      'PE AND HEALTH', 'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    ],
+    'SHS-APPLIED SUBJECTS': [
+      'ENGLISH FOR ACADEMIC AND PROFESSIONAL PURPOSES', 'ENTREPRENEURSHIP',
+      'PRACTICAL RESEARCH 1', 'EMPOWERMENT TECHNOLOGIES (E-TECH): ICT FPR PROFESSIONAL TRACKS',
+      'PAGSULAT SA FILIPINO SA PILING LARANGAN (AKADEMIK)',
+      'PAGSULAT SA FILIPINO SA PILING LARANGAN (TECH-VOC)',
+      'PAGSULAT SA FILIPINO SA PILING LARANGAN (ISPORTS)',
+      'PAGSULAT SA FILIPINO SA PILING LARANGAN (SINING)',
+      'PRACTICAL RESEARCH 2', 'RESEARCH PROJECT/CULMINATING ACTIVITY*'
+    ],
+    'SSHS-CORE': [
+      'EFFECTIVE COMMUNICATION', 'MABISANG KOMUNIKASYON', 'GENERAL MATHEMATICS',
+      'GENERAL SCIENCE', 'LIFE AND CAREER SKILLS', 'PAG-AARAL NG KASAYSAYAN AT LIPUNANG PILIPINO'
+    ],
+    'SSHS-ACADEMIC': [
+      'ARTS 1 (CREATIVE INDUSTRIES - VISUAL ART, LITERARY ART, MEDIA ART, APPLIED ART, AND TRADITIONAL ART)',
+      'ARTS 2 (CREATIVE INDUSTRIES - MUSIC, DANCE, AND THEATER)',
+      'FILIPINO IDENTITY THROUGH THE ARTS', 'LEADERSHIP AND MANGEMENT IN THE ARTS',
+      'CITIZENSHIP AND CIVIC ENGAGEMENT', 'CONTEMPORARY LITERATURE 1', 'CONTEMPORARY LITERATURE 2',
+      'CREATIVE COMPOSITION 1', 'CREATIVE COMPOSITION 2',
+      'FILIPINO 1 (WIKA AT KOMUNIKASYON SA AKADEMIKONG FILIPINO)',
+      'FILIPINO 2 (FILIPINO PARA SA LARANG TEKNIKAL-PROPESYONAL)',
+      'FILIPINO 2 (FILIPINO SA ISPORTS)', 'FILIPINO 2 (FILIPINO SA SINING AT DISENYO)',
+      'INTRODUCTION TO PHILOSOPHY', 'MALIKHAING PAGSULAT',
+      'PHILIPPINE GOVERNANCE (PHILIPPINE POLITICS AND GOVERNANCE)',
+      'SOCIAL SCIENCES (THEORY AND PRACTICE)', 'BUSINESS 1 (BASIC ACCOUNTING)',
+      'BUSINESS 2 (BUSINESS FINANCE AND INCOME TAXATION)', 'BUSINESS 3 (BUSINESS ECONOMICS)',
+      'CONTEMPORARY MARKETING', 'INTRODUCTION TO ORGANIZATION AND MANAGEMENT',
+      'ADVANCED MATHEMATICS 1', 'ADVANCED MATHEMATICS 2', 'BIOLOGY 1', 'BIOLOGY 2', 'BIOLOGY 3', 'BIOLOGY 4',
+      'CHEMISTRY 1', 'CHEMISTRY 2', 'CHEMISTRY 3', 'CHEMISTRY 4', 'DATABASE MANAGEMENT',
+      'EARTH AND SPACE SCIENCE 1', 'EARTH AND SPACE SCIENCE 2', 'EARTH AND SPACE SCIENCE 3', 'EARTH AND SPACE SCIENCE 4',
+      'FINITE MATHEMATICS 1', 'FINITE MATHEMATICS 2', 'FUNDAMENTALS IN DATA ANALYTICS',
+      'GENERAL SCIENCE 3', 'GENERAL SCIENCE 4', 'PHYSICS 1', 'PHYSICS 2', 'PHYSICS 3', 'PHYSICS 4',
+      'PRE-CALCULUS 1', 'PRE-CALCULUS 2', 'TRIGONOMETRY 1', 'TRIGONOMETRY 2',
+      'EXERCISE AND SPORTS PROGRAMMING', 'HUMAN MOVEMENT 1 (BASIC ANATOMY IN SPORTS AND EXERCISE)',
+      'HUMAN MOVEMENT 2 (MOTOR SKILLS DEVELOPMENT)', 'PHYSICAL EDUCATION 1 (FITNESS AND RECREATION)',
+      'PHYSICAL EDUCATION 2 (SPORTS AND DANCE)', 'SPORTS ACTIVITY MANAGEMENT',
+      'SPORTS COACHING', 'SPORTS OFFICIATING',
+      'ARTS APPRENTICESHIP (DANCE, MUSIC, THEATER ARTS, LITERARY ARTS, VISUAL ARTS, VISUAL, MEDIA, APPLIED, AND TRADITIONAL ART)',
+      'CREATIVE PRODUCTION AND PRESENTATION', 'DESIGN AND INNOVATION', 'RESEARCH METHODS',
+      '(IN-CAMPUS) SPORTS', '(OFF-CAMPUS) (BUSINESS AND ENTREPRENEURSHIP/ SPORTS HEALTH, AND WELLNESS/ SCIENCE, TECHNOLOGY, ENGINEERING, AND MATHEMATICS)',
+      'ELECTIVES, SPECIAL CURRICULAR PROGRAMS, OR INSTITUTIONAL'
+    ],
+    'SSHS-TECHPRO': [
+      'AESTHETIC SERVICES (BEAUTY CARE)', 'BARBERING SERVICES', 'CAREGIVING (ADULT CARE)',
+      'CAREGIVING (CHILD CARE)', 'HAIRDRESSING SERVICES', 'WELLNESS SERVICES (HILOT/MASSAGE)',
+      'AGRICULTURAL CROPS PRODUCTION', 'AGRO-ENTREPRENEURSHIP', 'AQUACULTURE',
+      'FISH CAPTURE OPERATION', 'FOOD PROCESSING', 'ORGANIC AGRICULTURE PRODUCTION',
+      'POULTRY PRODUCTION (CHICKEN)', 'RUMINANTS PRODUCTION', 'SWINE PRODUCTION',
+      'GARMENTS ARTISANRY', 'HANDICRAFTS (WEAVING)', 'AUTOMOTIVE SERVICING (ELECTRICAL REPAIR)',
+      'AUTOMOTIVE SERVICING (ENGINE AND CHASSIS REPAIRS)', 'DRIVING AND AUTOMOTIVE SERVICING',
+      'MOTORCYCLE AND SMALL ENGINE SERVICING', 'CARPENTRY', 'CONSTRUCTION OPERATION',
+      'MANUAL METAL ARC WELDING', 'TECHNICAL DRAFTING', 'ANIMATION', 'ILLUSTRATION',
+      'VISUAL GRAPHICS DESIGN', 'BAKERY OPERATION', 'EVENTS MANAGEMENT SERVICES',
+      'FOOD AND BEVERAGE OPERATION', 'HOTEL OPERATION (FRONT OFFICE SERVICES)',
+      'HOTEL OPERATION (HOUSEKEEPING SERVICES)', 'KITCHEN OPERATIONS', 'TOURISM SERVICES',
+      'COMMERCIAL AIR-CONDITIONING INSTALLATION AND SERVICING',
+      'DOMESTIC REFRIGERATION AND AIR-CONDITIONING SERVICING',
+      'ELECTRICAL INSTALLATION MAINTENANCE', 'ELECTRONICS PRODUCT ASSEMBLY AND SERVICING',
+      'MECHATRONICS', 'PHOTOVOLTAIC SYSTEMS INSTALLATION', 'BROADBAND INSTALLATION',
+      'COMPUTER PROGRAMMING (JAVA)', 'COMPUTER PROGRAMMING (.NET TECHNOLOGY)',
+      'COMPUTER PROGRAMMING (ORACLE DATABASE)', 'COMPUTER SYSTEMS SERVICING',
+      'CONTACT CENTER SERVICES', 'MARINE ENGINEERING AT THE SUPPORT LEVEL',
+      'MARINE TRANSPORTATION AT THE SUPPORT LEVEL', 'SHIPS CATERING SERVICES',
+      'WORK IMMERSION - AESTHETIC, WELLNESS AND HUMAN CARE CLUSTER',
+      'WORK IMMERSION - AGRI-FISHERY BUSINESS AND FOOD INNOVATION',
+      'WORK IMMERSION - ARTISANRY AND CREATIVE ENTERPRISE',
+      'WORK IMMERSION - AUTOMOTIVE AND SMALL ENGINE TECHNOLOGIES',
+      'WORK IMMERSION - CONSTRUCTION AND BUILDING TECHNOLOGIES',
+      'WORK IMMERSION - CREATIVE ARTS AND DESIGN TECHNOLOGIES',
+      'WORK IMMERSION - HOSPITALITY AND TOURISM', 'WORK IMMERSION - INDUSTRIAL TECHNOLOGIES',
+      'WORK IMMERSION - ICT SUPPORT AND COMPUTER PROGRAMMING TECHNOLOGIES',
+      'WORK IMMERSION - MARITIME TRANSPORT'
+    ],
+    'SHS-SPECIALIZED SUBJECTS': [
+      'BASIC CALCULUS', 'GENERAL BIOLOGY 1', 'GENERAL BIOLOGY 2', 'GENERAL CHEMISTRY 1',
+      'GENERAL CHEMISTRY 2', 'GENERAL PHYSICS 1', 'GENERAL PHYSICS 2', 'PRE-CALCULUS',
+      'APPLIED ECONOMICS', 'BUSINESS ETHICS AND SOCIAL RESPONSIBILITY',
+      'FUNDAMENTALS OF ACCOUNTANCY, BUSINESS, AND MANAGEMENT 1',
+      'FUNDAMENTALS OF ACCOUNTANCY, BUSINESS, AND MANAGEMENT 2', 'BUSINESS MATH',
+      'BUSINESS FINANCE', 'ORGANIZATION AND MANAGEMENT', 'PRINCIPLES OF MARKETING',
+      'CREATIVE NONFICTION', 'CREATIVE WRITING/MALIKHAING PAGSULAT',
+      'INTRODUCTION TO WORLD RELIGIONS AND BELIEF SYSTEMS',
+      'TRENDS, NETWORKS, AND CRITICAL THINKING IN THE 21ST CENTURY CULTURE',
+      'COMMUNITY ENGAGEMENT, SOLIDARITY, AND CITIZENSHIP',
+      'DISCIPLINE AND IDEAS IN THE APPLIED SCIENCES',
+      'DISCIPLINES AND IDEAS IN THE SOCIAL SCIENCES', 'PHILIPPINE POLITICS AND GOVERNANCE',
+      'DISASTER READINESS AND RISK REDUCTION (GAS)',
+      'APPRENTICESHIP AND EXPLORATION OF DIFFERENT ARTS FIELDS',
+      'CREATIVE INDUSTRIES I: ARTS AND DESIGN APPRECIATION AND PRODUCTION',
+      'CREATIVE INDUSTRIES II: PERFORMING ARTS', 'DEVELOPING FILIPINO IDENTITY IN THE ARTS',
+      '(ARTS)EXHIBIT FOR ARTS PRODUCTION (LITERARY ARTS)',
+      'EXHIBIT FOR ARTS PRODUCTION (MEDIA ARTS AND VISUAL ARTS)',
+      'INTEGRATING THE ELEMENTS AND PRINCIPLES OF ORGANIZATION IN THE ARTS',
+      'LEADERSHIP AND MANAGEMENT IN DIFFERENT ARTS FIELDS', 'PERFORMING ARTS PRODUCTION',
+      'PHYSICAL AND PERSONAL DEVELOPMENT IN THE ARTS', 'APPRENTICESHIP (OFF-CAMPUS)',
+      'FITNESS TESTING AND EXERCISE PROGRAMMING', 'FITNESS, SPORTS, AND RECREATION LEADERSHIP',
+      'FUNDAMENTAL OF COACHING', 'HUMAN MOVEMENT', 'PRACTICUM (IN-CAMPUS)',
+      'PSYCHOSOCIAL ASPECTS OF SPORTS AND EXERCISE', 'SAFETY AND FIRST AID',
+      'SPORTS OFFICIATING AND ACTIVITY MANAGEMENT', 'AGRICULTURAL CROP PRODUCTION (NC I)',
+      'AGRICULTURAL CROP PRODUCTION (NC II)', 'AGRICULTURAL CROP PRODUCTION (NC III)',
+      'ANIMAL HEALTH CARE MANAGEMENT (NC III)', 'ANIMAL PRODUCTION- POULTRY CHICKEN (NC II)',
+      'ANIMAL PRODUCTION- LARGE RUMINANTS (NC II)', 'ANIMAL PRODUCTION- SWINE (NC II)',
+      'AQUACULTURE (NC II)', 'ARTIFICIAL INSEMINATION- LARGE RUMINANTS (NC II)',
+      'ARTIFICIAL INSEMINATION- SWINE (NC II)', 'FISH CAPTURE (NC II)',
+      'FISH PRODUCTS PACKAGING (NC II)', 'FISH WHARF OPERATION (NC I)',
+      'FISHING GEAR REPAIR AND MAINTENANCE (NC III)', 'FOOD PROCESSING (NC II)',
+      'HORTICULTURE (NC III)', 'LANDSCAPE INSTALLATION AND MAINTENANCE (NC II)',
+      'ORGANIC AGRICULTURE PRODUCTION (NC II)', 'PEST MANAGEMENT (NC II)',
+      'RICE MACHINERY OPERATION (NC II)', 'RUBBER PROCESSING (NC II)',
+      'RUBBER PRODUCTION (NC I)', 'SLAUGHTERING OPERATION- HOG SWINE PIG (NC II)',
+      'ATTRACTIONS AND THEME PARKS TOURISM (NC II)', 'BARBERING (NC II)', 'BARTENDING (NC II)',
+      'BEAUTY/ NAIL CARE (NC II)', 'BREAD AND PASTRY PRODUCTION (NC II)', 'CAREGIVING (NC II)',
+      'COMMERCIAL COOKING (NC III)', 'COOKERY (NC II)', 'DRESSMAKING (NC II)',
+      'EVENTS MANAGEMENT SERVICES (NC III)', 'FASHION DESIGN (NC III)',
+      'FOOD AND BEVERAGE SERVICES (NC II)', 'FRONT OFFICE SERVICES (NC II)',
+      'HAIRDRESSING (NC II)', 'HAIRDRESSING (NC III)',
+      'HANDICRAFT- FASHION ACCESSORIES  AND PAPER CRAFT', 'HANDICRAFT- NEEDLECRAFT',
+      'HANDICRAFT- WOODCRAFT LEATHERCRAFT', 'HANDICRAFT- BASKETRY MACRAME',
+      'HOUSEKEEPING (NC II)', 'TAILORING (NC II)', 'LOCAL GUIDING SERVICES (NC II)',
+      'TOURISM PROMOTION SERVICES (NC II)', 'TRAVEL SERVICES (NC II)',
+      'WELLNESS MASSAGE (NC II)', 'ANIMATION (NC II)',
+      'BROADBAND INSTALLATION- FIXED WIRELESS SYSTEMS (NC II)',
+      'COMPUTER SYSTEMS SERVICING (NC II)', 'COMPUTER PROGRAMMING .NET TECHNOLOGY (NC III)',
+      'COMPUTER PROGRAMMING JAVA (NC III)', 'COMPUTER PROGRAMMING ORACLE DATABASE (NC III)',
+      'CONTACT CENTER SERVICES (NC II)', 'ILLUSTRATION (NC II)',
+      'MEDICAL TRANSCRIPTION (NC II)', 'TECHNICAL DRAFTING (NC II)',
+      'TELECOM OSP AND SUBSCRIBER LINE INSTALLATION- COPPER CABLE/ POTS AND DSL (NC II)',
+      'TELECOM OSP INSTALLATION- FIBER OPTIC CABLE (NC II)', 'AUTOMOTIVE SERVICING (NC I)',
+      'AUTOMOTIVE SERVICING (NC II)', 'CARPENTRY (NC II)', 'CARPENTRY (NC III)',
+      'CONSTRUCTION PAINTING (NC II)', 'ELECTRONIC PRODUCTS ASSEMBLY AND SERVICING (NC II)',
+      'DOMESTIC REFRIGERATION AND AIR-CONDITIONING (DOMRAC) SERVICING (NC II)',
+      'DRIVING (NC II)', 'ELECTRIC POWER DISTRIBUTION LINE CONSTRUCTION (NC II)',
+      'ELECTRICAL INSTALLATION AND MAINTENANCE (NC II)', 'FURNITURE MAKING- FINISHING (NC II)',
+      'GAS METAL ARC WELDING- GMAW (NC II)', 'GAS TUNGSTEN ARC WELDING- GTAW (NC II)',
+      'INSTRUMENTATION AND CONTROL SERVICING (NC II)', 'MACHINING (NC I)',
+      'MACHINING (NC II)', 'MASONRY (NC II)', 'MECHATRONICS SERVICING (NC II)',
+      'MOTORCYCLE/ SMALL ENGINE SERVICING (NC II)', 'PLUMBING (NC I)', 'PLUMBING (NC II)',
+      'REFRIGERATION AND AIR-CONDITIONING [RAC] PACKED AIR-CONDITIONING UNIT [PACU] COMMERCIAL REFRIGERATION EQUIPMENT [CRE] SERVICING (NC II)',
+      'SHIELDED METAL ARC WELDING (NC I)', 'SHIELDED METAL ARC WELDING (NC II)',
+      'TILE SETTING (NC II)', 'TRANSMISSION LINE INSTALLATION AND MAINTENANCE (NC II)',
+      'WORK IMMERSION/RESEARCH/CAREER ADVOCACY/CULMINATING ACTIVITY  (160)',
+      '(GAS) AGRICULTURAL CROP PRODUCTION (NC I)', '(GAS) AGRICULTURAL CROP PRODUCTION (NC II)',
+      '(GAS) AGRICULTURAL CROP PRODUCTION (NC III)', '(GAS) ANIMAL HEALTH CARE MANAGEMENT (NC III)',
+      '(GAS) ANIMAL PRODUCTION- POULTRY CHICKEN (NC II)', '(GAS) ANIMAL PRODUCTION- LARGE RUMINANTS (NC II)',
+      '(GAS) ANIMAL PRODUCTION- SWINE (NC II)', '(GAS) AQUACULTURE (NC II)',
+      '(GAS) ARTIFICIAL INSEMINATION- LARGE RUMINANTS (NC II)', '(GAS) ARTIFICIAL INSEMINATION- SWINE (NC II)',
+      '(GAS) FISH CAPTURE (NC II)', '(GAS) FISH PRODUCTS PACKAGING (NC II)',
+      '(GAS) FISH WHARF OPERATION (NC I)', '(GAS) FISHING GEAR REPAIR AND MAINTENANCE (NC III)',
+      '(GAS) FOOD PROCESSING (NC II)', '(GAS) HORTICULTURE (NC III)',
+      '(GAS) LANDSCAPE INSTALLATION AND MAINTENANCE (NC II)', '(GAS) ORGANIC AGRICULTURE PRODUCTION (NC II)',
+      '(GAS) PEST MANAGEMENT (NC II)', '(GAS) RICE MACHINERY OPERATION (NC II)',
+      '(GAS) RUBBER PROCESSING (NC II)', '(GAS) RUBBER PRODUCTION (NC I)',
+      '(GAS) SLAUGHTERING OPERATION- HOG SWINE PIG (NC II)', '(GAS) ATTRACTIONS AND THEME PARKS TOURISM (NC II)',
+      '(GAS) BARBERING (NC II)', '(GAS) BARTENDING (NC II)', '(GAS) BEAUTY/ NAIL CARE (NC II)',
+      '(GAS) BREAD AND PASTRY PRODUCTION (NC II)', '(GAS) CAREGIVING (NC II)',
+      '(GAS) COMMERCIAL COOKING (NC III)', '(GAS) COOKERY (NC II)', '(GAS) DRESSMAKING (NC II)',
+      '(GAS) EVENTS MANAGEMENT SERVICES (NC III)', '(GAS) FASHION DESIGN (NC III)',
+      '(GAS) FOOD AND BEVERAGE SERVICES (NC II)', '(GAS) FRONT OFFICE SERVICES (NC II)',
+      '(GAS) HAIRDRESSING (NC II)', '(GAS) HAIRDRESSING (NC III)',
+      '(GAS) HANDICRAFT- FASHION ACCESSORIES  AND PAPER CRAFT', '(GAS) HANDICRAFT- NEEDLECRAFT',
+      '(GAS) HANDICRAFT- WOODCRAFT LEATHERCRAFT', '(GAS) HANDICRAFT- BASKETRY MACRAME',
+      '(GAS) HOUSEKEEPING (NC II)', '(GAS) TAILORING (NC II)', '(GAS) LOCAL GUIDING SERVICES (NC II)',
+      '(GAS) TOURISM PROMOTION SERVICES (NC II)', '(GAS) TRAVEL SERVICES (NC II)',
+      '(GAS) WELLNESS MASSAGE (NC II)', '(GAS) ANIMATION (NC II)',
+      '(GAS) BROADBAND INSTALLATION- FIXED WIRELESS SYSTEMS (NC II)',
+      '(GAS) COMPUTER SYSTEMS SERVICING (NC II)', '(GAS) COMPUTER PROGRAMMING .NET TECHNOLOGY (NC III)',
+      '(GAS) COMPUTER PROGRAMMING JAVA (NC III)', '(GAS) COMPUTER PROGRAMMING ORACLE DATABASE (NC III)',
+      '(GAS) CONTACT CENTER SERVICES (NC II)', '(GAS) ILLUSTRATION (NC II)',
+      '(GAS) MEDICAL TRANSCRIPTION (NC II)', '(GAS) TECHNICAL DRAFTING (NC II)',
+      '(GAS) TELECOM OSP AND SUBSCRIBER LINE INSTALLATION- COPPER CABLE/ POTS AND DSL (NC II)',
+      '(GAS) TELECOM OSP INSTALLATION- FIBER OPTIC CABLE (NC II)', '(GAS) AUTOMOTIVE SERVICING (NC I)',
+      '(GAS) AUTOMOTIVE SERVICING (NC II)', '(GAS) CARPENTRY (NC II)', '(GAS) CARPENTRY (NC III)',
+      '(GAS) CONSTRUCTION PAINTING (NC II)', '(GAS) ELECTRONIC PRODUCTS ASSEMBLY AND SERVICING (NC II)',
+      '(GAS) DOMESTIC REFRIGERATION AND AIR-CONDITIONING (DOMRAC) SERVICING (NC II)',
+      '(GAS) DRIVING (NC II)', '(GAS) ELECTRIC POWER DISTRIBUTION LINE CONSTRUCTION (NC II)',
+      '(GAS) ELECTRICAL INSTALLATION AND MAINTENANCE (NC II)', '(GAS) FURNITURE MAKING- FINISHING (NC II)',
+      '(GAS) GAS METAL ARC WELDING- GMAW (NC II)', '(GAS) GAS TUNGSTEN ARC WELDING- GTAW (NC II)',
+      '(GAS) INSTRUMENTATION AND CONTROL SERVICING (NC II)', '(GAS) MACHINING (NC I)',
+      '(GAS) MACHINING (NC II)', '(GAS) MASONRY (NC II)', '(GAS) MECHATRONICS SERVICING (NC II)',
+      '(GAS) MOTORCYCLE/ SMALL ENGINE SERVICING (NC II)', '(GAS) PLUMBING (NC I)', '(GAS) PLUMBING (NC II)',
+      '(GAS) REFRIGERATION AND AIR-CONDITIONING [RAC] PACKED AIR-CONDITIONING UNIT [PACU] COMMERCIAL REFRIGERATION EQUIPMENT [CRE] SERVICING (NC II)',
+      '(GAS) SHIELDED METAL ARC WELDING (NC I)', '(GAS) SHIELDED METAL ARC WELDING (NC II)',
+      '(GAS) TILE SETTING (NC II)', '(GAS) TRANSMISSION LINE INSTALLATION AND MAINTENANCE (NC II)',
+      'WORK IMMERSION/RESEARCH/CAREER ADVOCACY/CULMINATING ACTIVITY  (240)',
+      'NAVIGATIONAL WATCH 1', 'NAVIGATIONAL WATCH 2', 'NAVIGATIONAL WATCH 3',
+      'ENGINE WATCH 1', 'ENGINE WATCH 2', 'SAFETY 1', 'SAFETY 2',
+      'SHIP\'S CATERING SERVICES 1', 'MARITIME (PB)', 'INTRODUCTION TO MARITIME CAREER',
+      'INTRODUCTION TO MARINE TRANSPORTATION AND ENGINEERING', 'INTRODUCTION TO MARITIME SAFETY',
+      'INQUIRIES, INVESTIGATIONS AND IMMERSION', 'RESEARCH/CAPSTONE PROJECT', 'OTHERS SPECIALIZED SUBJECT'
+    ]
+  }
+};
+
+const GRADE_SUBJECT_MAP = {
+  Kinder: [
+    'KINDER BLOCKS OF TIME', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+    'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+    'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+  ],
+  'Grade 1': [
+    'LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'MATHEMATICS', 'GMRC',
+    'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+    'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+    'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+  ],
+  'Grade 2': [
+    'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'GMRC',
+    'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+    'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+    'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+  ],
+  'Grade 3': [
+    'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'GMRC',
+    'SPECIAL PROGRAM IN SCIENCE', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
+    'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
+    'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+  ],
+  'Grade 4': [
+    'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+    'EPP/TLE', 'EPP / TLE', 'MAPEH', 'GMRC', 'SPECIAL PROGRAM IN SCIENCE',
+    'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT', 'MADRASAH SUBJECTS',
+    'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION'
+  ],
+  'Grade 5': [
+    'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+    'EPP/TLE', 'EPP / TLE', 'MAPEH', 'GMRC', 'SPECIAL PROGRAM IN SCIENCE',
+    'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT', 'MADRASAH SUBJECTS',
+    'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION'
+  ],
+  'Grade 6': [
+    'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'SCIENCE',
+    'EPP/TLE', 'EPP / TLE', 'MAPEH', 'GMRC', 'SPECIAL PROGRAM IN SCIENCE',
+    'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT', 'MADRASAH SUBJECTS',
+    'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE', 'REMEDIATION'
+  ]
+};
+
 export default function OrganizedClasses() {
-  const { classSections, addClassSection, updateSectionAdviser, removeClassSection, personnel, schoolInfo, showAlert, showConfirm } = useApp();
+  const { classSections, addClassSection, updateSectionAdviser, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMultigrade, setIsMultigrade] = useState(false);
   const [selectedGrades, setSelectedGrades] = useState([]);
   const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'list'
+
+  const cleanSubjectConfig = (cfg) => {
+    const isRestricted = (name) => {
+      const u = String(name || '').toUpperCase().trim();
+      return u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE') || u === 'MOTHER TONGUE' || u.includes('MOTHER TONGUE');
+    };
+
+    const source = (cfg && typeof cfg === 'object') ? cfg : DEFAULT_SUBJECTS;
+    const result = {};
+
+    ['Elementary', 'Junior High School', 'Senior High School'].forEach(band => {
+      const defaults = DEFAULT_SUBJECTS[band] || [];
+      const userList = Array.isArray(source[band]) ? source[band] : defaults;
+      
+      const existingNames = new Set(userList.map(s => String(s.name || '').toUpperCase().trim()));
+
+      const merged = userList
+        .filter(s => !isRestricted(s.name))
+        .map(s => {
+          const uName = String(s.name || '').toUpperCase().trim();
+          const defMatch = defaults.find(d => String(d.name || '').toUpperCase().trim() === uName);
+          return {
+            ...s,
+            shsCategory: s.shsCategory || (defMatch ? defMatch.shsCategory : undefined),
+            gradeLevel: s.gradeLevel || (defMatch ? defMatch.gradeLevel : undefined)
+          };
+        });
+
+      const seen = new Set();
+      const deduplicated = [];
+
+      merged.forEach(item => {
+        const uName = String(item.name || '').toUpperCase().trim();
+        if (!seen.has(uName)) {
+          seen.add(uName);
+          deduplicated.push(item);
+        }
+      });
+
+      result[band] = deduplicated;
+    });
+
+    return result;
+  };
+
+  // Subjects Taught Card state
+  const [disabledSubjectsMap, setDisabledSubjectsMap] = useState(() => {
+    try {
+      const saved = schoolInfo?.subjectsConfig?.disabledMap || (localStorage.getItem('school_disabled_subjects') ? JSON.parse(localStorage.getItem('school_disabled_subjects')) : {});
+      return saved || {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [customSubjects, setCustomSubjects] = useState(() => {
+    try {
+      const saved = schoolInfo?.subjectsConfig?.customSubjects || (localStorage.getItem('school_custom_subjects') ? JSON.parse(localStorage.getItem('school_custom_subjects')) : []);
+      return Array.isArray(saved) ? saved : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  React.useEffect(() => {
+    if (schoolInfo?.subjectsConfig) {
+      if (schoolInfo.subjectsConfig.disabledMap) setDisabledSubjectsMap(schoolInfo.subjectsConfig.disabledMap);
+      if (schoolInfo.subjectsConfig.customSubjects) setCustomSubjects(schoolInfo.subjectsConfig.customSubjects);
+    }
+  }, [schoolInfo?.subjectsConfig]);
+
+  const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
+  const [newSubjectInput, setNewSubjectInput] = useState('');
+  const [selectedBand, setSelectedBand] = useState('Elementary');
+  const [selectedShsCategory, setSelectedShsCategory] = useState('SHS-CORE SUBJECTS');
+  const [selectedShsFilterCategory, setSelectedShsFilterCategory] = useState('All');
+  const [selectedGradeLevel, setSelectedGradeLevel] = useState('All');
+  const [selectedModalGradeLevel, setSelectedModalGradeLevel] = useState('All');
+  const [subjectSearchQuery, setSubjectSearchQuery] = useState('');
+
+  const getSubjectsForView = () => {
+    let baseList = [];
+
+    if (selectedBand === 'Elementary') {
+      if (selectedGradeLevel === 'All') {
+        const set = new Set();
+        Object.values(MASTER_SUBJECTS_CATALOG.Elementary).forEach(arr => arr.forEach(s => set.add(s)));
+        baseList = Array.from(set).map(name => ({ name }));
+      } else {
+        const arr = MASTER_SUBJECTS_CATALOG.Elementary[selectedGradeLevel] || [];
+        baseList = arr.map(name => ({ name, gradeLevel: selectedGradeLevel }));
+      }
+    } else if (selectedBand === 'Junior High School') {
+      baseList = MASTER_SUBJECTS_CATALOG['Junior High School']['All'].map(name => ({ name }));
+    } else if (selectedBand === 'Senior High School') {
+      if (selectedShsFilterCategory === 'All') {
+        const list = [];
+        Object.entries(MASTER_SUBJECTS_CATALOG['Senior High School']).forEach(([cat, arr]) => {
+          arr.forEach(name => list.push({ name, shsCategory: cat }));
+        });
+        baseList = list;
+      } else {
+        const arr = MASTER_SUBJECTS_CATALOG['Senior High School'][selectedShsFilterCategory] || [];
+        baseList = arr.map(name => ({ name, shsCategory: selectedShsFilterCategory }));
+      }
+    }
+
+    // Merge any custom subjects added by user for this band & gradeLevel / category
+    (customSubjects || []).forEach(cs => {
+      if (cs.band === selectedBand) {
+        if (selectedBand === 'Elementary' && selectedGradeLevel !== 'All' && cs.gradeLevel && cs.gradeLevel !== 'All' && cs.gradeLevel !== selectedGradeLevel) {
+          return;
+        }
+        if (selectedBand === 'Senior High School' && selectedShsFilterCategory !== 'All' && cs.shsCategory && cs.shsCategory !== selectedShsFilterCategory) {
+          return;
+        }
+        baseList.push(cs);
+      }
+    });
+
+    // Remove restricted (ADVISORY, HGP, MOTHER TONGUE)
+    baseList = baseList.filter(s => {
+      const u = String(s.name || '').toUpperCase().trim();
+      return u !== 'ADVISORY' && u !== 'HGP' && !u.includes('HOMEROOM GUIDANCE') && u !== 'MOTHER TONGUE' && !u.includes('MOTHER TONGUE');
+    });
+
+    // Filter by search query if present
+    if (subjectSearchQuery.trim()) {
+      const q = subjectSearchQuery.trim().toLowerCase();
+      baseList = baseList.filter(s => String(s.name || '').toLowerCase().includes(q));
+    }
+
+    // Map enabled state
+    return baseList.map(s => ({
+      ...s,
+      enabled: disabledSubjectsMap[s.name] !== true
+    }));
+  };
+
+  const toggleSubject = (subjectName) => {
+    const isCurrentlyDisabled = disabledSubjectsMap[subjectName] === true;
+    const updatedMap = {
+      ...disabledSubjectsMap,
+      [subjectName]: !isCurrentlyDisabled
+    };
+    setDisabledSubjectsMap(updatedMap);
+    localStorage.setItem('school_disabled_subjects', JSON.stringify(updatedMap));
+    if (saveSchoolSubjects) {
+      saveSchoolSubjects({ disabledMap: updatedMap, customSubjects });
+    }
+  };
+
+  const handleCheckAll = () => {
+    const currentSubjects = getSubjectsForView();
+    const updatedMap = { ...disabledSubjectsMap };
+    currentSubjects.forEach(s => {
+      delete updatedMap[s.name];
+    });
+    setDisabledSubjectsMap(updatedMap);
+    localStorage.setItem('school_disabled_subjects', JSON.stringify(updatedMap));
+    if (saveSchoolSubjects) {
+      saveSchoolSubjects({ disabledMap: updatedMap, customSubjects });
+    }
+  };
+
+  const handleUncheckAll = () => {
+    const currentSubjects = getSubjectsForView();
+    const updatedMap = { ...disabledSubjectsMap };
+    currentSubjects.forEach(s => {
+      updatedMap[s.name] = true;
+    });
+    setDisabledSubjectsMap(updatedMap);
+    localStorage.setItem('school_disabled_subjects', JSON.stringify(updatedMap));
+    if (saveSchoolSubjects) {
+      saveSchoolSubjects({ disabledMap: updatedMap, customSubjects });
+    }
+  };
+
+  const handleAddSubject = async (e) => {
+    e.preventDefault();
+    const cleanName = newSubjectInput.trim().toUpperCase();
+    if (!cleanName) return;
+
+    if (cleanName === 'ADVISORY' || cleanName === 'HGP' || cleanName.includes('HOMEROOM GUIDANCE') || cleanName === 'MOTHER TONGUE') {
+      await showAlert('Restricted Subject', '"ADVISORY", "HGP", and "MOTHER TONGUE" cannot be added as custom subjects.');
+      return;
+    }
+
+    const newObj = {
+      name: cleanName,
+      band: selectedBand,
+      gradeLevel: selectedModalGradeLevel,
+      ...(selectedBand === 'Senior High School' ? { shsCategory: selectedShsCategory } : {})
+    };
+
+    const updatedCustom = [...customSubjects, newObj];
+    setCustomSubjects(updatedCustom);
+    localStorage.setItem('school_custom_subjects', JSON.stringify(updatedCustom));
+    if (saveSchoolSubjects) {
+      saveSchoolSubjects({ disabledMap: disabledSubjectsMap, customSubjects: updatedCustom });
+    }
+    setNewSubjectInput('');
+    setIsSubjectModalOpen(false);
+  };
+
+
 
   // Form state
   const [newSection, setNewSection] = useState({
@@ -123,11 +645,12 @@ export default function OrganizedClasses() {
       newSection.advisorId,
       finalSectionType,
       Number(newSection.advisoryMinutes || 300),
-      Number(newSection.hgpMinutes || 60)
+      Number(newSection.hgpMinutes || 60),
+      newSection.numberOfLearners
     );
     
     // Reset and close
-    setNewSection({ gradeLevel: availableGrades[0] || 'Grade 7', sectionName: '', advisorId: '', advisoryMinutes: 300, hgpMinutes: 60 });
+    setNewSection({ gradeLevel: availableGrades[0] || 'Grade 7', sectionName: '', advisorId: '', advisoryMinutes: 300, hgpMinutes: 60, numberOfLearners: '' });
     setIsMultigrade(false);
     setSelectedGrades([]);
     setIsModalOpen(false);
@@ -153,7 +676,7 @@ export default function OrganizedClasses() {
   });
 
   return (
-    <section id="classes" className="view grid">
+    <section id="classes" className="view grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '24px', alignItems: 'start' }}>
       <article className="card">
         <div className="card-inner">
           <div className="roster-card-header">
@@ -435,6 +958,237 @@ export default function OrganizedClasses() {
         </div>
       </article>
 
+      {/* Subjects Taught Card (Adjacent to Organized Classes Setup) */}
+      <article className="card">
+        <div className="card-inner">
+          <div className="roster-card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--navy)' }}>Subjects Taught</h2>
+              <p className="subtext">Configure active subjects offered by grade band in your school.</p>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setNewSubjectInput('');
+                setIsSubjectModalOpen(true);
+              }}
+              style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', minHeight: '36px', padding: '0 14px', borderRadius: '8px' }}
+            >
+              + Add Subject
+            </button>
+          </div>
+
+          {/* Grade Band Selector Tabs & Grade Level Filter */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+            <div style={{ flex: 1, minWidth: '220px', display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+              {['Elementary', 'Junior High School', 'Senior High School'].map(band => (
+                <button
+                  key={band}
+                  type="button"
+                  onClick={() => {
+                    setSelectedBand(band);
+                    setSelectedGradeLevel('All');
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '6px 8px',
+                    fontSize: '11px',
+                    fontWeight: selectedBand === band ? 'bold' : 'normal',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: selectedBand === band ? 'white' : 'transparent',
+                    color: selectedBand === band ? 'var(--blue)' : 'var(--muted)',
+                    cursor: 'pointer',
+                    boxShadow: selectedBand === band ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  {band === 'Junior High School' ? 'JHS' : band === 'Senior High School' ? 'SHS' : band}
+                </button>
+              ))}
+            </div>
+
+            {/* Search & Filter Controls */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
+              {/* Subject Search Bar */}
+              <div style={{ flex: 1, minWidth: '160px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search subject..."
+                  value={subjectSearchQuery}
+                  onChange={(e) => setSubjectSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '35px',
+                    padding: '0 10px',
+                    borderRadius: '8px',
+                    border: '1.5px solid var(--line)',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    color: 'var(--navy)',
+                    background: 'white'
+                  }}
+                />
+              </div>
+
+              {/* Grade Level Dropdown Filter */}
+              <div style={{ minWidth: '120px' }}>
+                <select
+                  value={selectedGradeLevel}
+                  onChange={(e) => setSelectedGradeLevel(e.target.value)}
+                  style={{ width: '100%', height: '35px', padding: '0 8px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', background: 'white' }}
+                >
+                  <option value="All">All {selectedBand === 'Junior High School' ? 'JHS' : selectedBand === 'Senior High School' ? 'SHS' : 'Elem'} Grades</option>
+                  {selectedBand === 'Elementary' && (
+                    <>
+                      <option value="Kinder">Kinder</option>
+                      <option value="Grade 1">Grade 1</option>
+                      <option value="Grade 2">Grade 2</option>
+                      <option value="Grade 3">Grade 3</option>
+                      <option value="Grade 4">Grade 4</option>
+                      <option value="Grade 5">Grade 5</option>
+                      <option value="Grade 6">Grade 6</option>
+                    </>
+                  )}
+                  {selectedBand === 'Junior High School' && (
+                    <>
+                      <option value="Grade 7">Grade 7</option>
+                      <option value="Grade 8">Grade 8</option>
+                      <option value="Grade 9">Grade 9</option>
+                      <option value="Grade 10">Grade 10</option>
+                    </>
+                  )}
+                  {selectedBand === 'Senior High School' && (
+                    <>
+                      <option value="Grade 11">Grade 11</option>
+                      <option value="Grade 12">Grade 12</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* SHS Category Dropdown Filter */}
+              {selectedBand === 'Senior High School' && (
+                <div style={{ minWidth: '140px' }}>
+                  <select
+                    value={selectedShsFilterCategory}
+                    onChange={(e) => setSelectedShsFilterCategory(e.target.value)}
+                    style={{ width: '100%', height: '35px', padding: '0 8px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', background: 'white' }}
+                  >
+                    <option value="All">All SHS Categories</option>
+                    <option value="SHS">SHS (General)</option>
+                    <option value="SHS-CORE SUBJECTS">SHS - Core Subjects</option>
+                    <option value="SHS-APPLIED SUBJECTS">SHS - Applied Subjects</option>
+                    <option value="SHS-SPECIALIZED SUBJECTS">SHS - Specialized Subjects</option>
+                    <option value="SSHS-CORE">SSHS - Core</option>
+                    <option value="SSHS-ACADEMIC">SSHS - Academic</option>
+                    <option value="SSHS-TECHPRO">SSHS - TechPro</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bulk Check/Uncheck Action Toolbar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 8px 0', padding: '0 2px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--navy)' }}>
+              {getSubjectsForView().length} Subjects Available
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={handleCheckAll}
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: '#15803d',
+                  background: '#dcfce7',
+                  border: '1.5px solid #bbf7d0',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+              >
+                ✓ Check All
+              </button>
+              <button
+                type="button"
+                onClick={handleUncheckAll}
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: '#b91c1c',
+                  background: '#fee2e2',
+                  border: '1.5px solid #fecaca',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+              >
+                ✕ Uncheck All
+              </button>
+            </div>
+          </div>
+
+          {/* Subjects List with On/Off Toggles */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
+            {getSubjectsForView().map((sub, index) => (
+              <div
+                key={sub.name || index}
+                onClick={() => toggleSubject(sub.name)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  border: sub.enabled ? '1.5px solid #bbf7d0' : '1.5px solid var(--line)',
+                  background: sub.enabled ? '#ffffff' : '#f8fafc',
+                  opacity: sub.enabled ? 1 : 0.65,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: sub.enabled ? 'var(--navy)' : 'var(--muted)' }}>
+                    {sub.name}
+                  </span>
+                  {selectedBand === 'Senior High School' && sub.shsCategory && (
+                    <span style={{
+                      fontSize: '9px',
+                      fontWeight: '800',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: sub.shsCategory.includes('CORE') ? '#e0f2fe' : sub.shsCategory.includes('APPLIED') ? '#fef3c7' : '#f3e8ff',
+                      color: sub.shsCategory.includes('CORE') ? '#0369a1' : sub.shsCategory.includes('APPLIED') ? '#b45309' : '#6b21a8'
+                    }}>
+                      {sub.shsCategory.replace('SHS-', '').replace(' SUBJECTS', '')}
+                    </span>
+                  )}
+                </div>
+
+                {/* Right-aligned Checkbox & Status */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }} onClick={(e) => e.stopPropagation()}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: sub.enabled ? '#15803d' : '#94a3b8' }}>
+                    {sub.enabled ? 'TAUGHT' : 'OFF'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={sub.enabled}
+                    onChange={() => toggleSubject(sub.name)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#15803d' }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </article>
+
       {/* Add Section Modal Popup */}
       {isModalOpen && (
         <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
@@ -517,6 +1271,16 @@ export default function OrganizedClasses() {
                     required
                   />
                 </div>
+                <div>
+                  <label>Number of Learners</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 35"
+                    value={newSection.numberOfLearners || ''}
+                    onChange={(e) => setNewSection({ ...newSection, numberOfLearners: e.target.value })}
+                  />
+                </div>
                 <div className="full">
                   <label>Section Adviser</label>
                   <select
@@ -541,6 +1305,112 @@ export default function OrganizedClasses() {
               <div className="modal-actions">
                 <button className="btn secondary" type="button" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button className="btn" type="submit">Add Section</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Subject Modal Popup */}
+      {isSubjectModalOpen && (
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
+          <div className="modal-card" style={{ width: '480px', padding: '28px 24px', background: 'white', borderRadius: '24px', border: '2.5px solid var(--outline)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'scaleUp 0.2s forwards' }}>
+            <div className="modal-head" style={{ border: 0, padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ fontSize: '20px', margin: 0, color: 'var(--navy)', fontWeight: 800 }}>Add New Subject</h2>
+                <p className="subtext" style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>Register a new subject for a grade band in your school.</p>
+              </div>
+              <button className="btn secondary" type="button" onClick={() => setIsSubjectModalOpen(false)} style={{ borderRadius: '50%', width: '34px', height: '34px', minWidth: '34px', padding: 0, display: 'grid', placeItems: 'center', fontSize: '18px' }}>&times;</button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              await handleAddSubject(e);
+              setIsSubjectModalOpen(false);
+            }} style={{ display: 'grid', gap: '16px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', marginBottom: '6px', display: 'block' }}>Grade Band</label>
+                <select
+                  value={selectedBand}
+                  onChange={(e) => setSelectedBand(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid var(--line)', fontSize: '13px', background: 'white', fontWeight: 'bold', color: 'var(--navy)' }}
+                >
+                  <option value="Elementary">Elementary</option>
+                  <option value="Junior High School">Junior High School</option>
+                  <option value="Senior High School">Senior High School</option>
+                </select>
+              </div>
+
+              {selectedBand === 'Senior High School' && (
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', marginBottom: '6px', display: 'block' }}>SHS Subject Category</label>
+                  <select
+                    value={selectedShsCategory}
+                    onChange={(e) => setSelectedShsCategory(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid var(--line)', fontSize: '13px', background: 'white', fontWeight: 'bold', color: 'var(--navy)' }}
+                  >
+                    <option value="SHS">SHS (General)</option>
+                    <option value="SHS-CORE SUBJECTS">SHS - Core Subjects</option>
+                    <option value="SHS-APPLIED SUBJECTS">SHS - Applied Subjects</option>
+                    <option value="SHS-SPECIALIZED SUBJECTS">SHS - Specialized Subjects</option>
+                    <option value="SSHS-CORE">SSHS - Core</option>
+                    <option value="SSHS-ACADEMIC">SSHS - Academic</option>
+                    <option value="SSHS-TECHPRO">SSHS - TechPro</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', marginBottom: '6px', display: 'block' }}>Target Grade Level</label>
+                <select
+                  value={selectedModalGradeLevel}
+                  onChange={(e) => setSelectedModalGradeLevel(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid var(--line)', fontSize: '13px', background: 'white', fontWeight: 'bold', color: 'var(--navy)' }}
+                >
+                  <option value="All">All {selectedBand} Grades</option>
+                  {selectedBand === 'Elementary' && (
+                    <>
+                      <option value="Kinder">Kinder</option>
+                      <option value="Grade 1">Grade 1</option>
+                      <option value="Grade 2">Grade 2</option>
+                      <option value="Grade 3">Grade 3</option>
+                      <option value="Grade 4">Grade 4</option>
+                      <option value="Grade 5">Grade 5</option>
+                      <option value="Grade 6">Grade 6</option>
+                    </>
+                  )}
+                  {selectedBand === 'Junior High School' && (
+                    <>
+                      <option value="Grade 7">Grade 7</option>
+                      <option value="Grade 8">Grade 8</option>
+                      <option value="Grade 9">Grade 9</option>
+                      <option value="Grade 10">Grade 10</option>
+                    </>
+                  )}
+                  {selectedBand === 'Senior High School' && (
+                    <>
+                      <option value="Grade 11">Grade 11</option>
+                      <option value="Grade 12">Grade 12</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', marginBottom: '6px', display: 'block' }}>Subject Name <span style={{ color: '#EF4444' }}>*</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. COMPUTER PROGRAMMING 101"
+                  value={newSubjectInput}
+                  onChange={(e) => setNewSubjectInput(e.target.value.toUpperCase())}
+                  required
+                  autoFocus
+                  style={{ width: '100%', textTransform: 'uppercase', fontSize: '13px', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid var(--line)', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="btn secondary" onClick={() => setIsSubjectModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn" style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white' }}>+ Add Subject</button>
               </div>
             </form>
           </div>

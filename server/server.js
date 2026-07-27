@@ -90,6 +90,8 @@ const initDB = async () => {
           tin TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE class_sections ADD COLUMN IF NOT EXISTS number_of_learners INTEGER;
+      ALTER TABLE schools ADD COLUMN IF NOT EXISTS subjects_config JSONB;
     `);
     console.log('✅ Database schema initialized successfully.');
     

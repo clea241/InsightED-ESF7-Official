@@ -330,8 +330,44 @@ async function processNextJob() {
         }
       }
 
-      // Insert Teaching Workload Rows with direct, robust Section ID resolution
-      for (const r of p.workloadRows || []) {
+      // Ensure ADVISORY workload (60 minutes every day: 07:30 to 08:30 M-F) for section advisers
+      const pOrigId = p.id;
+      const advisorySections = (payload.classSections || []).filter(s => 
+        s.advisorId && (String(s.advisorId) === String(pOrigId) || String(s.advisorId) === String(targetPersonnelId))
+      );
+
+      let teacherWorkloadRows = [...(p.workloadRows || [])];
+      
+      for (const sec of advisorySections) {
+        const secIdStr = String(sec.id);
+        const hasAdv = teacherWorkloadRows.some(r => r.subject === 'ADVISORY' && (String(r.sectionId) === secIdStr || String(r.section_id) === secIdStr || !r.sectionId));
+        if (!hasAdv) {
+          teacherWorkloadRows.push({
+            id: `adv-${secIdStr}-${Date.now()}`,
+            sectionId: secIdStr,
+            gradeLevel: sec.gradeLevel,
+            subject: 'ADVISORY',
+            startTime: null,
+            endTime: null, // Flexible clock time (60 mins/day automatic)
+            days: ['M', 'T', 'W', 'TH', 'F'] // Every workday
+          });
+        } else {
+          teacherWorkloadRows = teacherWorkloadRows.map(r => {
+            if (r.subject === 'ADVISORY' && (String(r.sectionId) === secIdStr || !r.sectionId)) {
+              return {
+                ...r,
+                sectionId: secIdStr,
+                gradeLevel: sec.gradeLevel || r.gradeLevel,
+                days: (Array.isArray(r.days) && r.days.length > 0) ? r.days : ['M', 'T', 'W', 'TH', 'F']
+              };
+            }
+            return r;
+          });
+        }
+      }
+
+      // Insert Teaching Workload Rows (including ADVISORY) into PostgreSQL workload_rows table
+      for (const r of teacherWorkloadRows) {
         const secId = r.sectionId || r.section_id;
         const mappedSecId = (secId && sectionIdMap[secId])
           || (r.gradeLevel && r.sectionName && sectionIdMapByGradeSec[`${r.gradeLevel}_${r.sectionName}`])
@@ -351,9 +387,9 @@ async function processNextJob() {
             r.subject || r.remediationSubject || null,
             r.gradeLevel || null,
             mappedSecId,
-            r.startTime || null,
-            r.endTime || null,
-            r.days || []
+            r.startTime || '07:30',
+            r.endTime || '08:30',
+            r.days || ['M', 'T', 'W', 'TH', 'F']
           ]
         );
       }
@@ -434,6 +470,37 @@ async function processNextJob() {
           t.status || 'active'
         ]
       );
+    }
+
+    // 9. Insert Personnel Absences & Tardiness Logs
+    for (const a of payload.absences || []) {
+      const origPId = a.personnelId || a.personnel_id;
+      const dbPersonnelId = personnelIdMap[origPId] || origPId;
+      if (dbPersonnelId) {
+        const absDate = parseDate(a.absenceDate || a.absence_date || a.startDate);
+        if (absDate) {
+          const targetP = (payload.personnel || []).find(p => String(p.id) === String(origPId));
+          const firstName = a.firstName || a.first_name || targetP?.firstName || targetP?.first_name || null;
+          const lastName = a.lastName || a.last_name || targetP?.lastName || targetP?.last_name || null;
+          const prn = a.prn || targetP?.prn || null;
+          const tin = a.tin || targetP?.tin || null;
+
+          await client.query(
+            `INSERT INTO personnel_absences (
+              personnel_id, absence_date, leave_type, prn, first_name, last_name, tin
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              dbPersonnelId,
+              absDate,
+              a.leaveType || a.leave_type || 'Tardiness / Late',
+              prn,
+              firstName,
+              lastName,
+              tin
+            ]
+          );
+        }
+      }
     }
 
     // COMMIT transaction

@@ -6,22 +6,50 @@ export default function Sidebar() {
   const { activeView, setActiveView, incomingRequests } = useApp();
   const { logout } = useAuth();
 
-  const navItems = [
-    { view: 'dashboard', label: 'Dashboard', icon: '⌂' },
-    { view: 'school', label: 'School Profile', icon: '🏛' },
-    { view: 'roster', label: 'Personnel Roster', icon: '☷' },
-    { view: 'profile', label: 'Personnel Profiling', icon: '✎' },
-    { view: 'classes', label: 'Organized Classes', icon: '▦' },
-    { view: 'workload', label: 'Workload', icon: '◷' },
-    { view: 'overload', label: 'Overload', icon: '⇄' },
-    { view: 'allowances', label: 'Allowances & Incentives', icon: '₱' },
-    { view: 'requests', label: 'Requests', icon: '✉', badge: incomingRequests.length > 0 ? incomingRequests.length : null },
-    { view: 'validation', label: 'Validation Center', icon: '⛨' },
-    { view: 'room-qr', label: 'Room QR Portal', icon: '⛶' },
+  const [openSections, setOpenSections] = React.useState({
+    esf7: true,
+    overload: true,
+    others: true
+  });
+
+  const toggleSection = (key) => {
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const sections = [
+    {
+      key: 'esf7',
+      title: 'ESF7',
+      items: [
+        { view: 'dashboard', label: 'Dashboard', icon: '⌂' },
+        { view: 'school', label: 'School Profile', icon: '🏛' },
+        { view: 'roster', label: 'Personnel Roster', icon: '☷' },
+        { view: 'profile', label: 'Personnel Profiling', icon: '✎' },
+        { view: 'classes', label: 'Organized Classes', icon: '▦' },
+        { view: 'workload', label: 'Workload', icon: '◷' },
+        { view: 'room-qr', label: 'Room QR Portal', icon: '⛶' },
+        { view: 'requests', label: 'Requests', icon: '✉', badge: incomingRequests.length > 0 ? incomingRequests.length : null }
+      ]
+    },
+    {
+      key: 'overload',
+      title: 'Teaching Overload',
+      items: [
+        { view: 'overload', label: 'Overload', icon: '⇄' }
+      ]
+    },
+    {
+      key: 'others',
+      title: 'Others',
+      items: [
+        { view: 'allowances', label: 'Allowances & Incentives', icon: '₱' }
+      ]
+    }
   ];
 
   return (
-    <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
+    <aside className="sidebar">
+      {/* Brand Logos */}
       <div className="brand-container">
         <img 
           src="/OFFICIAL LOGO/InsightED logo 5 x 3 in white outline.png" 
@@ -41,41 +69,72 @@ export default function Sidebar() {
           }}
         />
       </div>
-      <nav className="nav" aria-label="Primary" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-        {navItems.map((item) => (
-          <button
-            key={item.view}
-            className={activeView === item.view ? 'active' : ''}
-            data-icon={item.icon}
-            onClick={() => setActiveView(item.view)}
-            type="button"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left' }}
-          >
-            <span>{item.label}</span>
-            {item.badge && (
-              <span style={{
-                background: '#EF4444',
-                color: 'white',
-                fontSize: '10px',
-                fontWeight: 'bold',
-                padding: '2px 6px',
-                borderRadius: '999px',
-                marginRight: '10px'
-              }}>
-                {item.badge}
+
+      {/* Main Navigation List */}
+      <nav className="nav" aria-label="Primary">
+        {sections.map((sec) => (
+          <div key={sec.key} className="sidebar-section">
+            {/* Collapsible Section Header */}
+            <button
+              type="button"
+              className="section-header-btn"
+              onClick={() => toggleSection(sec.key)}
+            >
+              <span className="sidebar-section-title">{sec.title}</span>
+              <span 
+                className="sidebar-chevron" 
+                style={{ transform: openSections[sec.key] ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+              >
+                ▼
               </span>
+            </button>
+
+            {/* Section Items */}
+            {openSections[sec.key] && (
+              <div className="section-items">
+                {sec.items.map((item) => (
+                  <button
+                    key={item.view}
+                    className={activeView === item.view ? 'active' : ''}
+                    data-icon={item.icon}
+                    onClick={() => setActiveView(item.view)}
+                    type="button"
+                  >
+                    <span>{item.label}</span>
+                    {item.badge && (
+                      <span className="nav-badge">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
-          </button>
+          </div>
         ))}
-        <button
-          className="signout-btn"
-          data-icon="⎋"
-          onClick={logout}
-          type="button"
-          style={{ marginTop: 'auto', color: '#fca5a5', borderTop: '1.5px solid rgba(255,255,255,0.1)', paddingTop: '15px' }}
-        >
-          Sign Out
-        </button>
+
+        {/* VERY BOTTOM SECTION: Validation Center & Sign Out */}
+        <div className="sidebar-bottom-section">
+          {/* Validation Center Button - Very Bottom Submission Action */}
+          <button
+            className={activeView === 'validation' ? 'active' : ''}
+            data-icon="⛨"
+            onClick={() => setActiveView('validation')}
+            type="button"
+          >
+            <span>Validation Center</span>
+          </button>
+
+          {/* Sign Out Button */}
+          <button
+            className="signout-btn"
+            data-icon="⎋"
+            onClick={logout}
+            type="button"
+          >
+            <span>Sign Out</span>
+          </button>
+        </div>
       </nav>
     </aside>
   );

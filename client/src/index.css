@@ -71,7 +71,8 @@
                 linear-gradient(180deg, color-mix(in srgb, var(--navy) 92%, transparent), color-mix(in srgb, var(--blue) 72%, var(--navy) 28%));
             border-right: 1px solid rgba(255, 255, 255, .24);
             box-shadow: 18px 0 42px rgba(11, 31, 77, .16);
-            overflow: hidden;
+            overflow-x: hidden !important;
+            overflow-y: hidden;
             transition: width .18s ease, padding .18s ease;
         }
 
@@ -142,6 +143,94 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+            flex: 1;
+            overflow-x: hidden !important;
+            overflow-y: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .nav::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+        }
+
+        .sidebar-section {
+            margin-bottom: 8px;
+        }
+
+        .section-header-btn {
+            width: 100%;
+            background: transparent;
+            border: 0;
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            padding: 8px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            transition: color 0.15s ease;
+        }
+
+        .sidebar:not(:hover) .sidebar-section-title,
+        .sidebar:not(:hover) .sidebar-chevron {
+            display: none !important;
+        }
+
+        .sidebar:not(:hover) .section-header-btn {
+            padding: 4px 0 !important;
+            min-height: 12px;
+            justify-content: center !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            margin-bottom: 6px;
+        }
+
+        .sidebar:hover .sidebar-section-title {
+            display: inline-block !important;
+        }
+
+        .sidebar:hover .sidebar-chevron {
+            display: inline-block !important;
+            font-size: 10px;
+            opacity: 0.8;
+            transition: transform 0.2s ease;
+        }
+
+        .section-items {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-top: 4px;
+        }
+
+        .sidebar-bottom-section {
+            margin-top: auto;
+            padding-top: 14px;
+            border-top: 1.5px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .nav-badge {
+            background: #EF4444;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 999px;
+            margin-left: auto;
+        }
+
+        .sidebar:not(:hover) .nav-badge {
+            display: none !important;
         }
 
         .nav button {
@@ -160,6 +249,7 @@
             line-height: 1;
             text-align: left;
             white-space: nowrap;
+            overflow: hidden;
         }
 
         .sidebar:hover .nav button {
@@ -848,6 +938,21 @@
             margin-top: 12px;
         }
 
+        .just-added-highlight {
+            border-color: #0284c7 !important;
+            background-color: #f0f9ff !important;
+            animation: justAddedGlow 2s infinite alternate !important;
+        }
+
+        @keyframes justAddedGlow {
+            0% {
+                box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.35), 0 4px 12px rgba(2, 132, 199, 0.15);
+            }
+            100% {
+                box-shadow: 0 0 0 6px rgba(2, 132, 199, 0.6), 0 6px 18px rgba(2, 132, 199, 0.35);
+            }
+        }
+
         .workload-row {
             display: flex;
             flex-direction: column;
@@ -1423,7 +1528,7 @@
 
         .workload-kpis {
             display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 8px;
             margin-top: 14px;
         }

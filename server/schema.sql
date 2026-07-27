@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS schools (
     school_year TEXT NOT NULL,
     number_of_shifts INTEGER NOT NULL DEFAULT 1,
     curricular_offering TEXT[] NOT NULL DEFAULT '{}',
+    subjects_config JSONB,
     contact_email TEXT,
     certified_by TEXT,
     certified_signature TEXT,
@@ -126,6 +127,7 @@ CREATE TABLE IF NOT EXISTS class_sections (
     section_name TEXT NOT NULL,
     adviser_id VARCHAR(50) REFERENCES personnel (id) ON DELETE SET NULL,
     section_type TEXT NOT NULL DEFAULT 'MONO GRADE' CHECK (section_type IN ('MULTIGRADE', 'MONO GRADE', 'NON GRADED', 'Regular', 'regular')),
+    number_of_learners INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_section UNIQUE (school_id, school_year, grade_level, section_name)
