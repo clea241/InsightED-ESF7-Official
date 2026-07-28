@@ -212,6 +212,42 @@ export const api = {
     return res.json();
   },
 
+  // Allowances & Incentives management
+  getPersonnelAllowances: async (schoolYear = 'SY 26-27') => {
+    const res = await fetchWithAuth(`${API_BASE}/allowances?schoolYear=${encodeURIComponent(schoolYear)}`);
+    return res.json();
+  },
+  togglePersonnelAllowance: async (personnelId, allowanceKey, isGranted, schoolYear = 'SY 26-27') => {
+    const res = await fetchWithAuth(`${API_BASE}/allowances/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, allowanceKey, isGranted, schoolYear })
+    });
+    return res.json();
+  },
+  bulkUpdatePersonnelAllowances: async (personnelId, allowances, schoolYear = 'SY 26-27') => {
+    const res = await fetchWithAuth(`${API_BASE}/allowances/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, allowances, schoolYear })
+    });
+    return res.json();
+  },
+
+  // Overload Reasons management
+  getOverloadReasons: async (schoolYear = 'SY 26-27', term = 'Term 1') => {
+    const res = await fetchWithAuth(`${API_BASE}/overload-reasons?schoolYear=${encodeURIComponent(schoolYear)}&term=${encodeURIComponent(term)}`);
+    return res.json();
+  },
+  saveOverloadReasons: async ({ personnelId, schoolYear = 'SY 26-27', term = 'Term 1', reasons }) => {
+    const res = await fetchWithAuth(`${API_BASE}/overload-reasons/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, schoolYear, term, reasons })
+    });
+    return res.json();
+  },
+
   sharePersonnelToClusteredSchools: async (prn, target_school_ids, first_name, last_name) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/share`, {
       method: 'POST',

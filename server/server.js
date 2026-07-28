@@ -28,6 +28,8 @@ app.use('/api/absences', require('./controllers/absences'));
 app.use('/api/submissions', require('./controllers/submissions'));
 app.use('/api/requests', require('./controllers/requests'));
 app.use('/api/reports', require('./controllers/reports'));
+app.use('/api/allowances', require('./controllers/allowances'));
+app.use('/api/overload-reasons', require('./controllers/overload_reasons'));
 
 
 const queueWorker = require('./queue_worker');
@@ -89,6 +91,30 @@ const initDB = async () => {
           last_name TEXT,
           tin TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS personnel_allowances (
+          id SERIAL PRIMARY KEY,
+          personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+          school_year VARCHAR(20) NOT NULL DEFAULT 'SY 26-27',
+          pera BOOLEAN DEFAULT FALSE,
+          uniform BOOLEAN DEFAULT FALSE,
+          supplies BOOLEAN DEFAULT FALSE,
+          medical BOOLEAN DEFAULT FALSE,
+          hardship BOOLEAN DEFAULT FALSE,
+          overload BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(personnel_id, school_year)
+      );
+      CREATE TABLE IF NOT EXISTS overload_reasons (
+          id SERIAL PRIMARY KEY,
+          personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+          school_year VARCHAR(20) NOT NULL DEFAULT 'SY 26-27',
+          term VARCHAR(20) NOT NULL DEFAULT 'Term 1',
+          reasons TEXT[] NOT NULL DEFAULT ARRAY['Teacher Shortage'],
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(personnel_id, school_year, term)
       );
       ALTER TABLE class_sections ADD COLUMN IF NOT EXISTS number_of_learners INTEGER;
       ALTER TABLE schools ADD COLUMN IF NOT EXISTS subjects_config JSONB;

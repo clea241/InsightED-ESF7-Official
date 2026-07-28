@@ -1264,6 +1264,7 @@ export const AppProvider = ({ children }) => {
   const [workloadTransfers, setWorkloadTransfers] = useState([]);
   const [absences, setAbsences] = useState([]);
   const [salaryMatrix, setSalaryMatrix] = useState([]);
+  const [allowancesMap, setAllowancesMap] = useState({});
 
   // Toast & Modal States
   const [toast, setToast] = useState(null);
@@ -1292,6 +1293,39 @@ export const AppProvider = ({ children }) => {
       if (Array.isArray(schools)) setDistrictSchools(schools);
     } catch (e) {
       console.error('Failed to load district schools:', e);
+    }
+  };
+
+  const fetchAllowances = async (schoolYear = 'SY 26-27') => {
+    try {
+      const res = await api.getPersonnelAllowances(schoolYear);
+      if (res && res.success && res.data) {
+        setAllowancesMap(res.data);
+        return res.data;
+      }
+    } catch (e) {
+      console.error('[AppContext] Failed to fetch allowances:', e);
+    }
+    return {};
+  };
+
+  const toggleAllowance = async (personnelId, allowanceKey, isGranted, schoolYear = 'SY 26-27') => {
+    const grantedBool = Boolean(isGranted);
+    setAllowancesMap(prev => ({
+      ...prev,
+      [personnelId]: {
+        ...(prev[personnelId] || { pera: false, uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
+        [allowanceKey]: grantedBool
+      }
+    }));
+
+    try {
+      const res = await api.togglePersonnelAllowance(personnelId, allowanceKey, grantedBool, schoolYear);
+      return res;
+    } catch (e) {
+      console.error('[AppContext] Failed to toggle allowance:', e);
+      fetchAllowances(schoolYear);
+      return { success: false, error: e.message };
     }
   };
 
@@ -1528,6 +1562,7 @@ export const AppProvider = ({ children }) => {
         initialLoadCompleteRef.current = true;
         refreshRequests();
         loadDistrictSchools();
+        fetchAllowances(currentSchoolInfo.schoolYear);
       } catch (err) {
         console.error('Error loading initial data:', err);
       }
@@ -1980,10 +2015,18 @@ export const AppProvider = ({ children }) => {
       {
         id: newId,
         absent_personnel_id: transferData.absentTeacherId,
+        absentTeacherId: transferData.absentTeacherId,
+        absentTeacherName: transferData.absentTeacherName || '',
         substitute_personnel_id: transferData.substituteTeacherId,
-        workload_row_id: transferData.workloadRows[0]?.id || null,
+        substituteTeacherId: transferData.substituteTeacherId,
+        substituteTeacherName: transferData.substituteTeacherName || '',
+        workload_row_id: transferData.workloadRows?.[0]?.id || null,
+        workloadRows: transferData.workloadRows || [],
+        workload_rows: transferData.workloadRows || [],
         start_date: transferData.startDate,
+        startDate: transferData.startDate,
         end_date: transferData.endDate,
+        endDate: transferData.endDate,
         reason: transferData.reason || 'Leave of Absence',
         status: 'active'
       }
@@ -2351,7 +2394,10 @@ export const AppProvider = ({ children }) => {
       districtSchools,
       refreshRequests,
       loadDistrictSchools,
-      saveSchoolSubjects
+      saveSchoolSubjects,
+      allowancesMap,
+      fetchAllowances,
+      toggleAllowance
     }}>
       {children}
     </AppContext.Provider>

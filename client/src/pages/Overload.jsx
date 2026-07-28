@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
+import { api } from '../services/api';
 
 // Helper to convert "HH:MM" time to minutes
 const timeToMins = (t) => {
@@ -22,15 +23,20 @@ const MONTHS_LIST = [
   { name: 'June', quarter: 'Term 1', index: 5 },
   { name: 'July', quarter: 'Term 1', index: 6 },
   { name: 'August', quarter: 'Term 1', index: 7 },
-  { name: 'September', quarter: 'Term 1', index: 8 },
+  { name: 'September', quarter: 'Term 2', index: 8 },
   { name: 'October', quarter: 'Term 2', index: 9 },
   { name: 'November', quarter: 'Term 2', index: 10 },
-  { name: 'December', quarter: 'Term 2', index: 11 },
   { name: 'January', quarter: 'Term 3', index: 0 },
   { name: 'February', quarter: 'Term 3', index: 1 },
-  { name: 'March', quarter: 'Term 3', index: 2 },
-  { name: 'April', quarter: 'Term 3', index: 3 },
-  { name: 'May', quarter: 'Term 3', index: 4 }
+  { name: 'March', quarter: 'Term 3', index: 2 }
+];
+
+// End-of-Term blocks & Vacation where teachers have no teaching load and NO overload pay
+const NON_INSTRUCTIONAL_RANGES = [
+  { start: '2026-09-02', end: '2026-09-15', label: 'Term 1 End-of-Term Block' },
+  { start: '2026-12-07', end: '2026-12-18', label: 'Term 2 End-of-Term Block' },
+  { start: '2027-03-24', end: '2027-04-08', label: 'Term 3 End-of-Term Block' },
+  { start: '2027-04-09', end: '2027-06-06', label: 'Vacation' }
 ];
 
 export default function Overload() {
@@ -129,12 +135,73 @@ export default function Overload() {
 
   // Workload Transfer form state (Step 3)
   const [transferAbsentTeacherId, setTransferAbsentTeacherId] = useState('');
+  const [transferMonth, setTransferMonth] = useState('June');
+  const [transferRangeStart, setTransferRangeStart] = useState(null);
+  const [transferRangeEnd, setTransferRangeEnd] = useState(null);
   const [transferStartDate, setTransferStartDate] = useState('');
   const [transferEndDate, setTransferEndDate] = useState('');
   const [selectedTransferSlots, setSelectedTransferSlots] = useState({}); // { rowIdx: substituteTeacherId }
 
+  // Overload Reasons state (Step 4)
+  const [overloadReasonsMap, setOverloadReasonsMap] = useState({});
+  const [activeReasonModalTeacher, setActiveReasonModalTeacher] = useState(null);
+
+  useEffect(() => {
+    const fetchReasons = async () => {
+      try {
+        const sy = schoolInfo?.schoolYear || 'SY 26-27';
+        const res = await api.getOverloadReasons(sy, selectedQuarter);
+        if (res && res.success && res.data) {
+          setOverloadReasonsMap(res.data);
+        }
+      } catch (e) {
+        console.error('Failed to load overload reasons:', e);
+      }
+    };
+    fetchReasons();
+  }, [schoolInfo?.schoolYear, selectedQuarter]);
+
+  const handleToggleReasonForTeacher = async (personnelId, reasonName) => {
+    const current = overloadReasonsMap[personnelId] || ['Teacher Shortage'];
+    let updated = [];
+    if (current.includes(reasonName)) {
+      updated = current.filter(r => r !== reasonName);
+    } else {
+      updated = [...current, reasonName];
+    }
+
+    setOverloadReasonsMap(prev => ({
+      ...prev,
+      [personnelId]: updated
+    }));
+
+    if (updated.length >= 1) {
+      try {
+        const sy = schoolInfo?.schoolYear || 'SY 26-27';
+        await api.saveOverloadReasons({
+          personnelId,
+          schoolYear: sy,
+          term: selectedQuarter,
+          reasons: updated
+        });
+      } catch (e) {
+        console.error('Failed to save overload reason:', e);
+      }
+    }
+  };
+
   // Filter out draft personnel for all selectors
   const activePersonnel = personnel.filter(p => !p.isDraft);
+
+  // Filter active personnel who have recorded absences (for Step 3 Workload Transfer filtering)
+  const personnelWithAbsences = activePersonnel.filter(p => {
+    return absences.some(abs => {
+      const pId = String(abs.personnelId || abs.personnel_id || '');
+      if (pId !== String(p.id)) return false;
+      const lType = abs.leaveType || abs.leave_type || '';
+      return !lType.includes('Late') && !lType.includes('Tardiness');
+    });
+  });
 
   // Helper to get weekdays in a month for calculations
   const getWeekdaysInMonth = (monthName, yearString = 'SY 26-27') => {
@@ -204,6 +271,12 @@ export default function Overload() {
       const dateStr = getLocalDateString(date);
       const dayShort = dayIndexMap[date.getDay()];
       
+      // Check if date falls into an End-of-Term block or Vacation
+      const isNonInstructional = NON_INSTRUCTIONAL_RANGES.some(r => dateStr >= r.start && dateStr <= r.end);
+      if (isNonInstructional) {
+        return; // Teachers have no teaching load / overload pay during End-of-Term blocks or Vacation
+      }
+      
       // Calculate teaching load for this teacher on this day
       let dailyTeachingMinutes = 0;
       
@@ -221,7 +294,13 @@ export default function Overload() {
           );
           
           if (!isTransferred) {
-            dailyTeachingMinutes += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+            if (row.subject === 'HGP') {
+              // HGP is stored for tracking program duration only and does not add extra teaching load minutes
+            } else if (row.subject === 'ADVISORY') {
+              dailyTeachingMinutes += 60;
+            } else {
+              dailyTeachingMinutes += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+            }
           }
         }
       });
@@ -234,7 +313,13 @@ export default function Overload() {
             t.endDate >= dateStr) {
           (t.workloadRows || []).forEach(row => {
             if (row.days && row.days.includes(dayShort)) {
-              dailyTeachingMinutes += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+              if (row.subject === 'HGP') {
+                // HGP does not add extra teaching load minutes
+              } else if (row.subject === 'ADVISORY') {
+                dailyTeachingMinutes += 60;
+              } else {
+                dailyTeachingMinutes += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+              }
             }
           });
         }
@@ -450,9 +535,12 @@ export default function Overload() {
     });
 
     for (const [subId, rows] of Object.entries(grouped)) {
+      const substituteTeacher = activePersonnel.find(p => String(p.id) === String(subId));
       await addWorkloadTransfer({
         absentTeacherId: transferAbsentTeacherId,
+        absentTeacherName: absentTeacher ? `${absentTeacher.lastName}, ${absentTeacher.firstName}` : '',
         substituteTeacherId: subId,
+        substituteTeacherName: substituteTeacher ? `${substituteTeacher.lastName}, ${substituteTeacher.firstName}` : '',
         startDate: transferStartDate,
         endDate: transferEndDate,
         workloadRows: rows,
@@ -468,6 +556,19 @@ export default function Overload() {
   };
 
   const handleGeneratePDF = () => {
+    const missingReasonsTeacher = filteredRoster.find(item => {
+      const reasons = overloadReasonsMap[item.teacher.id] || ['Teacher Shortage'];
+      return !Array.isArray(reasons) || reasons.length < 1;
+    });
+
+    if (missingReasonsTeacher) {
+      showAlert(
+        "Overload Reason Required",
+        `Please select at least 1 overload reason for ${missingReasonsTeacher.teacher.firstName} ${missingReasonsTeacher.teacher.lastName} before generating the report.`
+      );
+      return;
+    }
+
     const quarterMonths = MONTHS_LIST.filter(m => m.quarter === selectedQuarter);
     const monthNames = quarterMonths.map(m => m.name);
 
@@ -511,6 +612,9 @@ export default function Overload() {
       const wCols = monthlyWeeklyMinutes.map(weeks => 
         weeks.map(w => `<td style="padding: 6px; border: 1px solid #475569; text-align: center; font-size: 11px;">${w || '-'}</td>`).join('')
       ).join('');
+
+      const teacherReasons = overloadReasonsMap[teacher.id] || ['Teacher Shortage'];
+      const formattedReasons = Array.isArray(teacherReasons) && teacherReasons.length > 0 ? teacherReasons.join(', ') : 'Teacher Shortage';
       
       return `
         <tr>
@@ -521,7 +625,7 @@ export default function Overload() {
           <td style="padding: 6px; border: 1px solid #475569; text-align: center; font-weight: bold; background-color: #f8fafc;">${totalMinutes}</td>
           <td style="padding: 6px; border: 1px solid #475569; text-align: center; font-weight: bold; background-color: #f8fafc;">${totalHours}</td>
           <td style="padding: 6px; border: 1px solid #475569; text-align: right; font-weight: bold; background-color: #f8fafc; font-family: monospace;">₱${formattedPay}</td>
-          <td style="padding: 6px; border: 1px solid #475569; text-align: center; font-size: 11px;">Teacher Shortage</td>
+          <td style="padding: 6px; border: 1px solid #475569; text-align: center; font-size: 11px;">${formattedReasons}</td>
         </tr>
       `;
     }).join('');
@@ -635,7 +739,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 1</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness & Late</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness Log</div>
         </button>
 
         <button 
@@ -654,7 +758,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 2</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📅 Absences & Leave</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🏖️ Absences & Leave</div>
         </button>
 
         <button 
@@ -692,7 +796,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 4</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📈 Overload Computation</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📈 Teaching Overload</div>
         </button>
       </div>
 
@@ -1244,20 +1348,26 @@ export default function Overload() {
               <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Create Workload Transfer</h2>
               <form onSubmit={handleCreateTransfer} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>ABSENT TEACHER</label>
-                  <SearchableDropdown 
-                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
-                    value={activePersonnel.find(p => p.id === transferAbsentTeacherId) ? (() => {
-                      const p = activePersonnel.find(p => p.id === transferAbsentTeacherId);
-                      return `${p.firstName} ${p.lastName} · ${p.position}`;
-                    })() : ''}
-                    onChange={(val) => {
-                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
-                      setTransferAbsentTeacherId(p ? p.id : '');
-                      setSelectedTransferSlots({}); // reset slots
-                    }}
-                    placeholder="Select absent teacher..."
-                  />
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>ABSENT TEACHER (WITH RECORDED ABSENCES)</label>
+                  {personnelWithAbsences.length === 0 ? (
+                    <div style={{ padding: '10px 12px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '8px', color: '#B45309', fontSize: '12px', fontWeight: 'bold' }}>
+                      ⚠️ No teachers with recorded absences found. Please log an absence in Step 2 first.
+                    </div>
+                  ) : (
+                    <SearchableDropdown 
+                      options={personnelWithAbsences.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
+                      value={personnelWithAbsences.find(p => p.id === transferAbsentTeacherId) ? (() => {
+                        const p = personnelWithAbsences.find(p => p.id === transferAbsentTeacherId);
+                        return `${p.firstName} ${p.lastName} · ${p.position}`;
+                      })() : ''}
+                      onChange={(val) => {
+                        const p = personnelWithAbsences.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
+                        setTransferAbsentTeacherId(p ? p.id : '');
+                        setSelectedTransferSlots({}); // reset slots
+                      }}
+                      placeholder="Select absent teacher..."
+                    />
+                  )}
                 </div>
                 
                 {transferAbsentTeacherId && (
@@ -1306,25 +1416,105 @@ export default function Overload() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>START DATE</label>
-                    <input 
-                      type="date" 
-                      value={transferStartDate} 
-                      onChange={(e) => setTransferStartDate(e.target.value)}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 6px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontSize: '12px', minWidth: 0 }}
-                    />
+                {/* Single-Calendar Range Picker for Transfer Dates */}
+                <div style={{ marginTop: '4px', background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>COVERAGE DATES (SINGLE CALENDAR RANGE)</label>
+                    <select 
+                      value={transferMonth}
+                      onChange={(e) => {
+                        setTransferMonth(e.target.value);
+                        setTransferRangeStart(null);
+                        setTransferRangeEnd(null);
+                        setTransferStartDate('');
+                        setTransferEndDate('');
+                      }}
+                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '11px' }}
+                    >
+                      {MONTHS_LIST.map(m => (
+                        <option key={m.name} value={m.name}>{m.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div style={{ minWidth: 0 }}>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>END DATE</label>
-                    <input 
-                      type="date" 
-                      value={transferEndDate} 
-                      onChange={(e) => setTransferEndDate(e.target.value)}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 6px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontSize: '12px', minWidth: 0 }}
-                    />
+
+                  {/* Calendar Grid (5 Weekdays) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
+                      <div key={day} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 'bold', color: 'var(--navy)', padding: '3px', background: '#e2e8f0', borderRadius: '4px' }}>
+                        {day}
+                      </div>
+                    ))}
+                    {(() => {
+                      const monthDates = getWeekdaysInMonth(transferMonth, 'SY 26-27');
+                      const effectiveStart = transferRangeStart;
+                      const effectiveEnd = transferRangeEnd || transferRangeStart;
+
+                      return monthDates.map((dateObj) => {
+                        const dateStr = getLocalDateString(dateObj);
+                        const dayNum = dateObj.getDate();
+                        const isInRange = effectiveStart && dateStr >= effectiveStart && dateStr <= effectiveEnd;
+
+                        return (
+                          <button
+                            key={dateStr}
+                            type="button"
+                            onClick={() => {
+                              if (!transferRangeStart || (transferRangeStart && transferRangeEnd)) {
+                                setTransferRangeStart(dateStr);
+                                setTransferRangeEnd(null);
+                                setTransferStartDate(dateStr);
+                                setTransferEndDate(dateStr);
+                              } else {
+                                if (dateStr >= transferRangeStart) {
+                                  setTransferRangeEnd(dateStr);
+                                  setTransferStartDate(transferRangeStart);
+                                  setTransferEndDate(dateStr);
+                                } else {
+                                  setTransferRangeStart(dateStr);
+                                  setTransferRangeEnd(null);
+                                  setTransferStartDate(dateStr);
+                                  setTransferEndDate(dateStr);
+                                }
+                              }
+                            }}
+                            style={{
+                              padding: '6px 2px',
+                              borderRadius: '6px',
+                              border: isInRange ? '1.5px solid #eab308' : '1px solid var(--line)',
+                              background: isInRange ? '#fef08a' : 'white',
+                              color: isInRange ? '#854d0e' : 'var(--navy)',
+                              fontWeight: 'bold',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {dayNum}
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
+
+                  {/* Range Status Preview */}
+                  {transferStartDate && (
+                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#854d0e', background: '#fefce8', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fef08a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>📅 Selected Range: <strong>{transferStartDate}</strong> {transferEndDate && transferEndDate !== transferStartDate ? `to ${transferEndDate}` : ''}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransferRangeStart(null);
+                          setTransferRangeEnd(null);
+                          setTransferStartDate('');
+                          setTransferEndDate('');
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <button type="submit" className="btn" style={{ padding: '10px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginTop: '6px' }}>
@@ -1360,21 +1550,53 @@ export default function Overload() {
                   </thead>
                   <tbody>
                     {workloadTransfers.filter(t => t.status !== 'ended').map((t, idx) => {
-                      const absentee = activePersonnel.find(p => p.id === t.absentTeacherId);
-                      const substitute = activePersonnel.find(p => p.id === t.substituteTeacherId);
-                      const classSummary = (t.workloadRows || []).map(r => `${r.subject} (${r.gradeLevel})`).join(', ');
+                      const absentId = t.absentTeacherId || t.absent_personnel_id || t.absent_teacher_id;
+                      const subId = t.substituteTeacherId || t.substitute_personnel_id || t.substitute_teacher_id;
+
+                      const absentee = activePersonnel.find(p => String(p.id) === String(absentId));
+                      const substitute = activePersonnel.find(p => String(p.id) === String(subId));
+
+                      const absenteeName = absentee 
+                        ? `${absentee.lastName}, ${absentee.firstName}` 
+                        : (t.absentTeacherName || t.absenteeName || t.absent_teacher_name || t.absent_name || 'Unknown Teacher');
+
+                      const substituteName = substitute 
+                        ? `${substitute.lastName}, ${substitute.firstName}` 
+                        : (t.substituteTeacherName || t.substituteName || t.substitute_teacher_name || t.substitute_name || 'Unknown Teacher');
+
+                      let rows = Array.isArray(t.workloadRows) && t.workloadRows.length > 0
+                        ? t.workloadRows
+                        : (Array.isArray(t.workload_rows) && t.workload_rows.length > 0 ? t.workload_rows : []);
+
+                      if (rows.length === 0 && (t.workload_row_id || t.workloadRowId) && absentee) {
+                        const matchedRow = (absentee.workloadRows || []).find(r => String(r.id) === String(t.workload_row_id || t.workloadRowId));
+                        if (matchedRow) rows = [matchedRow];
+                      }
+
+                      const classSummary = rows.map(r => {
+                        if (typeof r === 'string') return r;
+                        const sub = r.subject || r.subject_name || r.subjectName || r.name || '';
+                        const grade = r.gradeLevel || r.grade_level || r.grade || '';
+                        if (sub && grade) return `${sub} (${grade})`;
+                        return sub || grade || '';
+                      }).filter(Boolean).join(', ');
+
+                      const startDateVal = t.startDate || t.start_date || '';
+                      const endDateVal = t.endDate || t.end_date || '';
 
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
                           <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#b91c1c' }}>
-                            {absentee ? `${absentee.lastName}, ${absentee.firstName}` : 'Unknown'}
+                            {absenteeName}
                           </td>
                           <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#15803d' }}>
-                            {substitute ? `${substitute.lastName}, ${substitute.firstName}` : 'Unknown'}
+                            {substituteName}
                           </td>
-                          <td style={{ padding: '12px 10px', color: 'var(--navy)' }}>{classSummary || 'All workloads'}</td>
+                          <td style={{ padding: '12px 10px', color: 'var(--navy)', fontWeight: '600' }}>
+                            {classSummary || 'Specific Class Slot'}
+                          </td>
                           <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>
-                            {t.startDate ? new Date(t.startDate).toLocaleDateString() : ''} - {t.endDate ? new Date(t.endDate).toLocaleDateString() : ''}
+                            {startDateVal ? new Date(startDateVal).toLocaleDateString() : ''} - {endDateVal ? new Date(endDateVal).toLocaleDateString() : ''}
                           </td>
                           <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                             <button 
@@ -1420,9 +1642,9 @@ export default function Overload() {
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>SELECT TERM</label>
                   <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)} style={{ padding: '8px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}>
-                    <option value="Term 1">Term 1 (June – Sept)</option>
-                    <option value="Term 2">Term 2 (Sept – Dec)</option>
-                    <option value="Term 3">Term 3 (Jan – April)</option>
+                    <option value="Term 1">Term 1 (June – August)</option>
+                    <option value="Term 2">Term 2 (September – November)</option>
+                    <option value="Term 3">Term 3 (January – March)</option>
                   </select>
                 </div>
               </div>
@@ -1451,6 +1673,7 @@ export default function Overload() {
                     <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Net Monthly ({selectedMonth})</th>
                     <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Net Term ({selectedQuarter})</th>
                     <th style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--navy)' }}>Overload Pay (₱)</th>
+                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Reason for Overload</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1463,6 +1686,8 @@ export default function Overload() {
                     const phtr = calculatePHTR(item.teacher);
                     const overloadPay = Math.round(item.quarterStats.net * phtr * 100) / 100;
                     const formattedPay = overloadPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    const teacherReasons = overloadReasonsMap[item.teacher.id] || ['Teacher Shortage'];
+                    const isInvalid = !Array.isArray(teacherReasons) || teacherReasons.length < 1;
 
                     return (
                       <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
@@ -1483,12 +1708,117 @@ export default function Overload() {
                         <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--navy)' }}>
                           ₱{formattedPay}
                         </td>
+                        <td style={{ padding: '8px 10px', minWidth: '260px' }}>
+                          {(() => {
+                            const teacherReasons = overloadReasonsMap[item.teacher.id] || ['Teacher Shortage'];
+                            const allOptions = [
+                              'Teacher Shortage',
+                              'Relieving Duty',
+                              'Remediation or Enhancement Class',
+                              'Class Advising Duty'
+                            ];
+                            const isInvalid = !Array.isArray(teacherReasons) || teacherReasons.length < 1;
+                            const remainingOptions = allOptions.filter(opt => !teacherReasons.includes(opt));
+
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {/* Active Reason Badges / Pills */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                  {teacherReasons.map((reason, rIdx) => (
+                                    <div
+                                      key={rIdx}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        background: '#eff6ff',
+                                        border: '1px solid #bfdbfe',
+                                        borderRadius: '6px',
+                                        padding: '3px 8px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        color: '#1e40af'
+                                      }}
+                                    >
+                                      <span>{reason}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = teacherReasons.filter((_, idx) => idx !== rIdx);
+                                          setOverloadReasonsMap(prev => ({
+                                            ...prev,
+                                            [item.teacher.id]: updated
+                                          }));
+                                          if (updated.length >= 1) {
+                                            const sy = schoolInfo?.schoolYear || 'SY 26-27';
+                                            api.saveOverloadReasons({
+                                              personnelId: item.teacher.id,
+                                              schoolYear: sy,
+                                              term: selectedQuarter,
+                                              reasons: updated
+                                            });
+                                          }
+                                        }}
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: '#2563eb',
+                                          cursor: 'pointer',
+                                          fontWeight: 'bold',
+                                          fontSize: '12px',
+                                          lineHeight: 1,
+                                          padding: 0
+                                        }}
+                                        title="Remove Reason"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ))}
+
+                                  {isInvalid && (
+                                    <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 'bold' }}>
+                                      ⚠️ At least 1 reason required
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Dropdown to add another reason */}
+                                {remainingOptions.length > 0 && (
+                                  <select
+                                    value=""
+                                    onChange={(e) => {
+                                      const selectedVal = e.target.value;
+                                      if (!selectedVal) return;
+                                      handleToggleReasonForTeacher(item.teacher.id, selectedVal);
+                                    }}
+                                    style={{
+                                      fontSize: '11px',
+                                      padding: '4px 8px',
+                                      borderRadius: '6px',
+                                      border: '1.5px dashed #cbd5e1',
+                                      background: '#ffffff',
+                                      color: '#475569',
+                                      cursor: 'pointer',
+                                      width: 'fit-content'
+                                    }}
+                                  >
+                                    <option value="">+ Add Overload Reason...</option>
+                                    {remainingOptions.map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                       </tr>
                     );
                   })}
                   {filteredRoster.length === 0 && (
                     <tr>
-                      <td colSpan="7" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No teachers with active overloads found.</td>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No teachers with active overloads found.</td>
                     </tr>
                   )}
                 </tbody>

@@ -50,7 +50,15 @@ const SearchableSelect = ({ value, onChange, options = [], disabled = false, pla
     setSearch('');
   };
 
-  const filteredOptions = options.filter(opt =>
+  // Deduplicate options by value to avoid React duplicate key warnings
+  const uniqueOptionsMap = new Map();
+  (options || []).forEach(opt => {
+    if (opt && opt.value !== undefined && !uniqueOptionsMap.has(String(opt.value))) {
+      uniqueOptionsMap.set(String(opt.value), opt);
+    }
+  });
+
+  const filteredOptions = Array.from(uniqueOptionsMap.values()).filter(opt =>
     (opt.label || '').toLowerCase().includes(search.toLowerCase())
   );
 
@@ -111,9 +119,9 @@ const SearchableSelect = ({ value, onChange, options = [], disabled = false, pla
           }}
         >
           {filteredOptions.length > 0 ? (
-            filteredOptions.map((opt) => (
+            filteredOptions.map((opt, idx) => (
               <div
-                key={opt.value}
+                key={`${opt.value}-${idx}`}
                 onClick={() => handleSelect(opt.value)}
                 style={{
                   padding: '10px 14px',
@@ -2657,7 +2665,7 @@ export default function Workload() {
     handleFieldChangeForPerson(currentPerson.id, key, value);
   };
 
-  const getSubjectsForGrade = (grade, category = '') => {
+  const getSubjectsForGrade = (grade, category = 'Elementary') => {
     const normGrade = grade ? String(grade).replace(/\s*[\u2013\u2014-]\s*/g, ' - ') : '';
     if (normGrade && normGrade.includes(' - ')) {
       const parts = normGrade.split(' - ');
@@ -2669,43 +2677,61 @@ export default function Workload() {
       return Array.from(union);
     }
 
+    let baseList = [];
     if (grade === 'MONO-GRADE') {
-      if (category === 'Elementary') return ELEMENTARY_MONO_GRADE_SUBJECTS;
-      if (category === 'JHS') return JHS_MONO_GRADE_SUBJECTS;
-      if (category === 'SHS') return SHS_MONO_GRADE_SUBJECTS;
-    }
-    if (grade === 'NON-GRADED') {
-      if (category === 'JHS') return JHS_NON_GRADED_SUBJECTS;
-      if (category === 'SHS') return SHS_NON_GRADED_SUBJECTS;
-    }
-
-    if (grade === 'Grade 11' || grade === 'Grade 12') {
+      if (category === 'Elementary') baseList = ELEMENTARY_MONO_GRADE_SUBJECTS;
+      else if (category === 'JHS') baseList = JHS_MONO_GRADE_SUBJECTS;
+      else if (category === 'SHS') baseList = SHS_MONO_GRADE_SUBJECTS;
+      else baseList = ELEMENTARY_MONO_GRADE_SUBJECTS;
+    } else if (grade === 'NON-GRADED') {
+      if (category === 'JHS') baseList = JHS_NON_GRADED_SUBJECTS;
+      else if (category === 'SHS') baseList = SHS_NON_GRADED_SUBJECTS;
+      else baseList = JHS_NON_GRADED_SUBJECTS;
+    } else if (grade === 'Grade 11' || grade === 'Grade 12') {
       const isGrade12 = grade === 'Grade 12';
-      if (category === 'SHS') {
-        return isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
-      }
-      if (category === 'SHS-CORE SUBJECTS') {
-        return isGrade12 ? SHS_CORE_GRADE12_SUBJECTS : SHS_CORE_SUBJECTS;
-      }
-      if (category === 'SHS-APPLIED SUBJECTS') {
-        return isGrade12 ? SHS_APPLIED_GRADE12_SUBJECTS : SHS_APPLIED_SUBJECTS;
-      }
-      if (category === 'SHS-SPECIALIZED SUBJECTS') {
-        return isGrade12 ? SHS_SPECIALIZED_GRADE12_SUBJECTS : SHS_SPECIALIZED_SUBJECTS;
-      }
-      if (category === 'SSHS-CORE') {
-        return SSHS_CORE_SUBJECTS;
-      }
-      if (category === 'SSHS-ACADEMIC') {
-        return isGrade12 ? SSHS_ACADEMIC_GRADE12_SUBJECTS : SSHS_ACADEMIC_SUBJECTS;
-      }
-      if (category === 'SSHS-TECHPRO') {
-        return isGrade12 ? SSHS_TECHPRO_GRADE12_SUBJECTS : SSHS_TECHPRO_SUBJECTS;
-      }
-      return isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
+      if (category === 'SHS') baseList = isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
+      else if (category === 'SHS-CORE SUBJECTS') baseList = isGrade12 ? SHS_CORE_GRADE12_SUBJECTS : SHS_CORE_SUBJECTS;
+      else if (category === 'SHS-APPLIED SUBJECTS') baseList = isGrade12 ? SHS_APPLIED_GRADE12_SUBJECTS : SHS_APPLIED_SUBJECTS;
+      else if (category === 'SHS-SPECIALIZED SUBJECTS') baseList = isGrade12 ? SHS_SPECIALIZED_GRADE12_SUBJECTS : SHS_SPECIALIZED_SUBJECTS;
+      else if (category === 'SSHS-CORE') baseList = SSHS_CORE_SUBJECTS;
+      else if (category === 'SSHS-ACADEMIC') baseList = isGrade12 ? SSHS_ACADEMIC_GRADE12_SUBJECTS : SSHS_ACADEMIC_SUBJECTS;
+      else if (category === 'SSHS-TECHPRO') baseList = isGrade12 ? SSHS_TECHPRO_GRADE12_SUBJECTS : SSHS_TECHPRO_SUBJECTS;
+      else baseList = isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
+    } else {
+      baseList = GRADE_LEVEL_SUBJECTS[grade] || SUBJECT_OPTIONS;
     }
 
-    return GRADE_LEVEL_SUBJECTS[grade] || SUBJECT_OPTIONS;
+    // Load custom subjects added under "Subjects Taught"
+    const storedCustom = (() => {
+      try {
+        const saved = schoolInfo?.subjectsConfig?.customSubjects || (localStorage.getItem('school_custom_subjects') ? JSON.parse(localStorage.getItem('school_custom_subjects')) : []);
+        return Array.isArray(saved) ? saved : [];
+      } catch (e) {
+        return [];
+      }
+    })();
+
+    const customNames = storedCustom
+      .map(cs => typeof cs === 'string' ? cs : cs?.name)
+      .filter(Boolean);
+
+    // Merge base subjects with custom subjects
+    const merged = Array.from(new Set([...(baseList || []), ...customNames]));
+
+    // Check disabled map for standard subjects
+    const disabledMap = (() => {
+      try {
+        return schoolInfo?.subjectsConfig?.disabledMap || (localStorage.getItem('school_disabled_subjects') ? JSON.parse(localStorage.getItem('school_disabled_subjects')) : {});
+      } catch (e) {
+        return {};
+      }
+    })();
+
+    return merged.filter(subName => {
+      if (customNames.includes(subName)) return true; // Always include custom subjects (e.g. TEST)
+      if (disabledMap[subName] === true) return false;
+      return true;
+    });
   };
 
   const handleCommitTransfer = async () => {
@@ -2748,10 +2774,10 @@ export default function Workload() {
     }
   };
 
-  // Compute dynamic default schedule time and day from previous workload entries
+  // Compute dynamic default schedule time and day from previous workload entries (Default 1 hour)
   const getWorkloadScheduleDefaults = (workloadRows) => {
     let nextStart = '08:00';
-    let nextEnd = '08:40';
+    let nextEnd = '09:00';
     let nextDays = ['M', 'T', 'W', 'TH', 'F'];
 
     const rows = Array.isArray(workloadRows) ? workloadRows.filter(r => r && r.startTime && r.endTime) : [];
@@ -2770,10 +2796,11 @@ export default function Workload() {
           const pad = (v) => String(v).padStart(2, '0');
           nextStart = `${pad(hours)}:${pad(mins)}`;
 
-          let duration = 40; // Default 40-minute period
+          let duration = 60; // Default 1 hour (60-minute) period
           if (startMins < 99999 && endMins > startMins) {
-            duration = endMins - startMins;
+            duration = Math.min(60, endMins - startMins);
           }
+          if (duration <= 0) duration = 60;
 
           const nextEndMins = endMins + duration;
           const endHours = Math.floor(nextEndMins / 60) % 24;
@@ -2850,15 +2877,106 @@ export default function Workload() {
     handleFieldChange('workloadRows', rows);
   };
 
-  const updateWorkloadRow = (index, field, value) => {
+  const isSHSRow = (row) => {
+    if (!row) return false;
+    const grade = String(row.gradeLevel || '').trim();
+    const category = String(row.category || '').toUpperCase();
+    const subject = String(row.subject || '').toUpperCase();
+
+    return (
+      grade === 'Grade 11' ||
+      grade === 'Grade 12' ||
+      grade.includes('11') ||
+      grade.includes('12') ||
+      category.includes('SHS') ||
+      category.includes('SSHS') ||
+      subject.includes('SHS')
+    );
+  };
+
+  const getTimeDiffMins = (start, end) => {
+    if (!start || !end) return 0;
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    return (eh * 60 + em) - (sh * 60 + sm);
+  };
+
+  const updateWorkloadRow = async (index, field, value) => {
     const rows = [...(currentPerson.workloadRows || [])];
-    rows[index] = { ...rows[index], [field]: value };
+    let updatedRow = { ...rows[index], [field]: value };
+
+    if (field === 'startTime' || field === 'endTime') {
+      const sTime = updatedRow.startTime;
+      const eTime = updatedRow.endTime;
+      if (sTime && eTime) {
+        const diff = getTimeDiffMins(sTime, eTime);
+        const isSHS = isSHSRow(updatedRow);
+        const maxMins = isSHS ? 360 : 60;
+
+        if (diff > maxMins) {
+          const [sh, sm] = sTime.split(':').map(Number);
+          const maxEndMins = sh * 60 + sm + maxMins;
+          const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
+          const maxEndM = String(maxEndMins % 60).padStart(2, '0');
+          updatedRow.endTime = `${maxEndH}:${maxEndM}`;
+
+          await showAlert(
+            `Maximum Duration ${isSHS ? '6 Hours' : '1 Hour'}`,
+            isSHS
+              ? "Senior High School (Grade 11 & Grade 12) subject schedule cannot exceed 6 hours. The end time has been adjusted to 6 hours max."
+              : "A single subject period in workload cannot exceed 1 hour (60 minutes). The end time has been adjusted to 1 hour max."
+          );
+        } else if (diff < 0) {
+          await showAlert(
+            "Invalid Time Range",
+            "End time must be after start time."
+          );
+        }
+      }
+    } else if (field === 'hgpMinutes') {
+      if (value > 60) {
+        updatedRow.hgpMinutes = 60;
+        await showAlert(
+          "HGP Duration Limit",
+          "HGP duration cannot exceed 60 minutes (1 hour)."
+        );
+      }
+    }
+
+    rows[index] = updatedRow;
     handleFieldChange('workloadRows', rows);
   };
 
-  const updateWorkloadRowFields = (index, fieldValues) => {
+  const updateWorkloadRowFields = async (index, fieldValues) => {
     const rows = [...(currentPerson.workloadRows || [])];
-    rows[index] = { ...rows[index], ...fieldValues };
+    let updatedRow = { ...rows[index], ...fieldValues };
+
+    if (fieldValues.startTime || fieldValues.endTime || fieldValues.gradeLevel || fieldValues.category || fieldValues.subject) {
+      const sTime = updatedRow.startTime;
+      const eTime = updatedRow.endTime;
+      if (sTime && eTime) {
+        const diff = getTimeDiffMins(sTime, eTime);
+        const isSHS = isSHSRow(updatedRow);
+        const maxMins = isSHS ? 360 : 60;
+
+        if (diff > maxMins) {
+          const [sh, sm] = sTime.split(':').map(Number);
+          const maxEndMins = sh * 60 + sm + maxMins;
+          const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
+          const maxEndM = String(maxEndMins % 60).padStart(2, '0');
+          updatedRow.endTime = `${maxEndH}:${maxEndM}`;
+
+          await showAlert(
+            `Maximum Duration ${isSHS ? '6 Hours' : '1 Hour'}`,
+            isSHS
+              ? "Senior High School (Grade 11 & Grade 12) subject schedule cannot exceed 6 hours. The end time has been adjusted to 6 hours max."
+              : "A single subject period in workload cannot exceed 1 hour (60 minutes). The end time has been adjusted to 1 hour max."
+          );
+        }
+      }
+    }
+
+    rows[index] = updatedRow;
     handleFieldChange('workloadRows', rows);
   };
 
@@ -2896,12 +3014,32 @@ export default function Workload() {
     const rows = [...(currentPerson.workloadRows || [])];
     const targetRow = rows[rowIndex];
     if (!targetRow) return;
-    const days = [...(targetRow.days || [])];
-    if (days.includes(day)) {
-      targetRow.days = days.filter(d => d !== day);
-    } else {
-      targetRow.days = [...days, day];
+
+    if (targetRow.subject === 'HGP') {
+      const advRow = rows.find(r => r.subject === 'ADVISORY' && (String(r.sectionId) === String(targetRow.sectionId) || (!r.sectionId && !targetRow.sectionId)));
+      const advDays = advRow?.days || ['M', 'T', 'W', 'TH', 'F'];
+      if (!advDays.includes(day)) return; // Restrict HGP to ADVISORY days only
     }
+
+    const days = [...(targetRow.days || [])];
+    let newDays = [];
+    if (days.includes(day)) {
+      newDays = days.filter(d => d !== day);
+    } else {
+      newDays = [...days, day];
+    }
+    targetRow.days = newDays;
+
+    // If ADVISORY days change, auto-prune HGP days that are no longer selected in ADVISORY
+    if (targetRow.subject === 'ADVISORY') {
+      const hgpIdx = rows.findIndex(r => r.subject === 'HGP' && (String(r.sectionId) === String(targetRow.sectionId) || (!r.sectionId && !targetRow.sectionId)));
+      if (hgpIdx !== -1) {
+        const hgpRow = rows[hgpIdx];
+        const prunedHgpDays = (hgpRow.days || []).filter(d => newDays.includes(d));
+        rows[hgpIdx] = { ...hgpRow, days: prunedHgpDays };
+      }
+    }
+
     handleFieldChange('workloadRows', rows);
   };
 
@@ -2986,7 +3124,10 @@ export default function Workload() {
       const intervals = [];
       for (const r of rows) {
         if ((r.days || []).includes(d)) {
-          if (r.subject === 'ADVISORY') {
+          if (r.subject === 'HGP') {
+            // HGP is tracked for program duration only and does not add extra teaching load hours
+            continue;
+          } else if (r.subject === 'ADVISORY') {
             totalMins += 60;
           } else if (r.startTime && r.endTime) {
             const [startH, startM] = r.startTime.split(':').map(Number);
@@ -3022,6 +3163,7 @@ export default function Workload() {
   const weeklyTeachingHours = totalWeeklyTeachingHours.toFixed(1);
   const dailyAvgTeachingHours = (Number(weeklyTeachingHours) / 5).toFixed(1);
   const teachingOverloadHours = Math.max(0, Number(weeklyTeachingHours) - 30).toFixed(1);
+  const dailyOverloadHours = (Number(teachingOverloadHours) / 5).toFixed(1);
 
   const baseWeeklyRelatedHours = ((currentPerson?.teachingRelatedRows) || []).reduce((total, row) => {
     const daysCount = Array.isArray(row.days) ? row.days.length : 0;
@@ -3802,27 +3944,21 @@ export default function Workload() {
                     {/* Workload KPIs */}
                     <div className="workload-kpis">
                       <div className="kpi">
-                        <span>Weekly Teaching Load</span>
+                        <span>Total Teaching Load</span>
                         <strong>{weeklyTeachingHours} hrs</strong>
                         {coverageTeachingHours > 0 && <small style={{ color: 'var(--blue)', fontSize: '10px', display: 'block', marginTop: '2px' }}>(includes {coverageTeachingHours.toFixed(1)}h coverage)</small>}
                       </div>
                       <div className="kpi">
-                        <span>Daily Avg Teaching</span>
+                        <span>Average per Day</span>
                         <strong>{dailyAvgTeachingHours} hrs</strong>
                       </div>
                       <div className="kpi">
-                        <span>Overload Hours</span>
+                        <span>Overload per Day</span>
+                        <strong>{dailyOverloadHours} hrs</strong>
+                      </div>
+                      <div className="kpi">
+                        <span>Overload per Week</span>
                         <strong>{teachingOverloadHours} hrs</strong>
-                      </div>
-                      <div className="kpi">
-                        <span>Weekly Teaching-Related</span>
-                        <strong>{weeklyRelatedHours} hrs</strong>
-                        {coverageRelatedHours > 0 && <small style={{ color: 'var(--blue)', fontSize: '10px', display: 'block', marginTop: '2px' }}>(includes {coverageRelatedHours.toFixed(1)}h coverage)</small>}
-                      </div>
-                      <div className="kpi">
-                        <span>Weekly Administrative</span>
-                        <strong>{weeklyAdminHours} hrs</strong>
-                        {coverageAdminHours > 0 && <small style={{ color: 'var(--blue)', fontSize: '10px', display: 'block', marginTop: '2px' }}>(includes {coverageAdminHours.toFixed(1)}h coverage)</small>}
                       </div>
                     </div>
 
@@ -3918,24 +4054,24 @@ export default function Workload() {
                         <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>
                           {layoutType === 'list' && (currentPerson.workloadRows || []).length > 0 && (
                             <div style={{
-                              display: 'flex',
+                              display: 'grid',
+                              gridTemplateColumns: 'minmax(140px, 1fr) minmax(160px, 1.2fr) 135px 135px auto 90px',
                               gap: '12px',
+                              alignItems: 'center',
                               padding: '8px 16px',
                               fontWeight: '700',
                               fontSize: '11px',
                               color: '#64748b',
                               textTransform: 'uppercase',
                               borderBottom: '1.5px solid var(--line)',
-                              marginBottom: '12px'
+                              marginBottom: '8px'
                             }}>
-                              <div style={{ width: '120px' }}>Category</div>
-                              <div style={{ width: '120px' }}>Grade</div>
-                              <div style={{ width: '160px' }}>Section</div>
-                              <div style={{ width: '160px' }}>Subject</div>
-                              <div style={{ width: '90px' }}>Start Time</div>
-                              <div style={{ width: '90px' }}>End Time</div>
-                              <div style={{ flex: 1 }}>Usual Days</div>
-                              <div style={{ width: '90px', textAlign: 'right' }}>Actions</div>
+                              <div>Section</div>
+                              <div>Subject</div>
+                              <div>Start Time</div>
+                              <div>End Time</div>
+                              <div>Usual Days</div>
+                              <div style={{ textAlign: 'right' }}>Actions</div>
                             </div>
                           )}
 
@@ -3990,8 +4126,6 @@ export default function Workload() {
                               const cardRowId = row.id || `workload-row-${idx}`;
                               const isNewlyAdded = newlyAddedWorkloadId && (String(row.id) === String(newlyAddedWorkloadId) || String(cardRowId) === String(newlyAddedWorkloadId));
 
-                              const currentSecId = String(row.sectionId || row.section_id || '');
-
                               const cardHasError = hasConflict;
 
                               return (
@@ -4005,9 +4139,6 @@ export default function Workload() {
                                   style={{
                                     ...(layoutType === 'list'
                                       ? {
-                                          display: 'flex',
-                                          gap: '12px',
-                                          alignItems: 'center',
                                           padding: '10px 16px',
                                           borderBottom: '1px solid var(--line)',
                                           background: cardHasError ? '#FEF2F2' : 'white',
@@ -4021,52 +4152,10 @@ export default function Workload() {
                                     <span className="badge-new-item">Just Added</span>
                                   )}
 
-
-
-
                                   {layoutType === 'list' ? (
-                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', width: '100%' }}>
-                                      {/* Category */}
-                                      <div style={{ width: '120px' }}>
-                                        <SearchableSelect
-                                          disabled={row.subject === 'ADVISORY'}
-                                          value={row.category || 'Elementary'}
-                                          onChange={(e) => {
-                                            const cat = e.target.value;
-                                            const grades = GRADE_LEVELS_BY_CATEGORY[cat] || [];
-                                            const newGrade = grades[0] || 'Grade 1';
-                                            const newSubjects = getSubjectsForGrade(newGrade, cat);
-                                            updateWorkloadRowFields(idx, {
-                                              category: cat,
-                                              gradeLevel: newGrade,
-                                              sectionId: '',
-                                              subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY') || '')
-                                            });
-                                          }}
-                                          options={(getExpandedOfferings() || ['Elementary']).map(c => ({ value: c, label: c }))}
-                                        />
-                                      </div>
-
-                                      {/* Grade Level */}
-                                      <div style={{ width: '120px' }}>
-                                        <SearchableSelect
-                                          disabled={row.subject === 'ADVISORY'}
-                                          value={row.gradeLevel || ''}
-                                          onChange={(e) => {
-                                            const g = e.target.value;
-                                            const newSubjects = getSubjectsForGrade(g, row.category || 'Elementary');
-                                            updateWorkloadRowFields(idx, {
-                                              gradeLevel: g,
-                                              sectionId: '',
-                                              subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY') || '')
-                                            });
-                                          }}
-                                          options={(GRADE_LEVELS_BY_CATEGORY[row.category || 'Elementary'] || []).map(g => ({ value: g, label: g }))}
-                                        />
-                                      </div>
-
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(160px, 1.2fr) 135px 135px auto 90px', gap: '12px', alignItems: 'center', width: '100%' }}>
                                       {/* Section */}
-                                      <div style={{ width: '160px' }}>
+                                      <div>
                                         {(() => {
                                           const assignedGrades = getAssignedGradeLevels(currentPerson);
                                           const filteredSections = (classSections || []).filter(s => {
@@ -4110,7 +4199,7 @@ export default function Workload() {
                                       </div>
 
                                       {/* Subject */}
-                                      <div style={{ width: '160px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {(() => {
                                           const currentSecId = String(row.sectionId || row.section_id || '');
                                           const currentSub = row.subject || row.subject_name || '';
@@ -4179,57 +4268,89 @@ export default function Workload() {
                                         )}
                                       </div>
 
-                                      {/* Start Time */}
-                                      <div style={{ width: '90px' }}>
-                                        <input type="time" list="school-times" value={row.startTime} onChange={(e) => updateWorkloadRow(idx, 'startTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)' }} />
-                                      </div>
+                                      {/* Start & End Time / Fixed Duration */}
+                                      {row.subject === 'ADVISORY' ? (
+                                        <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                          <span style={{ fontSize: '11px', color: '#0284c7', background: '#e0f2fe', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold' }}>
+                                            ⏱️ 60 Mins / Day (Fixed)
+                                          </span>
+                                        </div>
+                                      ) : row.subject === 'HGP' ? (
+                                        <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>HGP:</span>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max="60"
+                                            value={row.hgpMinutes !== undefined ? row.hgpMinutes : 60}
+                                            onChange={(e) => updateWorkloadRow(idx, 'hgpMinutes', Math.min(60, Math.max(1, parseInt(e.target.value) || 0)))}
+                                            style={{ width: '60px', padding: '4px 6px', borderRadius: '6px', border: '1.5px solid var(--line)', textAlign: 'center', fontWeight: 'bold', fontSize: '12px' }}
+                                          />
+                                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>mins</span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          {/* Start Time */}
+                                          <div>
+                                            <input type="time" list="school-times" value={row.startTime} onChange={(e) => updateWorkloadRow(idx, 'startTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)' }} />
+                                          </div>
 
-                                      {/* End Time */}
-                                      <div style={{ width: '90px' }}>
-                                        <input type="time" list="school-times" value={row.endTime} onChange={(e) => updateWorkloadRow(idx, 'endTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)' }} />
-                                      </div>
+                                          {/* End Time */}
+                                          <div>
+                                            <input type="time" list="school-times" value={row.endTime} onChange={(e) => updateWorkloadRow(idx, 'endTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)' }} />
+                                          </div>
+                                        </>
+                                      )}
 
                                       {/* Usual Days */}
-                                      <div style={{ flex: 1, minWidth: '150px' }}>
+                                      <div>
                                         <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-                                          {(row.subject === 'HGP' ? ['M', 'T', 'W', 'TH', 'F'] : ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN']).map(day => (
-                                            <div
-                                              key={day}
-                                              onClick={() => toggleWorkloadDay(idx, day)}
-                                              style={{
-                                                padding: '4px 8px',
-                                                fontSize: '11px',
-                                                minWidth: '28px',
-                                                textAlign: 'center',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                                fontWeight: 'bold',
-                                                background: row.days?.includes(day) ? 'linear-gradient(180deg, var(--blue), var(--navy))' : '#f1f5f9',
-                                                color: row.days?.includes(day) ? 'white' : '#475569',
-                                                border: '1px solid transparent',
-                                                transition: 'all 0.15s'
-                                              }}
-                                              title={day === 'M' ? 'Monday' : day === 'T' ? 'Tuesday' : day === 'W' ? 'Wednesday' : day === 'TH' ? 'Thursday' : day === 'F' ? 'Friday' : day === 'SAT' ? 'Saturday' : 'Sunday'}
-                                            >
-                                              {day}
-                                            </div>
-                                          ))}
+                                          {(() => {
+                                            const isHgp = row.subject === 'HGP';
+                                            const advRow = isHgp ? (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (String(r.sectionId) === String(row.sectionId) || (!r.sectionId && !row.sectionId))) : null;
+                                            const advDays = advRow ? (advRow.days || []) : ['M', 'T', 'W', 'TH', 'F'];
+
+                                            return (isHgp ? ['M', 'T', 'W', 'TH', 'F'] : ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN']).map(day => {
+                                              const isAllowed = !isHgp || advDays.includes(day);
+                                              const isChecked = row.days?.includes(day);
+                                              return (
+                                                <div
+                                                  key={day}
+                                                  onClick={() => {
+                                                    if (isAllowed) toggleWorkloadDay(idx, day);
+                                                  }}
+                                                  style={{
+                                                    padding: '4px 8px',
+                                                    fontSize: '11px',
+                                                    minWidth: '28px',
+                                                    textAlign: 'center',
+                                                    borderRadius: '6px',
+                                                    cursor: isAllowed ? 'pointer' : 'not-allowed',
+                                                    fontWeight: 'bold',
+                                                    background: isChecked ? 'linear-gradient(180deg, var(--blue), var(--navy))' : (isAllowed ? '#f1f5f9' : '#e2e8f0'),
+                                                    color: isChecked ? 'white' : (isAllowed ? '#475569' : '#94a3b8'),
+                                                    border: '1px solid transparent',
+                                                    opacity: isAllowed ? 1 : 0.45,
+                                                    transition: 'all 0.15s'
+                                                  }}
+                                                  title={!isAllowed ? `Day ${day} is not selected in ADVISORY` : (day === 'M' ? 'Monday' : day === 'T' ? 'Tuesday' : day === 'W' ? 'Wednesday' : day === 'TH' ? 'Thursday' : day === 'F' ? 'Friday' : day === 'SAT' ? 'Saturday' : 'Sunday')}
+                                                >
+                                                  {day}
+                                                </div>
+                                              );
+                                            });
+                                          })()}
                                         </div>
                                       </div>
 
                                       {/* Action Button */}
-                                      <div style={{ width: '90px', display: 'flex', justifyContent: 'flex-end' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                                         {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
-                                          <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', paddingRight: '8px' }}>Locked 🔒</span>
+                                          <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>Locked 🔒</span>
                                         ) : (
-                                          <button className="btn danger workload-remove-btn" type="button" onClick={() => removeWorkloadRow(idx)} style={{ minHeight: '30px', padding: '0 10px', fontSize: '12px' }}>Remove</button>
+                                          <button className="btn danger sm" type="button" onClick={() => removeWorkloadRow(idx)}>Remove</button>
                                         )}
                                       </div>
-                                      {hasConflict && (
-                                        <div style={{ color: '#EF4444', fontSize: '10px', fontWeight: 'bold', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                          ⚠️ Time conflict with another period.
-                                        </div>
-                                      )}
                                     </div>
                                   ) : (
                                     <>
@@ -4395,14 +4516,22 @@ export default function Workload() {
                                             })()}
                                           </div>
                                         )}
-                                        <div>
-                                          <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
-                                          <input type="time" list="school-times" value={row.startTime} onChange={(e) => updateWorkloadRow(idx, 'startTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }} />
-                                        </div>
-                                        <div>
-                                          <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>End Time</label>
-                                          <input type="time" list="school-times" value={row.endTime} onChange={(e) => updateWorkloadRow(idx, 'endTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }} />
-                                        </div>
+                                        {row.subject === 'ADVISORY' ? (
+                                           <div style={{ gridColumn: '1 / -1', padding: '8px 12px', background: '#e0f2fe', borderRadius: '6px', textAlign: 'center', color: '#0284c7', fontSize: '11px', fontWeight: 'bold' }}>
+                                             ⏱️ 60 Mins / Day (Fixed Duration)
+                                           </div>
+                                         ) : (
+                                           <>
+                                             <div>
+                                               <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
+                                               <input type="time" list="school-times" value={row.startTime} onChange={(e) => updateWorkloadRow(idx, 'startTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }} />
+                                             </div>
+                                             <div>
+                                               <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>End Time</label>
+                                               <input type="time" list="school-times" value={row.endTime} onChange={(e) => updateWorkloadRow(idx, 'endTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }} />
+                                             </div>
+                                           </>
+                                         )}
                                       </div>
 
                                       {/* Day chips */}
