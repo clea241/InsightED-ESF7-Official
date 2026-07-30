@@ -17,7 +17,7 @@ async function main() {
     await db.query(`DELETE FROM schools WHERE school_id = '199999'`);
     await db.query(`
       INSERT INTO schools (id, school_id, school_name, region, division, district, school_year, number_of_shifts, curricular_offering)
-      VALUES ('sch-199999', '199999', 'TEST ELEMENTARY SCHOOL', 'REGION VIII', 'SAMAR (WESTERN SAMAR)', 'BASEY I', 'SY 26-27', 1, ARRAY['Elementary'])
+      VALUES ('sch-199999', '199999', 'TEST K-12 INTEGRATED SCHOOL', 'REGION VIII', 'SAMAR (WESTERN SAMAR)', 'BASEY I', 'SY 26-27', 1, ARRAY['Kindergarten', 'Elementary', 'Junior High School', 'Senior High School', 'K-12', 'Kinder', 'Elementary', 'JHS', 'SHS'])
     `);
     console.log('✅ School created directly in insighted_esf7 database.');
 

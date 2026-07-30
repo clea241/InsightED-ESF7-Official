@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ESF7UploadModal from '../components/ESF7UploadModal';
+import { FiUploadCloud } from 'react-icons/fi';
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
   const { personnel, getValidationIssues } = useApp();
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   const ownedPersonnel = personnel.filter(p => !p.isShared);
   
@@ -81,6 +84,47 @@ export default function Dashboard() {
 
   return (
     <section id="dashboard" className="view premium-dashboard">
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+        background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+        padding: '16px 24px',
+        borderRadius: '14px',
+        color: '#FFFFFF',
+        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+      }}>
+        <div>
+          <h2 style={{ fontSize: '18px', fontWeight: '800', margin: 0, color: '#F8FAFC', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            ⚡ Automatic eSF7 File Harvester
+          </h2>
+          <p style={{ fontSize: '13px', color: '#94A3B8', margin: '4px 0 0 0' }}>
+            Upload your official DepEd eSF7 spreadsheet (.xlsb) to auto-populate personnel records & workload schedules in seconds.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsUploadModalOpen(true)}
+          style={{
+            background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: '10px',
+            padding: '10px 20px',
+            fontSize: '13px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.4)'
+          }}
+        >
+          <FiUploadCloud style={{ fontSize: '18px' }} /> Upload eSF7 File (.xlsb)
+        </button>
+      </div>
+
       <div className="premium-kpis">
         <div className="premium-kpi-card">
           <div className="premium-kpi-title">👥 Total Personnel</div>
@@ -202,6 +246,11 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <ESF7UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+      />
     </section>
   );
 }

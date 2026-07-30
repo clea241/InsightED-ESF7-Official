@@ -142,9 +142,66 @@ export default function Overload() {
   const [transferEndDate, setTransferEndDate] = useState('');
   const [selectedTransferSlots, setSelectedTransferSlots] = useState({}); // { rowIdx: substituteTeacherId }
 
-  // Overload Reasons state (Step 4)
+  // Work Immersion form state (Step 4)
+  const [workImmersionTeacherId, setWorkImmersionTeacherId] = useState('');
+  const [workImmersionMonth, setWorkImmersionMonth] = useState('June');
+  const [workImmersionData, setWorkImmersionData] = useState({}); // { [dayInt]: minutes }
+  const [workImmersionLoading, setWorkImmersionLoading] = useState(false);
+
+  // Overload Reasons state (Step 5)
   const [overloadReasonsMap, setOverloadReasonsMap] = useState({});
   const [activeReasonModalTeacher, setActiveReasonModalTeacher] = useState(null);
+
+  // Fetch Work Immersion data when Step 4 is active
+  useEffect(() => {
+    if (activeStep !== 4 || !workImmersionTeacherId) return;
+    let isMounted = true;
+    setWorkImmersionLoading(true);
+    const sy = schoolInfo?.schoolYear || 'SY 26-27';
+    api.getWorkImmersion({
+      personnelId: workImmersionTeacherId,
+      schoolYear: sy,
+      month: workImmersionMonth
+    })
+      .then(res => {
+        if (!isMounted) return;
+        const rows = res.rows || [];
+        const data = {};
+        rows.forEach(r => { data[r.day] = r.minutes; });
+        setWorkImmersionData(data);
+      })
+      .catch(err => {
+        console.error('Failed to fetch work immersion data:', err);
+      })
+      .finally(() => {
+        if (isMounted) setWorkImmersionLoading(false);
+      });
+    return () => { isMounted = false; };
+  }, [activeStep, workImmersionTeacherId, workImmersionMonth, schoolInfo?.schoolYear]);
+
+  const handleSaveWorkImmersion = async (day, minutes) => {
+    if (!workImmersionTeacherId) return;
+    const sy = schoolInfo?.schoolYear || 'SY 26-27';
+
+    setWorkImmersionData(prev => ({
+      ...prev,
+      [day]: minutes
+    }));
+
+    try {
+      await api.saveWorkImmersion({
+        personnelId: workImmersionTeacherId,
+        schoolYear: sy,
+        month: workImmersionMonth,
+        day,
+        minutes
+      });
+      showToast(`Work immersion for day ${day} updated`, 'success');
+    } catch (err) {
+      console.error('Failed to save work immersion minutes:', err);
+      showToast('Failed to save work immersion minutes', 'error');
+    }
+  };
 
   useEffect(() => {
     const fetchReasons = async () => {
@@ -721,8 +778,8 @@ export default function Overload() {
         </div>
       </header>
 
-      {/* 4-Step Wizard Navigation Stepper */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '8px' }}>
+      {/* 5-Step Wizard Navigation Stepper */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '8px' }}>
         <button 
           onClick={() => setActiveStep(1)}
           style={{
@@ -796,6 +853,25 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 4</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>💼 Work Immersion (for SHS)</div>
+        </button>
+
+        <button 
+          onClick={() => setActiveStep(5)}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '14px',
+            border: '2px solid',
+            borderColor: activeStep === 5 ? 'var(--blue)' : 'var(--line)',
+            background: activeStep === 5 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+            color: activeStep === 5 ? 'var(--navy)' : 'var(--muted)',
+            fontWeight: 'bold',
+            textAlign: 'left',
+            cursor: 'pointer',
+            boxShadow: activeStep === 5 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
+          }}
+        >
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 5</div>
           <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📈 Teaching Overload</div>
         </button>
       </div>
@@ -1627,8 +1703,151 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 4: Computation of Teaching Overload */}
+      {/* STEP 4: Work Immersion (for SHS) */}
       {activeStep === 4 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '20px' }}>
+          <article className="card">
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)' }}>Work Immersion Details</h3>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4 }}>
+                Select a Senior High School teacher and month to record daily work immersion minutes.
+              </p>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SELECT TEACHER</label>
+                <SearchableDropdown
+                  options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}`)}
+                  value={activePersonnel.find(p => p.id === workImmersionTeacherId) ? (() => {
+                    const p = activePersonnel.find(p => p.id === workImmersionTeacherId);
+                    return `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}`;
+                  })() : ''}
+                  onChange={(val) => {
+                    const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}` === val);
+                    setWorkImmersionTeacherId(p ? p.id : '');
+                  }}
+                  placeholder="Select teacher..."
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SELECT MONTH</label>
+                <select
+                  value={workImmersionMonth}
+                  onChange={(e) => setWorkImmersionMonth(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1.5px solid var(--line)', background: 'white' }}
+                >
+                  {MONTHS_LIST.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+
+              <button
+                className="btn primary"
+                onClick={() => setActiveStep(5)}
+                disabled={!workImmersionTeacherId}
+                style={{ marginTop: '10px', width: '100%', padding: '12px', fontWeight: 'bold' }}
+              >
+                Proceed to Step 5 (Teaching Overload) →
+              </button>
+            </div>
+          </article>
+
+          <article className="card">
+            <div className="card-inner" style={{ padding: '20px' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '6px', fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)' }}>Work Immersion Calendar</h3>
+              <p style={{ marginBottom: '16px', fontSize: '12px', color: 'var(--muted)' }}>
+                Enter the number of minutes each teacher performed work immersion activities per day. Changes save automatically when moving between fields.
+              </p>
+
+              {!workImmersionTeacherId ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '13px' }}>
+                  👈 Please select a teacher on the left to record work immersion minutes.
+                </div>
+              ) : workImmersionLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '13px' }}>
+                  Loading work immersion records...
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '12px', color: 'var(--navy)', padding: '6px 0', background: '#F8FAFC', borderRadius: '6px' }}>
+                      {d}
+                    </div>
+                  ))}
+                  {(() => {
+                    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                    const monthIdx = monthNames.indexOf(workImmersionMonth) !== -1 ? monthNames.indexOf(workImmersionMonth) : 5;
+                    const syYearStr = schoolInfo?.schoolYear || 'SY 26-27';
+                    const years = syYearStr.match(/\d+/g) || ['26', '27'];
+                    const startYear = 2000 + parseInt(years[0], 10);
+                    const endYear = 2000 + parseInt(years[1] || years[0], 10);
+                    const yearInt = monthIdx >= 5 ? startYear : endYear;
+
+                    const firstDayOfWeek = new Date(yearInt, monthIdx, 1).getDay();
+                    const daysInMonth = new Date(yearInt, monthIdx + 1, 0).getDate();
+                    const cells = [];
+
+                    for (let i = 0; i < firstDayOfWeek; i++) {
+                      cells.push(<div key={`pad-${i}`} style={{ background: '#f8fafc', borderRadius: '8px', minHeight: '60px' }} />);
+                    }
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                      const mins = workImmersionData[day] ?? 0;
+                      cells.push(
+                        <div
+                          key={day}
+                          style={{
+                            background: mins > 0 ? '#EFF6FF' : '#FFFFFF',
+                            border: mins > 0 ? '1.5px solid #BFDBFE' : '1px solid var(--line)',
+                            borderRadius: '8px',
+                            padding: '6px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            minHeight: '60px'
+                          }}
+                        >
+                          <div style={{ fontSize: '11px', fontWeight: 'bold', color: mins > 0 ? '#1E40AF' : '#64748B', marginBottom: '4px' }}>
+                            {day}
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            max="480"
+                            placeholder="0"
+                            defaultValue={mins === 0 ? '' : mins}
+                            key={`${workImmersionTeacherId}-${workImmersionMonth}-${day}-${mins}`}
+                            onBlur={(e) => {
+                              const val = parseInt(e.target.value, 10) || 0;
+                              handleSaveWorkImmersion(day, val);
+                            }}
+                            style={{
+                              width: '100%',
+                              border: '1px solid var(--line)',
+                              borderRadius: '6px',
+                              background: 'white',
+                              textAlign: 'center',
+                              fontSize: '12px',
+                              fontWeight: 'bold',
+                              color: 'var(--navy)',
+                              padding: '4px 0'
+                            }}
+                          />
+                        </div>
+                      );
+                    }
+                    return cells;
+                  })()}
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+
+      {/* STEP 5: Computation of Teaching Overload */}
+      {activeStep === 5 && (
         <article className="card">
           <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>

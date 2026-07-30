@@ -49,6 +49,14 @@ export const api = {
     });
     return res.json();
   },
+  importBulkHarvester: async (schoolId, personnelList) => {
+    const res = await fetchWithAuth(`${API_BASE}/personnel/bulk-harvester-import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolId, personnelList })
+    });
+    return res.json();
+  },
   addPersonnel: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel`, {
       method: 'POST',
@@ -245,6 +253,39 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, schoolYear, term, reasons })
     });
+    return res.json();
+  },
+
+  // Feature A — Learning Area Matrix management
+  getLearningAreas: async (personnelId) => {
+    const res = await fetchWithAuth(`${API_BASE}/learning-areas?personnelId=${encodeURIComponent(personnelId)}`);
+    if (!res.ok) throw new Error('Failed to fetch learning areas');
+    return res.json();
+  },
+  saveLearningArea: async ({ personnelId, schoolYear, learningArea, checked }) => {
+    const res = await fetchWithAuth(`${API_BASE}/learning-areas/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, schoolYear, learningArea, checked })
+    });
+    if (!res.ok) throw new Error('Failed to save learning area');
+    return res.json();
+  },
+
+  // Feature B — Work Immersion management
+  getWorkImmersion: async ({ personnelId, schoolYear, month }) => {
+    const params = new URLSearchParams({ personnelId, schoolYear, month });
+    const res = await fetchWithAuth(`${API_BASE}/work-immersion?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch work immersion data');
+    return res.json();
+  },
+  saveWorkImmersion: async ({ personnelId, schoolYear, month, day, minutes }) => {
+    const res = await fetchWithAuth(`${API_BASE}/work-immersion/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, schoolYear, month, day, minutes })
+    });
+    if (!res.ok) throw new Error('Failed to save work immersion data');
     return res.json();
   },
 

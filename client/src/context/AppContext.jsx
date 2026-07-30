@@ -2149,6 +2149,39 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  const fetchPersonnel = async () => {
+    if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
+      const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
+      await deleteLocalDraft(draftKey);
+      try {
+        await api.deleteSchoolDraft(schoolInfo.schoolYear);
+      } catch (err) {}
+    }
+    initialLoadCompleteRef.current = false;
+    try {
+      const list = await fetchAndNormalizePersonnel();
+      setPersonnel(list || []);
+      if (list && list.length > 0) {
+        setActivePersonnelId(list[0].id);
+      }
+
+      const sections = await api.getSections();
+      setClassSections(sections || []);
+
+      const transfers = await api.getTransfers();
+      setWorkloadTransfers(transfers || []);
+
+      const absData = await api.getAbsences();
+      setAbsences(absData || []);
+
+      setHasUnsavedChanges(false);
+      initialLoadCompleteRef.current = true;
+      showToast("Updated roster from official database.");
+    } catch (err) {
+      console.error("Failed to fetch personnel from DB:", err);
+    }
+  };
+
   // Check duplicate values
   const hasDuplicate = (field, value, id) => {
     if (!value) return false;
@@ -2207,6 +2240,50 @@ export const AppProvider = ({ children }) => {
     // 3. Personnel Record Validation
     personnel.forEach(p => {
       const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.id;
+
+      // Timetable Verification Check
+      if (p.workloadVerified === false || p.needsTimeReview === true) {
+        issues.push({
+          id: `${p.id}-time-unverified`,
+          personId: p.id,
+          type: "warn",
+          category: "Workload Schedule",
+          message: `${name}: Auto-populated timetable schedule needs Start/End Time verification in Workload.`
+        });
+      }
+
+      // Check Workload Schedule Duration Errors (> 60m Elem/JHS, > 360m SHS, Kinder = exempt 3h)
+      const rows = p.workloadRows || [];
+      rows.forEach((r, rIdx) => {
+        if (r.startTime && r.endTime) {
+          const subStr = String(r.subject || r.task || '').toUpperCase();
+          const gStr = String(r.gradeLevel || '').toUpperCase();
+
+          // KINDER BLOCKS OF TIME is 3 Hours (180 mins) — exempt from 60-min limit!
+          if (subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER')) {
+            return;
+          }
+
+          const [sh, sm] = (r.startTime || '').split(':').map(Number);
+          const [eh, em] = (r.endTime || '').split(':').map(Number);
+          if (!isNaN(sh) && !isNaN(eh)) {
+            const diffMins = (eh * 60 + em) - (sh * 60 + sm);
+            const catStr = String(r.category || '').toUpperCase();
+            const isSHS = gStr.includes('11') || gStr.includes('12') || catStr.includes('SHS');
+            const maxMins = isSHS ? 360 : 60;
+
+            if (diffMins > maxMins) {
+              issues.push({
+                id: `${p.id}-duration-err-${rIdx}`,
+                personId: p.id,
+                type: "error",
+                category: "Workload Schedule",
+                message: `${name}: ${r.subject || 'Subject'} period duration is ${diffMins} mins (Exceeds maximum ${maxMins} mins limit).`
+              });
+            }
+          }
+        }
+      });
 
       // Required Basic Fields
       const requiredFields = [
@@ -2387,6 +2464,7 @@ export const AppProvider = ({ children }) => {
       submissionStatus,
       setSubmissionStatus,
       resetToDatabase,
+      fetchPersonnel,
       incomingRequests,
       setIncomingRequests,
       outgoingRequests,

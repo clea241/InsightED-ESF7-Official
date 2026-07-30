@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ESF7UploadModal from './ESF7UploadModal';
+import { FiUploadCloud } from 'react-icons/fi';
 
 export default function Topbar() {
   const { schoolInfo, getValidationIssues, hasUnsavedChanges, isSyncing, resetToDatabase } = useApp();
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const issues = getValidationIssues();
   const errorCount = issues.filter(i => i.type === 'error').length;
 
@@ -14,6 +17,27 @@ export default function Topbar() {
         <p>School personnel profile, workload, validation, clustered deployment, and final verification workflow.</p>
       </div>
       <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          style={{
+            background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '6px 14px',
+            fontSize: '12px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
+          }}
+        >
+          <FiUploadCloud style={{ fontSize: '15px' }} /> Upload eSF7 (.xlsb)
+        </button>
+
         {hasUnsavedChanges && (
           <button 
             type="button" 
@@ -43,6 +67,11 @@ export default function Topbar() {
           </span>
         )}
       </div>
+
+      <ESF7UploadModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </header>
   );
 }

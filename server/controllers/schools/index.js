@@ -23,38 +23,64 @@ const db = require('../../db');
 // GET school info directly from unit1_school_identity
 router.get('/', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req);
-    let result;
-    if (schoolId) {
-      result = await insightEdPool.query('SELECT * FROM unit1_school_identity WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1', [schoolId]);
-    } else {
-      result = await insightEdPool.query('SELECT * FROM unit1_school_identity ORDER BY updated_at DESC LIMIT 1');
-    }
-    if (result.rows.length === 0) {
-      // Check local schools table in the ESF7 database first before using hardcoded fallback
-      const localResult = await db.query('SELECT * FROM schools WHERE school_id = $1 LIMIT 1', [schoolId]);
-      if (localResult.rows.length > 0) {
-        const localRow = localResult.rows[0];
-        return res.json({
-          schoolId: localRow.school_id,
-          schoolName: localRow.school_name,
-          region: localRow.region,
-          division: localRow.division,
-          district: localRow.district,
-          schoolYear: localRow.school_year || 'SY 26-27',
-          numberOfShifts: String(localRow.number_of_shifts || 1),
-          curricularOffering: Array.isArray(localRow.curricular_offering) ? localRow.curricular_offering : ['Elementary'],
-          subjectsConfig: localRow.subjects_config || null
-        });
+    const schoolId = getSchoolIdFromRequest(req) || '199999';
+
+    // 1. First check local ESF7 database for local school definitions (e.g. test school 199999)
+    const localRes = await db.query(
+      'SELECT * FROM schools WHERE school_id = $1 LIMIT 1',
+      [schoolId]
+    );
+
+    if (localRes.rows.length > 0) {
+      const localRow = localRes.rows[0];
+      let offerings = [];
+
+      if (String(schoolId) === '199999') {
+        offerings = ['Elementary', 'JHS', 'SHS'];
+      } else if (Array.isArray(localRow.curricular_offering)) {
+        const rawList = localRow.curricular_offering.map(o => String(o).toLowerCase());
+        if (rawList.some(o => o.includes('elem') || o.includes('primary') || o.includes('kinder'))) offerings.push('Elementary');
+        if (rawList.some(o => o.includes('jhs') || o.includes('junior') || o.includes('sec') || o.includes('high'))) offerings.push('JHS');
+        if (rawList.some(o => o.includes('shs') || o.includes('senior'))) offerings.push('SHS');
+        if (rawList.includes('k-12') || rawList.includes('all')) {
+          offerings = ['Elementary', 'JHS', 'SHS'];
+        }
       }
 
-      // Return a default fallback object matching the frontend shape
+      if (offerings.length === 0) {
+        offerings = ['Elementary', 'JHS', 'SHS'];
+      }
+
       return res.json({
-        schoolId: "123456",
-        schoolName: "Sample National High School",
-        region: "Region IV-A",
-        division: "Sample Division",
-        district: "Sample District",
+        schoolId: localRow.school_id || '199999',
+        schoolName: localRow.school_name || 'TEST K-12 INTEGRATED SCHOOL',
+        region: localRow.region || 'REGION VIII',
+        division: localRow.division || 'SAMAR (WESTERN SAMAR)',
+        district: localRow.district || 'BASEY I',
+        schoolYear: localRow.school_year || 'SY 26-27',
+        numberOfShifts: String(localRow.number_of_shifts || 1),
+        curricularOffering: Array.from(new Set(offerings)),
+        certifiedBy: localRow.certified_by || null,
+        certifiedSignature: localRow.certified_signature || null,
+        certifiedAt: localRow.certified_at || null,
+        subjectsConfig: localRow.subjects_config || null
+      });
+    }
+
+    // 2. Query main unit1_school_identity
+    let result = await insightEdPool.query('SELECT * FROM unit1_school_identity WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1', [schoolId]);
+
+    if (result.rows.length === 0) {
+      result = await insightEdPool.query('SELECT * FROM unit1_school_identity ORDER BY updated_at DESC LIMIT 1');
+    }
+
+    if (result.rows.length === 0) {
+      return res.json({
+        schoolId: schoolId || '199999',
+        schoolName: "TEST K-12 INTEGRATED SCHOOL",
+        region: "REGION VIII",
+        division: "SAMAR (WESTERN SAMAR)",
+        district: "BASEY I",
         schoolYear: "SY 26-27",
         numberOfShifts: "1",
         curricularOffering: ['Elementary', 'JHS', 'SHS'],
@@ -65,42 +91,38 @@ router.get('/', async (req, res) => {
     const row = result.rows[0];
 
     // Map curricular offering string to ESF7 UI check arrays
-    const offerings = [];
-    const dbOffering = (row.curricular_offering || '').toLowerCase();
-    if (dbOffering.includes('elementary') || dbOffering.includes('primary') || dbOffering.includes('purely')) {
-      offerings.push('Elementary');
-    }
-    if (dbOffering.includes('jhs') || dbOffering.includes('junior') || dbOffering.includes('secondary') || dbOffering.includes('high school')) {
-      offerings.push('JHS');
-    }
-    if (dbOffering.includes('shs') || dbOffering.includes('senior')) {
-      offerings.push('SHS');
-    }
-    if (offerings.length === 0) {
-      offerings.push('Elementary', 'JHS', 'SHS');
+    let offerings = [];
+    if (String(schoolId) === '199999') {
+      offerings = ['Elementary', 'JHS', 'SHS'];
+    } else {
+      const dbOffering = (row.curricular_offering || '').toLowerCase();
+      if (dbOffering.includes('elementary') || dbOffering.includes('primary') || dbOffering.includes('purely') || dbOffering.includes('kinder')) {
+        offerings.push('Elementary');
+      }
+      if (dbOffering.includes('jhs') || dbOffering.includes('junior') || dbOffering.includes('secondary') || dbOffering.includes('high school')) {
+        offerings.push('JHS');
+      }
+      if (dbOffering.includes('shs') || dbOffering.includes('senior')) {
+        offerings.push('SHS');
+      }
+      if (offerings.length === 0) {
+        offerings = ['Elementary', 'JHS', 'SHS'];
+      }
     }
 
-    // Fetch certification status and subjects_config from local ESF7 schools table
-    const localRes = await db.query(
-      'SELECT certified_by, certified_signature, certified_at, subjects_config FROM schools WHERE school_id = $1 LIMIT 1',
-      [schoolId || '123456']
-    );
-    const localRow = localRes.rows[0] || {};
-
-    // Return mapped fields matching ESF7 expected shape
     res.json({
-      schoolId: row.school_id || '123456',
-      schoolName: row.school_name || '',
+      schoolId: row.school_id || schoolId,
+      schoolName: String(schoolId) === '199999' ? 'TEST K-12 INTEGRATED SCHOOL' : (row.school_name || ''),
       region: row.region || '',
       division: row.division || '',
       district: row.district || '',
       schoolYear: 'SY 26-27',
-      numberOfShifts: "1", // read-only default
-      curricularOffering: offerings,
-      certifiedBy: localRow.certified_by || null,
-      certifiedSignature: localRow.certified_signature || null,
-      certifiedAt: localRow.certified_at || null,
-      subjectsConfig: localRow.subjects_config || null
+      numberOfShifts: "1",
+      curricularOffering: Array.from(new Set(offerings)),
+      certifiedBy: null,
+      certifiedSignature: null,
+      certifiedAt: null,
+      subjectsConfig: null
     });
 
   } catch (err) {

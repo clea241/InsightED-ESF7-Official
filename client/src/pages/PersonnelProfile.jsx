@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import SearchableDropdown from '../components/SearchableDropdown';
+import { api } from '../services/api';
 import {
   useApp,
   POSITION_OPTIONS_BY_CATEGORY,
@@ -17,6 +18,17 @@ import {
   TESDA_CERTIFICATION_OPTIONS,
   NEAP_TRAINING_OPTIONS
 } from '../context/AppContext';
+
+const LEARNING_AREAS = [
+  'Filipino', 'English', 'Mathematics', 'Science',
+  'Araling Panlipunan (AP)', 'Edukasyon sa Pagpapakatao (EsP)',
+  'Technology and Livelihood Education (TLE)', 'MAPEH',
+  'Mother Tongue', 'EPP', 'Computer/ICT'
+];
+
+const SCHOOL_YEARS = [
+  'SY 26-27', 'SY 25-26', 'SY 24-25', 'SY 23-24', 'SY 22-23'
+];
 
 function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false }) {
   const [showCalendar, setShowCalendar] = React.useState(false);
@@ -563,6 +575,11 @@ export default function PersonnelProfile() {
   const [showRa1080Modal, setShowRa1080Modal] = useState(false);
   const [ra1080InputText, setRa1080InputText] = useState('');
 
+  // Feature A: Learning Area Matrix State
+  const [learningAreaRows, setLearningAreaRows] = useState([]);
+  const [learningAreaLoading, setLearningAreaLoading] = useState(false);
+  const [checkedSet, setCheckedSet] = useState(new Set());
+
   // Sidebar search & filter states
   const [personnelSearch, setPersonnelSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -589,6 +606,61 @@ export default function PersonnelProfile() {
   }, [activePersonnelId, dbPerson]);
 
   const currentPerson = editPerson || dbPerson;
+
+  // Fetch Learning Areas for active personnel
+  useEffect(() => {
+    if (!currentPerson?.id) return;
+    let isMounted = true;
+    setLearningAreaLoading(true);
+    api.getLearningAreas(currentPerson.id)
+      .then(res => {
+        if (!isMounted) return;
+        const rows = res.rows || [];
+        setLearningAreaRows(rows);
+        const set = new Set(rows.map(r => `${r.school_year}||${r.learning_area}`));
+        setCheckedSet(set);
+      })
+      .catch(err => {
+        console.error('Failed to fetch learning areas:', err);
+      })
+      .finally(() => {
+        if (isMounted) setLearningAreaLoading(false);
+      });
+    return () => { isMounted = false; };
+  }, [currentPerson?.id]);
+
+  const handleToggleLearningArea = async (sy, la) => {
+    if (!currentPerson?.id) return;
+    const key = `${sy}||${la}`;
+    const currentlyChecked = checkedSet.has(key);
+    const newChecked = !currentlyChecked;
+
+    setCheckedSet(prev => {
+      const next = new Set(prev);
+      if (newChecked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+    try {
+      await api.saveLearningArea({
+        personnelId: currentPerson.id,
+        schoolYear: sy,
+        learningArea: la,
+        checked: newChecked
+      });
+      showToast(`Learning area ${newChecked ? 'added' : 'removed'}`, 'success');
+    } catch (err) {
+      console.error('Failed to toggle learning area:', err);
+      setCheckedSet(prev => {
+        const next = new Set(prev);
+        if (currentlyChecked) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+      showToast('Failed to save learning area toggle', 'error');
+    }
+  };
 
   useEffect(() => {
     if (currentPerson && currentPerson.isShared && activeTab !== 'identity') {
@@ -885,6 +957,98 @@ export default function PersonnelProfile() {
   };
 
   // Filtered list for sidebar
+  const handleAutoPopulateMissingInfo = () => {
+    let populatedCount = 0;
+    const updatedPersonnelList = (personnel || []).map(p => {
+      let isModified = false;
+      const updatedP = { ...p };
+
+      // 1. Position-based type classification
+      if (!updatedP.type || updatedP.type === 'teaching') {
+        const posUpper = String(updatedP.position || '').toUpperCase();
+        if (posUpper.includes('PRINCIPAL') || posUpper.includes('TIC') || posUpper.includes('HEAD TEACHER') || posUpper.includes('SUPERVISOR')) {
+          updatedP.type = 'teaching-related';
+          isModified = true;
+        } else if (posUpper.includes('ADMINISTRATIVE') || posUpper.includes('ACCOUNTANT') || posUpper.includes('CLERK') || posUpper.includes('DISBURSING') || posUpper.includes('DRIVER') || posUpper.includes('NURSE') || posUpper.includes('SECURITY') || posUpper.includes('UTILITY') || posUpper.includes('ADAS')) {
+          updatedP.type = 'non-teaching';
+          isModified = true;
+        }
+      }
+
+      // 2. Sex at birth default
+      if (!updatedP.sexAtBirth) {
+        updatedP.sexAtBirth = updatedP.sex ? (String(updatedP.sex).toUpperCase().startsWith('M') ? 'Male' : 'Female') : 'Male';
+        isModified = true;
+      }
+
+      // 3. Fund Source default
+      if (!updatedP.fundSource) {
+        updatedP.fundSource = 'NATIONAL';
+        isModified = true;
+      }
+
+      // 4. Nature of Appointment default
+      if (!updatedP.natureOfAppointment) {
+        updatedP.natureOfAppointment = updatedP.appointmentStatus || 'REGULAR PERMANENT';
+        isModified = true;
+      }
+
+      // 5. Hiring Arrangement default
+      if (!updatedP.hiringArrangement) {
+        updatedP.hiringArrangement = 'Regular/Permanent';
+        isModified = true;
+      }
+
+      // 6. Status of Deployment default
+      if (!updatedP.deploymentStatus) {
+        updatedP.deploymentStatus = 'Stationed';
+        isModified = true;
+      }
+
+      // 7. Salutation default
+      if (!updatedP.salutation) {
+        updatedP.salutation = updatedP.sexAtBirth === 'Female' ? 'MS.' : 'MR.';
+        isModified = true;
+      }
+
+      // 8. Assigned Grade Levels from workloads & classSections
+      const assigned = [...(Array.isArray(updatedP.assignedGradeLevels) ? updatedP.assignedGradeLevels : [])];
+      (classSections || []).forEach(s => {
+        if (s.advisorId && String(s.advisorId) === String(updatedP.id) && !assigned.includes(s.gradeLevel)) {
+          assigned.push(s.gradeLevel);
+          isModified = true;
+        }
+      });
+      (updatedP.workloadRows || []).forEach(r => {
+        if (r.gradeLevel && !assigned.includes(r.gradeLevel)) {
+          assigned.push(r.gradeLevel);
+          isModified = true;
+        }
+      });
+      if (assigned.length > 0) {
+        updatedP.assignedGradeLevels = assigned;
+      }
+
+      if (isModified) {
+        populatedCount++;
+        localStorage.setItem(`draft_personnel_${updatedP.id}`, JSON.stringify(updatedP));
+      }
+
+      return updatedP;
+    });
+
+    if (populatedCount > 0) {
+      setPersonnel(updatedPersonnelList);
+      if (currentPerson) {
+        const found = updatedPersonnelList.find(x => x.id === currentPerson.id);
+        if (found) setEditPerson(found);
+      }
+      showToast(`✨ Auto-populated missing profile details for ${populatedCount} personnel!`, 'success');
+    } else {
+      showToast(`All personnel profiles are already complete!`, 'info');
+    }
+  };
+
   const sidebarPeople = nonDraftPersonnel.filter(p => {
     const matchesCat = categoryFilter === 'all' || p.type === categoryFilter;
     const fullName = `${p.firstName || ''} ${p.lastName || ''} ${p.position || ''}`.toLowerCase();
@@ -906,7 +1070,8 @@ export default function PersonnelProfile() {
     { tab: 'employment', label: 'Employment', icon: '💼' },
     { tab: 'education', label: 'Education', icon: '🎓' },
     { tab: 'development', label: 'L&D', icon: '📋' },
-    ...(currentPerson && currentPerson.type !== 'non-teaching' ? [{ tab: 'teaching', label: 'Teaching', icon: '📚' }] : [])
+    ...(currentPerson && currentPerson.type !== 'non-teaching' ? [{ tab: 'teaching', label: 'Teaching', icon: '📚' }] : []),
+    { tab: 'learning-area', label: 'Learning Area', icon: '📖' }
   ];
 
   return (
@@ -925,7 +1090,29 @@ export default function PersonnelProfile() {
           }}>
             {/* Header */}
             <div style={{ padding: '18px 16px 12px', borderBottom: '1.5px solid var(--line)' }}>
-              <h2 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: '800', color: 'var(--navy)' }}>Personnel Profiling</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--navy)' }}>Personnel Profiling</h2>
+                <button
+                  type="button"
+                  onClick={handleAutoPopulateMissingInfo}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Auto-fill missing profile details & classifications for all personnel"
+                >
+                  ✨ Auto-Populate
+                </button>
+              </div>
               <p style={{ margin: '0 0 12px', fontSize: '12px', color: 'var(--muted)' }}>{nonDraftPersonnel.length} personnel record{nonDraftPersonnel.length !== 1 ? 's' : ''}</p>
               {/* Search */}
               <div style={{ position: 'relative' }}>
@@ -1158,6 +1345,7 @@ export default function PersonnelProfile() {
                       {activeTab === 'education' && "🎓 Editing degree, major/minor, post-graduate degree, discipline, eligibility, and PRC specialization."}
                       {activeTab === 'development' && "📋 Editing NEAP trainings, TESDA NCs, certifications, and other professional development records."}
                       {activeTab === 'teaching' && "📚 Editing teaching grade level assignments."}
+                      {activeTab === 'learning-area' && "📖 Record taught learning areas per school year."}
                     </p>
 
                     <div className="form-grid profile-form-grid">
@@ -1628,7 +1816,7 @@ export default function PersonnelProfile() {
                                   checked={currentPerson.lastPromotionDate === 'N/A'}
                                   onChange={(e) => handleFieldChange('lastPromotionDate', e.target.checked ? 'N/A' : '')}
                                 />
-                                Never Promoted / N/A
+                                N/A
                               </label>
                             </div>
                             <DatePickerDropdowns
@@ -1648,7 +1836,7 @@ export default function PersonnelProfile() {
                                   checked={currentPerson.lastLateralMovementDate === 'N/A'}
                                   onChange={(e) => handleFieldChange('lastLateralMovementDate', e.target.checked ? 'N/A' : '')}
                                 />
-                                Not Applicable
+                                N/A
                               </label>
                             </div>
                             <DatePickerDropdowns
@@ -1668,7 +1856,7 @@ export default function PersonnelProfile() {
                                   checked={currentPerson.newStationDate === 'N/A'}
                                   onChange={(e) => handleFieldChange('newStationDate', e.target.checked ? 'N/A' : '')}
                                 />
-                                Not Applicable
+                                N/A
                               </label>
                             </div>
                             <DatePickerDropdowns
@@ -2135,6 +2323,49 @@ export default function PersonnelProfile() {
                             </div>
                           </div>
                         </>
+                      )}
+
+                      {activeTab === 'learning-area' && (
+                        <div style={{ gridColumn: '1 / -1', overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh' }}>
+                          {learningAreaLoading ? (
+                            <p style={{ padding: '1rem' }}>Loading learning areas...</p>
+                          ) : (
+                            <table style={{ borderCollapse: 'collapse', minWidth: '100%', fontSize: '0.8rem' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ position: 'sticky', left: 0, background: '#fff', padding: '6px 10px', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap', textAlign: 'left', zIndex: 2 }}>
+                                    School Year
+                                  </th>
+                                  {LEARNING_AREAS.map(la => (
+                                    <th key={la} style={{ padding: '6px 8px', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap', textAlign: 'center', writingMode: 'vertical-lr', transform: 'rotate(180deg)', maxHeight: '120px' }}>
+                                      {la}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {SCHOOL_YEARS.map(sy => (
+                                  <tr key={sy}>
+                                    <td style={{ position: 'sticky', left: 0, background: '#fff', padding: '5px 10px', borderBottom: '1px solid #e2e8f0', fontWeight: 600, whiteSpace: 'nowrap', zIndex: 1 }}>
+                                      {sy}
+                                    </td>
+                                    {LEARNING_AREAS.map(la => (
+                                      <td key={la} style={{ textAlign: 'center', padding: '5px 8px', borderBottom: '1px solid #e2e8f0' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={checkedSet.has(`${sy}||${la}`)}
+                                          onChange={() => handleToggleLearningArea(sy, la)}
+                                          disabled={currentPerson.isShared}
+                                          style={{ cursor: currentPerson.isShared ? 'not-allowed' : 'pointer', width: '16px', height: '16px' }}
+                                        />
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
                       )}
 
                     </div>

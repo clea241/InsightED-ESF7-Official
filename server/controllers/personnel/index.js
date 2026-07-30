@@ -371,9 +371,25 @@ router.get('/autofill-template', async (req, res) => {
       const rawName = teacher.name || '';
       const nameParts = rawName.includes(',') ? rawName.split(',').map(s => s.trim()) : [rawName, ''];
       
-      const lastName = isPilotTableSource ? nameParts[0] : (teacher.last || '');
-      const firstName = isPilotTableSource ? nameParts[1] : (teacher.first || '');
-      const middleName = isPilotTableSource ? 'N/A' : (teacher.middle || 'N/A');
+      let lastName = '';
+      let firstName = '';
+      let middleName = 'N/A';
+
+      if (isPilotTableSource) {
+        lastName = nameParts[0] || '';
+        const firstAndMiddle = (nameParts[1] || '').trim();
+        const firstParts = firstAndMiddle.split(' ');
+        if (firstParts.length > 1 && firstParts[firstParts.length - 1].length <= 2) {
+          middleName = firstParts.pop();
+          firstName = firstParts.join(' ');
+        } else {
+          firstName = firstAndMiddle;
+        }
+      } else {
+        lastName = teacher.last || '';
+        firstName = teacher.first || '';
+        middleName = teacher.middle || 'N/A';
+      }
       
       const sexAtBirth = (isPilotTableSource ? (teacher.sex || 'Female') : (teacher.gender || teacher.sex || teacher.sex_at_birth || 'Female')).toUpperCase();
 
@@ -671,6 +687,180 @@ router.put('/:id/school-head', async (req, res) => {
     await client.query('ROLLBACK');
     client.release();
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Bulk Harvester Import from eSF7 .xlsb file
+router.post('/bulk-harvester-import', async (req, res) => {
+  let schoolId = getSchoolIdFromRequest(req) || req.body.schoolId;
+  const { personnelList, schoolYear: reqSchoolYear } = req.body;
+
+  if (!schoolId) {
+    const firstSchool = await db.query('SELECT id FROM schools LIMIT 1');
+    if (firstSchool.rows.length > 0) {
+      schoolId = firstSchool.rows[0].id;
+    } else {
+      schoolId = 'SCH-123456';
+    }
+  }
+
+  if (!personnelList || !Array.isArray(personnelList) || personnelList.length === 0) {
+    return res.status(400).json({ error: 'No personnel data provided in request body.' });
+  }
+
+  const schoolRes = await db.query('SELECT school_year FROM schools WHERE id = $1 OR school_id = $1 LIMIT 1', [schoolId]);
+  const schoolYear = reqSchoolYear || (schoolRes.rows.length > 0 ? schoolRes.rows[0].school_year : 'SY 26-27');
+
+  const client = await db.pool.connect();
+  let importedPersonnelCount = 0;
+  let importedWorkloadCount = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (const p of personnelList) {
+      let personnelId;
+      const profilingCode = generateProfilingCode();
+
+      let existingRes;
+      if (p.tin && p.tin.length > 3) {
+        existingRes = await client.query(
+          'SELECT id FROM personnel WHERE (tin = $1 OR prn = $1) AND (school_id = $2 OR school_id = $3) LIMIT 1',
+          [p.tin, schoolId, schoolId.replace('SCH-', '')]
+        );
+      }
+      if (!existingRes || existingRes.rows.length === 0) {
+        existingRes = await client.query(
+          'SELECT id FROM personnel WHERE LOWER(last_name) = LOWER($1) AND LOWER(first_name) = LOWER($2) AND (school_id = $3 OR school_id = $4) LIMIT 1',
+          [p.lastName, p.firstName, schoolId, schoolId.replace('SCH-', '')]
+        );
+      }
+
+      if (existingRes && existingRes.rows.length > 0) {
+        personnelId = existingRes.rows[0].id;
+        await client.query(
+          `UPDATE personnel SET 
+            first_name = COALESCE($1, first_name),
+            middle_name = COALESCE($2, middle_name),
+            last_name = COALESCE($3, last_name),
+            sex_at_birth = COALESCE($4, sex_at_birth),
+            type = COALESCE($5, type),
+            tin = COALESCE(NULLIF($6, ''), tin),
+            updated_at = NOW()
+           WHERE id = $7`,
+          [p.firstName, p.middleName, p.lastName, p.sex, p.type, p.tin, personnelId]
+        );
+
+        await client.query(
+          `UPDATE personnel_employment SET
+            position = COALESCE($1, position),
+            fund_source = COALESCE($2, fund_source),
+            nature_of_appointment = COALESCE($3, nature_of_appointment),
+            updated_at = NOW()
+           WHERE personnel_id = $4`,
+          [p.position, p.fundSource, p.appointmentStatus, personnelId]
+        );
+
+        await client.query(
+          `UPDATE personnel_qualifications SET
+            college_degree = COALESCE($1, college_degree),
+            major = COALESCE($2, major),
+            minor = COALESCE($3, minor),
+            updated_at = NOW()
+           WHERE personnel_id = $4`,
+          [p.degree, p.major, p.minor, personnelId]
+        );
+      } else {
+        personnelId = generatePersonnelId();
+        const prn = p.tin ? `PRN-${p.tin}` : `PRN-${schoolId}-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+        const empId = generateEmploymentId();
+        const qualId = generateQualificationId();
+
+        await client.query(
+          `INSERT INTO personnel (
+            id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name,
+            sex_at_birth, civil_status, solo_parent, tin, no_tin, deped_email, deployment_status,
+            profiling_code, personal_verified, workload_verified
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+          [
+            personnelId, prn, schoolId, schoolYear, p.type || 'teaching', p.sex === 'Male' ? 'Mr.' : 'Ms.',
+            p.firstName, p.middleName || 'N/A', p.lastName, p.sex || 'Male', 'Single', false,
+            p.tin || null, !p.tin, `${p.firstName.toLowerCase().replace(/[^a-z0-9]/g,'')}.${p.lastName.toLowerCase().replace(/[^a-z0-9]/g,'')}@deped.gov.ph`,
+            'Stationed', profilingCode, true, true
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO personnel_employment (
+            id, personnel_id, position, fund_source, nature_of_appointment, hiring_arrangement,
+            first_service_date, last_promotion_date, new_station_date
+          ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), NOW())`,
+          [empId, personnelId, p.position || 'TEACHER I', p.fundSource || 'NATIONAL', p.appointmentStatus || 'REGULAR PERMANENT', 'Permanent']
+        );
+
+        await client.query(
+          `INSERT INTO personnel_qualifications (
+            id, personnel_id, college_degree, major, minor, post_graduate_degree, eligibility
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [qualId, personnelId, p.degree || 'BACHELOR', p.major || 'GENERAL EDUCATION', p.minor || 'N/A', 'N/A', 'LET']
+        );
+      }
+
+      importedPersonnelCount++;
+
+      if (p.workloads && Array.isArray(p.workloads) && p.workloads.length > 0) {
+        await client.query('DELETE FROM workload_rows WHERE personnel_id = $1 AND school_id = $2', [personnelId, schoolId]);
+
+        for (const w of p.workloads) {
+          let sectionId = null;
+
+          if (w.sectionName && w.sectionName.length > 0) {
+            const secRes = await client.query(
+              `SELECT id FROM class_sections WHERE (school_id = $1 OR school_id = $2) AND LOWER(section_name) = LOWER($3) LIMIT 1`,
+              [schoolId, schoolId.replace('SCH-', ''), w.sectionName]
+            );
+
+            if (secRes.rows.length > 0) {
+              sectionId = secRes.rows[0].id;
+            } else {
+              sectionId = `SEC-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+              await client.query(
+                `INSERT INTO class_sections (id, school_id, school_year, grade_level, section_name, section_type)
+                 VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+                [sectionId, schoolId, schoolYear, w.gradeLevel || 'MONO-GRADE', w.sectionName, 'MONO GRADE']
+              );
+            }
+          }
+
+          const wrkId = `WRK-${Date.now()}-${Math.floor(Math.random()*100000)}`;
+          await client.query(
+            `INSERT INTO workload_rows (
+              id, personnel_id, school_id, school_year, row_type, subject, task, grade_level, section_id, start_time, end_time, days
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [
+              wrkId, personnelId, schoolId, schoolYear, w.rowType || 'teaching', w.subject || w.task || 'General',
+              w.task || w.subject || '', w.gradeLevel || 'MONO-GRADE', sectionId, w.startTime || '08:00', w.endTime || '09:00',
+              w.days || ['M', 'T', 'W', 'TH', 'F']
+            ]
+          );
+          importedWorkloadCount++;
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: `eSF7 Harvester Import Complete! Imported ${importedPersonnelCount} personnel records and ${importedWorkloadCount} workload schedule items.`,
+      importedPersonnelCount,
+      importedWorkloadCount
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error in bulk-harvester-import:', err);
+    res.status(500).json({ error: err.message || 'Failed to import eSF7 data.' });
+  } finally {
+    client.release();
   }
 });
 

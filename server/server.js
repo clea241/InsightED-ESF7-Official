@@ -11,7 +11,8 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Routes wiring
 app.use('/api/auth', require('./controllers/auth'));
@@ -30,6 +31,8 @@ app.use('/api/requests', require('./controllers/requests'));
 app.use('/api/reports', require('./controllers/reports'));
 app.use('/api/allowances', require('./controllers/allowances'));
 app.use('/api/overload-reasons', require('./controllers/overload_reasons'));
+app.use('/api/learning-areas', require('./controllers/learningAreas/index.js'));
+app.use('/api/work-immersion', require('./controllers/workImmersion/index.js'));
 
 
 const queueWorker = require('./queue_worker');
@@ -115,6 +118,22 @@ const initDB = async () => {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE(personnel_id, school_year, term)
+      );
+      CREATE TABLE IF NOT EXISTS personnel_learning_areas (
+          id SERIAL PRIMARY KEY,
+          personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+          school_year TEXT NOT NULL,
+          learning_area TEXT NOT NULL,
+          UNIQUE(personnel_id, school_year, learning_area)
+      );
+      CREATE TABLE IF NOT EXISTS work_immersion_minutes (
+          id SERIAL PRIMARY KEY,
+          personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+          school_year TEXT NOT NULL,
+          month TEXT NOT NULL,
+          day INTEGER NOT NULL,
+          minutes INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(personnel_id, school_year, month, day)
       );
       ALTER TABLE class_sections ADD COLUMN IF NOT EXISTS number_of_learners INTEGER;
       ALTER TABLE schools ADD COLUMN IF NOT EXISTS subjects_config JSONB;

@@ -236,3 +236,24 @@ CREATE TABLE IF NOT EXISTS school_calendar_terms (
 
 CREATE INDEX IF NOT EXISTS idx_school_calendar_terms_school_sy ON school_calendar_terms (school_id, school_year);
 
+-- 14. Personnel Learning Areas Table (Feature A)
+CREATE TABLE IF NOT EXISTS personnel_learning_areas (
+    id SERIAL PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    school_year TEXT NOT NULL,
+    learning_area TEXT NOT NULL,
+    UNIQUE(personnel_id, school_year, learning_area)
+);
+
+-- 15. Work Immersion Minutes Table (Feature B)
+CREATE TABLE IF NOT EXISTS work_immersion_minutes (
+    id SERIAL PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    school_year TEXT NOT NULL,
+    month TEXT NOT NULL,
+    day INTEGER NOT NULL,
+    minutes INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(personnel_id, school_year, month, day)
+);
+
+

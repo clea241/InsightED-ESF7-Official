@@ -6,20 +6,761 @@ const isAdvisorySub = (sub) => {
   return s === 'ADVISORY' || s.includes('HOMEROOM GUIDANCE') || s.includes('HGP');
 };
 
+const isRemediationSub = (sub) => {
+  if (!sub) return false;
+  const s = String(sub).toUpperCase();
+  return s === 'REMEDIATION' || s.includes('REMEDIAL') || s.includes('ENHANCEMENT');
+};
+
 const isAdvisoryOrHgpPair = (rA, rB) => {
   if (!rA || !rB) return false;
   const subA = rA.subject || rA.task || '';
   const subB = rB.subject || rB.task || '';
-  if (isAdvisorySub(subA) && isAdvisorySub(subB)) {
-    const secA = String(rA.sectionId || rA.section_id || '');
-    const secB = String(rB.sectionId || rB.section_id || '');
-    if (secA && secB && secA === secB) return true;
-    if (!secA || !secB) return true;
+  if (isAdvisorySub(subA) || isAdvisorySub(subB)) {
+    return true;
   }
   return false;
 };
 
+function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSections, customSubjects, GRADE_LEVEL_SUBJECTS, REMEDIATION_FOCUS_BY_CATEGORY }) {
+  const payloadData = {
+    version: 'INSIGHTED_WORKLOAD_DELEGATION_V1',
+    schoolName: schoolInfo?.schoolName || 'DepEd School',
+    schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
+    generatedAt: new Date().toISOString(),
+    gradeSubjects: GRADE_LEVEL_SUBJECTS,
+    remediationFocusMap: REMEDIATION_FOCUS_BY_CATEGORY,
+    sections: (classSections || []).map(s => ({
+      id: s.id,
+      sectionName: s.sectionName || s.section_name || '',
+      gradeLevel: s.gradeLevel || s.grade_level || ''
+    })),
+    teachers: selectedTeachers.map(t => ({
+      id: t.id,
+      firstName: t.firstName,
+      lastName: t.lastName,
+      position: t.position || 'Teacher',
+      workloadRows: (t.workloadRows || []).map(r => ({
+        id: r.id || `r-${Math.random().toString(36).substring(2, 7)}`,
+        category: r.category || 'Elementary',
+        subject: r.subject || '',
+        remediationSubject: r.remediationSubject || '',
+        gradeLevel: r.gradeLevel || '',
+        sectionName: r.sectionName || r.section_name || '',
+        startTime: r.startTime || (r.subject === 'ADVISORY' || r.subject === 'HGP' ? '07:30' : '08:00'),
+        endTime: r.endTime || (r.subject === 'ADVISORY' || r.subject === 'HGP' ? '08:30' : '09:00'),
+        days: Array.isArray(r.days) ? r.days : ['M', 'T', 'W', 'TH', 'F']
+      }))
+    })),
+    customSubjects: customSubjects || []
+  };
 
+  const rawJson = JSON.stringify(payloadData);
+  const jsonB64 = btoa(unescape(encodeURIComponent(rawJson)));
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InsightED Workload Delegation Package — ${payloadData.schoolName}</title>
+  <style>
+    :root {
+      --navy: #0f172a;
+      --blue: #0284c7;
+      --blue-light: #eff6ff;
+      --border: #cbd5e1;
+      --bg: #f8fafc;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: #334155;
+    }
+    header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    header h1 { margin: 0; font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+    header p { margin: 4px 0 0; font-size: 12px; opacity: 0.8; }
+    .export-btn {
+      background: linear-gradient(180deg, #10b981, #059669);
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+    .export-btn:hover { opacity: 0.95; }
+    .container {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 20px;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .sidebar {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin: 0 0 12px; font-size: 14px; color: var(--navy); }
+    .teacher-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      margin-bottom: 4px;
+      transition: all 0.15s;
+    }
+    .teacher-item:hover { background: #f1f5f9; }
+    .teacher-item.active { background: #eff6ff; border-color: #bfdbfe; font-weight: bold; color: #1e40af; }
+    .teacher-item .name { font-size: 13px; font-weight: 700; margin: 0; }
+    .teacher-item .pos { font-size: 11px; color: #64748b; margin: 2px 0 0; }
+    .main-editor {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1.5px solid var(--border);
+      padding-bottom: 14px;
+      margin-bottom: 16px;
+    }
+    .add-row-btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f8fafc; padding: 10px 8px; text-align: left; border-bottom: 2px solid var(--border); font-weight: 700; color: var(--navy); }
+    td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+    input, select { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; width: 100%; box-sizing: border-box; }
+    .day-chk { display: flex; gap: 4px; }
+    .day-chk label { font-size: 10px; font-weight: bold; cursor: pointer; padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 4px; }
+    .day-chk input { width: auto; }
+    .del-btn { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>📋 Workload Delegation Package</h1>
+      <p>${payloadData.schoolName} | ${payloadData.schoolYear}</p>
+    </div>
+    <button class="export-btn" onclick="exportReturnPayload()">📥 Save & Download Return File (.json)</button>
+  </header>
+
+  <div class="container">
+    <div class="sidebar">
+      <h3>Assigned Teachers (<span id="t-count">0</span>)</h3>
+      <div id="teacher-list"></div>
+    </div>
+    <div class="main-editor">
+      <div class="editor-header">
+        <div>
+          <h2 id="active-t-name" style="margin: 0; font-size: 18px; color: var(--navy);">Select a Teacher</h2>
+          <span id="active-t-pos" style="font-size: 12px; color: #64748b;">Choose a teacher from the left to edit workload.</span>
+        </div>
+        <button class="add-row-btn" onclick="addWorkloadRow()">+ Add Workload Row</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <div style="background: #f8fafc; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px;">
+          <div style="font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase;">Weekly Teaching Load</div>
+          <div id="stat-weekly-hours" style="font-size: 18px; font-weight: 800; color: var(--navy);">0.0 hrs/wk</div>
+        </div>
+        <div style="background: #f8fafc; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px;">
+          <div style="font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase;">Daily Avg Load</div>
+          <div id="stat-daily-avg" style="font-size: 18px; font-weight: 800; color: var(--navy);">0.0 hrs/day</div>
+        </div>
+        <div id="stat-overload-card" style="background: #f8fafc; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px;">
+          <div style="font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase;">Weekly Overload</div>
+          <div id="stat-overload" style="font-size: 18px; font-weight: 800; color: var(--navy);">0.0 hrs/wk</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 240px;">Class Section</th>
+            <th style="width: 220px;">Subject</th>
+            <th style="width: 140px;">Days</th>
+            <th style="width: 100px;">Start Time</th>
+            <th style="width: 100px;">End Time</th>
+            <th style="width: 60px;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="workload-rows">
+          <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 30px;">Select a teacher on the left to begin encoding workload.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let data = { teachers: [], sections: [] };
+    try {
+      const rawJsonStr = decodeURIComponent(escape(atob("${jsonB64}")));
+      data = JSON.parse(rawJsonStr);
+    } catch(e) {
+      console.error("Payload decode error:", e);
+      document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:red"><h2>⚠️ Payload Parsing Error</h2><pre>' + e.message + '</pre></div>';
+    }
+    let activeTeacherId = null;
+
+    document.getElementById('t-count').innerText = (data.teachers || []).length;
+
+    function calculateTeacherWorkload(t) {
+      if (!t || !t.workloadRows) return { weeklyHours: '0.0', dailyAvg: '0.0', overload: '0.0' };
+      const daysList = ['M', 'T', 'W', 'TH', 'F'];
+      let totalMins = 0;
+
+      for (const d of daysList) {
+        const intervals = [];
+        for (const r of t.workloadRows) {
+          if ((r.days || []).includes(d)) {
+            const subUpper = String(r.subject || '').toUpperCase().trim();
+            if (subUpper === 'HGP') {
+              continue;
+            } else if (subUpper === 'ADVISORY') {
+              totalMins += 60;
+            } else if (r.startTime && r.endTime) {
+              const [sh, sm] = r.startTime.split(':').map(Number);
+              const [eh, em] = r.endTime.split(':').map(Number);
+              if (sh !== undefined && eh !== undefined) {
+                intervals.push([sh * 60 + sm, eh * 60 + em]);
+              }
+            }
+          }
+        }
+
+        if (intervals.length > 0) {
+          intervals.sort((a, b) => a[0] - b[0]);
+          let merged = [intervals[0]];
+          for (let i = 1; i < intervals.length; i++) {
+            const current = intervals[i];
+            const lastMerged = merged[merged.length - 1];
+            if (current[0] <= lastMerged[1]) {
+              lastMerged[1] = Math.max(lastMerged[1], current[1]);
+            } else {
+              merged.push(current);
+            }
+          }
+          for (const [start, end] of merged) {
+            totalMins += (end - start);
+          }
+        }
+      }
+
+      const weeklyHoursNum = totalMins / 60;
+      const weeklyHours = weeklyHoursNum.toFixed(1);
+      const dailyAvg = (weeklyHoursNum / 5).toFixed(1);
+      const overloadNum = Math.max(0, weeklyHoursNum - 30);
+      const overload = overloadNum.toFixed(1);
+
+      return { weeklyHours, dailyAvg, overload, overloadNum };
+    }
+
+    function getSubjectsForGradeInHTML(grade, category) {
+      let list = [];
+      if (grade && data.gradeSubjects && data.gradeSubjects[grade]) {
+        list = data.gradeSubjects[grade];
+      } else if (category && data.gradeSubjects && data.gradeSubjects[category]) {
+        list = data.gradeSubjects[category];
+      } else if (category && category.startsWith('SHS')) {
+        list = (data.gradeSubjects && data.gradeSubjects['SHS-CORE SUBJECTS']) || [];
+      } else {
+        list = (data.gradeSubjects && (data.gradeSubjects['Grade 1'] || data.gradeSubjects['Elementary'])) || [];
+      }
+
+      if (data.customSubjects && Array.isArray(data.customSubjects)) {
+        const customNames = data.customSubjects.map(cs => typeof cs === 'string' ? cs : cs.name).filter(Boolean);
+        list = Array.from(new Set([...list, ...customNames]));
+      }
+
+      // Unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS into one subject option, and filter out ADVISORY from dropdowns
+      list = list.map(s => (s === 'REMEDIATION' || s === 'REMEDIAL/ENHANCEMENT CLASS') ? 'REMEDIAL / ENHANCEMENT CLASS' : s)
+                 .filter(s => s !== 'ADVISORY');
+
+      return Array.from(new Set(list));
+    }
+
+    function renderTeacherList() {
+      const listEl = document.getElementById('teacher-list');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      data.teachers.forEach((t, idx) => {
+        const stats = calculateTeacherWorkload(t);
+        const item = document.createElement('div');
+        item.className = 'teacher-item' + (String(t.id) === String(activeTeacherId) ? ' active' : '');
+        item.innerHTML = '<div class="name">' + (t.lastName || '') + ', ' + (t.firstName || '') + '</div><div class="pos">' + (t.position || 'Teacher') + ' (' + ((t.workloadRows || []).length) + ' rows · ' + stats.weeklyHours + 'h)</div>';
+        item.onclick = () => selectTeacher(t.id);
+        listEl.appendChild(item);
+      });
+    }
+
+    function selectTeacher(id) {
+      activeTeacherId = id;
+      renderTeacherList();
+      const t = data.teachers.find(x => String(x.id) === String(id));
+      if (!t) return;
+      const nameEl = document.getElementById('active-t-name');
+      const posEl = document.getElementById('active-t-pos');
+      if (nameEl) nameEl.innerText = (t.firstName || '') + ' ' + (t.lastName || '');
+      if (posEl) posEl.innerText = t.position || 'Teacher';
+      renderWorkloadRows();
+    }
+
+    function renderWorkloadRows() {
+      const tbody = document.getElementById('workload-rows');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      const t = data.teachers.find(x => String(x.id) === String(activeTeacherId));
+      if (!t) return;
+
+      const stats = calculateTeacherWorkload(t);
+      document.getElementById('stat-weekly-hours').innerText = stats.weeklyHours + ' hrs/wk';
+      document.getElementById('stat-daily-avg').innerText = stats.dailyAvg + ' hrs/day';
+      document.getElementById('stat-overload').innerText = stats.overload + ' hrs/wk';
+
+      const ovCard = document.getElementById('stat-overload-card');
+      if (stats.overloadNum > 0) {
+        ovCard.style.background = '#fffbeb';
+        ovCard.style.borderColor = '#f59e0b';
+        document.getElementById('stat-overload').style.color = '#b45309';
+      } else {
+        ovCard.style.background = '#f8fafc';
+        ovCard.style.borderColor = 'var(--border)';
+        document.getElementById('stat-overload').style.color = 'var(--navy)';
+      }
+
+      if (t.workloadRows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 30px;">No workload rows. Click "+ Add Workload Row" above.</td></tr>';
+        return;
+      }
+
+      t.workloadRows.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        const availableSubjects = getSubjectsForGradeInHTML(row.gradeLevel, row.category);
+        const subUpper = String(row.subject || '').toUpperCase().trim();
+        const isLockedSub = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper === 'HOMEROOM GUIDANCE';
+
+        // 1. Class Section Cell
+        const tdSec = document.createElement('td');
+        if (isLockedSub) {
+          tdSec.innerHTML = '<span style="font-weight: 700; color: var(--navy); font-size: 12px;">[' + (row.gradeLevel || 'Advisory') + '] ' + (row.sectionName || 'Assigned Section') + ' 🔒</span>';
+        } else if (data.sections && data.sections.length > 0) {
+          const selSec = document.createElement('select');
+          selSec.onchange = function() { updateSection(idx, this.value); };
+          let opts = '<option value="">-- Choose Section --</option>';
+          data.sections.forEach(function(s) {
+            const sel = (row.sectionName === s.sectionName) ? 'selected' : '';
+            opts += '<option value="' + s.sectionName + '" ' + sel + '>[' + s.gradeLevel + '] ' + s.sectionName + '</option>';
+          });
+          selSec.innerHTML = opts;
+          tdSec.appendChild(selSec);
+        } else {
+          const inpSec = document.createElement('input');
+          inpSec.type = 'text';
+          inpSec.value = row.sectionName || '';
+          inpSec.placeholder = 'Section name...';
+          inpSec.onchange = function() { updateRow(idx, 'sectionName', this.value); };
+          tdSec.appendChild(inpSec);
+        }
+        tr.appendChild(tdSec);
+
+        // 2. Subject Cell
+        const tdSub = document.createElement('td');
+        if (isLockedSub) {
+          tdSub.innerHTML = '<span style="font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 12px; font-size: 11px;">' + row.subject + ' 🔒</span>';
+        } else {
+          const selSub = document.createElement('select');
+          const hasSection = Boolean(row.sectionId || row.sectionName);
+          if (!hasSection) {
+            selSub.disabled = true;
+          }
+          selSub.onchange = function() { updateSubjectWithRemediation(idx, this.value); };
+          let subOpts = hasSection ? '<option value="">-- Select Subject --</option>' : '<option value="">-- Choose Section First --</option>';
+          availableSubjects.forEach(function(sub) {
+            const sel = (row.subject === sub) ? 'selected' : '';
+            subOpts += '<option value="' + sub + '" ' + sel + '>' + sub + '</option>';
+          });
+          selSub.innerHTML = subOpts;
+          tdSub.appendChild(selSub);
+
+          if (subUpper.includes('REMEDIAL') || subUpper.includes('ENHANCEMENT') || subUpper === 'REMEDIATION') {
+            const selRem = document.createElement('select');
+            selRem.style.marginTop = '6px';
+            selRem.style.borderColor = '#0284c7';
+            selRem.style.background = '#f0f9ff';
+            selRem.style.fontWeight = '600';
+            selRem.style.color = '#0369a1';
+            selRem.onchange = function() { updateRow(idx, 'remediationSubject', this.value); };
+
+            const listOpts = (data.remediationFocusMap ? (row.category === 'Elementary' ? data.remediationFocusMap['Elementary'] : (data.remediationFocusMap[row.category] || data.remediationFocusMap['ALL'])) : []) || [];
+            const currentRem = row.remediationSubject || (row.gradeLevel === 'Kinder' ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN');
+            let remOpts = '<option value="">-- Select Remediation Focus --</option>';
+            listOpts.forEach(function(opt) {
+              const sel = (currentRem === opt) ? 'selected' : '';
+              remOpts += '<option value="' + opt + '" ' + sel + '>Focus: ' + opt + '</option>';
+            });
+            selRem.innerHTML = remOpts;
+            tdSub.appendChild(selRem);
+          }
+        }
+        tr.appendChild(tdSub);
+
+        // 3. Days Cell
+        const tdDays = document.createElement('td');
+        const divDays = document.createElement('div');
+        divDays.className = 'day-chk';
+        ['M','T','W','TH','F'].forEach(function(d) {
+          const lbl = document.createElement('label');
+          const chk = document.createElement('input');
+          chk.type = 'checkbox';
+          if ((row.days || []).includes(d)) chk.checked = true;
+          if (isLockedSub && subUpper === 'ADVISORY') chk.disabled = true;
+          chk.onchange = function() { toggleDay(idx, d); };
+          lbl.appendChild(chk);
+          lbl.appendChild(document.createTextNode(d));
+          divDays.appendChild(lbl);
+        });
+        tdDays.appendChild(divDays);
+        tr.appendChild(tdDays);
+
+        // 4. Start & End Time Cells
+        if (subUpper === 'ADVISORY') {
+          const tdTime = document.createElement('td');
+          tdTime.colSpan = 2;
+          tdTime.style.textAlign = 'center';
+          tdTime.innerHTML = '<span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 6px; font-weight: bold;">⏱️ 60 Mins / Day (Fixed)</span>';
+          tr.appendChild(tdTime);
+        } else {
+          const tdStart = document.createElement('td');
+          const inpStart = document.createElement('input');
+          inpStart.type = 'time';
+          inpStart.value = row.startTime || '08:00';
+          inpStart.onchange = function() { updateRow(idx, 'startTime', this.value); };
+          tdStart.appendChild(inpStart);
+          tr.appendChild(tdStart);
+
+          const tdEnd = document.createElement('td');
+          const inpEnd = document.createElement('input');
+          inpEnd.type = 'time';
+          inpEnd.value = row.endTime || '09:00';
+          inpEnd.onchange = function() { updateRow(idx, 'endTime', this.value); };
+          tdEnd.appendChild(inpEnd);
+          tr.appendChild(tdEnd);
+        }
+
+        // 6. Action Cell
+        const tdAct = document.createElement('td');
+        if (isLockedSub) {
+          tdAct.innerHTML = '<span style="font-size: 11px; color: #94a3b8; font-weight: bold;">🔒 Locked</span>';
+        } else {
+          const btnDel = document.createElement('button');
+          btnDel.className = 'del-btn';
+          btnDel.innerText = '✕';
+          btnDel.onclick = function() { deleteRow(idx); };
+          tdAct.appendChild(btnDel);
+        }
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateSection(idx, val) {
+      const t = data.teachers.find(x => x.id === activeTeacherId);
+      if (!t || !t.workloadRows[idx]) return;
+
+      const sec = (data.sections || []).find(s => s.sectionName === val || String(s.id) === String(val));
+      if (sec) {
+        t.workloadRows[idx].sectionId = String(sec.id);
+        t.workloadRows[idx].sectionName = sec.sectionName;
+        t.workloadRows[idx].gradeLevel = sec.gradeLevel;
+
+        const g = String(sec.gradeLevel || '').toUpperCase();
+        if (g.includes('11') || g.includes('12')) {
+          t.workloadRows[idx].category = 'SHS';
+        } else if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10')) {
+          t.workloadRows[idx].category = 'JHS';
+        } else {
+          t.workloadRows[idx].category = 'Elementary';
+        }
+
+        const available = getSubjectsForGradeInHTML(sec.gradeLevel, t.workloadRows[idx].category);
+        if (!available.includes(t.workloadRows[idx].subject)) {
+          t.workloadRows[idx].subject = '';
+          t.workloadRows[idx].remediationSubject = '';
+        }
+      } else {
+        t.workloadRows[idx].sectionId = '';
+        t.workloadRows[idx].sectionName = '';
+        t.workloadRows[idx].gradeLevel = '';
+        t.workloadRows[idx].subject = '';
+        t.workloadRows[idx].remediationSubject = '';
+      }
+      renderWorkloadRows();
+      renderTeacherList();
+    }
+
+    function updateSubjectWithRemediation(idx, val) {
+      const t = data.teachers.find(x => x.id === activeTeacherId);
+      if (!t || !t.workloadRows[idx]) return;
+
+      const row = t.workloadRows[idx];
+      row.subject = val;
+      const upperVal = String(val || '').toUpperCase().trim();
+      if (upperVal.includes('REMEDIAL') || upperVal.includes('ENHANCEMENT') || upperVal === 'REMEDIATION') {
+        if (!row.remediationSubject) {
+          row.remediationSubject = (row.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN';
+        }
+      } else {
+        row.remediationSubject = '';
+      }
+      renderWorkloadRows();
+      renderTeacherList();
+    }
+
+    function addWorkloadRow() {
+      if (!activeTeacherId) return alert('Please select a teacher first.');
+      const t = data.teachers.find(x => x.id === activeTeacherId);
+
+      let nextStart = '08:00';
+      let nextEnd = '09:00';
+      const rows = t.workloadRows || [];
+      if (rows.length > 0) {
+        const lastRow = rows[0];
+        if (lastRow.endTime) {
+          const [eh, em] = lastRow.endTime.split(':').map(Number);
+          if (eh !== undefined && !isNaN(eh)) {
+            const endMins = eh * 60 + (em || 0);
+            nextStart = String(Math.floor(endMins / 60) % 24).padStart(2, '0') + ':' + String(endMins % 60).padStart(2, '0');
+            const nextEndMins = endMins + 60;
+            nextEnd = String(Math.floor(nextEndMins / 60) % 24).padStart(2, '0') + ':' + String(nextEndMins % 60).padStart(2, '0');
+          }
+        }
+      }
+
+      t.workloadRows.unshift({
+        id: 'r-' + Date.now(),
+        category: 'Elementary',
+        gradeLevel: 'Grade 1',
+        subject: '',
+        sectionName: '',
+        startTime: nextStart,
+        endTime: nextEnd,
+        days: ['M', 'T', 'W', 'TH', 'F']
+      });
+
+      renderTeacherList();
+      renderWorkloadRows();
+    }
+
+    function checkTeacherConflictsInHTML(t) {
+      if (!t || !t.workloadRows || t.workloadRows.length < 2) return null;
+
+      for (let i = 0; i < t.workloadRows.length; i++) {
+        for (let j = i + 1; j < t.workloadRows.length; j++) {
+          const r1 = t.workloadRows[i];
+          const r2 = t.workloadRows[j];
+
+          const commonDays = (r1.days || []).filter(d => (r2.days || []).includes(d));
+          if (commonDays.length === 0) continue;
+
+          const sub1Upper = String(r1.subject || '').toUpperCase().trim();
+          const sub2Upper = String(r2.subject || '').toUpperCase().trim();
+
+          const isAdvHgpPair = (sub1Upper === 'ADVISORY' || sub1Upper === 'HGP' || sub1Upper.includes('HOMEROOM')) &&
+                               (sub2Upper === 'ADVISORY' || sub2Upper === 'HGP' || sub2Upper.includes('HOMEROOM'));
+          if (isAdvHgpPair) {
+            const sec1 = String(r1.sectionId || r1.sectionName || '').trim();
+            const sec2 = String(r2.sectionId || r2.sectionName || '').trim();
+            if (!sec1 || !sec2 || sec1 === sec2) continue;
+          }
+
+          if (r1.startTime && r1.endTime && r2.startTime && r2.endTime) {
+            const [s1h, s1m] = r1.startTime.split(':').map(Number);
+            const [e1h, e1m] = r1.endTime.split(':').map(Number);
+            const [s2h, s2m] = r2.startTime.split(':').map(Number);
+            const [e2h, e2m] = r2.endTime.split(':').map(Number);
+
+            const start1 = s1h * 60 + (s1m || 0);
+            const end1 = e1h * 60 + (e1m || 0);
+            const start2 = s2h * 60 + (s2m || 0);
+            const end2 = e2h * 60 + (e2m || 0);
+
+            if (start1 < end2 && end1 > start2) {
+              return {
+                sub1: r1.subject || 'Subject 1',
+                sub2: r2.subject || 'Subject 2',
+                days: commonDays.join(', '),
+                time1: (r1.startTime || '') + ' - ' + (r1.endTime || ''),
+                time2: (r2.startTime || '') + ' - ' + (r2.endTime || '')
+              };
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    function updateRow(idx, field, val) {
+      const t = data.teachers.find(x => x.id === activeTeacherId);
+      if (!t || !t.workloadRows[idx]) return;
+
+      const row = t.workloadRows[idx];
+      row[field] = val;
+
+      const subUpper = String(row.subject || '').toUpperCase().trim();
+      if (subUpper === 'ADVISORY') {
+        row.startTime = '07:30';
+        row.endTime = '08:30';
+        row.days = ['M', 'T', 'W', 'TH', 'F'];
+      }
+
+      if (field === 'startTime' || field === 'endTime') {
+        if (row.startTime && row.endTime) {
+          const [sh, sm] = row.startTime.split(':').map(Number);
+          const [eh, em] = row.endTime.split(':').map(Number);
+          if (!isNaN(sh) && !isNaN(eh)) {
+            const startMins = sh * 60 + (sm || 0);
+            const endMins = eh * 60 + (em || 0);
+            const diff = endMins - startMins;
+
+            const isSHS = String(row.gradeLevel || '').includes('11') || String(row.gradeLevel || '').includes('12') || String(row.category || '').includes('SHS');
+            const maxMins = isSHS ? 360 : 60;
+
+            if (diff > maxMins) {
+              const maxEndMins = startMins + maxMins;
+              const maxH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
+              const maxM = String(maxEndMins % 60).padStart(2, '0');
+              row.endTime = maxH + ':' + maxM;
+              alert(isSHS 
+                ? "⚠️ Senior High School (Grade 11 & 12) subject schedule cannot exceed 6 hours. Adjusted to 6 hours max."
+                : "⚠️ A single subject period in workload cannot exceed 1 hour (60 minutes). Adjusted to 1 hour max."
+              );
+            } else if (diff < 0) {
+              alert("⚠️ Invalid Time Range: End time must be strictly after start time.");
+            }
+          }
+        }
+      }
+
+      renderWorkloadRows();
+      renderTeacherList();
+
+      const conflict = checkTeacherConflictsInHTML(t);
+      if (conflict) {
+        alert(['⚠️ Schedule Conflict Detected:', '"' + conflict.sub1 + '" (' + conflict.time1 + ') overlaps with "' + conflict.sub2 + '" (' + conflict.time2 + ') on ' + conflict.days + '.', 'Please adjust the schedule times to avoid double-booking.'].join('\\n'));
+      }
+    }
+
+    function toggleDay(idx, day) {
+      const t = data.teachers.find(x => x.id === activeTeacherId);
+      if (t && t.workloadRows[idx]) {
+        const row = t.workloadRows[idx];
+        const subUpper = String(row.subject || '').toUpperCase().trim();
+        if (subUpper === 'ADVISORY') {
+          return alert('🔒 Advisory days are fixed to Monday through Friday (M-F).');
+        }
+
+        if (subUpper === 'HGP') {
+          row.days = [day]; // HGP is strictly 1 day only
+          renderWorkloadRows();
+          renderTeacherList();
+          return;
+        }
+
+        const days = row.days || [];
+        if (days.includes(day)) {
+          row.days = days.filter(d => d !== day);
+        } else {
+          row.days = [...days, day];
+        }
+        renderWorkloadRows();
+        renderTeacherList();
+
+        const conflict = checkTeacherConflictsInHTML(t);
+        if (conflict) {
+          alert(['⚠️ Schedule Conflict Detected:', '"' + conflict.sub1 + '" (' + conflict.time1 + ') overlaps with "' + conflict.sub2 + '" (' + conflict.time2 + ') on ' + conflict.days + '.', 'Please adjust the schedule times to avoid double-booking.'].join('\\n'));
+        }
+      }
+    }
+
+    function deleteRow(idx) {
+      const t = data.teachers.find(x => x.id === activeTeacherId);
+      if (t && t.workloadRows[idx]) {
+        const subUpper = String(t.workloadRows[idx].subject || '').toUpperCase().trim();
+        if (subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper === 'HOMEROOM GUIDANCE') {
+          return alert('🔒 Advisory and HGP workload schedules are locked and cannot be deleted.');
+        }
+        t.workloadRows.splice(idx, 1);
+        renderTeacherList();
+        renderWorkloadRows();
+      }
+    }
+
+    function exportReturnPayload() {
+      const returnPayload = {
+        version: 'INSIGHTED_WORKLOAD_DELEGATION_V1',
+        schoolName: data.schoolName,
+        schoolYear: data.schoolYear,
+        returnedAt: new Date().toISOString(),
+        teachersWorkload: {}
+      };
+
+      data.teachers.forEach(t => {
+        returnPayload.teachersWorkload[t.id] = t.workloadRows;
+      });
+
+      const jsonStr = JSON.stringify(returnPayload, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Workload_Return_' + (data.schoolName || 'School').replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now() + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      alert('✅ Return Payload Downloaded Successfully! Send this .json file back to the School Head.');
+    }
+
+    renderTeacherList();
+    if (data.teachers && data.teachers.length > 0) {
+      selectTeacher(data.teachers[0].id);
+    }
+  </script>
+</body>
+</html>`;
+}
 
 const SearchableSelect = ({ value, onChange, options = [], disabled = false, placeholder = 'Select...' }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -2332,6 +3073,7 @@ const REMEDIATION_FOCUS_BY_CATEGORY = {
 export default function Workload() {
   const {
     personnel,
+    setPersonnel,
     activePersonnelId,
     setActivePersonnelId,
     updatePersonnelInfo,
@@ -2376,6 +3118,223 @@ export default function Workload() {
   const [newSlot, setNewSlot] = useState({ teacherId: '', subject: '', startTime: '08:00', endTime: '09:00', days: ['M', 'T', 'W', 'TH', 'F'] });
   const [slotConflict, setSlotConflict] = useState(null);
 
+  // Timetable Schedule Verification State & Modal
+  const [showAttentionModal, setShowAttentionModal] = useState(false);
+  const verifiedModalDismissedMap = useRef({});
+
+  // Multi-Date Calendar Selector Modal State
+  const [calendarModalConfig, setCalendarModalConfig] = useState(null); // { category, taskIdx, taskName }
+  const [calendarSelectedDates, setCalendarSelectedDates] = useState([]); // Array of 'YYYY-MM-DD'
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth()); // 0-indexed
+  const [calendarStartTime, setCalendarStartTime] = useState('08:00');
+  const [calendarEndTime, setCalendarEndTime] = useState('17:00');
+
+  const openCalendarModal = (category, taskIdx, task) => {
+    const existingDates = (task.dates || []).map(d => d.date).filter(Boolean);
+    const firstStartTime = task.dates?.[0]?.startTime || '08:00';
+    const firstEndTime = task.dates?.[0]?.endTime || '17:00';
+
+    setCalendarModalConfig({ category, taskIdx, taskName: task.task || 'Task' });
+    setCalendarSelectedDates(existingDates);
+    setCalendarStartTime(firstStartTime);
+    setCalendarEndTime(firstEndTime);
+
+    if (existingDates.length > 0) {
+      const parts = existingDates[0].split('-');
+      if (parts.length === 3) {
+        setCalendarYear(parseInt(parts[0], 10));
+        setCalendarMonth(parseInt(parts[1], 10) - 1);
+      }
+    } else {
+      setCalendarYear(new Date().getFullYear());
+      setCalendarMonth(new Date().getMonth());
+    }
+  };
+
+  const handleApplyCalendarDates = () => {
+    if (!calendarModalConfig) return;
+    const { category, taskIdx } = calendarModalConfig;
+
+    const newDates = calendarSelectedDates.map(dStr => ({
+      date: dStr,
+      startTime: calendarStartTime,
+      endTime: calendarEndTime
+    }));
+
+    if (newDates.length === 0) {
+      newDates.push({ date: '', startTime: calendarStartTime, endTime: calendarEndTime });
+    }
+
+    updateTaskField(category, taskIdx, 'dates', newDates);
+    const appliedName = calendarModalConfig.taskName;
+    const count = calendarSelectedDates.length;
+    setCalendarModalConfig(null);
+    if (showToast) showToast(`✓ Applied ${count} selected date(s) to ${appliedName}!`);
+  };
+
+  const toggleCalendarDate = (dStr) => {
+    setCalendarSelectedDates(prev => {
+      if (prev.includes(dStr)) {
+        return prev.filter(x => x !== dStr);
+      } else {
+        return [...prev, dStr];
+      }
+    });
+  };
+
+  const handleSelectAllWeekdaysInMonth = () => {
+    const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const newDates = [...calendarSelectedDates];
+
+    for (let day = 1; day <= totalDays; day++) {
+      const d = new Date(calendarYear, calendarMonth, day);
+      const dayOfWeek = d.getDay(); // 0 = Sun, 6 = Sat
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        const mm = String(calendarMonth + 1).padStart(2, '0');
+        const dd = String(day).padStart(2, '0');
+        const dStr = `${calendarYear}-${mm}-${dd}`;
+        if (!newDates.includes(dStr)) {
+          newDates.push(dStr);
+        }
+      }
+    }
+    setCalendarSelectedDates(newDates);
+  };
+
+  const handleToggleSpecificDayOfWeek = (targetDayOfWeek) => {
+    const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const monthDayStrings = [];
+
+    for (let day = 1; day <= totalDays; day++) {
+      const d = new Date(calendarYear, calendarMonth, day);
+      if (d.getDay() === targetDayOfWeek) {
+        const mm = String(calendarMonth + 1).padStart(2, '0');
+        const dd = String(day).padStart(2, '0');
+        monthDayStrings.push(`${calendarYear}-${mm}-${dd}`);
+      }
+    }
+
+    const allAlreadySelected = monthDayStrings.length > 0 && monthDayStrings.every(dStr => calendarSelectedDates.includes(dStr));
+
+    if (allAlreadySelected) {
+      setCalendarSelectedDates(prev => prev.filter(dStr => !monthDayStrings.includes(dStr)));
+    } else {
+      setCalendarSelectedDates(prev => {
+        const set = new Set([...prev, ...monthDayStrings]);
+        return Array.from(set);
+      });
+    }
+  };
+
+  const handleVerifySchedule = (personId) => {
+    if (!personId) return;
+
+    // 1. Update AppContext React state
+    setPersonnel(prev => (Array.isArray(prev) ? prev : []).map(p => {
+      if (p.id === personId) {
+        return { ...p, workloadVerified: true, needsTimeReview: false };
+      }
+      return p;
+    }));
+
+    // 2. Update active editPerson state in Workload component
+    setEditPerson(prev => {
+      if (prev && prev.id === personId) {
+        return { ...prev, workloadVerified: true, needsTimeReview: false };
+      }
+      return prev;
+    });
+
+    // 3. Update localStorage draft if present
+    const draftKey = `draft_workload_${personId}`;
+    const savedDraft = localStorage.getItem(draftKey);
+    if (savedDraft) {
+      try {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed) {
+          localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadVerified: true, needsTimeReview: false }));
+        }
+      } catch (e) {}
+    }
+
+    verifiedModalDismissedMap.current[personId] = true;
+    setShowAttentionModal(false);
+    if (showToast) showToast("✓ Timetable schedule confirmed and saved!");
+  };
+
+  const handleConfirmAllAndSave = async () => {
+    let confirmedCount = 0;
+    const errorTeachers = [];
+
+    const updatedPersonnelList = (personnel || []).map(p => {
+      if (p.isDraft) return p;
+
+      // Check if this teacher has duration or overlap blocking errors
+      const tRows = p.workloadRows || [];
+      const hasErrors = tRows.some((r, rIdx) => {
+        if (getRowDurationError(r)) return true;
+        return tRows.some((otherR, oIdx) => {
+          if (rIdx === oIdx) return false;
+          if (!r.startTime || !r.endTime || !otherR.startTime || !otherR.endTime) return false;
+          const daysOverlap = (r.days || []).some(d => (otherR.days || []).includes(d));
+          if (!daysOverlap) return false;
+          const ns = parseTimeToMinutes(r.startTime), ne = parseTimeToMinutes(r.endTime);
+          const rs = parseTimeToMinutes(otherR.startTime), re = parseTimeToMinutes(otherR.endTime);
+          if (ns < re && ne > rs) {
+            if (isAdvisoryOrHgpPair(r, otherR)) return false;
+            return true;
+          }
+          return false;
+        });
+      });
+
+      if (hasErrors) {
+        errorTeachers.push(`${p.lastName}, ${p.firstName}`);
+        return p; // Skip unverified teacher with errors
+      }
+
+      // Mark verified
+      confirmedCount++;
+      const updatedP = { ...p, workloadVerified: true, needsTimeReview: false };
+
+      // Update local storage draft if present
+      const draftKey = `draft_workload_${p.id}`;
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed) {
+            localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadVerified: true, needsTimeReview: false }));
+          }
+        } catch (e) {}
+      }
+
+      return updatedP;
+    });
+
+    // Batch update React state in AppContext
+    setPersonnel(updatedPersonnelList);
+
+    // Update active editPerson if present
+    if (editPerson) {
+      const activeUpdated = updatedPersonnelList.find(x => x.id === editPerson.id);
+      if (activeUpdated) setEditPerson(activeUpdated);
+    }
+
+    setShowAttentionModal(false);
+
+    if (errorTeachers.length === 0) {
+      if (showToast) showToast(`✓ Successfully confirmed & saved timetables for ALL ${confirmedCount} personnel!`);
+      await showAlert("Batch Timetable Verification", `✓ All ${confirmedCount} personnel schedules have been confirmed and saved!`);
+    } else {
+      await showAlert(
+        "Batch Timetable Verification",
+        `✓ Confirmed and saved ${confirmedCount} personnel schedules!\n\n⚠️ ${errorTeachers.length} personnel were skipped due to red duration errors (> 60m / > 6h SHS) or schedule overlaps:\n• ${errorTeachers.slice(0, 5).join('\n• ')}${errorTeachers.length > 5 ? `\n...and ${errorTeachers.length - 5} more` : ''}`
+      );
+    }
+  };
+
   // Filter states
   const [gradeFilter, setGradeFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -2385,6 +3344,133 @@ export default function Workload() {
   const [timeSortOrder, setTimeSortOrder] = useState('desc'); // 'added' | 'asc' | 'desc'
   const [newlyAddedWorkloadId, setNewlyAddedWorkloadId] = useState(null);
   const workloadCardRefs = React.useRef({});
+
+  // Delegation & Batch Import state
+  const [showOrganizedClassCheckModal, setShowOrganizedClassCheckModal] = useState(false);
+  const [showDelegationModal, setShowDelegationModal] = useState(false);
+  const [selectedTeacherIdsForDelegation, setSelectedTeacherIdsForDelegation] = useState([]);
+  const [delegationSearch, setDelegationSearch] = useState('');
+  const [delegationGradeFilter, setDelegationGradeFilter] = useState('all');
+  const [showImportBatchModal, setShowImportBatchModal] = useState(false);
+  const [importedBatchData, setImportedBatchData] = useState(null);
+  const batchImportFileRef = useRef(null);
+
+  useEffect(() => {
+    if (showDelegationModal && selectedTeacherIdsForDelegation.length === 0) {
+      const validTeacherIds = (personnel || []).map(p => String(p.id));
+      setSelectedTeacherIdsForDelegation(validTeacherIds);
+    }
+  }, [showDelegationModal, personnel]);
+
+  const handleGenerateDelegationPackageHTML = () => {
+    const selIds = selectedTeacherIdsForDelegation.map(id => String(id));
+    console.log('[Delegation HTML] personnel count:', (personnel || []).length);
+    console.log('[Delegation HTML] selIds:', selIds);
+    console.log('[Delegation HTML] personnel IDs:', (personnel || []).map(p => String(p.id)));
+    const rawSelected = (personnel || []).filter(p => selIds.includes(String(p.id)));
+    console.log('[Delegation HTML] rawSelected count:', rawSelected.length);
+
+    if (rawSelected.length === 0) {
+      showAlert("No Teachers Selected", "Please select at least one teacher to delegate workload entry.");
+      return;
+    }
+
+    const selectedTeachers = rawSelected.map(p => {
+      const draftKey = `draft_workload_${p.id}`;
+      const savedDraft = localStorage.getItem(draftKey);
+      let personData = { ...p };
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed && Array.isArray(parsed.workloadRows)) {
+            personData.workloadRows = parsed.workloadRows;
+          }
+        } catch (e) {
+          console.error("Failed to parse draft workload for teacher", p.id, e);
+        }
+      }
+      if (!Array.isArray(personData.workloadRows)) {
+        personData.workloadRows = [];
+      }
+      return personData;
+    });
+
+    const htmlContent = generateWorkloadDelegationHTML({
+      schoolInfo,
+      selectedTeachers,
+      classSections,
+      customSubjects: schoolInfo?.subjectsConfig?.customSubjects || [],
+      GRADE_LEVEL_SUBJECTS,
+      REMEDIATION_FOCUS_BY_CATEGORY
+    });
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Workload_Delegation_Package_${(schoolInfo?.schoolName || 'School').replace(/[^a-zA-Z0-9]/g, '_')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowDelegationModal(false);
+    showToast(`Workload Delegation Package HTML generated for ${selectedTeachers.length} teachers!`, 'success');
+  };
+
+  const handleBatchJSONImportSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const payload = JSON.parse(event.target.result);
+        if (payload && payload.version === 'INSIGHTED_WORKLOAD_DELEGATION_V1' && payload.teachersWorkload) {
+          setImportedBatchData(payload);
+          setShowImportBatchModal(true);
+        } else {
+          showAlert("Invalid Data File", "The uploaded file is not a valid InsightED Workload Return payload.");
+        }
+      } catch (err) {
+        console.error("Failed to parse batch JSON file", err);
+        showAlert("File Read Error", "Could not read the JSON file. Please ensure it is valid.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleApproveAndMergeBatchImport = async () => {
+    if (!importedBatchData || !importedBatchData.teachersWorkload) return;
+
+    let mergedCount = 0;
+    const teachersMap = importedBatchData.teachersWorkload;
+
+    Object.entries(teachersMap).forEach(([personnelId, rows]) => {
+      const targetPerson = personnel.find(p => p.id === personnelId);
+      if (targetPerson) {
+        const draftKey = `draft_workload_${personnelId}`;
+        const savedDraft = localStorage.getItem(draftKey);
+        let basePerson = targetPerson;
+        if (savedDraft) {
+          try {
+            const parsed = JSON.parse(savedDraft);
+            if (parsed) basePerson = parsed;
+          } catch (e) {}
+        }
+        const updated = { ...basePerson, workloadRows: rows };
+        localStorage.setItem(draftKey, JSON.stringify(updated));
+        mergedCount++;
+      }
+    });
+
+    if (dbPerson && teachersMap[dbPerson.id]) {
+      const updatedActive = { ...currentPerson, workloadRows: teachersMap[dbPerson.id] };
+      setEditPerson(updatedActive);
+    }
+
+    setShowImportBatchModal(false);
+    setImportedBatchData(null);
+    showToast(`Successfully merged workloads for ${mergedCount} teachers locally!`, 'success');
+  };
 
   useEffect(() => {
     if (newlyAddedWorkloadId && workloadCardRefs.current[newlyAddedWorkloadId]) {
@@ -2480,7 +3566,57 @@ export default function Workload() {
         }
       }
 
-      let updatedRows = (person.workloadRows || []).map(r => {
+      const isNonTeachingPerson = (person.type === 'non-teaching') || (
+        String(person.position || '').toUpperCase().includes('ADMINISTRATIVE') ||
+        String(person.position || '').toUpperCase().includes('ADAS') ||
+        String(person.position || '').toUpperCase().includes('BOOKKEEPER') ||
+        String(person.position || '').toUpperCase().includes('SECURITY') ||
+        String(person.position || '').toUpperCase().includes('UTILITY') ||
+        String(person.position || '').toUpperCase().includes('NURSE') ||
+        String(person.position || '').toUpperCase().includes('DRIVER') ||
+        String(person.position || '').toUpperCase().includes('AIDE') ||
+        String(person.position || '').toUpperCase().includes('ACCOUNTANT') ||
+        String(person.position || '').toUpperCase().includes('DISBURSING')
+      );
+
+      if (isNonTeachingPerson && person.workloadRows && person.workloadRows.length > 0) {
+        let currentAdmin = [...(person.administrativeRows || [])];
+        let currentTR = [...(person.teachingRelatedRows || [])];
+
+        person.workloadRows.forEach((w, wIdx) => {
+          const taskName = w.subject || w.task || 'Administrative Duties';
+          const taskUpper = String(taskName).toUpperCase();
+          const isTR = taskUpper.includes('TR') || taskUpper.includes('TEACHING RELATED') || taskUpper.includes('TEACHING-RELATED');
+
+          const newRow = {
+            id: `migrated-${Date.now()}-${wIdx}`,
+            task: taskName,
+            dates: [
+              {
+                date: '',
+                startTime: w.startTime || '08:00',
+                endTime: w.endTime || '17:00',
+                days: w.days || ['M', 'T', 'W', 'TH', 'F']
+              }
+            ]
+          };
+
+          if (isTR) {
+            if (!currentTR.some(r => r.task === taskName)) currentTR.push(newRow);
+          } else {
+            if (!currentAdmin.some(r => r.task === taskName)) currentAdmin.push(newRow);
+          }
+        });
+
+        person = {
+          ...person,
+          workloadRows: [],
+          administrativeRows: currentAdmin,
+          teachingRelatedRows: currentTR
+        };
+      }
+
+      let updatedRows = (isNonTeachingPerson) ? [] : (person.workloadRows || []).map(r => {
         let normSecId = (r.sectionId !== undefined && r.sectionId !== null && r.sectionId !== '')
           ? String(r.sectionId)
           : ((r.section_id !== undefined && r.section_id !== null && r.section_id !== '') ? String(r.section_id) : '');
@@ -2507,12 +3643,15 @@ export default function Workload() {
         return {
           ...r,
           sectionId: normSecId,
-          subject: normSub,
+          subject: String(normSub || '').toUpperCase().trim(),
           gradeLevel: normGrade,
           category: normCat || 'Elementary'
         };
       });
       let rowsChanged = false;
+
+      const advisorySections = (classSections || []).filter(s => s.advisorId && dbPerson.id && String(s.advisorId) === String(dbPerson.id));
+      const defaultAdvSecId = advisorySections.length > 0 ? String(advisorySections[0].id) : '';
 
       // Filter out obsolete HOMEROOM GUIDANCE rows and duplicate ADVISORY / HGP rows per section
       const seenAdvisorySecs = new Set();
@@ -2527,18 +3666,18 @@ export default function Workload() {
           return;
         }
         if (subUpper === 'ADVISORY') {
-          const secKey = String(r.sectionId || r.section_id || '');
+          let secKey = String(r.sectionId || r.section_id || defaultAdvSecId || 'GLOBAL_ADV');
           if (!seenAdvisorySecs.has(secKey)) {
             seenAdvisorySecs.add(secKey);
-            cleanedRows.push({ ...r, subject: 'ADVISORY' });
+            cleanedRows.push({ ...r, subject: 'ADVISORY', sectionId: r.sectionId || defaultAdvSecId || '' });
           } else {
             didClean = true;
           }
         } else if (subUpper === 'HGP') {
-          const secKey = String(r.sectionId || r.section_id || '');
+          let secKey = String(r.sectionId || r.section_id || defaultAdvSecId || 'GLOBAL_HGP');
           if (!seenHgpSecs.has(secKey)) {
             seenHgpSecs.add(secKey);
-            cleanedRows.push({ ...r, subject: 'HGP' });
+            cleanedRows.push({ ...r, subject: 'HGP', sectionId: r.sectionId || defaultAdvSecId || '' });
           } else {
             didClean = true;
           }
@@ -2551,8 +3690,6 @@ export default function Workload() {
         updatedRows = cleanedRows;
         rowsChanged = true;
       }
-
-      const advisorySections = (classSections || []).filter(s => s.advisorId && dbPerson.id && String(s.advisorId) === String(dbPerson.id));
 
       if (advisorySections.length === 0) {
         const initialLen = updatedRows.length;
@@ -2622,6 +3759,34 @@ export default function Workload() {
         });
       }
 
+      // Post-sanitization: Strictly enforce maximum ONE ADVISORY row and ONE HGP row per teacher
+      const finalSanitizedRows = [];
+      const seenAdvFinal = new Set();
+      const seenHgpFinal = new Set();
+
+      updatedRows.forEach(r => {
+        const subUpper = String(r.subject || '').toUpperCase().trim();
+        if (subUpper === 'ADVISORY') {
+          if (seenAdvFinal.has('ADVISORY_SINGLETON')) {
+            rowsChanged = true;
+            return; // Drop duplicate ADVISORY row
+          }
+          seenAdvFinal.add('ADVISORY_SINGLETON');
+        } else if (subUpper === 'HGP') {
+          if (seenHgpFinal.has('HGP_SINGLETON')) {
+            rowsChanged = true;
+            return; // Drop duplicate HGP row
+          }
+          seenHgpFinal.add('HGP_SINGLETON');
+        }
+        finalSanitizedRows.push(r);
+      });
+
+      if (finalSanitizedRows.length !== updatedRows.length) {
+        updatedRows = finalSanitizedRows;
+        rowsChanged = true;
+      }
+
       if (rowsChanged) {
         const updatedPerson = { ...person, workloadRows: updatedRows };
         setEditPerson(updatedPerson);
@@ -2635,6 +3800,14 @@ export default function Workload() {
   }, [activePersonnelId, dbPerson, classSections]);
 
   const currentPerson = editPerson || dbPerson;
+
+  useEffect(() => {
+    if (currentPerson && currentPerson.workloadVerified === false && !verifiedModalDismissedMap.current[currentPerson.id]) {
+      setShowAttentionModal(true);
+    } else {
+      setShowAttentionModal(false);
+    }
+  }, [currentPerson?.id, currentPerson?.workloadVerified]);
 
 
 
@@ -2715,8 +3888,13 @@ export default function Workload() {
       .map(cs => typeof cs === 'string' ? cs : cs?.name)
       .filter(Boolean);
 
-    // Merge base subjects with custom subjects
-    const merged = Array.from(new Set([...(baseList || []), ...customNames]));
+    // Merge base subjects with custom subjects, unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS, filter ADVISORY
+    const unifiedList = (baseList || []).map(s => {
+      const u = String(s || '').toUpperCase().trim();
+      return (u === 'REMEDIATION' || u === 'REMEDIAL/ENHANCEMENT CLASS') ? 'REMEDIAL / ENHANCEMENT CLASS' : u;
+    });
+    const uppercaseCustom = customNames.map(c => String(c || '').toUpperCase().trim());
+    const merged = Array.from(new Set([...unifiedList, ...uppercaseCustom]));
 
     // Check disabled map for standard subjects
     const disabledMap = (() => {
@@ -2728,6 +3906,7 @@ export default function Workload() {
     })();
 
     return merged.filter(subName => {
+      if (subName === 'ADVISORY') return false; // ADVISORY is auto-assigned to Section Advisors only
       if (customNames.includes(subName)) return true; // Always include custom subjects (e.g. TEST)
       if (disabledMap[subName] === true) return false;
       return true;
@@ -2817,8 +3996,11 @@ export default function Workload() {
     return { nextStart, nextEnd, nextDays };
   };
 
-  // 1. Classroom Workload Rows (Vite Subject schedule rows)
   const addWorkloadRow = () => {
+    if (currentPerson?.type === 'non-teaching') {
+      if (showToast) showToast("Non-teaching personnel cannot be assigned classroom teaching subjects.", "warning");
+      return;
+    }
     const assignedGrades = getAssignedGradeLevels(currentPerson);
 
     let initialGrade = 'Grade 1';
@@ -2896,9 +4078,33 @@ export default function Workload() {
 
   const getTimeDiffMins = (start, end) => {
     if (!start || !end) return 0;
-    const [sh, sm] = start.split(':').map(Number);
-    const [eh, em] = end.split(':').map(Number);
+    const [sh, sm] = String(start).split(':').map(Number);
+    const [eh, em] = String(end).split(':').map(Number);
+    if (isNaN(sh) || isNaN(eh)) return 0;
     return (eh * 60 + em) - (sh * 60 + sm);
+  };
+
+  const getRowDurationError = (row) => {
+    if (!row || !row.startTime || !row.endTime) return null;
+    const diffMins = getTimeDiffMins(row.startTime, row.endTime);
+    if (diffMins <= 0) return "End time must be after start time";
+
+    const subStr = String(row.subject || row.task || '').toUpperCase();
+    const gStr = String(row.gradeLevel || '').toUpperCase();
+    
+    // KINDER BLOCKS OF TIME: Automatic 3 Hours (180 mins) — No max / no min duration error!
+    if (subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER')) {
+      return null;
+    }
+
+    const isSHS = isSHSRow(row);
+    const maxMins = isSHS ? 360 : 60;
+    if (diffMins > maxMins) {
+      return isSHS 
+        ? `Exceeds max 6 hours (360 mins) for SHS (Current: ${diffMins} mins)`
+        : `Exceeds max 1 hour (60 mins) for Elementary/JHS (Current: ${diffMins} mins)`;
+    }
+    return null;
   };
 
   const updateWorkloadRow = async (index, field, value) => {
@@ -2993,18 +4199,25 @@ export default function Workload() {
         }
       }
       const newSubjects = getSubjectsForGrade(section.gradeLevel, resolvedCategory);
+      const isCurrentValid = newSubjects.includes(rows[index].subject);
 
       rows[index] = {
         ...rows[index],
         sectionId: String(sectionId),
+        sectionName: section.sectionName,
         gradeLevel: section.gradeLevel,
         category: resolvedCategory,
-        subject: newSubjects.includes(rows[index].subject) ? rows[index].subject : (newSubjects.find(s => !isAdvisorySub(s)) || '')
+        subject: isCurrentValid ? rows[index].subject : '',
+        remediationSubject: isCurrentValid ? rows[index].remediationSubject : ''
       };
     } else {
       rows[index] = {
         ...rows[index],
-        sectionId: ''
+        sectionId: '',
+        sectionName: '',
+        gradeLevel: '',
+        subject: '',
+        remediationSubject: ''
       };
     }
     handleFieldChange('workloadRows', rows);
@@ -3015,10 +4228,18 @@ export default function Workload() {
     const targetRow = rows[rowIndex];
     if (!targetRow) return;
 
-    if (targetRow.subject === 'HGP') {
+    const subUpper = String(targetRow.subject || '').toUpperCase().trim();
+    if (subUpper === 'ADVISORY') {
+      return alert('🔒 Advisory days are fixed to Monday through Friday (M-F).');
+    }
+
+    if (subUpper === 'HGP') {
       const advRow = rows.find(r => r.subject === 'ADVISORY' && (String(r.sectionId) === String(targetRow.sectionId) || (!r.sectionId && !targetRow.sectionId)));
       const advDays = advRow?.days || ['M', 'T', 'W', 'TH', 'F'];
       if (!advDays.includes(day)) return; // Restrict HGP to ADVISORY days only
+      targetRow.days = [day]; // HGP is strictly 1 day only
+      handleFieldChange('workloadRows', rows);
+      return;
     }
 
     const days = [...(targetRow.days || [])];
@@ -3029,16 +4250,6 @@ export default function Workload() {
       newDays = [...days, day];
     }
     targetRow.days = newDays;
-
-    // If ADVISORY days change, auto-prune HGP days that are no longer selected in ADVISORY
-    if (targetRow.subject === 'ADVISORY') {
-      const hgpIdx = rows.findIndex(r => r.subject === 'HGP' && (String(r.sectionId) === String(targetRow.sectionId) || (!r.sectionId && !targetRow.sectionId)));
-      if (hgpIdx !== -1) {
-        const hgpRow = rows[hgpIdx];
-        const prunedHgpDays = (hgpRow.days || []).filter(d => newDays.includes(d));
-        rows[hgpIdx] = { ...hgpRow, days: prunedHgpDays };
-      }
-    }
 
     handleFieldChange('workloadRows', rows);
   };
@@ -3482,22 +4693,73 @@ export default function Workload() {
       <article className="card">
         <div className="card-inner">
 
-          {/* ── View Mode Toggle ── */}
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', background: 'var(--blue-50)', padding: '5px', borderRadius: '12px', width: 'fit-content', border: '1.5px solid var(--line)' }}>
-            <button type="button" onClick={() => setWorkloadView('by-personnel')}
-              style={{
-                padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
-                background: workloadView === 'by-personnel' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
-                color: workloadView === 'by-personnel' ? 'white' : 'var(--navy)'
-              }}
-            >👤 By Personnel</button>
-            <button type="button" onClick={() => setWorkloadView('by-section')}
-              style={{
-                padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
-                background: workloadView === 'by-section' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
-                color: workloadView === 'by-section' ? 'white' : 'var(--navy)'
-              }}
-            >🏫 By Section</button>
+          {/* ── View Mode Toggle & Delegation Actions ── */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', gap: '6px', background: 'var(--blue-50)', padding: '5px', borderRadius: '12px', width: 'fit-content', border: '1.5px solid var(--line)' }}>
+              <button type="button" onClick={() => setWorkloadView('by-personnel')}
+                style={{
+                  padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
+                  background: workloadView === 'by-personnel' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
+                  color: workloadView === 'by-personnel' ? 'white' : 'var(--navy)'
+                }}
+              >👤 By Personnel</button>
+              <button type="button" onClick={() => setWorkloadView('by-section')}
+                style={{
+                  padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
+                  background: workloadView === 'by-section' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
+                  color: workloadView === 'by-section' ? 'white' : 'var(--navy)'
+                }}
+              >🏫 By Section</button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleConfirmAllAndSave}
+                style={{
+                  background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                  cursor: 'pointer'
+                }}
+                title="Confirm and save timetable schedules for all personnel"
+              >
+                ✓ Confirm All & Save
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowOrganizedClassCheckModal(true);
+                }}
+                style={{ background: '#0284c7', color: 'white', fontWeight: 'bold', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span>📤</span> Delegation Package (HTML)
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => batchImportFileRef.current?.click()}
+                style={{ border: '1.5px solid #0284c7', color: '#0284c7', fontWeight: 'bold', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span>📥</span> Import Batch (.json)
+              </button>
+              <input
+                type="file"
+                ref={batchImportFileRef}
+                accept=".json"
+                style={{ display: 'none' }}
+                onChange={handleBatchJSONImportSelect}
+              />
+            </div>
           </div>
 
           {/* ── BY SECTION VIEW ── */}
@@ -3683,12 +4945,13 @@ export default function Workload() {
 
                         return (
                           <SearchableSelect
+                            disabled={!selectedSectionId}
                             value={newSlot.subject || ''}
-                            placeholder="Select subject..."
+                            placeholder={!selectedSectionId ? 'Select section first…' : 'Select subject…'}
                             options={subjectOptions}
                             onChange={(e) => {
                               const val = e.target.value;
-                              if (val === 'REMEDIATION') {
+                              if (isRemediationSub(val)) {
                                 const defaultSub = (sec?.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN';
                                 setNewSlot(prev => ({ ...prev, subject: val, remediationSubject: defaultSub }));
                               } else {
@@ -3702,7 +4965,7 @@ export default function Workload() {
                       {/* Secondary Remediation Dropdown */}
                       {(() => {
                         const sec = (classSections || []).find(s => s.id === selectedSectionId);
-                        if (newSlot.subject === 'REMEDIATION') {
+                        if (isRemediationSub(newSlot.subject)) {
                           const isKinder = sec?.gradeLevel === 'Kinder';
                           const subOptions = isKinder
                             ? [
@@ -3894,17 +5157,45 @@ export default function Workload() {
                         </span>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--muted)' }}>
                           <span>{p.position}</span>
-                          <span style={{
-                            background: p.type === 'teaching' ? '#e0f2fe' : p.type === 'teaching-related' ? '#fae8ff' : '#f1f5f9',
-                            color: p.type === 'teaching' ? '#0369a1' : p.type === 'teaching-related' ? '#a21caf' : '#475569',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontSize: '9px',
-                            fontWeight: 'bold',
-                            textTransform: 'uppercase'
-                          }}>
-                            {p.type === 'teaching-related' ? 'Related' : p.type}
-                          </span>
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                            {p.workloadVerified === false && (
+                              <span style={{
+                                background: '#FEF3C7',
+                                color: '#D97706',
+                                border: '1px solid #FCD34D',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontSize: '8.5px',
+                                fontWeight: '700'
+                              }}>
+                                ⚠️ Time Review
+                              </span>
+                            )}
+                            {p.workloadVerified === true && (
+                              <span style={{
+                                background: '#DCFCE7',
+                                color: '#15803D',
+                                border: '1px solid #86EFAC',
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                fontSize: '8.5px',
+                                fontWeight: '700'
+                              }}>
+                                ✓ Confirmed & Saved
+                              </span>
+                            )}
+                            <span style={{
+                              background: p.type === 'teaching' ? '#e0f2fe' : p.type === 'teaching-related' ? '#fae8ff' : '#f1f5f9',
+                              color: p.type === 'teaching' ? '#0369a1' : p.type === 'teaching-related' ? '#a21caf' : '#475569',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '9px',
+                              fontWeight: 'bold',
+                              textTransform: 'uppercase'
+                            }}>
+                              {p.type === 'teaching-related' ? 'Related' : p.type}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     );
@@ -3926,6 +5217,96 @@ export default function Workload() {
                   </div>
                 ) : (
                   <>
+                    {/* Schedule Time Verification Banner */}
+                    {(() => {
+                      const currentTeacherRows = currentPerson?.workloadRows || [];
+                      const hasBlockingErrors = currentTeacherRows.some((r, rIdx) => {
+                        if (getRowDurationError(r)) return true;
+                        return currentTeacherRows.some((otherR, oIdx) => {
+                          if (rIdx === oIdx) return false;
+                          if (!r.startTime || !r.endTime || !otherR.startTime || !otherR.endTime) return false;
+                          const daysOverlap = (r.days || []).some(d => (otherR.days || []).includes(d));
+                          if (!daysOverlap) return false;
+                          const ns = parseTimeToMinutes(r.startTime), ne = parseTimeToMinutes(r.endTime);
+                          const rs = parseTimeToMinutes(otherR.startTime), re = parseTimeToMinutes(otherR.endTime);
+                          if (ns < re && ne > rs) {
+                            if (isAdvisoryOrHgpPair(r, otherR)) return false;
+                            return true;
+                          }
+                          return false;
+                        });
+                      });
+
+                      if (!currentPerson || currentPerson.workloadVerified !== false) return null;
+
+                      return (
+                        <div style={{
+                          background: hasBlockingErrors ? '#FEF2F2' : '#FFFBEB',
+                          border: `1.5px solid ${hasBlockingErrors ? '#EF4444' : '#F59E0B'}`,
+                          borderRadius: '12px',
+                          padding: '14px 18px',
+                          marginBottom: '16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '16px',
+                          boxShadow: '0 2px 4px rgba(245, 158, 11, 0.15)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '24px' }}>{hasBlockingErrors ? '🔴' : '⚠️'}</span>
+                            <div>
+                              <strong style={{ color: hasBlockingErrors ? '#991B1B' : '#92400E', fontSize: '13.5px', display: 'block' }}>
+                                {hasBlockingErrors ? 'Fix Invalid Duration / Overlapping Time Slots First' : 'Auto-Populated Schedule Requires Time Verification'}
+                              </strong>
+                              <span style={{ color: hasBlockingErrors ? '#B91C1C' : '#B45309', fontSize: '12px', fontWeight: hasBlockingErrors ? '600' : '400' }}>
+                                {hasBlockingErrors
+                                  ? `Please fix red duration errors (> 60m / > 6h SHS) or overlaps for ${currentPerson.firstName} ${currentPerson.lastName} before confirming.`
+                                  : `Please inspect all Start Times, End Times, and Days for ${currentPerson.firstName} ${currentPerson.lastName}.`}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={hasBlockingErrors}
+                            onClick={() => handleVerifySchedule(currentPerson.id)}
+                            style={{
+                              background: hasBlockingErrors ? '#CBD5E1' : 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
+                              color: hasBlockingErrors ? '#64748B' : '#FFFFFF',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '8px 18px',
+                              fontWeight: '700',
+                              fontSize: '12px',
+                              cursor: hasBlockingErrors ? 'not-allowed' : 'pointer',
+                              whiteSpace: 'nowrap',
+                              boxShadow: hasBlockingErrors ? 'none' : '0 4px 6px -1px rgba(217, 119, 6, 0.3)'
+                            }}
+                            title={hasBlockingErrors ? "Fix red duration errors or overlapping schedules before confirming" : "Confirm and save schedule"}
+                          >
+                            {hasBlockingErrors ? '🚫 Fix Errors First' : '✓ Confirm Schedule'}
+                          </button>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Non-Teaching Personnel Banner */}
+                    {currentPerson?.type === 'non-teaching' && (
+                      <div style={{
+                        background: '#F1F5F9', border: '1.5px solid #CBD5E1', borderRadius: '12px',
+                        padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px'
+                      }}>
+                        <span style={{ fontSize: '24px' }}>💼</span>
+                        <div>
+                          <strong style={{ color: '#1E293B', fontSize: '14px', display: 'block' }}>
+                            Non-Teaching Personnel
+                          </strong>
+                          <span style={{ color: '#475569', fontSize: '12px' }}>
+                            {currentPerson.firstName} {currentPerson.lastName} ({currentPerson.position || 'Non-Teaching'}) is classified as non-teaching and automatically has <strong>0.0 teaching workload hours</strong>.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Draft Banner if exists */}
                     {localStorage.getItem(`draft_workload_${currentPerson?.id}`) && (
                       <div style={{ padding: '12px 16px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '12px', color: '#B45309', fontSize: '13px', marginBottom: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4055,7 +5436,7 @@ export default function Workload() {
                           {layoutType === 'list' && (currentPerson.workloadRows || []).length > 0 && (
                             <div style={{
                               display: 'grid',
-                              gridTemplateColumns: 'minmax(140px, 1fr) minmax(160px, 1.2fr) 135px 135px auto 90px',
+                              gridTemplateColumns: '150px 1fr 125px 125px 170px 80px',
                               gap: '12px',
                               alignItems: 'center',
                               padding: '8px 16px',
@@ -4126,7 +5507,8 @@ export default function Workload() {
                               const cardRowId = row.id || `workload-row-${idx}`;
                               const isNewlyAdded = newlyAddedWorkloadId && (String(row.id) === String(newlyAddedWorkloadId) || String(cardRowId) === String(newlyAddedWorkloadId));
 
-                              const cardHasError = hasConflict;
+                              const durationErr = getRowDurationError(row);
+                              const cardHasError = hasConflict || !!durationErr;
 
                               return (
                                 <div
@@ -4152,8 +5534,26 @@ export default function Workload() {
                                     <span className="badge-new-item">Just Added</span>
                                   )}
 
+                                  {cardHasError && (
+                                    <div style={{
+                                      background: '#FEF2F2',
+                                      color: '#B91C1C',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      padding: '4px 10px',
+                                      borderRadius: '6px',
+                                      border: '1px solid #FCA5A5',
+                                      marginBottom: '8px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px'
+                                    }}>
+                                      <span>🔴</span> {durationErr || 'Schedule Overlap Conflict: Time slot overlaps with another subject or task.'}
+                                    </div>
+                                  )}
+
                                   {layoutType === 'list' ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) minmax(160px, 1.2fr) 135px 135px auto 90px', gap: '12px', alignItems: 'center', width: '100%' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 125px 125px 170px 80px', gap: '12px', alignItems: 'center', width: '100%' }}>
                                       {/* Section */}
                                       <div>
                                         {(() => {
@@ -4238,11 +5638,11 @@ export default function Workload() {
                                           const subjectOptions = filteredSubjectList.map(s => ({ value: s, label: s }));
                                           return (
                                             <SearchableSelect
-                                              disabled={(!currentSecId && !currentSub) || row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                              disabled={!currentSecId || row.subject === 'ADVISORY' || row.subject === 'HGP'}
                                               value={currentSub}
                                               onChange={(e) => {
                                                 const val = e.target.value;
-                                                if (val === 'REMEDIATION') {
+                                                if (isRemediationSub(val)) {
                                                   const defaultSub = (row.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN';
                                                   updateWorkloadRowFields(idx, { subject: val, remediationSubject: defaultSub });
                                                 } else {
@@ -4254,7 +5654,7 @@ export default function Workload() {
                                             />
                                           );
                                         })()}
-                                        {row.subject === 'REMEDIATION' && (
+                                        {isRemediationSub(row.subject) && (
                                           <SearchableSelect
                                             value={row.remediationSubject || (row.gradeLevel === 'Kinder' ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN')}
                                             onChange={(e) => updateWorkloadRow(idx, 'remediationSubject', e.target.value)}
@@ -4274,19 +5674,6 @@ export default function Workload() {
                                           <span style={{ fontSize: '11px', color: '#0284c7', background: '#e0f2fe', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold' }}>
                                             ⏱️ 60 Mins / Day (Fixed)
                                           </span>
-                                        </div>
-                                      ) : row.subject === 'HGP' ? (
-                                        <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>HGP:</span>
-                                          <input
-                                            type="number"
-                                            min="1"
-                                            max="60"
-                                            value={row.hgpMinutes !== undefined ? row.hgpMinutes : 60}
-                                            onChange={(e) => updateWorkloadRow(idx, 'hgpMinutes', Math.min(60, Math.max(1, parseInt(e.target.value) || 0)))}
-                                            style={{ width: '60px', padding: '4px 6px', borderRadius: '6px', border: '1.5px solid var(--line)', textAlign: 'center', fontWeight: 'bold', fontSize: '12px' }}
-                                          />
-                                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>mins</span>
                                         </div>
                                       ) : (
                                         <>
@@ -4467,11 +5854,11 @@ export default function Workload() {
                                             }
                                             return (
                                               <SearchableSelect
-                                                disabled={(!currentSecId && !currentSub) || row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                                disabled={!currentSecId || row.subject === 'ADVISORY' || row.subject === 'HGP'}
                                                 value={currentSub}
                                                 onChange={(e) => {
                                                   const val = e.target.value;
-                                                  if (val === 'REMEDIATION') { updateWorkloadRowFields(idx, { subject: val, remediationSubject: (row.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN' }); }
+                                                  if (isRemediationSub(val)) { updateWorkloadRowFields(idx, { subject: val, remediationSubject: (row.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN' }); }
                                                   else { updateWorkloadRowFields(idx, { subject: val, remediationSubject: '' }); }
                                                 }}
                                                 options={filteredSubjectList.map(s => ({ value: s, label: s }))}
@@ -4501,7 +5888,7 @@ export default function Workload() {
                                             />
                                           </div>
                                         )}
-                                        {row.subject === 'REMEDIATION' && (
+                                        {isRemediationSub(row.subject) && (
                                           <div>
                                             <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Remediation Focus</label>
                                             {(() => {
@@ -4666,18 +6053,39 @@ export default function Workload() {
                                       )}
                                     </div>
                                   ))}
-                                  <button
-                                    type="button"
-                                    className="btn secondary"
-                                    style={{ alignSelf: 'flex-start', marginTop: '4px', fontSize: '11px', padding: '4px 10px', minHeight: 'auto' }}
-                                    onClick={() => {
-                                      const updatedDates = [...(row.dates || [])];
-                                      updatedDates.push({ date: '', startTime: '08:00', endTime: '09:00' });
-                                      updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
-                                    }}
-                                  >
-                                    + Add Date
-                                  </button>
+                                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      className="btn secondary"
+                                      style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto' }}
+                                      onClick={() => {
+                                        const updatedDates = [...(row.dates || [])];
+                                        updatedDates.push({ date: '', startTime: '08:00', endTime: '09:00' });
+                                        updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
+                                      }}
+                                    >
+                                      + Add Single Date
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      style={{
+                                        background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        fontSize: '11px',
+                                        padding: '4px 12px',
+                                        minHeight: 'auto',
+                                        borderRadius: '6px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                      }}
+                                      onClick={() => openCalendarModal('teachingRelatedRows', idx, row)}
+                                    >
+                                      📅 Select Dates on Calendar
+                                    </button>
+                                  </div>
                                 </div>
                                 <button className="btn danger" type="button" onClick={() => removeTaskRow('teachingRelatedRows', idx)} style={{ marginTop: '20px' }}>Remove</button>
                               </div>
@@ -4772,18 +6180,39 @@ export default function Workload() {
                                       )}
                                     </div>
                                   ))}
-                                  <button
-                                    type="button"
-                                    className="btn secondary"
-                                    style={{ alignSelf: 'flex-start', marginTop: '4px', fontSize: '11px', padding: '4px 10px', minHeight: 'auto' }}
-                                    onClick={() => {
-                                      const updatedDates = [...(row.dates || [])];
-                                      updatedDates.push({ date: '', startTime: '08:00', endTime: '09:00' });
-                                      updateTaskField('administrativeRows', idx, 'dates', updatedDates);
-                                    }}
-                                  >
-                                    + Add Date
-                                  </button>
+                                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      className="btn secondary"
+                                      style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto' }}
+                                      onClick={() => {
+                                        const updatedDates = [...(row.dates || [])];
+                                        updatedDates.push({ date: '', startTime: '08:00', endTime: '09:00' });
+                                        updateTaskField('administrativeRows', idx, 'dates', updatedDates);
+                                      }}
+                                    >
+                                      + Add Single Date
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      style={{
+                                        background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        fontSize: '11px',
+                                        padding: '4px 12px',
+                                        minHeight: 'auto',
+                                        borderRadius: '6px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                      }}
+                                      onClick={() => openCalendarModal('administrativeRows', idx, row)}
+                                    >
+                                      📅 Select Dates on Calendar
+                                    </button>
+                                  </div>
                                 </div>
                                 <button className="btn danger" type="button" onClick={() => removeTaskRow('administrativeRows', idx)} style={{ marginTop: '20px' }}>Remove</button>
                               </div>
@@ -4793,14 +6222,6 @@ export default function Workload() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '20px', borderTop: '1.5px solid var(--line)', paddingTop: '15px' }}>
-                      <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white' }}>
-                        Save Changes
-                      </button>
-                      <button className="btn secondary" type="button" onClick={handleSaveValidate} style={{ borderColor: 'var(--blue)', color: 'var(--blue)' }}>
-                        Save & Validate Workload
-                      </button>
-                    </div>
                   </>
                 )}
               </div>
@@ -4808,6 +6229,627 @@ export default function Workload() {
           )}
         </div>
       </article>
+
+      {/* ── ORGANIZED CLASS COMPLETION CHECK MODAL ── */}
+      {showOrganizedClassCheckModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.5)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px', width: '520px', maxWidth: '90vw',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
+                🏫
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
+                  Is Organized Classes Completed?
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>
+                  Confirmation required before downloading Delegation Package
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5, margin: '0 0 16px' }}>
+              The downloaded HTML Delegation package embeds your school's official <strong>Organized Class Sections</strong> so encoders (Person A) can select class sections directly from a dropdown list.
+            </p>
+
+            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--navy)' }}>Registered School Sections:</span>
+              <span style={{ background: '#0284c7', color: 'white', fontWeight: '800', fontSize: '12px', padding: '4px 10px', borderRadius: '20px' }}>
+                {(classSections || []).length} Section(s) Found
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setShowOrganizedClassCheckModal(false)}
+                style={{ padding: '10px 16px', borderRadius: '8px' }}
+              >
+                Not Yet — Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  setShowOrganizedClassCheckModal(false);
+                  const allIds = (personnel || []).map(p => String(p.id));
+                  console.log('[OrganizedCheck → Delegation] setting teacher IDs:', allIds);
+                  setSelectedTeacherIdsForDelegation(allIds);
+                  setShowDelegationModal(true);
+                }}
+                style={{ padding: '10px 20px', fontWeight: 'bold', borderRadius: '8px', background: '#0284c7' }}
+              >
+                Yes, Complete → Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── WORKLOAD DELEGATION PACKAGE (HTML EXPORT) MODAL ── */}
+      {showDelegationModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.5)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px', width: '520px', maxWidth: '90vw',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
+              📤 Export Workload Delegation Package (HTML)
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+              Select the teachers you want Person A (or Department Head) to encode. This exports a standalone HTML file that works offline on any computer.
+            </p>
+
+            {/* Search & Grade Level Filter controls */}
+            {(() => {
+              const visibleTeachers = personnel.filter(p => {
+                const fullName = `${p.firstName || ''} ${p.lastName || ''} ${p.position || ''}`.toLowerCase();
+                const matchesSearch = fullName.includes(delegationSearch.toLowerCase().trim());
+                if (!matchesSearch) return false;
+                if (delegationGradeFilter === 'all') return true;
+
+                const assigned = getAssignedGradeLevels(p);
+                const rowGrades = (p.workloadRows || []).map(r => r.gradeLevel).filter(Boolean);
+                const allGrades = Array.from(new Set([...assigned, ...rowGrades]));
+                return allGrades.includes(delegationGradeFilter);
+              });
+
+              const selIdsStr = selectedTeacherIdsForDelegation.map(String);
+              const allVisibleSelected = visibleTeachers.length > 0 && visibleTeachers.every(p => selIdsStr.includes(String(p.id)));
+
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px auto', gap: '8px', marginBottom: '12px' }}>
+                    <input
+                      type="text"
+                      placeholder="Search teacher..."
+                      value={delegationSearch}
+                      onChange={(e) => setDelegationSearch(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                    />
+                    <select
+                      value={delegationGradeFilter}
+                      onChange={(e) => setDelegationGradeFilter(e.target.value)}
+                      style={{ padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px', background: 'white', fontWeight: 'bold', color: 'var(--navy)' }}
+                    >
+                      <option value="all">All Grades</option>
+                      {['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn secondary"
+                      onClick={() => {
+                        const visibleIdsStr = visibleTeachers.map(p => String(p.id));
+                        if (allVisibleSelected) {
+                          setSelectedTeacherIdsForDelegation(prev => prev.filter(id => !visibleIdsStr.includes(String(id))));
+                        } else {
+                          setSelectedTeacherIdsForDelegation(prev => Array.from(new Set([...prev.map(String), ...visibleIdsStr])));
+                        }
+                      }}
+                      style={{ padding: '8px 12px', fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                    >
+                      {allVisibleSelected ? 'Deselect Visible' : 'Select Visible'}
+                    </button>
+                  </div>
+
+                  {/* Teachers Checklist */}
+                  <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--line)', borderRadius: '10px', padding: '8px', marginBottom: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {visibleTeachers.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
+                        No teachers found for the selected grade filter.
+                      </div>
+                    ) : (
+                      visibleTeachers.map(p => {
+                        const pIdStr = String(p.id);
+                        const isChecked = selIdsStr.includes(pIdStr);
+                        const assignedGrades = getAssignedGradeLevels(p);
+                        return (
+                          <label
+                            key={p.id}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '8px',
+                              background: isChecked ? '#eff6ff' : 'transparent', cursor: 'pointer', fontSize: '12px',
+                              border: isChecked ? '1px solid #bfdbfe' : '1px solid transparent'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (isChecked) {
+                                    setSelectedTeacherIdsForDelegation(prev => prev.filter(id => String(id) !== pIdStr));
+                                  } else {
+                                    setSelectedTeacherIdsForDelegation(prev => [...prev, pIdStr]);
+                                  }
+                                }}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                              />
+                              <div>
+                                <div style={{ fontWeight: isChecked ? '700' : '600', color: isChecked ? '#1e40af' : '#334155' }}>
+                                  {p.lastName}, {p.firstName}
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#64748b' }}>{p.position || 'Teacher'}</div>
+                              </div>
+                            </div>
+                            {assignedGrades.length > 0 && (
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                {assignedGrades.slice(0, 3).map(g => (
+                                  <span key={g} style={{ background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: 'bold' }}>
+                                    {g}
+                                  </span>
+                                ))}
+                                {assignedGrades.length > 3 && (
+                                  <span style={{ background: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: '10px', fontSize: '9px', fontWeight: 'bold' }}>
+                                    +{assignedGrades.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)' }}>
+                Selected: {selectedTeacherIdsForDelegation.length} teachers
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setShowDelegationModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: '8px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={selectedTeacherIdsForDelegation.length === 0}
+                  onClick={handleGenerateDelegationPackageHTML}
+                  style={{ padding: '8px 20px', borderRadius: '8px', fontWeight: 'bold' }}
+                >
+                  Generate HTML Package →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BATCH IMPORT PREVIEW & MERGE MODAL ── */}
+      {showImportBatchModal && importedBatchData && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.5)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px', width: '560px', maxWidth: '90vw',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
+              📥 Batch Workload Import Preview
+            </h3>
+            <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748b' }}>
+              From: <strong>{importedBatchData.schoolName}</strong> ({importedBatchData.schoolYear})
+            </p>
+
+            <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', border: '1px solid var(--line)', marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--navy)', marginBottom: '8px' }}>
+                Workload Payload Summary:
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#334155', maxHeight: '200px', overflowY: 'auto' }}>
+                {Object.entries(importedBatchData.teachersWorkload || {}).map(([pId, rows]) => {
+                  const p = personnel.find(x => x.id === pId);
+                  return (
+                    <li key={pId} style={{ marginBottom: '4px' }}>
+                      <strong>{p ? `${p.lastName}, ${p.firstName}` : pId}</strong>: {rows.length} workload rows
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => {
+                  setShowImportBatchModal(false);
+                  setImportedBatchData(null);
+                }}
+                style={{ padding: '10px 18px', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={handleApproveAndMergeBatchImport}
+                style={{ padding: '10px 24px', fontWeight: 'bold', borderRadius: '8px' }}
+              >
+                Approve & Merge Workloads
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ATTENTION TIMETABLE VERIFICATION MODAL ── */}
+      {showAttentionModal && currentPerson && (
+        <div className="modal-backdrop" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#FFFFFF', borderRadius: '16px', padding: '28px',
+            maxWidth: '540px', width: '90%', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            border: '2.5px solid #F59E0B'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+              <div style={{
+                background: '#FEF3C7', color: '#D97706', borderRadius: '50%',
+                width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '26px', flexShrink: 0, boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)'
+              }}>
+                ⚠️
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#78350F', fontWeight: '800' }}>
+                  ATTENTION: Timetable Verification Required
+                </h3>
+                <span style={{ fontSize: '12.5px', color: '#B45309', fontWeight: '700', textTransform: 'uppercase' }}>
+                  {currentPerson.firstName} {currentPerson.lastName} ({currentPerson.position || 'Teacher'})
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '10px',
+              padding: '14px 16px', marginBottom: '20px', fontSize: '13px', color: '#92400E', lineHeight: '1.6'
+            }}>
+              <strong style={{ display: 'block', marginBottom: '4px', color: '#78350F' }}>
+                Auto-Populated Schedules Notice:
+              </strong>
+              This teacher's timetable schedule was auto-populated from an uploaded eSF7 file. Please inspect the <strong>Start Time</strong>, <strong>End Time</strong>, and <strong>Usual Days</strong> for all subject periods to ensure accuracy.
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  verifiedModalDismissedMap.current[currentPerson.id] = true;
+                  setShowAttentionModal(false);
+                }}
+                style={{
+                  background: '#F1F5F9',
+                  color: '#334155',
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: '10px',
+                  padding: '12px 20px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  flex: 1
+                }}
+              >
+                Inspect Schedule
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAllAndSave}
+                style={{
+                  background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '12px 20px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  flex: 1,
+                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)'
+                }}
+              >
+                ✓ Confirm All & Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MULTI-DATE CALENDAR SELECTOR MODAL ── */}
+      {calendarModalConfig && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.6)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            background: '#FFFFFF', borderRadius: '16px', padding: '24px',
+            width: '500px', maxWidth: '92vw', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1.5px solid var(--line)'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: 'var(--navy)' }}>
+                  📅 Select Dates on Calendar
+                </h3>
+                <span style={{ fontSize: '12px', color: '#0284c7', fontWeight: '700' }}>
+                  {calendarModalConfig.taskName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCalendarModalConfig(null)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Month Header Navigation */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC', padding: '10px 14px', borderRadius: '10px', marginBottom: '14px', border: '1px solid var(--line)' }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ minHeight: 'auto', padding: '4px 10px', fontSize: '12px' }}
+                onClick={() => {
+                  if (calendarMonth === 0) {
+                    setCalendarMonth(11);
+                    setCalendarYear(prev => prev - 1);
+                  } else {
+                    setCalendarMonth(prev => prev - 1);
+                  }
+                }}
+              >
+                ◀ Prev
+              </button>
+              <span style={{ fontWeight: '800', fontSize: '15px', color: 'var(--navy)' }}>
+                {new Date(calendarYear, calendarMonth, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+              </span>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ minHeight: 'auto', padding: '4px 10px', fontSize: '12px' }}
+                onClick={() => {
+                  if (calendarMonth === 11) {
+                    setCalendarMonth(0);
+                    setCalendarYear(prev => prev + 1);
+                  } else {
+                    setCalendarMonth(prev => prev + 1);
+                  }
+                }}
+              >
+                Next ▶
+              </button>
+            </div>
+
+            {/* Quick Select Bar & Time Configuration */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px', background: '#EFF6FF', padding: '12px', borderRadius: '10px', border: '1px solid #BFDBFE' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#1E40AF', display: 'block', marginBottom: '2px' }}>Start Time</label>
+                <input
+                  type="time"
+                  list="school-times"
+                  value={calendarStartTime}
+                  onChange={(e) => setCalendarStartTime(e.target.value)}
+                  style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #93C5FD', fontSize: '12px' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#1E40AF', display: 'block', marginBottom: '2px' }}>End Time</label>
+                <input
+                  type="time"
+                  list="school-times"
+                  value={calendarEndTime}
+                  onChange={(e) => setCalendarEndTime(e.target.value)}
+                  style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #93C5FD', fontSize: '12px' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto', flex: 1 }}
+                onClick={handleSelectAllWeekdaysInMonth}
+              >
+                ✓ Select All Weekdays (M-F)
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto', color: '#EF4444', borderColor: '#FCA5A5' }}
+                onClick={() => setCalendarSelectedDates([])}
+              >
+                Clear All
+              </button>
+            </div>
+
+            {/* Quick Specific Day Selection Toolbar */}
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px', background: '#F8FAFC', padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--navy)', marginRight: '2px' }}>Toggle Day:</span>
+              {[
+                { label: 'All M', dayIndex: 1 },
+                { label: 'All T', dayIndex: 2 },
+                { label: 'All W', dayIndex: 3 },
+                { label: 'All TH', dayIndex: 4 },
+                { label: 'All F', dayIndex: 5 },
+                { label: 'All SAT', dayIndex: 6 },
+                { label: 'All SUN', dayIndex: 0 },
+              ].map(({ label, dayIndex }) => {
+                const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+                const monthDayStrings = [];
+                for (let day = 1; day <= totalDays; day++) {
+                  const d = new Date(calendarYear, calendarMonth, day);
+                  if (d.getDay() === dayIndex) {
+                    const mm = String(calendarMonth + 1).padStart(2, '0');
+                    const dd = String(day).padStart(2, '0');
+                    monthDayStrings.push(`${calendarYear}-${mm}-${dd}`);
+                  }
+                }
+                const isFullySelected = monthDayStrings.length > 0 && monthDayStrings.every(dStr => calendarSelectedDates.includes(dStr));
+
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => handleToggleSpecificDayOfWeek(dayIndex)}
+                    style={{
+                      padding: '3px 7px',
+                      fontSize: '10.5px',
+                      fontWeight: '700',
+                      borderRadius: '6px',
+                      border: isFullySelected ? 'none' : '1px solid #CBD5E1',
+                      background: isFullySelected ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : '#FFFFFF',
+                      color: isFullySelected ? '#FFFFFF' : '#334155',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={`Click to select or unselect all ${label.replace('All ', '')}s in this month`}
+                  >
+                    {isFullySelected ? `✓ ${label}` : label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Calendar Days Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', marginBottom: '16px' }}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dName, dIdx) => (
+                <div
+                  key={dName}
+                  onClick={() => handleToggleSpecificDayOfWeek(dIdx)}
+                  style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', padding: '4px 0', cursor: 'pointer', borderRadius: '4px', userSelect: 'none' }}
+                  title={`Click to toggle all ${dName}s in this month`}
+                >
+                  {dName}
+                </div>
+              ))}
+              {(() => {
+                const firstDayIndex = new Date(calendarYear, calendarMonth, 1).getDay();
+                const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+                const gridCells = [];
+
+                for (let i = 0; i < firstDayIndex; i++) {
+                  gridCells.push(<div key={`blank-${i}`} style={{ height: '36px' }} />);
+                }
+
+                for (let day = 1; day <= totalDays; day++) {
+                  const mm = String(calendarMonth + 1).padStart(2, '0');
+                  const dd = String(day).padStart(2, '0');
+                  const dStr = `${calendarYear}-${mm}-${dd}`;
+                  const isSelected = calendarSelectedDates.includes(dStr);
+                  const dObj = new Date(calendarYear, calendarMonth, day);
+                  const isWeekend = dObj.getDay() === 0 || dObj.getDay() === 6;
+
+                  gridCells.push(
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleCalendarDate(dStr)}
+                      style={{
+                        height: '36px',
+                        borderRadius: '8px',
+                        border: isSelected ? 'none' : '1px solid var(--line)',
+                        background: isSelected ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : isWeekend ? '#F8FAFC' : '#FFFFFF',
+                        color: isSelected ? '#FFFFFF' : isWeekend ? '#94A3B8' : '#1E293B',
+                        fontWeight: isSelected ? '800' : '600',
+                        fontSize: '12.5px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isSelected ? '0 2px 4px rgba(2, 132, 199, 0.3)' : 'none'
+                      }}
+                    >
+                      {isSelected ? `✓ ${day}` : day}
+                    </button>
+                  );
+                }
+                return gridCells;
+              })()}
+            </div>
+
+            {/* Footer Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--navy)' }}>
+                Selected: <strong style={{ color: '#0284c7' }}>{calendarSelectedDates.length} Date(s)</strong>
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '12px' }}
+                  onClick={() => setCalendarModalConfig(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    borderRadius: '8px',
+                    padding: '8px 20px',
+                    fontSize: '12px'
+                  }}
+                  onClick={handleApplyCalendarDates}
+                >
+                  Apply Selected Dates ({calendarSelectedDates.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
