@@ -25,6 +25,7 @@ export default function Sidebar() {
         { view: 'school', label: 'School Profile', icon: '🏛' },
         { view: 'roster', label: 'Personnel Roster', icon: '☷' },
         { view: 'profile', label: 'Personnel Profiling', icon: '✎' },
+        { view: 'designation', label: 'Designations', icon: '🏅' },
         { view: 'classes', label: 'Organized Classes', icon: '▦' },
         { view: 'workload', label: 'Workload', icon: '◷' },
         { view: 'room-qr', label: 'Room QR Portal', icon: '⛶' },

@@ -1,0 +1,2751 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESF7 Division Submission Monitor</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');
+
+    :root {
+      --navy: #08315F;
+      --navy2: #075985;
+      --blue: #0284C7;
+      --blue-soft: #E0F2FE;
+      --blue-50: #F0F9FF;
+      --blue-100: #E0F2FE;
+      --blue-400: #7DD3FC;
+      --blue-600: #0284C7;
+      --gold: #FBBF24;
+      --gold-soft: #FEF3C7;
+      --green: #16A34A;
+      --green-soft: #DCFCE7;
+      --amber: #D97706;
+      --amber-soft: #FEECD2;
+      --red: #B91C1C;
+      --red-soft: #FEE2E2;
+      --purple: #7C3AED;
+      --ink: #0F172A;
+      --muted: #64748B;
+      --canvas: #FFFFFF;
+      --card: #FFFFFF;
+      --soft: #F0F9FF;
+      --surface2: #E0F2FE;
+      --border: #BAE6FD;
+      --line: #BAE6FD;
+      --radius: 22px;
+      --radius-sm: 12px;
+      --shadow: 0 1px 2px rgba(8, 49, 95, .05), 0 4px 12px rgba(8, 49, 95, .04);
+      --font: "DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-heading: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-body: "DM Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: var(--font-body);
+      background-color: var(--blue-50);
+      background-attachment: fixed;
+      background-image: radial-gradient(43.5% 49.5% at 10% 12%, rgba(7, 89, 133, .30) 0 34%, transparent 78%), radial-gradient(46.5% 54% at 92% 10%, rgba(251, 191, 36, .42) 0 36%, transparent 80%), radial-gradient(40.5% 48% at 84% 92%, rgba(125, 211, 252, .30) 0 34%, transparent 78%), radial-gradient(45% 52.5% at 8% 92%, rgba(217, 119, 6, .26) 0 28%, rgba(251, 191, 36, .18) 42%, transparent 80%);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased
+    }
+
+    .wrap {
+      width: min(1500px, 100% - 56px);
+      margin: 0 auto;
+      padding: 22px 0 60px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px
+    }
+
+    .card {
+      background: var(--canvas);
+      border: 2.5px solid color-mix(in srgb, var(--blue) 64%, var(--navy) 36%);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: none
+    }
+
+    .full {
+      grid-column: 1 / -1
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 12px
+    }
+
+    .card-title {
+      font-family: var(--font-heading);
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--navy);
+      letter-spacing: -.01em
+    }
+
+    .card-sub {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    button {
+      font-family: inherit;
+      cursor: pointer
+    }
+
+    .btn {
+      border: 1.5px solid var(--border);
+      background: var(--canvas);
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      min-height: 38px
+    }
+
+    .btn:hover {
+      background: var(--soft)
+    }
+
+    .btn-accent {
+      background: var(--navy);
+      color: #fff;
+      border-color: var(--navy)
+    }
+
+    .btn-accent:hover {
+      background: var(--navy2)
+    }
+
+    .toggle {
+      display: inline-flex;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden
+    }
+
+    .toggle button {
+      border: 0;
+      background: var(--canvas);
+      padding: 7px 12px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted)
+    }
+
+    .toggle button.on {
+      background: var(--navy);
+      color: #fff
+    }
+
+    select,
+    input[type=text],
+    input[type=search] {
+      font-family: inherit;
+      font-size: 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: var(--canvas);
+      color: var(--ink);
+      min-height: 38px;
+      width: 100%
+    }
+
+    select:focus,
+    input:focus {
+      outline: 2px solid var(--blue);
+      outline-offset: 0;
+      border-color: var(--blue)
+    }
+
+    label.fld {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      margin-bottom: 4px
+    }
+
+    /* HERO */
+    .hero {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: 120px;
+      color: #fff;
+      border: 2.5px solid color-mix(in srgb, var(--blue) 64%, var(--navy) 36%);
+      border-radius: calc(var(--radius) + 6px);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      padding: 28px 44px;
+      background: radial-gradient(circle at 92% 50%, rgba(251, 191, 36, .18) 0 7%, rgba(251, 191, 36, .08) 7.2% 13%, transparent 13.2%), radial-gradient(circle at 98% 46%, rgba(251, 191, 36, .28) 0 10%, transparent 10.5%), linear-gradient(112deg, var(--navy) 0 70%, rgba(255, 255, 255, .97) 70.2% 100%)
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 70%;
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      clip-path: polygon(0 0, 88% 0, 100% 100%, 0 100%);
+      z-index: -2;
+      pointer-events: none
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 61%;
+      width: 13%;
+      background: color-mix(in srgb, var(--navy) 88%, #000 12%);
+      clip-path: polygon(0 0, 58% 0, 100% 100%, 42% 100%);
+      z-index: -1;
+      pointer-events: none
+    }
+
+    .hero-left {
+      position: relative;
+      z-index: 1
+    }
+
+    .eyebrow {
+      font-size: 10px !important;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--gold) !important;
+      font-weight: 800;
+      white-space: nowrap;
+      max-width: 100%
+    }
+
+    .hero h1 {
+      margin: 6px 0 4px;
+      font-size: 27px;
+      letter-spacing: -.02em;
+      font-weight: 800;
+      font-family: var(--font-heading)
+    }
+
+    .hero p {
+      margin: 0;
+      font-size: 13.5px;
+      color: rgba(255, 255, 255, .82);
+      max-width: 640px
+    }
+
+    .pill {
+      position: relative;
+      z-index: 1;
+      width: fit-content;
+      text-align: right;
+      background: rgba(255, 255, 255, .92);
+      border: 1.5px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 16px;
+      box-shadow: 0 6px 18px rgba(8, 49, 95, .12)
+    }
+
+    .pill .plabel {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 800;
+      font-family: var(--font-heading)
+    }
+
+    .pill .pnum {
+      font-size: 40px;
+      font-weight: 800;
+      line-height: 1;
+      background: linear-gradient(90deg, var(--navy), var(--blue));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 4px 0;
+      font-family: var(--font-heading)
+    }
+
+    .pill .pbar {
+      height: 6px;
+      border-radius: 6px;
+      background: var(--blue-100);
+      overflow: hidden;
+      margin-top: 8px
+    }
+
+    .pill .pbar>i {
+      display: block;
+      height: 100%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, var(--gold), var(--green))
+    }
+
+    .pill .pscope {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 7px
+    }
+
+    @media(max-width:760px) {
+      .hero {
+        background: linear-gradient(135deg, var(--navy), var(--blue));
+        padding: 20px 22px;
+        min-height: 0;
+        border-radius: var(--radius)
+      }
+
+      .hero::before {
+        width: 100%;
+        clip-path: none
+      }
+
+      .hero::after {
+        display: none
+      }
+
+      .eyebrow {
+        white-space: normal
+      }
+    }
+
+    /* CONTROLS */
+    .ctl-search {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      margin-bottom: 12px
+    }
+
+    .ctl-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px
+    }
+
+    .adv {
+      margin-top: 12px;
+      padding: 14px;
+      border: 1.5px dashed color-mix(in srgb, var(--gold) 55%, var(--border));
+      background: var(--gold-soft);
+      border-radius: var(--radius-sm)
+    }
+
+    .adv.hidden {
+      display: none
+    }
+
+    .adv-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px
+    }
+
+    .gear {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px
+    }
+
+    .gear .gbtn {
+      min-width: 40px;
+      padding: 8px 10px
+    }
+
+    /* KPI */
+    .kpi-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px
+    }
+
+    .kpi {
+      flex: 1 1 190px;
+      min-width: 180px;
+      background: var(--soft);
+      border: 1.5px solid var(--border);
+      border-left: 4px solid var(--blue);
+      border-radius: var(--radius-sm);
+      padding: 14px 15px;
+      position: relative;
+      overflow: visible
+    }
+
+    .kpi .knum {
+      font-size: clamp(32px, 2.3vw, 42px);
+      font-weight: 800;
+      color: var(--navy);
+      line-height: 1;
+      font-family: var(--font-heading)
+    }
+
+    .kpi .klabel {
+      font-size: 13px;
+      font-weight: 700;
+      margin-top: 6px
+    }
+
+    .kpi .kcap {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .kpi.total {
+      border-left-color: var(--gold);
+      background: linear-gradient(180deg, #fff, var(--gold-soft))
+    }
+
+    .kpi-breakdown {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      top: calc(100% + 8px);
+      z-index: 30;
+      max-height: 260px;
+      overflow: auto;
+      background: var(--canvas);
+      border: 2px solid color-mix(in srgb, var(--blue) 64%, var(--navy) 36%);
+      border-radius: 12px;
+      box-shadow: 0 12px 30px rgba(8, 49, 95, .18);
+      padding: 10px 12px;
+      display: none
+    }
+
+    .kpi:hover .kpi-breakdown {
+      display: block
+    }
+
+    .kb-head {
+      font-family: var(--font-heading);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 6px
+    }
+
+    .kb-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12.5px;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .kb-row:last-child {
+      border-bottom: 0
+    }
+
+    .kb-name {
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .kb-val {
+      font-weight: 800;
+      color: var(--navy)
+    }
+
+    .empty-note {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 8px 4px
+    }
+
+    /* CHARTS */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      display: inline-block
+    }
+
+    .breadcrumb {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 12px
+    }
+
+    .crumb {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--navy)
+    }
+
+    .crumb.link {
+      cursor: pointer
+    }
+
+    .crumb.link:hover {
+      background: var(--blue-soft);
+      border-color: var(--blue)
+    }
+
+    .crumb.cur {
+      background: var(--navy);
+      color: #fff;
+      border-color: var(--navy)
+    }
+
+    .bars {
+      display: flex;
+      flex-direction: column;
+      gap: 9px
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 170px 1fr 62px;
+      align-items: center;
+      gap: 12px
+    }
+
+    .bar-lab {
+      font-size: 12.5px;
+      font-weight: 600;
+      text-align: right;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .bar-lab:hover {
+      color: var(--blue);
+      text-decoration: underline
+    }
+
+    .bar-track {
+      height: 26px;
+      background: var(--soft);
+      border-radius: 7px;
+      overflow: hidden;
+      display: flex;
+      cursor: pointer
+    }
+
+    .seg {
+      height: 100%;
+      transition: width .35s ease;
+      cursor: pointer;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: #fff;
+      font-family: var(--font-heading);
+      font-size: 13.5px;
+      font-weight: 800;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .35)
+    }
+
+    .seg-lab {
+      pointer-events: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 0 4px
+    }
+
+    .seg:hover {
+      filter: brightness(1.08)
+    }
+
+    .bar-tot {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--navy)
+    }
+
+    .heat {
+      display: grid;
+      gap: 4px
+    }
+
+    .heat-cell {
+      border-radius: 6px;
+      padding: 8px 4px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff
+    }
+
+    .heat-cell.head {
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: default;
+      text-transform: uppercase;
+      letter-spacing: .03em
+    }
+
+    .heat-cell.rowhead {
+      background: var(--soft);
+      color: var(--ink);
+      text-align: right;
+      padding-right: 8px;
+      cursor: pointer
+    }
+
+    .heat-cell.rowhead:hover {
+      color: var(--blue)
+    }
+
+    .donut-wrap {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 36px;
+      align-items: center;
+      justify-content: center
+    }
+
+    .donut-wrap svg {
+      flex: 0 0 auto
+    }
+
+    .donut-wrap circle[data-seg] {
+      transition: stroke-width .12s ease
+    }
+
+    .donut-wrap circle[data-seg]:hover {
+      stroke-width: 34
+    }
+
+    .mini-tbl {
+      border-collapse: collapse;
+      font-size: 12.5px;
+      flex: 0 0 auto;
+      white-space: nowrap
+    }
+
+    .mini-tbl td,
+    .mini-tbl th {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left
+    }
+
+    .mini-tbl th {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 10.5px;
+      letter-spacing: .04em
+    }
+
+    .mini-tbl td.num,
+    .mini-tbl th.num {
+      text-align: right
+    }
+
+    .card-hist {
+      display: flex;
+      flex-direction: column
+    }
+
+    .hist {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      flex: 1 1 auto;
+      min-height: 230px;
+      padding-top: 10px;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden
+    }
+
+    .hist-col {
+      flex: 1 0 58px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+      justify-content: flex-end;
+      cursor: pointer
+    }
+
+    .hist-bar {
+      width: 70%;
+      border-radius: 7px 7px 0 0;
+      background: var(--blue);
+      transition: height .35s ease
+    }
+
+    .hist-col:hover .hist-bar {
+      filter: brightness(1.08)
+    }
+
+    .hist-val {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--navy);
+      font-family: var(--font-heading)
+    }
+
+    .hist-lab {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.2
+    }
+
+    /* TREND (daily line) */
+    .trend-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      overflow: visible
+    }
+
+    .trend-line {
+      fill: none;
+      stroke: var(--blue);
+      stroke-width: 2.5;
+      stroke-linejoin: round;
+      stroke-linecap: round
+    }
+
+    .trend-area {
+      fill: rgba(39, 131, 222, .10)
+    }
+
+    .trend-dot {
+      fill: #fff;
+      stroke: var(--blue);
+      stroke-width: 2.5;
+      cursor: pointer;
+      transition: r .1s
+    }
+
+    .trend-dot:hover {
+      fill: var(--blue);
+      r: 6
+    }
+
+    .trend-grid {
+      stroke: var(--border);
+      stroke-width: 1
+    }
+
+    .trend-lab {
+      fill: var(--muted);
+      font-size: 11px;
+      font-family: var(--font)
+    }
+
+    /* TABLE */
+    .tbl-scroll {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm)
+    }
+
+    table.grid {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 13px;
+      min-width: 900px
+    }
+
+    table.grid th,
+    table.grid td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap
+    }
+
+    table.grid th.num,
+    table.grid td.num {
+      text-align: center
+    }
+
+    table.grid thead th {
+      background: var(--soft);
+      position: sticky;
+      top: 0;
+      font-family: var(--font-heading);
+      font-size: 11.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none
+    }
+
+    table.grid thead th.frz,
+    table.grid tbody td.frz {
+      position: sticky;
+      left: 0;
+      background: var(--canvas);
+      z-index: 1
+    }
+
+    table.grid thead th.frz {
+      background: var(--soft);
+      z-index: 2
+    }
+
+    table.grid tbody tr {
+      cursor: pointer
+    }
+
+    table.grid tbody tr:hover td {
+      background: var(--blue-soft)
+    }
+
+    table.grid tbody tr:hover td.frz {
+      background: var(--blue-soft)
+    }
+
+    .filt-row th {
+      padding: 6px 8px;
+      background: var(--canvas);
+      position: sticky;
+      top: 33px
+    }
+
+    .filt-row input,
+    .filt-row select {
+      min-height: 32px;
+      padding: 5px 8px;
+      font-size: 12px
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 700
+    }
+
+    .b-green {
+      background: var(--green-soft);
+      color: #2f7351
+    }
+
+    .b-amber {
+      background: var(--amber-soft);
+      color: #a55b21
+    }
+
+    .b-red {
+      background: var(--red-soft);
+      color: #b23c31
+    }
+
+    .pager {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 2px;
+      flex-wrap: wrap
+    }
+
+    .pager .pinfo {
+      font-size: 12.5px;
+      color: var(--muted)
+    }
+
+    .pager-rows {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      color: var(--muted);
+      white-space: nowrap
+    }
+
+    .pager-rows select {
+      width: auto;
+      min-height: 32px;
+      padding: 5px 8px;
+      font-size: 12px
+    }
+
+    .sort-ind {
+      font-size: 10px;
+      color: var(--blue)
+    }
+
+    .muted-cell {
+      color: var(--muted)
+    }
+
+    /* MODAL */
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(18, 30, 45, .45);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 24px
+    }
+
+    .backdrop.on {
+      display: flex
+    }
+
+    .modal {
+      background: var(--canvas);
+      border-radius: var(--radius);
+      width: min(920px, 100%);
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .3)
+    }
+
+    .modal-head {
+      background: linear-gradient(120deg, var(--navy), var(--navy2));
+      color: #fff;
+      padding: 18px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px
+    }
+
+    .modal-head h3 {
+      margin: 0;
+      font-size: 18px;
+      font-family: var(--font-heading)
+    }
+
+    .modal-head .mh-sub {
+      font-size: 12.5px;
+      color: rgba(255, 255, 255, .8);
+      margin-top: 3px
+    }
+
+    .x {
+      background: rgba(255, 255, 255, .15);
+      border: 0;
+      color: #fff;
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      font-size: 17px;
+      line-height: 1
+    }
+
+    .x:hover {
+      background: rgba(255, 255, 255, .28)
+    }
+
+    .modal-body {
+      padding: 20px 22px;
+      overflow-y: auto
+    }
+
+    .mgroup {
+      margin-bottom: 18px
+    }
+
+    .mgroup h4 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--gold)
+    }
+
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 8px
+    }
+
+    .tile {
+      background: var(--soft);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px
+    }
+
+    .tile .tl {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .03em
+    }
+
+    .tile .tv {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-top: 2px
+    }
+
+    .modal-tools {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-bottom: 12px
+    }
+
+    .tfoot-tot {
+      font-weight: 800;
+      color: var(--navy)
+    }
+
+    .recon {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px
+    }
+
+    .recon b {
+      color: var(--green)
+    }
+
+    /* PICKER */
+    .pick-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px
+    }
+
+    .pick-row label {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      flex: 1
+    }
+
+    .pick-row .pc {
+      font-weight: 700;
+      color: var(--navy)
+    }
+
+    .pick-tools {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      align-items: center
+    }
+
+    /* tooltip */
+    #tip {
+      position: fixed;
+      pointer-events: none;
+      background: var(--navy);
+      color: #fff;
+      font-size: 12px;
+      padding: 8px 11px;
+      border-radius: 9px;
+      opacity: 0;
+      transition: opacity .12s;
+      z-index: 80;
+      max-width: 260px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .25)
+    }
+
+    #tip .tt-tot {
+      border-top: 1px solid rgba(255, 255, 255, .25);
+      margin-top: 5px;
+      padding-top: 4px;
+      font-weight: 700
+    }
+
+    #tip .tt-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px
+    }
+
+    @media(max-width:1180px) {
+
+      .ctl-grid,
+      .adv-grid {
+        grid-template-columns: repeat(2, 1fr)
+      }
+    }
+
+    @media(max-width:760px) {
+      .wrap {
+        width: calc(100% - 28px);
+        grid-template-columns: 1fr
+      }
+
+      .full {
+        grid-column: 1
+      }
+
+      .card:not(.hero) {
+        grid-column: 1
+      }
+
+      .pill {
+        display: none
+      }
+
+      .ctl-grid,
+      .adv-grid {
+        grid-template-columns: 1fr
+      }
+
+      .bar-row {
+        grid-template-columns: 110px 1fr 46px
+      }
+
+      .kpi {
+        flex: 1 1 45%
+      }
+    }
+
+    @media(max-width:480px) {
+      .kpi {
+        flex: 1 1 100%
+      }
+    }
+
+    /* ===== APP SHELL / SIDEBAR / TABS ===== */
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+      align-items: stretch
+    }
+
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 240px;
+      background: linear-gradient(180deg, var(--navy), var(--navy2));
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      padding: 22px 14px;
+      gap: 6px;
+      z-index: 60;
+      box-shadow: 4px 0 24px rgba(8, 49, 95, .18)
+    }
+
+    .sidebar .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 6px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, .14);
+      margin-bottom: 10px
+    }
+
+    .sidebar .brand .logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--gold), var(--amber));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: var(--navy);
+      font-family: var(--font-heading);
+      font-size: 16px;
+      flex: 0 0 auto
+    }
+
+    .sidebar .brand .bt {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 15px;
+      line-height: 1.1
+    }
+
+    .sidebar .brand .bs {
+      font-size: 10.5px;
+      color: var(--blue-400);
+      letter-spacing: .04em;
+      margin-top: 2px
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      color: rgba(255, 255, 255, .82);
+      font-family: var(--font-body);
+      font-weight: 600;
+      font-size: 13.5px;
+      border: 1px solid transparent;
+      background: transparent;
+      text-align: left;
+      width: 100%
+    }
+
+    .nav-item:hover {
+      background: rgba(255, 255, 255, .08);
+      color: #fff
+    }
+
+    .nav-item.active {
+      background: rgba(255, 255, 255, .16);
+      color: #fff;
+      border-color: rgba(255, 255, 255, .24);
+      box-shadow: inset 0 -3px 0 var(--gold)
+    }
+
+    .nav-item .ic {
+      width: 22px;
+      text-align: center;
+      font-size: 16px;
+      flex: 0 0 auto
+    }
+
+    .sidebar .nav-foot {
+      margin-top: auto;
+      font-size: 11px;
+      color: rgba(255, 255, 255, .5);
+      padding: 10px 8px;
+      letter-spacing: .04em
+    }
+
+    .main {
+      margin-left: 240px;
+      flex: 1;
+      min-width: 0;
+      width: calc(100% - 240px)
+    }
+
+    .view {
+      display: none
+    }
+
+    .view.active {
+      display: block
+    }
+
+    /* SETTINGS */
+    .set-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px
+    }
+
+    .set-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px
+    }
+
+    .set-form .fg label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      margin-bottom: 4px
+    }
+
+    .set-msg {
+      font-size: 12.5px;
+      font-weight: 600;
+      min-height: 16px
+    }
+
+    .set-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px
+    }
+
+    .set-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 4px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .set-row:last-child {
+      border-bottom: 0
+    }
+
+    .set-row .st {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink)
+    }
+
+    .set-row .ss {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+      max-width: 640px
+    }
+
+    .switch {
+      position: relative;
+      width: 46px;
+      height: 26px;
+      flex: 0 0 auto
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute
+    }
+
+    .switch .sl {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 20px;
+      transition: .2s;
+      cursor: pointer
+    }
+
+    .switch .sl::before {
+      content: "";
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: .2s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .3)
+    }
+
+    .switch input:checked+.sl {
+      background: var(--green)
+    }
+
+    .switch input:checked+.sl::before {
+      transform: translateX(20px)
+    }
+
+    input[type=password],
+    input[type=number] {
+      font-family: inherit;
+      font-size: 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: var(--canvas);
+      color: var(--ink);
+      min-height: 38px;
+      width: 100%
+    }
+
+    input[type=password]:focus,
+    input[type=number]:focus {
+      outline: 2px solid var(--blue);
+      outline-offset: 0;
+      border-color: var(--blue)
+    }
+
+    /* PAYMENT ACTIONS */
+    .btn-confirm {
+      background: var(--green);
+      color: #fff;
+      border: 1.5px solid var(--green);
+      border-radius: 9px;
+      padding: 6px 14px;
+      min-height: 32px;
+      font-size: 12.5px;
+      font-weight: 700
+    }
+
+    .btn-confirm:hover {
+      filter: brightness(1.08)
+    }
+
+    .btn-confirmed {
+      background: var(--green-soft);
+      color: #2f7351;
+      border: 1.5px solid transparent;
+      border-radius: 9px;
+      padding: 6px 14px;
+      min-height: 32px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: default
+    }
+
+    /* DARK MODE */
+    body.dark {
+      --navy: #0b1220;
+      --navy2: #0f1b2d;
+      --canvas: #0f172a;
+      --card: #0f172a;
+      --soft: #0f1e33;
+      --surface2: #16233b;
+      --border: #243449;
+      --line: #243449;
+      --ink: #E2E8F0;
+      --muted: #94A3B8;
+      --blue-50: #0b1220;
+      --blue-soft: #16233b;
+      --blue-100: #16233b;
+      background-color: #0b1220;
+      background-image: none
+    }
+
+    body.dark table.grid thead th,
+    body.dark .filt-row th {
+      background: var(--soft)
+    }
+
+    body.dark .btn {
+      background: var(--soft);
+      color: var(--ink)
+    }
+
+    body.compact table.grid th,
+    body.compact table.grid td {
+      padding: 5px 10px
+    }
+
+    @media(max-width:760px) {
+      .app-shell {
+        flex-direction: column
+      }
+
+      .sidebar {
+        position: sticky;
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 8px;
+        gap: 6px;
+        box-shadow: 0 4px 18px rgba(8, 49, 95, .18)
+      }
+
+      .sidebar .brand {
+        display: none
+      }
+
+      .sidebar .nav-foot {
+        display: none
+      }
+
+      .nav-item {
+        width: auto;
+        flex: 1 1 auto;
+        justify-content: center;
+        padding: 9px 8px;
+        font-size: 12px
+      }
+
+      .main {
+        margin-left: 0;
+        width: 100%
+      }
+
+      .set-cols {
+        grid-template-columns: 1fr
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">e7</div>
+        <div>
+          <div class="bt">ESF7 Monitor</div>
+          <div class="bs">DepEd · HRODI</div>
+        </div>
+      </div>
+      <button class="nav-item active" data-tab="home"><span class="ic">🏠</span> Home</button>
+      <button class="nav-item" data-tab="payment"><span class="ic">💳</span> Payment Monitoring</button>
+      <button class="nav-item" data-tab="settings"><span class="ic">⚙️</span> Settings</button>
+      <div class="nav-foot">ESF7 · v1</div>
+    </aside>
+    <main class="main">
+      <div class="view active" id="view-home">
+        <div class="wrap" id="app">
+          <!-- HERO -->
+          <section class="card hero full">
+            <div class="hero-left">
+              <div class="eyebrow">Department of Education · ESF7 Monitoring</div>
+              <h1 id="heroTitle">ESF7 Submission Monitor</h1>
+              <p>Nationwide tracking of School Form ESF7 submissions — personnel profiling and workload verification
+                across every region, division, district, municipality, and school in the Philippines.</p>
+            </div>
+            <div class="pill">
+              <div class="plabel">Submission rate</div>
+              <div class="pnum" id="heroRate">0%</div>
+              <div class="pbar"><i id="heroBar" style="width:0%"></i></div>
+              <div class="pscope" id="heroScope">All divisions</div>
+            </div>
+          </section>
+
+          <!-- DATA CONTROLS -->
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Data Controls</div>
+                <div class="card-sub">Filter the monitored school set. Submission status is derived from each record's
+                  created_at / updated_at. Advanced mode exposes the distribution engine.</div>
+              </div>
+              <label class="toggle"><button id="advToggle">Advanced mode</button></label>
+            </div>
+            <div class="ctl-search">
+              <input type="search" id="search" placeholder="Search school, ID, municipality, or school head…" />
+              <button class="btn" id="resetBtn">Reset</button>
+            </div>
+            <div class="ctl-grid">
+              <div><label class="fld">Division</label><select id="f_division"></select></div>
+              <div><label class="fld">District</label><select id="f_district"></select></div>
+              <div><label class="fld">Municipality</label><select id="f_municipality"></select></div>
+              <div><label class="fld">Submission status</label><select id="f_status"></select></div>
+              <div><label class="fld">School type</label><select id="f_type"></select></div>
+            </div>
+            <div class="adv hidden" id="advPanel">
+              <div class="adv-grid">
+                <div class="gear">
+                  <div style="flex:1"><label class="fld">Distribution by</label><select id="a_dist"></select></div>
+                  <button class="btn gbtn" id="gearBtn" title="Choose values">⚙</button>
+                </div>
+                <div><label class="fld">Measure</label><select id="a_measure">
+                    <option value="count">School count</option>
+                    <option value="personnel">Personnel (sum)</option>
+                  </select></div>
+                <div><label class="fld">Drill leaf level</label><select id="a_leaf">
+                    <option value="school">School</option>
+                    <option value="municipality">Municipality</option>
+                  </select></div>
+                <div><label class="fld">Rows per page</label><select id="a_rows">
+                    <option>10</option>
+                    <option selected>25</option>
+                    <option>50</option>
+                    <option>100</option>
+                  </select></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- KPI ROW -->
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Key indicators</div>
+                <div class="card-sub" id="kpiSub">Mirrors the active distribution dimension</div>
+              </div>
+            </div>
+            <div class="kpi-row" id="kpiRow"></div>
+          </section>
+
+          <!-- PRIMARY CHART -->
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Submission distribution by location</div>
+                <div class="card-sub">Click a bar label to drill down · click a segment to disaggregate</div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <select id="primSplit" style="width:auto"></select>
+                <label class="toggle"><button id="pt_bar" class="on">Bars</button><button id="pt_heat">Heat
+                    map</button></label>
+              </div>
+            </div>
+            <div class="breadcrumb" id="breadcrumb"></div>
+            <div id="primaryChart"></div>
+            <div class="legend" id="primaryLegend"></div>
+          </section>
+
+          <!-- DONUT -->
+          <section class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Share of total</div>
+                <div class="card-sub">Click an arc to disaggregate</div>
+              </div>
+              <select id="donutSplit" style="width:auto"></select>
+            </div>
+            <div class="donut-wrap" id="donutWrap"></div>
+          </section>
+
+          <!-- HISTOGRAM -->
+          <section class="card card-hist">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Count by category</div>
+                <div class="card-sub">Click a bar to disaggregate</div>
+              </div>
+              <select id="histSplit" style="width:auto"></select>
+            </div>
+            <div class="hist" id="histChart"></div>
+          </section>
+
+          <!-- UPDATE TREND -->
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Daily update activity</div>
+                <div class="card-sub">Records updated per day (by updated_at), scoped to current filters. Click a point
+                  to see who updated that day.</div>
+              </div>
+              <label class="toggle" id="trendRange"><button data-r="7" class="on">1 week</button><button data-r="15">15
+                  days</button><button data-r="30">30 days</button><button data-r="all">All</button></label>
+            </div>
+            <div id="trendChart"></div>
+          </section>
+
+          <!-- TABLE -->
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">School records</div>
+                <div class="card-sub" id="tblSub"></div>
+              </div>
+              <button class="btn" id="csvBtn">Export CSV</button>
+            </div>
+            <div class="pager" id="pagerTop"></div>
+            <div class="tbl-scroll">
+              <table class="grid" id="grid">
+                <thead id="gridHead"></thead>
+                <tbody id="gridBody"></tbody>
+              </table>
+            </div>
+            <div class="pager" id="pagerBot"></div>
+          </section>
+        </div>
+      </div><!-- /view-home -->
+
+      <!-- PAYMENT MONITORING VIEW -->
+      <div class="view" id="view-payment">
+        <div class="wrap" style="grid-template-columns:1fr">
+          <section class="card hero full">
+            <div class="hero-left">
+              <div class="eyebrow">Department of Education · ESF7 Monitoring</div>
+              <h1>Payment Monitoring</h1>
+              <p>Review each teacher's tentative payment, verify the school's approval, then confirm the exact amount
+                the teacher should receive.</p>
+            </div>
+            <div class="pill">
+              <div class="plabel">Confirmed payout</div>
+              <div class="pnum" id="payConfirmedTot">₱0</div>
+              <div class="pbar"><i id="payBar" style="width:0%"></i></div>
+              <div class="pscope" id="payScope">0 of 0 payments confirmed</div>
+            </div>
+          </section>
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Payment indicators</div>
+                <div class="card-sub">Live totals across all teacher payment records</div>
+              </div>
+            </div>
+            <div class="kpi-row" id="payKpis"></div>
+          </section>
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Teacher payments</div>
+                <div class="card-sub">Confirm the amount each teacher should receive. Only school-approved rows can be
+                  confirmed.</div>
+              </div>
+              <button class="btn" id="payCsvBtn">Export CSV</button>
+            </div>
+            <div class="ctl-search">
+              <input type="search" id="paySearch" placeholder="Search teacher, school, or ID…" />
+              <button class="btn" id="payReset">Reset</button>
+            </div>
+            <div class="ctl-grid" style="grid-template-columns:repeat(3,1fr)">
+              <div><label class="fld">School approval</label><select id="payApproval">
+                  <option value="all">All</option>
+                  <option value="yes">Approved</option>
+                  <option value="no">Not approved</option>
+                </select></div>
+              <div><label class="fld">Confirmation</label><select id="payStatus">
+                  <option value="all">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="confirmed">Confirmed</option>
+                </select></div>
+              <div><label class="fld">Rows per page</label><select id="payRows">
+                  <option>10</option>
+                  <option selected>25</option>
+                  <option>50</option>
+                  <option>100</option>
+                </select></div>
+            </div>
+            <div class="pager" id="payPagerTop"></div>
+            <div class="tbl-scroll">
+              <table class="grid" id="payGrid">
+                <thead id="payHead"></thead>
+                <tbody id="payBody"></tbody>
+              </table>
+            </div>
+            <div class="pager" id="payPagerBot"></div>
+          </section>
+        </div>
+      </div>
+
+      <!-- SETTINGS VIEW -->
+      <div class="view" id="view-settings">
+        <div class="wrap" style="grid-template-columns:1fr">
+          <section class="card hero full">
+            <div class="hero-left">
+              <div class="eyebrow">Department of Education · ESF7 Monitoring</div>
+              <h1>Settings</h1>
+              <p>Manage your account security, appearance, and session preferences.</p>
+            </div>
+          </section>
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Account security</div>
+                <div class="card-sub">Update your login password and 6-digit passcode.</div>
+              </div>
+            </div>
+            <div class="set-cols">
+              <form class="set-form" id="pwForm" autocomplete="off">
+                <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--gold)">
+                  Change password</h4>
+                <div class="fg"><label>Current password</label><input type="password" id="pw_cur" /></div>
+                <div class="fg"><label>New password</label><input type="password" id="pw_new" /></div>
+                <div class="fg"><label>Confirm new password</label><input type="password" id="pw_cfm" /></div>
+                <button class="btn btn-accent" type="submit">Update password</button>
+                <div class="set-msg" id="pwMsg"></div>
+              </form>
+              <form class="set-form" id="pcForm" autocomplete="off">
+                <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--gold)">
+                  Change passcode</h4>
+                <div class="fg"><label>New 6-digit passcode</label><input type="password" inputmode="numeric"
+                    maxlength="6" id="pc_new" /></div>
+                <div class="fg"><label>Confirm passcode</label><input type="password" inputmode="numeric" maxlength="6"
+                    id="pc_cfm" /></div>
+                <button class="btn btn-accent" type="submit">Update passcode</button>
+                <div class="set-msg" id="pcMsg"></div>
+              </form>
+            </div>
+          </section>
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Appearance &amp; preferences</div>
+                <div class="card-sub">Personalize how the dashboard looks and behaves.</div>
+              </div>
+            </div>
+            <div class="set-list">
+              <div class="set-row">
+                <div>
+                  <div class="st">Dark mode</div>
+                  <div class="ss">Switch to a darker color theme for low-light environments.</div>
+                </div><label class="switch"><input type="checkbox" id="opt_dark" /><span class="sl"></span></label>
+              </div>
+
+            </div>
+          </section>
+          <section class="card full">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Session</div>
+                <div class="card-sub">Sign out of your ESF7 Monitoring account.</div>
+              </div>
+            </div>
+            <button class="btn" id="logoutBtn" style="background:var(--red);color:#fff;border-color:var(--red)">⎋ Log
+              out</button>
+          </section>
+        </div>
+      </div>
+
+    </main>
+  </div><!-- /app-shell -->
+
+  <!-- MODALS -->
+  <div class="backdrop" id="backdrop">
+    <div class="modal" id="modal">
+      <div class="modal-head">
+        <div>
+          <h3 id="mTitle"></h3>
+          <div class="mh-sub" id="mSub"></div>
+        </div><button class="x" id="mClose">×</button>
+      </div>
+      <div class="modal-body" id="mBody"></div>
+    </div>
+  </div>
+  <div class="backdrop" id="pickBackdrop">
+    <div class="modal" id="pickModal" style="width:min(560px,100%)">
+      <div class="modal-head">
+        <div>
+          <h3>Choose values</h3>
+          <div class="mh-sub" id="pickSub"></div>
+        </div><button class="x" id="pickClose">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="pick-tools">
+          <button class="btn" id="pkTop">Top 5</button>
+          <button class="btn" id="pkAll">Select all</button>
+          <button class="btn" id="pkClear">Clear</button>
+          <label class="toggle" style="margin-left:auto"><button id="pkSortVal" class="on">Value</button><button
+              id="pkSortAz">A–Z</button></label>
+        </div>
+        <input type="search" id="pkSearch" placeholder="Search values…" style="margin-bottom:6px" />
+        <div id="pickList"></div>
+      </div>
+    </div>
+  </div>
+  <div id="tip"></div>
+
+  <script>
+    "use strict";
+    const SEED_VERSION = 'esf7-ncr-v1';
+    /* ---------- deterministic PRNG ---------- */
+    function hashStr(s) { let h = 1779033703 ^ s.length; for (let i = 0; i < s.length; i++) { h = Math.imul(h ^ s.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; } return h >>> 0; }
+    function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+    const rnd = mulberry32(hashStr(SEED_VERSION));
+    function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
+    function ri(min, max) { return Math.floor(rnd() * (max - min + 1)) + min; }
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+
+    /* ---------- seed data ---------- */
+    const ROOT = 'NCR';
+    const STATUSES = ['Submitted', 'For Revision', 'Not Yet Submitted'];
+    const STATUS_COLOR = { 'Submitted': 'var(--green)', 'For Revision': 'var(--amber)', 'Not Yet Submitted': 'var(--red)' };
+    const STATUS_BADGE = { 'Submitted': 'b-green', 'For Revision': 'b-amber', 'Not Yet Submitted': 'b-red' };
+    const TYPES = ['Elementary', 'Junior High', 'Senior High', 'Integrated'];
+    const TYPE_COLOR = { 'Elementary': '#5E9FE8', 'Junior High': '#EAC26B', 'Senior High': '#72BC8F', 'Integrated': '#BF8EDA' };
+    const GEO = {
+      'NCR': { 'SDO Manila': ['District I', 'District II', 'District III'], 'SDO Quezon City': ['District I', 'District II', 'District III', 'District IV'], 'SDO Makati': ['District I', 'District II'], 'SDO Pasig': ['District I', 'District II'], 'SDO Caloocan': ['District I', 'District II', 'District III'], 'SDO Las Piñas': ['District I', 'District II'], 'SDO Parañaque': ['District I', 'District II'], 'SDO Taguig City': ['District I', 'District II', 'District III'] }
+    };
+    const MUNI_POOL = ['Poblacion', 'San Isidro', 'Bagong Silang', 'Malanday', 'Guitnang Bayan', 'Ampid', 'Sta. Ana', 'Banaba', 'Silangan', 'San Roque', 'Maligaya', 'Riverside'];
+    const BRGY = ['Central', 'East', 'West', 'North', 'South', 'Riverside', 'Hillcrest', 'Bagong', 'Maligaya', 'Pinagsama'];
+    const SURN = ['Santos', 'Reyes', 'Cruz', 'Bautista', 'Dela Rosa', 'Mendoza', 'Aquino', 'Ramos', 'Villanueva', 'Domingo', 'Salazar', 'Navarro'];
+    const GIVN = ['Maria', 'Jose', 'Ana', 'Ramon', 'Liza', 'Carlo', 'Grace', 'Eduardo', 'Rosa', 'Miguel', 'Teresa', 'Andres'];
+    const POSITIONS_TEACHING = ['Teacher I', 'Teacher II', 'Teacher III', 'Master Teacher I', 'Master Teacher II', 'Head Teacher I', 'Head Teacher III'];
+    const POSITIONS_NONTEACH = ['Administrative Aide I', 'Administrative Aide IV', 'Administrative Officer II', 'Administrative Officer IV', 'Guidance Counselor I', 'Librarian I', 'Registrar I', 'School Nurse II', 'Utility Worker I', 'Security Guard'];
+    let _id = 1000;
+    const schools = [];
+    Object.entries(GEO).forEach(([region, divisions]) => {
+      Object.entries(divisions).forEach(([division, districts]) => {
+        districts.forEach((district, di) => {
+          const munis = [];
+          for (let mi = 0; mi < 2; mi++) { munis.push(MUNI_POOL[(hashStr(division + district) + di * 2 + mi) % MUNI_POOL.length]); }
+          munis.forEach(muni => {
+            const n = ri(3, 6);
+            for (let i = 0; i < n; i++) {
+              const type = pick(TYPES);
+              // Submission is derived from the row lifecycle timestamps created_at / updated_at
+              let createdAt = null, updatedAt = null, revised = false;
+              const roll = rnd();
+              if (roll >= 0.15) {
+                const cd = new Date(2026, ri(4, 6), ri(1, 26), ri(7, 17), ri(0, 59));
+                createdAt = fmt(cd);
+                revised = rnd() < 0.3;
+                const ud = new Date(cd.getTime());
+                if (revised) { ud.setDate(ud.getDate() + ri(3, 22)); ud.setHours(ri(7, 17), ri(0, 59)); }
+                else { ud.setMinutes(ud.getMinutes() + ri(5, 300)); }
+                updatedAt = fmt(ud);
+              }
+              const status = createdAt === null ? 'Not Yet Submitted' : (revised ? 'For Revision' : 'Submitted');
+              const base = type === 'Elementary' ? ri(14, 55) : type === 'Junior High' ? ri(30, 85) : type === 'Senior High' ? ri(18, 60) : ri(45, 120);
+              let verifiedRate, workloadRate;
+              if (status === 'Submitted') { verifiedRate = 0.86 + rnd() * 0.14; workloadRate = 0.8 + rnd() * 0.2; }
+              else if (status === 'For Revision') { verifiedRate = 0.5 + rnd() * 0.3; workloadRate = 0.45 + rnd() * 0.3; }
+              else { verifiedRate = rnd() * 0.35; workloadRate = rnd() * 0.3; }
+              const verified = Math.round(base * verifiedRate);
+              const workloadVerified = Math.round(base * workloadRate);
+              const _id2 = (++_id);
+              const overload = Math.round(base * (0.2 + rnd() * 0.5));
+              schools.push({
+                id: _id2,
+                schoolId: '1' + String(_id2).padStart(5, '0'),
+                name: pick(BRGY) + ' ' + ({ 'Elementary': 'Elementary School', 'Junior High': 'National High School', 'Senior High': 'Senior High School', 'Integrated': 'Integrated School' })[type],
+                region, division, district, municipality: muni, type, status,
+                personnel: base, verified, workloadVerified, overloadHours: overload,
+                createdAt, updatedAt,
+                head: pick(GIVN) + ' ' + pick(SURN)
+              });
+            }
+          });
+        });
+      });
+    });
+
+    /* dedupe duplicate names within division+municipality */
+    const seen = {};
+    schools.forEach(s => { const k = s.division + '|' + s.municipality + '|' + s.name; seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) s.name = s.name + ' ' + ['', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][seen[k] - 1]; });
+
+    /* ---------- dimensions ---------- */
+    const DIMS = {
+      status: { label: 'Submission status', get: s => s.status, values: STATUSES, color: v => STATUS_COLOR[v] },
+      division: { label: 'Division', get: s => s.division, values: [...new Set(schools.map(s => s.division))], color: v => 'var(--blue)' },
+      district: { label: 'District', get: s => s.district, values: [...new Set(schools.map(s => s.district))], color: v => 'var(--blue)' },
+      municipality: { label: 'Municipality', get: s => s.municipality, values: [...new Set(schools.map(s => s.municipality))], color: v => 'var(--blue)' },
+      school: { label: 'School', get: s => s.name, values: null, color: v => 'var(--blue)' },
+      type: { label: 'School type', get: s => s.type, values: TYPES, color: v => TYPE_COLOR[v] }
+    };
+    const PALETTE = ['#5E9FE8', '#EAC26B', '#72BC8F', '#BF8EDA', '#DE9255', '#DF84A8', '#4FB9C9', '#E97366'];
+    function dimColor(dimKey, val, idx) { const d = DIMS[dimKey]; if (dimKey === 'status') return STATUS_COLOR[val]; if (dimKey === 'type') return TYPE_COLOR[val]; return PALETTE[idx % PALETTE.length]; }
+
+    /* ---------- state ---------- */
+    const state = {
+      search: '',
+      f: { division: 'all', district: 'all', municipality: 'all', status: 'all', type: 'all' },
+      advanced: false,
+      distBy: 'status',
+      selected: new Set(STATUSES),
+      measure: 'count',
+      leaf: 'school',
+      drill: [],
+      primSplit: 'status',
+      donutSplit: 'status',
+      histSplit: 'status',
+      trendRange: 7,
+      primType: 'bar',
+      sort: { col: 'name', dir: 1 },
+      colFilters: {},
+      page: 1, pageSize: 25
+    };
+    function measureFn(s) { return state.measure === 'personnel' ? s.personnel : 1; }
+    function measureLabel() { return state.measure === 'personnel' ? 'personnel' : 'schools'; }
+
+    /* ---------- filtering ---------- */
+    function baseFiltered() {
+      const q = state.search.trim().toLowerCase();
+      return schools.filter(s => {
+        if (state.f.division !== 'all' && s.division !== state.f.division) return false;
+        if (state.f.district !== 'all' && s.district !== state.f.district) return false;
+        if (state.f.municipality !== 'all' && s.municipality !== state.f.municipality) return false;
+        if (state.f.status !== 'all' && s.status !== state.f.status) return false;
+        if (state.f.type !== 'all' && s.type !== state.f.type) return false;
+        if (q) { const hay = (s.name + ' ' + s.schoolId + ' ' + s.municipality + ' ' + s.district + ' ' + s.division + ' ' + s.region + ' ' + s.head).toLowerCase(); if (!hay.includes(q)) return false; }
+        return true;
+      });
+    }
+    /* apply drill path to a set */
+    function applyDrill(list) {
+      let out = list;
+      state.drill.forEach(step => { out = out.filter(s => DIMS[step.dim].get(s) === step.value); });
+      return out;
+    }
+    const drillLevels = () => state.leaf === 'municipality' ? ['division', 'district', 'municipality'] : ['division', 'district', 'municipality', 'school'];
+    function currentLevelDim() { const lv = drillLevels(); return lv[Math.min(state.drill.length, lv.length - 1)]; }
+    function atDeepest() { return state.drill.length >= drillLevels().length - 1; }
+
+    /* ---------- aggregation ---------- */
+    function aggregateBy(list, dimKey) {
+      const m = new Map();
+      const vals = groupValues(list, dimKey);
+      vals.forEach(v => m.set(v, 0));
+      list.forEach(s => { const v = DIMS[dimKey].get(s); m.set(v, (m.get(v) || 0) + measureFn(s)); });
+      return m;
+    }
+    function groupValues(list, dimKey) {
+      if (dimKey === 'status') return STATUSES.slice();
+      if (dimKey === 'type') return TYPES.slice();
+      if (dimKey === 'school') return [...new Set(list.map(s => s.name))];
+      const present = [...new Set(list.map(s => DIMS[dimKey].get(s)))];
+      const order = DIMS[dimKey].values;
+      return order.filter(v => present.includes(v));
+    }
+
+    /* ---------- rendering ---------- */
+    const $ = id => document.getElementById(id);
+    function opt(v, l, sel) { return '<option value="' + v + '"' + (sel ? ' selected' : '') + '>' + (l || v) + '</option>'; }
+
+    function fillSelects() {
+      refreshDivisionOptions();
+      refreshDistrictOptions();
+      refreshMuniOptions();
+      $('f_status').innerHTML = opt('all', 'All statuses') + STATUSES.map(s => opt(s)).join('');
+      $('f_type').innerHTML = opt('all', 'All types') + TYPES.map(t => opt(t)).join('');
+      $('a_dist').innerHTML = Object.keys(DIMS).filter(k => k !== 'school').map(k => opt(k, DIMS[k].label, k === state.distBy)).join('');
+      const splitOpts = Object.keys(DIMS).filter(k => k !== 'school').map(k => opt(k, DIMS[k].label)).join('');
+      $('primSplit').innerHTML = splitOpts; $('primSplit').value = state.primSplit;
+      $('donutSplit').innerHTML = splitOpts; $('donutSplit').value = state.donutSplit;
+      $('histSplit').innerHTML = splitOpts; $('histSplit').value = state.histSplit;
+    }
+    function refreshDivisionOptions() {
+      const divs = Object.keys(GEO[ROOT]);
+      $('f_division').innerHTML = opt('all', 'All divisions') + divs.map(d => opt(d)).join('');
+      if (!divs.includes(state.f.division)) state.f.division = 'all';
+      $('f_division').value = state.f.division;
+    }
+    function refreshDistrictOptions() {
+      let list = schools;
+      if (state.f.division !== 'all') list = list.filter(s => s.division === state.f.division);
+      const dl = [...new Set(list.map(s => s.district))];
+      $('f_district').innerHTML = opt('all', 'All districts') + dl.map(d => opt(d)).join('');
+      if (!dl.includes(state.f.district)) state.f.district = 'all';
+      $('f_district').value = state.f.district;
+    }
+    function refreshMuniOptions() {
+      let list = schools;
+      if (state.f.division !== 'all') list = list.filter(s => s.division === state.f.division);
+      if (state.f.district !== 'all') list = list.filter(s => s.district === state.f.district);
+      const munis = [...new Set(list.map(s => s.municipality))];
+      $('f_municipality').innerHTML = opt('all', 'All municipalities') + munis.map(m => opt(m)).join('');
+      if (!munis.includes(state.f.municipality)) state.f.municipality = 'all';
+      $('f_municipality').value = state.f.municipality;
+    }
+    function syncGeoSelects() { refreshDivisionOptions(); refreshDistrictOptions(); refreshMuniOptions(); }
+
+    function renderHero() {
+      const list = baseFiltered();
+      const sub = list.filter(s => s.status === 'Submitted').length;
+      const rate = list.length ? Math.round(sub / list.length * 100) : 0;
+      $('heroRate').textContent = rate + '%';
+      $('heroBar').style.width = rate + '%';
+      const scope = [state.f.division !== 'all' ? state.f.division : 'All divisions', state.f.district !== 'all' ? state.f.district : null].filter(Boolean).join(' · ');
+      $('heroScope').textContent = scope + ' · ' + list.length + ' schools';
+    }
+
+    function renderKPIs() {
+      const dim = state.distBy;
+      const scoped = baseFiltered().filter(s => state.selected.has(DIMS[dim].get(s)));
+      const agg = aggregateBy(scoped, dim);
+      const row = $('kpiRow');
+      const bdDim = state.f.division !== 'all' ? 'district' : 'division';
+      const bdLabel = DIMS[bdDim].label + ' breakdown';
+      $('kpiSub').textContent = 'Distribution by ' + DIMS[dim].label.toLowerCase() + ' · measure: ' + measureLabel() + ' · hover a card for ' + DIMS[bdDim].label.toLowerCase() + ' breakdown';
+      const chosen = [...agg.keys()].filter(v => state.selected.has(v));
+      if (chosen.length === 0) { row.innerHTML = '<div class="empty-note">No values selected. Open the ⚙ category picker to choose values to display.</div>'; return; }
+      let total = 0; chosen.forEach(v => total += agg.get(v) || 0);
+      const bd = list => {
+        const m = new Map();
+        list.forEach(s => { const k = DIMS[bdDim].get(s); m.set(k, (m.get(k) || 0) + measureFn(s)); });
+        const entries = [...m.entries()].filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]);
+        if (entries.length === 0) return '';
+        return '<div class="kpi-breakdown"><div class="kb-head">' + bdLabel + '</div>' + entries.map(([k, v]) => '<div class="kb-row"><span class="kb-name">' + k + '</span><span class="kb-val">' + v.toLocaleString() + '</span></div>').join('') + '</div>';
+      };
+      let html = chosen.map((v, i) => {
+        const val = agg.get(v) || 0; const pct = total ? Math.round(val / total * 100) : 0;
+        return '<div class="kpi" style="border-left-color:' + dimColor(dim, v, i) + '"><div class="knum">' + val.toLocaleString() + '</div><div class="klabel">' + v + '</div><div class="kcap">' + pct + '% of shown · ' + measureLabel() + '</div>' + bd(scoped.filter(s => DIMS[dim].get(s) === v)) + '</div>';
+      }).join('');
+      const totalCard = '<div class="kpi total"><div class="knum">' + total.toLocaleString() + '</div><div class="klabel">Total shown</div><div class="kcap">across ' + chosen.length + ' ' + DIMS[dim].label.toLowerCase() + ' values</div>' + bd(scoped) + '</div>';
+      row.innerHTML = totalCard + html;
+    }
+
+    function renderBreadcrumb() {
+      const bc = $('breadcrumb');
+      let html = '<span class="crumb link" data-i="-1">' + ROOT + '</span>';
+      state.drill.forEach((step, i) => { html += '<span style="color:var(--muted)">›</span><span class="crumb ' + (i === state.drill.length - 1 ? 'cur' : 'link') + '" data-i="' + i + '">' + step.value + '</span>'; });
+      const cur = currentLevelDim();
+      if (!atDeepest() || state.drill.length === 0) html += '<span style="color:var(--muted);font-size:11px;margin-left:6px">grouping by ' + DIMS[cur].label.toLowerCase() + '</span>';
+      bc.innerHTML = html;
+      bc.querySelectorAll('.crumb.link').forEach(el => el.onclick = () => { const i = +el.dataset.i; const keep = i < 0 ? [] : state.drill.slice(0, i + 1); const dims = keep.map(x => x.dim); if (!dims.includes('division')) state.f.division = 'all'; if (!dims.includes('district')) state.f.district = 'all'; if (!dims.includes('municipality')) state.f.municipality = 'all'; syncGeoSelects(); renderAll(); });
+    }
+
+    function renderPrimary() {
+      renderBreadcrumb();
+      const list = applyDrill(baseFiltered());
+      const groupDim = currentLevelDim();
+      const splitDim = state.primSplit;
+      const groups = groupValues(list, groupDim);
+      const segs = groupValues(list, splitDim);
+      const cont = $('primaryChart');
+      // legend
+      $('primaryLegend').innerHTML = segs.map((v, i) => '<span><span class="dot" style="background:' + dimColor(splitDim, v, i) + '"></span>' + v + '</span>').join('');
+      if (list.length === 0) { cont.innerHTML = '<div class="empty-note">No schools match the current filters.</div>'; return; }
+      // matrix
+      const matrix = new Map(); let groupTot = new Map();
+      groups.forEach(g => { const row = new Map(); segs.forEach(s => row.set(s, 0)); matrix.set(g, row); groupTot.set(g, 0); });
+      list.forEach(s => { const g = DIMS[groupDim].get(s); const sv = DIMS[splitDim].get(s); if (matrix.has(g)) { matrix.get(g).set(sv, (matrix.get(g).get(sv) || 0) + measureFn(s)); groupTot.set(g, groupTot.get(g) + measureFn(s)); } });
+      const maxTot = Math.max(...groups.map(g => groupTot.get(g)), 1);
+      if (state.primType === 'bar') {
+        let html = '<div class="bars">';
+        groups.forEach(g => {
+          const tot = groupTot.get(g); const rowW = tot / maxTot * 100;
+          html += '<div class="bar-row"><div class="bar-lab" data-group="' + encodeURIComponent(g) + '" title="' + g + '">' + g + '</div><div class="bar-track" data-group="' + encodeURIComponent(g) + '" style="width:' + Math.max(rowW, 4) + '%">';
+          segs.forEach((s, i) => { const val = matrix.get(g).get(s) || 0; if (val <= 0) return; const w = val / tot * 100; const lab = w >= 7 ? '<span class="seg-lab">' + val.toLocaleString() + '</span>' : ''; html += '<div class="seg" data-group="' + encodeURIComponent(g) + '" data-seg="' + encodeURIComponent(s) + '" data-val="' + val + '" style="width:' + w + '%;background:' + dimColor(splitDim, s, i) + '">' + lab + '</div>'; });
+          html += '</div><div class="bar-tot">' + tot.toLocaleString() + '</div></div>';
+        });
+        html += '</div>'; cont.innerHTML = html;
+        cont.querySelectorAll('.bar-lab').forEach(el => el.onclick = () => drillInto(groupDim, decodeURIComponent(el.dataset.group)));
+        cont.querySelectorAll('.bar-track').forEach(el => el.onclick = e => { if (e.target.classList.contains('seg')) return; drillInto(groupDim, decodeURIComponent(el.dataset.group)); });
+        cont.querySelectorAll('.seg').forEach(el => {
+          el.onclick = e => { e.stopPropagation(); openDisagg(groupDim, decodeURIComponent(el.dataset.group), splitDim, decodeURIComponent(el.dataset.seg)); };
+          el.onmousemove = e => { const g = decodeURIComponent(el.dataset.group); showTip(e, g, segs, matrix.get(g), splitDim); };
+          el.onmouseleave = hideTip;
+        });
+      } else {
+        // heat map
+        const cols = ['', ...segs, 'Total'];
+        let html = '<div class="heat" style="grid-template-columns:170px repeat(' + (segs.length + 1) + ',1fr)">';
+        html += cols.map(c => '<div class="heat-cell head">' + c + '</div>').join('');
+        const maxCell = Math.max(1, ...groups.flatMap(g => segs.map(s => matrix.get(g).get(s) || 0)));
+        groups.forEach(g => {
+          html += '<div class="heat-cell rowhead" data-group="' + encodeURIComponent(g) + '" title="' + g + '">' + g + '</div>';
+          segs.forEach((s, i) => { const val = matrix.get(g).get(s) || 0; const inten = val / maxCell; const bg = 'color-mix(in srgb,' + dimColor(splitDim, s, i) + ' ' + (15 + inten * 85) + '%, #ffffff)'; html += '<div class="heat-cell" data-group="' + encodeURIComponent(g) + '" data-seg="' + encodeURIComponent(s) + '" style="background:' + bg + ';color:' + (inten > 0.5 ? '#fff' : 'var(--ink)') + '">' + (val || '') + '</div>'; });
+          html += '<div class="heat-cell" style="background:var(--navy);color:#fff">' + groupTot.get(g).toLocaleString() + '</div>';
+        });
+        html += '</div>'; cont.innerHTML = html;
+        cont.querySelectorAll('.heat-cell.rowhead').forEach(el => el.onclick = () => drillInto(groupDim, decodeURIComponent(el.dataset.group)));
+        cont.querySelectorAll('.heat-cell[data-seg]').forEach(el => el.onclick = () => openDisagg(groupDim, decodeURIComponent(el.dataset.group), splitDim, decodeURIComponent(el.dataset.seg)));
+      }
+    }
+    function drillInto(dim, value) {
+      if (atDeepest()) { openRecordsForGroup(dim, value); return; }
+      if (dim === 'division') { state.f.division = value; state.f.district = 'all'; state.f.municipality = 'all'; syncGeoSelects(); renderAll(); return; }
+      if (dim === 'district') { state.f.district = value; state.f.municipality = 'all'; syncGeoSelects(); renderAll(); return; }
+      if (dim === 'municipality') { state.f.municipality = value; syncGeoSelects(); renderAll(); return; }
+      state.drill.push({ dim, value }); renderAll();
+    }
+
+    function renderDonut() {
+      const list = applyDrill(baseFiltered());
+      const dim = state.donutSplit;
+      const agg = aggregateBy(list, dim);
+      const entries = [...agg.entries()].filter(e => e[1] > 0);
+      const total = entries.reduce((a, e) => a + e[1], 0);
+      const wrap = $('donutWrap');
+      if (total === 0) { wrap.innerHTML = '<div class="empty-note">No data for current selection.</div>'; return; }
+      const R = 86, C = 2 * Math.PI * R; let off = 0; const cx = 105, cy = 105;
+      let circles = '';
+      entries.forEach(([v, val], i) => { const frac = val / total; const len = frac * C; const col = dimColor(dim, v, i); circles += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="none" stroke="' + col + '" stroke-width="30" stroke-dasharray="' + len + ' ' + (C - len) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 ' + cx + ' ' + cy + ')" data-seg="' + encodeURIComponent(v) + '" style="cursor:pointer"></circle>'; off += len; });
+      const svg = '<svg width="210" height="210" viewBox="0 0 210 210">' + circles + '<text x="105" y="98" text-anchor="middle" font-size="14" fill="var(--muted)" font-family="var(--font-body)">Total</text><text x="105" y="122" text-anchor="middle" font-size="26" font-weight="800" fill="var(--navy)" font-family="var(--font-heading)">' + total.toLocaleString() + '</text></svg>';
+      let tbl = '<table class="mini-tbl"><thead><tr><th>Segment</th><th class="num">Value</th><th class="num">Share</th></tr></thead><tbody>';
+      entries.forEach(([v, val], i) => { tbl += '<tr><td><span class="dot" style="background:' + dimColor(dim, v, i) + '"></span> ' + v + '</td><td class="num">' + val.toLocaleString() + '</td><td class="num">' + (val / total * 100).toFixed(1) + '%</td></tr>'; });
+      tbl += '</tbody></table>';
+      wrap.innerHTML = svg + tbl;
+      wrap.querySelectorAll('circle[data-seg]').forEach(el => { el.onclick = () => openDisagg(null, null, dim, decodeURIComponent(el.dataset.seg)); el.onmousemove = e => { const v = decodeURIComponent(el.dataset.seg); tipHtml(e, '<b>' + v + '</b>', '<div class="tt-line"><span>' + measureLabel() + '</span><span>' + agg.get(v) + '</span></div><div class="tt-line tt-tot"><span>share</span><span>' + (agg.get(v) / total * 100).toFixed(1) + '%</span></div>'); }; el.onmouseleave = hideTip; });
+    }
+
+    function renderHistogram() {
+      const list = applyDrill(baseFiltered());
+      const dim = state.histSplit;
+      const agg = aggregateBy(list, dim);
+      const entries = [...agg.entries()];
+      const max = Math.max(1, ...entries.map(e => e[1]));
+      const cont = $('histChart');
+      if (entries.every(e => e[1] === 0)) { cont.innerHTML = '<div class="empty-note">No data for current selection.</div>'; return; }
+      cont.innerHTML = entries.map(([v, val], i) => '<div class="hist-col" data-seg="' + encodeURIComponent(v) + '"><div class="hist-val">' + val.toLocaleString() + '</div><div class="hist-bar" style="height:' + (val / max * 100) + '%;background:' + dimColor(dim, v, i) + '"></div><div class="hist-lab">' + v + '</div></div>').join('');
+      cont.querySelectorAll('.hist-col').forEach(el => { el.onclick = () => openDisagg(null, null, dim, decodeURIComponent(el.dataset.seg)); el.onmousemove = e => { const v = decodeURIComponent(el.dataset.seg); tipHtml(e, '<b>' + v + '</b>', '<div class="tt-line"><span>' + measureLabel() + '</span><span>' + agg.get(v) + '</span></div>'); }; el.onmouseleave = hideTip; });
+    }
+
+    /* ---------- daily update trend ---------- */
+    function trendScope() { return applyDrill(baseFiltered()).filter(s => state.selected.has(DIMS[state.distBy].get(s))); }
+    function smoothPath(pts, minY, maxY) {
+      if (pts.length < 2) return pts.length ? ('M' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1)) : '';
+      const cl = y => Math.max(minY, Math.min(maxY, y));
+      let d = 'M' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+        const c1x = p1.x + (p2.x - p0.x) / 6, c1y = cl(p1.y + (p2.y - p0.y) / 6);
+        const c2x = p2.x - (p3.x - p1.x) / 6, c2y = cl(p2.y - (p3.y - p1.y) / 6);
+        d += ' C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ' ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ' ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+      }
+      return d;
+    }
+    function renderTrend() {
+      const cont = $('trendChart');
+      const withUpd = trendScope().filter(s => s.updatedAt);
+      if (withUpd.length === 0) { cont.innerHTML = '<div class="empty-note">No updates in the current selection.</div>'; return; }
+      const counts = new Map();
+      withUpd.forEach(s => { const d = s.updatedAt.slice(0, 10); counts.set(d, (counts.get(d) || 0) + 1); });
+      const keys = [...counts.keys()].sort();
+      let all = []; let dd = new Date(keys[0] + 'T00:00:00'); const end = new Date(keys[keys.length - 1] + 'T00:00:00');
+      while (dd <= end) { const key = dd.getFullYear() + '-' + pad(dd.getMonth() + 1) + '-' + pad(dd.getDate()); all.push({ day: key, count: counts.get(key) || 0 }); dd.setDate(dd.getDate() + 1); }
+      if (state.trendRange !== 'all' && all.length > state.trendRange) all = all.slice(-state.trendRange);
+      if (all.every(a => a.count === 0)) { cont.innerHTML = '<div class="empty-note">No updates in the selected time range.</div>'; return; }
+      const W = 1000, H = 260, pL = 46, pR = 18, pT = 18, pB = 42, n = all.length;
+      const maxC = Math.max(1, ...all.map(a => a.count));
+      const X = i => pL + (n <= 1 ? 0 : (i / (n - 1)) * (W - pL - pR));
+      const Y = c => pT + (1 - c / maxC) * (H - pT - pB);
+      let grid = ''; const ticks = 4;
+      for (let t = 0; t <= ticks; t++) { const val = Math.round(maxC * t / ticks); const yy = Y(val); grid += '<line class="trend-grid" x1="' + pL + '" y1="' + yy + '" x2="' + (W - pR) + '" y2="' + yy + '"/><text class="trend-lab" x="' + (pL - 8) + '" y="' + (yy + 4) + '" text-anchor="end">' + val + '</text>'; }
+      const step = Math.max(1, Math.ceil(n / 8)); let xlab = '';
+      for (let i = 0; i < n; i += step) { xlab += '<text class="trend-lab" x="' + X(i).toFixed(1) + '" y="' + (H - pB + 18) + '" text-anchor="middle">' + all[i].day.slice(5) + '</text>'; }
+      const pts = all.map((a, i) => ({ x: X(i), y: Y(a.count) }));
+      const line = smoothPath(pts, pT, Y(0));
+      const area = line + ' L' + X(n - 1).toFixed(1) + ' ' + Y(0).toFixed(1) + ' L' + X(0).toFixed(1) + ' ' + Y(0).toFixed(1) + ' Z';
+      let dots = ''; all.forEach((a, i) => { if (a.count > 0) dots += '<circle class="trend-dot" data-day="' + a.day + '" data-c="' + a.count + '" cx="' + X(i).toFixed(1) + '" cy="' + Y(a.count).toFixed(1) + '" r="4.5"/>'; });
+      cont.innerHTML = '<svg class="trend-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img">' + grid + '<path class="trend-area" d="' + area + '"/><path class="trend-line" d="' + line + '"/><line class="trend-grid" x1="' + pL + '" y1="' + Y(0) + '" x2="' + (W - pR) + '" y2="' + Y(0) + '"/>' + dots + xlab + '</svg>';
+      cont.querySelectorAll('.trend-dot').forEach(el => { el.onclick = () => openDayUpdates(el.dataset.day); el.onmousemove = e => tipHtml(e, '<b>' + el.dataset.day + '</b>', '<div class="tt-line"><span>updated</span><span>' + el.dataset.c + '</span></div>'); el.onmouseleave = hideTip; });
+    }
+    function openDayUpdates(day) {
+      const list = trendScope().filter(s => s.updatedAt && s.updatedAt.slice(0, 10) === day);
+      $('mTitle').textContent = 'Updates on ' + day;
+      $('mSub').textContent = list.length + ' record' + (list.length === 1 ? '' : 's') + ' updated · scoped to current filters';
+      const cols = [{ k: 'name', l: 'School' }, { k: 'schoolId', l: 'ID' }, { k: 'district', l: 'District' }, { k: 'municipality', l: 'Municipality' }, { k: 'status', l: 'Status' }, { k: 'head', l: 'Updated by' }, { k: 'time', l: 'Time' }];
+      let html = '<div class="modal-tools"><input type="search" id="duSearch" placeholder="Search these records…"/></div>';
+      html += '<div class="tbl-scroll"><table class="grid" id="duGrid" style="min-width:720px"><thead><tr>' + cols.map(c => '<th data-sk="' + c.k + '">' + c.l + '</th>').join('') + '</tr></thead><tbody id="duBody"></tbody><tfoot><tr><td colspan="' + (cols.length - 1) + '" class="tfoot-tot">Total updated</td><td class="tfoot-tot" id="duTot">' + list.length + '</td></tr></tfoot></table></div><div class="pager" id="duPager"></div><div class="recon" id="duRecon"></div>';
+      $('mBody').innerHTML = html;
+      let so = { k: 'time', dir: 1 };
+      let duPage = 1, duSize = 25;
+      const cell = (s, k) => k === 'time' ? s.updatedAt.slice(11, 16) : s[k];
+      function draw() {
+        const q = ($('duSearch').value || '').toLowerCase();
+        let rows = list.filter(s => !q || (s.name + ' ' + s.schoolId + ' ' + s.municipality + ' ' + s.district + ' ' + s.head).toLowerCase().includes(q));
+        rows.sort((a, b) => { let x = cell(a, so.k), y = cell(b, so.k); return x < y ? -so.dir : x > y ? so.dir : 0; });
+        const totalR = rows.length; const pages = Math.max(1, Math.ceil(totalR / duSize)); if (duPage > pages) duPage = pages; const startI = (duPage - 1) * duSize; const pageRows = rows.slice(startI, startI + duSize);
+        $('duBody').innerHTML = pageRows.map(s => '<tr data-id="' + s.id + '" style="cursor:pointer">' + cols.map(c => c.k === 'status' ? '<td><span class="badge ' + STATUS_BADGE[s.status] + '">' + s.status + '</span></td>' : '<td>' + cell(s, c.k) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="empty-note">No records.</td></tr>';
+        $('duBody').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { const sc = schools.find(x => x.id === +tr.dataset.id); if (sc) showSchoolPersonnel(sc, () => openDayUpdates(day)); });
+        $('duTot').textContent = totalR;
+        $('duRecon').innerHTML = 'Showing <b>' + totalR + '</b> of <b>' + list.length + '</b> records updated on ' + day + (q ? ' · (filtered view)' : ' · <b>reconciles with chart point ✓</b>');
+        renderModalPager('duPager', { page: duPage, size: duSize, total: totalR, shown: pageRows.length, start: startI, onPage: p => { duPage = p; draw(); }, onSize: s => { duSize = s; duPage = 1; draw(); } });
+      }
+      draw();
+      $('duSearch').oninput = () => { duPage = 1; draw(); };
+      $('duGrid').querySelectorAll('th[data-sk]').forEach(th => th.onclick = () => { const k = th.dataset.sk; if (so.k === k) so.dir *= -1; else { so.k = k; so.dir = 1; } draw(); });
+      openBackdrop('backdrop');
+    }
+
+    /* ---------- table ---------- */
+    const COLS = [
+      { k: 'name', label: 'School', frz: true, type: 'text' },
+      { k: 'schoolId', label: 'School ID', type: 'text' },
+      { k: 'division', label: 'Division', type: 'sel', opts: Object.keys(GEO[ROOT]) },
+      { k: 'district', label: 'District', type: 'sel', opts: [...new Set(schools.map(s => s.district))] },
+      { k: 'type', label: 'Type', type: 'sel', opts: TYPES },
+      { k: 'status', label: 'Status', type: 'sel', opts: STATUSES },
+      { k: 'updatedAt', label: 'Last updated', type: 'text' },
+      { k: 'personnel', label: 'Personnel', type: 'num', num: true },
+      { k: 'workloadPct', label: 'Workload %', type: 'num', num: true, computed: true }
+    ];
+    function rowVal(s, k) {
+      if (k === 'verifiedPct') return s.personnel ? Math.round(s.verified / s.personnel * 100) : null;
+      if (k === 'workloadPct') return s.personnel ? Math.round(s.workloadVerified / s.personnel * 100) : null;
+      return s[k];
+    }
+    function tableRows() {
+      let list = applyDrill(baseFiltered()).filter(s => state.selected.has(DIMS[state.distBy].get(s)));
+      // column filters
+      Object.entries(state.colFilters).forEach(([k, fv]) => {
+        if (!fv) return; const col = COLS.find(c => c.k === k);
+        list = list.filter(s => { const v = rowVal(s, k); if (v == null) return false; if (col.type === 'sel') return String(v) === fv; return String(v).toLowerCase().includes(fv.toLowerCase()); });
+      });
+      const { col, dir } = state.sort;
+      list.sort((a, b) => { let x = rowVal(a, col), y = rowVal(b, col); if (x == null) x = -Infinity; if (y == null) y = -Infinity; if (typeof x === 'string' || typeof y === 'string') { x = String(x); y = String(y); return x < y ? -dir : x > y ? dir : 0; } return (x - y) * dir; });
+      return list;
+    }
+    function renderTable() {
+      const rows = tableRows();
+      const totalRows = rows.length;
+      const pages = Math.max(1, Math.ceil(totalRows / state.pageSize));
+      if (state.page > pages) state.page = pages;
+      const start = (state.page - 1) * state.pageSize; const pageRows = rows.slice(start, start + state.pageSize);
+      $('tblSub').textContent = totalRows + ' schools · scoped to ' + DIMS[state.distBy].label.toLowerCase() + ' selection';
+      // head
+      let head = '<tr>' + COLS.map(c => { const ind = state.sort.col === c.k ? '<span class="sort-ind">' + (state.sort.dir > 0 ? '▲' : '▼') + '</span>' : ''; return '<th class="' + (c.frz ? 'frz' : '') + (c.num || c.k === 'schoolId' ? ' num' : '') + '" data-k="' + c.k + '">' + c.label + ' ' + ind + '</th>'; }).join('') + '</tr>';
+      head += '<tr class="filt-row">' + COLS.map(c => {
+        const cur = state.colFilters[c.k] || '';
+        if (c.type === 'sel') return '<th class="' + (c.frz ? 'frz' : '') + '"><select data-fk="' + c.k + '"><option value="">All</option>' + c.opts.map(o => opt(o, o, o === cur)).join('') + '</select></th>';
+        return '<th class="' + (c.frz ? 'frz' : '') + '"><input type="text" data-fk="' + c.k + '" value="' + cur.replace(/"/g, '&quot;') + '" placeholder="filter"/></th>';
+      }).join('') + '</tr>';
+      $('gridHead').innerHTML = head;
+      // body
+      if (pageRows.length === 0) { $('gridBody').innerHTML = '<tr><td colspan="' + COLS.length + '" class="empty-note">No schools match these filters.</td></tr>'; }
+      else {
+        $('gridBody').innerHTML = pageRows.map(s => {
+          return '<tr data-id="' + s.id + '">' + COLS.map(c => {
+            let v = rowVal(s, c.k);
+            if (c.k === 'status') return '<td class="' + (c.frz ? 'frz' : '') + '"><span class="badge ' + STATUS_BADGE[s.status] + '">' + s.status + '</span></td>';
+            if (c.computed && v == null) return '<td class="muted-cell num">—</td>';
+            if (c.k === 'verifiedPct' || c.k === 'workloadPct') v = v + '%';
+            if (c.k === 'createdAt' || c.k === 'updatedAt') v = v ? String(v).replace('T', ' ') : '<span class="muted-cell">—</span>';
+            if (c.num && typeof v === 'number') v = v.toLocaleString();
+            return '<td class="' + (c.frz ? 'frz' : '') + (c.num || c.k === 'schoolId' ? ' num' : '') + '">' + v + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+        $('gridBody').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openRecord(+tr.dataset.id));
+      }
+      // sorting
+      $('gridHead').querySelectorAll('th[data-k]').forEach(th => th.onclick = () => { const k = th.dataset.k; if (state.sort.col === k) state.sort.dir *= -1; else { state.sort.col = k; state.sort.dir = 1; } renderTable(); });
+      // col filters
+      $('gridHead').querySelectorAll('[data-fk]').forEach(inp => {
+        const k = inp.dataset.fk;
+        const handler = () => { state.colFilters[k] = inp.value; state.page = 1; const active = document.activeElement === inp; renderTable(); if (active) { const again = $('gridHead').querySelector('[data-fk="' + k + '"]'); if (again) { again.focus(); if (again.setSelectionRange && again.type === 'text') again.setSelectionRange(again.value.length, again.value.length); } } };
+        if (inp.tagName === 'SELECT') inp.onchange = handler; else { let t; inp.oninput = () => { clearTimeout(t); t = setTimeout(handler, 220); }; }
+      });
+      renderPager('pagerTop', totalRows, pages, start, pageRows.length);
+      renderPager('pagerBot', totalRows, pages, start, pageRows.length);
+    }
+    const PAGE_SIZES = [10, 25, 50, 100];
+    function rowsOptions(sel) { return PAGE_SIZES.map(n => '<option value="' + n + '"' + (n === sel ? ' selected' : '') + '>' + n + '</option>').join(''); }
+    function renderPager(id, total, pages, start, shown) {
+      const el = $(id);
+      el.innerHTML = '<div class="pinfo">Rows ' + (total ? start + 1 : 0) + '–' + (start + shown) + ' of ' + total + ' · Page ' + state.page + ' of ' + pages + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center"><label class="pager-rows">Rows per page <select data-rows>' + rowsOptions(state.pageSize) + '</select></label><button class="btn" data-pg="prev" ' + (state.page <= 1 ? 'disabled' : '') + '>‹ Prev</button><button class="btn" data-pg="next" ' + (state.page >= pages ? 'disabled' : '') + '>Next ›</button></div>';
+      el.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { if (b.dataset.pg === 'prev' && state.page > 1) state.page--; if (b.dataset.pg === 'next' && state.page < pages) state.page++; renderTable(); });
+      const rs = el.querySelector('[data-rows]'); if (rs) rs.onchange = e => { state.pageSize = +e.target.value; state.page = 1; const a = $('a_rows'); if (a) a.value = e.target.value; renderTable(); };
+    }
+    function renderModalPager(id, o) {
+      const el = $(id); if (!el) return;
+      const pages = Math.max(1, Math.ceil(o.total / o.size));
+      el.innerHTML = '<div class="pinfo">Rows ' + (o.total ? o.start + 1 : 0) + '–' + (o.start + o.shown) + ' of ' + o.total + ' · Page ' + o.page + ' of ' + pages + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center"><label class="pager-rows">Rows per page <select data-rows>' + rowsOptions(o.size) + '</select></label><button class="btn" data-pg="prev" ' + (o.page <= 1 ? 'disabled' : '') + '>‹ Prev</button><button class="btn" data-pg="next" ' + (o.page >= pages ? 'disabled' : '') + '>Next ›</button></div>';
+      const rs = el.querySelector('[data-rows]'); if (rs) rs.onchange = e => o.onSize(+e.target.value);
+      el.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { if (b.dataset.pg === 'prev' && o.page > 1) o.onPage(o.page - 1); if (b.dataset.pg === 'next' && o.page < pages) o.onPage(o.page + 1); });
+    }
+
+    /* ---------- modals ---------- */
+    function personnelOf(school) {
+      if (school._people) return school._people;
+      const r = mulberry32(hashStr(SEED_VERSION + 'personnel' + school.id));
+      const pk = arr => arr[Math.floor(r() * arr.length)];
+      const people = [{ name: school.head, position: 'School Head / Principal', teaching: true, isHead: true }];
+      const n = Math.max(0, school.personnel - 1);
+      for (let i = 0; i < n; i++) {
+        const teaching = r() < 0.82;
+        people.push({ name: pk(GIVN) + ' ' + pk(SURN), position: teaching ? pk(POSITIONS_TEACHING) : pk(POSITIONS_NONTEACH), teaching, isHead: false });
+      }
+      school._people = people;
+      return people;
+    }
+    function showSchoolPersonnel(school, backFn) {
+      const people = personnelOf(school);
+      $('mTitle').textContent = school.name + ' · Personnel';
+      $('mSub').textContent = school.schoolId + ' · ' + school.district + ' · ' + school.municipality + ' · ' + school.type;
+      let html = '<div class="modal-tools" style="grid-template-columns:auto 1fr;gap:10px;align-items:center"><button class="btn" id="perBack">‹ Back to school list</button><input type="search" id="perSearch" placeholder="Search personnel or position…"/></div>';
+      html += '<div class="mgroup"><h4>School Personnel</h4><div class="tbl-scroll"><table class="grid" id="perGrid" style="min-width:520px"><thead><tr><th>#</th><th>Name</th><th>Position</th><th>Category</th></tr></thead><tbody id="perBody"></tbody><tfoot><tr><td colspan="3" class="tfoot-tot">Total personnel</td><td class="tfoot-tot" id="perTot"></td></tr></tfoot></table></div><div class="pager" id="perPager"></div><div class="recon" id="perRecon"></div></div>';
+      $('mBody').innerHTML = html;
+      let perPage = 1, perSize = 25;
+      function draw() {
+        const q = ($('perSearch').value || '').toLowerCase();
+        const rows = people.filter(p => !q || (p.name + ' ' + p.position).toLowerCase().includes(q));
+        const totalR = rows.length; const pages = Math.max(1, Math.ceil(totalR / perSize)); if (perPage > pages) perPage = pages; const startI = (perPage - 1) * perSize; const pageRows = rows.slice(startI, startI + perSize);
+        $('perBody').innerHTML = pageRows.map((p, i) => '<tr' + (p.isHead ? ' style="background:var(--gold-soft);font-weight:700"' : '') + '><td>' + (p.isHead ? 'Head' : startI + i + 1) + '</td><td>' + p.name + '</td><td>' + p.position + '</td><td>' + (p.isHead ? 'School Head' : (p.teaching ? 'Teaching' : 'Non-teaching')) + '</td></tr>').join('') || '<tr><td colspan="4" class="empty-note">No personnel match this search.</td></tr>';
+        $('perTot').textContent = totalR.toLocaleString();
+        $('perRecon').innerHTML = 'Showing <b>' + totalR + '</b> of <b>' + people.length + '</b> personnel · school personnel count: <b>' + school.personnel + '</b>' + (totalR === people.length ? ' · <b>reconciles ✓</b>' : ' · (filtered view)');
+        renderModalPager('perPager', { page: perPage, size: perSize, total: totalR, shown: pageRows.length, start: startI, onPage: p => { perPage = p; draw(); }, onSize: s => { perSize = s; perPage = 1; draw(); } });
+      }
+      draw();
+      $('perSearch').oninput = () => { perPage = 1; draw(); };
+      $('perBack').onclick = backFn;
+      openBackdrop('backdrop');
+    }
+    function openRecord(id) {
+      const s = schools.find(x => x.id === id); if (!s) return;
+      $('mTitle').textContent = s.name;
+      $('mSub').textContent = s.schoolId + ' · ' + s.district + ' · ' + s.municipality;
+      const vpct = s.personnel ? Math.round(s.verified / s.personnel * 100) : null;
+      const wpct = s.personnel ? Math.round(s.workloadVerified / s.personnel * 100) : null;
+      function tile(l, v) { return '<div class="tile"><div class="tl">' + l + '</div><div class="tv">' + v + '</div></div>'; }
+      let html = '';
+      const fmtDate = v => v ? String(v).replace('T', ' ') : '—';
+      html += '<div class="mgroup"><h4>Submission</h4><div class="tiles">' + tile('Status', '<span class="badge ' + STATUS_BADGE[s.status] + '">' + s.status + '</span>') + tile('Created (submitted)', fmtDate(s.createdAt)) + tile('Last updated', fmtDate(s.updatedAt)) + tile('School head', s.head) + '</div></div>';
+      html += '<div class="mgroup"><h4>Location</h4><div class="tiles">' + tile('Division', s.division) + tile('District', s.district) + tile('Municipality', s.municipality) + tile('School type', s.type) + '</div></div>';
+      html += '<div class="mgroup"><h4>Personnel &amp; verification</h4><div class="tiles">' + tile('Personnel', s.personnel) + tile('Profile-verified', s.verified + (vpct != null ? ' (' + vpct + '%)' : '')) + tile('Workload-verified', s.workloadVerified + (wpct != null ? ' (' + wpct + '%)' : '')) + tile('Overload hours', s.overloadHours) + '</div></div>';
+      $('mBody').innerHTML = '<div class="modal-tools"><button class="btn btn-accent" id="orPersonnel">View personnel list (' + s.personnel + ') ›</button></div>' + html;
+      $('orPersonnel').onclick = () => showSchoolPersonnel(s, () => openRecord(s.id));
+      openBackdrop('backdrop');
+    }
+    function openRecordsForGroup(dim, value) {
+      // deepest-level fallback: show detail-style list modal of matching schools
+      const list = applyDrill(baseFiltered()).filter(s => DIMS[dim].get(s) === value);
+      disaggTable('Schools · ' + value, DIMS[dim].label + ' = ' + value, list, null, null);
+    }
+    function openDisagg(groupDim, groupVal, splitDim, segVal) {
+      let list = applyDrill(baseFiltered());
+      if (groupDim && groupVal != null) list = list.filter(s => DIMS[groupDim].get(s) === groupVal);
+      list = list.filter(s => DIMS[splitDim].get(s) === segVal);
+      const scopeTxt = (groupVal != null ? DIMS[groupDim].label + ' = ' + groupVal + '  ·  ' : '') + DIMS[splitDim].label + ' = ' + segVal;
+      disaggTable('Disaggregation · ' + segVal, scopeTxt, list, splitDim, segVal);
+    }
+    function disaggTable(title, sub, list, splitDim, segVal) {
+      $('mTitle').textContent = title;
+      $('mSub').textContent = sub + '  ·  measure: ' + measureLabel();
+      const cols = [{ k: 'name', l: 'School' }, { k: 'schoolId', l: 'ID' }, { k: 'division', l: 'Division' }, { k: 'district', l: 'District' }, { k: 'municipality', l: 'Municipality' }, { k: 'type', l: 'Type' }, { k: 'status', l: 'Status' }];
+      const valCol = state.measure === 'personnel' ? { k: 'personnel', l: 'Personnel' } : { k: '_one', l: 'Schools' };
+      const total = list.reduce((a, s) => a + measureFn(s), 0);
+      let html = '<div class="modal-tools"><input type="search" id="dgSearch" placeholder="Search these records…"/></div>';
+      html += '<div class="tbl-scroll"><table class="grid" id="dgGrid" style="min-width:640px"><thead><tr>' + cols.map(c => '<th data-sk="' + c.k + '">' + c.l + '</th>').join('') + '<th class="num" data-sk="' + valCol.k + '">' + valCol.l + '</th></tr></thead><tbody id="dgBody"></tbody>';
+      html += '<tfoot><tr><td colspan="' + cols.length + '" class="tfoot-tot">Total</td><td class="tfoot-tot" style="text-align:right" id="dgTot">' + total.toLocaleString() + '</td></tr></tfoot></table></div>';
+      html += '<div class="pager" id="dgPager"></div>';
+      html += '<div class="recon" id="dgRecon"></div>';
+      $('mBody').innerHTML = html;
+      let dgSort = { k: 'name', dir: 1 };
+      let dgPage = 1, dgSize = 25;
+      function draw() {
+        const q = ($('dgSearch').value || '').toLowerCase();
+        let rows = list.filter(s => !q || (s.name + ' ' + s.schoolId + ' ' + s.municipality + ' ' + s.district).toLowerCase().includes(q));
+        rows.sort((a, b) => { let x = dgSort.k === '_one' ? 1 : a[dgSort.k]; let y = dgSort.k === '_one' ? 1 : b[dgSort.k]; if (typeof x === 'string') { return x < y ? -dgSort.dir : x > y ? dgSort.dir : 0; } return ((x || 0) - (y || 0)) * dgSort.dir; });
+        const vis = rows.reduce((a, s) => a + measureFn(s), 0);
+        const totalR = rows.length; const pages = Math.max(1, Math.ceil(totalR / dgSize)); if (dgPage > pages) dgPage = pages; const startI = (dgPage - 1) * dgSize; const pageRows = rows.slice(startI, startI + dgSize);
+        $('dgBody').innerHTML = pageRows.map(s => '<tr data-id="' + s.id + '" style="cursor:pointer">' + cols.map(c => c.k === 'status' ? '<td><span class="badge ' + STATUS_BADGE[s.status] + '">' + s.status + '</span></td>' : '<td>' + s[c.k] + '</td>').join('') + '<td class="num">' + (state.measure === 'personnel' ? s.personnel : 1) + '</td></tr>').join('') || '<tr><td colspan="' + (cols.length + 1) + '" class="empty-note">No records.</td></tr>';
+        $('dgBody').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { const sc = schools.find(x => x.id === +tr.dataset.id); if (sc) showSchoolPersonnel(sc, () => disaggTable(title, sub, list, splitDim, segVal)); });
+        $('dgTot').textContent = vis.toLocaleString();
+        const reconOk = vis === total && !q;
+        $('dgRecon').innerHTML = 'Visible total: <b>' + vis.toLocaleString() + '</b> ' + measureLabel() + ' · Selected total: <b>' + total.toLocaleString() + '</b>' + (reconOk ? ' · <b>reconciles with chart ✓</b>' : (q ? ' · (filtered view)' : ''));
+        renderModalPager('dgPager', { page: dgPage, size: dgSize, total: totalR, shown: pageRows.length, start: startI, onPage: p => { dgPage = p; draw(); }, onSize: s => { dgSize = s; dgPage = 1; draw(); } });
+      }
+      draw();
+      $('dgSearch').oninput = () => { dgPage = 1; draw(); };
+      $('dgGrid').querySelectorAll('th[data-sk]').forEach(th => th.onclick = () => { const k = th.dataset.sk; if (dgSort.k === k) dgSort.dir *= -1; else { dgSort.k = k; dgSort.dir = 1; } draw(); });
+      openBackdrop('backdrop');
+    }
+
+    /* ---------- gear picker ---------- */
+    function openPicker() {
+      const dim = state.distBy;
+      $('pickSub').textContent = DIMS[dim].label + ' · ' + measureLabel();
+      let pkSort = 'val';
+      const agg = aggregateBy(baseFiltered(), dim);
+      function draw() {
+        const q = ($('pkSearch').value || '').toLowerCase();
+        let vals = groupValues(baseFiltered(), dim).filter(v => !q || v.toLowerCase().includes(q));
+        if (pkSort === 'val') vals.sort((a, b) => (agg.get(b) || 0) - (agg.get(a) || 0)); else vals.sort();
+        $('pickList').innerHTML = vals.map(v => '<div class="pick-row"><label><input type="checkbox" data-v="' + encodeURIComponent(v) + '" ' + (state.selected.has(v) ? 'checked' : '') + '/> ' + v + '</label><span class="pc">' + (agg.get(v) || 0).toLocaleString() + '</span></div>').join('');
+        $('pickList').querySelectorAll('input[data-v]').forEach(cb => cb.onchange = () => { const v = decodeURIComponent(cb.dataset.v); if (cb.checked) state.selected.add(v); else state.selected.delete(v); renderKPIs(); renderTable(); });
+      }
+      draw();
+      $('pkSearch').value = ''; $('pkSearch').oninput = draw;
+      $('pkTop').onclick = () => { const top = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]); state.selected = new Set(top); draw(); renderKPIs(); renderTable(); };
+      $('pkAll').onclick = () => { state.selected = new Set(groupValues(baseFiltered(), dim)); draw(); renderKPIs(); renderTable(); };
+      $('pkClear').onclick = () => { state.selected = new Set(); draw(); renderKPIs(); renderTable(); };
+      $('pkSortVal').onclick = () => { pkSort = 'val'; $('pkSortVal').classList.add('on'); $('pkSortAz').classList.remove('on'); draw(); };
+      $('pkSortAz').onclick = () => { pkSort = 'az'; $('pkSortAz').classList.add('on'); $('pkSortVal').classList.remove('on'); draw(); };
+      openBackdrop('pickBackdrop');
+    }
+
+    /* ---------- tooltip ---------- */
+    const tip = $('tip');
+    function tipHtml(e, title, body) { tip.innerHTML = title + body; tip.style.opacity = '1'; place(e); }
+    function showTip(e, group, segs, rowMap, splitDim) { let tot = 0; segs.forEach(s => tot += rowMap.get(s) || 0); let body = segs.map(s => { const v = rowMap.get(s) || 0; return v ? '<div class="tt-line"><span>' + s + '</span><span>' + v + '</span></div>' : ''; }).join(''); body += '<div class="tt-line tt-tot"><span>Total</span><span>' + tot + '</span></div>'; tip.innerHTML = '<b>' + group + '</b>' + body; tip.style.opacity = '1'; place(e); }
+    function place(e) { const pad = 14; let x = e.clientX + pad, y = e.clientY + pad; const r = tip.getBoundingClientRect(); if (x + r.width > innerWidth) x = e.clientX - r.width - pad; if (y + r.height > innerHeight) y = e.clientY - r.height - pad; tip.style.left = x + 'px'; tip.style.top = y + 'px'; }
+    function hideTip() { tip.style.opacity = '0'; }
+
+    /* ---------- backdrop helpers ---------- */
+    function openBackdrop(id) { $(id).classList.add('on'); }
+    function closeBackdrops() { $('backdrop').classList.remove('on'); $('pickBackdrop').classList.remove('on'); }
+    $('mClose').onclick = closeBackdrops; $('pickClose').onclick = closeBackdrops;
+    $('backdrop').onclick = e => { if (e.target === $('backdrop')) closeBackdrops(); };
+    $('pickBackdrop').onclick = e => { if (e.target === $('pickBackdrop')) closeBackdrops(); };
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBackdrops(); });
+
+    /* ---------- CSV ---------- */
+    $('csvBtn').onclick = () => {
+      const rows = tableRows();
+      const header = COLS.map(c => c.label);
+      const lines = [header.join(',')];
+      rows.forEach(s => { lines.push(COLS.map(c => { let v = rowVal(s, c.k); if (v == null) v = ''; if (c.k === 'verifiedPct' || c.k === 'workloadPct') v = v === '' ? '' : v + '%'; return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',')); });
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'esf7_division_submissions.csv'; a.click();
+    };
+
+    /* ---------- events ---------- */
+    let searchT;
+    $('search').oninput = e => { clearTimeout(searchT); searchT = setTimeout(() => { state.search = e.target.value; state.page = 1; renderAll(); }, 220); };
+    $('resetBtn').onclick = () => { state.search = ''; $('search').value = ''; state.f = { division: 'all', district: 'all', municipality: 'all', status: 'all', type: 'all' }; state.drill = []; state.colFilters = {}; state.page = 1; state.selected = new Set(DIMS[state.distBy].values); fillSelects(); renderAll(); };
+    $('advToggle').onclick = () => { state.advanced = !state.advanced; $('advPanel').classList.toggle('hidden', !state.advanced); $('advToggle').classList.toggle('on', state.advanced); };
+    $('f_division').onchange = e => { state.f.division = e.target.value; state.f.district = 'all'; state.f.municipality = 'all'; refreshDistrictOptions(); refreshMuniOptions(); state.page = 1; renderAll(); };
+    $('f_district').onchange = e => { state.f.district = e.target.value; state.f.municipality = 'all'; refreshMuniOptions(); state.page = 1; renderAll(); };
+    $('f_municipality').onchange = e => { state.f.municipality = e.target.value; state.page = 1; renderAll(); };
+    $('f_status').onchange = e => { state.f.status = e.target.value; state.page = 1; renderAll(); };
+    $('f_type').onchange = e => { state.f.type = e.target.value; state.page = 1; renderAll(); };
+    $('a_dist').onchange = e => { state.distBy = e.target.value; state.selected = new Set(DIMS[state.distBy].values); renderAll(); };
+    $('a_measure').onchange = e => { state.measure = e.target.value; renderAll(); };
+    $('a_leaf').onchange = e => { state.leaf = e.target.value; state.drill = state.drill.slice(0, drillLevels().length - 1); renderAll(); };
+    $('a_rows').onchange = e => { state.pageSize = +e.target.value; state.page = 1; renderTable(); };
+    $('gearBtn').onclick = openPicker;
+    $('primSplit').onchange = e => { state.primSplit = e.target.value; renderPrimary(); };
+    $('donutSplit').onchange = e => { state.donutSplit = e.target.value; renderDonut(); };
+    $('histSplit').onchange = e => { state.histSplit = e.target.value; renderHistogram(); };
+    document.querySelectorAll('#trendRange button').forEach(b => b.onclick = () => { state.trendRange = b.dataset.r === 'all' ? 'all' : +b.dataset.r; document.querySelectorAll('#trendRange button').forEach(x => x.classList.toggle('on', x === b)); renderTrend(); });
+    $('pt_bar').onclick = () => { state.primType = 'bar'; $('pt_bar').classList.add('on'); $('pt_heat').classList.remove('on'); renderPrimary(); };
+    $('pt_heat').onclick = () => { state.primType = 'heat'; $('pt_heat').classList.add('on'); $('pt_bar').classList.remove('on'); renderPrimary(); };
+
+    /* ---------- filter->drill sync ---------- */
+    function syncDrillFromFilters() {
+      const path = [];
+      if (state.f.division !== 'all') {
+        path.push({ dim: 'division', value: state.f.division });
+        if (state.f.district !== 'all') {
+          path.push({ dim: 'district', value: state.f.district });
+          if (state.f.municipality !== 'all') path.push({ dim: 'municipality', value: state.f.municipality });
+        }
+      }
+      state.drill = path.slice(0, drillLevels().length - 1);
+    }
+
+    /* ---------- render all ---------- */
+    function renderAll() {
+      syncDrillFromFilters();
+      renderHero(); renderKPIs(); renderPrimary(); renderDonut(); renderHistogram(); renderTrend(); renderTable();
+    }
+    fillSelects(); renderAll();
+
+    /* ===== SIDEBAR NAV + PAYMENT MONITORING + SETTINGS ===== */
+    const navItems = document.querySelectorAll('.nav-item');
+    const VIEWS = { home: 'view-home', payment: 'view-payment', settings: 'view-settings' };
+    function switchTab(tab) {
+      navItems.forEach(n => n.classList.toggle('active', n.dataset.tab === tab));
+      Object.entries(VIEWS).forEach(([k, id]) => $(id).classList.toggle('active', k === tab));
+      if (tab === 'payment') renderPayments();
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+    navItems.forEach(n => n.onclick = () => switchTab(n.dataset.tab));
+
+    /* ---------- payment data (deterministic) ---------- */
+    const PAY_TYPES = ['Teaching Overload', 'Medical Allowance', 'Special Hardship Allowance'];
+    const PAY_TYPE_COLOR = { 'Teaching Overload': 'b-green', 'Medical Allowance': 'b-amber', 'Special Hardship Allowance': 'b-red' };
+    const payments = [];
+    schools.forEach(sc => {
+      const r = mulberry32(hashStr(SEED_VERSION + 'pay' + sc.id));
+      const people = personnelOf(sc);
+      const cnt = 1 + Math.floor(r() * 3);
+      for (let i = 0; i < cnt; i++) {
+        const p = people[Math.floor(r() * people.length)];
+        const tentative = (4 + Math.floor(r() * 33)) * 500;
+        const approved = r() < 0.62;
+        const paymentType = PAY_TYPES[Math.floor(r() * PAY_TYPES.length)];
+        payments.push({ pid: sc.id + '-' + i, teacher: p.name, position: p.position, schoolId: sc.schoolId, schoolName: sc.name, division: sc.division, paymentType: paymentType, tentative: tentative, approved: approved, actual: null, confirmed: false });
+      }
+    });
+    const payState = { search: '', approval: 'all', status: 'all', sort: { col: 'teacher', dir: 1 }, page: 1, pageSize: 25 };
+    const payColFilters = { teacher: '', position: '', schoolId: '', schoolName: '', division: '', paymentType: '', tentativeMin: '', tentativeMax: '', approvedCol: '', actualMin: '', actualMax: '' };
+    const peso = n => '₱' + Number(n).toLocaleString();
+    const PAY_COLS = [
+      { k: 'teacher', l: 'Personnel Name' },
+      { k: 'position', l: 'Position' },
+      { k: 'schoolId', l: 'School ID' },
+      { k: 'schoolName', l: 'School Name' },
+      { k: 'division', l: 'Division' },
+      { k: 'paymentType', l: 'Type of Payment' },
+      { k: 'tentative', l: 'Tentative Payment', num: true },
+      { k: 'approved', l: 'Approved by School', num: true },
+      { k: 'actual', l: 'Actual Payment', num: true },
+      { k: 'action', l: 'Action', num: true, noSort: true }
+    ];
+    function payFiltered() {
+      const q = payState.search.trim().toLowerCase();
+      let list = payments.filter(p => {
+        if (payState.approval === 'yes' && !p.approved) return false;
+        if (payState.approval === 'no' && p.approved) return false;
+        if (payState.status === 'pending' && p.confirmed) return false;
+        if (payState.status === 'confirmed' && !p.confirmed) return false;
+        if (q && !(p.teacher + ' ' + p.schoolId + ' ' + p.schoolName).toLowerCase().includes(q)) return false;
+        if (payColFilters.teacher && !p.teacher.toLowerCase().includes(payColFilters.teacher.toLowerCase())) return false;
+        if (payColFilters.position && !p.position.toLowerCase().includes(payColFilters.position.toLowerCase())) return false;
+        if (payColFilters.schoolId && !p.schoolId.toLowerCase().includes(payColFilters.schoolId.toLowerCase())) return false;
+        if (payColFilters.schoolName && !p.schoolName.toLowerCase().includes(payColFilters.schoolName.toLowerCase())) return false;
+        if (payColFilters.division && p.division !== payColFilters.division) return false;
+        if (payColFilters.paymentType && p.paymentType !== payColFilters.paymentType) return false;
+        if (payColFilters.approvedCol === 'yes' && !p.approved) return false;
+        if (payColFilters.approvedCol === 'no' && p.approved) return false;
+        if (payColFilters.tentativeMin !== '' && p.tentative < +payColFilters.tentativeMin) return false;
+        if (payColFilters.tentativeMax !== '' && p.tentative > +payColFilters.tentativeMax) return false;
+        if (payColFilters.actualMin !== '' && (p.actual == null || p.actual < +payColFilters.actualMin)) return false;
+        if (payColFilters.actualMax !== '' && (p.actual == null || p.actual > +payColFilters.actualMax)) return false;
+        return true;
+      });
+      const { col, dir } = payState.sort;
+      list.sort((a, b) => {
+        let x = a[col], y = b[col];
+        if (col === 'actual') { x = x == null ? -1 : x; y = y == null ? -1 : y; }
+        if (typeof x === 'boolean') { x = x ? 1 : 0; y = y ? 1 : 0; }
+        if (typeof x === 'string') { return x < y ? -dir : x > y ? dir : 0; }
+        return ((x || 0) - (y || 0)) * dir;
+      });
+      return list;
+    }
+    function renderPayKpis() {
+      const total = payments.length;
+      const approved = payments.filter(p => p.approved).length;
+      const confirmed = payments.filter(p => p.confirmed).length;
+      const pending = total - confirmed;
+      const tentativeSum = payments.reduce((a, p) => a + p.tentative, 0);
+      const actualSum = payments.reduce((a, p) => a + (p.actual || 0), 0);
+      const cards = [
+        { n: total.toLocaleString(), l: 'Total payments', c: 'teacher payment records', cls: 'total' },
+        { n: approved.toLocaleString(), l: 'School-approved', c: (total ? Math.round(approved / total * 100) : 0) + '% approved' },
+        { n: confirmed.toLocaleString(), l: 'Confirmed', c: pending.toLocaleString() + ' pending' },
+        { n: peso(tentativeSum), l: 'Tentative total', c: 'proposed payout' },
+        { n: peso(actualSum), l: 'Actual total', c: 'confirmed payout' }
+      ];
+      $('payKpis').innerHTML = cards.map(k => '<div class="kpi ' + (k.cls || '') + '"><div class="knum">' + k.n + '</div><div class="klabel">' + k.l + '</div><div class="kcap">' + k.c + '</div></div>').join('');
+      const confirmedPct = total ? Math.round(confirmed / total * 100) : 0;
+      $('payConfirmedTot').textContent = confirmedPct + '%';
+      $('payBar').style.width = confirmedPct + '%';
+      $('payScope').textContent = confirmed + ' of ' + total + ' payments confirmed';
+    }
+    function renderPayments() {
+      renderPayKpis();
+      const rows = payFiltered();
+      const total = rows.length;
+      const pages = Math.max(1, Math.ceil(total / payState.pageSize));
+      if (payState.page > pages) payState.page = pages;
+      const start = (payState.page - 1) * payState.pageSize;
+      const pageRows = rows.slice(start, start + payState.pageSize);
+      const _divs = [...new Set(payments.map(p => p.division))].sort();
+      const _filtRow = '<tr class="filt-row">' + PAY_COLS.map(c => {
+        const th = '<th class="' + (c.num ? 'num' : '') + '" style="cursor:default">';
+        if (c.k === 'teacher' || c.k === 'position' || c.k === 'schoolId' || c.k === 'schoolName') return th + '<input type="text" data-pfk="' + c.k + '" value="' + (payColFilters[c.k] || '') + '" placeholder="filter"/></th>';
+        if (c.k === 'division') return th + '<select data-pfk="division"><option value="">All</option>' + _divs.map(d => '<option value="' + d + '"' + (payColFilters.division === d ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></th>';
+        if (c.k === 'paymentType') return th + '<select data-pfk="paymentType"><option value="">All</option>' + PAY_TYPES.map(t => '<option value="' + t + '"' + (payColFilters.paymentType === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></th>';
+        if (c.k === 'tentative') return th + '<div style="display:flex;gap:3px"><input type="number" data-pfk="tentativeMin" value="' + payColFilters.tentativeMin + '" placeholder="Min" style="width:68px"/><input type="number" data-pfk="tentativeMax" value="' + payColFilters.tentativeMax + '" placeholder="Max" style="width:68px"/></div></th>';
+        if (c.k === 'actual') return th + '<div style="display:flex;gap:3px"><input type="number" data-pfk="actualMin" value="' + payColFilters.actualMin + '" placeholder="Min" style="width:68px"/><input type="number" data-pfk="actualMax" value="' + payColFilters.actualMax + '" placeholder="Max" style="width:68px"/></div></th>';
+        if (c.k === 'approved') return th + '<select data-pfk="approvedCol"><option value="">All</option><option value="yes"' + (payColFilters.approvedCol === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (payColFilters.approvedCol === 'no' ? ' selected' : '') + '>No</option></select></th>';
+        return th + '</th>';
+      }).join('') + '</tr>';
+      $('payHead').innerHTML = '<tr>' + PAY_COLS.map(c => {
+        const ind = payState.sort.col === c.k ? '<span class="sort-ind">' + (payState.sort.dir > 0 ? '▲' : '▼') + '</span>' : '';
+        return '<th class="' + (c.num ? 'num' : '') + '"' + (c.noSort ? '' : ' data-k="' + c.k + '"') + '>' + c.l + ' ' + ind + '</th>';
+      }).join('') + '</tr>' + _filtRow;
+      if (pageRows.length === 0) {
+        $('payBody').innerHTML = '<tr><td colspan="' + PAY_COLS.length + '" class="empty-note">No payments match these filters.</td></tr>';
+      } else {
+        $('payBody').innerHTML = pageRows.map(p => {
+          const typeSel = '<span class="badge ' + PAY_TYPE_COLOR[p.paymentType] + '">' + p.paymentType + '</span>';
+          const appBadge = p.approved ? '<span class="badge b-green">Yes</span>' : '<span class="badge b-red">No</span>';
+          const fmtCurrency = v => v == null || v === '' ? '' : (parseFloat(v) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const actual = '<div style="display:flex;align-items:center;gap:4px"><span style="font-weight:700;color:var(--muted)">&#8369;</span><input type="text" inputmode="decimal" data-pid="' + p.pid + '" class="pay-actual-input" data-raw="' + (p.actual != null ? p.actual : '') + '" value="' + (p.actual != null ? fmtCurrency(p.actual) : '') + '" placeholder="0.00" style="width:130px;text-align:right;font-family:inherit;font-size:13px;border:1.5px solid var(--border);border-radius:8px;padding:5px 8px;background:var(--canvas);color:var(--ink);"' + (p.confirmed ? ' disabled' : '') + '/></div>';
+          let action;
+          if (p.confirmed) action = '<button class="btn-confirmed" disabled>Confirmed ✓</button>';
+          else if (!p.approved) action = '<button class="btn" disabled title="Awaiting school approval">Confirm</button>';
+          else action = '<button class="btn-confirm" data-pid="' + p.pid + '">Confirm</button>';
+          return '<tr><td>' + p.teacher + '</td><td>' + p.position + '</td><td class="num">' + p.schoolId + '</td><td>' + p.schoolName + '</td><td>' + p.division + '</td><td>' + typeSel + '</td><td class="num">' + peso(p.tentative) + '</td><td class="num">' + appBadge + '</td><td class="num">' + actual + '</td><td class="num">' + action + '</td></tr>';
+        }).join('');
+        $('payBody').querySelectorAll('button[data-pid]').forEach(b => b.onclick = () => confirmPayment(b.dataset.pid));
+        $('payBody').querySelectorAll('select.pay-type-sel').forEach(sel => sel.onchange = e => { const p = payments.find(x => x.pid === e.target.dataset.pid); if (p) p.paymentType = e.target.value; });
+        $('payBody').querySelectorAll('input.pay-actual-input:not([disabled])').forEach(inp => {
+          inp.oninput = e => {
+            const raw = e.target.value.replace(/[^0-9.]/g, '');
+            const p = payments.find(x => x.pid === e.target.dataset.pid);
+            if (p) { p.actual = raw === '' ? null : parseFloat(raw) || 0; e.target.dataset.raw = raw; }
+          };
+          inp.onblur = e => {
+            const raw = e.target.dataset.raw || e.target.value.replace(/[^0-9.]/g, '');
+            const num = parseFloat(raw);
+            e.target.value = isNaN(num) || raw === '' ? '' : (num).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          };
+          inp.onfocus = e => {
+            const raw = e.target.dataset.raw || e.target.value.replace(/[^0-9.]/g, '');
+            e.target.value = raw;
+          };
+        });
+      }
+      $('payHead').querySelectorAll('th[data-k]').forEach(th => th.onclick = () => { const k = th.dataset.k; if (payState.sort.col === k) payState.sort.dir *= -1; else { payState.sort.col = k; payState.sort.dir = 1; } renderPayments(); });
+      $('payHead').querySelectorAll('[data-pfk]').forEach(inp => {
+        const k = inp.dataset.pfk;
+        const handler = () => { payColFilters[k] = inp.value; payState.page = 1; const wasActive = document.activeElement === inp; renderPayments(); if (wasActive) { const again = $('payHead').querySelector('[data-pfk="' + k + '"]'); if (again) { again.focus(); if (again.type === 'text' && again.setSelectionRange) again.setSelectionRange(again.value.length, again.value.length); } } };
+        if (inp.tagName === 'SELECT') inp.onchange = handler; else { let t; inp.oninput = () => { clearTimeout(t); t = setTimeout(handler, 260); }; }
+      });
+      renderPayPager('payPagerTop', total, pages, start, pageRows.length);
+      renderPayPager('payPagerBot', total, pages, start, pageRows.length);
+    }
+    function confirmPayment(pid) {
+      const p = payments.find(x => x.pid === pid);
+      if (!p || !p.approved || p.confirmed) return;
+      const inputEl = document.querySelector('input.pay-actual-input[data-pid="' + pid + '"]');
+      const rawVal = inputEl ? (inputEl.dataset.raw || inputEl.value.replace(/[^0-9.]/g, '')) : '';
+      const inputVal = parseFloat(rawVal);
+      if (!inputEl || isNaN(inputVal) || inputVal <= 0) { alert('Please enter a valid actual payment amount before confirming.'); return; }
+      if (!confirm('Confirm ' + peso(inputVal) + ' as the final payment for ' + p.teacher + '?')) return;
+      p.actual = inputVal; p.confirmed = true;
+      renderPayments();
+    }
+    function renderPayPager(id, total, pages, start, shown) {
+      const el = $(id);
+      el.innerHTML = '<div class="pinfo">Rows ' + (total ? start + 1 : 0) + '–' + (start + shown) + ' of ' + total + ' · Page ' + payState.page + ' of ' + pages + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center"><label class="pager-rows">Rows per page <select data-prows>' + rowsOptions(payState.pageSize) + '</select></label><button class="btn" data-ppg="prev" ' + (payState.page <= 1 ? 'disabled' : '') + '>‹ Prev</button><button class="btn" data-ppg="next" ' + (payState.page >= pages ? 'disabled' : '') + '>Next ›</button></div>';
+      el.querySelectorAll('[data-ppg]').forEach(b => b.onclick = () => { if (b.dataset.ppg === 'prev' && payState.page > 1) payState.page--; if (b.dataset.ppg === 'next' && payState.page < pages) payState.page++; renderPayments(); });
+      const rs = el.querySelector('[data-prows]'); if (rs) rs.onchange = e => { payState.pageSize = +e.target.value; payState.page = 1; renderPayments(); };
+    }
+    let paySearchT;
+    $('paySearch').oninput = e => { clearTimeout(paySearchT); paySearchT = setTimeout(() => { payState.search = e.target.value; payState.page = 1; renderPayments(); }, 200); };
+    $('payReset').onclick = () => { payState.search = ''; $('paySearch').value = ''; payState.approval = 'all'; payState.status = 'all'; $('payApproval').value = 'all'; $('payStatus').value = 'all'; Object.keys(payColFilters).forEach(k => payColFilters[k] = ''); payState.page = 1; renderPayments(); };
+    $('payApproval').onchange = e => { payState.approval = e.target.value; payState.page = 1; renderPayments(); };
+    $('payStatus').onchange = e => { payState.status = e.target.value; payState.page = 1; renderPayments(); };
+    $('payRows').onchange = e => { payState.pageSize = +e.target.value; payState.page = 1; renderPayments(); };
+    $('payCsvBtn').onclick = () => {
+      const rows = payFiltered();
+      const header = ['Personnel Name', 'Position', 'School ID', 'School Name', 'Division', 'Type of Payment', 'Tentative Payment', 'Approved by School', 'Actual Payment', 'Status'];
+      const lines = [header.join(',')];
+      rows.forEach(p => { lines.push(['"' + p.teacher + '"', '"' + p.position + '"', p.schoolId, '"' + p.schoolName.replace(/"/g, '""') + '"', '"' + p.division + '"', '"' + p.paymentType + '"', p.tentative, p.approved ? 'Yes' : 'No', p.actual == null ? '' : p.actual, p.confirmed ? 'Confirmed' : 'Pending'].join(',')); });
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'esf7_teacher_payments.csv'; a.click();
+    };
+
+    /* ---------- settings ---------- */
+    $('opt_dark').onchange = e => document.body.classList.toggle('dark', e.target.checked);
+    $('pwForm').onsubmit = e => {
+      e.preventDefault();
+      const cur = $('pw_cur').value, nw = $('pw_new').value, cf = $('pw_cfm').value, msg = $('pwMsg');
+      if (!cur || !nw || !cf) { msg.style.color = 'var(--red)'; msg.textContent = 'Please fill in all password fields.'; return; }
+      if (nw.length < 8) { msg.style.color = 'var(--red)'; msg.textContent = 'New password must be at least 8 characters.'; return; }
+      if (nw !== cf) { msg.style.color = 'var(--red)'; msg.textContent = 'New password and confirmation do not match.'; return; }
+      msg.style.color = 'var(--green)'; msg.textContent = '✓ Password updated successfully.';
+      $('pwForm').reset();
+    };
+    $('pcForm').onsubmit = e => {
+      e.preventDefault();
+      const nw = $('pc_new').value, cf = $('pc_cfm').value, msg = $('pcMsg');
+      if (!/^[0-9]{6}$/.test(nw)) { msg.style.color = 'var(--red)'; msg.textContent = 'Passcode must be exactly 6 digits.'; return; }
+      if (nw !== cf) { msg.style.color = 'var(--red)'; msg.textContent = 'Passcodes do not match.'; return; }
+      msg.style.color = 'var(--green)'; msg.textContent = '✓ Passcode updated successfully.';
+      $('pcForm').reset();
+    };
+    $('logoutBtn').onclick = () => { if (confirm('Are you sure you want to log out?')) alert('You have been logged out.'); };
+  </script>
+</body>
+
+</html>

@@ -161,7 +161,7 @@ router.put('/:id', async (req, res) => {
     const result = await client.query(
       `UPDATE class_sections 
        SET adviser_id = $1, 
-           number_of_learners = COALESCE($2, number_of_learners), 
+           number_of_learners = CASE WHEN $2::integer IS NOT NULL THEN $2::integer ELSE number_of_learners END, 
            updated_at = NOW() 
        WHERE id = $3 RETURNING *`,
       [validAdvisorId, targetLearners, req.params.id]

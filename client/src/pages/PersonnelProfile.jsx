@@ -2326,44 +2326,90 @@ export default function PersonnelProfile() {
                       )}
 
                       {activeTab === 'learning-area' && (
-                        <div style={{ gridColumn: '1 / -1', overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh' }}>
+                        <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--navy)' }}>
+                                📖 Learning Area Matrix
+                              </h3>
+                              <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+                                Select the learning areas / subjects taught by this personnel across school years.
+                              </p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                type="button"
+                                className="btn secondary"
+                                style={{ fontSize: '11px', padding: '6px 12px' }}
+                                onClick={() => {
+                                  const allSet = new Set();
+                                  SCHOOL_YEARS.forEach(sy => {
+                                    LEARNING_AREAS.forEach(la => {
+                                      allSet.add(`${sy}||${la}`);
+                                    });
+                                  });
+                                  setCheckedSet(allSet);
+                                }}
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                className="btn secondary"
+                                style={{ fontSize: '11px', padding: '6px 12px' }}
+                                onClick={() => setCheckedSet(new Set())}
+                              >
+                                Clear All
+                              </button>
+                            </div>
+                          </div>
+
                           {learningAreaLoading ? (
-                            <p style={{ padding: '1rem' }}>Loading learning areas...</p>
+                            <p style={{ padding: '1rem', color: 'var(--muted)' }}>Loading learning area matrix...</p>
                           ) : (
-                            <table style={{ borderCollapse: 'collapse', minWidth: '100%', fontSize: '0.8rem' }}>
-                              <thead>
-                                <tr>
-                                  <th style={{ position: 'sticky', left: 0, background: '#fff', padding: '6px 10px', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap', textAlign: 'left', zIndex: 2 }}>
-                                    School Year
-                                  </th>
-                                  {LEARNING_AREAS.map(la => (
-                                    <th key={la} style={{ padding: '6px 8px', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap', textAlign: 'center', writingMode: 'vertical-lr', transform: 'rotate(180deg)', maxHeight: '120px' }}>
-                                      {la}
+                            <div style={{ overflowX: 'auto', border: '1.5px solid var(--line)', borderRadius: '14px', background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid var(--line)' }}>
+                                    {/* Y Axis Header (Subject / Learning Area) */}
+                                    <th style={{ position: 'sticky', left: 0, background: '#F8FAFC', padding: '12px 16px', textAlign: 'left', zIndex: 3, minWidth: '220px', fontWeight: '800', color: 'var(--navy)', borderRight: '2px solid var(--line)' }}>
+                                      Learning Area (Y) ↓ / School Year (X) →
                                     </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {SCHOOL_YEARS.map(sy => (
-                                  <tr key={sy}>
-                                    <td style={{ position: 'sticky', left: 0, background: '#fff', padding: '5px 10px', borderBottom: '1px solid #e2e8f0', fontWeight: 600, whiteSpace: 'nowrap', zIndex: 1 }}>
-                                      {sy}
-                                    </td>
-                                    {LEARNING_AREAS.map(la => (
-                                      <td key={la} style={{ textAlign: 'center', padding: '5px 8px', borderBottom: '1px solid #e2e8f0' }}>
-                                        <input
-                                          type="checkbox"
-                                          checked={checkedSet.has(`${sy}||${la}`)}
-                                          onChange={() => handleToggleLearningArea(sy, la)}
-                                          disabled={currentPerson.isShared}
-                                          style={{ cursor: currentPerson.isShared ? 'not-allowed' : 'pointer', width: '16px', height: '16px' }}
-                                        />
-                                      </td>
+                                    {/* X Axis Headers (School Years) */}
+                                    {SCHOOL_YEARS.map(sy => (
+                                      <th key={sy} style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'nowrap', borderRight: '1px solid var(--line)', minWidth: '110px' }}>
+                                        {sy}
+                                      </th>
                                     ))}
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody>
+                                  {LEARNING_AREAS.map(la => (
+                                    <tr key={la} style={{ borderBottom: '1px solid var(--line)' }}>
+                                      {/* Y Axis Row Value (Subject / Learning Area) */}
+                                      <td style={{ position: 'sticky', left: 0, background: '#FFFFFF', padding: '12px 16px', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'nowrap', zIndex: 2, borderRight: '2px solid var(--line)' }}>
+                                        {la}
+                                      </td>
+                                      {/* X Axis Matrix Checkboxes for each School Year */}
+                                      {SCHOOL_YEARS.map(sy => {
+                                        const isChecked = checkedSet.has(`${sy}||${la}`);
+                                        return (
+                                          <td key={sy} style={{ textAlign: 'center', padding: '10px 8px', borderRight: '1px solid var(--line)', background: isChecked ? '#EFF6FF' : 'transparent' }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={isChecked}
+                                              onChange={() => handleToggleLearningArea(sy, la)}
+                                              disabled={currentPerson.isShared}
+                                              style={{ cursor: currentPerson.isShared ? 'not-allowed' : 'pointer', width: '18px', height: '18px', accentColor: '#0284C7' }}
+                                            />
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           )}
                         </div>
                       )}

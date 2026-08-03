@@ -1980,19 +1980,43 @@ export const AppProvider = ({ children }) => {
     showToast('Class section added.');
   };
 
-  const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60) => {
+  const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
     try {
-      const res = await api.updateSectionAdviser(sectionId, advisorId, advisoryMinutes, hgpMinutes);
+      const targetSec = classSections.find(s => String(s.id) === String(sectionId));
+      const finalLearners = numberOfLearners !== null && numberOfLearners !== undefined ? numberOfLearners : (targetSec ? targetSec.numberOfLearners : null);
+      const res = await api.updateSectionAdviser(sectionId, advisorId, advisoryMinutes, hgpMinutes, finalLearners);
       if (res && res.id) {
-        setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? { ...s, advisorId: res.advisorId ? String(res.advisorId) : null } : s));
+        setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
+          ...s,
+          advisorId: res.advisorId ? String(res.advisorId) : null,
+          numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (finalLearners !== null && finalLearners !== undefined ? Number(finalLearners) : s.numberOfLearners)
+        } : s));
         const list = await fetchAndNormalizePersonnel();
         if (Array.isArray(list)) setPersonnel(list);
       }
     } catch (err) {
-      console.error("Failed to update section advisor:", err);
+      console.error("Failed to update section:", err);
     }
     setHasUnsavedChanges(true);
-    showToast("Section advisor updated.");
+    showToast("Section updated.");
+  };
+
+  const updateSectionLearners = async (sectionId, numberOfLearners) => {
+    try {
+      const targetSec = classSections.find(s => String(s.id) === String(sectionId));
+      const currentAdvisorId = targetSec ? targetSec.advisorId : null;
+      const res = await api.updateSectionAdviser(sectionId, currentAdvisorId, 300, 60, numberOfLearners);
+      if (res && res.id) {
+        setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
+          ...s,
+          numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (numberOfLearners !== '' && numberOfLearners !== null ? Number(numberOfLearners) : null)
+        } : s));
+      }
+    } catch (err) {
+      console.error("Failed to update section learners count:", err);
+    }
+    setHasUnsavedChanges(true);
+    showToast("Total learners updated.");
   };
 
   const removeClassSection = async (id) => {
@@ -2435,6 +2459,7 @@ export const AppProvider = ({ children }) => {
       toggleSchoolHead,
       addClassSection,
       updateSectionAdviser,
+      updateSectionLearners,
       removeClassSection,
       schoolEdited,
       setSchoolEdited,

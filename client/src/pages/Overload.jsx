@@ -146,6 +146,7 @@ export default function Overload() {
   const [workImmersionTeacherId, setWorkImmersionTeacherId] = useState('');
   const [workImmersionMonth, setWorkImmersionMonth] = useState('June');
   const [workImmersionData, setWorkImmersionData] = useState({}); // { [dayInt]: minutes }
+  const [workImmersionTimes, setWorkImmersionTimes] = useState({}); // { [dayInt]: { startTime, endTime } }
   const [workImmersionLoading, setWorkImmersionLoading] = useState(false);
 
   // Overload Reasons state (Step 5)
@@ -167,8 +168,16 @@ export default function Overload() {
         if (!isMounted) return;
         const rows = res.rows || [];
         const data = {};
-        rows.forEach(r => { data[r.day] = r.minutes; });
+        const times = {};
+        rows.forEach(r => {
+          data[r.day] = r.minutes || 0;
+          times[r.day] = {
+            startTime: r.startTime || r.start_time || '',
+            endTime: r.endTime || r.end_time || ''
+          };
+        });
         setWorkImmersionData(data);
+        setWorkImmersionTimes(times);
       })
       .catch(err => {
         console.error('Failed to fetch work immersion data:', err);
@@ -179,10 +188,23 @@ export default function Overload() {
     return () => { isMounted = false; };
   }, [activeStep, workImmersionTeacherId, workImmersionMonth, schoolInfo?.schoolYear]);
 
-  const handleSaveWorkImmersion = async (day, minutes) => {
+  const handleSaveWorkImmersionTime = async (day, startTime, endTime) => {
     if (!workImmersionTeacherId) return;
     const sy = schoolInfo?.schoolYear || 'SY 26-27';
 
+    let minutes = 0;
+    if (startTime && endTime) {
+      const startMins = timeToMins(startTime);
+      const endMins = timeToMins(endTime);
+      if (endMins > startMins) {
+        minutes = endMins - startMins;
+      }
+    }
+
+    setWorkImmersionTimes(prev => ({
+      ...prev,
+      [day]: { startTime, endTime }
+    }));
     setWorkImmersionData(prev => ({
       ...prev,
       [day]: minutes
@@ -194,12 +216,14 @@ export default function Overload() {
         schoolYear: sy,
         month: workImmersionMonth,
         day,
-        minutes
+        minutes,
+        startTime,
+        endTime
       });
-      showToast(`Work immersion for day ${day} updated`, 'success');
+      showToast(`Work immersion for day ${day} updated (${minutes} mins)`, 'success');
     } catch (err) {
-      console.error('Failed to save work immersion minutes:', err);
-      showToast('Failed to save work immersion minutes', 'error');
+      console.error('Failed to save work immersion times:', err);
+      showToast('Failed to save work immersion times', 'error');
     }
   };
 
@@ -247,8 +271,27 @@ export default function Overload() {
     }
   };
 
-  // Filter out draft personnel for all selectors
+  // Helper to determine eligibility for Teaching Overload Pay
+  const isOverloadEligible = (p) => {
+    if (!p || p.isDraft) return false;
+    if (p.is_school_head || p.isSchoolHead) return false;
+    if (p.type === 'non-teaching' || p.type === 'teaching-related') return false;
+
+    const pos = String(p.position || '').toUpperCase();
+    if (pos.includes('PRINCIPAL')) return false;
+    if (pos.includes('HEAD TEACHER')) return false;
+    if (pos.includes('TIC') || pos.includes('TEACHER-IN-CHARGE') || pos.includes('TEACHER IN CHARGE') || pos.includes('TEACHER IN-CHARGE')) return false;
+    if (pos.includes('OIC') || pos.includes('OFFICER-IN-CHARGE') || pos.includes('OFFICER IN CHARGE') || pos.includes('OFFICER IN-CHARGE')) return false;
+    if (pos.includes('ADMINISTRATIVE') || pos.includes('CLERK') || pos.includes('BOOKKEEPER') || pos.includes('NURSE') || pos.includes('DRIVER') || pos.includes('UTILITY') || pos.includes('SECURITY')) return false;
+
+    return true;
+  };
+
+  // Filter out draft personnel for general views
   const activePersonnel = personnel.filter(p => !p.isDraft);
+
+  // Filter personnel eligible for Teaching Overload Pay
+  const overloadEligiblePersonnel = personnel.filter(isOverloadEligible);
 
   // Filter active personnel who have recorded absences (for Step 3 Workload Transfer filtering)
   const personnelWithAbsences = activePersonnel.filter(p => {
@@ -412,7 +455,7 @@ export default function Overload() {
   const monthDates = getWeekdaysInMonth(selectedMonth, syYear);
   const quarterDates = getWeekdaysInQuarter(selectedQuarter, syYear);
 
-  const overloadRoster = activePersonnel.map(teacher => {
+  const overloadRoster = overloadEligiblePersonnel.map(teacher => {
     // Base weekly overload (no absences/transfers considered, pure schedule check)
     let weeklyOverload = 0;
     const dailyLoads = { M: 0, T: 0, W: 0, TH: 0, F: 0 };
@@ -1792,6 +1835,10 @@ export default function Overload() {
 
                     for (let day = 1; day <= daysInMonth; day++) {
                       const mins = workImmersionData[day] ?? 0;
+                      const timeObj = workImmersionTimes[day] || {};
+                      const sTime = timeObj.startTime || '';
+                      const eTime = timeObj.endTime || '';
+
                       cells.push(
                         <div
                           key={day}
@@ -1799,41 +1846,38 @@ export default function Overload() {
                             background: mins > 0 ? '#EFF6FF' : '#FFFFFF',
                             border: mins > 0 ? '1.5px solid #BFDBFE' : '1px solid var(--line)',
                             borderRadius: '8px',
-                            padding: '6px',
+                            padding: '6px 4px',
                             textAlign: 'center',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            justifyContent: 'space-between',
-                            minHeight: '60px'
+                            gap: '4px'
                           }}
                         >
-                          <div style={{ fontSize: '11px', fontWeight: 'bold', color: mins > 0 ? '#1E40AF' : '#64748B', marginBottom: '4px' }}>
-                            {day}
+                          <div style={{ fontSize: '11px', fontWeight: 'bold', color: mins > 0 ? '#1E40AF' : '#64748B' }}>
+                            Day {day}
                           </div>
-                          <input
-                            type="number"
-                            min="0"
-                            max="480"
-                            placeholder="0"
-                            defaultValue={mins === 0 ? '' : mins}
-                            key={`${workImmersionTeacherId}-${workImmersionMonth}-${day}-${mins}`}
-                            onBlur={(e) => {
-                              const val = parseInt(e.target.value, 10) || 0;
-                              handleSaveWorkImmersion(day, val);
-                            }}
-                            style={{
-                              width: '100%',
-                              border: '1px solid var(--line)',
-                              borderRadius: '6px',
-                              background: 'white',
-                              textAlign: 'center',
-                              fontSize: '12px',
-                              fontWeight: 'bold',
-                              color: 'var(--navy)',
-                              padding: '4px 0'
-                            }}
-                          />
+                          <div style={{ width: '100%' }}>
+                            <input
+                              type="time"
+                              value={sTime}
+                              onChange={(e) => handleSaveWorkImmersionTime(day, e.target.value, eTime)}
+                              title="Start Time"
+                              style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', fontSize: '11px', padding: '2px', textAlign: 'center' }}
+                            />
+                          </div>
+                          <div style={{ width: '100%' }}>
+                            <input
+                              type="time"
+                              value={eTime}
+                              onChange={(e) => handleSaveWorkImmersionTime(day, sTime, e.target.value)}
+                              title="End Time"
+                              style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', fontSize: '11px', padding: '2px', textAlign: 'center' }}
+                            />
+                          </div>
+                          <div style={{ fontSize: '10px', fontWeight: '800', color: mins > 0 ? '#1D4ED8' : '#94A3B8' }}>
+                            {mins > 0 ? `${mins}m (${(mins / 60).toFixed(1)}h)` : '0m'}
+                          </div>
                         </div>
                       );
                     }

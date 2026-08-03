@@ -6111,6 +6111,58 @@ export default function Workload() {
                                     onChange={(e) => updateTaskField('administrativeRows', idx, 'task', e.target.value)}
                                     options={ADMINISTRATIVE_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
                                   />
+                                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                    <div style={{ width: '120px' }}>
+                                      <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
+                                      <input
+                                        type="time"
+                                        value={row.startTime || '08:00'}
+                                        onChange={(e) => updateTaskField('administrativeRows', idx, 'startTime', e.target.value)}
+                                        style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
+                                      />
+                                    </div>
+                                    <div style={{ width: '120px' }}>
+                                      <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
+                                      <input
+                                        type="time"
+                                        value={row.endTime || '12:00'}
+                                        onChange={(e) => updateTaskField('administrativeRows', idx, 'endTime', e.target.value)}
+                                        style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
+                                      />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: '180px' }}>
+                                      <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Usual Days (MTWTHF)</label>
+                                      <div style={{ display: 'flex', gap: '4px' }}>
+                                        {['M', 'T', 'W', 'Th', 'F'].map(day => {
+                                          const selectedDays = Array.isArray(row.days) ? row.days : ['M', 'T', 'W', 'Th', 'F'];
+                                          const isSel = selectedDays.includes(day);
+                                          return (
+                                            <button
+                                              key={day}
+                                              type="button"
+                                              onClick={() => {
+                                                const currentDays = [...selectedDays];
+                                                const nextDays = isSel ? currentDays.filter(d => d !== day) : [...currentDays, day];
+                                                updateTaskField('administrativeRows', idx, 'days', nextDays);
+                                              }}
+                                              style={{
+                                                padding: '3px 8px',
+                                                fontSize: '11px',
+                                                fontWeight: 'bold',
+                                                borderRadius: '4px',
+                                                border: isSel ? 'none' : '1px solid var(--line)',
+                                                background: isSel ? '#0284C7' : '#FFFFFF',
+                                                color: isSel ? '#FFFFFF' : '#334155',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              {day}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                                   {(row.dates || []).map((dateEntry, dateIdx) => (

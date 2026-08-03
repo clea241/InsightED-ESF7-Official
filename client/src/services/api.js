@@ -153,11 +153,16 @@ export const api = {
     });
     return res.json();
   },
-  updateSectionAdviser: async (id, advisorId, advisory_minutes = 300) => {
+  updateSectionAdviser: async (id, advisorId, advisory_minutes = 300, hgp_minutes = 60, numberOfLearners = null) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ advisorId, advisory_minutes })
+      body: JSON.stringify({
+        advisorId,
+        advisory_minutes,
+        hgp_minutes,
+        number_of_learners: numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null
+      })
     });
     return res.json();
   },

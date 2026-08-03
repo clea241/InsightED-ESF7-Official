@@ -318,7 +318,7 @@ const GRADE_SUBJECT_MAP = {
 };
 
 export default function OrganizedClasses() {
-  const { classSections, addClassSection, updateSectionAdviser, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
+  const { classSections, addClassSection, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMultigrade, setIsMultigrade] = useState(false);
@@ -752,6 +752,7 @@ export default function OrganizedClasses() {
                   <tr>
                     <th>Grade Level</th>
                     <th>Section Name</th>
+                    <th style={{ width: '130px', textAlign: 'center' }}>Total Learners</th>
                     <th>Class Adviser</th>
                     <th>Position</th>
                     <th style={{ width: '80px' }}>Action</th>
@@ -764,6 +765,19 @@ export default function OrganizedClasses() {
                       <tr key={sec.id}>
                         <td>{sec.gradeLevel}</td>
                         <td>{sec.sectionName}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : ''}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              updateSectionLearners(sec.id, val);
+                            }}
+                            style={{ width: '90px', fontSize: '13px', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', background: 'white', textAlign: 'center', fontWeight: 'bold' }}
+                          />
+                        </td>
                         <td>
                           <select
                             value={sec.advisorId || ''}
@@ -799,7 +813,7 @@ export default function OrganizedClasses() {
                   })}
                   {filteredSections.length === 0 && (
                     <tr>
-                      <td colSpan="5" style={{ textAlign: 'center', padding: '15px' }}>No sections found.</td>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '15px' }}>No sections found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -905,8 +919,29 @@ export default function OrganizedClasses() {
                         {sec.sectionName}
                       </h3>
 
+                      {/* Total Learners Input Box */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#F8FAFC', padding: '6px 10px', borderRadius: '10px', border: '1px solid var(--line)', margin: '4px 0' }}>
+                        <span style={{ fontSize: '14px' }}>👥</span>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '9.5px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                            Total Learners
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="e.g. 40"
+                            value={sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : ''}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              updateSectionLearners(sec.id, val);
+                            }}
+                            style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: '800', color: 'var(--navy)', outline: 'none', padding: 0 }}
+                          />
+                        </div>
+                      </div>
+
                       {/* Divider */}
-                      <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '8px 0' }} />
+                      <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '4px 0' }} />
 
                       {/* Adviser Profile info */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 'auto' }}>

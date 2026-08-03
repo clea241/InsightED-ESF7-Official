@@ -14,6 +14,7 @@ import RequestCenter from './pages/RequestCenter';
 import RoomProfiling from './pages/RoomProfiling';
 import SchoolProfile from './pages/SchoolProfile';
 import Allowances from './pages/Allowances';
+import Designations from './pages/Designations';
 import SchoolHeadChatWidget from './components/SchoolHeadChatWidget';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -66,6 +67,7 @@ function MainAppContent() {
           {activeView === 'school' && <SchoolProfile />}
           {activeView === 'roster' && <Roster />}
           {activeView === 'profile' && <PersonnelProfile />}
+          {activeView === 'designation' && <Designations />}
           {activeView === 'classes' && <OrganizedClasses />}
           {activeView === 'workload' && <Workload />}
           {activeView === 'overload' && <Overload />}
