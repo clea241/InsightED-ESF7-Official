@@ -660,12 +660,58 @@ export const ETHNIC_GROUP_OPTIONS = [
 ];
 export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
-export const DISCIPLINE_OPTIONS = ["N/A", "Educational Management", "Curriculum and Instruction", "Mathematics Education", "Science Education", "Language Education", "Special Education", "Guidance and Counseling", "Public Administration", "Business Administration", "Information Technology"];
+export const DISCIPLINE_OPTIONS = [
+  "Business Administration and Related",
+  "Education Science and Teacher Training",
+  "Agriculture, Forestry, Fisheries",
+  "Engineering and Tech",
+  "Humanities",
+  "IT-Related Disciplines",
+  "Mathematics",
+  "Medical and Allied",
+  "Natural Science",
+  "Social Work and Development, Disaster Risk Management",
+  "Law and Jurisprudence",
+  "Religion and Theology",
+  "Social and Behavioral Sciences",
+  "Criminology, Forensic Science, Police Administration, and Other Civil Security and Military",
+  "Mass Communication and Documentation",
+  "General",
+  "Home Economics",
+  "Fine and Applied Arts",
+  "Maritime",
+  "Service Trades",
+  "Architecture and Town Planning",
+  "Others"
+];
 export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 
 export const NATURE_OF_APPOINTMENT_OPTIONS = ["REGULAR PERMANENT", "PROVISIONAL", "CONTRACTUAL", "SUBSTITUTE", "CASUAL/EMERGENCY", "JOB ORDER/CONTRACT OF SERVICE", "VOLUNTEER"];
 export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "OTHERS", "N/A"];
 export const POST_GRADUATE_DEGREE_OPTIONS = ["MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE", "OTHERS", "N/A"];
+
+export const DESIGNATION_GRADE_LEVELS = [
+  "Kinder", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+  "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"
+];
+
+export const SHS_TRACKS = ["ACADEMIC", "TECHPRO"];
+
+export const OFFICIAL_DESIGNATIONS = [
+  { id: 'guidance_designate', name: 'GUIDANCE DESIGNATE', description: 'Handles student guidance, counseling, and student welfare support.' },
+  { id: 'reading_literacy_numeracy', name: 'READING / LITERACY AND NUMERACY SCHOOL COORDINATOR', description: 'Leads reading and numeracy interventions, literacy assessments, and learning remediation.' },
+  { id: 'research_coordinator', name: 'RESEARCH SCHOOL COORDINATOR', description: 'Coordinates school-level action research, innovation projects, and research capability building.' },
+  { id: 'sned_coordinator', name: 'SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR', description: 'Manages SNED programs, individualized education plans, and inclusive learning needs.' },
+  { id: 'ict_coordinator', name: 'ICT SCHOOL COORDINATOR', description: 'Handles school IT infrastructure, DepEd computerization program (DCP), and digital reporting systems.' },
+  { id: 'guidance_counselling_coordinator', name: 'GUIDANCE AND COUNSELLING SCHOOL COORDINATOR', description: 'Oversees guidance services, child protection policy enforcement, and career guidance.' },
+  { id: 'inclusive_education_coordinator', name: 'INCLUSIVE EDUCATION SCHOOL COORDINATOR', description: 'Coordinates inclusive education initiatives and mainstreaming support for learners.' },
+  { id: 'school_paper_adviser', name: 'SCHOOL PAPER TRAINER/ADVISER', description: 'Trains and advises campus journalists, school publication staff, and editorial teams.' },
+  { id: 'sports_development_adviser', name: 'SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER', description: 'Manages school sports programs, athletic training, and sports competition delegations.' },
+  { id: 'selg_sslg_adviser', name: 'SELG / SSLG TRAINER/ADVISER', description: 'Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).' },
+  { id: 'grade_level_chairperson', name: 'GRADE LEVEL CHAIRPERSON', description: 'Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.', parameterized: 'grade' },
+  { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments.', parameterized: 'grade' },
+  { id: 'department_head_ecp', name: 'DEPARTMENT HEAD (Based on ECP)', description: 'Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.', parameterized: 'ecp' }
+];
 
 export const COLLEGE_DEGREE_OPTIONS = [
   "N/A",
@@ -2381,7 +2427,7 @@ export const AppProvider = ({ children }) => {
           issues.push({ id: `${p.id}-clustered-pending`, personId: p.id, type: "warn", category: "Deployment", message: `${name}: Clustered deployment status is currently pending SDO/School acceptance.` });
         }
       }
-      if (["Reassigned", "Borrowed", "Detailed"].includes(p.deploymentStatus) && (!p.assignedSchools || p.assignedSchools.length === 0) && !p.clusteredSchools) {
+      if (["Reassigned", "Borrowed"].includes(p.deploymentStatus) && (!p.assignedSchools || p.assignedSchools.length === 0) && !p.clusteredSchools) {
         issues.push({ id: `${p.id}-assigned-none`, personId: p.id, type: "error", category: "Deployment", message: `${name}: ${p.deploymentStatus} deployment requires at least one assigned receiving school.` });
       }
 

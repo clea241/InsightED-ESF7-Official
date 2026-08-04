@@ -97,6 +97,17 @@ export default function Deployment() {
                   </option>
                 ))}
               </select>
+            <div>
+              <label>Status of Deployment</label>
+              <select
+                value={currentPerson.deploymentStatus || 'OWN STATION'}
+                onChange={(e) => handleFieldChange('deploymentStatus', e.target.value)}
+              >
+                <option value="OWN STATION">OWN STATION</option>
+                <option value="CLUSTERED">CLUSTERED</option>
+                <option value="REASSIGNED">REASSIGNED</option>
+                <option value="BORROWED">BORROWED</option>
+              </select>
             </div>
             <div>
               <label>Profile Owner / Original School</label>

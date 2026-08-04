@@ -53,8 +53,13 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
       if (!isNaN(d.getTime())) {
         setViewDate(d);
       }
+    } else if (minDate) {
+      const d = minDate instanceof Date ? minDate : new Date(minDate);
+      if (!isNaN(d.getTime())) {
+        setViewDate(d);
+      }
     }
-  }, [cleanValue]);
+  }, [cleanValue, minDate]);
 
   React.useEffect(() => {
     function handleClickOutside(event) {
@@ -816,7 +821,7 @@ export default function PersonnelProfile() {
     if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
     if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
     if (!p.deploymentStatus) errors.push("STATUS OF DEPLOYMENT");
-    if (['Clustered', 'Reassigned', 'Borrowed', 'Detailed', 'CLUSTERED', 'REASSIGNED', 'BORROWED', 'DETAILED'].includes(p.deploymentStatus) && !p.clusteredSchools && (!Array.isArray(p.assignedSchools) || p.assignedSchools.length === 0)) {
+    if (['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(p.deploymentStatus) && !p.clusteredSchools && (!Array.isArray(p.assignedSchools) || p.assignedSchools.length === 0)) {
       errors.push("OTHER SCHOOL ASSIGNMENT");
     }
     if (!p.firstServiceDate) errors.push("DATE OF FIRST DAY OF SERVICE");
@@ -886,7 +891,7 @@ export default function PersonnelProfile() {
       if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
       if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
       if (!p.deploymentStatus) errors.push("STATUS OF DEPLOYMENT");
-      if (['Clustered', 'Reassigned', 'Borrowed', 'Detailed', 'CLUSTERED', 'REASSIGNED', 'BORROWED', 'DETAILED'].includes(p.deploymentStatus) && !p.clusteredSchools && (!Array.isArray(p.assignedSchools) || p.assignedSchools.length === 0)) {
+      if (['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(p.deploymentStatus) && !p.clusteredSchools && (!Array.isArray(p.assignedSchools) || p.assignedSchools.length === 0)) {
         errors.push("OTHER SCHOOL ASSIGNMENT");
       }
       if (!p.firstServiceDate) errors.push("DATE OF FIRST DAY OF SERVICE");
@@ -1403,7 +1408,7 @@ export default function PersonnelProfile() {
                           </div>
                           <div className="profile-subsection">Legal Name</div>
                           <div>
-                            <label>Designation</label>
+                            <label>Title / Salutation</label>
                             <select
                               value={currentPerson.salutation || 'MR.'}
                               onChange={(e) => handleFieldChange('salutation', e.target.value)}
@@ -1553,12 +1558,12 @@ export default function PersonnelProfile() {
                             />
                           </div>
                           <div>
-                            <label>Designation/Position</label>
+                            <label>Plantilla Position</label>
                             <SearchableDropdown
                               options={POSITION_OPTIONS_BY_CATEGORY[currentPerson.type || 'teaching'].map(p => p.toUpperCase())}
                               value={currentPerson.position || ''}
                               onChange={(val) => handleFieldChange('position', val)}
-                              placeholder="SELECT DESIGNATION/POSITION..."
+                              placeholder="SELECT PLANTILLA POSITION..."
                               required
                             />
                           </div>
@@ -1674,14 +1679,14 @@ export default function PersonnelProfile() {
                           <div>
                             <label>Status of Deployment</label>
                             <SearchableDropdown
-                              options={['OWN STATION', 'CLUSTERED', 'REASSIGNED', 'BORROWED', 'DETAILED']}
+                              options={['OWN STATION', 'CLUSTERED', 'REASSIGNED', 'BORROWED']}
                               value={currentPerson.deploymentStatus || ''}
                               onChange={(val) => handleFieldChange('deploymentStatus', val)}
                               placeholder="SELECT STATUS OF DEPLOYMENT..."
                             />
                           </div>
 
-                          {['Clustered', 'Reassigned', 'Borrowed', 'Detailed', 'CLUSTERED', 'REASSIGNED', 'BORROWED', 'DETAILED'].includes(currentPerson.deploymentStatus) && (
+                          {['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(currentPerson.deploymentStatus) && (
                             <div className="full" style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '15px' }}>
 
                               {String(currentPerson.deploymentStatus).toUpperCase() !== 'CLUSTERED' && (
@@ -1706,7 +1711,7 @@ export default function PersonnelProfile() {
                                     }}
                                     placeholder="SELECT OTHER ASSIGNED SCHOOL..."
                                   />
-                                  <p className="field-help">Appears only for Reassigned, Borrowed, or Detailed deployment.</p>
+                                  <p className="field-help">Appears only for Reassigned or Borrowed deployment.</p>
                                 </div>
                               )}
 
@@ -1942,24 +1947,55 @@ export default function PersonnelProfile() {
                           {currentPerson.postGraduateDegree && currentPerson.postGraduateDegree !== 'NONE' && currentPerson.postGraduateDegree !== 'N/A' && (
                             <div>
                               <label>Post-Graduate Discipline</label>
-                              <input
-                                type="text"
-                                value={currentPerson.postGraduateDiscipline || ''}
-                                onChange={(e) => handleFieldChange('postGraduateDiscipline', e.target.value.toUpperCase())}
-                                placeholder="Enter post-graduate discipline..."
-                                style={{
-                                  width: '100%',
-                                  boxSizing: 'border-box',
-                                  padding: '10px 14px',
-                                  borderRadius: '12px',
-                                  border: '1.5px solid var(--line)',
-                                  background: 'white',
-                                  color: 'var(--navy)',
-                                  fontFamily: 'inherit',
-                                  fontSize: '14px',
-                                  minHeight: '44px'
-                                }}
-                              />
+                              {(() => {
+                                const currentVal = currentPerson.postGraduateDiscipline || '';
+                                const presetOptions = DISCIPLINE_OPTIONS.filter(opt => opt !== 'Others');
+                                const matchedPreset = presetOptions.find(opt => opt.toUpperCase() === currentVal.toUpperCase());
+                                const selectedDropdownValue = matchedPreset ? matchedPreset : (currentVal ? 'Others' : '');
+                                const isCustomMode = selectedDropdownValue === 'Others';
+
+                                return (
+                                  <div>
+                                    <SearchableDropdown
+                                      options={DISCIPLINE_OPTIONS}
+                                      value={selectedDropdownValue}
+                                      onChange={(val) => {
+                                        if (val === 'Others') {
+                                          if (matchedPreset || !currentVal) {
+                                            handleFieldChange('postGraduateDiscipline', 'OTHERS');
+                                          }
+                                        } else {
+                                          handleFieldChange('postGraduateDiscipline', val);
+                                        }
+                                      }}
+                                      placeholder="SELECT POST-GRADUATE DISCIPLINE..."
+                                    />
+                                    {isCustomMode && (
+                                      <input
+                                        type="text"
+                                        placeholder="Type custom post-graduate discipline *"
+                                        value={['OTHERS', 'OTHER'].includes(currentVal.toUpperCase()) ? '' : currentVal}
+                                        onChange={(e) => handleFieldChange('postGraduateDiscipline', e.target.value.toUpperCase())}
+                                        style={{
+                                          marginTop: '6px',
+                                          fontSize: '13px',
+                                          background: '#FFFBEB',
+                                          borderColor: '#F59E0B',
+                                          width: '100%',
+                                          boxSizing: 'border-box',
+                                          padding: '10px 14px',
+                                          borderRadius: '12px',
+                                          border: '1.5px solid #F59E0B',
+                                          color: 'var(--navy)',
+                                          fontFamily: 'inherit',
+                                          minHeight: '44px'
+                                        }}
+                                        required
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
@@ -2422,7 +2458,7 @@ export default function PersonnelProfile() {
                                 <thead>
                                   <tr style={{ background: '#F8FAFC', borderBottom: '2px solid var(--line)' }}>
                                     {/* Y Axis Header (Subject / Learning Area) */}
-                                    <th style={{ position: 'sticky', left: 0, background: '#F8FAFC', padding: '12px 16px', textAlign: 'left', zIndex: 3, minWidth: '220px', fontWeight: '800', color: 'var(--navy)', borderRight: '2px solid var(--line)' }}>
+                                    <th style={{ position: 'sticky', left: 0, background: '#F8FAFC', padding: '12px 16px', textAlign: 'left', zIndex: 3, minWidth: '200px', maxWidth: '280px', fontWeight: '800', color: 'var(--navy)', borderRight: '2px solid var(--line)', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                       Learning Area (Y) ↓ / School Year (X) →
                                     </th>
                                     {/* X Axis Headers (School Years) */}
@@ -2437,7 +2473,7 @@ export default function PersonnelProfile() {
                                   {LEARNING_AREAS.map(la => (
                                     <tr key={la} style={{ borderBottom: '1px solid var(--line)' }}>
                                       {/* Y Axis Row Value (Subject / Learning Area) */}
-                                      <td style={{ position: 'sticky', left: 0, background: '#FFFFFF', padding: '12px 16px', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'nowrap', zIndex: 2, borderRight: '2px solid var(--line)' }}>
+                                      <td style={{ position: 'sticky', left: 0, background: '#FFFFFF', padding: '12px 16px', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'normal', wordBreak: 'break-word', minWidth: '200px', maxWidth: '280px', zIndex: 2, borderRight: '2px solid var(--line)' }}>
                                         {la}
                                       </td>
                                       {/* X Axis Matrix Checkboxes for each School Year */}

@@ -3091,6 +3091,30 @@ export default function Workload() {
     saveWorkImmersionSchedules
   } = useApp();
 
+  // SHS Term Workload state
+  const [selectedShsTerm, setSelectedShsTerm] = useState('1st');
+  const [shsWorkloadMap, setShsWorkloadMap] = useState({}); // { [personId]: { '1st': [], '2nd': [], '3rd': [] } }
+
+  useEffect(() => {
+    if (activePersonnelId) {
+      api.getShsWorkloads(activePersonnelId)
+        .then(res => {
+          if (res && res.success && Array.isArray(res.data)) {
+            const grouped = { '1st': [], '2nd': [], '3rd': [] };
+            res.data.forEach(r => {
+              if (grouped[r.term]) grouped[r.term].push(r);
+              else grouped['1st'].push(r);
+            });
+            setShsWorkloadMap(prev => ({
+              ...prev,
+              [activePersonnelId]: grouped
+            }));
+          }
+        })
+        .catch(err => console.error("Error fetching SHS workloads:", err));
+    }
+  }, [activePersonnelId]);
+
   // Helper to expand high-level offerings like SHS into the subcategories expected by Workload builder
   const getExpandedOfferings = () => {
     const raw = Array.isArray(schoolInfo?.curricularOffering) && schoolInfo.curricularOffering.length > 0
@@ -3343,7 +3367,6 @@ export default function Workload() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [positionFilter, setPositionFilter] = useState('all');
   const [teacherSearch, setTeacherSearch] = useState('');
-  const [selectedShsTerm, setSelectedShsTerm] = useState('1st');
   const [layoutType, setLayoutType] = useState('list'); // 'list' | 'card'
   const [timeSortOrder, setTimeSortOrder] = useState('desc'); // 'added' | 'asc' | 'desc'
   const [newlyAddedWorkloadId, setNewlyAddedWorkloadId] = useState(null);
@@ -5080,25 +5103,6 @@ export default function Workload() {
                       </div>
                     )}
 
-                    {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
-                    {(() => {
-                      const hasImmersion = (currentPerson.workloadRows || []).some(r => {
-                        const sub = String(r.subject || r.task || '').toUpperCase();
-                        return sub.includes('WORK IMMERSION');
-                      });
-                      if (!hasImmersion) return null;
-
-                      return (
-                        <WorkImmersionSection
-                          currentPerson={currentPerson}
-                          schoolInfo={schoolInfo}
-                          showToast={showToast}
-                          workImmersionSchedulesMap={workImmersionSchedulesMap}
-                          fetchWorkImmersionSchedules={fetchWorkImmersionSchedules}
-                          saveWorkImmersionSchedules={saveWorkImmersionSchedules}
-                        />
-                      );
-                    })()}
                     <div style={{ gridColumn: '1 / -1' }}>
                       <button className="btn ok" type="button" onClick={handleAddSectionSlot}
                         disabled={!!slotConflict}
@@ -5808,7 +5812,6 @@ export default function Workload() {
                                           </div>
                                         );
                                       })()}
-
                                       {/* Subject Title */}
                                       <h4 style={{ margin: '2px 0 0', fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>{row.subject || 'Select Subject'}</h4>
                                       <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '2px 0 4px' }} />
@@ -5818,7 +5821,10 @@ export default function Workload() {
                                         <div>
                                           <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Section</label>
                                           {(() => {
-                                            const filteredSections = [...(classSections || [])];
+                                            const filteredSections = (classSections || []).filter(s => {
+                                              const g = String(s.gradeLevel || '').toUpperCase();
+                                              return !g.includes('11') && !g.includes('12') && !g.includes('SHS') && !g.includes('SENIOR');
+                                            });
                                             const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                                             if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) filteredSections.push(advisorySec);
                                             let currentSecId = String(row.sectionId || row.section_id || '');
@@ -5982,15 +5988,194 @@ export default function Workload() {
                                       </div>
                                     </div>
 
-                                    {shsRows.length === 0 ? (
-                                      <div style={{ padding: '20px', background: '#F0FDF4', borderRadius: '8px', border: '1px dashed #86EFAC', color: '#166534', fontSize: '12px', textAlign: 'center' }}>
-                                        No SHS workload rows assigned yet. Click <strong>"+ Add subject schedule"</strong> and select a Grade 11 or Grade 12 section.
-                                      </div>
-                                    ) : (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        {shsRows.map(row => renderWorkloadRowCardItem(row))}
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      const activePersonId = currentPerson?.id;
+                                      const currentPersonShsMap = shsWorkloadMap[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
+                                      const activeTermRows = currentPersonShsMap[selectedShsTerm] || [];
+
+                                      const addShsRowForActiveTerm = () => {
+                                        const newShsRow = {
+                                          id: `shs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                                          term: selectedShsTerm,
+                                          sectionId: '',
+                                          sectionName: '',
+                                          gradeLevel: 'Grade 11',
+                                          category: 'SHS-CORE SUBJECTS',
+                                          subject: '',
+                                          startTime: '08:00',
+                                          endTime: '09:00',
+                                          days: ['M', 'T', 'W', 'TH', 'F']
+                                        };
+                                        setShsWorkloadMap(prev => {
+                                          const pMap = prev[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
+                                          const termRows = [...(pMap[selectedShsTerm] || []), newShsRow];
+                                          return {
+                                            ...prev,
+                                            [activePersonId]: {
+                                              ...pMap,
+                                              [selectedShsTerm]: termRows
+                                            }
+                                          };
+                                        });
+                                        setHasUnsavedChanges(true);
+                                      };
+
+                                      const updateShsRowForActiveTerm = (rowIdx, updatedFields) => {
+                                        setShsWorkloadMap(prev => {
+                                          const pMap = prev[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
+                                          const termRows = [...(pMap[selectedShsTerm] || [])];
+                                          if (termRows[rowIdx]) {
+                                            termRows[rowIdx] = { ...termRows[rowIdx], ...updatedFields };
+                                          }
+                                          return {
+                                            ...prev,
+                                            [activePersonId]: {
+                                              ...pMap,
+                                              [selectedShsTerm]: termRows
+                                            }
+                                          };
+                                        });
+                                        setHasUnsavedChanges(true);
+                                      };
+
+                                      const removeShsRowForActiveTerm = (rowIdx) => {
+                                        setShsWorkloadMap(prev => {
+                                          const pMap = prev[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
+                                          const termRows = (pMap[selectedShsTerm] || []).filter((_, i) => i !== rowIdx);
+                                          return {
+                                            ...prev,
+                                            [activePersonId]: {
+                                              ...pMap,
+                                              [selectedShsTerm]: termRows
+                                            }
+                                          };
+                                        });
+                                        setHasUnsavedChanges(true);
+                                      };
+
+                                      return (
+                                        <div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#15803D' }}>
+                                              Showing {selectedShsTerm} Term Workload ({activeTermRows.length} subject periods)
+                                            </span>
+                                            <button
+                                              type="button"
+                                              className="btn"
+                                              onClick={addShsRowForActiveTerm}
+                                              style={{
+                                                background: '#16A34A',
+                                                color: 'white',
+                                                fontSize: '11px',
+                                                fontWeight: 'bold',
+                                                padding: '4px 10px',
+                                                borderRadius: '6px',
+                                                border: 'none',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              + Add {selectedShsTerm} Term Schedule
+                                            </button>
+                                          </div>
+
+                                          {activeTermRows.length === 0 ? (
+                                            <div style={{ padding: '20px', background: '#F0FDF4', borderRadius: '8px', border: '1px dashed #86EFAC', color: '#166534', fontSize: '12px', textAlign: 'center' }}>
+                                              No workload added yet for <strong>{selectedShsTerm} Term</strong>. Click <strong>"+ Add {selectedShsTerm} Term Schedule"</strong> above to create a brand-new schedule for this term.
+                                            </div>
+                                          ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                              {activeTermRows.map((row, rIdx) => (
+                                                <div key={row.id || rIdx} style={{ display: 'grid', gridTemplateColumns: '150px 1fr 125px 125px 170px 80px', gap: '12px', alignItems: 'center', padding: '10px 16px', background: 'white', borderBottom: '1px solid var(--line)' }}>
+                                                  {/* Section Dropdown */}
+                                                  <SearchableSelect
+                                                    value={String(row.sectionId || '')}
+                                                    onChange={(e) => {
+                                                      const sec = (classSections || []).find(s => String(s.id) === String(e.target.value));
+                                                      updateShsRowForActiveTerm(rIdx, { sectionId: e.target.value, sectionName: sec?.sectionName || '', gradeLevel: sec?.gradeLevel || 'Grade 11' });
+                                                    }}
+                                                    options={(classSections || []).filter(s => {
+                                                      const gNorm = String(s.gradeLevel || '').toUpperCase();
+                                                      return gNorm.includes('11') || gNorm.includes('12') || gNorm.includes('SHS') || gNorm.includes('SENIOR');
+                                                    }).map(s => ({ value: String(s.id), label: `${s.sectionName} (${s.gradeLevel})` }))}
+                                                    placeholder="Select SHS section…"
+                                                  />
+
+                                                  {/* Subject & Category */}
+                                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <SearchableSelect
+                                                      value={row.category || 'SHS-CORE SUBJECTS'}
+                                                      onChange={(e) => {
+                                                        const newCat = e.target.value;
+                                                        const newSubs = getSubjectsForGrade(row.gradeLevel || 'Grade 11', newCat);
+                                                        updateShsRowForActiveTerm(rIdx, { category: newCat, subject: newSubs[0] || '' });
+                                                      }}
+                                                      options={[
+                                                        { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
+                                                        { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
+                                                        { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
+                                                        { value: 'SSHS-CORE', label: 'SSHS-CORE' },
+                                                        { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
+                                                        { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' }
+                                                      ]}
+                                                    />
+                                                    <SearchableSelect
+                                                      value={row.subject || ''}
+                                                      onChange={(e) => updateShsRowForActiveTerm(rIdx, { subject: e.target.value })}
+                                                      options={getSubjectsForGrade(row.gradeLevel || 'Grade 11', row.category || 'SHS-CORE SUBJECTS').map(sub => ({ value: sub, label: sub }))}
+                                                      placeholder="Select SHS subject…"
+                                                    />
+                                                  </div>
+
+                                                  {/* Start Time */}
+                                                  <input
+                                                    type="time"
+                                                    value={row.startTime || '08:00'}
+                                                    onChange={(e) => updateShsRowForActiveTerm(rIdx, { startTime: e.target.value })}
+                                                    style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                                  />
+
+                                                  {/* End Time */}
+                                                  <input
+                                                    type="time"
+                                                    value={row.endTime || '09:00'}
+                                                    onChange={(e) => updateShsRowForActiveTerm(rIdx, { endTime: e.target.value })}
+                                                    style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                                  />
+
+                                                  {/* Days */}
+                                                  <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                                                    {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(d => {
+                                                      const isSel = (row.days || []).includes(d);
+                                                      return (
+                                                        <button
+                                                          key={d}
+                                                          type="button"
+                                                          onClick={() => {
+                                                            const newDays = isSel ? (row.days || []).filter(x => x !== d) : [...(row.days || []), d];
+                                                            updateShsRowForActiveTerm(rIdx, { days: newDays });
+                                                          }}
+                                                          style={{
+                                                            padding: '2px 6px', fontSize: '10px', fontWeight: '800', borderRadius: '4px', border: 'none',
+                                                            background: isSel ? 'var(--blue)' : '#f1f5f9', color: isSel ? 'white' : '#64748b', cursor: 'pointer'
+                                                          }}
+                                                        >
+                                                          {d}
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+
+                                                  {/* Remove */}
+                                                  <div style={{ textAlign: 'right' }}>
+                                                    <button className="btn danger sm" type="button" onClick={() => removeShsRowForActiveTerm(rIdx)}>Remove</button>
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 )}
                               </div>
@@ -6002,8 +6187,23 @@ export default function Workload() {
 
                     {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
                     {(() => {
-                      const hasImmersion = (currentPerson.workloadRows || []).some(r => {
-                        const sub = String(r.subject || r.task || '').toUpperCase();
+                      const elemJhsRows = (currentPerson?.workloadRows || []).filter(r => {
+                        const g = String(r.gradeLevel || '').toUpperCase();
+                        const isShsGrade = g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR');
+                        return !isShsGrade && (r.sectionName || r.sectionId);
+                      });
+
+                      const personShsMap = shsWorkloadMap[currentPerson?.id] || {};
+                      const activeShsRows = [
+                        ...(personShsMap['1st'] || []),
+                        ...(personShsMap['2nd'] || []),
+                        ...(personShsMap['3rd'] || [])
+                      ].filter(r => r.sectionName || r.sectionId);
+
+                      const activeAssignedRows = [...elemJhsRows, ...activeShsRows];
+
+                      const hasImmersion = activeAssignedRows.some(r => {
+                        const sub = String(r.subject || '').toUpperCase().trim();
                         return sub.includes('WORK IMMERSION');
                       });
                       if (!hasImmersion) return null;
