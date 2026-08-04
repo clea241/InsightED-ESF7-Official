@@ -3,15 +3,33 @@ const router = express.Router();
 const db = require('../../db');
 
 /**
- * Helper to calculate duration in minutes between start_time (HH:MM) and end_time (HH:MM)
+ * Helper to calculate duration in minutes between start_time (HH:MM) and end_time (HH:MM).
+ * Automatically excludes 12:00 PM - 1:00 PM (12:00 - 13:00 / 720 - 780 mins) lunch break.
  */
 function calculateMinutes(startTime, endTime) {
   if (!startTime || !endTime) return 0;
-  const [sh, sm] = startTime.split(':').map(Number);
-  const [eh, em] = endTime.split(':').map(Number);
+  const [sh, sm] = String(startTime).split(':').map(Number);
+  const [eh, em] = String(endTime).split(':').map(Number);
   if (isNaN(sh) || isNaN(eh)) return 0;
-  const diff = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
-  return diff > 0 ? diff : 0;
+
+  const startMins = sh * 60 + (sm || 0);
+  const endMins = eh * 60 + (em || 0);
+  if (endMins <= startMins) return 0;
+
+  let totalDiff = endMins - startMins;
+
+  // Lunch Break Window: 12:00 PM (720 mins) to 1:00 PM (780 mins)
+  const lunchStart = 720;
+  const lunchEnd = 780;
+
+  if (startMins < lunchEnd && endMins > lunchStart) {
+    const overlapStart = Math.max(startMins, lunchStart);
+    const overlapEnd = Math.min(endMins, lunchEnd);
+    const lunchDeduction = Math.max(0, overlapEnd - overlapStart);
+    totalDiff -= lunchDeduction;
+  }
+
+  return Math.max(0, totalDiff);
 }
 
 /**

@@ -33,6 +33,8 @@ app.use('/api/allowances', require('./controllers/allowances'));
 app.use('/api/overload-reasons', require('./controllers/overload_reasons'));
 app.use('/api/learning-areas', require('./controllers/learningAreas/index.js'));
 app.use('/api/work-immersion', require('./controllers/work_immersion/index.js'));
+app.use('/api/shs-workloads', require('./controllers/shs_workload_rows/index.js'));
+app.use('/api/shs-transfers', require('./controllers/shs_workload_transfers/index.js'));
 
 
 const queueWorker = require('./queue_worker');

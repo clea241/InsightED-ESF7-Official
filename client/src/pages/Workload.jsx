@@ -3343,6 +3343,7 @@ export default function Workload() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [positionFilter, setPositionFilter] = useState('all');
   const [teacherSearch, setTeacherSearch] = useState('');
+  const [selectedShsTerm, setSelectedShsTerm] = useState('1st');
   const [layoutType, setLayoutType] = useState('list'); // 'list' | 'card'
   const [timeSortOrder, setTimeSortOrder] = useState('desc'); // 'added' | 'asc' | 'desc'
   const [newlyAddedWorkloadId, setNewlyAddedWorkloadId] = useState(null);
@@ -4040,9 +4041,9 @@ export default function Workload() {
     const newId = `new-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const newRow = {
       id: newId,
-      category: initialCategory,
-      subject: validInitialSubject,
-      gradeLevel: initialGrade,
+      category: '',
+      subject: '',
+      gradeLevel: '',
       sectionId: '',
       startTime: nextStart,
       endTime: nextEnd,
@@ -5242,14 +5243,15 @@ export default function Workload() {
               </div>
 
               {/* Right Column: Workload Editor */}
-              <div style={{ minWidth: 0 }}>
-                {!currentPerson ? (
+              {!currentPerson ? (
+                <div style={{ minWidth: 0 }}>
                   <div className="card" style={{ padding: '40px', textAlign: 'center', border: '1.5px solid var(--line)', borderRadius: '16px', background: 'white' }}>
                     <h3 style={{ color: 'var(--navy)', margin: 0 }}>No Teacher Selected</h3>
                     <p className="subtext" style={{ margin: '8px 0 0 0' }}>Please select a teacher from the roster list on the left to configure workloads.</p>
                   </div>
-                ) : (
-                  <>
+                </div>
+              ) : (
+                <div style={{ minWidth: 0 }}>
                     {/* Schedule Time Verification Banner */}
                     {(() => {
                       const currentTeacherRows = currentPerson?.workloadRows || [];
@@ -5339,26 +5341,6 @@ export default function Workload() {
                         </div>
                       </div>
                     )}
-
-                    {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
-                    {(() => {
-                      const hasImmersion = (currentPerson.workloadRows || []).some(r => {
-                        const sub = String(r.subject || r.task || '').toUpperCase();
-                        return sub.includes('WORK IMMERSION');
-                      });
-                      if (!hasImmersion) return null;
-
-                      return (
-                        <WorkImmersionSection
-                          currentPerson={currentPerson}
-                          schoolInfo={schoolInfo}
-                          showToast={showToast}
-                          workImmersionSchedulesMap={workImmersionSchedulesMap}
-                          fetchWorkImmersionSchedules={fetchWorkImmersionSchedules}
-                          saveWorkImmersionSchedules={saveWorkImmersionSchedules}
-                        />
-                      );
-                    })()}
 
                     {/* Draft Banner if exists */}
                     {localStorage.getItem(`draft_workload_${currentPerson?.id}`) && (
@@ -5535,8 +5517,9 @@ export default function Workload() {
                               });
                             }
 
-                            return sortedRows.map((row) => {
-                              const idx = row.originalIdx;
+
+                            const renderWorkloadRowCardItem = (row) => {
+                              const idx = row.originalIdx !== undefined ? row.originalIdx : (currentPerson.workloadRows || []).indexOf(row);
                               const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                               if (isAdvisorySub(row.subject) && advisorySec && !row.sectionId) {
                                 row.sectionId = String(advisorySec.id);
@@ -5610,19 +5593,7 @@ export default function Workload() {
                                       {/* Section */}
                                       <div>
                                         {(() => {
-                                          const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                          const filteredSections = (classSections || []).filter(s => {
-                                            if (assignedGrades.length === 0) return true;
-                                            const sGradeNorm = (s.gradeLevel || '').replace(/\s*[\u2013\u2014-]\s*/g, ' - ');
-                                            const assignedNorm = assignedGrades.map(g => (g || '').replace(/\s*[\u2013\u2014-]\s*/g, ' - '));
-                                            if (assignedGrades.includes(s.gradeLevel) || assignedNorm.includes(sGradeNorm)) return true;
-                                            if (sGradeNorm.includes(' - ')) {
-                                              const grades = sGradeNorm.split(' - ');
-                                              return grades.some(g => assignedNorm.includes(g) || assignedGrades.includes(g));
-                                            }
-                                            return false;
-                                          });
-
+                                          const filteredSections = [...(classSections || [])];
                                           const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                                           if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) {
                                             filteredSections.push(advisorySec);
@@ -5701,123 +5672,105 @@ export default function Workload() {
                                               return SUBJECT_OPTIONS;
                                             }
                                           })();
-                                          const filteredSubjectList = subjectList.filter(sub => {
-                                            if (sub === 'ADVISORY' || sub === 'HGP') {
-                                              const exists = (currentPerson.workloadRows || []).some((r, i) => i !== idx && r.subject === sub);
-                                              return !exists;
-                                            }
-                                            return true;
-                                          });
-                                          if (currentSub && !filteredSubjectList.includes(currentSub)) {
-                                            filteredSubjectList.push(currentSub);
-                                          }
-                                          const subjectOptions = filteredSubjectList.map(s => ({ value: s, label: s }));
+
+                                          const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
+                                          const subjectOptions = [
+                                            ...(isCustom ? [{ value: currentSub, label: `${currentSub} (Custom)` }] : []),
+                                            ...subjectList.map(sub => ({ value: sub, label: sub }))
+                                          ];
+
                                           return (
                                             <SearchableSelect
-                                              disabled={!currentSecId || row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                              disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
                                               value={currentSub}
                                               onChange={(e) => {
-                                                const val = e.target.value;
-                                                if (isRemediationSub(val)) {
-                                                  const defaultSub = (row.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN';
-                                                  updateWorkloadRowFields(idx, { subject: val, remediationSubject: defaultSub });
-                                                } else {
-                                                  updateWorkloadRowFields(idx, { subject: val, remediationSubject: '' });
+                                                const newSub = e.target.value;
+                                                if (!newSub) return;
+                                                const isSHS = isSHSRow({ ...row, subject: newSub });
+                                                const maxMins = isSHS ? 360 : 60;
+                                                let newStart = row.startTime || '07:30';
+                                                let newEnd = row.endTime || '08:30';
+                                                if (newStart && newEnd) {
+                                                  const diff = getTimeDiffMins(newStart, newEnd);
+                                                  if (diff > maxMins) {
+                                                    const [sh, sm] = newStart.split(':').map(Number);
+                                                    const maxEndMins = sh * 60 + sm + maxMins;
+                                                    const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
+                                                    const maxEndM = String(maxEndMins % 60).padStart(2, '0');
+                                                    newEnd = `${maxEndH}:${maxEndM}`;
+                                                  }
                                                 }
+                                                updateWorkloadRowFields(idx, { subject: newSub, startTime: newStart, endTime: newEnd });
                                               }}
                                               options={subjectOptions}
-                                              placeholder={!currentSecId ? 'Select section first…' : 'Select subject…'}
+                                              placeholder="Select subject…"
                                             />
                                           );
                                         })()}
-                                        {isRemediationSub(row.subject) && (
-                                          <SearchableSelect
-                                            value={row.remediationSubject || (row.gradeLevel === 'Kinder' ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN')}
-                                            onChange={(e) => updateWorkloadRow(idx, 'remediationSubject', e.target.value)}
-                                            options={
-                                              (row.category === 'Elementary'
-                                                ? REMEDIATION_FOCUS_BY_CATEGORY['Elementary']
-                                                : (REMEDIATION_FOCUS_BY_CATEGORY[row.category] || REMEDIATION_FOCUS_BY_CATEGORY['ALL'])
-                                              ).map(opt => ({ value: opt, label: opt }))
-                                            }
-                                          />
-                                        )}
                                       </div>
 
-                                      {/* Start & End Time / Fixed Duration */}
-                                      {row.subject === 'ADVISORY' ? (
-                                        <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                          <span style={{ fontSize: '11px', color: '#0284c7', background: '#e0f2fe', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold' }}>
-                                            ⏱️ 60 Mins / Day (Fixed)
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <>
-                                          {/* Start Time */}
-                                          <div>
-                                            <input type="time" list="school-times" value={row.startTime} onChange={(e) => updateWorkloadRow(idx, 'startTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)' }} />
-                                          </div>
+                                      {/* Start Time */}
+                                      <div>
+                                        <input
+                                          type="time"
+                                          list="school-times"
+                                          value={row.startTime || ''}
+                                          onChange={(e) => updateWorkloadRowFields(idx, { startTime: e.target.value })}
+                                          disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                          style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                        />
+                                      </div>
 
-                                          {/* End Time */}
-                                          <div>
-                                            <input type="time" list="school-times" value={row.endTime} onChange={(e) => updateWorkloadRow(idx, 'endTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)' }} />
-                                          </div>
-                                        </>
-                                      )}
+                                      {/* End Time */}
+                                      <div>
+                                        <input
+                                          type="time"
+                                          list="school-times"
+                                          value={row.endTime || ''}
+                                          onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
+                                          disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                          style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                        />
+                                      </div>
 
                                       {/* Usual Days */}
-                                      <div>
-                                        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-                                          {(() => {
-                                            const isHgp = row.subject === 'HGP';
-                                            const advRow = isHgp ? (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (String(r.sectionId) === String(row.sectionId) || (!r.sectionId && !row.sectionId))) : null;
-                                            const advDays = advRow ? (advRow.days || []) : ['M', 'T', 'W', 'TH', 'F'];
-
-                                            return (isHgp ? ['M', 'T', 'W', 'TH', 'F'] : ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN']).map(day => {
-                                              const isAllowed = !isHgp || advDays.includes(day);
-                                              const isChecked = row.days?.includes(day);
-                                              return (
-                                                <div
-                                                  key={day}
-                                                  onClick={() => {
-                                                    if (isAllowed) toggleWorkloadDay(idx, day);
-                                                  }}
-                                                  style={{
-                                                    padding: '4px 8px',
-                                                    fontSize: '11px',
-                                                    minWidth: '28px',
-                                                    textAlign: 'center',
-                                                    borderRadius: '6px',
-                                                    cursor: isAllowed ? 'pointer' : 'not-allowed',
-                                                    fontWeight: 'bold',
-                                                    background: isChecked ? 'linear-gradient(180deg, var(--blue), var(--navy))' : (isAllowed ? '#f1f5f9' : '#e2e8f0'),
-                                                    color: isChecked ? 'white' : (isAllowed ? '#475569' : '#94a3b8'),
-                                                    border: '1px solid transparent',
-                                                    opacity: isAllowed ? 1 : 0.45,
-                                                    transition: 'all 0.15s'
-                                                  }}
-                                                  title={!isAllowed ? `Day ${day} is not selected in ADVISORY` : (day === 'M' ? 'Monday' : day === 'T' ? 'Tuesday' : day === 'W' ? 'Wednesday' : day === 'TH' ? 'Thursday' : day === 'F' ? 'Friday' : day === 'SAT' ? 'Saturday' : 'Sunday')}
-                                                >
-                                                  {day}
-                                                </div>
-                                              );
-                                            });
-                                          })()}
-                                        </div>
+                                      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                                        {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => {
+                                          const isSelected = (row.days || []).includes(day);
+                                          return (
+                                            <button
+                                              key={day}
+                                              type="button"
+                                              onClick={() => toggleWorkloadDay(idx, day)}
+                                              style={{
+                                                padding: '2px 6px',
+                                                fontSize: '10px',
+                                                fontWeight: '800',
+                                                borderRadius: '4px',
+                                                border: 'none',
+                                                background: isSelected ? 'var(--blue)' : '#f1f5f9',
+                                                color: isSelected ? 'white' : '#64748b',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              {day}
+                                            </button>
+                                          );
+                                        })}
                                       </div>
 
-                                      {/* Action Button */}
-                                      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                      {/* Actions */}
+                                      <div style={{ textAlign: 'right' }}>
                                         {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
-                                          <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>Locked 🔒</span>
+                                          <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'flex-end' }}>Locked 🔒</span>
                                         ) : (
                                           <button className="btn danger sm" type="button" onClick={() => removeWorkloadRow(idx)}>Remove</button>
                                         )}
                                       </div>
                                     </div>
                                   ) : (
-                                    <>
-                                      {/* ✕ Remove / Lock badge - top right */}
+                                    /* Cards Layout */
+                                    <div>
                                       {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
                                         <span style={{ position: 'absolute', top: '12px', right: '14px', fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>🔒 Locked</span>
                                       ) : (
@@ -5858,7 +5811,6 @@ export default function Workload() {
 
                                       {/* Subject Title */}
                                       <h4 style={{ margin: '2px 0 0', fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>{row.subject || 'Select Subject'}</h4>
-                                      {/* Divider */}
                                       <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '2px 0 4px' }} />
 
                                       {/* Compact fields grid */}
@@ -5866,18 +5818,7 @@ export default function Workload() {
                                         <div>
                                           <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Section</label>
                                           {(() => {
-                                            const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                            const filteredSections = (classSections || []).filter(s => {
-                                              if (assignedGrades.length === 0) return true;
-                                              const sGradeNorm = (s.gradeLevel || '').replace(/\s*[\u2013\u2014-]\s*/g, ' - ');
-                                              const assignedNorm = assignedGrades.map(g => (g || '').replace(/\s*[\u2013\u2014-]\s*/g, ' - '));
-                                              if (assignedGrades.includes(s.gradeLevel) || assignedNorm.includes(sGradeNorm)) return true;
-                                              if (sGradeNorm.includes(' - ')) {
-                                                const grades = sGradeNorm.split(' - ');
-                                                return grades.some(g => assignedNorm.includes(g) || assignedGrades.includes(g));
-                                              }
-                                              return false;
-                                            });
+                                            const filteredSections = [...(classSections || [])];
                                             const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                                             if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) filteredSections.push(advisorySec);
                                             let currentSecId = String(row.sectionId || row.section_id || '');
@@ -5910,155 +5851,151 @@ export default function Workload() {
                                             const subjectList = (() => {
                                               if (!currentSecId && !currentSub) return [];
                                               const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                              if (row.gradeLevel) return getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
-                                              else if (assignedGrades.length > 0) {
+                                              if (row.gradeLevel) {
+                                                return getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
+                                              } else if (assignedGrades.length > 0) {
                                                 const unionSubjects = new Set();
                                                 assignedGrades.forEach(g => {
                                                   let resolvedCategory = 'Elementary';
-                                                  for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) { if (grades.includes(g)) { resolvedCategory = cat; break; } }
+                                                  for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
+                                                    if (grades.includes(g)) {
+                                                      resolvedCategory = cat;
+                                                      break;
+                                                    }
+                                                  }
                                                   getSubjectsForGrade(g, resolvedCategory).forEach(sub => unionSubjects.add(sub));
                                                 });
                                                 return Array.from(unionSubjects);
-                                              } else return SUBJECT_OPTIONS;
+                                              } else {
+                                                return SUBJECT_OPTIONS;
+                                              }
                                             })();
-                                            const filteredSubjectList = subjectList.filter(sub => {
-                                              if (sub === 'ADVISORY' || sub === 'HGP') { return !(currentPerson.workloadRows || []).some((r, i) => i !== idx && r.subject === sub); }
-                                              return true;
-                                            });
-                                            if (currentSub && !filteredSubjectList.includes(currentSub)) {
-                                              filteredSubjectList.push(currentSub);
-                                            }
+
+                                            const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
+                                            const subjectOptions = [
+                                              ...(isCustom ? [{ value: currentSub, label: `${currentSub} (Custom)` }] : []),
+                                              ...subjectList.map(sub => ({ value: sub, label: sub }))
+                                            ];
+
                                             return (
                                               <SearchableSelect
-                                                disabled={!currentSecId || row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                                disabled={isAdvisorySub(row.subject)}
                                                 value={currentSub}
                                                 onChange={(e) => {
-                                                  const val = e.target.value;
-                                                  if (isRemediationSub(val)) { updateWorkloadRowFields(idx, { subject: val, remediationSubject: (row.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN' }); }
-                                                  else { updateWorkloadRowFields(idx, { subject: val, remediationSubject: '' }); }
+                                                  const newSub = e.target.value;
+                                                  if (!newSub) return;
+                                                  const isSHS = isSHSRow({ ...row, subject: newSub });
+                                                  const maxMins = isSHS ? 360 : 60;
+                                                  let newStart = row.startTime || '07:30';
+                                                  let newEnd = row.endTime || '08:30';
+                                                  if (newStart && newEnd) {
+                                                    const diff = getTimeDiffMins(newStart, newEnd);
+                                                    if (diff > maxMins) {
+                                                      const [sh, sm] = newStart.split(':').map(Number);
+                                                      const maxEndMins = sh * 60 + sm + maxMins;
+                                                      const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
+                                                      const maxEndM = String(maxEndMins % 60).padStart(2, '0');
+                                                      newEnd = `${maxEndH}:${maxEndM}`;
+                                                    }
+                                                  }
+                                                  updateWorkloadRowFields(idx, { subject: newSub, startTime: newStart, endTime: newEnd });
                                                 }}
-                                                options={filteredSubjectList.map(s => ({ value: s, label: s }))}
-                                                placeholder={!currentSecId ? 'Select section first…' : 'Select subject…'}
+                                                options={subjectOptions}
+                                                placeholder="Select subject…"
                                               />
                                             );
                                           })()}
                                         </div>
-                                        {row.sectionId && isSHSRow(row) && (
-                                          <div>
-                                            <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>SHS Category</label>
-                                            <SearchableSelect
-                                              value={row.category || 'SHS-CORE SUBJECTS'}
-                                              onChange={(e) => {
-                                                const newCat = e.target.value;
-                                                const newSubjects = getSubjectsForGrade(row.gradeLevel, newCat);
-                                                updateWorkloadRowFields(idx, { category: newCat, subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY' && s !== 'HGP') || '') });
-                                              }}
-                                              options={[
-                                                { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
-                                                { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
-                                                { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
-                                                { value: 'SSHS-CORE', label: 'SSHS-CORE' },
-                                                { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
-                                                { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' }
-                                              ]}
-                                            />
-                                          </div>
-                                        )}
-                                        {isRemediationSub(row.subject) && (
-                                          <div>
-                                            <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Remediation Focus</label>
-                                            {(() => {
-                                              const subOptions = row.category === 'Elementary' ? REMEDIATION_FOCUS_BY_CATEGORY['Elementary'] : (REMEDIATION_FOCUS_BY_CATEGORY[row.category] || REMEDIATION_FOCUS_BY_CATEGORY['ALL']);
-                                              return (
-                                                <SearchableSelect
-                                                  value={row.remediationSubject || (row.gradeLevel === 'Kinder' ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN')}
-                                                  onChange={(e) => updateWorkloadRow(idx, 'remediationSubject', e.target.value)}
-                                                  options={subOptions.map(opt => ({ value: opt, label: opt }))}
-                                                />
-                                              );
-                                            })()}
-                                          </div>
-                                        )}
-                                        {row.subject === 'ADVISORY' ? (
-                                           <div style={{ gridColumn: '1 / -1', padding: '8px 12px', background: '#e0f2fe', borderRadius: '6px', textAlign: 'center', color: '#0284c7', fontSize: '11px', fontWeight: 'bold' }}>
-                                             ⏱️ 60 Mins / Day (Fixed Duration)
-                                           </div>
-                                         ) : (
-                                           <>
-                                             <div>
-                                               <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
-                                               <input type="time" list="school-times" value={row.startTime} onChange={(e) => updateWorkloadRow(idx, 'startTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }} />
-                                             </div>
-                                             <div>
-                                               <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>End Time</label>
-                                               <input type="time" list="school-times" value={row.endTime} onChange={(e) => updateWorkloadRow(idx, 'endTime', e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }} />
-                                             </div>
-                                           </>
-                                         )}
                                       </div>
-
-                                      {/* Day chips */}
-                                      <div style={{ marginTop: '4px' }}>
-                                        <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Usual Days</label>
-                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                          {(row.subject === 'HGP' ? ['M', 'T', 'W', 'TH', 'F'] : ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN']).map(day => (
-                                            <div
-                                              key={day}
-                                              onClick={() => toggleWorkloadDay(idx, day)}
-                                              style={{
-                                                padding: '3px 8px', fontSize: '10px', minWidth: '26px', textAlign: 'center',
-                                                borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold',
-                                                background: row.days?.includes(day) ? 'linear-gradient(180deg, var(--blue), var(--navy))' : '#f1f5f9',
-                                                color: row.days?.includes(day) ? 'white' : '#475569',
-                                                border: '1px solid transparent', transition: 'all 0.15s'
-                                              }}
-                                              title={day === 'M' ? 'Monday' : day === 'T' ? 'Tuesday' : day === 'W' ? 'Wednesday' : day === 'TH' ? 'Thursday' : day === 'F' ? 'Friday' : day === 'SAT' ? 'Saturday' : 'Sunday'}
-                                            >{day}</div>
-                                          ))}
-                                        </div>
-                                      </div>
-
-                                                                             {/* SDS Designation Toggle */}
-                                       <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                                         <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155' }}>Designated by SDS?</span>
-                                         <div style={{ display: 'flex', border: '1.5px solid #CBD5E1', borderRadius: '6px', overflow: 'hidden', background: '#FFFFFF' }}>
-                                           <button
-                                             type="button"
-                                             onClick={() => updateWorkloadRow(idx, 'designatedBySds', false)}
-                                             style={{
-                                               padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
-                                               background: !row.designatedBySds ? '#64748B' : 'transparent',
-                                               color: !row.designatedBySds ? '#FFFFFF' : '#64748B'
-                                             }}
-                                           >
-                                             NO
-                                           </button>
-                                           <button
-                                             type="button"
-                                             onClick={() => updateWorkloadRow(idx, 'designatedBySds', true)}
-                                             style={{
-                                               padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
-                                               background: row.designatedBySds ? '#0284C7' : 'transparent',
-                                               color: row.designatedBySds ? '#FFFFFF' : '#64748B'
-                                             }}
-                                           >
-                                             YES
-                                           </button>
-                                         </div>
-                                       </div>
-
-                                       {/* Conflict warning inside card */}
-                                      {hasConflict && (
-                                        <div style={{ color: '#EF4444', fontSize: '10px', fontWeight: 'bold', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                          ⚠️ Time conflict with another period on the same day(s).
-                                        </div>
-                                      )}
-                                    </>
+                                    </div>
                                   )}
+                                </div>
+                              );
+                            };
+
+                            const elemJhsRows = sortedRows.filter(r => !isSHSRow(r));
+                            const shsRows = sortedRows.filter(r => isSHSRow(r));
+                            const isShsTeacher = !!currentPerson?.teachesShs || (Array.isArray(currentPerson?.assignedGradeLevels) && currentPerson.assignedGradeLevels.some(g => String(g).includes('11') || String(g).includes('12')));
+
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {/* ── UPPER PARTITION: ELEMENTARY & JUNIOR HIGH SCHOOL (GRADES K-10) ── */}
+                                <div>
+                                  {(shsRows.length > 0 || isShsTeacher) && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: '#EFF6FF', borderLeft: '4px solid #0284C7', borderRadius: '6px', marginBottom: '12px' }}>
+                                      <span style={{ fontSize: '14px' }}>📘</span>
+                                      <strong style={{ fontSize: '13px', color: '#0369A1' }}>Elementary & Junior High School (Grades K – 10)</strong>
+                                      <span style={{ fontSize: '11px', color: '#64748B', marginLeft: 'auto' }}>{elemJhsRows.length} subject period(s)</span>
+                                    </div>
+                                  )}
+
+                                  {elemJhsRows.length === 0 ? (
+                                    <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', color: '#64748B', fontSize: '12px', textAlign: 'center' }}>
+                                      No Elementary / JHS workload rows added yet.
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                      {elemJhsRows.map(row => renderWorkloadRowCardItem(row))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* ── LOWER PARTITION: SENIOR HIGH SCHOOL (GRADE 11 & GRADE 12) ── */}
+                                {(shsRows.length > 0 || isShsTeacher) && (
+                                  <div style={{ paddingTop: '16px', borderTop: '2px dashed #CBD5E1' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '8px 14px', background: '#F0FDF4', borderLeft: '4px solid #16A34A', borderRadius: '8px', marginBottom: '14px' }}>
+                                      <div>
+                                        <strong style={{ fontSize: '14px', color: '#15803D', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <span>📗</span> Senior High School (Grade 11 & Grade 12) Term Workload
+                                        </strong>
+                                        <span style={{ fontSize: '11px', color: '#166534' }}>
+                                          Term-based workload for SHS. Selecting a Grade 11 or 12 section automatically routes the row here.
+                                        </span>
+                                      </div>
+
+                                      {/* Term Switcher Tabs */}
+                                      <div style={{ display: 'flex', gap: '6px' }}>
+                                        {[
+                                          { key: '1st', label: '📘 1st Term' },
+                                          { key: '2nd', label: '📙 2nd Term' },
+                                          { key: '3rd', label: '📕 3rd Term' }
+                                        ].map(t => (
+                                          <button
+                                            key={t.key}
+                                            type="button"
+                                            onClick={() => setSelectedShsTerm(t.key)}
+                                            style={{
+                                              padding: '5px 12px',
+                                              borderRadius: '6px',
+                                              fontSize: '11px',
+                                              fontWeight: 'bold',
+                                              border: selectedShsTerm === t.key ? '2px solid #16A34A' : '1px solid #CBD5E1',
+                                              background: selectedShsTerm === t.key ? '#16A34A' : 'white',
+                                              color: selectedShsTerm === t.key ? 'white' : '#475569',
+                                              cursor: 'pointer',
+                                              transition: 'all 0.15s'
+                                            }}
+                                          >
+                                            {t.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {shsRows.length === 0 ? (
+                                      <div style={{ padding: '20px', background: '#F0FDF4', borderRadius: '8px', border: '1px dashed #86EFAC', color: '#166534', fontSize: '12px', textAlign: 'center' }}>
+                                        No SHS workload rows assigned yet. Click <strong>"+ Add subject schedule"</strong> and select a Grade 11 or Grade 12 section.
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                        {shsRows.map(row => renderWorkloadRowCardItem(row))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            )
-                          })
-                        })()}
+                            );
+                          })()}
                         </div>
                       </div>
                     )}
@@ -6426,14 +6363,12 @@ export default function Workload() {
                         </div>
                       </div>
                     </div>
-
-                  </>
+                  </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
-      </article>
+            )}
+          </div>
+        </article>
 
       {/* ── ORGANIZED CLASS COMPLETION CHECK MODAL ── */}
       {showOrganizedClassCheckModal && (
@@ -7020,45 +6955,12 @@ export default function Workload() {
                 return gridCells;
               })()}
             </div>
-
-            {/* Footer Actions */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--navy)' }}>
-                Selected: <strong style={{ color: '#0284c7' }}>{calendarSelectedDates.length} Date(s)</strong>
-              </span>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  className="btn secondary"
-                  style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '12px' }}
-                  onClick={() => setCalendarModalConfig(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  style={{
-                    background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
-                    color: 'white',
-                    fontWeight: 'bold',
-                    borderRadius: '8px',
-                    padding: '8px 20px',
-                    fontSize: '12px'
-                  }}
-                  onClick={handleApplyCalendarDates}
-                >
-                  Apply Selected Dates ({calendarSelectedDates.length})
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
     </section>
   );
 }
-
 
 /* ── WORK IMMERSION MONTHLY CALENDAR & MINUTES MANAGER ── */
 const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmersionSchedulesMap, fetchWorkImmersionSchedules, saveWorkImmersionSchedules }) => {

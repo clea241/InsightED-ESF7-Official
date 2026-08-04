@@ -2353,6 +2353,24 @@ export default function PersonnelProfile() {
                                 })()}
                               </select>
                             </div>
+
+                            {/* Dedicated SHS Teacher Toggle */}
+                            <div style={{ marginTop: '20px', padding: '12px 16px', background: '#F0F9FF', border: '1.5px solid #0284C7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div>
+                                <label style={{ fontWeight: 'bold', color: '#0369A1', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span>📗</span> Teaches Senior High School (Grade 11 / Grade 12)
+                                </label>
+                                <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
+                                  Enabling this unlocks the <strong>SHS Term Workload Card</strong> (1st, 2nd, 3rd Term) in the Workload module.
+                                </p>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={!!currentPerson.teachesShs || (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.some(g => String(g).includes('11') || String(g).includes('12')))}
+                                onChange={(e) => handleFieldChange('teachesShs', e.target.checked)}
+                                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0284C7' }}
+                              />
+                            </div>
                           </div>
                         </>
                       )}

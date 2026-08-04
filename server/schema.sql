@@ -197,6 +197,64 @@ CREATE INDEX IF NOT EXISTS idx_workload_rows_school ON workload_rows (school_id)
 CREATE INDEX IF NOT EXISTS idx_workload_row_dates_row ON workload_row_dates (workload_row_id);
 CREATE INDEX IF NOT EXISTS idx_school_drafts_school_sy ON school_drafts (school_id, school_year);
 
+-- 12. SHS Workload Tables (Senior High School — term-based)
+
+-- SHS Workload Rows (mirrors workload_rows + term column)
+CREATE TABLE IF NOT EXISTS shs_workload_rows (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    term TEXT NOT NULL CHECK (term IN ('1st', '2nd', '3rd')),
+    row_type TEXT NOT NULL CHECK (row_type IN ('teaching', 'teaching-related', 'administrative')),
+    subject TEXT,
+    shs_category TEXT,
+    task TEXT,
+    grade_level TEXT,
+    section_id VARCHAR(50) REFERENCES class_sections (id) ON DELETE CASCADE,
+    start_time VARCHAR(20),
+    end_time VARCHAR(20),
+    days TEXT[] NOT NULL DEFAULT '{}',
+    designated_by_sds BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- SHS Workload Transfers (mirrors workload_transfers + term column)
+CREATE TABLE IF NOT EXISTS shs_workload_transfers (
+    id VARCHAR(50) PRIMARY KEY,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    term TEXT NOT NULL CHECK (term IN ('1st', '2nd', '3rd')),
+    absent_personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
+    substitute_personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
+    shs_workload_row_id VARCHAR(50) NOT NULL REFERENCES shs_workload_rows (id) ON DELETE CASCADE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended', 'cancelled')),
+    logged_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- SHS Workload Row Dates (mirrors workload_row_dates for SHS)
+CREATE TABLE IF NOT EXISTS shs_workload_row_dates (
+    id VARCHAR(50) PRIMARY KEY,
+    shs_workload_row_id VARCHAR(50) NOT NULL REFERENCES shs_workload_rows (id) ON DELETE CASCADE,
+    task_date DATE,
+    start_time VARCHAR(20),
+    end_time VARCHAR(20),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- SHS Workload Indexes
+CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_personnel ON shs_workload_rows (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_school ON shs_workload_rows (school_id);
+CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_term ON shs_workload_rows (term);
+CREATE INDEX IF NOT EXISTS idx_shs_row_dates_row ON shs_workload_row_dates (shs_workload_row_id);
+
 -- 12. Request Center Tables (Clustered & Mergers)
 CREATE TABLE IF NOT EXISTS clustered_connections (
     id SERIAL PRIMARY KEY,

@@ -142,6 +142,7 @@ router.get('/', async (req, res) => {
         hiringArrangement: emp.hiring_arrangement || '',
         assignedSchools: emp.assigned_schools || [],
         gradeLevelsTaught: emp.grade_levels_taught || [],
+        teachesShs: !!emp.teaches_shs,
         firstServiceDate: emp.first_service_date || '',
         lastPromotionDate: emp.last_promotion_date || '',
         newStationDate: emp.new_station_date || '',

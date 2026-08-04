@@ -1739,7 +1739,7 @@ export const AppProvider = ({ children }) => {
           );
         }
 
-        const empKeys = ['position', 'designation', 'fundSource', 'natureOfAppointment', 'hiringArrangement', 'assignedSchools', 'gradeLevelsTaught', 'assignedGradeLevels', 'firstServiceDate', 'lastPromotionDate', 'newStationDate', 'lastLateralMovementDate', 'stepIncrement'];
+        const empKeys = ['position', 'designation', 'fundSource', 'natureOfAppointment', 'hiringArrangement', 'assignedSchools', 'gradeLevelsTaught', 'assignedGradeLevels', 'teachesShs', 'firstServiceDate', 'lastPromotionDate', 'newStationDate', 'lastLateralMovementDate', 'stepIncrement'];
         const hasEmp = Object.keys(accumulatedFields).some(k => empKeys.includes(k));
         if (hasEmp) {
           const payload = {
@@ -1750,6 +1750,7 @@ export const AppProvider = ({ children }) => {
             hiring_arrangement: latestPerson.hiringArrangement || '',
             assigned_schools: latestPerson.assignedSchools || [],
             grade_levels_taught: latestPerson.assignedGradeLevels || latestPerson.gradeLevelsTaught || [],
+            teaches_shs: !!latestPerson.teachesShs,
             first_service_date: latestPerson.firstServiceDate || '2000-01-01',
             last_promotion_date: latestPerson.lastPromotionDate || '2000-01-01',
             new_station_date: latestPerson.newStationDate || '2000-01-01',
@@ -1935,124 +1936,64 @@ export const AppProvider = ({ children }) => {
   };
 
   const toggleSchoolHead = async (id, isSchoolHead) => {
-    try {
-      const p = personnel.find(x => x.id === id);
-      if (!p) return;
-      
-      if (p.isDraft) {
-        setPersonnel(prev => prev.map(item => {
-          if (item.id === id) {
-            return { ...item, isSchoolHead };
-          }
-          if (isSchoolHead) {
-            return { ...item, isSchoolHead: false };
-          }
-          return item;
-        }));
-        showToast("School Head designated (draft).");
-        return;
+    setPersonnel(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, isSchoolHead };
       }
-
-      await api.toggleSchoolHead(id, isSchoolHead);
-
-      setPersonnel(prev => prev.map(item => {
-        if (item.id === id) {
-          return { ...item, isSchoolHead };
-        }
-        if (isSchoolHead) {
-          return { ...item, isSchoolHead: false };
-        }
-        return item;
-      }));
-
-      showToast(isSchoolHead ? "School Head designated successfully." : "School Head designation removed.");
-    } catch (err) {
-      console.error("Failed to toggle school head:", err);
-      showAlert("Error", "Failed to update School Head: " + err.message);
-    }
+      if (isSchoolHead) {
+        return { ...item, isSchoolHead: false };
+      }
+      return item;
+    }));
+    setHasUnsavedChanges(true);
+    showToast(isSchoolHead ? "School Head designated in draft locally." : "School Head designation removed in draft locally.");
   };
 
   const addClassSection = async (gradeLevel, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
-    const res = await api.addSection({
-      school_id: schoolInfo.schoolId,
-      school_year: schoolInfo.schoolYear,
-      grade_level: gradeLevel,
-      section_name: sectionName,
-      adviser_id: advisorId || null,
-      section_type: sectionType || 'MONO GRADE',
-      advisory_minutes: advisoryMinutes,
-      hgp_minutes: hgpMinutes,
-      number_of_learners: numberOfLearners !== undefined && numberOfLearners !== null && numberOfLearners !== '' ? Number(numberOfLearners) : null
-    });
+    const localSecId = `sec-draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newSec = {
+      id: localSecId,
+      gradeLevel: gradeLevel,
+      sectionName: sectionName,
+      advisorId: advisorId ? String(advisorId) : null,
+      sectionType: sectionType || 'MONO GRADE',
+      advisoryMinutes: Number(advisoryMinutes) || 300,
+      hgpMinutes: Number(hgpMinutes) || 60,
+      numberOfLearners: numberOfLearners !== undefined && numberOfLearners !== null && numberOfLearners !== '' ? Number(numberOfLearners) : null
+    };
 
-    if (res && res.error) {
-      throw new Error(res.error);
-    }
-
-    if (res && res.id) {
-      const newSec = {
-        id: String(res.id),
-        gradeLevel: res.gradeLevel || res.grade_level || gradeLevel,
-        sectionName: res.sectionName || res.section_name || sectionName,
-        advisorId: res.advisorId ? String(res.advisorId) : (res.adviser_id ? String(res.adviser_id) : (advisorId || null)),
-        sectionType: res.sectionType || res.section_type || sectionType,
-        numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (numberOfLearners ? Number(numberOfLearners) : null)
-      };
-      setClassSections(prev => [...prev.filter(s => String(s.id) !== String(newSec.id)), newSec]);
-    } else {
-      throw new Error('Failed to create class section.');
-    }
-
+    setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === gradeLevel && s.sectionName === sectionName)), newSec]);
     setHasUnsavedChanges(true);
-    showToast('Class section added.');
+    showToast('Class section added to draft locally.');
   };
 
   const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
-    try {
-      const targetSec = classSections.find(s => String(s.id) === String(sectionId));
-      const finalLearners = numberOfLearners !== null && numberOfLearners !== undefined ? numberOfLearners : (targetSec ? targetSec.numberOfLearners : null);
-      const res = await api.updateSectionAdviser(sectionId, advisorId, advisoryMinutes, hgpMinutes, finalLearners);
-      if (res && res.id) {
-        setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
-          ...s,
-          advisorId: res.advisorId ? String(res.advisorId) : null,
-          numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (finalLearners !== null && finalLearners !== undefined ? Number(finalLearners) : s.numberOfLearners)
-        } : s));
-      }
-    } catch (err) {
-      console.error("Failed to update section:", err);
-    }
+    const finalLearners = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
+    setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
+      ...s,
+      advisorId: advisorId ? String(advisorId) : null,
+      advisoryMinutes: Number(advisoryMinutes) || 300,
+      hgpMinutes: Number(hgpMinutes) || 60,
+      numberOfLearners: finalLearners !== null ? finalLearners : s.numberOfLearners
+    } : s));
     setHasUnsavedChanges(true);
-    showToast("Section updated.");
+    showToast("Section updated in draft locally.");
   };
 
   const updateSectionLearners = async (sectionId, numberOfLearners) => {
-    try {
-      const targetSec = classSections.find(s => String(s.id) === String(sectionId));
-      const currentAdvisorId = targetSec ? targetSec.advisorId : null;
-      const res = await api.updateSectionAdviser(sectionId, currentAdvisorId, 300, 60, numberOfLearners);
-      if (res && res.id) {
-        setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
-          ...s,
-          numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (numberOfLearners !== '' && numberOfLearners !== null ? Number(numberOfLearners) : null)
-        } : s));
-      }
-    } catch (err) {
-      console.error("Failed to update section learners count:", err);
-    }
+    const finalLearners = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
+    setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
+      ...s,
+      numberOfLearners: finalLearners
+    } : s));
     setHasUnsavedChanges(true);
-    showToast("Total learners updated.");
+    showToast("Total learners updated in draft locally.");
   };
 
   const removeClassSection = async (id) => {
-    try {
-      await api.deleteSection(id);
-      setClassSections(prev => prev.filter(s => String(s.id) !== String(id)));
-    } catch (err) {
-      console.error("Failed to delete section:", err);
-    }
+    setClassSections(prev => prev.filter(s => String(s.id) !== String(id)));
     setHasUnsavedChanges(true);
-    showToast("Class section removed.");
+    showToast("Class section removed from draft locally.");
   };
 
   const addWorkloadTransfer = async (transferData) => {

@@ -7,6 +7,9 @@ async function truncateTables() {
     await client.query('BEGIN;');
 
     const tablesToTruncate = [
+      'shs_workload_transfers',
+      'shs_workload_row_dates',
+      'shs_workload_rows',
       'workload_transfers',
       'workload_row_dates',
       'workload_rows',

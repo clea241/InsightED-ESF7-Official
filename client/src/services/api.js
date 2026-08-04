@@ -458,5 +458,31 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return res.json();
+  },
+
+  // SHS Workloads
+  getShsWorkloads: async (personnelId) => {
+    const res = await fetchWithAuth(`${API_BASE}/shs-workloads/${personnelId}`);
+    return res.json();
+  },
+  saveShsWorkloads: async (personnelId, shsWorkloadRows) => {
+    const res = await fetchWithAuth(`${API_BASE}/shs-workloads/personnel/${personnelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shsWorkloadRows })
+    });
+    return res.json();
+  },
+  getShsTransfers: async (personnelId, term) => {
+    const res = await fetchWithAuth(`${API_BASE}/shs-transfers?personnelId=${personnelId || ''}&term=${term || ''}`);
+    return res.json();
+  },
+  saveShsTransfer: async (transferData) => {
+    const res = await fetchWithAuth(`${API_BASE}/shs-transfers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(transferData)
+    });
+    return res.json();
   }
 };

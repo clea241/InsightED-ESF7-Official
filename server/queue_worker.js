@@ -128,6 +128,8 @@ async function processNextJob() {
     );
 
     // 4. Clear old data
+    await client.query('DELETE FROM shs_workload_transfers WHERE school_id = $1 AND school_year = $2', [job.school_id, job.school_year]);
+    await client.query('DELETE FROM shs_workload_rows WHERE school_id = $1 AND school_year = $2', [job.school_id, job.school_year]);
     await client.query('DELETE FROM class_sections WHERE school_id = $1 AND school_year = $2', [job.school_id, job.school_year]);
     await client.query('DELETE FROM workload_transfers WHERE school_id = $1 AND school_year = $2', [job.school_id, job.school_year]);
     await client.query('DELETE FROM workload_rows WHERE school_id = $1 AND school_year = $2', [job.school_id, job.school_year]);
@@ -430,6 +432,41 @@ async function processNextJob() {
             `INSERT INTO workload_row_dates (id, workload_row_id, task_date, start_time, end_time)
              VALUES ($1, $2, $3, $4, $5)`,
             [newWkdId, newRowId, parseDate(d.date) || null, d.startTime || null, d.endTime || null]
+          );
+        }
+      }
+
+      // Insert SHS Workload Rows (per term: '1st', '2nd', '3rd') into shs_workload_rows table
+      const shsData = p.shsWorkloadRows || {};
+      for (const term of ['1st', '2nd', '3rd']) {
+        const termRows = shsData[term] || [];
+        for (const r of termRows) {
+          const secId = r.sectionId || r.section_id;
+          const mappedSecId = (secId && sectionIdMap[secId])
+            || (r.gradeLevel && r.sectionName && sectionIdMapByGradeSec[`${r.gradeLevel}_${r.sectionName}`])
+            || null;
+
+          const newWklId = generateWorkloadId();
+          await client.query(
+            `INSERT INTO shs_workload_rows (
+              id, personnel_id, school_id, school_year, term, row_type, subject, shs_category, grade_level, section_id, start_time, end_time, days, designated_by_sds
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+            [
+              newWklId,
+              targetPersonnelId,
+              job.school_id,
+              job.school_year,
+              term,
+              r.rowType || 'teaching',
+              r.subject || null,
+              r.shsCategory || null,
+              r.gradeLevel || null,
+              mappedSecId,
+              r.startTime || '07:30',
+              r.endTime || '08:30',
+              r.days || ['M', 'T', 'W', 'TH', 'F'],
+              !!(r.designatedBySds || r.designated_by_sds)
+            ]
           );
         }
       }
