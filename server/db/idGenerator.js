@@ -14,5 +14,6 @@ module.exports = {
   generateSectionId: () => generateAlphanumericId('SEC'),
   generateWorkloadId: () => generateAlphanumericId('WKL'),
   generateWorkloadDateId: () => generateAlphanumericId('WKD'),
-  generateTransferId: () => generateAlphanumericId('TRF')
+  generateTransferId: () => generateAlphanumericId('TRF'),
+  generateDesignationId: () => generateAlphanumericId('DSG')
 };

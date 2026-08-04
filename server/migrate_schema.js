@@ -154,6 +154,85 @@ async function run() {
     } catch (e) {
       console.log('ℹ️  shs_workload_row_dates migration:', e.message);
     }
+    // Create personnel_designations table & migration
+    try {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS personnel_designations (
+          id VARCHAR(50) PRIMARY KEY,
+          personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
+          school_id TEXT NOT NULL,
+          school_year TEXT NOT NULL,
+          designation_name TEXT NOT NULL,
+          grade_level TEXT,
+          learning_area TEXT,
+          track TEXT,
+          approved_by_sds BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT unique_personnel_designation UNIQUE (personnel_id, designation_name, grade_level, learning_area, track)
+        )
+      `);
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_personnel_designations_lookup ON personnel_designations (school_id, school_year, personnel_id)`);
+      console.log('✅ Created personnel_designations table and index');
+    } catch (e) {
+      console.log('ℹ️  personnel_designations creation:', e.message);
+    }
+
+    // Add designation_id column to workload_rows
+    try {
+      await db.query(`ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS designation_id VARCHAR(50) REFERENCES personnel_designations(id) ON DELETE CASCADE`);
+      console.log('✅ Added designation_id column to workload_rows');
+    } catch (e) {
+      console.log('ℹ️  workload_rows designation_id migration:', e.message);
+    }
+
+    // Backfill legacy personnel_employment.designation into personnel_designations
+    try {
+      const legacyRes = await db.query(`
+        SELECT pe.personnel_id, pe.designation, p.school_id, p.school_year 
+        FROM personnel_employment pe
+        JOIN personnel p ON pe.personnel_id = p.id
+        WHERE pe.designation IS NOT NULL AND pe.designation != ''
+      `);
+      for (const row of legacyRes.rows) {
+        const rawDesig = row.designation;
+        const desigItems = rawDesig.split(',').map(s => s.trim()).filter(Boolean);
+        for (const item of desigItems) {
+          const isApproved = item.includes('::APPROVED_SDS');
+          const cleanItem = item.replace('::APPROVED_SDS', '').trim();
+          
+          let designationName = cleanItem;
+          let gradeLevel = null;
+          let learningArea = null;
+          let track = null;
+
+          if (cleanItem.includes(' - ')) {
+            const parts = cleanItem.split(' - ').map(s => s.trim());
+            designationName = parts[0];
+            if (parts.length >= 2) gradeLevel = parts[1];
+            if (parts.length >= 3) {
+              if (['ACADEMIC', 'TECHPRO', 'SPORTS', 'ARTS'].includes(parts[2])) {
+                track = parts[2];
+              } else {
+                learningArea = parts[2];
+              }
+            }
+          }
+
+          const desigId = `DSG-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+          await db.query(`
+            INSERT INTO personnel_designations 
+              (id, personnel_id, school_id, school_year, designation_name, grade_level, learning_area, track, approved_by_sds)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (personnel_id, designation_name, grade_level, learning_area, track) 
+            DO UPDATE SET approved_by_sds = EXCLUDED.approved_by_sds, updated_at = NOW()
+          `, [desigId, row.personnel_id, row.school_id, row.school_year, designationName, gradeLevel, learningArea, track, isApproved]);
+        }
+      }
+      console.log('✅ Legacy designations backfill completed');
+    } catch (e) {
+      console.log('ℹ️  Legacy designation backfill:', e.message);
+    }
 
     console.log('\nAll migrations completed!');
   } catch (e) {

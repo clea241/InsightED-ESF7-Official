@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   useApp,
   OFFICIAL_DESIGNATIONS,
@@ -8,12 +8,48 @@ import {
 } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 
+function SdsToggle({ checked, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        background: checked ? '#DCFCE7' : '#F1F5F9',
+        border: checked ? '1px solid #86EFAC' : '1px solid #CBD5E1',
+        borderRadius: '999px',
+        padding: '3px 9px',
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        userSelect: 'none'
+      }}
+    >
+      <span
+        style={{
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          background: checked ? '#16A34A' : '#94A3B8',
+          display: 'inline-block',
+          boxShadow: checked ? '0 0 5px rgba(22, 163, 74, 0.5)' : 'none',
+          transition: 'all 0.15s ease'
+        }}
+      />
+      <span style={{ fontSize: '10px', fontWeight: '800', color: checked ? '#15803D' : '#64748B', letterSpacing: '0.3px' }}>
+        {checked ? '✓ APPROVED BY SDS' : 'APPROVE BY SDS'}
+      </span>
+    </button>
+  );
+}
+
 export default function Designations() {
-  const { personnel, setPersonnel, savePersonnelChanges, showToast } = useApp();
+  const { personnel, setPersonnel, savePersonnelChanges, schoolEdited, showToast } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState('card'); // 'card' or 'matrix'
 
   // Local state for parameterized choices per card
-  // Structure: { [designationId]: { grade: 'Grade 1', learningArea: 'English', track: 'ACADEMIC' } }
   const [cardParams, setCardParams] = useState({
     grade_level_chairperson: { grade: 'Grade 1' },
     learning_area_chairperson: { grade: 'Grade 1' },
@@ -25,6 +61,26 @@ export default function Designations() {
 
   // Active (non-draft) personnel list
   const activePersonnel = (Array.isArray(personnel) ? personnel : []).filter(p => !p.isDraft);
+
+  // Active subjects from Organized Classes
+  const activeSubjects = useMemo(() => {
+    const list = new Set();
+    if (schoolEdited?.subjects) {
+      Object.values(schoolEdited.subjects).forEach(subList => {
+        if (Array.isArray(subList)) {
+          subList.forEach(s => {
+            if (s?.name) list.add(s.name);
+          });
+        }
+      });
+    }
+    if (list.size === 0) {
+      SUBJECT_OPTIONS.forEach(s => {
+        if (s !== 'ADVISORY') list.add(s);
+      });
+    }
+    return Array.from(list);
+  }, [schoolEdited]);
 
   // Helper to get selected params for a card
   const getParams = (desigId) => {
@@ -40,7 +96,6 @@ export default function Designations() {
         [field]: value
       }
     }));
-    // Clear error on parameter change
     setConstraintErrors(prev => ({ ...prev, [desigId]: null }));
   };
 
@@ -66,27 +121,36 @@ export default function Designations() {
     return desig.name;
   };
 
-  // Helper to check assignment limit constraints
+  // Check if a person is assigned to targetKey (matching with or without ::APPROVED_SDS suffix)
+  const isAssignedToKey = (personDesignation, targetKey) => {
+    if (!personDesignation || !targetKey) return false;
+    const cleanPerson = String(personDesignation).replace('::APPROVED_SDS', '').trim().toUpperCase();
+    const cleanTarget = String(targetKey).replace('::APPROVED_SDS', '').trim().toUpperCase();
+    return cleanPerson === cleanTarget;
+  };
+
+  // Check constraint limits
   const checkConstraint = (desig, targetKey, activeAssigned) => {
     if (desig.id === 'department_head_ecp') {
       if (activeAssigned.length >= 1) {
-        const subName = targetKey.replace('DEPARTMENT HEAD - ', '');
+        const subName = targetKey.replace('DEPARTMENT HEAD - ', '').replace('::APPROVED_SDS', '');
         return `Constraint Violation: Only 1 Department Head is allowed for ${subName} based on ECP rules. Unassign the current leader first.`;
       }
     }
     return null;
   };
 
-  // Assign personnel to a serialized designation key
-  const handleAddPersonnel = async (desig, selectedPersonId) => {
+  // Assign personnel to a serialized designation key (with optional SDS approval)
+  const handleAddPersonnel = async (desig, selectedPersonId, isSdsApproved = false) => {
     if (!selectedPersonId) return;
 
-    const targetKey = getSerializedKey(desig);
-    const assignedForSubKey = activePersonnel.filter(
-      p => (p.designation || '').trim().toUpperCase() === targetKey.trim().toUpperCase()
-    );
+    let targetKey = getSerializedKey(desig);
+    if (isSdsApproved && !targetKey.endsWith('::APPROVED_SDS')) {
+      targetKey = `${targetKey}::APPROVED_SDS`;
+    }
 
-    // Check constraint before saving
+    const assignedForSubKey = activePersonnel.filter(p => isAssignedToKey(p.designation, targetKey));
+
     const violation = checkConstraint(desig, targetKey, assignedForSubKey);
     if (violation) {
       setConstraintErrors(prev => ({ ...prev, [desig.id]: violation }));
@@ -108,6 +172,26 @@ export default function Designations() {
     }
 
     showToast(`✓ Assigned ${person.firstName} ${person.lastName} as ${targetKey}`, 'success');
+  };
+
+  // Toggle SDS Approval on an assigned person
+  const handleToggleSdsApproval = async (personId, isApproved) => {
+    const person = activePersonnel.find(p => p.id === personId);
+    if (!person || !person.designation) return;
+
+    let baseKey = person.designation.replace('::APPROVED_SDS', '').trim();
+    const newDesignation = isApproved ? `${baseKey}::APPROVED_SDS` : baseKey;
+
+    const updatedPerson = { ...person, designation: newDesignation };
+    localStorage.setItem(`draft_personnel_${person.id}`, JSON.stringify(updatedPerson));
+
+    if (savePersonnelChanges) {
+      await savePersonnelChanges(person.id, updatedPerson);
+    } else {
+      setPersonnel(prev => prev.map(p => p.id === person.id ? updatedPerson : p));
+    }
+
+    showToast(isApproved ? `✓ SDS Approval marked for ${person.firstName} ${person.lastName}` : `SDS Approval removed for ${person.firstName} ${person.lastName}`, 'info');
   };
 
   // Unassign personnel from designation
@@ -143,328 +227,364 @@ export default function Designations() {
                 🏅 School Designation Management
               </h2>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--muted)' }}>
-                Assign official school designations and ancillary roles to qualified personnel with multi-assignment and ECP allocation limits.
+                Assign official school designations, SDS approval status, and manage ECP allocation limits.
               </p>
             </div>
 
-            {/* Search Box */}
-            <div style={{ position: 'relative', width: '280px' }}>
-              <input
-                type="text"
-                placeholder="Search designation or role..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px 8px 34px',
-                  borderRadius: '10px',
-                  border: '1.5px solid var(--line)',
-                  fontSize: '13px',
-                  outline: 'none'
-                }}
-              />
-              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', fontSize: '14px' }}>🔍</span>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* Card vs Matrix View Toggle */}
+              <div style={{ display: 'flex', border: '1.5px solid var(--line)', borderRadius: '10px', overflow: 'hidden', background: '#F8FAFC' }}>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('card')}
+                  style={{
+                    padding: '8px 14px',
+                    border: 'none',
+                    background: viewMode === 'card' ? '#0284C7' : 'transparent',
+                    color: viewMode === 'card' ? 'white' : '#475569',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ▦ Card View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('matrix')}
+                  style={{
+                    padding: '8px 14px',
+                    border: 'none',
+                    background: viewMode === 'matrix' ? '#0284C7' : 'transparent',
+                    color: viewMode === 'matrix' ? 'white' : '#475569',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ▤ Matrix View
+                </button>
+              </div>
+
+              {/* Search Box */}
+              <div style={{ position: 'relative', width: '240px' }}>
+                <input
+                  type="text"
+                  placeholder="Search designation..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px 8px 34px',
+                    borderRadius: '10px',
+                    border: '1.5px solid var(--line)',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', fontSize: '14px' }}>🔍</span>
+              </div>
             </div>
           </div>
 
-          {/* Grid of 13 Designations */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(440px, 1fr))', gap: '18px' }}>
-            {filteredDesignations.map((desig) => {
-              const targetKey = getSerializedKey(desig);
-              const params = getParams(desig.id);
+          {/* VIEW MODE 1: CARD VIEW */}
+          {viewMode === 'card' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(440px, 1fr))', gap: '18px' }}>
+              {filteredDesignations.map((desig) => {
+                const targetKey = getSerializedKey(desig);
+                const params = getParams(desig.id);
 
-              // Find assigned personnel for this targetKey
-              const assignedPersonnel = activePersonnel.filter(
-                p => (p.designation || '').trim().toUpperCase() === targetKey.trim().toUpperCase()
-              );
+                const assignedPersonnel = activePersonnel.filter(p => isAssignedToKey(p.designation, targetKey));
+                const availablePersonnel = activePersonnel.filter(p => !isAssignedToKey(p.designation, targetKey));
 
-              // Available personnel to assign (not already assigned to targetKey)
-              const availablePersonnel = activePersonnel.filter(
-                p => (p.designation || '').trim().toUpperCase() !== targetKey.trim().toUpperCase()
-              );
+                const isDepartmentHead = desig.id === 'department_head_ecp';
+                const isGrade4to10 = isDepartmentHead && ['Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'].includes(params.grade);
+                const isSHS = isDepartmentHead && ['Grade 11', 'Grade 12'].includes(params.grade);
 
-              const isDepartmentHead = desig.id === 'department_head_ecp';
-              const isGrade4to10 = isDepartmentHead && ['Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'].includes(params.grade);
-              const isSHS = isDepartmentHead && ['Grade 11', 'Grade 12'].includes(params.grade);
+                const constraintError = constraintErrors[desig.id];
 
-              const constraintError = constraintErrors[desig.id];
+                return (
+                  <div
+                    key={desig.id}
+                    style={{
+                      background: '#FFFFFF',
+                      border: assignedPersonnel.length > 0 ? '1.5px solid #0284C7' : '1.5px solid var(--line)',
+                      borderRadius: '14px',
+                      padding: '20px',
+                      boxShadow: assignedPersonnel.length > 0 ? '0 4px 14px rgba(2, 132, 199, 0.08)' : '0 1px 3px rgba(0,0,0,0.05)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
+                          {desig.name}
+                        </h3>
+                        {assignedPersonnel.length > 0 ? (
+                          <span style={{ padding: '3px 10px', borderRadius: '999px', background: '#EFF6FF', color: '#0284C7', fontSize: '11px', fontWeight: '800', border: '1px solid #BAE6FD' }}>
+                            {assignedPersonnel.length} Assigned
+                          </span>
+                        ) : (
+                          <span style={{ padding: '3px 10px', borderRadius: '999px', background: '#F8FAFC', color: '#94A3B8', fontSize: '11px', fontWeight: '700', border: '1px solid #E2E8F0' }}>
+                            Vacant
+                          </span>
+                        )}
+                      </div>
 
-              return (
-                <div
-                  key={desig.id}
-                  style={{
-                    background: '#FFFFFF',
-                    border: assignedPersonnel.length > 0 ? '1.5px solid #0284C7' : '1.5px solid var(--line)',
-                    borderRadius: '14px',
-                    padding: '20px',
-                    boxShadow: assignedPersonnel.length > 0 ? '0 4px 14px rgba(2, 132, 199, 0.08)' : '0 1px 3px rgba(0,0,0,0.05)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div>
-                    {/* Role Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
-                        {desig.name}
-                      </h3>
-                      {assignedPersonnel.length > 0 ? (
-                        <span style={{
-                          padding: '3px 10px',
-                          borderRadius: '999px',
-                          background: '#EFF6FF',
-                          color: '#0284C7',
-                          fontSize: '11px',
-                          fontWeight: '800',
-                          border: '1px solid #BAE6FD'
-                        }}>
-                          {assignedPersonnel.length} Assigned
-                        </span>
-                      ) : (
-                        <span style={{
-                          padding: '3px 10px',
-                          borderRadius: '999px',
-                          background: '#F8FAFC',
-                          color: '#94A3B8',
-                          fontSize: '11px',
-                          fontWeight: '700',
-                          border: '1px solid #E2E8F0'
-                        }}>
-                          Vacant
-                        </span>
-                      )}
-                    </div>
+                      <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
+                        {desig.description}
+                      </p>
 
-                    <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
-                      {desig.description}
-                    </p>
-
-                    {/* Sub-categorization Dropdowns for Parameterized Designations */}
-                    {desig.parameterized && (
-                      <div style={{
-                        background: '#F0F9FF',
-                        border: '1.5px solid #BAE6FD',
-                        borderRadius: '12px',
-                        padding: '12px',
-                        marginBottom: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '10px'
-                      }}>
-                        <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase' }}>
-                          ⚙️ Sub-Categorization & Limits
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: isGrade4to10 || isSHS ? '1fr 1fr' : '1fr', gap: '8px' }}>
-                          {/* Grade Level Selector */}
-                          <div>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>
-                              Grade Level
-                            </label>
-                            <select
-                              value={params.grade}
-                              onChange={(e) => handleParamChange(desig.id, 'grade', e.target.value)}
-                              style={{
-                                width: '100%',
-                                padding: '8px',
-                                borderRadius: '8px',
-                                border: '1px solid #7DD3FC',
-                                fontSize: '13px',
-                                background: 'white',
-                                color: '#0F172A',
-                                fontWeight: '600'
-                              }}
-                            >
-                              {DESIGNATION_GRADE_LEVELS.map(g => (
-                                <option key={g} value={g}>{g}</option>
-                              ))}
-                            </select>
+                      {/* Sub-categorization Dropdowns */}
+                      {desig.parameterized && (
+                        <div style={{ background: '#F0F9FF', border: '1.5px solid #BAE6FD', borderRadius: '12px', padding: '12px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase' }}>
+                            ⚙️ Sub-Categorization & Limits
                           </div>
 
-                          {/* Learning Area Selector for KS 2 & 3 */}
-                          {isGrade4to10 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: isGrade4to10 || isSHS ? '1fr 1fr' : '1fr', gap: '8px' }}>
                             <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>
-                                Learning Area
-                              </label>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>Grade Level</label>
                               <select
-                                value={params.learningArea}
-                                onChange={(e) => handleParamChange(desig.id, 'learningArea', e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  padding: '8px',
-                                  borderRadius: '8px',
-                                  border: '1px solid #7DD3FC',
-                                  fontSize: '13px',
-                                  background: 'white',
-                                  color: '#0F172A',
-                                  fontWeight: '600'
-                                }}
+                                value={params.grade}
+                                onChange={(e) => handleParamChange(desig.id, 'grade', e.target.value)}
+                                style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #7DD3FC', fontSize: '13px', background: 'white', color: '#0F172A', fontWeight: '600' }}
                               >
-                                {SUBJECT_OPTIONS.filter(s => s !== 'ADVISORY').map(s => (
-                                  <option key={s} value={s}>{s}</option>
+                                {DESIGNATION_GRADE_LEVELS.map(g => (
+                                  <option key={g} value={g}>{g}</option>
                                 ))}
                               </select>
                             </div>
-                          )}
 
-                          {/* Track Selector for SHS */}
-                          {isSHS && (
-                            <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>
-                                Track
-                              </label>
-                              <select
-                                value={params.track}
-                                onChange={(e) => handleParamChange(desig.id, 'track', e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  padding: '8px',
-                                  borderRadius: '8px',
-                                  border: '1px solid #7DD3FC',
-                                  fontSize: '13px',
-                                  background: 'white',
-                                  color: '#0F172A',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                {SHS_TRACKS.map(t => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Active Target Key Display & Limit Indicator */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#0284C7', fontWeight: '700', borderTop: '1px dashed #7DD3FC', paddingTop: '8px', marginTop: '2px' }}>
-                          <span>Target: <code style={{ background: '#E0F2FE', padding: '2px 6px', borderRadius: '4px', color: '#0369A1' }}>{targetKey}</code></span>
-                          <span>{isDepartmentHead ? 'Max: 1 Person' : 'Unlimited Personnel'}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Constraint Error Alert */}
-                    {constraintError && (
-                      <div style={{
-                        padding: '10px 12px',
-                        background: '#FEF2F2',
-                        border: '1.5px solid #FCA5A5',
-                        borderRadius: '10px',
-                        color: '#991B1B',
-                        fontSize: '12px',
-                        fontWeight: '700',
-                        marginBottom: '14px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '8px'
-                      }}>
-                        <span>⚠️ {constraintError}</span>
-                        <button
-                          type="button"
-                          onClick={() => setConstraintErrors(prev => ({ ...prev, [desig.id]: null }))}
-                          style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontWeight: 'bold' }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Assigned Personnel List (Multi-Select Pill Badges) */}
-                    <div style={{ marginBottom: '14px' }}>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
-                        ASSIGNED PERSONNEL ({assignedPersonnel.length})
-                      </label>
-
-                      {assignedPersonnel.length === 0 ? (
-                        <div style={{ padding: '10px 12px', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '10px', fontSize: '12px', color: '#94A3B8', textAlign: 'center' }}>
-                          No personnel assigned to {targetKey} yet.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {assignedPersonnel.map(person => (
-                            <div
-                              key={person.id}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                background: '#F8FAFC',
-                                padding: '8px 12px',
-                                borderRadius: '10px',
-                                border: '1px solid #E2E8F0'
-                              }}
-                            >
-                              <div style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '50%',
-                                background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-                                color: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: '800',
-                                fontSize: '12px'
-                              }}>
-                                {`${(person.firstName || '')[0] || ''}${(person.lastName || '')[0] || ''}`.toUpperCase()}
+                            {isGrade4to10 && (
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>Learning Area</label>
+                                <select
+                                  value={params.learningArea}
+                                  onChange={(e) => handleParamChange(desig.id, 'learningArea', e.target.value)}
+                                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #7DD3FC', fontSize: '13px', background: 'white', color: '#0F172A', fontWeight: '600' }}
+                                >
+                                  {activeSubjects.map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                  ))}
+                                </select>
                               </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {person.firstName} {person.lastName}
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#64748B' }}>
-                                  {person.position || 'Teacher'}
-                                </div>
+                            )}
+
+                            {isSHS && (
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>Track</label>
+                                <select
+                                  value={params.track}
+                                  onChange={(e) => handleParamChange(desig.id, 'track', e.target.value)}
+                                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #7DD3FC', fontSize: '13px', background: 'white', color: '#0F172A', fontWeight: '600' }}
+                                >
+                                  {SHS_TRACKS.map(t => (
+                                    <option key={t} value={t}>{t}</option>
+                                  ))}
+                                </select>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePersonnel(person.id, targetKey)}
-                                style={{
-                                  background: '#FEE2E2',
-                                  color: '#EF4444',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  padding: '4px 8px',
-                                  fontSize: '11px',
-                                  fontWeight: '700',
-                                  cursor: 'pointer'
-                                }}
-                                title="Unassign this personnel"
-                              >
-                                Remove ✕
-                              </button>
-                            </div>
-                          ))}
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#0284C7', fontWeight: '700', borderTop: '1px dashed #7DD3FC', paddingTop: '8px' }}>
+                            <span>Target: <code style={{ background: '#E0F2FE', padding: '2px 6px', borderRadius: '4px' }}>{targetKey}</code></span>
+                            <span>{isDepartmentHead ? 'Max: 1 Person' : 'Unlimited'}</span>
+                          </div>
                         </div>
                       )}
+
+                      {/* Constraint Error Alert */}
+                      {constraintError && (
+                        <div style={{ padding: '10px 12px', background: '#FEF2F2', border: '1.5px solid #FCA5A5', borderRadius: '10px', color: '#991B1B', fontSize: '12px', fontWeight: '700', marginBottom: '14px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>⚠️ {constraintError}</span>
+                          <button type="button" onClick={() => setConstraintErrors(prev => ({ ...prev, [desig.id]: null }))} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer' }}>✕</button>
+                        </div>
+                      )}
+
+                      {/* Assigned Personnel List */}
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '8px' }}>
+                          ASSIGNED PERSONNEL ({assignedPersonnel.length})
+                        </label>
+
+                        {assignedPersonnel.length === 0 ? (
+                          <div style={{ padding: '10px 12px', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '10px', fontSize: '12px', color: '#94A3B8', textAlign: 'center' }}>
+                            No personnel assigned to {targetKey} yet.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {assignedPersonnel.map(person => {
+                              const isSdsApproved = (person.designation || '').includes('::APPROVED_SDS');
+
+                              return (
+                                <div key={person.id} style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#0284C7', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '12px' }}>
+                                      {`${(person.firstName || '')[0] || ''}${(person.lastName || '')[0] || ''}`.toUpperCase()}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>
+                                        {person.firstName} {person.lastName}
+                                      </div>
+                                      <div style={{ fontSize: '11px', color: '#64748B' }}>{person.position || 'Teacher'}</div>
+                                    </div>
+                                    <button type="button" onClick={() => handleRemovePersonnel(person.id, targetKey)} style={{ background: '#FEE2E2', color: '#EF4444', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
+                                      Remove ✕
+                                    </button>
+                                  </div>
+
+                                  {/* SDS Approval Toggle */}
+                                  <div style={{ borderTop: '1px dashed #CBD5E1', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <SdsToggle
+                                      checked={isSdsApproved}
+                                      onChange={(val) => handleToggleSdsApproval(person.id, val)}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 'auto' }}>
+                      <SearchableDropdown
+                        options={availablePersonnel.map(p => `${p.firstName} ${p.lastName} (${p.position || 'Teacher'})`)}
+                        value=""
+                        onChange={(val) => {
+                          const person = availablePersonnel.find(p => `${p.firstName} ${p.lastName} (${p.position || 'Teacher'})` === val);
+                          if (person) handleAddPersonnel(desig, person.id);
+                        }}
+                        placeholder="Select school personnel to add..."
+                      />
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
 
-                  {/* Add Personnel Dropdown */}
-                  <div style={{ marginTop: 'auto' }}>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>
-                      ADD PERSONNEL TO DESIGNATION
-                    </label>
-                    <SearchableDropdown
-                      options={availablePersonnel.map(p => `${p.firstName} ${p.lastName} (${p.position || 'Teacher'})`)}
-                      value=""
-                      onChange={(val) => {
-                        const person = availablePersonnel.find(p => `${p.firstName} ${p.lastName} (${p.position || 'Teacher'})` === val);
-                        if (person) {
-                          handleAddPersonnel(desig, person.id);
-                        }
-                      }}
-                      placeholder="Select school personnel to add..."
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* VIEW MODE 2: MATRIX VIEW */}
+          {viewMode === 'matrix' && (
+            <div style={{ overflowX: 'auto', border: '1.5px solid var(--line)', borderRadius: '14px', background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid var(--line)' }}>
+                    <th style={{ padding: '12px 16px', fontWeight: '800', color: 'var(--navy)' }}>Designation Category / Name</th>
+                    <th style={{ padding: '12px 16px', fontWeight: '800', color: 'var(--navy)', width: '320px' }}>Assigned Personnel & SDS Approval</th>
+                    <th style={{ padding: '12px 16px', fontWeight: '800', color: 'var(--navy)' }}>Sub-Options (Grade / Subject / Track)</th>
+                    <th style={{ padding: '12px 16px', fontWeight: '800', color: 'var(--navy)', minWidth: '220px' }}>Add Personnel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDesignations.map((desig, idx) => {
+                    const targetKey = getSerializedKey(desig);
+                    const params = getParams(desig.id);
+
+                    const assignedPersonnel = activePersonnel.filter(p => isAssignedToKey(p.designation, targetKey));
+                    const availablePersonnel = activePersonnel.filter(p => !isAssignedToKey(p.designation, targetKey));
+
+                    const isDepartmentHead = desig.id === 'department_head_ecp';
+                    const isGrade4to10 = isDepartmentHead && ['Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'].includes(params.grade);
+                    const isSHS = isDepartmentHead && ['Grade 11', 'Grade 12'].includes(params.grade);
+
+                    return (
+                      <tr key={desig.id} style={{ borderBottom: '1px solid var(--line)', background: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA' }}>
+                        <td style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                          <div style={{ fontWeight: '800', color: 'var(--navy)', fontSize: '13px' }}>{desig.name}</div>
+                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>{desig.description}</div>
+                          <code style={{ display: 'inline-block', background: '#E0F2FE', padding: '2px 6px', borderRadius: '4px', color: '#0369A1', fontSize: '10px', marginTop: '6px' }}>
+                            {targetKey}
+                          </code>
+                        </td>
+
+                        <td style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                          {assignedPersonnel.length === 0 ? (
+                            <span style={{ padding: '3px 8px', borderRadius: '999px', background: '#FFFBEB', color: '#B45309', fontSize: '11px', fontWeight: '700', border: '1px solid #FDE68A' }}>
+                              ⚪ Vacant
+                            </span>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {assignedPersonnel.map(person => {
+                                const isSdsApproved = (person.designation || '').includes('::APPROVED_SDS');
+
+                                return (
+                                  <div key={person.id} style={{ background: '#EFF6FF', border: '1px solid #BAE6FD', padding: '8px', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <span style={{ fontWeight: '800', color: '#0369A1', fontSize: '12px' }}>
+                                        👤 {person.firstName} {person.lastName}
+                                      </span>
+                                      <button type="button" onClick={() => handleRemovePersonnel(person.id, targetKey)} style={{ background: '#FEE2E2', color: '#EF4444', border: 'none', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }}>
+                                        ✕
+                                      </button>
+                                    </div>
+                                    <div style={{ marginTop: '6px' }}>
+                                      <SdsToggle
+                                        checked={isSdsApproved}
+                                        onChange={(val) => handleToggleSdsApproval(person.id, val)}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                          {desig.parameterized ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <div>
+                                <label style={{ fontSize: '10px', fontWeight: '800', color: '#475569', display: 'block' }}>Grade Level</label>
+                                <select value={params.grade} onChange={(e) => handleParamChange(desig.id, 'grade', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #7DD3FC', fontSize: '12px' }}>
+                                  {DESIGNATION_GRADE_LEVELS.map(g => <option key={g} value={g}>{g}</option>)}
+                                </select>
+                              </div>
+                              {isGrade4to10 && (
+                                <div>
+                                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#475569', display: 'block' }}>Learning Area</label>
+                                  <select value={params.learningArea} onChange={(e) => handleParamChange(desig.id, 'learningArea', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #7DD3FC', fontSize: '12px' }}>
+                                    {activeSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                </div>
+                              )}
+                              {isSHS && (
+                                <div>
+                                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#475569', display: 'block' }}>Track</label>
+                                  <select value={params.track} onChange={(e) => handleParamChange(desig.id, 'track', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid #7DD3FC', fontSize: '12px' }}>
+                                    {SHS_TRACKS.map(t => <option key={t} value={t}>{t}</option>)}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>N/A (Standard Role)</span>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                          <SearchableDropdown
+                            options={availablePersonnel.map(p => `${p.firstName} ${p.lastName} (${p.position || 'Teacher'})`)}
+                            value=""
+                            onChange={(val) => {
+                              const p = availablePersonnel.find(person => `${person.firstName} ${person.lastName} (${person.position || 'Teacher'})` === val);
+                              if (p) handleAddPersonnel(desig, p.id);
+                            }}
+                            placeholder="+ Add personnel..."
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </article>
     </section>

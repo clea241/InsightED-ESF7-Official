@@ -5362,15 +5362,26 @@ export default function Workload() {
                     )}
 
                     {/* Workload KPIs */}
-                    <div className="workload-kpis">
-                      <div className="kpi">
-                        <span>Total Teaching Load</span>
-                        <strong>{weeklyTeachingHours} hrs</strong>
-                        {coverageTeachingHours > 0 && <small style={{ color: 'var(--blue)', fontSize: '10px', display: 'block', marginTop: '2px' }}>(includes {coverageTeachingHours.toFixed(1)}h coverage)</small>}
-                      </div>
-                      <div className="kpi">
-                        <span>Average per Day</span>
-                        <strong>{dailyAvgTeachingHours} hrs</strong>
+                    <div className="workload-kpis" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                      <div
+                        className="kpi"
+                        style={{
+                          background: Number(dailyAvgTeachingHours) === 0 ? '#FFFFFF' : Number(dailyAvgTeachingHours) <= 4 ? '#DCFCE7' : Number(dailyAvgTeachingHours) <= 6 ? '#FFEDD5' : '#FEE2E2',
+                          border: Number(dailyAvgTeachingHours) === 0 ? '1.5px solid #E2E8F0' : Number(dailyAvgTeachingHours) <= 4 ? '1.5px solid #86EFAC' : Number(dailyAvgTeachingHours) <= 6 ? '1.5px solid #FDBA74' : '1.5px solid #FCA5A5',
+                          borderRadius: '12px',
+                          padding: '12px 16px',
+                          color: Number(dailyAvgTeachingHours) === 0 ? 'var(--navy)' : Number(dailyAvgTeachingHours) <= 4 ? '#15803D' : Number(dailyAvgTeachingHours) <= 6 ? '#C2410C' : '#B91C1C'
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', lineHeight: '1.3' }}>
+                          Teaching Workload Total Teaching Load per day (MTWThF)
+                        </span>
+                        <strong style={{ fontSize: '20px', fontWeight: '800', display: 'block', marginTop: '4px' }}>
+                          {dailyAvgTeachingHours} hrs/day
+                        </strong>
+                        <small style={{ fontSize: '11px', fontWeight: '700', display: 'block', marginTop: '2px' }}>
+                          Weekly Total: {weeklyTeachingHours} hrs
+                        </small>
                       </div>
                       <div className="kpi">
                         <span>Overload per Day</span>
@@ -6236,6 +6247,21 @@ export default function Workload() {
                               + Add task
                             </button>
                           </div>
+
+                          {currentPerson.designation && currentPerson.designation.includes('::APPROVED_SDS') && (
+                            <div style={{ background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: '10px', padding: '10px 14px', margin: '10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '18px' }}>🔒</span>
+                              <div>
+                                <div style={{ fontSize: '12px', fontWeight: '800', color: '#15803D' }}>
+                                  Auto-Synced SDS Designation: {currentPerson.designation.replace('::APPROVED_SDS', '')}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#166534' }}>
+                                  Automatically designated by Schools Division Superintendent. Manual duplicate entries are locked.
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="multi-task-rows">
                             {(currentPerson.teachingRelatedRows || []).map((row, idx) => (
                               <div key={idx} className="multi-task-row teaching-related-layout" style={{ alignItems: 'flex-start' }}>

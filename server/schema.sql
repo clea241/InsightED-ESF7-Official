@@ -133,7 +133,25 @@ CREATE TABLE IF NOT EXISTS class_sections (
     CONSTRAINT uq_section UNIQUE (school_id, school_year, grade_level, section_name)
 );
 
--- 7. Workload Rows Table
+-- 7. Personnel Designations Table
+CREATE TABLE IF NOT EXISTS personnel_designations (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    designation_name TEXT NOT NULL,
+    grade_level TEXT,
+    learning_area TEXT,
+    track TEXT,
+    approved_by_sds BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_personnel_designation UNIQUE (personnel_id, designation_name, grade_level, learning_area, track)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personnel_designations_lookup ON personnel_designations (school_id, school_year, personnel_id);
+
+-- 8. Workload Rows Table
 CREATE TABLE IF NOT EXISTS workload_rows (
     id VARCHAR(50) PRIMARY KEY,
     personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
@@ -144,6 +162,7 @@ CREATE TABLE IF NOT EXISTS workload_rows (
     task TEXT,
     grade_level TEXT,
     section_id VARCHAR(50) REFERENCES class_sections (id) ON DELETE CASCADE,
+    designation_id VARCHAR(50) REFERENCES personnel_designations (id) ON DELETE CASCADE,
     start_time VARCHAR(20),
     end_time VARCHAR(20),
     days TEXT[] NOT NULL DEFAULT '{}',

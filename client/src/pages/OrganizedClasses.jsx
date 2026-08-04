@@ -4,9 +4,7 @@ import { useApp } from '../context/AppContext';
 const MASTER_SUBJECTS_CATALOG = {
   Elementary: {
     Kinder: [
-      'KINDER BLOCKS OF TIME', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
-      'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
-      'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+      'KINDER BLOCKS OF TIME'
     ],
     'Grade 1': [
       'LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'MATHEMATICS', 'GMRC',
@@ -275,9 +273,7 @@ const MASTER_SUBJECTS_CATALOG = {
 
 const GRADE_SUBJECT_MAP = {
   Kinder: [
-    'KINDER BLOCKS OF TIME', 'SPED MODIFIED SUBJECTS', 'IP RELATED SUBJECT',
-    'MADRASAH SUBJECTS', 'ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE',
-    'REMEDIATION', 'REMEDIAL/ENHANCEMENT CLASS'
+    'KINDER BLOCKS OF TIME'
   ],
   'Grade 1': [
     'LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'MATHEMATICS', 'GMRC',
@@ -324,6 +320,32 @@ export default function OrganizedClasses() {
   const [isMultigrade, setIsMultigrade] = useState(false);
   const [selectedGrades, setSelectedGrades] = useState([]);
   const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'list'
+  const [isAralModalOpen, setIsAralModalOpen] = useState(false);
+  const [aralBasis, setAralBasis] = useState('grade');
+  const [aralGrade, setAralGrade] = useState('Grade 3');
+  const [aralLearners, setAralLearners] = useState(15);
+  const [aralTutorId, setAralTutorId] = useState('');
+
+  const activePersonnel = (Array.isArray(personnel) ? personnel : []).filter(p => !p.isDraft);
+
+  const handleAralSubmit = (e) => {
+    e.preventDefault();
+    if (!aralTutorId) {
+      if (showAlert) showAlert("Tutor Required", "Please select a section tutor for the ARAL section.");
+      return;
+    }
+    const sectionType = aralBasis === 'grade' ? 'ARAL_GRADE' : 'ARAL_ASSESSMENT';
+    const sectionName = `ARAL (${aralBasis === 'grade' ? 'Grade-Level' : 'Assessment Profile'}) - ${aralGrade}`;
+    addClassSection({
+      gradeLevel: aralGrade,
+      sectionName,
+      adviserId: aralTutorId,
+      sectionType,
+      numberOfLearners: Number(aralLearners) || 0
+    });
+    setIsAralModalOpen(false);
+    setAralTutorId('');
+  };
 
   const cleanSubjectConfig = (cfg) => {
     const isRestricted = (name) => {
@@ -684,13 +706,23 @@ export default function OrganizedClasses() {
               <h2>Organized Classes Setup</h2>
               <p className="subtext">Configure curriculum-level sections and assign class advisers for the current school year.</p>
             </div>
-            <button 
-              className="btn" 
-              onClick={() => setIsModalOpen(true)}
-              style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white' }}
-            >
-              + Add Section
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                className="btn" 
+                onClick={() => setIsModalOpen(true)}
+                style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white' }}
+              >
+                + Add Regular Section
+              </button>
+              <button 
+                type="button"
+                className="btn" 
+                onClick={() => setIsAralModalOpen(true)}
+                style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '8px', padding: '0 14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                + Add ARAL Section
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: '12px', margin: '20px 0', alignItems: 'center' }}>
@@ -1446,6 +1478,63 @@ export default function OrganizedClasses() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button type="button" className="btn secondary" onClick={() => setIsSubjectModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn" style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white' }}>+ Add Subject</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ARAL Section Modal */}
+      {isAralModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: '16px', padding: '24px', width: '480px', maxWidth: '90vw', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>➕ Add ARAL Section</h3>
+              <button type="button" onClick={() => setIsAralModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleAralSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '6px' }}>ARAL Basis</label>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input type="radio" name="aralBasis" value="grade" checked={aralBasis === 'grade'} onChange={() => setAralBasis('grade')} />
+                    (1) Grade Level
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input type="radio" name="aralBasis" value="assessment" checked={aralBasis === 'assessment'} onChange={() => setAralBasis('assessment')} />
+                    (2) Assessment Profile
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>Grade Level</label>
+                <select value={aralGrade} onChange={(e) => setAralGrade(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px' }}>
+                  {['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>Number of ARAL Learners</label>
+                <input type="number" min="1" required value={aralLearners} onChange={(e) => setAralLearners(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', boxSizing: 'border-box' }} />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>Section Tutor *</label>
+                <select value={aralTutorId} onChange={(e) => setAralTutorId(e.target.value)} required style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px' }}>
+                  <option value="">Select tutor personnel...</option>
+                  {activePersonnel.map(p => (
+                    <option key={p.id} value={p.id}>{p.firstName} {p.lastName} ({p.position || 'Tutor'})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+                <button type="button" onClick={() => setIsAralModalOpen(false)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', background: 'white', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
+                <button type="submit" style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#16A34A', color: 'white', fontWeight: '800', cursor: 'pointer', fontSize: '13px' }}>Create ARAL Section</button>
               </div>
             </form>
           </div>
