@@ -30,6 +30,8 @@ router.get('/:personnel_id', async (req, res) => {
       startTime: r.start_time ? r.start_time.substring(0, 5) : null,
       endTime: r.end_time ? r.end_time.substring(0, 5) : null,
       days: r.days || [],
+      designated_by_sds: !!r.designated_by_sds,
+      designatedBySds: !!r.designated_by_sds,
       minutes_per_week: (r.subject && (r.subject.includes('Advisory') || r.subject === 'ADVISORY')) ? 240 : 60
     }));
 
@@ -41,7 +43,8 @@ router.get('/:personnel_id', async (req, res) => {
 
 // Add a workload row (teaching, teaching-related, or administrative)
 router.post('/', async (req, res) => {
-  const { personnel_id, school_id, school_year, row_type, subject, remediation_subject, task, grade_level, section_id, days } = req.body;
+  const { personnel_id, school_id, school_year, row_type, subject, remediation_subject, task, grade_level, section_id, days, designatedBySds, designated_by_sds } = req.body;
+  const isSds = !!(designatedBySds || designated_by_sds);
   const start_time = req.body.start_time || req.body.startTime || null;
   const end_time = req.body.end_time || req.body.endTime || null;
   try {
@@ -73,9 +76,9 @@ router.post('/', async (req, res) => {
 
     const workloadId = generateWorkloadId();
     const result = await db.query(
-      `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, remediation_subject, task, grade_level, section_id, start_time, end_time, days)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-      [workloadId, personnel_id, school_id || '123456', school_year || '2026-2027', row_type, subject || null, remediation_subject || null, task || null, grade_level || null, section_id || null, start_time, end_time, days || []]
+      `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, remediation_subject, task, grade_level, section_id, start_time, end_time, days, designated_by_sds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+      [workloadId, personnel_id, school_id || '123456', school_year || '2026-2027', row_type, subject || null, remediation_subject || null, task || null, grade_level || null, section_id || null, start_time, end_time, days || [], isSds]
     );
     const row = result.rows[0];
     res.status(201).json({
@@ -87,7 +90,8 @@ router.post('/', async (req, res) => {
       sectionId: row.section_id || '',
       startTime: row.start_time ? row.start_time.substring(0, 5) : '',
       endTime: row.end_time ? row.end_time.substring(0, 5) : '',
-      days: row.days
+      days: row.days,
+      designatedBySds: !!row.designated_by_sds
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -121,10 +125,11 @@ router.put('/personnel/:personnel_id', async (req, res) => {
     // Insert teaching rows
     for (const r of workloadRows || []) {
       const workloadId = generateWorkloadId();
+      const isSds = !!(r.designatedBySds || r.designated_by_sds);
       const result = await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, remediation_subject, grade_level, section_id, start_time, end_time, days)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-        [workloadId, personnel_id, school_id, school_year, 'teaching', r.subject, r.remediationSubject || null, r.gradeLevel, r.sectionId || null, r.startTime || null, r.endTime || null, r.days || []]
+        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, remediation_subject, grade_level, section_id, start_time, end_time, days, designated_by_sds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+        [workloadId, personnel_id, school_id, school_year, 'teaching', r.subject, r.remediationSubject || null, r.gradeLevel, r.sectionId || null, r.startTime || null, r.endTime || null, r.days || [], isSds]
       );
       inserted.push(result.rows[0]);
     }
@@ -132,10 +137,11 @@ router.put('/personnel/:personnel_id', async (req, res) => {
     // Insert teaching-related rows
     for (const r of teachingRelatedRows || []) {
       const workloadId = generateWorkloadId();
+      const isSds = !!(r.designatedBySds || r.designated_by_sds);
       const result = await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, task)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [workloadId, personnel_id, school_id, school_year, 'teaching-related', r.task]
+        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, task, designated_by_sds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [workloadId, personnel_id, school_id, school_year, 'teaching-related', r.task, isSds]
       );
       const rowId = result.rows[0].id;
       for (const d of r.dates || []) {
@@ -150,10 +156,11 @@ router.put('/personnel/:personnel_id', async (req, res) => {
     // Insert administrative rows
     for (const r of administrativeRows || []) {
       const workloadId = generateWorkloadId();
+      const isSds = !!(r.designatedBySds || r.designated_by_sds);
       const result = await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, task)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [workloadId, personnel_id, school_id, school_year, 'administrative', r.task]
+        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, task, designated_by_sds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [workloadId, personnel_id, school_id, school_year, 'administrative', r.task, isSds]
       );
       const rowId = result.rows[0].id;
       for (const d of r.dates || []) {

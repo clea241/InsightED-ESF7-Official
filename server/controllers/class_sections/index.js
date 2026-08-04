@@ -74,7 +74,13 @@ router.post('/', async (req, res) => {
     const newSecId = generateSectionId();
     const result = await client.query(
       `INSERT INTO class_sections (id, school_id, school_year, grade_level, section_name, adviser_id, section_type, number_of_learners)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (school_id, school_year, grade_level, section_name)
+       DO UPDATE SET adviser_id = COALESCE(EXCLUDED.adviser_id, class_sections.adviser_id),
+                     section_type = EXCLUDED.section_type,
+                     number_of_learners = COALESCE(EXCLUDED.number_of_learners, class_sections.number_of_learners),
+                     updated_at = NOW()
+       RETURNING *`,
       [newSecId, school_id || '123456', school_year || '2026-2027', grade_level, section_name, validAdvisorId, section_type || 'MONO GRADE', targetLearners]
     );
 

@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS workload_rows (
     start_time VARCHAR(20),
     end_time VARCHAR(20),
     days TEXT[] NOT NULL DEFAULT '{}',
+    designated_by_sds BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -256,4 +257,36 @@ CREATE TABLE IF NOT EXISTS work_immersion_minutes (
     UNIQUE(personnel_id, school_year, month, day)
 );
 
+-- 16. Personnel Allowances & Financial Incentives Table (Boolean Flags)
+CREATE TABLE IF NOT EXISTS personnel_allowances (
+    id SERIAL PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    school_year VARCHAR(20) NOT NULL DEFAULT 'SY 26-27',
+    pera BOOLEAN DEFAULT FALSE,
+    uniform BOOLEAN DEFAULT FALSE,
+    supplies BOOLEAN DEFAULT FALSE,
+    medical BOOLEAN DEFAULT FALSE,
+    hardship BOOLEAN DEFAULT FALSE,
+    overload BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(personnel_id, school_year)
+);
+
+-- 17. Work Immersion Schedules Table (Daily Start/End Times & Overload Integration)
+CREATE TABLE IF NOT EXISTS work_immersion_schedules (
+    id SERIAL PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL DEFAULT '123456',
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    schedule_date DATE NOT NULL,
+    start_time VARCHAR(20) NOT NULL,
+    end_time VARCHAR(20) NOT NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(personnel_id, school_year, schedule_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_immersion_personnel_sy ON work_immersion_schedules (personnel_id, school_year);
 

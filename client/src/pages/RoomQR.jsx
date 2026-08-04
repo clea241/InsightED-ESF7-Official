@@ -25,6 +25,23 @@ export default function RoomQR() {
 
   // Search state for passcodes
   const [passcodeSearch, setPasscodeSearch] = useState('');
+  const [copiedCodeId, setCopiedCodeId] = useState(null);
+
+  // Auto-generate missing passcodes for personnel who don't have one yet
+  useEffect(() => {
+    if (Array.isArray(personnel) && personnel.length > 0) {
+      personnel.forEach(p => {
+        if (!p.profilingCode && !p.profiling_code && !p.passcode) {
+          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+          let code = '';
+          for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          updatePersonnelInfo(p.id, { profilingCode: code });
+        }
+      });
+    }
+  }, [personnel]);
 
   const getPortalUrl = (roomName) => {
     const origin = window.location.origin;
@@ -546,61 +563,123 @@ export default function RoomQR() {
                 Teachers must enter their unique 6-digit passcode to unlock their profiling forms. Distribute these codes to your staff.
               </p>
               
-              <input
-                type="text"
-                placeholder="Search teacher by name..."
-                value={passcodeSearch}
-                onChange={(e) => setPasscodeSearch(e.target.value)}
-                style={{ minHeight: '36px', padding: '6px 12px', fontSize: '13px' }}
-              />
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Search teacher by name..."
+                  value={passcodeSearch}
+                  onChange={(e) => setPasscodeSearch(e.target.value)}
+                  style={{ flex: 1, minHeight: '36px', padding: '6px 12px', fontSize: '13px' }}
+                />
+                <button
+                  type="button"
+                  className="btn secondary"
+                  style={{ minHeight: '36px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  onClick={() => {
+                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                    (personnel || []).forEach(p => {
+                      let code = '';
+                      for (let i = 0; i < 6; i++) {
+                        code += chars.charAt(Math.floor(Math.random() * chars.length));
+                      }
+                      updatePersonnelInfo(p.id, { profilingCode: code });
+                    });
+                  }}
+                >
+                  ⚡ Regen All
+                </button>
+              </div>
 
               <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1.5px solid var(--line)', borderRadius: '12px' }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid var(--line)' }}>
-                      <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800 }}>Teacher Name</th>
-                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 800 }}>Passcode</th>
-                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: 800 }}>Action</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 800 }}>Teacher Name</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800 }}>Passcode</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800 }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {personnel
-                      .filter(p => {
-                        const fullName = `${p.firstName} ${p.lastName}`.toLowerCase();
-                        return fullName.includes(passcodeSearch.toLowerCase());
-                      })
-                      .map(p => (
-                        <tr key={p.id} style={{ borderBottom: '1px solid #E2E8F0' }}>
-                          <td style={{ padding: '8px', fontWeight: 'bold' }}>{p.lastName.toUpperCase()}, {p.firstName}</td>
-                          <td style={{ padding: '8px', textAlign: 'center', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--blue-600)', letterSpacing: '0.05em' }}>
-                            {p.profilingCode || 'N/A'}
-                          </td>
-                          <td style={{ padding: '8px', textAlign: 'center' }}>
-                            <button 
-                              type="button" 
-                              onClick={() => {
-                                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                                let code = '';
-                                for (let i = 0; i < 6; i++) {
-                                  code += chars.charAt(Math.floor(Math.random() * chars.length));
-                                }
-                                updatePersonnelInfo(p.id, { profilingCode: code });
-                              }}
-                              style={{ 
-                                background: 'none', 
-                                border: 'none', 
-                                color: 'var(--blue)', 
-                                fontSize: '11px', 
-                                fontWeight: 800, 
-                                cursor: 'pointer',
-                                textDecoration: 'underline'
-                              }}
-                            >
-                              Regen
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                    {(() => {
+                      const filteredList = (personnel || []).filter(p => {
+                        const fn = (p.firstName || p.first_name || '').toLowerCase();
+                        const ln = (p.lastName || p.last_name || '').toLowerCase();
+                        const full = `${fn} ${ln} ${p.name || ''}`.toLowerCase();
+                        return full.includes((passcodeSearch || '').toLowerCase());
+                      });
+
+                      if (filteredList.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="3" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '12px' }}>
+                              {(personnel || []).length === 0 ? 'No personnel records loaded.' : 'No teachers matching search.'}
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filteredList.map(p => {
+                        const fName = p.firstName || p.first_name || '';
+                        const lName = p.lastName || p.last_name || '';
+                        const displayName = lName && fName ? `${lName.toUpperCase()}, ${fName}` : (lName || fName || p.name || 'TEACHER').toUpperCase();
+                        const codeVal = p.profilingCode || p.profiling_code || p.passcode || 'N/A';
+
+                        return (
+                          <tr key={p.id} style={{ borderBottom: '1px solid #E2E8F0' }}>
+                            <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{displayName}</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace', fontWeight: '800', color: 'var(--blue-600)', letterSpacing: '0.08em', fontSize: '13px' }}>
+                              {codeVal}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (codeVal && codeVal !== 'N/A') {
+                                      navigator.clipboard.writeText(codeVal);
+                                      setCopiedCodeId(p.id);
+                                      setTimeout(() => setCopiedCodeId(null), 1500);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: copiedCodeId === p.id ? 'var(--emerald, #059669)' : 'var(--blue)',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {copiedCodeId === p.id ? '✓ Copied' : 'Copy'}
+                                </button>
+                                <span style={{ color: '#CBD5E1' }}>|</span>
+                                <button 
+                                  type="button" 
+                                  onClick={() => {
+                                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                                    let code = '';
+                                    for (let i = 0; i < 6; i++) {
+                                      code += chars.charAt(Math.floor(Math.random() * chars.length));
+                                    }
+                                    updatePersonnelInfo(p.id, { profilingCode: code });
+                                  }}
+                                  style={{ 
+                                    background: 'none', 
+                                    border: 'none', 
+                                    color: 'var(--muted)', 
+                                    fontSize: '11px', 
+                                    fontWeight: 700, 
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Regen
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>

@@ -261,6 +261,28 @@ export const api = {
     return res.json();
   },
 
+  // Work Immersion management
+  getWorkImmersionSchedules: async (personnelId, schoolYear = '2026-2027') => {
+    const res = await fetchWithAuth(`${API_BASE}/work-immersion/${personnelId}?schoolYear=${encodeURIComponent(schoolYear)}`);
+    return res.json();
+  },
+  saveWorkImmersionBatch: async ({ personnelId, schoolId = '123456', schoolYear = '2026-2027', schedules }) => {
+    const res = await fetchWithAuth(`${API_BASE}/work-immersion/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, schoolId, schoolYear, schedules })
+    });
+    return res.json();
+  },
+  deleteWorkImmersionDate: async ({ personnelId, schoolYear = '2026-2027', date }) => {
+    const res = await fetchWithAuth(`${API_BASE}/work-immersion/date`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, schoolYear, date })
+    });
+    return res.json();
+  },
+
   // Feature A — Learning Area Matrix management
   getLearningAreas: async (personnelId) => {
     const res = await fetchWithAuth(`${API_BASE}/learning-areas?personnelId=${encodeURIComponent(personnelId)}`);
@@ -388,13 +410,30 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/reports/esf7-xlsb`);
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.message || 'Failed to download report');
+      throw new Error(err.message || 'Failed to download XLSB report');
     }
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `eSF7_Report.xlsb`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  downloadESF7PDF: async (schoolId) => {
+    const sId = schoolId || '108348';
+    const res = await fetchWithAuth(`${API_BASE}/reports/esf7/${sId}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to download PDF report');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `eSF7_${sId}.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();

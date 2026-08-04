@@ -540,10 +540,10 @@ export default function OrganizedClasses() {
     hgpMinutes: 60
   });
 
-  const offerings = (schoolInfo?.curricularOffering || []).map(o => o.toUpperCase());
-  const showElem = offerings.includes('ELEMENTARY');
-  const showJHS = offerings.includes('JHS');
-  const showSHS = offerings.includes('SHS');
+  const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
+  const showElem = offerings.length === 0 || offerings.some(o => o.includes('ELEM') || o.includes('KINDER') || o.includes('PRIMARY'));
+  const showJHS = offerings.length === 0 || offerings.some(o => o.includes('JHS') || o.includes('JUNIOR') || o.includes('INTERMEDIATE'));
+  const showSHS = offerings.length === 0 || offerings.some(o => o.includes('SHS') || o.includes('SENIOR') || o.includes('HIGH'));
 
   const availableGrades = [];
   if (showElem) {
@@ -556,7 +556,7 @@ export default function OrganizedClasses() {
     availableGrades.push('Grade 11', 'Grade 12');
   }
   if (availableGrades.length === 0) {
-    availableGrades.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
+    availableGrades.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
   }
 
   React.useEffect(() => {

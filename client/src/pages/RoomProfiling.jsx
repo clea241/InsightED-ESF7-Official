@@ -672,15 +672,23 @@ export default function RoomProfiling() {
                         <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', padding: '12px', background: 'white', border: '1px solid var(--line)', borderRadius: '12px' }}>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label>Training Program</label>
-                            <select 
-                              value={tr.title || ''} 
-                              onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'title', e.target.value)}
-                            >
-                              <option value="">-- Choose training --</option>
-                              {NEAP_TRAINING_OPTIONS.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
+                            <SearchableDropdown
+                              options={['OTHER (SPECIFY CUSTOM...)', ...NEAP_TRAINING_OPTIONS]}
+                              value={tr.title || ''}
+                              onChange={(val) => handleTrainingChange('neapTrainingRows', index, 'title', val)}
+                              placeholder="SELECT NEAP TRAINING OR TYPE CUSTOM..."
+                              allowCustom={true}
+                            />
+                            {(tr.title === 'OTHER (SPECIFY CUSTOM...)' || (tr.title && !NEAP_TRAINING_OPTIONS.includes(tr.title))) && (
+                              <input
+                                type="text"
+                                placeholder="Type custom NEAP training title *"
+                                value={tr.title === 'OTHER (SPECIFY CUSTOM...)' ? '' : tr.title}
+                                onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'title', e.target.value.toUpperCase())}
+                                style={{ marginTop: '6px', fontSize: '13px', background: '#FFFBEB', borderColor: '#F59E0B' }}
+                                required
+                              />
+                            )}
                           </div>
                           <div>
                             <label>Start Date</label>
@@ -793,20 +801,42 @@ export default function RoomProfiling() {
                         <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', padding: '12px', background: 'white', border: '1px solid var(--line)', borderRadius: '12px' }}>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label>Training Title</label>
-                            <select 
-                              value={tr.title || ''} 
-                              onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'title', e.target.value)}
-                            >
-                              <option value="">-- Choose training --</option>
-                              <option value="SCHOOL-BASED INSET">SCHOOL-BASED INSET</option>
-                              <option value="DIVISION TRAINING WORKSHOP">DIVISION TRAINING WORKSHOP</option>
-                              <option value="REGIONAL MASS TRAINING">REGIONAL MASS TRAINING</option>
-                              <option value="LEARNING ACTION CELL">LEARNING ACTION CELL</option>
-                              <option value="RESEARCH CAPABILITY BUILDING">RESEARCH CAPABILITY BUILDING</option>
-                              <option value="DRRM TRAINING">DRRM TRAINING</option>
-                              <option value="CHILD PROTECTION TRAINING">CHILD PROTECTION TRAINING</option>
-                              <option value="MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT">MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT</option>
-                            </select>
+                            <SearchableDropdown
+                              options={[
+                                'OTHER (SPECIFY CUSTOM...)',
+                                'SCHOOL-BASED INSET',
+                                'DIVISION TRAINING WORKSHOP',
+                                'REGIONAL MASS TRAINING',
+                                'LEARNING ACTION CELL',
+                                'RESEARCH CAPABILITY BUILDING',
+                                'DRRM TRAINING',
+                                'CHILD PROTECTION TRAINING',
+                                'MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT'
+                              ]}
+                              value={tr.title || ''}
+                              onChange={(val) => handleTrainingChange('otherTrainingRows', index, 'title', val)}
+                              placeholder="SELECT OTHER TRAINING OR TYPE CUSTOM..."
+                              allowCustom={true}
+                            />
+                            {(tr.title === 'OTHER (SPECIFY CUSTOM...)' || (tr.title && ![
+                              'SCHOOL-BASED INSET',
+                              'DIVISION TRAINING WORKSHOP',
+                              'REGIONAL MASS TRAINING',
+                              'LEARNING ACTION CELL',
+                              'RESEARCH CAPABILITY BUILDING',
+                              'DRRM TRAINING',
+                              'CHILD PROTECTION TRAINING',
+                              'MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT'
+                            ].includes(tr.title))) && (
+                              <input
+                                type="text"
+                                placeholder="Type custom training title *"
+                                value={tr.title === 'OTHER (SPECIFY CUSTOM...)' ? '' : tr.title}
+                                onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'title', e.target.value.toUpperCase())}
+                                style={{ marginTop: '6px', fontSize: '13px', background: '#FFFBEB', borderColor: '#F59E0B' }}
+                                required
+                              />
+                            )}
                           </div>
                           <div>
                             <label>Start Date</label>

@@ -62,6 +62,14 @@ async function run() {
       console.log('ℹ️  workload_rows section_id migration:', e.message);
     }
 
+    // Ensure workload_rows.designated_by_sds column exists
+    try {
+      await db.query(`ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS designated_by_sds BOOLEAN DEFAULT FALSE`);
+      console.log('✅ Added designated_by_sds column to workload_rows');
+    } catch (e) {
+      console.log('ℹ️  workload_rows designated_by_sds migration:', e.message);
+    }
+
     console.log('\nAll migrations completed!');
   } catch (e) {
     console.error('Migration failed:', e.message);

@@ -1329,6 +1329,36 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Work Immersion Schedules Management
+  const [workImmersionSchedulesMap, setWorkImmersionSchedulesMap] = useState({});
+
+  const fetchWorkImmersionSchedules = async (personnelId, schoolYear = '2026-2027') => {
+    if (!personnelId) return [];
+    try {
+      const res = await api.getWorkImmersionSchedules(personnelId, schoolYear);
+      if (res && res.success && Array.isArray(res.data)) {
+        setWorkImmersionSchedulesMap(prev => ({ ...prev, [personnelId]: res.data }));
+        return res.data;
+      }
+    } catch (e) {
+      console.error('[AppContext] Failed to fetch work immersion schedules:', e);
+    }
+    return [];
+  };
+
+  const saveWorkImmersionSchedules = async (personnelId, schedules, schoolYear = '2026-2027', schoolId = '123456') => {
+    try {
+      const res = await api.saveWorkImmersionBatch({ personnelId, schoolId, schoolYear, schedules });
+      if (res && res.success) {
+        await fetchWorkImmersionSchedules(personnelId, schoolYear);
+      }
+      return res;
+    } catch (e) {
+      console.error('[AppContext] Failed to save work immersion schedules:', e);
+      return { success: false, error: e.message };
+    }
+  };
+
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -1969,9 +1999,6 @@ export const AppProvider = ({ children }) => {
         numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (numberOfLearners ? Number(numberOfLearners) : null)
       };
       setClassSections(prev => [...prev.filter(s => String(s.id) !== String(newSec.id)), newSec]);
-
-      const list = await fetchAndNormalizePersonnel();
-      if (Array.isArray(list)) setPersonnel(list);
     } else {
       throw new Error('Failed to create class section.');
     }
@@ -1991,8 +2018,6 @@ export const AppProvider = ({ children }) => {
           advisorId: res.advisorId ? String(res.advisorId) : null,
           numberOfLearners: res.numberOfLearners !== undefined && res.numberOfLearners !== null ? Number(res.numberOfLearners) : (finalLearners !== null && finalLearners !== undefined ? Number(finalLearners) : s.numberOfLearners)
         } : s));
-        const list = await fetchAndNormalizePersonnel();
-        if (Array.isArray(list)) setPersonnel(list);
       }
     } catch (err) {
       console.error("Failed to update section:", err);
@@ -2023,8 +2048,6 @@ export const AppProvider = ({ children }) => {
     try {
       await api.deleteSection(id);
       setClassSections(prev => prev.filter(s => String(s.id) !== String(id)));
-      const list = await fetchAndNormalizePersonnel();
-      if (Array.isArray(list)) setPersonnel(list);
     } catch (err) {
       console.error("Failed to delete section:", err);
     }
@@ -2436,6 +2459,22 @@ export const AppProvider = ({ children }) => {
       // Verification Checkmarks removed from Validation Center since this screen is where the overall validation and submission happens.
     });
 
+    // 4. Allowances & Financial Incentives Validation Check
+    const activePersonnel = (personnel || []).filter(p => !p.isDraft && !p.isShared);
+    const hasAnyAllowanceChecked = activePersonnel.some(p => {
+      const pAllowances = allowancesMap[p.id] || {};
+      return Object.values(pAllowances).some(val => Boolean(val) === true);
+    });
+
+    if (!hasAnyAllowanceChecked) {
+      issues.push({
+        id: "allowances-none-checked",
+        type: "error",
+        category: "Allowances & Financial Incentives",
+        message: "No allowances or financial incentives have been checked. You must check at least one allowance/incentive in the Allowances & Incentives Portal before submitting."
+      });
+    }
+
     return issues;
   };
 
@@ -2497,10 +2536,12 @@ export const AppProvider = ({ children }) => {
       districtSchools,
       refreshRequests,
       loadDistrictSchools,
-      saveSchoolSubjects,
       allowancesMap,
       fetchAllowances,
-      toggleAllowance
+      toggleAllowance,
+      workImmersionSchedulesMap,
+      fetchWorkImmersionSchedules,
+      saveWorkImmersionSchedules
     }}>
       {children}
     </AppContext.Provider>

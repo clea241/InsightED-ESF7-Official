@@ -2072,11 +2072,22 @@ export default function PersonnelProfile() {
                                   <div>
                                     <label>NEAP Training</label>
                                     <SearchableDropdown
-                                      options={NEAP_TRAINING_OPTIONS}
+                                      options={['OTHER (SPECIFY CUSTOM...)', ...NEAP_TRAINING_OPTIONS]}
                                       value={tr.title || ''}
                                       onChange={(val) => handleTrainingChange('neapTrainingRows', index, 'title', val)}
-                                      placeholder="SELECT NEAP TRAINING..."
+                                      placeholder="SELECT NEAP TRAINING OR TYPE CUSTOM..."
+                                      allowCustom={true}
                                     />
+                                    {(tr.title === 'OTHER (SPECIFY CUSTOM...)' || (tr.title && !NEAP_TRAINING_OPTIONS.includes(tr.title))) && (
+                                      <input
+                                        type="text"
+                                        placeholder="Type custom NEAP training title *"
+                                        value={tr.title === 'OTHER (SPECIFY CUSTOM...)' ? '' : tr.title}
+                                        onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'title', e.target.value.toUpperCase())}
+                                        style={{ marginTop: '6px', fontSize: '13px', background: '#FFFBEB', borderColor: '#F59E0B' }}
+                                        required
+                                      />
+                                    )}
                                   </div>
                                   <div>
                                     <label>Start Date</label>
@@ -2185,6 +2196,7 @@ export default function PersonnelProfile() {
                                     <label>Training Title</label>
                                     <SearchableDropdown
                                       options={[
+                                        'OTHER (SPECIFY CUSTOM...)',
                                         'SCHOOL-BASED INSET',
                                         'DIVISION TRAINING WORKSHOP',
                                         'REGIONAL MASS TRAINING',
@@ -2196,8 +2208,28 @@ export default function PersonnelProfile() {
                                       ]}
                                       value={tr.title || ''}
                                       onChange={(val) => handleTrainingChange('otherTrainingRows', index, 'title', val)}
-                                      placeholder="SELECT OTHER TRAINING..."
+                                      placeholder="SELECT OTHER TRAINING OR TYPE CUSTOM..."
+                                      allowCustom={true}
                                     />
+                                    {(tr.title === 'OTHER (SPECIFY CUSTOM...)' || (tr.title && ![
+                                      'SCHOOL-BASED INSET',
+                                      'DIVISION TRAINING WORKSHOP',
+                                      'REGIONAL MASS TRAINING',
+                                      'LEARNING ACTION CELL',
+                                      'RESEARCH CAPABILITY BUILDING',
+                                      'DRRM TRAINING',
+                                      'CHILD PROTECTION TRAINING',
+                                      'MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT'
+                                    ].includes(tr.title))) && (
+                                      <input
+                                        type="text"
+                                        placeholder="Type custom training title *"
+                                        value={tr.title === 'OTHER (SPECIFY CUSTOM...)' ? '' : tr.title}
+                                        onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'title', e.target.value.toUpperCase())}
+                                        style={{ marginTop: '6px', fontSize: '13px', background: '#FFFBEB', borderColor: '#F59E0B' }}
+                                        required
+                                      />
+                                    )}
                                   </div>
                                   <div>
                                     <label>Start Date</label>

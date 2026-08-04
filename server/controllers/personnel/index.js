@@ -85,6 +85,8 @@ router.get('/', async (req, res) => {
             start_time: r.start_time,
             end_time: r.end_time,
             days: r.days,
+            designated_by_sds: !!r.designated_by_sds,
+            designatedBySds: !!r.designated_by_sds,
             dates: []
           };
         }

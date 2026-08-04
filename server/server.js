@@ -32,7 +32,7 @@ app.use('/api/reports', require('./controllers/reports'));
 app.use('/api/allowances', require('./controllers/allowances'));
 app.use('/api/overload-reasons', require('./controllers/overload_reasons'));
 app.use('/api/learning-areas', require('./controllers/learningAreas/index.js'));
-app.use('/api/work-immersion', require('./controllers/workImmersion/index.js'));
+app.use('/api/work-immersion', require('./controllers/work_immersion/index.js'));
 
 
 const queueWorker = require('./queue_worker');
@@ -118,6 +118,19 @@ const initDB = async () => {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE(personnel_id, school_year, term)
+      );
+      CREATE TABLE IF NOT EXISTS work_immersion_schedules (
+          id SERIAL PRIMARY KEY,
+          personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+          school_id TEXT NOT NULL DEFAULT '123456',
+          school_year TEXT NOT NULL DEFAULT '2026-2027',
+          schedule_date DATE NOT NULL,
+          start_time VARCHAR(20) NOT NULL,
+          end_time VARCHAR(20) NOT NULL,
+          duration_minutes INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(personnel_id, school_year, schedule_date)
       );
       CREATE TABLE IF NOT EXISTS personnel_learning_areas (
           id SERIAL PRIMARY KEY,

@@ -3085,7 +3085,10 @@ export default function Workload() {
     removeWorkloadTransfer,
     showToast,
     showAlert,
-    showConfirm
+    showConfirm,
+    workImmersionSchedulesMap,
+    fetchWorkImmersionSchedules,
+    saveWorkImmersionSchedules
   } = useApp();
 
   // Helper to expand high-level offerings like SHS into the subcategories expected by Workload builder
@@ -3650,7 +3653,7 @@ export default function Workload() {
       });
       let rowsChanged = false;
 
-      const advisorySections = (classSections || []).filter(s => s.advisorId && dbPerson.id && String(s.advisorId) === String(dbPerson.id));
+      const advisorySections = (classSections || []).filter(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
       const defaultAdvSecId = advisorySections.length > 0 ? String(advisorySections[0].id) : '';
 
       // Filter out obsolete HOMEROOM GUIDANCE rows and duplicate ADVISORY / HGP rows per section
@@ -3860,8 +3863,8 @@ export default function Workload() {
       if (category === 'JHS') baseList = JHS_NON_GRADED_SUBJECTS;
       else if (category === 'SHS') baseList = SHS_NON_GRADED_SUBJECTS;
       else baseList = JHS_NON_GRADED_SUBJECTS;
-    } else if (grade === 'Grade 11' || grade === 'Grade 12') {
-      const isGrade12 = grade === 'Grade 12';
+    } else if (normGrade.toUpperCase().includes('11') || normGrade.toUpperCase().includes('12') || normGrade.toUpperCase().includes('SHS')) {
+      const isGrade12 = normGrade.includes('12');
       if (category === 'SHS') baseList = isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
       else if (category === 'SHS-CORE SUBJECTS') baseList = isGrade12 ? SHS_CORE_GRADE12_SUBJECTS : SHS_CORE_SUBJECTS;
       else if (category === 'SHS-APPLIED SUBJECTS') baseList = isGrade12 ? SHS_APPLIED_GRADE12_SUBJECTS : SHS_APPLIED_SUBJECTS;
@@ -4061,18 +4064,19 @@ export default function Workload() {
 
   const isSHSRow = (row) => {
     if (!row) return false;
-    const grade = String(row.gradeLevel || '').trim();
-    const category = String(row.category || '').toUpperCase();
-    const subject = String(row.subject || '').toUpperCase();
+    const grade = String(row.gradeLevel || '').toUpperCase().trim();
+    const category = String(row.category || '').toUpperCase().trim();
+    const subject = String(row.subject || '').toUpperCase().trim();
 
     return (
-      grade === 'Grade 11' ||
-      grade === 'Grade 12' ||
       grade.includes('11') ||
       grade.includes('12') ||
+      grade.includes('SHS') ||
+      grade.includes('SENIOR') ||
       category.includes('SHS') ||
       category.includes('SSHS') ||
-      subject.includes('SHS')
+      subject.includes('SHS') ||
+      subject.includes('WORK IMMERSION')
     );
   };
 
@@ -4191,13 +4195,22 @@ export default function Workload() {
     const section = (classSections || []).find(s => String(s.id) === String(sectionId));
 
     if (section) {
+      const secGradeUpper = String(section.gradeLevel || '').toUpperCase().trim();
       let resolvedCategory = 'Elementary';
-      for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
-        if (grades.includes(section.gradeLevel)) {
-          resolvedCategory = cat;
-          break;
+
+      if (secGradeUpper.includes('11') || secGradeUpper.includes('12') || secGradeUpper.includes('SHS') || secGradeUpper.includes('SENIOR')) {
+        resolvedCategory = rows[index].category && rows[index].category.includes('SHS') ? rows[index].category : 'SHS';
+      } else if (secGradeUpper.includes('7') || secGradeUpper.includes('8') || secGradeUpper.includes('9') || secGradeUpper.includes('10') || secGradeUpper.includes('JHS')) {
+        resolvedCategory = 'JHS';
+      } else {
+        for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
+          if (grades.includes(section.gradeLevel)) {
+            resolvedCategory = cat;
+            break;
+          }
         }
       }
+
       const newSubjects = getSubjectsForGrade(section.gradeLevel, resolvedCategory);
       const isCurrentValid = newSubjects.includes(rows[index].subject);
 
@@ -5065,6 +5078,26 @@ export default function Workload() {
                         </div>
                       </div>
                     )}
+
+                    {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
+                    {(() => {
+                      const hasImmersion = (currentPerson.workloadRows || []).some(r => {
+                        const sub = String(r.subject || r.task || '').toUpperCase();
+                        return sub.includes('WORK IMMERSION');
+                      });
+                      if (!hasImmersion) return null;
+
+                      return (
+                        <WorkImmersionSection
+                          currentPerson={currentPerson}
+                          schoolInfo={schoolInfo}
+                          showToast={showToast}
+                          workImmersionSchedulesMap={workImmersionSchedulesMap}
+                          fetchWorkImmersionSchedules={fetchWorkImmersionSchedules}
+                          saveWorkImmersionSchedules={saveWorkImmersionSchedules}
+                        />
+                      );
+                    })()}
                     <div style={{ gridColumn: '1 / -1' }}>
                       <button className="btn ok" type="button" onClick={handleAddSectionSlot}
                         disabled={!!slotConflict}
@@ -5307,6 +5340,26 @@ export default function Workload() {
                       </div>
                     )}
 
+                    {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
+                    {(() => {
+                      const hasImmersion = (currentPerson.workloadRows || []).some(r => {
+                        const sub = String(r.subject || r.task || '').toUpperCase();
+                        return sub.includes('WORK IMMERSION');
+                      });
+                      if (!hasImmersion) return null;
+
+                      return (
+                        <WorkImmersionSection
+                          currentPerson={currentPerson}
+                          schoolInfo={schoolInfo}
+                          showToast={showToast}
+                          workImmersionSchedulesMap={workImmersionSchedulesMap}
+                          fetchWorkImmersionSchedules={fetchWorkImmersionSchedules}
+                          saveWorkImmersionSchedules={saveWorkImmersionSchedules}
+                        />
+                      );
+                    })()}
+
                     {/* Draft Banner if exists */}
                     {localStorage.getItem(`draft_workload_${currentPerson?.id}`) && (
                       <div style={{ padding: '12px 16px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '12px', color: '#B45309', fontSize: '13px', marginBottom: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -5484,7 +5537,7 @@ export default function Workload() {
 
                             return sortedRows.map((row) => {
                               const idx = row.originalIdx;
-                              const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson.id && String(s.advisorId) === String(dbPerson.id));
+                              const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                               if (isAdvisorySub(row.subject) && advisorySec && !row.sectionId) {
                                 row.sectionId = String(advisorySec.id);
                                 row.gradeLevel = advisorySec.gradeLevel;
@@ -5570,7 +5623,7 @@ export default function Workload() {
                                             return false;
                                           });
 
-                                          const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson.id && String(s.advisorId) === String(dbPerson.id));
+                                          const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                                           if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) {
                                             filteredSections.push(advisorySec);
                                           }
@@ -5600,6 +5653,29 @@ export default function Workload() {
 
                                       {/* Subject */}
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {row.sectionId && isSHSRow(row) && (
+                                          <div style={{ marginBottom: '2px' }}>
+                                            <SearchableSelect
+                                              disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                              value={row.category || 'SHS-CORE SUBJECTS'}
+                                              onChange={(e) => {
+                                                const newCat = e.target.value;
+                                                const newSubjects = getSubjectsForGrade(row.gradeLevel, newCat);
+                                                updateWorkloadRowFields(idx, { category: newCat, subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY' && s !== 'HGP') || '') });
+                                              }}
+                                              options={[
+                                                { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
+                                                { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
+                                                { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
+                                                { value: 'SSHS-CORE', label: 'SSHS-CORE' },
+                                                { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
+                                                { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
+                                                { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
+                                              ]}
+                                              placeholder="Select SHS category…"
+                                            />
+                                          </div>
+                                        )}
                                         {(() => {
                                           const currentSecId = String(row.sectionId || row.section_id || '');
                                           const currentSub = row.subject || row.subject_name || '';
@@ -5802,7 +5878,7 @@ export default function Workload() {
                                               }
                                               return false;
                                             });
-                                            const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson.id && String(s.advisorId) === String(dbPerson.id));
+                                            const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
                                             if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) filteredSections.push(advisorySec);
                                             let currentSecId = String(row.sectionId || row.section_id || '');
                                             if (!currentSecId && row.gradeLevel) {
@@ -5867,7 +5943,7 @@ export default function Workload() {
                                             );
                                           })()}
                                         </div>
-                                        {row.sectionId && (row.gradeLevel === 'Grade 11' || row.gradeLevel === 'Grade 12') && (
+                                        {row.sectionId && isSHSRow(row) && (
                                           <div>
                                             <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>SHS Category</label>
                                             <SearchableSelect
@@ -5942,7 +6018,36 @@ export default function Workload() {
                                         </div>
                                       </div>
 
-                                      {/* Conflict warning inside card */}
+                                                                             {/* SDS Designation Toggle */}
+                                       <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                                         <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155' }}>Designated by SDS?</span>
+                                         <div style={{ display: 'flex', border: '1.5px solid #CBD5E1', borderRadius: '6px', overflow: 'hidden', background: '#FFFFFF' }}>
+                                           <button
+                                             type="button"
+                                             onClick={() => updateWorkloadRow(idx, 'designatedBySds', false)}
+                                             style={{
+                                               padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
+                                               background: !row.designatedBySds ? '#64748B' : 'transparent',
+                                               color: !row.designatedBySds ? '#FFFFFF' : '#64748B'
+                                             }}
+                                           >
+                                             NO
+                                           </button>
+                                           <button
+                                             type="button"
+                                             onClick={() => updateWorkloadRow(idx, 'designatedBySds', true)}
+                                             style={{
+                                               padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
+                                               background: row.designatedBySds ? '#0284C7' : 'transparent',
+                                               color: row.designatedBySds ? '#FFFFFF' : '#64748B'
+                                             }}
+                                           >
+                                             YES
+                                           </button>
+                                         </div>
+                                       </div>
+
+                                       {/* Conflict warning inside card */}
                                       {hasConflict && (
                                         <div style={{ color: '#EF4444', fontSize: '10px', fontWeight: 'bold', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                           ⚠️ Time conflict with another period on the same day(s).
@@ -5958,10 +6063,30 @@ export default function Workload() {
                       </div>
                     )}
 
+                    {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
+                    {(() => {
+                      const hasImmersion = (currentPerson.workloadRows || []).some(r => {
+                        const sub = String(r.subject || r.task || '').toUpperCase();
+                        return sub.includes('WORK IMMERSION');
+                      });
+                      if (!hasImmersion) return null;
+
+                      return (
+                        <WorkImmersionSection
+                          currentPerson={currentPerson}
+                          schoolInfo={schoolInfo}
+                          showToast={showToast}
+                          workImmersionSchedulesMap={workImmersionSchedulesMap}
+                          fetchWorkImmersionSchedules={fetchWorkImmersionSchedules}
+                          saveWorkImmersionSchedules={saveWorkImmersionSchedules}
+                        />
+                      );
+                    })()}
+
                     {/* Extra Tasks builders */}
                     <div className="workload-section-panel" style={{ marginTop: '20px' }}>
                       <div className="workload-section-title">
-                        <h3>Advisory and Extra Task Builders</h3>
+                        <h3>Extra Task Builder</h3>
                       </div>
 
                       <div className="task-assignment-grid">
@@ -5984,6 +6109,33 @@ export default function Workload() {
                                     onChange={(e) => updateTaskField('teachingRelatedRows', idx, 'task', e.target.value)}
                                     options={TEACHING_RELATED_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
                                   />
+                                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155' }}>Designated by SDS?</span>
+                                    <div style={{ display: 'flex', border: '1.5px solid #CBD5E1', borderRadius: '6px', overflow: 'hidden', background: '#FFFFFF' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateTaskField('teachingRelatedRows', idx, 'designatedBySds', false)}
+                                        style={{
+                                          padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
+                                          background: !row.designatedBySds ? '#64748B' : 'transparent',
+                                          color: !row.designatedBySds ? '#FFFFFF' : '#64748B'
+                                        }}
+                                      >
+                                        NO
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateTaskField('teachingRelatedRows', idx, 'designatedBySds', true)}
+                                        style={{
+                                          padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
+                                          background: row.designatedBySds ? '#0284C7' : 'transparent',
+                                          color: row.designatedBySds ? '#FFFFFF' : '#64748B'
+                                        }}
+                                      >
+                                        YES
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                                   {(row.dates || []).map((dateEntry, dateIdx) => (
@@ -6111,6 +6263,7 @@ export default function Workload() {
                                     onChange={(e) => updateTaskField('administrativeRows', idx, 'task', e.target.value)}
                                     options={ADMINISTRATIVE_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
                                   />
+
                                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                                     <div style={{ width: '120px' }}>
                                       <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
@@ -6905,3 +7058,350 @@ export default function Workload() {
     </section>
   );
 }
+
+
+/* ── WORK IMMERSION MONTHLY CALENDAR & MINUTES MANAGER ── */
+const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmersionSchedulesMap, fetchWorkImmersionSchedules, saveWorkImmersionSchedules }) => {
+  const [selectedYear, setSelectedYear] = useState(2026);
+  const [selectedMonth, setSelectedMonth] = useState(9); // 0-indexed (9 = October)
+  const [editingDate, setEditingDate] = useState(null); // 'YYYY-MM-DD'
+  const [editingStartTime, setEditingStartTime] = useState('08:00');
+  const [editingEndTime, setEditingEndTime] = useState('12:00');
+  const [copiedPattern, setCopiedPattern] = useState(null); // { dayOfWeek: { startTime, endTime } }
+
+  const schoolYear = schoolInfo?.schoolYear || '2026-2027';
+  const personId = currentPerson?.id;
+
+  // Load immersion schedules on mount or teacher change
+  useEffect(() => {
+    if (personId && fetchWorkImmersionSchedules) {
+      fetchWorkImmersionSchedules(personId, schoolYear);
+    }
+  }, [personId, schoolYear]);
+
+  const personImmersionList = workImmersionSchedulesMap[personId] || [];
+
+  // Month Names
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  // Days in selected month
+  const totalDaysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+  const firstDayOfWeek = new Date(selectedYear, selectedMonth, 1).getDay(); // 0 = Sun
+
+  // Maps date string 'YYYY-MM-DD' to entry
+  const dateMap = {};
+  personImmersionList.forEach(item => {
+    dateMap[item.date] = item;
+  });
+
+  const getFormattedDateStr = (day) => {
+    const mm = String(selectedMonth + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${selectedYear}-${mm}-${dd}`;
+  };
+
+  const handleOpenDateEditor = (day) => {
+    const dStr = getFormattedDateStr(day);
+    const existing = dateMap[dStr];
+    setEditingDate(dStr);
+    setEditingStartTime(existing ? existing.startTime : '08:00');
+    setEditingEndTime(existing ? existing.endTime : '12:00');
+  };
+
+  const handleSaveSingleDate = async () => {
+    if (!editingDate || !personId) return;
+    const existingList = personImmersionList.filter(item => item.date !== editingDate);
+    const newEntry = { date: editingDate, startTime: editingStartTime, endTime: editingEndTime };
+    const updatedSchedules = [...existingList, newEntry];
+
+    const res = await saveWorkImmersionSchedules(personId, updatedSchedules, schoolYear, schoolInfo?.schoolId);
+    if (res && res.success !== false) {
+      if (showToast) showToast(`✓ Saved Work Immersion schedule for ${editingDate} (${editingStartTime} - ${editingEndTime})`);
+      setEditingDate(null);
+    }
+  };
+
+  const handleRemoveSingleDate = async (dStr) => {
+    if (!personId) return;
+    const updatedSchedules = personImmersionList.filter(item => item.date !== dStr);
+    const res = await saveWorkImmersionSchedules(personId, updatedSchedules, schoolYear, schoolInfo?.schoolId);
+    if (res && res.success !== false) {
+      if (showToast) showToast(`Removed Work Immersion schedule for ${dStr}`);
+      if (editingDate === dStr) setEditingDate(null);
+    }
+  };
+
+  // 📋 Copy Month Schedule Pattern (by weekday M-F)
+  const handleCopyMonthPattern = () => {
+    const pattern = {};
+    for (let day = 1; day <= totalDaysInMonth; day++) {
+      const dStr = getFormattedDateStr(day);
+      const entry = dateMap[dStr];
+      if (entry) {
+        const dObj = new Date(selectedYear, selectedMonth, day);
+        const dayOfWeek = dObj.getDay(); // 0-6
+        pattern[dayOfWeek] = { startTime: entry.startTime, endTime: entry.endTime };
+      }
+    }
+
+    if (Object.keys(pattern).length === 0) {
+      if (showToast) showToast("⚠️ No active Work Immersion schedules found in this month to copy.", "error");
+      return;
+    }
+
+    setCopiedPattern({
+      sourceMonthName: `${monthNames[selectedMonth]} ${selectedYear}`,
+      pattern
+    });
+
+    if (showToast) showToast(`📋 Copied ${Object.keys(pattern).length} weekday immersion pattern(s) from ${monthNames[selectedMonth]} ${selectedYear}!`);
+  };
+
+  // 📥 Paste Month Schedule Pattern onto Target Month
+  const handlePasteMonthPattern = async () => {
+    if (!copiedPattern || !copiedPattern.pattern) {
+      if (showToast) showToast("⚠️ Please copy a month schedule first before pasting.", "error");
+      return;
+    }
+
+    const { pattern } = copiedPattern;
+    const newSchedules = [...personImmersionList];
+
+    for (let day = 1; day <= totalDaysInMonth; day++) {
+      const dObj = new Date(selectedYear, selectedMonth, day);
+      const dayOfWeek = dObj.getDay();
+      if (pattern[dayOfWeek]) {
+        const targetDStr = getFormattedDateStr(day);
+        const matchTime = pattern[dayOfWeek];
+        // Remove old entry if exists for target date
+        const existingIdx = newSchedules.findIndex(x => x.date === targetDStr);
+        if (existingIdx >= 0) {
+          newSchedules[existingIdx] = { date: targetDStr, startTime: matchTime.startTime, endTime: matchTime.endTime };
+        } else {
+          newSchedules.push({ date: targetDStr, startTime: matchTime.startTime, endTime: matchTime.endTime });
+        }
+      }
+    }
+
+    const res = await saveWorkImmersionSchedules(personId, newSchedules, schoolYear, schoolInfo?.schoolId);
+    if (res && res.success !== false) {
+      if (showToast) showToast(`📥 Pasted immersion schedule pattern to ${monthNames[selectedMonth]} ${selectedYear}!`);
+    }
+  };
+
+  // Calculate total immersion hours for selected month
+  const currentMonthEntries = personImmersionList.filter(item => {
+    if (!item.date) return false;
+    const [y, m] = item.date.split('-').map(Number);
+    return y === selectedYear && m === (selectedMonth + 1);
+  });
+
+  const totalMonthMins = currentMonthEntries.reduce((acc, curr) => acc + (curr.durationMinutes || 0), 0);
+  const totalMonthHours = (totalMonthMins / 60).toFixed(1);
+
+  return (
+    <div className="workload-section-panel" style={{ marginTop: '24px', background: 'linear-gradient(130deg, #FFFFFF 0%, #F0F9FF 100%)', border: '2px solid #0284C7' }}>
+      <div className="workload-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div>
+          <h3 style={{ color: '#0369A1', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <span>🏢</span> Work Immersion Monthly Calendar & Overload Integration
+          </h3>
+          <p className="subtext" style={{ margin: '4px 0 0', color: '#0369A1' }}>
+            Track daily Work Immersion supervision start/end times. Immersion hours are added 1-to-1 to regular teaching load for <strong>Overload Pay Authorization</strong>.
+          </p>
+        </div>
+
+        {/* Action Controls */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn secondary"
+            style={{ fontSize: '12px', padding: '6px 12px', background: 'white', borderColor: '#0284C7', color: '#0284C7', fontWeight: 'bold' }}
+            onClick={handleCopyMonthPattern}
+          >
+            📋 Copy {monthNames[selectedMonth]} Schedule
+          </button>
+          <button
+            type="button"
+            className="btn"
+            style={{ fontSize: '12px', padding: '6px 12px', background: copiedPattern ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : '#CBD5E1', color: 'white', fontWeight: 'bold', cursor: copiedPattern ? 'pointer' : 'not-allowed' }}
+            onClick={handlePasteMonthPattern}
+            disabled={!copiedPattern}
+            title={copiedPattern ? `Paste pattern from ${copiedPattern.sourceMonthName} to ${monthNames[selectedMonth]} ${selectedYear}` : "Copy a month schedule first"}
+          >
+            📥 Paste to {monthNames[selectedMonth]}
+          </button>
+        </div>
+      </div>
+
+      {/* Copied Banner indicator */}
+      {copiedPattern && (
+        <div style={{ background: '#E0F2FE', border: '1px solid #7DD3FC', color: '#0369A1', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', fontWeight: 'bold', marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>📋 Copied schedule pattern from <strong>{copiedPattern.sourceMonthName}</strong>. Select another month and click "Paste to [Month]" to duplicate.</span>
+          <button type="button" onClick={() => setCopiedPattern(null)} style={{ background: 'none', border: 'none', color: '#0369A1', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
+        </div>
+      )}
+
+      {/* Month Selector Bar & Month Summary KPI */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', marginBottom: '16px', background: 'white', padding: '12px 16px', borderRadius: '12px', border: '1px solid #BAE6FD' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#0369A1' }}>Select Month & Year:</label>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            style={{ padding: '6px 12px', borderRadius: '8px', border: '1.5px solid #0284C7', fontSize: '13px', fontWeight: 'bold', color: '#0369A1', background: 'white' }}
+          >
+            {monthNames.map((name, idx) => (
+              <option key={idx} value={idx}>{name}</option>
+            ))}
+          </select>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            style={{ padding: '6px 12px', borderRadius: '8px', border: '1.5px solid #0284C7', fontSize: '13px', fontWeight: 'bold', color: '#0369A1', background: 'white' }}
+          >
+            {[2025, 2026, 2027].map(yr => (
+              <option key={yr} value={yr}>{yr}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '10px', color: '#64748B', textTransform: 'uppercase', fontWeight: 'bold', display: 'block' }}>Monthly Immersion Total</span>
+            <strong style={{ fontSize: '16px', color: '#0284C7' }}>{totalMonthHours} Hours</strong>
+          </div>
+          <div style={{ background: '#F0F9FF', padding: '6px 10px', borderRadius: '8px', border: '1px solid #7DD3FC', fontSize: '11px', color: '#0369A1', fontWeight: 'bold' }}>
+            ➕ Integrated into Overload Pay
+          </div>
+        </div>
+      </div>
+
+      {/* Calendar Grid View */}
+      <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
+        {/* Days of week header */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center', fontWeight: 'bold', fontSize: '11px', color: '#475569', paddingBottom: '8px', borderBottom: '1px solid #E2E8F0', marginBottom: '8px' }}>
+          <div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div>
+        </div>
+
+        {/* Month Days Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+          {/* Empty leading cells */}
+          {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+            <div key={`empty-${i}`} style={{ height: '75px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #F1F5F9' }}></div>
+          ))}
+
+          {/* Actual Month Days */}
+          {Array.from({ length: totalDaysInMonth }).map((_, i) => {
+            const day = i + 1;
+            const dStr = getFormattedDateStr(day);
+            const entry = dateMap[dStr];
+            const isEditing = editingDate === dStr;
+            const dObj = new Date(selectedYear, selectedMonth, day);
+            const isWeekend = dObj.getDay() === 0 || dObj.getDay() === 6;
+
+            return (
+              <div
+                key={day}
+                onClick={() => handleOpenDateEditor(day)}
+                style={{
+                  height: '75px',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  border: isEditing ? '2px solid #0284C7' : entry ? '1.5px solid #7DD3FC' : '1px solid #E2E8F0',
+                  background: isEditing ? '#EFF6FF' : entry ? '#F0F9FF' : isWeekend ? '#F8FAFC' : 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: entry ? '#0369A1' : '#475569' }}>{day}</span>
+                  {entry && (
+                    <span style={{ fontSize: '9px', background: '#0284C7', color: 'white', padding: '1px 5px', borderRadius: '10px', fontWeight: 'bold' }}>
+                      {(entry.durationMinutes / 60).toFixed(1)}h
+                    </span>
+                  )}
+                </div>
+
+                {entry ? (
+                  <div style={{ fontSize: '10px', color: '#0369A1', fontWeight: 'bold', background: 'white', padding: '2px 4px', borderRadius: '4px', border: '1px solid #BAE6FD', textAlign: 'center' }}>
+                    ⏱️ {entry.startTime} - {entry.endTime}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: '10px', color: '#94A3B8', textAlign: 'center' }}>+ Set time</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Date Editor Drawer / Modal */}
+      {editingDate && (
+        <div style={{ marginTop: '16px', background: '#F0F9FF', padding: '16px', borderRadius: '12px', border: '1.5px solid #0284C7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <strong style={{ fontSize: '14px', color: '#0369A1', display: 'block' }}>
+              Editing Work Immersion Time for {editingDate}
+            </strong>
+            <span style={{ fontSize: '12px', color: '#64748B' }}>
+              Set exact Start Time and End Time for immersion supervision on this date.
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#0369A1', display: 'block' }}>START TIME</label>
+              <input
+                type="time"
+                value={editingStartTime}
+                onChange={(e) => setEditingStartTime(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #0284C7', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#0369A1', display: 'block' }}>END TIME</label>
+              <input
+                type="time"
+                value={editingEndTime}
+                onChange={(e) => setEditingEndTime(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #0284C7', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '16px' }}>
+              <button
+                type="button"
+                className="btn ok"
+                onClick={handleSaveSingleDate}
+                style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', color: 'white', fontWeight: 'bold', fontSize: '12px', padding: '7px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
+              >
+                ✓ Save Date Slot
+              </button>
+              {dateMap[editingDate] && (
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={() => handleRemoveSingleDate(editingDate)}
+                  style={{ fontSize: '12px', padding: '7px 14px', borderRadius: '8px' }}
+                >
+                  Remove
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setEditingDate(null)}
+                style={{ fontSize: '12px', padding: '7px 14px', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

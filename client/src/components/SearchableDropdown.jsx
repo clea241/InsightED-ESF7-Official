@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export default function SearchableDropdown({ options = [], value = '', onChange, placeholder = 'Select...', disabled = false, required = false }) {
+export default function SearchableDropdown({ options = [], value = '', onChange, placeholder = 'Select...', disabled = false, required = false, allowCustom = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const wrapperRef = useRef(null);
@@ -28,8 +28,22 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
   );
 
   const displayValue = typeof value === 'string' ? value.toUpperCase() : (value || '');
-
   const isRed = required && !displayValue;
+
+  const isCustomOptionMatch = allowCustom && search.trim().length > 0 && !options.some(opt => opt.toUpperCase() === search.trim().toUpperCase());
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (isCustomOptionMatch) {
+        onChange(search.trim().toUpperCase());
+        setIsOpen(false);
+      } else if (filteredOptions.length > 0) {
+        onChange(filteredOptions[0]);
+        setIsOpen(false);
+      }
+    }
+  };
 
   return (
     <div ref={wrapperRef} className="searchable-dropdown-container" style={{ position: 'relative', width: '100%' }}>
@@ -80,9 +94,10 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
             <input
               type="text"
               autoFocus
-              placeholder="Type to search..."
+              placeholder={allowCustom ? "Type to search or enter custom title..." : "Type to search..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleKeyDown}
               style={{
                 width: '100%',
                 padding: '8px 12px',
@@ -97,6 +112,28 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
             />
           </div>
           <div style={{ overflowY: 'auto', flex: 1, maxHeight: '220px' }}>
+            {isCustomOptionMatch && (
+              <div
+                onClick={() => {
+                  onChange(search.trim().toUpperCase());
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '10px 14px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  color: '#0284C7',
+                  fontWeight: '700',
+                  background: '#F0F9FF',
+                  borderBottom: '1.5px dashed #BAE6FD',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                ✍️ Use Custom: "{search.trim().toUpperCase()}"
+              </div>
+            )}
             {filteredOptions.length > 0 ? (
               filteredOptions.map((opt) => (
                 <div
@@ -124,9 +161,9 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
                   {opt}
                 </div>
               ))
-            ) : (
+            ) : !isCustomOptionMatch && (
               <div style={{ padding: '12px 14px', color: 'var(--muted, #64748B)', fontSize: '13px', textAlign: 'center' }}>
-                No options found
+                No matching options found
               </div>
             )}
           </div>

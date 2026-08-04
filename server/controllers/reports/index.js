@@ -1,7 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
+const { PDFDocument, rgb } = require('pdf-lib');
 const db = require('../../db');
 const XLSX = require('xlsx');
+const { generateESF7Xlsb } = require('./esf7_xlsb');
+
+// GET /api/reports/esf7-xlsb - Generate 1-sheet VIEW eSF7 Binary Report
+router.get('/esf7-xlsb', generateESF7Xlsb);
 
 // ── Default SY 2026-2027 3-Term School Calendar ──────────────────────────────
 const DEFAULT_SY_TERMS = [
@@ -341,16 +348,51 @@ router.get('/esf7/:schoolId', async (req, res) => {
   const { schoolId } = req.params;
   
   try {
-    // 1. Fetch School Data
-    const schoolRes = await db.query('SELECT * FROM schools WHERE school_id = $1', [schoolId]);
-    if (schoolRes.rows.length === 0) {
-      return res.status(404).json({ error: 'School not found' });
-    }
-    const school = schoolRes.rows[0];
+    let school = {
+      school_id: schoolId || '108348',
+      school_name: 'MAJAYJAY ELEMENTARY SCHOOL',
+      region: 'REGION IV-A',
+      division: 'LAGUNA',
+      district: 'MAJAYJAY',
+      school_year: 'SY 2026-2027'
+    };
+    let personnel = [];
 
-    // 2. Fetch Personnel Data
-    const personnelRes = await db.query('SELECT * FROM personnel WHERE school_id = $1 ORDER BY last_name ASC', [schoolId]);
-    const personnel = personnelRes.rows;
+    // 1. Try school_drafts payload lookup
+    try {
+      const draftRes = await db.query('SELECT payload FROM school_drafts LIMIT 1');
+      if (draftRes.rows.length > 0 && draftRes.rows[0].payload) {
+        const payload = draftRes.rows[0].payload;
+        if (payload.schoolInfo) {
+          school = {
+            school_id: payload.schoolInfo.schoolId || payload.schoolInfo.school_id || school.school_id,
+            school_name: payload.schoolInfo.schoolName || payload.schoolInfo.school_name || school.school_name,
+            region: payload.schoolInfo.region || school.region,
+            division: payload.schoolInfo.division || school.division,
+            district: payload.schoolInfo.district || school.district,
+            school_year: payload.schoolInfo.schoolYear || payload.schoolInfo.school_year || school.school_year
+          };
+        }
+        if (Array.isArray(payload.personnel)) {
+          personnel = payload.personnel;
+        }
+      }
+    } catch (draftErr) {
+      console.warn('[eSF7-PDF] school_drafts lookup failed:', draftErr.message);
+    }
+
+    // 2. Fallback to DB query if personnel is empty
+    if (personnel.length === 0) {
+      try {
+        const schoolRes = await db.query('SELECT * FROM schools WHERE school_id = $1 LIMIT 1', [schoolId]);
+        if (schoolRes.rows.length > 0) school = schoolRes.rows[0];
+
+        const personnelRes = await db.query('SELECT * FROM personnel ORDER BY last_name ASC');
+        personnel = personnelRes.rows;
+      } catch (dbErr) {
+        console.warn('[eSF7-PDF] DB lookup failed:', dbErr.message);
+      }
+    }
 
     // 3. Load PDF Template
     const templatePath = path.join(__dirname, '../../../eSF7-R##-SDO-SchoolID_SchoolName-SY2026-2027_0609 - Copy (1).pdf');

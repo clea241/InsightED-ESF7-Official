@@ -105,14 +105,31 @@ try {
 
   const posRowMap = {
     'SCHOOL PRINCIPAL IV': 12, 'SCHOOL PRINCIPAL III': 12, 'SCHOOL PRINCIPAL II': 12, 'SCHOOL PRINCIPAL I': 12,
-    'MASTER TEACHER II': 13, 'MASTER TEACHER I': 14,
-    'SPED TEACHER I': 15, 'TEACHER VI': 16, 'TEACHER IV': 17,
+    'PRINCIPAL IV': 12, 'PRINCIPAL III': 12, 'PRINCIPAL II': 12, 'PRINCIPAL I': 12, 'PRINCIPAL': 12, 'TEACHER-IN-CHARGE': 12, 'TIC': 12, 'OIC': 12,
+    'HEAD TEACHER VI': 12, 'HEAD TEACHER V': 12, 'HEAD TEACHER IV': 12, 'HEAD TEACHER III': 12, 'HEAD TEACHER II': 12, 'HEAD TEACHER I': 12, 'HEAD TEACHER': 12,
+    'MASTER TEACHER IV': 13, 'MASTER TEACHER III': 13, 'MASTER TEACHER II': 13,
+    'MASTER TEACHER I': 14,
+    'SPED TEACHER V': 15, 'SPED TEACHER IV': 15, 'SPED TEACHER III': 15, 'SPED TEACHER II': 15, 'SPED TEACHER I': 15, 'SPED TEACHER': 15,
+    'TEACHER VI': 16, 'TEACHER V': 16, 'TEACHER IV': 17,
     'TEACHER III': 18, 'TEACHER II': 19, 'TEACHER I': 20
   };
 
   Object.keys(posCounts).forEach(pos => {
-    const r = posRowMap[pos];
-    if (r) setCell(`AB${r}`, posCounts[pos]);
+    let r = posRowMap[pos];
+    if (!r) {
+      // Fallback fuzzy normalization
+      const norm = pos.replace(/\s+\d+$/, '').trim(); // e.g. "TEACHER 1" -> "TEACHER"
+      if (norm.includes('PRINCIPAL') || norm.includes('HEAD TEACHER') || norm.includes('TIC') || norm.includes('OIC')) r = 12;
+      else if (norm.includes('MASTER TEACHER II') || norm.includes('MASTER TEACHER 2')) r = 13;
+      else if (norm.includes('MASTER TEACHER')) r = 14;
+      else if (norm.includes('SPED')) r = 15;
+      else if (norm.includes('TEACHER VI') || norm.includes('TEACHER 6')) r = 16;
+      else if (norm.includes('TEACHER IV') || norm.includes('TEACHER 4')) r = 17;
+      else if (norm.includes('TEACHER III') || norm.includes('TEACHER 3')) r = 18;
+      else if (norm.includes('TEACHER II') || norm.includes('TEACHER 2')) r = 19;
+      else if (norm.includes('TEACHER')) r = 20;
+    }
+    if (r) setCell(`AB${r}`, (ws[`AB${r}`]?.v || 0) + posCounts[pos]);
   });
 
   setCell('AB27', totalTeaching);

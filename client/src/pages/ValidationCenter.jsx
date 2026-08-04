@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
+import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
 
 export default function ValidationCenter() {
   const {
@@ -27,6 +28,13 @@ export default function ValidationCenter() {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState([]);
   const [hasPriorSubmission, setHasPriorSubmission] = useState(false);
+
+  // Tab & Preview filters for VIEW Sheet / Teacher Class Programs
+  const [activeTab, setActiveTab] = useState('validation'); // 'validation' | 'view_preview'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [posFilter, setPosFilter] = useState('ALL'); // 'ALL' | 'TEACHING' | 'NON_TEACHING'
+  const [expandedTeacherId, setExpandedTeacherId] = useState(null);
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Reset states on school switch
   useEffect(() => {
@@ -309,6 +317,7 @@ export default function ValidationCenter() {
   };
 
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const handleExportXLSB = async () => {
     try {
@@ -323,42 +332,128 @@ export default function ValidationCenter() {
     }
   };
 
+  const handleExportPDF = async () => {
+    try {
+      setIsDownloadingPdf(true);
+      await api.downloadESF7PDF(schoolInfo?.schoolId);
+      if (showToast) showToast("eSF7 PDF Report downloaded successfully!");
+    } catch (err) {
+      console.error(err);
+      if (showAlert) showAlert("PDF Export Failed", err.message || "Failed to generate eSF7 PDF report.");
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   return (
     <section id="validation" className="view grid">
       <article className="card">
         <div className="card-inner">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
             <div>
-              <h2>Validation Center</h2>
-              <p className="subtext">
-                Covers required fields, dependencies, uniqueness, duplicate detection, role constraints, workflow status, permissions, transfers, clustered schools, and computations.
+              <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: 'var(--navy)' }}>Validation Center & Reports</h2>
+              <p className="subtext" style={{ margin: '4px 0 0 0' }}>
+                Review personnel record validation, verify teacher class programs, and export official DepEd eSF7 reports.
               </p>
             </div>
-            {/* PAUSED FOR NOW
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                style={{
+                  background: 'linear-gradient(180deg, #10b981, #059669)',
+                  color: 'white',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                  padding: '10px 22px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                🖨️ Print / Save PDF Report
+              </button>
+          </div>
+
+          {/* Sub-Navigation Tabs */}
+          <div style={{
+            display: 'flex',
+            gap: '10px',
+            borderBottom: '2px solid var(--outline, #E2E8F0)',
+            marginBottom: '20px',
+            paddingBottom: '2px'
+          }}>
             <button
-              className="btn"
               type="button"
-              onClick={handleExportXLSB}
-              disabled={isDownloading}
+              onClick={() => setActiveTab('validation')}
               style={{
-                background: 'linear-gradient(180deg, #10b981, #059669)',
-                color: 'white',
+                padding: '10px 20px',
+                fontSize: '14px',
                 fontWeight: '700',
-                fontSize: '13px',
-                padding: '10px 18px',
-                borderRadius: '10px',
                 border: 'none',
-                cursor: isDownloading ? 'wait' : 'pointer',
-                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                borderBottom: activeTab === 'validation' ? '3px solid var(--blue, #2563EB)' : '3px solid transparent',
+                background: 'none',
+                color: activeTab === 'validation' ? 'var(--blue, #2563EB)' : 'var(--muted, #64748B)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px'
               }}
             >
-              {isDownloading ? '⏳ Generating eSF7 (.xlsb)...' : '📥 Export Official eSF7 (.xlsb)'}
+              🛡️ Validation Issues & Submission
+              {errors.length > 0 && (
+                <span style={{
+                  background: '#EF4444',
+                  color: 'white',
+                  borderRadius: '12px',
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: '800'
+                }}>
+                  {errors.length}
+                </span>
+              )}
             </button>
-            */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('view_preview')}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '700',
+                border: 'none',
+                borderBottom: activeTab === 'view_preview' ? '3px solid var(--blue, #2563EB)' : '3px solid transparent',
+                background: 'none',
+                color: activeTab === 'view_preview' ? 'var(--blue, #2563EB)' : 'var(--muted, #64748B)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              📊 Teacher Class Programs (VIEW Sheet Preview)
+              <span style={{
+                background: '#3B82F6',
+                color: 'white',
+                borderRadius: '12px',
+                padding: '2px 8px',
+                fontSize: '11px',
+                fontWeight: '800'
+              }}>
+                {personnel.length} Teachers
+              </span>
+            </button>
           </div>
+
+          {activeTab === 'validation' ? (
+            <>
 
           <div className="kpis" style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
             <div className="kpi">
@@ -408,8 +503,18 @@ export default function ValidationCenter() {
                     </strong>
                     <span>{issue.message}</span>
                   </div>
-                  {issue.personId && (
-                    <span style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--blue)' }}>
+                  {issue.category === 'Allowances & Financial Incentives' ? (
+                    <span 
+                      onClick={() => setActiveView('allowances')}
+                      style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--blue)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      Go to Allowances Portal →
+                    </span>
+                  ) : issue.personId && (
+                    <span 
+                      onClick={() => handleNavigateToPerson(issue.personId)}
+                      style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--blue)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
                       Fix Profile →
                     </span>
                   )}
@@ -694,6 +799,495 @@ export default function ValidationCenter() {
               )}
             </div>
           )}
+        </>
+      ) : (
+        /* ================= VIEW SHEET & TEACHER CLASS PROGRAM PREVIEW ================= */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Header Metadata Card Matching Official DepEd SF7 Template */}
+          <div style={{
+            background: 'white',
+            border: '2px solid #1E40AF',
+            borderRadius: '16px',
+            padding: '20px',
+            boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.08)',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+              {/* DepEd Official Logo */}
+              <div style={{ flexShrink: 0, paddingLeft: '8px' }}>
+                <img
+                  src="/OFFICIAL LOGO/deped.png"
+                  alt="DepEd Official Seal Logo"
+                  style={{ height: '80px', width: 'auto', objectFit: 'contain', display: 'block' }}
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              </div>
+
+              {/* Title & Metadata Grid */}
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '900', color: 'var(--navy)' }}>
+                    School Form 7 (SF7) School Personnel Assignment List and Basic Profile
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic', display: 'block' }}>
+                    (This replaces Form 12-Monthly Status Report for Teachers, Form 19-Assignment List, Form 29-Teacher Program and Form 31-Summary Information of Teachers)
+                  </span>
+                </div>
+
+                {/* Outlined Input Box Metadata Grid Matching Screenshot */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px', fontWeight: '700', color: 'var(--navy)' }}>
+                  {/* Row 1: School ID, Region, Division */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--muted)' }}>School ID</span>
+                      <div style={{ border: '1.5px solid #0F172A', borderRadius: '4px', padding: '3px 14px', minWidth: '130px', textAlign: 'center', fontWeight: '800', background: '#F8FAFC' }}>
+                        {schoolInfo?.schoolId || schoolInfo?.school_id || '108348'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--muted)' }}>Region</span>
+                      <div style={{ border: '1.5px solid #0F172A', borderRadius: '4px', padding: '3px 14px', minWidth: '100px', textAlign: 'center', fontWeight: '800', background: '#F8FAFC' }}>
+                        {schoolInfo?.region || 'REGION IV-A'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--muted)' }}>Division</span>
+                      <div style={{ border: '1.5px solid #0F172A', borderRadius: '4px', padding: '3px 14px', minWidth: '180px', textAlign: 'center', fontWeight: '800', background: '#F8FAFC' }}>
+                        {schoolInfo?.division || 'LAGUNA'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Row 2: School Name, District, School Year */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--muted)' }}>School Name</span>
+                      <div style={{ border: '1.5px solid #0F172A', borderRadius: '4px', padding: '3px 14px', minWidth: '240px', textAlign: 'center', fontWeight: '800', background: '#F8FAFC' }}>
+                        {schoolInfo?.schoolName || schoolInfo?.school_name || 'MAJAYJAY ELEMENTARY SCHOOL'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--muted)' }}>District</span>
+                      <div style={{ border: '1.5px solid #0F172A', borderRadius: '4px', padding: '3px 14px', minWidth: '140px', textAlign: 'center', fontWeight: '800', background: '#F8FAFC' }}>
+                        {schoolInfo?.district || 'MAJAYJAY'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: 'var(--muted)' }}>School Year</span>
+                      <div style={{ border: '1.5px solid #0F172A', borderRadius: '4px', padding: '3px 14px', minWidth: '110px', textAlign: 'center', fontWeight: '800', background: '#F8FAFC' }}>
+                        {schoolInfo?.schoolYear || schoolInfo?.school_year || 'SY 2026-2027'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Position Summary Tallies Table matching official eSF7 template */}
+          <div style={{
+            background: 'white',
+            border: '1.5px solid var(--outline, #E2E8F0)',
+            borderRadius: '16px',
+            padding: '20px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+          }}>
+            <h4 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              📊 Personnel Position Incumbent Summary (Per Position)
+            </h4>
+            {(() => {
+              const teachingMap = {};
+              const nonTeachingMap = {};
+              let totalTeachingCount = 0;
+              let totalNonTeachingCount = 0;
+
+              (personnel || []).forEach(p => {
+                const pos = (p.position || 'TEACHER I').toUpperCase().trim();
+                if (p.type === 'non-teaching' || pos.includes('ADMINISTRATIVE') || pos.includes('OFFICER') || pos.includes('ASSISTANT') || pos.includes('AIDE') || pos.includes('PROJECT')) {
+                  nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
+                  totalNonTeachingCount++;
+                } else {
+                  teachingMap[pos] = (teachingMap[pos] || 0) + 1;
+                  totalTeachingCount++;
+                }
+              });
+
+              const activeTeachingRows = Object.keys(teachingMap).map(t => ({ title: t, count: teachingMap[t] }));
+              const activeNonTeachingRows = Object.keys(nonTeachingMap).map(t => ({ title: t, count: nonTeachingMap[t] }));
+              const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, 6);
+
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', border: '1.5px solid #0F172A' }}>
+                    <thead>
+                      <tr style={{ background: '#F1F5F9', textAlign: 'center', fontWeight: '800', color: 'var(--navy)' }}>
+                        <th colSpan="2" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '34%' }}>
+                          (A) Nationally-Funded Teaching & Teaching Related Items
+                        </th>
+                        <th colSpan="2" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '33%' }}>
+                          (B) Nationally-Funded Non Teaching Items
+                        </th>
+                        <th colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '33%' }}>
+                          (C) Other Appointments and Funding Source
+                        </th>
+                      </tr>
+                      <tr style={{ background: '#F8FAFC', fontSize: '10px', textAlign: 'center', fontWeight: '700', color: '#475569' }}>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Title of Plantilla Position</th>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '60px' }}>Incumbents</th>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Title of Plantilla Position</th>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '60px' }}>Incumbents</th>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Title of Position</th>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Appointment</th>
+                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Fund Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: maxRows }).map((_, rIdx) => {
+                        const tItem = activeTeachingRows[rIdx];
+                        const ntItem = activeNonTeachingRows[rIdx];
+
+                        return (
+                          <tr key={rIdx} style={{ textAlign: 'left', height: '22px' }}>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: '600', color: '#0F172A' }}>
+                              {tItem ? tItem.title : ''}
+                            </td>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', textAlign: 'center', fontWeight: '800', color: '#047857' }}>
+                              {tItem ? tItem.count : ''}
+                            </td>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: '600', color: '#0F172A' }}>
+                              {ntItem ? ntItem.title : ''}
+                            </td>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', textAlign: 'center', fontWeight: '800', color: '#1D4ED8' }}>
+                              {ntItem ? ntItem.count : ''}
+                            </td>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: '#94A3B8' }}>
+                              {rIdx === 0 ? 'UTILITY WORKER' : ''}
+                            </td>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: '#94A3B8' }}>
+                              {rIdx === 0 ? 'JOB ORDER / COS' : ''}
+                            </td>
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: '#94A3B8' }}>
+                              {rIdx === 0 ? 'MOOE' : ''}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      <tr style={{ fontWeight: '800', background: '#F1F5F9', color: 'var(--navy)' }}>
+                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>TOTAL</td>
+                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#047857', fontSize: '13px' }}>{totalTeachingCount}</td>
+                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>TOTAL</td>
+                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#1D4ED8', fontSize: '13px' }}>{totalNonTeachingCount}</td>
+                        <td colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '6px 8px' }}></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Search & Filter Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ position: 'relative', minWidth: '280px', flex: 1 }}>
+              <input
+                type="text"
+                placeholder="🔍 Search teacher name, TIN, position, or subject..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  border: '1.5px solid var(--outline, #CBD5E1)',
+                  fontSize: '13px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setPosFilter('ALL')}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: posFilter === 'ALL' ? 'var(--blue, #2563EB)' : 'white',
+                  color: posFilter === 'ALL' ? 'white' : '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                All Personnel
+              </button>
+              <button
+                type="button"
+                onClick={() => setPosFilter('TEACHING')}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: posFilter === 'TEACHING' ? 'var(--blue, #2563EB)' : 'white',
+                  color: posFilter === 'TEACHING' ? 'white' : '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Teaching Only
+              </button>
+              <button
+                type="button"
+                onClick={() => setPosFilter('NON_TEACHING')}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: posFilter === 'NON_TEACHING' ? 'var(--blue, #2563EB)' : 'white',
+                  color: posFilter === 'NON_TEACHING' ? 'white' : '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                Non-Teaching
+              </button>
+            </div>
+          </div>
+
+          {/* Personnel Teacher Class Program List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {personnel
+              .filter(p => {
+                if (posFilter === 'TEACHING' && p.type === 'non-teaching') return false;
+                if (posFilter === 'NON_TEACHING' && p.type !== 'non-teaching') return false;
+                if (!searchQuery) return true;
+                const q = searchQuery.toLowerCase();
+                const name = `${p.firstName} ${p.lastName} ${p.tin} ${p.position}`.toLowerCase();
+                const hasSubj = (p.workloadRows || []).some(w => (w.subject || w.task || '').toLowerCase().includes(q));
+                return name.includes(q) || hasSubj;
+              })
+              .map((p, pIdx) => {
+                const isExpanded = expandedTeacherId === p.id || searchQuery.length > 0;
+                const workloads = p.workloadRows || [];
+                let teacherTotalMins = 0;
+
+                return (
+                  <div
+                    key={p.id || pIdx}
+                    style={{
+                      background: 'white',
+                      border: '1.5px solid var(--outline, #E2E8F0)',
+                      borderRadius: '16px',
+                      overflow: 'hidden',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {/* Teacher Summary Header Row */}
+                    <div
+                      onClick={() => setExpandedTeacherId(expandedTeacherId === p.id ? null : p.id)}
+                      style={{
+                        padding: '16px 20px',
+                        background: '#F8FAFC',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        borderBottom: isExpanded ? '1.5px solid #E2E8F0' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '10px',
+                          background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: '800',
+                          fontSize: '15px'
+                        }}>
+                          {(p.firstName || 'T').charAt(0)}{(p.lastName || '').charAt(0)}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <strong style={{ fontSize: '15px', color: 'var(--navy)' }}>
+                              {p.lastName}, {p.firstName} {p.middleName ? `${p.middleName.charAt(0)}.` : ''}
+                            </strong>
+                            <span style={{
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              background: '#DBEAFE',
+                              color: '#1E40AF',
+                              padding: '2px 8px',
+                              borderRadius: '6px'
+                            }}>
+                              {p.position || 'TEACHER I'}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '12px', color: 'var(--muted)', display: 'block', marginTop: '2px' }}>
+                            TIN: <strong>{p.tin || p.philsysNo || 'N/A'}</strong> · {p.natureOfAppointment || 'REGULAR PERMANENT'} · {p.collegeDegree || 'BACHELOR DEGREE'} ({p.major || 'GENERAL'})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>
+                            Assigned Workloads
+                          </span>
+                          <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
+                            {workloads.length} Slots
+                          </strong>
+                        </div>
+                        <span style={{ fontSize: '18px', color: 'var(--muted)' }}>
+                          {isExpanded ? '▲' : '▼'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Teacher Workload Detail Table */}
+                    {isExpanded && (
+                      <div style={{ padding: '16px 20px', background: 'white' }}>
+                        {workloads.length === 0 ? (
+                          <div style={{ padding: '16px', textTransform: 'uppercase', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
+                            No active workload rows assigned yet.
+                          </div>
+                        ) : (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F1F5F9', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  <th style={{ padding: '10px 12px' }}>Subject / Assignment</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Grade</th>
+                                  <th style={{ padding: '10px 12px' }}>Section</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Days</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>From</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>To</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Weekly Mins</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {workloads.map((w, wIdx) => {
+                                  const startStr = w.startTime || w.start_time || '07:30';
+                                  const endStr   = w.endTime || w.end_time || '08:15';
+                                  const sMins    = parseInt(startStr.split(':')[0] || 0) * 60 + parseInt(startStr.split(':')[1] || 0);
+                                  const eMins    = parseInt(endStr.split(':')[0] || 0) * 60 + parseInt(endStr.split(':')[1] || 0);
+                                  const dailyMins = Math.max(0, eMins - sMins);
+                                  const daysArr  = Array.isArray(w.days) ? w.days : ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+                                  const weeklyMins = dailyMins * (daysArr.length || 5);
+                                  teacherTotalMins += weeklyMins;
+
+                                  const format12Hr = (timeStr) => {
+                                    if (!timeStr) return '';
+                                    if (timeStr.toUpperCase().includes('AM') || timeStr.toUpperCase().includes('PM')) return timeStr;
+                                    const parts = timeStr.split(':');
+                                    let h = parseInt(parts[0], 10);
+                                    const m = parts[1] || '00';
+                                    if (isNaN(h)) return timeStr;
+                                    const ampm = h >= 12 ? 'PM' : 'AM';
+                                    h = h % 12;
+                                    if (h === 0) h = 12;
+                                    return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+                                  };
+
+                                  const rawGrade = w.gradeLevel || w.grade_level || (p.type === 'non-teaching' || (p.position || '').toUpperCase().includes('PRINCIPAL') ? 'NG' : '4');
+                                  let gradeVal   = String(rawGrade).trim();
+                                  if (gradeVal.toUpperCase() === 'NG' || gradeVal.toUpperCase().includes('NON')) {
+                                    gradeVal = 'NG';
+                                  } else {
+                                    const m = gradeVal.match(/\d+/);
+                                    if (m) gradeVal = m[0];
+                                  }
+                                  const secVal   = (w.sectionName || w.section_name || 'BONIFACIO').toUpperCase();
+
+                                  return (
+                                    <tr key={w.id || wIdx} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                      <td style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--navy)' }}>
+                                        {w.subject || w.subject_name || w.task || 'TEACHING'}
+                                      </td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '800', color: '#1E40AF' }}>
+                                        {gradeVal}
+                                      </td>
+                                      <td style={{ padding: '10px 12px', color: '#0F172A', fontWeight: '700' }}>
+                                        {secVal}
+                                      </td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                        <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                                          {['M', 'T', 'W', 'TH', 'F'].map(code => {
+                                            const str = daysArr.map(d => String(d).toUpperCase()).join(' ');
+                                            let active = false;
+                                            if (code === 'M') active = str.includes('MON') || str.includes('M');
+                                            if (code === 'T') active = str.includes('TUE') || str.includes('T');
+                                            if (code === 'W') active = str.includes('WED') || str.includes('W');
+                                            if (code === 'TH') active = str.includes('THU') || str.includes('TH');
+                                            if (code === 'F') active = str.includes('FRI') || str.includes('F');
+
+                                            return (
+                                              <span key={code} style={{
+                                                padding: '2px 5px',
+                                                fontSize: '10px',
+                                                fontWeight: '800',
+                                                borderRadius: '4px',
+                                                background: active ? '#2563EB' : '#E2E8F0',
+                                                color: active ? 'white' : '#94A3B8'
+                                              }}>
+                                                {code}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      </td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'center', fontFamily: 'monospace', fontWeight: '600' }}>
+                                        {format12Hr(startStr)}
+                                      </td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'center', fontFamily: 'monospace', fontWeight: '600' }}>
+                                        {format12Hr(endStr)}
+                                      </td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', color: '#059669' }}>
+                                        {weeklyMins} min
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                                <tr style={{ background: '#F8FAFC', fontWeight: '800', borderTop: '2px solid #CBD5E1' }}>
+                                  <td colSpan="6" style={{ padding: '10px 12px', textAlign: 'right', textTransform: 'uppercase', color: 'var(--navy)' }}>Total Teaching Minutes</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#047857', fontSize: '15px' }}>{teacherTotalMins} min</td>
+                                </tr>
+                              </tbody>
+                            </table>
+
+                            <div style={{
+                              marginTop: '12px',
+                              padding: '10px 14px',
+                              background: '#F0FDF4',
+                              borderRadius: '8px',
+                              border: '1px solid #BBF7D0',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: '#166534', textTransform: 'uppercase' }}>
+                                Total Workload Minutes / Week
+                              </span>
+                              <strong style={{ fontSize: '15px', color: '#15803D' }}>
+                                {teacherTotalMins} Mins ({(teacherTotalMins / 60).toFixed(1)} Hours/Week)
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
         </div>
       </article>
 
@@ -843,6 +1437,15 @@ export default function ValidationCenter() {
           </div>
         </div>
       )}
+
+      {/* HTML Printable Report Modal Overlay */}
+      <ESF7PrintableReportModal
+        isOpen={showPrintModal}
+        onClose={() => setShowPrintModal(false)}
+        schoolInfo={schoolInfo}
+        personnel={personnel}
+      />
     </section>
   );
 }
+
