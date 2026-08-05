@@ -352,15 +352,7 @@ export default function RoomQR() {
         </div>
       )}
 
-      {/* Concept Info Box */}
-      <div className="profile-section-note" style={{ borderLeftColor: 'var(--blue-600)', background: 'linear-gradient(180deg, #fff, var(--blue-50))' }}>
-        <h3 style={{ margin: '0 0 6px 0', color: 'var(--navy)', fontSize: '15px' }}>💡 Peer-to-Peer Offline Sync Concept</h3>
-        <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.4', color: 'var(--text)' }}>
-          Both generating the QR code (on the teacher's phone) and scanning it (on this administrator device) run 
-          <strong> entirely locally in the browser</strong>. This creates a secure, offline-first data exchange that consumes 
-          <strong> 0% server power or VM database storage</strong>.
-        </p>
-      </div>
+
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
         

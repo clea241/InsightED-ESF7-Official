@@ -1496,15 +1496,45 @@ export default function OrganizedClasses() {
             <form onSubmit={handleAralSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '6px' }}>ARAL Basis</label>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                    <input type="radio" name="aralBasis" value="grade" checked={aralBasis === 'grade'} onChange={() => setAralBasis('grade')} />
+                <div style={{ display: 'flex', background: '#F1F5F9', border: '1.5px solid #CBD5E1', borderRadius: '12px', padding: '3px', gap: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAralBasis('grade')}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '9px',
+                      border: 'none',
+                      background: aralBasis === 'grade' ? '#0284C7' : 'transparent',
+                      color: aralBasis === 'grade' ? 'white' : '#475569',
+                      fontWeight: '800',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      boxShadow: aralBasis === 'grade' ? '0 2px 6px rgba(2, 132, 199, 0.2)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
                     (1) Grade Level
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                    <input type="radio" name="aralBasis" value="assessment" checked={aralBasis === 'assessment'} onChange={() => setAralBasis('assessment')} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAralBasis('assessment')}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '9px',
+                      border: 'none',
+                      background: aralBasis === 'assessment' ? '#0284C7' : 'transparent',
+                      color: aralBasis === 'assessment' ? 'white' : '#475569',
+                      fontWeight: '800',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      boxShadow: aralBasis === 'assessment' ? '0 2px 6px rgba(2, 132, 199, 0.2)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
                     (2) Assessment Profile
-                  </label>
+                  </button>
                 </div>
               </div>
 

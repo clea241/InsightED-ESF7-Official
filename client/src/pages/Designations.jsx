@@ -224,7 +224,7 @@ export default function Designations() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: 'var(--navy)' }}>
-                🏅 School Designation Management
+                ⚜ School Designation Management
               </h2>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--muted)' }}>
                 Assign official school designations, SDS approval status, and manage ECP allocation limits.

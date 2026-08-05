@@ -10,12 +10,11 @@ require('dotenv').config();
 // These are for pilot testing only. Remove before official rollout.
 // Prefix 1 = Elementary | Prefix 3 = JHS/SHS | Prefix 5 = All Offerings
 const PILOT_SCHOOLS = [
-  // Elementary (prefix 1)
-  '130113', '123325', '104126', '114196', '199999', '123458',
-  // JHS/SHS (prefix 3)
-  '312311', '300844', '300744',
-  // All Offerings (prefix 5)
-  '500273', '500522', '500369'
+  '305337', '101190', '305280', '110416', '500552',
+  '500484', '124214', '125789', '305514', '131280',
+  '199999', '130113', '123325', '104126', '114196',
+  '123458', '312311', '300844', '300744', '500273',
+  '500522', '500369'
 ];
 const PILOT_PASSWORD = 'Pilot2026!';
 

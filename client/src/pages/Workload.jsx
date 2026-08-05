@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 const isAdvisorySub = (sub) => {
   if (!sub) return false;
@@ -1253,33 +1253,14 @@ import {
   SUBJECT_OPTIONS,
   TEACHING_RELATED_TASK_OPTIONS,
   ADMINISTRATIVE_TASK_OPTIONS,
-  POSITION_OPTIONS_BY_CATEGORY
+  POSITION_OPTIONS_BY_CATEGORY,
+  OFFICIAL_DESIGNATIONS
 } from '../context/AppContext';
 import { api } from '../services/api';
 
 let GRADE_LEVEL_SUBJECTS = {
   'Kinder': [
-    'ADVISORY',
-    'KINDER BLOCKS OF TIME',
-    'SPED MODIFIED SUBJECTS',
-    'IP RELATED SUBJECT',
-    'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
-    'REMEDIATION',
-    'REMEDIAL/ENHANCEMENT CLASS',
-    'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
-    'TR - RESEARCH SCHOOL COORDINATOR',
-    'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
-    'TR - ICT SCHOOL COORDINATOR',
-    'TR - GUIDANCE AND COUNSELLING SCHOOL COORDINATOR',
-    'TR - INCLUSIVE EDUCATION SCHOOL COORDINATOR',
-    'TR - SCHOOL PAPER TRAINER/ADVISER',
-    'TR - SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER',
-    'TR - SELG / SSLG TRAINER/ADVISER',
-    'TR - GRADE LEVEL CHAIRPERSON',
-    'TR - LEARNING AREA CHAIRPERSON'
+    'KINDER BLOCKS OF TIME'
   ],
   'Grade 1': [
     'ADVISORY',
@@ -3836,6 +3817,38 @@ export default function Workload() {
     }
   }, [currentPerson?.id, currentPerson?.workloadVerified]);
 
+  const allTeachingRelatedOptions = useMemo(() => {
+    const list = new Set(TEACHING_RELATED_TASK_OPTIONS);
+    (OFFICIAL_DESIGNATIONS || []).forEach(d => {
+      if (d.name) {
+        list.add(d.name);
+        list.add(`TR - ${d.name}`);
+      }
+    });
+    return Array.from(list);
+  }, []);
+
+  useEffect(() => {
+    if (currentPerson?.designation && currentPerson.type === 'teaching') {
+      const rawDesig = String(currentPerson.designation).replace('::APPROVED_SDS', '').trim();
+      if (rawDesig) {
+        const existingRows = currentPerson.teachingRelatedRows || [];
+        const alreadyHas = existingRows.some(r => r.task && (r.task.includes(rawDesig) || rawDesig.includes(r.task)));
+        if (!alreadyHas) {
+          const isSds = currentPerson.designation.includes('::APPROVED_SDS');
+          const matchedTask = allTeachingRelatedOptions.find(opt => opt.includes(rawDesig) || rawDesig.includes(opt)) || rawDesig;
+          const newRow = {
+            task: matchedTask,
+            designatedBySds: isSds,
+            hours: 1,
+            days: ['M', 'T', 'W', 'TH', 'F']
+          };
+          handleFieldChange('teachingRelatedRows', [newRow, ...existingRows]);
+        }
+      }
+    }
+  }, [currentPerson?.id, currentPerson?.designation, allTeachingRelatedOptions]);
+
 
 
   const handleFieldChangeForPerson = (personId, key, value) => {
@@ -3878,7 +3891,9 @@ export default function Workload() {
     }
 
     let baseList = [];
-    if (grade === 'MONO-GRADE') {
+    if (normGrade.toUpperCase().includes('KINDER')) {
+      return ['KINDER BLOCKS OF TIME'];
+    } else if (grade === 'MONO-GRADE') {
       if (category === 'Elementary') baseList = ELEMENTARY_MONO_GRADE_SUBJECTS;
       else if (category === 'JHS') baseList = JHS_MONO_GRADE_SUBJECTS;
       else if (category === 'SHS') baseList = SHS_MONO_GRADE_SUBJECTS;
@@ -4120,8 +4135,12 @@ export default function Workload() {
     const subStr = String(row.subject || row.task || '').toUpperCase();
     const gStr = String(row.gradeLevel || '').toUpperCase();
     
-    // KINDER BLOCKS OF TIME: Automatic 3 Hours (180 mins) — No max / no min duration error!
-    if (subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER')) {
+    // KINDER BLOCKS OF TIME: 4 Hours Max (240 mins)
+    const isKinder = subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER');
+    if (isKinder) {
+      if (diffMins > 240) {
+        return `Exceeds max 4 hours (240 mins) for Kinder (Current: ${diffMins} mins)`;
+      }
       return null;
     }
 
@@ -4144,8 +4163,11 @@ export default function Workload() {
       const eTime = updatedRow.endTime;
       if (sTime && eTime) {
         const diff = getTimeDiffMins(sTime, eTime);
+        const subStr = String(updatedRow.subject || '').toUpperCase();
+        const gStr = String(updatedRow.gradeLevel || '').toUpperCase();
+        const isKinder = subStr.includes('KINDER') || gStr.includes('KINDER');
         const isSHS = isSHSRow(updatedRow);
-        const maxMins = isSHS ? 360 : 60;
+        const maxMins = isKinder ? 240 : (isSHS ? 360 : 60);
 
         if (diff > maxMins) {
           const [sh, sm] = sTime.split(':').map(Number);
@@ -4155,10 +4177,12 @@ export default function Workload() {
           updatedRow.endTime = `${maxEndH}:${maxEndM}`;
 
           await showAlert(
-            `Maximum Duration ${isSHS ? '6 Hours' : '1 Hour'}`,
-            isSHS
-              ? "Senior High School (Grade 11 & Grade 12) subject schedule cannot exceed 6 hours. The end time has been adjusted to 6 hours max."
-              : "A single subject period in workload cannot exceed 1 hour (60 minutes). The end time has been adjusted to 1 hour max."
+            `Maximum Duration ${isKinder ? '4 Hours' : (isSHS ? '6 Hours' : '1 Hour')}`,
+            isKinder
+              ? "Kindergarten Blocks of Time schedule cannot exceed 4 hours (240 minutes). The end time has been adjusted to 4 hours max."
+              : (isSHS
+                ? "Senior High School (Grade 11 & Grade 12) subject schedule cannot exceed 6 hours. The end time has been adjusted to 6 hours max."
+                : "A single subject period in workload cannot exceed 1 hour (60 minutes). The end time has been adjusted to 1 hour max.")
           );
         } else if (diff < 0) {
           await showAlert(
@@ -4190,8 +4214,11 @@ export default function Workload() {
       const eTime = updatedRow.endTime;
       if (sTime && eTime) {
         const diff = getTimeDiffMins(sTime, eTime);
+        const subStr = String(updatedRow.subject || '').toUpperCase();
+        const gStr = String(updatedRow.gradeLevel || '').toUpperCase();
+        const isKinder = subStr.includes('KINDER') || gStr.includes('KINDER');
         const isSHS = isSHSRow(updatedRow);
-        const maxMins = isSHS ? 360 : 60;
+        const maxMins = isKinder ? 240 : (isSHS ? 360 : 60);
 
         if (diff > maxMins) {
           const [sh, sm] = sTime.split(':').map(Number);
@@ -5361,36 +5388,107 @@ export default function Workload() {
                       </div>
                     )}
 
-                    {/* Workload KPIs */}
-                    <div className="workload-kpis" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                      <div
-                        className="kpi"
-                        style={{
-                          background: Number(dailyAvgTeachingHours) === 0 ? '#FFFFFF' : Number(dailyAvgTeachingHours) <= 4 ? '#DCFCE7' : Number(dailyAvgTeachingHours) <= 6 ? '#FFEDD5' : '#FEE2E2',
-                          border: Number(dailyAvgTeachingHours) === 0 ? '1.5px solid #E2E8F0' : Number(dailyAvgTeachingHours) <= 4 ? '1.5px solid #86EFAC' : Number(dailyAvgTeachingHours) <= 6 ? '1.5px solid #FDBA74' : '1.5px solid #FCA5A5',
-                          borderRadius: '12px',
-                          padding: '12px 16px',
-                          color: Number(dailyAvgTeachingHours) === 0 ? 'var(--navy)' : Number(dailyAvgTeachingHours) <= 4 ? '#15803D' : Number(dailyAvgTeachingHours) <= 6 ? '#C2410C' : '#B91C1C'
-                        }}
-                      >
-                        <span style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', lineHeight: '1.3' }}>
-                          Teaching Workload Total Teaching Load per day (MTWThF)
-                        </span>
-                        <strong style={{ fontSize: '20px', fontWeight: '800', display: 'block', marginTop: '4px' }}>
-                          {dailyAvgTeachingHours} hrs/day
-                        </strong>
-                        <small style={{ fontSize: '11px', fontWeight: '700', display: 'block', marginTop: '2px' }}>
-                          Weekly Total: {weeklyTeachingHours} hrs
-                        </small>
-                      </div>
-                      <div className="kpi">
-                        <span>Overload per Day</span>
-                        <strong>{dailyOverloadHours} hrs</strong>
-                      </div>
-                      <div className="kpi">
-                        <span>Overload per Week</span>
-                        <strong>{teachingOverloadHours} hrs</strong>
-                      </div>
+                    {/* 5 Daily Workload KPI Cards (Monday to Friday) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', margin: '16px 0' }}>
+                      {[
+                        { code: 'M', name: 'Monday' },
+                        { code: 'T', name: 'Tuesday' },
+                        { code: 'W', name: 'Wednesday' },
+                        { code: 'TH', name: 'Thursday' },
+                        { code: 'F', name: 'Friday' }
+                      ].map(day => {
+                        let dayMins = 0;
+
+                        // 1. Elementary / JHS active teaching subject periods
+                        (currentPerson?.workloadRows || []).forEach(r => {
+                          if (!isSHSRow(r) && Array.isArray(r.days) && r.days.includes(day.code)) {
+                            if (r.startTime && r.endTime) {
+                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
+                            }
+                          }
+                        });
+
+                        // 2. Senior High School active term subject periods (from shsWorkloadMap for selected term or workloadRows matching selected term)
+                        const activePersonId = currentPerson?.id;
+                        const currentPersonShsMap = shsWorkloadMap[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
+                        const activeShsTermRows = currentPersonShsMap[selectedShsTerm] || [];
+                        
+                        activeShsTermRows.forEach(r => {
+                          if (Array.isArray(r.days) && r.days.includes(day.code)) {
+                            if (r.startTime && r.endTime) {
+                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
+                            }
+                          }
+                        });
+
+                        (currentPerson?.workloadRows || []).forEach(r => {
+                          if (isSHSRow(r)) {
+                            const rowTerm = r.term || r.semester || '1st';
+                            if ((rowTerm === selectedShsTerm || (selectedShsTerm === '1st' && !r.term)) && Array.isArray(r.days) && r.days.includes(day.code)) {
+                              if (r.startTime && r.endTime) {
+                                dayMins += getTimeDiffMins(r.startTime, r.endTime);
+                              }
+                            }
+                          }
+                        });
+
+                        // 3. Extra Tasks (Teaching-Related & Administrative) with assigned start and end times
+                        (currentPerson?.teachingRelatedRows || []).forEach(r => {
+                          if (Array.isArray(r.days) && r.days.includes(day.code)) {
+                            if (r.startTime && r.endTime) {
+                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
+                            }
+                          }
+                        });
+
+                        (currentPerson?.administrativeRows || []).forEach(r => {
+                          const rDays = Array.isArray(r.days) ? r.days : ['M', 'T', 'W', 'TH', 'F'];
+                          if (rDays.includes(day.code)) {
+                            if (r.startTime && r.endTime) {
+                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
+                            }
+                          }
+                        });
+
+                        const dayHrs = parseFloat((dayMins / 60).toFixed(1));
+                        
+                        // Font color scale: 0 = White (#FFFFFF), <=4 = Emerald Green (#10B981), <=6 = Amber Orange (#F59E0B), >6 = Rose Red (#F43F5E)
+                        let fontColor = '#FFFFFF';
+                        if (dayHrs > 0 && dayHrs <= 4) {
+                          fontColor = '#10B981';
+                        } else if (dayHrs > 4 && dayHrs <= 6) {
+                          fontColor = '#F59E0B';
+                        } else if (dayHrs > 6) {
+                          fontColor = '#F43F5E';
+                        }
+
+                        return (
+                          <div
+                            key={day.code}
+                            style={{
+                              background: '#0F172A',
+                              border: '1.5px solid #1E293B',
+                              borderRadius: '12px',
+                              padding: '12px 14px',
+                              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justify: 'space-between',
+                              minHeight: '80px'
+                            }}
+                          >
+                            <span style={{ fontSize: '11px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              {day.name}
+                            </span>
+                            <strong style={{ fontSize: '20px', fontWeight: '900', color: fontColor, marginTop: '4px', letterSpacing: '-0.5px' }}>
+                              {dayHrs} hrs
+                            </strong>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: fontColor, marginTop: '2px', opacity: 0.9 }}>
+                              {dayHrs === 0 ? '⚪ 0.0 hrs' : dayHrs <= 4 ? '🟢 Normal' : dayHrs <= 6 ? '🟠 Full' : '🔴 Overload'}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {/* Subject schedule panel */}
@@ -5865,8 +5963,14 @@ export default function Workload() {
                                           {(() => {
                                             const currentSecId = String(row.sectionId || row.section_id || '');
                                             const currentSub = row.subject || row.subject_name || '';
+                                            const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId);
+                                            const effectiveGrade = String(row.gradeLevel || linkedSec?.gradeLevel || '').toLowerCase();
+
                                             const subjectList = (() => {
                                               if (!currentSecId && !currentSub) return [];
+                                              if (effectiveGrade.includes('kinder')) {
+                                                return ['KINDER BLOCKS OF TIME'];
+                                              }
                                               const assignedGrades = getAssignedGradeLevels(currentPerson);
                                               if (row.gradeLevel) {
                                                 return getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
@@ -6243,7 +6347,7 @@ export default function Workload() {
                         <div className="multi-task-panel">
                           <div className="multi-task-panel-head">
                             <label>Teaching-Related Tasks</label>
-                            <button className="btn secondary" type="button" onClick={() => addTaskRow('teachingRelatedRows', TEACHING_RELATED_TASK_OPTIONS)}>
+                            <button className="btn secondary" type="button" onClick={() => addTaskRow('teachingRelatedRows', allTeachingRelatedOptions)}>
                               + Add task
                             </button>
                           </div>
@@ -6270,35 +6374,8 @@ export default function Workload() {
                                   <SearchableSelect
                                     value={row.task}
                                     onChange={(e) => updateTaskField('teachingRelatedRows', idx, 'task', e.target.value)}
-                                    options={TEACHING_RELATED_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
+                                    options={allTeachingRelatedOptions.map(opt => ({ value: opt, label: opt }))}
                                   />
-                                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#334155' }}>Designated by SDS?</span>
-                                    <div style={{ display: 'flex', border: '1.5px solid #CBD5E1', borderRadius: '6px', overflow: 'hidden', background: '#FFFFFF' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => updateTaskField('teachingRelatedRows', idx, 'designatedBySds', false)}
-                                        style={{
-                                          padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
-                                          background: !row.designatedBySds ? '#64748B' : 'transparent',
-                                          color: !row.designatedBySds ? '#FFFFFF' : '#64748B'
-                                        }}
-                                      >
-                                        NO
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => updateTaskField('teachingRelatedRows', idx, 'designatedBySds', true)}
-                                        style={{
-                                          padding: '3px 10px', fontSize: '10px', fontWeight: '800', border: 'none', cursor: 'pointer',
-                                          background: row.designatedBySds ? '#0284C7' : 'transparent',
-                                          color: row.designatedBySds ? '#FFFFFF' : '#64748B'
-                                        }}
-                                      >
-                                        YES
-                                      </button>
-                                    </div>
-                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                                   {(row.dates || []).map((dateEntry, dateIdx) => (
@@ -6428,24 +6505,28 @@ export default function Workload() {
                                   />
 
                                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                                    <div style={{ width: '120px' }}>
-                                      <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
-                                      <input
-                                        type="time"
-                                        value={row.startTime || '08:00'}
-                                        onChange={(e) => updateTaskField('administrativeRows', idx, 'startTime', e.target.value)}
-                                        style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
-                                      />
-                                    </div>
-                                    <div style={{ width: '120px' }}>
-                                      <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
-                                      <input
-                                        type="time"
-                                        value={row.endTime || '12:00'}
-                                        onChange={(e) => updateTaskField('administrativeRows', idx, 'endTime', e.target.value)}
-                                        style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
-                                      />
-                                    </div>
+                                    {(!row.dates || row.dates.length === 0) && (
+                                      <>
+                                        <div style={{ width: '120px' }}>
+                                          <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
+                                          <input
+                                            type="time"
+                                            value={row.startTime || '08:00'}
+                                            onChange={(e) => updateTaskField('administrativeRows', idx, 'startTime', e.target.value)}
+                                            style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
+                                          />
+                                        </div>
+                                        <div style={{ width: '120px' }}>
+                                          <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
+                                          <input
+                                            type="time"
+                                            value={row.endTime || '12:00'}
+                                            onChange={(e) => updateTaskField('administrativeRows', idx, 'endTime', e.target.value)}
+                                            style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
+                                          />
+                                        </div>
+                                      </>
+                                    )}
                                     <div style={{ flex: 1, minWidth: '180px' }}>
                                       <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Usual Days (MTWTHF)</label>
                                       <div style={{ display: 'flex', gap: '4px' }}>
