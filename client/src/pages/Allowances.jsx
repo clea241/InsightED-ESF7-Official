@@ -12,8 +12,7 @@ export default function Allowances() {
     { key: 'uniform', label: 'Uniform Allowance', desc: 'Clothing & Uniform Allowance' },
     { key: 'supplies', label: 'Teaching Supplies', desc: 'Cash Allowance for Teaching Supplies' },
     { key: 'medical', label: 'Medical Allowance', desc: 'Fixed Medical Allowance (₱7,000)' },
-    { key: 'hardship', label: 'Special Hardship', desc: 'Special Hardship Allowance' },
-    { key: 'overload', label: 'Overload Pay', desc: 'Teaching Overload Pay Authorization' }
+    { key: 'hardship', label: 'Special Hardship', desc: 'Special Hardship Allowance' }
   ];
 
   // Active personnel (exclude draft and shared personnel from main grid if applicable)

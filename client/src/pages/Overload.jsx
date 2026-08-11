@@ -1,13 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import { api } from '../services/api';
 
-// Helper to convert "HH:MM" time to minutes
+// Helper to convert "HH:MM" or "HH:MM AM/PM" time to minutes
 const timeToMins = (t) => {
   if (!t) return 0;
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
+  const str = String(t).trim();
+  const match = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (!match) {
+    const [h, m] = str.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
+  let h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+
+  return h * 60 + m;
 };
 
 // Day mapping helper from short code to full name
@@ -271,27 +283,122 @@ export default function Overload() {
     }
   };
 
-  // Helper to determine eligibility for Teaching Overload Pay
-  const isOverloadEligible = (p) => {
-    if (!p || p.isDraft) return false;
-    if (p.is_school_head || p.isSchoolHead) return false;
-    if (p.type === 'non-teaching' || p.type === 'teaching-related') return false;
+  // === DIRECT API FETCH: get fresh personnel+workload from the server every time ===
+  const [freshPersonnel, setFreshPersonnel] = useState([]);
+  const [freshLoading, setFreshLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const fetchedRef = useRef(false);
 
-    const pos = String(p.position || '').toUpperCase();
-    if (pos.includes('PRINCIPAL')) return false;
-    if (pos.includes('HEAD TEACHER')) return false;
-    if (pos.includes('TIC') || pos.includes('TEACHER-IN-CHARGE') || pos.includes('TEACHER IN CHARGE') || pos.includes('TEACHER IN-CHARGE')) return false;
-    if (pos.includes('OIC') || pos.includes('OFFICER-IN-CHARGE') || pos.includes('OFFICER IN CHARGE') || pos.includes('OFFICER IN-CHARGE')) return false;
-    if (pos.includes('ADMINISTRATIVE') || pos.includes('CLERK') || pos.includes('BOOKKEEPER') || pos.includes('NURSE') || pos.includes('DRIVER') || pos.includes('UTILITY') || pos.includes('SECURITY')) return false;
+  const refreshOverloadData = () => setRefreshTrigger(t => t + 1);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFreshPersonnel = async () => {
+      setFreshLoading(true);
+      try {
+        const data = await api.getPersonnel();
+        if (!cancelled && Array.isArray(data)) {
+          // Merge any localStorage drafts on top of DB records
+          const merged = data.map(p => {
+            try {
+              const draftStr = localStorage.getItem(`draft_workload_${p.id}`);
+              if (draftStr) {
+                const draft = JSON.parse(draftStr);
+                if (draft && Array.isArray(draft.workloadRows) && draft.workloadRows.length > 0) {
+                  return { ...p, workloadRows: draft.workloadRows };
+                }
+              }
+              const draftPersonStr = localStorage.getItem(`draft_personnel_${p.id}`);
+              if (draftPersonStr) {
+                const draftP = JSON.parse(draftPersonStr);
+                if (draftP && Array.isArray(draftP.workloadRows) && draftP.workloadRows.length > 0) {
+                  return { ...p, ...draftP, workloadRows: draftP.workloadRows };
+                }
+              }
+            } catch (e) {}
+            return p;
+          });
+          // Also include local-draft personnel from AppContext that are not yet in the DB
+          const localDraftPersonnel = personnel.filter(p =>
+            String(p.id || '').startsWith('local-') || String(p.id || '').startsWith('draft-')
+          );
+          const localWithDrafts = localDraftPersonnel.map(p => {
+            try {
+              const draftStr = localStorage.getItem(`draft_workload_${p.id}`);
+              if (draftStr) {
+                const draft = JSON.parse(draftStr);
+                if (draft && Array.isArray(draft.workloadRows)) return { ...p, workloadRows: draft.workloadRows };
+              }
+            } catch (e) {}
+            return p;
+          });
+          const allIds = new Set(merged.map(p => String(p.id)));
+          const onlyLocal = localWithDrafts.filter(p => !allIds.has(String(p.id)));
+          setFreshPersonnel([...merged, ...onlyLocal]);
+        }
+      } catch (err) {
+        // Fallback to AppContext personnel if API fails
+        if (!cancelled) setFreshPersonnel(personnel);
+      } finally {
+        if (!cancelled) setFreshLoading(false);
+      }
+    };
+    loadFreshPersonnel();
+    return () => { cancelled = true; };
+  }, [refreshTrigger]);
+
+  // Re-merge drafts when AppContext personnel changes (handles new local-draft additions)
+  useEffect(() => {
+    if (freshLoading) return;
+    setFreshPersonnel(prev => {
+      const localDraftPersonnel = personnel.filter(p =>
+        String(p.id || '').startsWith('local-') || String(p.id || '').startsWith('draft-')
+      );
+      const existingIds = new Set(prev.map(p => String(p.id)));
+      const newLocals = localDraftPersonnel.filter(p => !existingIds.has(String(p.id))).map(p => {
+        try {
+          const draftStr = localStorage.getItem(`draft_workload_${p.id}`);
+          if (draftStr) {
+            const draft = JSON.parse(draftStr);
+            if (draft && Array.isArray(draft.workloadRows)) return { ...p, workloadRows: draft.workloadRows };
+          }
+        } catch (e) {}
+        return p;
+      });
+      return [...prev, ...newLocals];
+    });
+  }, [personnel]);
+
+  // Helper to determine eligibility for Teaching Overload Pay
+  // Include ALL teaching staff who are not school heads, principals, or head teachers
+  const isOverloadEligible = (p) => {
+    if (!p) return false;
+    if (p.isDraft && !p.type) return false; // Skip empty draft stubs
+    if (p.is_school_head || p.isSchoolHead) return false;
+    // Only exclude if type is EXPLICITLY non-teaching (not undefined/null)
+    if (p.type === 'non-teaching') return false;
+
+    const pos = String(p.position || '').toUpperCase().trim();
+    // Only exclude clearly non-teaching positions
+    if (pos.startsWith('PRINCIPAL')) return false;
+    if (pos === 'HEAD TEACHER' || pos.startsWith('HEAD TEACHER ')) return false;
+    if (pos === 'TEACHER-IN-CHARGE' || pos === 'TEACHER IN CHARGE') return false;
+    if (pos === 'OFFICER-IN-CHARGE' || pos === 'OFFICER IN CHARGE') return false;
+    if (pos === 'ADMINISTRATIVE AIDE I' || pos === 'ADMINISTRATIVE AIDE II' || pos === 'ADMINISTRATIVE AIDE III' || pos === 'ADMINISTRATIVE AIDE IV' || pos === 'ADMINISTRATIVE AIDE V' || pos === 'ADMINISTRATIVE AIDE VI') return false;
+    if (pos === 'ADMINISTRATIVE OFFICER I' || pos === 'ADMINISTRATIVE OFFICER II') return false;
+    if (pos === 'BOOKKEEPER' || pos === 'CLERK' || pos === 'NURSE' || pos === 'DRIVER' || pos === 'UTILITY WORKER' || pos === 'SECURITY GUARD') return false;
 
     return true;
   };
 
+  // Use AppContext personnel (current school roster) as single source of truth
+  const effectivePersonnel = (Array.isArray(personnel) && personnel.length > 0) ? personnel : freshPersonnel;
+
   // Filter out draft personnel for general views
-  const activePersonnel = personnel.filter(p => !p.isDraft);
+  const activePersonnel = effectivePersonnel.filter(p => !p.isDraft);
 
   // Filter personnel eligible for Teaching Overload Pay
-  const overloadEligiblePersonnel = personnel.filter(isOverloadEligible);
+  const overloadEligiblePersonnel = effectivePersonnel.filter(isOverloadEligible);
 
   // Filter active personnel who have recorded absences (for Step 3 Workload Transfer filtering)
   const personnelWithAbsences = activePersonnel.filter(p => {
@@ -358,8 +465,44 @@ export default function Overload() {
     return `${yyyy}-${mm}-${dd}`;
   };
 
+  const normalizeDay = (d) => {
+    const upper = String(d || '').toUpperCase().trim();
+    if (upper === 'M' || upper.startsWith('MON')) return 'M';
+    if (upper === 'T' || upper.startsWith('TUE')) return 'T';
+    if (upper === 'W' || upper.startsWith('WED')) return 'W';
+    if (upper === 'TH' || upper.startsWith('THU')) return 'TH';
+    if (upper === 'F' || upper.startsWith('FRI')) return 'F';
+    return null;
+  };
+
+  // freshPersonnel already has localStorage drafts merged, so this is now a passthrough
+  const getEffectiveTeacher = (t) => t;
+
+  const parseDaysArray = (daysInput) => {
+    if (!daysInput) return [];
+    if (Array.isArray(daysInput)) return daysInput;
+    if (typeof daysInput === 'string') {
+      const trimmed = daysInput.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+      }
+      return trimmed.replace(/[\[\]"']/g, '').split(/[\s,]+/).filter(Boolean);
+    }
+    return [];
+  };
+
+  const matchesDay = (days, targetDayShort) => {
+    const daysArr = parseDaysArray(days);
+    if (daysArr.length === 0) return true;
+    return daysArr.some(d => normalizeDay(d) === targetDayShort);
+  };
+
   // Main overload calculator logic
-  const calculateOverloadForTeacher = (teacher, dates) => {
+  const calculateOverloadForTeacher = (rawTeacher, dates) => {
+    const teacher = getEffectiveTeacher(rawTeacher);
     let grossOverloadTotal = 0;
     let deductionTotal = 0;
     let netOverloadTotal = 0;
@@ -381,25 +524,34 @@ export default function Overload() {
       let dailyTeachingMinutes = 0;
       
       // 1. Process base workload rows
-      const currentYearWorkloads = (teacher.workloadRows || []).filter(row => !row.schoolYear || row.schoolYear === syYear);
+      const currentSy = schoolInfo?.schoolYear || 'SY 26-27';
+      const currentYearWorkloads = (teacher.workloadRows || []).filter(row => {
+        const rowSy = row.schoolYear || row.school_year;
+        return !rowSy || rowSy === currentSy || (rowSy && currentSy && rowSy.replace(/\s+/g, '') === currentSy.replace(/\s+/g, ''));
+      });
+
       currentYearWorkloads.forEach(row => {
-        if (row.days && row.days.includes(dayShort)) {
+        if (matchesDay(row.days, dayShort)) {
+          const sTime = row.startTime || row.start_time;
+          const eTime = row.endTime || row.end_time;
+          const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
+
           // Check if this slot was transferred to someone else on this date
           const isTransferred = workloadTransfers.some(t => 
             t.absentTeacherId === teacher.id && 
             t.status !== 'ended' &&
             t.startDate <= dateStr && 
             t.endDate >= dateStr &&
-            (String(t.workloadRowId) === String(row.id) || (t.workloadRows && t.workloadRows.some(wr => wr.subject === row.subject && wr.startTime === row.startTime && wr.endTime === row.endTime)))
+            (String(t.workloadRowId) === String(row.id) || (t.workloadRows && t.workloadRows.some(wr => (wr.subject || wr.subject_name) === subName && (wr.startTime || wr.start_time) === sTime && (wr.endTime || wr.end_time) === eTime)))
           );
           
           if (!isTransferred) {
-            if (row.subject === 'HGP') {
+            if (subName === 'HGP') {
               // HGP is stored for tracking program duration only and does not add extra teaching load minutes
-            } else if (row.subject === 'ADVISORY') {
+            } else if (subName === 'ADVISORY') {
               dailyTeachingMinutes += 60;
             } else {
-              dailyTeachingMinutes += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+              dailyTeachingMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
             }
           }
         }
@@ -412,13 +564,17 @@ export default function Overload() {
             t.startDate <= dateStr && 
             t.endDate >= dateStr) {
           (t.workloadRows || []).forEach(row => {
-            if (row.days && row.days.includes(dayShort)) {
-              if (row.subject === 'HGP') {
+            if (matchesDay(row.days, dayShort)) {
+              const sTime = row.startTime || row.start_time;
+              const eTime = row.endTime || row.end_time;
+              const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
+
+              if (subName === 'HGP') {
                 // HGP does not add extra teaching load minutes
-              } else if (row.subject === 'ADVISORY') {
+              } else if (subName === 'ADVISORY') {
                 dailyTeachingMinutes += 60;
               } else {
-                dailyTeachingMinutes += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+                dailyTeachingMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
               }
             }
           });
@@ -431,7 +587,14 @@ export default function Overload() {
       // Gross daily overload
       const grossDailyOverload = Math.max(0, dailyHours - 6.0);
       
-      const isAbsent = absences.some(a => String(a.personnelId || a.personnel_id) === String(teacher.id) && (a.absenceDate || a.absence_date) === dateStr);
+      const isAbsent = absences.some(a => {
+        if (String(a.personnelId || a.personnel_id) !== String(teacher.id)) return false;
+        const lType = a.leaveType || a.leave_type || '';
+        if (lType.includes('Late') || lType.includes('Tardiness')) return false;
+        const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+        const eStr = a.endDate || a.end_date || sStr;
+        return dateStr >= sStr && dateStr <= eStr;
+      });
       
       if (grossDailyOverload > 0) {
         grossOverloadTotal += grossDailyOverload;
@@ -451,21 +614,37 @@ export default function Overload() {
   };
 
   // Compute stats for all active teachers
-  const syYear = 'SY 26-27';
+  const syYear = schoolInfo?.schoolYear || 'SY 26-27';
   const monthDates = getWeekdaysInMonth(selectedMonth, syYear);
   const quarterDates = getWeekdaysInQuarter(selectedQuarter, syYear);
 
-  const overloadRoster = overloadEligiblePersonnel.map(teacher => {
+  const overloadRoster = overloadEligiblePersonnel.map(rawTeacher => {
+    const teacher = getEffectiveTeacher(rawTeacher);
     // Base weekly overload (no absences/transfers considered, pure schedule check)
     let weeklyOverload = 0;
     const dailyLoads = { M: 0, T: 0, W: 0, TH: 0, F: 0 };
     
-    const currentYearWorkloads = (teacher.workloadRows || []).filter(row => !row.schoolYear || row.schoolYear === syYear);
+    const currentYearWorkloads = (teacher.workloadRows || []).filter(row => {
+      const rowSy = row.schoolYear || row.school_year;
+      return !rowSy || rowSy === syYear || (rowSy && syYear && rowSy.replace(/\s+/g, '') === syYear.replace(/\s+/g, ''));
+    });
     currentYearWorkloads.forEach(row => {
       if (row.days) {
-        row.days.forEach(day => {
-          if (dailyLoads[day] !== undefined) {
-            dailyLoads[day] += Math.max(0, timeToMins(row.endTime) - timeToMins(row.startTime));
+        const daysArr = parseDaysArray(row.days);
+        const sTime = row.startTime || row.start_time;
+        const eTime = row.endTime || row.end_time;
+        const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
+
+        daysArr.forEach(day => {
+          const key = normalizeDay(day);
+          if (key && dailyLoads[key] !== undefined) {
+            if (subName === 'HGP') {
+              // HGP does not add extra teaching load minutes
+            } else if (subName === 'ADVISORY') {
+              dailyLoads[key] += 60;
+            } else {
+              dailyLoads[key] += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
+            }
           }
         });
       }
@@ -488,11 +667,9 @@ export default function Overload() {
       monthStats,
       quarterStats
     };
-  }).filter(item => 
-    item.weeklyOverload > 0 || 
-    item.monthStats.net > 0 || 
-    item.quarterStats.net > 0
-  );
+  });
+  // Show ALL eligible teachers — even those with 0 computed overload hours
+  // so admins can always see who is overload-eligible
 
   const filteredRoster = overloadRoster.filter(item => {
     const fullName = `${item.teacher.firstName} ${item.teacher.lastName}`.toLowerCase();
@@ -518,7 +695,11 @@ export default function Overload() {
     const end = new Date(tardinessEndDate);
     while (cur <= end) {
       const dStr = getLocalDateString(cur);
-      if (teacherAbsences.some(a => a.absenceDate === dStr)) {
+      if (teacherAbsences.some(a => {
+        const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+        const eStr = a.endDate || a.end_date || sStr;
+        return dStr >= sStr && dStr <= eStr;
+      })) {
         hasConflict = true;
         conflictDate = dStr;
         break;
@@ -564,7 +745,11 @@ export default function Overload() {
     const end = new Date(absenceEndDate);
     while (cur <= end) {
       const dStr = getLocalDateString(cur);
-      if (teacherAbsences.some(a => a.absenceDate === dStr)) {
+      if (teacherAbsences.some(a => {
+        const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+        const eStr = a.endDate || a.end_date || sStr;
+        return dStr >= sStr && dStr <= eStr;
+      })) {
         hasConflict = true;
         conflictDate = dStr;
         break;
@@ -839,7 +1024,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 1</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness Log</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🏖️ Absences & Leave</div>
         </button>
 
         <button 
@@ -858,7 +1043,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 2</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🏖️ Absences & Leave</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness Log</div>
         </button>
 
         <button 
@@ -919,8 +1104,8 @@ export default function Overload() {
         </button>
       </div>
 
-      {/* STEP 1: Tardiness & Late Log */}
-      {activeStep === 1 && (
+      {/* STEP 2: Tardiness & Late Log */}
+      {activeStep === 2 && (
         <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
           {/* Interactive Calendar Selector Card */}
           <article className="card" style={{ height: 'fit-content' }}>
@@ -1001,7 +1186,11 @@ export default function Overload() {
                       return monthDates.map((dateObj, idx) => {
                         const dateStr = getLocalDateString(dateObj);
                         const dayNum = dateObj.getDate();
-                        const existingLog = teacherAbsences.find(a => (a.absenceDate || a.absence_date) === dateStr);
+                        const existingLog = teacherAbsences.find(a => {
+                          const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+                          const eStr = a.endDate || a.end_date || sStr;
+                          return dateStr >= sStr && dateStr <= eStr;
+                        });
                         const lType = existingLog?.leaveType || existingLog?.leave_type || '';
                         const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
                         const isLeave = existingLog && !isTardy;
@@ -1017,10 +1206,10 @@ export default function Overload() {
                           color = '#991b1b';
                           badgeText = '⏰ LATE';
                         } else if (isLeave) {
-                          bg = '#fef3c7';
-                          border = '1.5px solid #fde68a';
-                          color = '#92400e';
-                          badgeText = '🏖️ LEAVE';
+                          bg = '#fee2e2';
+                          border = '2px solid #ef4444';
+                          color = '#991b1b';
+                          badgeText = '🔒 ABSENT';
                         }
 
                         return (
@@ -1029,7 +1218,8 @@ export default function Overload() {
                             type="button"
                             onClick={async () => {
                               if (isLeave) {
-                                await showAlert("Official Leave Logged", `This teacher is already logged for ${existingLog.leaveType} on ${dateStr} in Step 2.`);
+                                const leaveName = existingLog?.leaveType || existingLog?.leave_type || 'Leave';
+                                await showAlert("Action Blocked", `This teacher is already logged as ABSENT (${leaveName}) on ${dateStr} in Step 1. Tardiness cannot be logged for absent days.`);
                                 return;
                               }
                               if (isTardy) {
@@ -1052,7 +1242,8 @@ export default function Overload() {
                               border: border,
                               color: color,
                               fontWeight: 'bold',
-                              cursor: 'pointer',
+                              cursor: isLeave ? 'not-allowed' : 'pointer',
+                              opacity: isLeave ? 0.75 : 1,
                               display: 'flex',
                               flexDirection: 'column',
                               alignItems: 'center',
@@ -1153,8 +1344,8 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 2: Absences & Leave Log */}
-      {activeStep === 2 && (
+      {/* STEP 1: Absences & Leave Log */}
+      {activeStep === 1 && (
         <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
           {/* Interactive Range Picker Card */}
           <article className="card" style={{ height: 'fit-content' }}>
@@ -1259,7 +1450,11 @@ export default function Overload() {
                       return monthDates.map((dateObj, idx) => {
                         const dateStr = getLocalDateString(dateObj);
                         const dayNum = dateObj.getDate();
-                        const existingLog = teacherAbsences.find(a => (a.absenceDate || a.absence_date) === dateStr);
+                        const existingLog = teacherAbsences.find(a => {
+                          const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+                          const eStr = a.endDate || a.end_date || sStr;
+                          return dateStr >= sStr && dateStr <= eStr;
+                        });
                         const lType = existingLog?.leaveType || existingLog?.leave_type || '';
                         const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
                         const isLoggedLeave = existingLog && !isTardy;
@@ -1398,58 +1593,84 @@ export default function Overload() {
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
                       <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date of Absence</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date / Duration</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Total Days</th>
                       <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Leave Type</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '80px' }}>Action</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '90px' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {absences.filter(abs => {
-                      const lType = abs.leaveType || abs.leave_type || '';
-                      return !lType.includes('Late') && !lType.includes('Tardiness');
-                    }).map((abs, idx) => {
-                      const teacher = activePersonnel.find(p => String(p.id) === String(abs.personnelId || abs.personnel_id));
-                      const teacherName = teacher ? `${teacher.lastName}, ${teacher.firstName}` : (abs.lastName ? `${abs.lastName}, ${abs.firstName}` : 'Unknown Teacher');
-                      const aDate = abs.absenceDate || abs.absence_date || '';
-                      const lType = abs.leaveType || abs.leave_type || '';
+                    {(() => {
+                      const nonTardyAbsences = absences.filter(abs => {
+                        const lType = abs.leaveType || abs.leave_type || '';
+                        return !lType.includes('Late') && !lType.includes('Tardiness');
+                      });
 
-                      return (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
-                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{teacherName}</td>
-                          <td style={{ padding: '12px 10px' }}>{aDate}</td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span style={{
-                              background: '#fef3c7',
-                              color: '#b45309',
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: 'bold'
-                            }}>
-                              {lType}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                            <button 
-                              className="btn danger"
-                              onClick={async () => {
-                                if (await showConfirm("Remove Log?", `Are you sure you want to remove this absence log for ${teacherName}?`)) {
-                                  await removePersonnelAbsence(abs.id);
-                                }
-                              }}
-                              style={{ padding: '4px 8px', fontSize: '11px' }}
-                            >
-                              ✕ Remove
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {absences.filter(abs => !abs.leaveType?.includes('Late') && !abs.leaveType?.includes('Tardiness')).length === 0 && (
-                      <tr>
-                        <td colSpan="4" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No absences logged yet.</td>
-                      </tr>
-                    )}
+                      if (nonTardyAbsences.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="5" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>
+                              No absences logged yet.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return nonTardyAbsences.map((abs, idx) => {
+                        const pId = String(abs.personnelId || abs.personnel_id || '');
+                        const teacher = activePersonnel.find(p => String(p.id) === pId);
+                        const teacherName = teacher ? `${teacher.lastName}, ${teacher.firstName}` : 'Unknown Teacher';
+                        const sDate = abs.startDate || abs.start_date || abs.absenceDate || abs.absence_date || '';
+                        const eDate = abs.endDate || abs.end_date || sDate;
+                        const lType = abs.leaveType || abs.leave_type || '';
+
+                        const calcDays = () => {
+                          if (!sDate) return 1;
+                          if (!eDate || sDate === eDate) return 1;
+                          const d1 = new Date(sDate);
+                          const d2 = new Date(eDate);
+                          let count = 0;
+                          let cur = new Date(d1);
+                          while (cur <= d2) {
+                            count++;
+                            cur.setDate(cur.getDate() + 1);
+                          }
+                          return count || 1;
+                        };
+                        const dayCount = calcDays();
+                        const dateRangeStr = (!eDate || sDate === eDate) ? sDate : `${sDate} – ${eDate}`;
+
+                        return (
+                          <tr key={abs.id || idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                            <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{teacherName}</td>
+                            <td style={{ padding: '12px 10px', fontWeight: '600' }}>{dateRangeStr}</td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                                {dayCount} {dayCount === 1 ? 'Day' : 'Days'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 10px' }}>
+                              <span style={{ background: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                                {lType}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                              <button
+                                className="btn danger"
+                                onClick={async () => {
+                                  if (await showConfirm("Remove Leave Log?", `Remove this ${lType} log (${dateRangeStr}) for ${teacherName}?`)) {
+                                    await removePersonnelAbsence(abs.id);
+                                  }
+                                }}
+                                style={{ padding: '4px 10px', fontSize: '11px' }}
+                              >
+                                ✕ Remove
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -1919,12 +2140,28 @@ export default function Overload() {
                   onChange={(e) => setTeacherSearch(e.target.value)}
                   style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', width: '220px' }}
                 />
+                <button
+                  className="btn"
+                  onClick={refreshOverloadData}
+                  disabled={freshLoading}
+                  title="Re-fetch workload data from database"
+                  style={{ padding: '8px 12px', background: freshLoading ? '#e2e8f0' : '#f0fdf4', color: freshLoading ? '#94a3b8' : '#15803d', border: '1.5px solid #86efac', borderRadius: '8px', fontWeight: 'bold', cursor: freshLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  {freshLoading ? '⏳' : '🔄'} Refresh
+                </button>
                 <button className="btn" onClick={handleGeneratePDF} style={{ padding: '8px 16px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                   🖨️ Generate Report (PDF)
                 </button>
               </div>
             </div>
 
+            {freshLoading && (
+              <div style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px', animation: 'spin 1s linear infinite' }}>⏳</span>
+                <span style={{ fontSize: '14px', fontWeight: '600' }}>Loading teacher workload data from database...</span>
+              </div>
+            )}
+            {!freshLoading && (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
@@ -2081,12 +2318,20 @@ export default function Overload() {
                   })}
                   {filteredRoster.length === 0 && (
                     <tr>
-                      <td colSpan="8" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No teachers with active overloads found.</td>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '24px' }}>📋</span>
+                          <span style={{ fontWeight: '600', color: 'var(--navy)' }}>No overload-eligible teachers found.</span>
+                          <span style={{ fontSize: '12px' }}>Make sure teachers have their workload saved in the Workload section, then click <strong>🔄 Refresh</strong> above.</span>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Total personnel loaded: {effectivePersonnel.length} | Eligible: {overloadEligiblePersonnel.length}</span>
+                        </div>
+                      </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </article>
       )}

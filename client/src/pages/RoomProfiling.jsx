@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import SearchableDropdown from '../components/SearchableDropdown';
 import { useApp, POSITION_OPTIONS_BY_CATEGORY, RELIGION_OPTIONS, ETHNIC_GROUP_OPTIONS, MAJOR_OPTIONS, MINOR_OPTIONS, PRC_SPECIALIZATION_OPTIONS, COLLEGE_DEGREE_OPTIONS, TESDA_CERTIFICATION_OPTIONS, NEAP_TRAINING_OPTIONS } from '../context/AppContext';
+import { get10MinPasscode } from '../utils/passcode';
+import { api } from '../services/api';
 
 export default function RoomProfiling() {
-  const { personnel, scannedRoom } = useApp();
+  const { personnel: appPersonnel, setPersonnel, scannedRoom } = useApp();
+  const [personnelList, setPersonnelList] = useState(appPersonnel || []);
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [formData, setFormData] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('identity');
@@ -12,15 +15,42 @@ export default function RoomProfiling() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  useEffect(() => {
+    if (Array.isArray(appPersonnel) && appPersonnel.length > 0) {
+      setPersonnelList(appPersonnel);
+    } else {
+      api.getPersonnel().then(res => {
+        if (Array.isArray(res) && res.length > 0) {
+          setPersonnelList(res);
+          if (setPersonnel) setPersonnel(res);
+        } else {
+          api.getAutofillTemplate().then(tmpl => {
+            if (Array.isArray(tmpl) && tmpl.length > 0) {
+              setPersonnelList(tmpl);
+              if (setPersonnel) setPersonnel(tmpl);
+            }
+          });
+        }
+      }).catch(() => {
+        api.getAutofillTemplate().then(tmpl => {
+          if (Array.isArray(tmpl) && tmpl.length > 0) {
+            setPersonnelList(tmpl);
+            if (setPersonnel) setPersonnel(tmpl);
+          }
+        });
+      });
+    }
+  }, [appPersonnel, setPersonnel]);
+
   // Map personnel to label strings for SearchableDropdown
-  const teacherOptions = personnel.map(p => 
-    `${p.lastName.toUpperCase()}, ${p.firstName} ${p.middleName || ''} (${p.position}) [${p.id}]`
+  const teacherOptions = personnelList.map(p => 
+    `${(p.lastName || p.last || '').toUpperCase()}, ${p.firstName || p.first || ''} ${p.middleName || p.middle || ''} (${p.position || 'TEACHER'}) [${p.id}]`
   );
 
   const selectedTeacherLabel = selectedTeacherId
     ? (() => {
-        const p = personnel.find(p => p.id === selectedTeacherId);
-        return p ? `${p.lastName.toUpperCase()}, ${p.firstName} ${p.middleName || ''} (${p.position}) [${p.id}]` : '';
+        const p = personnelList.find(p => String(p.id) === String(selectedTeacherId));
+        return p ? `${(p.lastName || p.last || '').toUpperCase()}, ${p.firstName || p.first || ''} ${p.middleName || p.middle || ''} (${p.position || 'TEACHER'}) [${p.id}]` : '';
       })()
     : '';
 
@@ -34,7 +64,7 @@ export default function RoomProfiling() {
   // Handle teacher selection change
   useEffect(() => {
     if (selectedTeacherId) {
-      const teacher = personnel.find(p => p.id === selectedTeacherId);
+      const teacher = personnelList.find(p => String(p.id) === String(selectedTeacherId));
       if (teacher) {
         setFormData({ ...teacher });
         setIsSubmitted(false);
@@ -48,7 +78,7 @@ export default function RoomProfiling() {
       setEnteredPasscode('');
       setErrorMessage('');
     }
-  }, [selectedTeacherId]);
+  }, [selectedTeacherId, personnelList]);
 
   const compressProfile = (data) => {
     return {
@@ -84,16 +114,30 @@ export default function RoomProfiling() {
     e.preventDefault();
     if (!enteredPasscode) return;
     const cleanCode = enteredPasscode.trim().toUpperCase();
-    const latestTeacher = personnel.find(p => p.id === selectedTeacherId);
-    const correctCode = latestTeacher && latestTeacher.profilingCode ? latestTeacher.profilingCode.trim().toUpperCase() : '';
-    if (cleanCode === correctCode) {
+    const latestTeacher = personnelList.find(p => String(p.id) === String(selectedTeacherId));
+    if (!latestTeacher) {
+      setErrorMessage('Please select a valid teacher.');
+      return;
+    }
+
+    const currentCodeObj = get10MinPasscode(latestTeacher, 0);
+    const prevCodeObj = get10MinPasscode(latestTeacher, -1);
+    const currentCodeId = get10MinPasscode(latestTeacher.id, 0);
+    const prevCodeId = get10MinPasscode(latestTeacher.id, -1);
+    const overrideCode = latestTeacher.profilingCode ? latestTeacher.profilingCode.trim().toUpperCase() : '';
+
+    if (
+      cleanCode === currentCodeObj || 
+      cleanCode === prevCodeObj || 
+      cleanCode === currentCodeId || 
+      cleanCode === prevCodeId || 
+      (overrideCode && cleanCode === overrideCode)
+    ) {
       setIsUnlocked(true);
       setErrorMessage('');
-      if (latestTeacher) {
-        setFormData({ ...latestTeacher });
-      }
+      setFormData({ ...latestTeacher });
     } else {
-      setErrorMessage('Incorrect passcode. Please request the correct code from the School Head.');
+      setErrorMessage('Incorrect or expired passcode. Please request the latest code from the Administrator.');
     }
   };
 

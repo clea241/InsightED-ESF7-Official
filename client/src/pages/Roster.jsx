@@ -3,7 +3,7 @@ import { useApp, POSITION_OPTIONS_BY_CATEGORY } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 
 export default function Roster() {
-  const { personnel, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, hasUnsavedChanges } = useApp();
+  const { personnel, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges } = useApp();
   
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -254,42 +254,65 @@ export default function Roster() {
                     </td>
                     <td>{p.position}</td>
                     <td style={{ textAlign: 'center', width: '100px' }}>
-                       <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px' }}>
-                         <input
-                           type="checkbox"
-                           checked={p.isSchoolHead || false}
-                           onChange={async (e) => {
-                             const val = e.target.checked;
-                             if (val) {
-                               const currentHead = personnel.find(x => x.isSchoolHead === true && x.id !== p.id);
-                               if (currentHead) {
-                                 const confirmed = await showConfirm(
-                                   "Change School Head",
-                                   `Designate ${p.firstName} ${p.lastName} as the new School Head? This will replace ${currentHead.firstName} ${currentHead.lastName}.`
-                                 );
-                                 if (confirmed) {
-                                   await toggleSchoolHead(p.id, true);
+                       {(() => {
+                         const isNonTeaching = p.type === 'non-teaching' || p.type === 'non_teaching' || (p.type && p.type !== 'teaching' && p.type !== 'teaching-related');
+                         return (
+                           <label
+                             className="switch"
+                             style={{
+                               position: 'relative',
+                               display: 'inline-block',
+                               width: '36px',
+                               height: '20px',
+                               opacity: isNonTeaching ? 0.4 : 1,
+                               cursor: isNonTeaching ? 'not-allowed' : 'pointer'
+                             }}
+                             title={isNonTeaching ? "Non-Teaching personnel cannot be designated as School Head" : (p.isSchoolHead ? "Remove School Head Designation" : "Designate as School Head")}
+                           >
+                             <input
+                               type="checkbox"
+                               checked={p.isSchoolHead || false}
+                               disabled={isNonTeaching}
+                               onChange={async (e) => {
+                                 if (isNonTeaching) {
+                                   showToast("⚠️ Non-Teaching personnel cannot be designated as School Head.");
+                                   return;
                                  }
-                               } else {
-                                 await toggleSchoolHead(p.id, true);
-                               }
-                             } else {
-                               await toggleSchoolHead(p.id, false);
-                             }
-                           }}
-                           style={{ opacity: 0, width: 0, height: 0 }}
-                         />
-                         <span style={{
-                           position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                           backgroundColor: p.isSchoolHead ? 'var(--blue)' : '#cbd5e1',
-                           transition: '0.3s', borderRadius: '20px'
-                         }}>
-                           <span style={{
-                             position: 'absolute', content: '""', height: '14px', width: '14px', left: p.isSchoolHead ? '18px' : '3px', bottom: '3px',
-                             backgroundColor: 'white', transition: '0.3s', borderRadius: '50%'
-                           }} />
-                         </span>
-                       </label>
+                                 const val = e.target.checked;
+                                 if (val) {
+                                   const currentHead = personnel.find(x => x.isSchoolHead === true && x.id !== p.id);
+                                   if (currentHead) {
+                                     const confirmed = await showConfirm(
+                                       "Change School Head",
+                                       `Designate ${p.firstName} ${p.lastName} as the new School Head? This will replace ${currentHead.firstName} ${currentHead.lastName}.`
+                                     );
+                                     if (confirmed) {
+                                       await toggleSchoolHead(p.id, true);
+                                     }
+                                   } else {
+                                     await toggleSchoolHead(p.id, true);
+                                   }
+                                 } else {
+                                   await toggleSchoolHead(p.id, false);
+                                 }
+                               }}
+                               style={{ opacity: 0, width: 0, height: 0 }}
+                             />
+                             <span style={{
+                               position: 'absolute',
+                               cursor: isNonTeaching ? 'not-allowed' : 'pointer',
+                               top: 0, left: 0, right: 0, bottom: 0,
+                               backgroundColor: p.isSchoolHead ? 'var(--blue)' : '#cbd5e1',
+                               transition: '0.3s', borderRadius: '20px'
+                             }}>
+                               <span style={{
+                                 position: 'absolute', content: '""', height: '14px', width: '14px', left: p.isSchoolHead ? '18px' : '3px', bottom: '3px',
+                                 backgroundColor: 'white', transition: '0.3s', borderRadius: '50%'
+                               }} />
+                             </span>
+                           </label>
+                         );
+                       })()}
                      </td>
                     <td>
                       <div style={{ display: 'flex', gap: '5px' }}>

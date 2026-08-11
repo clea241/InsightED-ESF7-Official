@@ -57,6 +57,16 @@ router.post('/save', async (req, res) => {
       return res.status(400).json({ success: false, error: 'personnelId is required.' });
     }
 
+    // Check if personnel exists in database (handle draft / local temporary personnel gracefully)
+    const personCheck = await db.query('SELECT id FROM personnel WHERE id = $1', [personnelId]);
+    if (personCheck.rows.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Draft personnel reason updated locally.',
+        data: { personnel_id: personnelId, school_year: schoolYear, term, reasons }
+      });
+    }
+
     if (!Array.isArray(reasons) || reasons.length < 1) {
       return res.status(400).json({ success: false, error: 'At least 1 overload reason is required.' });
     }

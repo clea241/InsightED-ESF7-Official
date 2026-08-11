@@ -19,15 +19,22 @@ import {
   NEAP_TRAINING_OPTIONS
 } from '../context/AppContext';
 
-const LEARNING_AREAS = [
-  'Filipino', 'English', 'Mathematics', 'Science',
-  'Araling Panlipunan (AP)', 'Edukasyon sa Pagpapakatao (EsP)',
-  'Technology and Livelihood Education (TLE)', 'MAPEH',
-  'Mother Tongue', 'EPP', 'Computer/ICT'
+const CURRICULUM_ERAS = [
+  { key: '1973-2002', label: '1973–2002 (NSEC / NEP)', startYear: 1973, endYear: 2002 },
+  { key: '2002-2011', label: '2002–2011 (2002 Basic Education Curriculum)', startYear: 2002, endYear: 2011 },
+  { key: '2011-2023', label: '2011–2023 (K to 12 Basic Education Program)', startYear: 2011, endYear: 2023 },
+  { key: '2023-Present', label: '2023–Present (MATATAG Curriculum)', startYear: 2023, endYear: 2099 }
 ];
 
-const SCHOOL_YEARS = [
-  'SY 26-27', 'SY 25-26', 'SY 24-25', 'SY 23-24', 'SY 22-23'
+const PRIMARY_SUBJECTS = [
+  'Filipino',
+  'English',
+  'Mathematics',
+  'Science',
+  'Araling Panlipunan (AP)',
+  'Edukasyon sa Pagpapakatao (EsP)',
+  'Technology and Livelihood Education (TLE)',
+  'MAPEH'
 ];
 
 function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false }) {
@@ -581,9 +588,8 @@ export default function PersonnelProfile() {
   const [ra1080InputText, setRa1080InputText] = useState('');
 
   // Feature A: Learning Area Matrix State
-  const [learningAreaRows, setLearningAreaRows] = useState([]);
+  const [learningAreaMap, setLearningAreaMap] = useState({}); // key: `${eraKey}||${subjectKey}` -> { checked: boolean, years: number }
   const [learningAreaLoading, setLearningAreaLoading] = useState(false);
-  const [checkedSet, setCheckedSet] = useState(new Set());
 
   // Sidebar search & filter states
   const [personnelSearch, setPersonnelSearch] = useState('');
@@ -621,9 +627,14 @@ export default function PersonnelProfile() {
       .then(res => {
         if (!isMounted) return;
         const rows = res.rows || [];
-        setLearningAreaRows(rows);
-        const set = new Set(rows.map(r => `${r.school_year}||${r.learning_area}`));
-        setCheckedSet(set);
+        const map = {};
+        rows.forEach(r => {
+          map[`${r.school_year}||${r.learning_area}`] = {
+            checked: true,
+            years: Number(r.years_taught || 1)
+          };
+        });
+        setLearningAreaMap(map);
       })
       .catch(err => {
         console.error('Failed to fetch learning areas:', err);
@@ -634,36 +645,52 @@ export default function PersonnelProfile() {
     return () => { isMounted = false; };
   }, [currentPerson?.id]);
 
-  const handleToggleLearningArea = async (sy, la) => {
-    if (!currentPerson?.id) return;
-    const key = `${sy}||${la}`;
-    const currentlyChecked = checkedSet.has(key);
-    const newChecked = !currentlyChecked;
+  const handleToggleLearningAreaCell = async (eraKey, subjectKey) => {
+    if (!currentPerson?.id || currentPerson.isShared) return;
+    const key = `${eraKey}||${subjectKey}`;
+    const existing = learningAreaMap[key];
+    const newChecked = !existing?.checked;
+    const newYears = newChecked ? (existing?.years || 1) : 0;
 
-    setCheckedSet(prev => {
-      const next = new Set(prev);
-      if (newChecked) next.add(key);
-      else next.delete(key);
-      return next;
-    });
+    setLearningAreaMap(prev => ({
+      ...prev,
+      [key]: { checked: newChecked, years: newYears }
+    }));
 
     try {
       await api.saveLearningArea({
         personnelId: currentPerson.id,
-        schoolYear: sy,
-        learningArea: la,
-        checked: newChecked
+        schoolYear: eraKey,
+        learningArea: subjectKey,
+        checked: newChecked,
+        yearsTaught: newYears
       });
       showToast(`Learning area ${newChecked ? 'added' : 'removed'}`, 'success');
     } catch (err) {
       console.error('Failed to toggle learning area:', err);
-      setCheckedSet(prev => {
-        const next = new Set(prev);
-        if (currentlyChecked) next.add(key);
-        else next.delete(key);
-        return next;
+    }
+  };
+
+  const handleYearsChange = async (eraKey, subjectKey, yearsVal) => {
+    if (!currentPerson?.id || currentPerson.isShared) return;
+    const key = `${eraKey}||${subjectKey}`;
+    const parsedYears = Math.max(1, parseInt(yearsVal || 1, 10));
+
+    setLearningAreaMap(prev => ({
+      ...prev,
+      [key]: { checked: true, years: parsedYears }
+    }));
+
+    try {
+      await api.saveLearningArea({
+        personnelId: currentPerson.id,
+        schoolYear: eraKey,
+        learningArea: subjectKey,
+        checked: true,
+        yearsTaught: parsedYears
       });
-      showToast('Failed to save learning area toggle', 'error');
+    } catch (err) {
+      console.error('Failed to update years taught:', err);
     }
   };
 
@@ -2419,7 +2446,7 @@ export default function PersonnelProfile() {
                                 📖 Learning Area Matrix
                               </h3>
                               <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-                                Select the learning areas / subjects taught by this personnel across school years.
+                                Record taught primary learning areas across DepEd curriculum eras. Check a subject to enter total years taught.
                               </p>
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -2428,22 +2455,31 @@ export default function PersonnelProfile() {
                                 className="btn secondary"
                                 style={{ fontSize: '11px', padding: '6px 12px' }}
                                 onClick={() => {
-                                  const allSet = new Set();
-                                  SCHOOL_YEARS.forEach(sy => {
-                                    LEARNING_AREAS.forEach(la => {
-                                      allSet.add(`${sy}||${la}`);
-                                    });
+                                  const newMap = {};
+                                  const firstServiceYear = (() => {
+                                    const d = currentPerson?.firstServiceDate || currentPerson?.first_service_date || '';
+                                    if (!d) return null;
+                                    const y = parseInt(d.substring(0, 4), 10);
+                                    return isNaN(y) ? null : y;
+                                  })();
+                                  CURRICULUM_ERAS.forEach(era => {
+                                    const isDisabled = firstServiceYear !== null && firstServiceYear > era.endYear;
+                                    if (!isDisabled) {
+                                      PRIMARY_SUBJECTS.forEach(sub => {
+                                        newMap[`${era.key}||${sub}`] = { checked: true, years: 1 };
+                                      });
+                                    }
                                   });
-                                  setCheckedSet(allSet);
+                                  setLearningAreaMap(newMap);
                                 }}
                               >
-                                Select All
+                                Select All Active
                               </button>
                               <button
                                 type="button"
                                 className="btn secondary"
                                 style={{ fontSize: '11px', padding: '6px 12px' }}
-                                onClick={() => setCheckedSet(new Set())}
+                                onClick={() => setLearningAreaMap({})}
                               >
                                 Clear All
                               </button>
@@ -2457,42 +2493,89 @@ export default function PersonnelProfile() {
                               <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
                                 <thead>
                                   <tr style={{ background: '#F8FAFC', borderBottom: '2px solid var(--line)' }}>
-                                    {/* Y Axis Header (Subject / Learning Area) */}
-                                    <th style={{ position: 'sticky', left: 0, background: '#F8FAFC', padding: '12px 16px', textAlign: 'left', zIndex: 3, minWidth: '200px', maxWidth: '280px', fontWeight: '800', color: 'var(--navy)', borderRight: '2px solid var(--line)', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                      Learning Area (Y) ↓ / School Year (X) →
+                                    {/* Y Axis Header (Curriculum Era) */}
+                                    <th style={{ position: 'sticky', left: 0, background: '#F8FAFC', padding: '12px 16px', textAlign: 'left', zIndex: 3, minWidth: '240px', maxWidth: '300px', fontWeight: '800', color: 'var(--navy)', borderRight: '2px solid var(--line)' }}>
+                                      Curriculum Era (Y) ↓ / Primary Subject (X) →
                                     </th>
-                                    {/* X Axis Headers (School Years) */}
-                                    {SCHOOL_YEARS.map(sy => (
-                                      <th key={sy} style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'nowrap', borderRight: '1px solid var(--line)', minWidth: '110px' }}>
-                                        {sy}
+                                    {/* X Axis Headers (8 Primary Subjects) */}
+                                    {PRIMARY_SUBJECTS.map(sub => (
+                                      <th key={sub} style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '800', color: 'var(--navy)', borderRight: '1px solid var(--line)', minWidth: '110px' }}>
+                                        {sub}
                                       </th>
                                     ))}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {LEARNING_AREAS.map(la => (
-                                    <tr key={la} style={{ borderBottom: '1px solid var(--line)' }}>
-                                      {/* Y Axis Row Value (Subject / Learning Area) */}
-                                      <td style={{ position: 'sticky', left: 0, background: '#FFFFFF', padding: '12px 16px', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'normal', wordBreak: 'break-word', minWidth: '200px', maxWidth: '280px', zIndex: 2, borderRight: '2px solid var(--line)' }}>
-                                        {la}
-                                      </td>
-                                      {/* X Axis Matrix Checkboxes for each School Year */}
-                                      {SCHOOL_YEARS.map(sy => {
-                                        const isChecked = checkedSet.has(`${sy}||${la}`);
-                                        return (
-                                          <td key={sy} style={{ textAlign: 'center', padding: '10px 8px', borderRight: '1px solid var(--line)', background: isChecked ? '#EFF6FF' : 'transparent' }}>
-                                            <input
-                                              type="checkbox"
-                                              checked={isChecked}
-                                              onChange={() => handleToggleLearningArea(sy, la)}
-                                              disabled={currentPerson.isShared}
-                                              style={{ cursor: currentPerson.isShared ? 'not-allowed' : 'pointer', width: '18px', height: '18px', accentColor: '#0284C7' }}
-                                            />
+                                  {(() => {
+                                    const firstServiceYear = (() => {
+                                      const d = currentPerson?.firstServiceDate || currentPerson?.first_service_date || '';
+                                      if (!d) return null;
+                                      const y = parseInt(d.substring(0, 4), 10);
+                                      return isNaN(y) ? null : y;
+                                    })();
+
+                                    return CURRICULUM_ERAS.map(era => {
+                                      const isDisabledEra = firstServiceYear !== null && firstServiceYear > era.endYear;
+
+                                      return (
+                                        <tr 
+                                          key={era.key} 
+                                          style={{ 
+                                            borderBottom: '1px solid var(--line)',
+                                            background: isDisabledEra ? '#F1F5F9' : '#FFFFFF',
+                                            opacity: isDisabledEra ? 0.65 : 1
+                                          }}
+                                        >
+                                          {/* Y Axis Row Value (Curriculum Era) */}
+                                          <td style={{ position: 'sticky', left: 0, background: isDisabledEra ? '#F1F5F9' : '#FFFFFF', padding: '12px 16px', fontWeight: '800', color: isDisabledEra ? '#64748B' : 'var(--navy)', zIndex: 2, borderRight: '2px solid var(--line)' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                              <span>{era.label}</span>
+                                              {isDisabledEra && (
+                                                <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                                                  🔒 Prior to Service Start ({firstServiceYear})
+                                                </span>
+                                              )}
+                                            </div>
                                           </td>
-                                        );
-                                      })}
-                                    </tr>
-                                  ))}
+
+                                          {/* X Axis Matrix Cells for 8 Primary Subjects */}
+                                          {PRIMARY_SUBJECTS.map(sub => {
+                                            const cellKey = `${era.key}||${sub}`;
+                                            const cellData = learningAreaMap[cellKey];
+                                            const isChecked = !!cellData?.checked;
+
+                                            return (
+                                              <td key={sub} style={{ textAlign: 'center', padding: '10px 8px', borderRight: '1px solid var(--line)', background: isChecked && !isDisabledEra ? '#EFF6FF' : 'transparent' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() => handleToggleLearningAreaCell(era.key, sub)}
+                                                    disabled={currentPerson.isShared || isDisabledEra}
+                                                    style={{ cursor: isDisabledEra || currentPerson.isShared ? 'not-allowed' : 'pointer', width: '18px', height: '18px', accentColor: '#0284C7' }}
+                                                  />
+                                                  {isChecked && !isDisabledEra && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginTop: '2px' }}>
+                                                      <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="50"
+                                                        value={cellData.years || 1}
+                                                        onChange={(e) => handleYearsChange(era.key, sub, e.target.value)}
+                                                        disabled={currentPerson.isShared || isDisabledEra}
+                                                        style={{ width: '42px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', padding: '2px', border: '1.5px solid #0284C7', borderRadius: '4px', background: '#FFFFFF' }}
+                                                      />
+                                                      <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--navy)' }}>yr{cellData.years > 1 ? 's' : ''}</span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      );
+                                    });
+                                  })()}
                                 </tbody>
                               </table>
                             </div>

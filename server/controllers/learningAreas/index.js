@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
   if (!personnelId) return res.status(400).json({ error: 'personnelId required' });
   try {
     const result = await db.query(
-      'SELECT id, personnel_id, school_year, learning_area FROM personnel_learning_areas WHERE personnel_id = $1 ORDER BY school_year DESC, learning_area ASC',
+      'SELECT id, personnel_id, school_year, learning_area, COALESCE(years_taught, 1) as years_taught FROM personnel_learning_areas WHERE personnel_id = $1 ORDER BY school_year DESC, learning_area ASC',
       [personnelId]
     );
     res.json({ rows: result.rows });
@@ -20,15 +20,19 @@ router.get('/', async (req, res) => {
 
 // POST /api/learning-areas/toggle
 router.post('/toggle', async (req, res) => {
-  const { personnelId, schoolYear, learningArea, checked } = req.body;
+  const { personnelId, schoolYear, learningArea, checked, yearsTaught } = req.body;
   if (!personnelId || !schoolYear || !learningArea || checked === undefined) {
     return res.status(400).json({ error: 'personnelId, schoolYear, learningArea, checked required' });
   }
+  const yearsVal = Math.max(1, parseInt(yearsTaught || 1, 10));
   try {
     if (checked) {
       await db.query(
-        'INSERT INTO personnel_learning_areas (personnel_id, school_year, learning_area) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-        [personnelId, schoolYear, learningArea]
+        `INSERT INTO personnel_learning_areas (personnel_id, school_year, learning_area, years_taught) 
+         VALUES ($1, $2, $3, $4) 
+         ON CONFLICT (personnel_id, school_year, learning_area) 
+         DO UPDATE SET years_taught = EXCLUDED.years_taught`,
+        [personnelId, schoolYear, learningArea, yearsVal]
       );
     } else {
       await db.query(

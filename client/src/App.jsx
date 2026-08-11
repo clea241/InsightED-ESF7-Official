@@ -37,12 +37,12 @@ function MainAppContent() {
     return <LoadingScreen />;
   }
 
-  if (!user) {
-    return <Login />;
-  }
-
   if (activeView === 'room-profiling') {
     return <RoomProfiling />;
+  }
+
+  if (!user) {
+    return <Login />;
   }
 
   return (

@@ -16,9 +16,9 @@ PM2_NAME     = "insighted-esf7-staging-backend"
 
 def run_ssh(command: str, timeout=60):
     """Run bundled commands over a single SSH connection with a timeout."""
-    ssh_cmd = f'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "{SSH_KEY_PATH}" {REMOTE_USER}@{REMOTE_HOST} "{command}"'
+    ssh_cmd = f'ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "{SSH_KEY_PATH}" {REMOTE_USER}@{REMOTE_HOST} "{command}"'
     try:
-        return subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         print(f"  [ERROR] SSH command timed out after {timeout}s")
         sys.exit(1)
@@ -64,7 +64,7 @@ def main():
     try:
         # Create directory first to ensure scp works
         run_ssh(f"mkdir -p {REMOTE_ROOT}")
-        subprocess.run(f'scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "{SSH_KEY_PATH}" {ARCHIVE_NAME} {REMOTE_USER}@{REMOTE_HOST}:{REMOTE_ROOT}/', shell=True, check=True)
+        subprocess.run(f'scp -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "{SSH_KEY_PATH}" {ARCHIVE_NAME} {REMOTE_USER}@{REMOTE_HOST}:{REMOTE_ROOT}/', shell=True, check=True, stdin=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         print("  [ERROR] Upload failed! Check your SSH key and connection.")
         sys.exit(1)
@@ -76,8 +76,6 @@ def main():
         f"cd {REMOTE_ROOT} && "
         f"tar -xzf {ARCHIVE_NAME} && "
         f"sudo chown -R {REMOTE_USER}:{REMOTE_USER} {REMOTE_ROOT} && "
-        # Ensure DATABASE_URL uses localhost/direct Azure DB bypass if needed
-        # We can bypass local postgres host replacements since it uses Azure DB directly
         "echo \"       → Running production npm install...\" && "
         "npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
         "cd server && npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
@@ -88,9 +86,9 @@ def main():
         f"rm {ARCHIVE_NAME}"
     )
     
-    ssh_cmd = f'ssh -t -i "{SSH_KEY_PATH}" -o ConnectTimeout=10 {REMOTE_USER}@{REMOTE_HOST} "{remote_script}"'
+    ssh_cmd = f'ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "{SSH_KEY_PATH}" {REMOTE_USER}@{REMOTE_HOST} "{remote_script}"'
     try:
-        subprocess.run(ssh_cmd, shell=True, check=True)
+        subprocess.run(ssh_cmd, shell=True, check=True, stdin=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         print(f"  [ERROR] Remote setup failed with exit code {e.returncode}")
         sys.exit(1)

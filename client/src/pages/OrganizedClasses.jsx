@@ -323,8 +323,31 @@ export default function OrganizedClasses() {
   const [isAralModalOpen, setIsAralModalOpen] = useState(false);
   const [aralBasis, setAralBasis] = useState('grade');
   const [aralGrade, setAralGrade] = useState('Grade 3');
+  const [aralToolKey, setAralToolKey] = useState('crla'); // 'crla', 'philIri', 'rma'
+  const [aralProfileLevel, setAralProfileLevel] = useState('Emerging');
   const [aralLearners, setAralLearners] = useState(15);
   const [aralTutorId, setAralTutorId] = useState('');
+
+  const ARAL_TOOLS = {
+    crla: {
+      domain: 'Reading',
+      tool: 'CRLA',
+      toolFull: 'Comprehensive Rapid Literacy Assessment (Grades 1-3)',
+      levels: ['Emerging', 'Developing', 'Transitioning', 'Reading at Grade Level']
+    },
+    philIri: {
+      domain: 'Reading',
+      tool: 'Phil-IRI',
+      toolFull: 'Philippine Informal Reading Inventory (Grades 4-10)',
+      levels: ['Frustration', 'Instructional', 'Independent']
+    },
+    rma: {
+      domain: 'Mathematics',
+      tool: 'RMA',
+      toolFull: 'Rapid Math Assessment (Grades 1-10)',
+      levels: ['Not Proficient', 'Low Proficient', 'Nearly Proficient', 'Proficient', 'Highly Proficient']
+    }
+  };
 
   const activePersonnel = (Array.isArray(personnel) ? personnel : []).filter(p => !p.isDraft);
 
@@ -334,10 +357,20 @@ export default function OrganizedClasses() {
       if (showAlert) showAlert("Tutor Required", "Please select a section tutor for the ARAL section.");
       return;
     }
-    const sectionType = aralBasis === 'grade' ? 'ARAL_GRADE' : 'ARAL_ASSESSMENT';
-    const sectionName = `ARAL (${aralBasis === 'grade' ? 'Grade-Level' : 'Assessment Profile'}) - ${aralGrade}`;
+    let sectionType = 'ARAL_GRADE';
+    let sectionName = `ARAL (Grade-Level) - ${aralGrade}`;
+    let resGrade = aralGrade;
+
+    if (aralBasis === 'assessment') {
+      const toolObj = ARAL_TOOLS[aralToolKey] || ARAL_TOOLS.crla;
+      const selectedLevel = toolObj.levels.includes(aralProfileLevel) ? aralProfileLevel : toolObj.levels[0];
+      sectionType = `ARAL_${toolObj.tool}_${selectedLevel.toUpperCase().replace(/ /g, '_')}`;
+      sectionName = `ARAL (${toolObj.tool} - ${selectedLevel})`;
+      resGrade = 'ARAL';
+    }
+
     addClassSection({
-      gradeLevel: aralGrade,
+      gradeLevel: resGrade,
       sectionName,
       adviserId: aralTutorId,
       sectionType,
@@ -1487,7 +1520,7 @@ export default function OrganizedClasses() {
       {/* ARAL Section Modal */}
       {isAralModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '16px', padding: '24px', width: '480px', maxWidth: '90vw', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+          <div style={{ background: 'white', borderRadius: '16px', padding: '24px', width: '540px', maxWidth: '92vw', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>➕ Add ARAL Section</h3>
               <button type="button" onClick={() => setIsAralModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}>✕</button>
@@ -1533,19 +1566,137 @@ export default function OrganizedClasses() {
                       transition: 'all 0.15s ease'
                     }}
                   >
-                    (2) Assessment Profile
+                    (2) Assessment Profile (Table 2)
                   </button>
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>Grade Level</label>
-                <select value={aralGrade} onChange={(e) => setAralGrade(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px' }}>
-                  {['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => (
-                    <option key={g} value={g}>{g}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Grade Level (Shown ONLY when basis is Grade Level) */}
+              {aralBasis === 'grade' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>Grade Level</label>
+                  <select
+                    value={aralGrade}
+                    onChange={(e) => setAralGrade(e.target.value)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px' }}
+                  >
+                    {['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Assessment Profile Option Cards (DepEd Table 2 - No Grade Level Needed) */}
+              {aralBasis === 'assessment' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '6px' }}>
+                    Select Assessment Tool & Domain (DepEd Table 2)
+                  </label>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    {/* Tool 1: CRLA */}
+                    {(() => {
+                      const isSel = aralToolKey === 'crla';
+                      return (
+                        <div
+                          onClick={() => {
+                            setAralToolKey('crla');
+                            setAralProfileLevel(ARAL_TOOLS.crla.levels[0]);
+                          }}
+                          style={{
+                            border: `2px solid ${isSel ? '#0284C7' : '#E2E8F0'}`,
+                            background: isSel ? '#F0F9FF' : '#FAFAFA',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '15px', marginBottom: '2px' }}>📖</div>
+                          <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>CRLA</div>
+                          <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Reading (Gr 1-3)</div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Tool 2: Phil-IRI */}
+                    {(() => {
+                      const isSel = aralToolKey === 'philIri';
+                      return (
+                        <div
+                          onClick={() => {
+                            setAralToolKey('philIri');
+                            setAralProfileLevel(ARAL_TOOLS.philIri.levels[0]);
+                          }}
+                          style={{
+                            border: `2px solid ${isSel ? '#0284C7' : '#E2E8F0'}`,
+                            background: isSel ? '#F0F9FF' : '#FAFAFA',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '15px', marginBottom: '2px' }}>📖</div>
+                          <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>Phil-IRI</div>
+                          <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Reading (Gr 4-10)</div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Tool 3: RMA */}
+                    {(() => {
+                      const isSel = aralToolKey === 'rma';
+                      return (
+                        <div
+                          onClick={() => {
+                            setAralToolKey('rma');
+                            setAralProfileLevel(ARAL_TOOLS.rma.levels[0]);
+                          }}
+                          style={{
+                            border: `2px solid ${isSel ? '#0284C7' : '#E2E8F0'}`,
+                            background: isSel ? '#F0F9FF' : '#FAFAFA',
+                            borderRadius: '10px',
+                            padding: '10px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '15px', marginBottom: '2px' }}>🔢</div>
+                          <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>RMA</div>
+                          <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Math (Gr 1-10)</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Level Dropdown */}
+                  {(() => {
+                    const toolObj = ARAL_TOOLS[aralToolKey] || ARAL_TOOLS.crla;
+                    const levels = toolObj.levels;
+                    return (
+                      <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#0369A1', marginBottom: '4px' }}>
+                          🎯 {toolObj.tool} Assessment Profile Level:
+                        </label>
+                        <select
+                          value={levels.includes(aralProfileLevel) ? aralProfileLevel : levels[0]}
+                          onChange={(e) => setAralProfileLevel(e.target.value)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #CBD5E1', fontSize: '12px', fontWeight: '700', color: '#0F172A' }}
+                        >
+                          {levels.map(lvl => (
+                            <option key={lvl} value={lvl}>{lvl}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: '#475569', marginBottom: '4px' }}>Number of ARAL Learners</label>

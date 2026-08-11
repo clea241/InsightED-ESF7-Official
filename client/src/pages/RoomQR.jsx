@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { get10MinPasscode } from '../utils/passcode';
 
 export default function RoomQR() {
   const { scannedRoom, setScannedRoom, personnel, updatePersonnelInfo, savePersonnelChanges } = useApp();
@@ -26,6 +27,27 @@ export default function RoomQR() {
   // Search state for passcodes
   const [passcodeSearch, setPasscodeSearch] = useState('');
   const [copiedCodeId, setCopiedCodeId] = useState(null);
+
+  // Masking & 10-minute rotation state
+  const [revealedIds, setRevealedIds] = useState([]);
+  const [allRevealed, setAllRevealed] = useState(false);
+  const [timeLeftSeconds, setTimeLeftSeconds] = useState(600);
+
+  useEffect(() => {
+    const calcRemaining = () => 600 - (Math.floor(Date.now() / 1000) % 600);
+    setTimeLeftSeconds(calcRemaining());
+
+    const interval = setInterval(() => {
+      setTimeLeftSeconds(calcRemaining());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatCountdown = (totalSecs) => {
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   // Auto-generate missing passcodes for personnel who don't have one yet
   useEffect(() => {
@@ -550,9 +572,14 @@ export default function RoomQR() {
           {/* Roster Passcodes Management Card */}
           <article className="card" style={{ border: '2.5px solid var(--outline)' }}>
             <div className="card-inner" style={{ display: 'grid', gap: '12px' }}>
-              <h2>🔑 Teacher Passcodes</h2>
-              <p className="subtext">
-                Teachers must enter their unique 6-digit passcode to unlock their profiling forms. Distribute these codes to your staff.
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <h2 style={{ margin: 0 }}>🔑 Teacher Passcodes</h2>
+                <span style={{ background: '#F0F9FF', color: '#0369A1', border: '1px solid #BAE6FD', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  ⏱️ Rotates in {formatCountdown(timeLeftSeconds)}
+                </span>
+              </div>
+              <p className="subtext" style={{ margin: 0 }}>
+                Teachers must enter their unique 6-digit passcode to unlock their profiling forms. Codes dynamically rotate every 10 minutes.
               </p>
               
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -567,18 +594,22 @@ export default function RoomQR() {
                   type="button"
                   className="btn secondary"
                   style={{ minHeight: '36px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  onClick={() => setAllRevealed(prev => !prev)}
+                >
+                  {allRevealed ? '🙈 Hide All' : '👁 Reveal All'}
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  style={{ minHeight: '36px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
                   onClick={() => {
-                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
                     (personnel || []).forEach(p => {
-                      let code = '';
-                      for (let i = 0; i < 6; i++) {
-                        code += chars.charAt(Math.floor(Math.random() * chars.length));
-                      }
-                      updatePersonnelInfo(p.id, { profilingCode: code });
+                      const dynamic = get10MinPasscode(p.id, 0);
+                      updatePersonnelInfo(p.id, { profilingCode: dynamic });
                     });
                   }}
                 >
-                  ⚡ Regen All
+                  ⚡ Refresh
                 </button>
               </div>
 
@@ -614,21 +645,36 @@ export default function RoomQR() {
                         const fName = p.firstName || p.first_name || '';
                         const lName = p.lastName || p.last_name || '';
                         const displayName = lName && fName ? `${lName.toUpperCase()}, ${fName}` : (lName || fName || p.name || 'TEACHER').toUpperCase();
-                        const codeVal = p.profilingCode || p.profiling_code || p.passcode || 'N/A';
+                        const actualCode = p.profilingCode || get10MinPasscode(p, 0);
+                        const isRevealed = allRevealed || revealedIds.includes(p.id);
+                        const displayCode = isRevealed ? actualCode : '••••••';
 
                         return (
                           <tr key={p.id} style={{ borderBottom: '1px solid #E2E8F0' }}>
                             <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{displayName}</td>
                             <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'monospace', fontWeight: '800', color: 'var(--blue-600)', letterSpacing: '0.08em', fontSize: '13px' }}>
-                              {codeVal}
+                              {displayCode}
                             </td>
                             <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (codeVal && codeVal !== 'N/A') {
-                                      navigator.clipboard.writeText(codeVal);
+                                    setRevealedIds(prev =>
+                                      prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                                    );
+                                  }}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                                  title={isRevealed ? "Hide Passcode" : "Reveal Passcode"}
+                                >
+                                  {isRevealed ? '🙈' : '👁'}
+                                </button>
+                                <span style={{ color: '#CBD5E1' }}>|</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (actualCode && actualCode !== 'N/A') {
+                                      navigator.clipboard.writeText(actualCode);
                                       setCopiedCodeId(p.id);
                                       setTimeout(() => setCopiedCodeId(null), 1500);
                                     }
@@ -643,28 +689,6 @@ export default function RoomQR() {
                                   }}
                                 >
                                   {copiedCodeId === p.id ? '✓ Copied' : 'Copy'}
-                                </button>
-                                <span style={{ color: '#CBD5E1' }}>|</span>
-                                <button 
-                                  type="button" 
-                                  onClick={() => {
-                                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                                    let code = '';
-                                    for (let i = 0; i < 6; i++) {
-                                      code += chars.charAt(Math.floor(Math.random() * chars.length));
-                                    }
-                                    updatePersonnelInfo(p.id, { profilingCode: code });
-                                  }}
-                                  style={{ 
-                                    background: 'none', 
-                                    border: 'none', 
-                                    color: 'var(--muted)', 
-                                    fontSize: '11px', 
-                                    fontWeight: 700, 
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  Regen
                                 </button>
                               </div>
                             </td>

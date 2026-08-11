@@ -378,11 +378,18 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "TEACHER I",
     "TEACHER II",
     "TEACHER III",
+    "TEACHER IV",
+    "TEACHER V",
+    "TEACHER VI",
+    "TEACHER VII",
     "EXTERNAL TUTOR",
     "SPED TEACHER I",
     "SPED TEACHER II",
     "SPED TEACHER III",
     "SPED TEACHER IV",
+    "SPED TEACHER V",
+    "SPED TEACHER VI",
+    "SPED TEACHER VII",
     "SPECIAL SCIENCE TEACHER I",
     "SPECIAL SCIENCE TEACHER II",
     "SPECIAL SCIENCE TEACHER III",
@@ -395,6 +402,10 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "ALS TR - TEACHER I",
     "ALS TR - TEACHER II",
     "ALS TR - TEACHER III",
+    "ALS TR - TEACHER IV",
+    "ALS TR - TEACHER V",
+    "ALS TR - TEACHER VI",
+    "ALS TR - TEACHER VII",
     "ALS TR - SPED TEACHER I",
     "ALS TR - SPED TEACHER II",
     "ALS TR - SPED TEACHER III",
@@ -411,6 +422,10 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "IP TR - TEACHER I",
     "IP TR - TEACHER II",
     "IP TR - TEACHER III",
+    "IP TR - TEACHER IV",
+    "IP TR - TEACHER V",
+    "IP TR - TEACHER VI",
+    "IP TR - TEACHER VII",
     "IP TR - SPED TEACHER I",
     "IP TR - SPED TEACHER II",
     "IP TR - SPED TEACHER III",
@@ -427,6 +442,10 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "MADRASAH TR - TEACHER I",
     "MADRASAH TR - TEACHER II",
     "MADRASAH TR - TEACHER III",
+    "MADRASAH TR - TEACHER IV",
+    "MADRASAH TR - TEACHER V",
+    "MADRASAH TR - TEACHER VI",
+    "MADRASAH TR - TEACHER VII",
     "MADRASAH TR - SPED TEACHER I",
     "MADRASAH TR - SPED TEACHER II",
     "MADRASAH TR - SPED TEACHER III",
@@ -1734,7 +1753,7 @@ export const AppProvider = ({ children }) => {
 
   const updatePersonnelInfo = async (id, fields) => {
     // 1. Instantly update local state for 0ms typing delay
-    setPersonnel(prev => prev.map(p => p.id === id ? { ...p, ...fields } : p));
+    setPersonnel(prev => prev.map(p => String(p.id) === String(id) ? { ...p, ...fields } : p));
 
     // 2. Accumulate pending changes for this personnel
     if (!pendingFields.current[id]) {
@@ -1756,7 +1775,7 @@ export const AppProvider = ({ children }) => {
       // Safe retrieval of latest state outside state updater side effects
       let latestPerson;
       setPersonnel(prev => {
-        latestPerson = prev.find(p => p.id === id);
+        latestPerson = prev.find(p => String(p.id) === String(id));
         return prev;
       });
 
@@ -1975,6 +1994,14 @@ export const AppProvider = ({ children }) => {
   };
 
   const toggleSchoolHead = async (id, isSchoolHead) => {
+    const targetPerson = personnel.find(item => String(item.id) === String(id));
+    if (isSchoolHead && targetPerson) {
+      const typeStr = String(targetPerson.type || targetPerson.category || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (typeStr === 'nonteaching') {
+        showToast("⚠️ Non-Teaching personnel cannot be designated as School Head.");
+        return;
+      }
+    }
     setPersonnel(prev => prev.map(item => {
       if (item.id === id) {
         return { ...item, isSchoolHead };
@@ -1988,20 +2015,66 @@ export const AppProvider = ({ children }) => {
     showToast(isSchoolHead ? "School Head designated in draft locally." : "School Head designation removed in draft locally.");
   };
 
-  const addClassSection = async (gradeLevel, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
+  const addClassSection = async (gradeLevelOrObj, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
+    let finalGradeLevel = gradeLevelOrObj;
+    let finalSectionName = sectionName;
+    let finalAdvisorId = advisorId;
+    let finalSectionType = sectionType;
+    let finalAdvisoryMins = advisoryMinutes;
+    let finalHgpMins = hgpMinutes;
+    let finalLearners = numberOfLearners;
+
+    if (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) {
+      finalGradeLevel = gradeLevelOrObj.gradeLevel;
+      finalSectionName = gradeLevelOrObj.sectionName;
+      finalAdvisorId = gradeLevelOrObj.advisorId || gradeLevelOrObj.adviserId;
+      finalSectionType = gradeLevelOrObj.sectionType;
+      finalAdvisoryMins = gradeLevelOrObj.advisoryMinutes || 300;
+      finalHgpMins = gradeLevelOrObj.hgpMinutes || 60;
+      finalLearners = gradeLevelOrObj.numberOfLearners;
+    }
+
+    try {
+      const dbRes = await api.createSection({
+        grade_level: finalGradeLevel,
+        section_name: finalSectionName,
+        adviser_id: finalAdvisorId ? String(finalAdvisorId) : null,
+        section_type: finalSectionType || 'MONO GRADE',
+        advisory_minutes: Number(finalAdvisoryMins) || 300,
+        hgp_minutes: Number(finalHgpMins) || 60,
+        number_of_learners: finalLearners !== undefined && finalLearners !== null && finalLearners !== '' ? Number(finalLearners) : null
+      });
+
+      if (dbRes && dbRes.id) {
+        const persistedSec = {
+          id: String(dbRes.id),
+          gradeLevel: dbRes.gradeLevel || finalGradeLevel,
+          sectionName: dbRes.sectionName || finalSectionName,
+          advisorId: dbRes.advisorId || finalAdvisorId,
+          sectionType: dbRes.sectionType || finalSectionType || 'MONO GRADE',
+          numberOfLearners: dbRes.numberOfLearners !== undefined && dbRes.numberOfLearners !== null ? dbRes.numberOfLearners : finalLearners
+        };
+        setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), persistedSec]);
+        showToast('✅ ARAL Section saved directly to database!');
+        return persistedSec;
+      }
+    } catch (err) {
+      console.warn('Failed backend section persist, fallback to local state:', err);
+    }
+
     const localSecId = `sec-draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const newSec = {
       id: localSecId,
-      gradeLevel: gradeLevel,
-      sectionName: sectionName,
-      advisorId: advisorId ? String(advisorId) : null,
-      sectionType: sectionType || 'MONO GRADE',
-      advisoryMinutes: Number(advisoryMinutes) || 300,
-      hgpMinutes: Number(hgpMinutes) || 60,
-      numberOfLearners: numberOfLearners !== undefined && numberOfLearners !== null && numberOfLearners !== '' ? Number(numberOfLearners) : null
+      gradeLevel: finalGradeLevel,
+      sectionName: finalSectionName,
+      advisorId: finalAdvisorId ? String(finalAdvisorId) : null,
+      sectionType: finalSectionType || 'MONO GRADE',
+      advisoryMinutes: Number(finalAdvisoryMins) || 300,
+      hgpMinutes: Number(finalHgpMins) || 60,
+      numberOfLearners: finalLearners !== undefined && finalLearners !== null && finalLearners !== '' ? Number(finalLearners) : null
     };
 
-    setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === gradeLevel && s.sectionName === sectionName)), newSec]);
+    setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), newSec]);
     setHasUnsavedChanges(true);
     showToast('Class section added to draft locally.');
   };
@@ -2067,40 +2140,36 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPersonnelAbsence = async (absenceData) => {
-    const start = new Date(absenceData.startDate);
-    const end = new Date(absenceData.endDate || absenceData.startDate);
-    const newItems = [];
-    
-    let cur = new Date(start);
-    while (cur <= end) {
-      const yyyy = cur.getFullYear();
-      const mm = String(cur.getMonth() + 1).padStart(2, '0');
-      const dd = String(cur.getDate()).padStart(2, '0');
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-      const newId = `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const startStr = absenceData.startDate;
+    const endStr = absenceData.endDate || absenceData.startDate;
+    const newId = `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
 
-      newItems.push({
-        id: newId,
-        personnel_id: absenceData.personnelId,
-        personnelId: absenceData.personnelId,
-        absence_date: dateStr,
-        absenceDate: dateStr,
-        end_date: dateStr,
-        endDate: dateStr,
-        leave_type: absenceData.leaveType,
-        leaveType: absenceData.leaveType
-      });
-      cur.setDate(cur.getDate() + 1);
-    }
+    const newLeaveRecord = {
+      id: newId,
+      personnel_id: absenceData.personnelId,
+      personnelId: absenceData.personnelId,
+      start_date: startStr,
+      startDate: startStr,
+      end_date: endStr,
+      endDate: endStr,
+      absence_date: startStr,
+      absenceDate: startStr,
+      leave_type: absenceData.leaveType,
+      leaveType: absenceData.leaveType
+    };
 
-    setAbsences(prev => [...prev, ...newItems]);
+    setAbsences(prev => [...prev, newLeaveRecord]);
     showToast("Absence record saved.");
     return { success: true };
   };
 
-  const removePersonnelAbsence = async (id) => {
-    setAbsences(prev => prev.filter(a => a.id !== id));
-    showToast("Absence log removed from draft locally.");
+  const removePersonnelAbsence = async (id, targetBatchId = null) => {
+    setAbsences(prev => prev.filter(a => {
+      if (targetBatchId && (a.batchId === targetBatchId || a.batch_id === targetBatchId)) return false;
+      if (Array.isArray(id) && id.includes(a.id)) return false;
+      return a.id !== id;
+    }));
+    showToast("Absence log removed.");
   };
 
   const resetToDatabase = async () => {

@@ -57,6 +57,7 @@ export default function Sidebar() {
           alt="InsightED Logo" 
           className="brand-logo brand-logo-landscape"
           onError={(e) => {
+            e.target.onerror = null;
             e.target.src = "/OFFICIAL LOGO/InsightED logo 5 x 3 in.png";
           }}
         />
@@ -66,7 +67,8 @@ export default function Sidebar() {
           alt="ESF7 Logo" 
           className="brand-logo"
           onError={(e) => {
-            e.target.src = "/OFFICIAL LOGO/ESF7_logo.png";
+            e.target.onerror = null;
+            e.target.src = "/OFFICIAL LOGO/deped.png";
           }}
         />
       </div>

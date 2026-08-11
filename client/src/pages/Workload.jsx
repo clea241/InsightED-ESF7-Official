@@ -211,9 +211,8 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
           <tr>
             <th style="width: 240px;">Class Section</th>
             <th style="width: 220px;">Subject</th>
-            <th style="width: 140px;">Days</th>
-            <th style="width: 100px;">Start Time</th>
-            <th style="width: 100px;">End Time</th>
+            <th style="width: 140px;">Duration</th>
+            <th style="width: 160px;">Usual Days (M-F)</th>
             <th style="width: 60px;">Action</th>
           </tr>
         </thead>
@@ -647,6 +646,10 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         row.days = ['M', 'T', 'W', 'TH', 'F'];
       }
 
+      if (field === 'startTime') {
+        row.startTime = val;
+        row.endTime = add60MinutesToTime(val);
+      }
       if (field === 'startTime' || field === 'endTime') {
         if (row.startTime && row.endTime) {
           const [sh, sm] = row.startTime.split(':').map(Number);
@@ -3069,7 +3072,8 @@ export default function Workload() {
     showConfirm,
     workImmersionSchedulesMap,
     fetchWorkImmersionSchedules,
-    saveWorkImmersionSchedules
+    saveWorkImmersionSchedules,
+    setHasUnsavedChanges
   } = useApp();
 
   // SHS Term Workload state
@@ -3274,12 +3278,24 @@ export default function Workload() {
   const handleConfirmAllAndSave = async () => {
     let confirmedCount = 0;
     const errorTeachers = [];
+    const updatedPersonnelList = [];
 
-    const updatedPersonnelList = (personnel || []).map(p => {
-      if (p.isDraft) return p;
+    for (const p of (personnel || [])) {
+      const draftKey = `draft_workload_${p.id}`;
+      const savedDraft = localStorage.getItem(draftKey);
+      let tRows = p.workloadRows || [];
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed && Array.isArray(parsed.workloadRows)) {
+            tRows = parsed.workloadRows;
+          } else if (Array.isArray(parsed)) {
+            tRows = parsed;
+          }
+        } catch (e) {}
+      }
 
       // Check if this teacher has duration or overlap blocking errors
-      const tRows = p.workloadRows || [];
       const hasErrors = tRows.some((r, rIdx) => {
         if (getRowDurationError(r)) return true;
         return tRows.some((otherR, oIdx) => {
@@ -3298,36 +3314,45 @@ export default function Workload() {
       });
 
       if (hasErrors) {
-        errorTeachers.push(`${p.lastName}, ${p.firstName}`);
-        return p; // Skip unverified teacher with errors
+        errorTeachers.push(`${p.lastName || 'Teacher'}, ${p.firstName || ''}`);
+        updatedPersonnelList.push(p);
+        continue;
       }
 
-      // Mark verified
       confirmedCount++;
-      const updatedP = { ...p, workloadVerified: true, needsTimeReview: false };
 
-      // Update local storage draft if present
-      const draftKey = `draft_workload_${p.id}`;
-      const savedDraft = localStorage.getItem(draftKey);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          if (parsed) {
-            localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadVerified: true, needsTimeReview: false }));
-          }
-        } catch (e) {}
+      const updatedP = {
+        ...p,
+        workloadRows: tRows,
+        workloadVerified: true,
+        needsTimeReview: false
+      };
+
+      updatedPersonnelList.push(updatedP);
+
+      // Save changes into AppContext AND PostgreSQL
+      try {
+        await savePersonnelChanges(p.id, {
+          workloadRows: tRows,
+          workloadVerified: true,
+          needsTimeReview: false
+        });
+      } catch (e) {
+        console.error("Error saving personnel changes for", p.id, e);
       }
 
-      return updatedP;
-    });
+      localStorage.removeItem(draftKey);
+    }
 
-    // Batch update React state in AppContext
+    // Set personnel in AppContext
     setPersonnel(updatedPersonnelList);
 
-    // Update active editPerson if present
-    if (editPerson) {
-      const activeUpdated = updatedPersonnelList.find(x => x.id === editPerson.id);
-      if (activeUpdated) setEditPerson(activeUpdated);
+    // If current active teacher is in the list, update editPerson so UI updates immediately without revert
+    if (currentPerson) {
+      const activeUpdated = updatedPersonnelList.find(x => String(x.id) === String(currentPerson.id));
+      if (activeUpdated) {
+        setEditPerson(activeUpdated);
+      }
     }
 
     setShowAttentionModal(false);
@@ -3338,7 +3363,7 @@ export default function Workload() {
     } else {
       await showAlert(
         "Batch Timetable Verification",
-        `✓ Confirmed and saved ${confirmedCount} personnel schedules!\n\n⚠️ ${errorTeachers.length} personnel were skipped due to red duration errors (> 60m / > 6h SHS) or schedule overlaps:\n• ${errorTeachers.slice(0, 5).join('\n• ')}${errorTeachers.length > 5 ? `\n...and ${errorTeachers.length - 5} more` : ''}`
+        `✓ Confirmed and saved ${confirmedCount} personnel schedules!\n\n⚠️ ${errorTeachers.length} personnel were skipped due to duration errors (> 60m / > 6h SHS) or schedule overlaps:\n• ${errorTeachers.slice(0, 5).join('\n• ')}${errorTeachers.length > 5 ? `\n...and ${errorTeachers.length - 5} more` : ''}`
       );
     }
   };
@@ -3519,6 +3544,17 @@ export default function Workload() {
     return hours * 60 + minutes;
   };
 
+  const add60MinutesToTime = (timeStr) => {
+    if (!timeStr) return '09:00';
+    const parts = String(timeStr).split(':');
+    let h = parseInt(parts[0], 10);
+    let m = parseInt(parts[1], 10);
+    if (isNaN(h)) h = 8;
+    if (isNaN(m)) m = 0;
+    const newH = (h + 1) % 24;
+    return `${String(newH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
   const getAssignedGradeLevels = (p) => {
     if (!p) return [];
     const assigned = [...(Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [])];
@@ -3568,7 +3604,10 @@ export default function Workload() {
       let person = dbPerson;
       if (savedDraft) {
         try {
-          person = JSON.parse(savedDraft);
+          const parsed = JSON.parse(savedDraft);
+          if (parsed) {
+            person = parsed;
+          }
         } catch (e) {
           console.error("Failed to parse draft", e);
         }
@@ -3658,10 +3697,18 @@ export default function Workload() {
       });
       let rowsChanged = false;
 
-      const advisorySections = (classSections || []).filter(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
+      const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId);
+      const advisorySections = (classSections || []).filter(s => {
+        const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
+        const advName = String(s.advisorName || s.advisor_name || '').toLowerCase().trim();
+        const pFn = String(dbPerson?.firstName || currentPerson?.firstName || '').toLowerCase().trim();
+        const pLn = String(dbPerson?.lastName || currentPerson?.lastName || '').toLowerCase().trim();
+        const fullName = `${pFn} ${pLn}`.trim();
+        return (advId && advId === activePersonIdToMatch) || (advName && fullName && (advName.includes(pLn) || fullName.includes(advName)));
+      });
       const defaultAdvSecId = advisorySections.length > 0 ? String(advisorySections[0].id) : '';
 
-      // Filter out obsolete HOMEROOM GUIDANCE rows and duplicate ADVISORY / HGP rows per section
+      // Keep ADVISORY and HGP rows per section, clean up obsolete rows
       const seenAdvisorySecs = new Set();
       const seenHgpSecs = new Set();
       let cleanedRows = [];
@@ -3670,8 +3717,7 @@ export default function Workload() {
       updatedRows.forEach(r => {
         const subUpper = String(r.subject || '').toUpperCase().trim();
         if (subUpper === 'HOMEROOM GUIDANCE' || subUpper === 'HOMEROOM GUIDANCE (HGP)') {
-          didClean = true;
-          return;
+          r.subject = 'HGP';
         }
         if (subUpper === 'ADVISORY') {
           let secKey = String(r.sectionId || r.section_id || defaultAdvSecId || 'GLOBAL_ADV');
@@ -3699,13 +3745,41 @@ export default function Workload() {
         rowsChanged = true;
       }
 
-      if (advisorySections.length === 0) {
+      // Combine advisorySections from classSections with any section referenced by an ADVISORY/HGP row
+      const combinedAdvisoryMap = new Map();
+
+      advisorySections.forEach(sec => {
+        combinedAdvisoryMap.set(String(sec.id), sec);
+      });
+
+      updatedRows.forEach(r => {
+        const subUpper = String(r.subject || '').toUpperCase().trim();
+        if ((subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper === 'HOMEROOM GUIDANCE') && r.sectionId) {
+          const secIdStr = String(r.sectionId);
+          if (!combinedAdvisoryMap.has(secIdStr)) {
+            const matchedSec = (classSections || []).find(s => String(s.id) === secIdStr);
+            if (matchedSec) {
+              combinedAdvisoryMap.set(secIdStr, matchedSec);
+            } else {
+              combinedAdvisoryMap.set(secIdStr, {
+                id: secIdStr,
+                sectionName: r.sectionName || r.section_name || 'Section',
+                gradeLevel: r.gradeLevel || r.grade_level || 'Grade Level'
+              });
+            }
+          }
+        }
+      });
+
+      const effectiveAdvisorySections = Array.from(combinedAdvisoryMap.values());
+
+      if (effectiveAdvisorySections.length === 0) {
         const initialLen = updatedRows.length;
         updatedRows = updatedRows.filter(r => r.subject !== 'ADVISORY' && r.subject !== 'HGP' && r.subject !== 'HOMEROOM GUIDANCE');
         if (updatedRows.length !== initialLen) rowsChanged = true;
       } else {
-        advisorySections.forEach(sec => {
-          // 1. Check if ADVISORY exists in the workload rows for this section
+        effectiveAdvisorySections.forEach(sec => {
+          // 1. Check if ADVISORY exists for this section
           let advisoryIdx = updatedRows.findIndex(r => r.subject === 'ADVISORY' && (String(r.sectionId) === String(sec.id) || !r.sectionId));
           if (advisoryIdx === -1) {
             const newAdv = {
@@ -3721,7 +3795,6 @@ export default function Workload() {
             advisoryIdx = updatedRows.length - 1;
             rowsChanged = true;
           } else {
-            // Ensure sectionId and gradeLevel are synced with the active class section
             const existing = updatedRows[advisoryIdx];
             if (String(existing.sectionId) !== String(sec.id) || existing.gradeLevel !== sec.gradeLevel) {
               updatedRows[advisoryIdx] = {
@@ -3733,8 +3806,8 @@ export default function Workload() {
             }
           }
 
-          // 2. Check if HGP exists in the workload rows for this section
-          const hgpIdx = updatedRows.findIndex(r => (r.subject === 'HGP' || r.subject === 'HOMEROOM GUIDANCE') && (String(r.sectionId) === String(sec.id) || !r.sectionId));
+          // 2. Check if HGP exists for this section
+          let hgpIdx = updatedRows.findIndex(r => r.subject === 'HGP' && (String(r.sectionId) === String(sec.id) || !r.sectionId));
           const advRow = updatedRows[advisoryIdx];
           const startTime = advRow?.startTime || '07:30';
           const endTime = advRow?.endTime || '08:30';
@@ -3755,7 +3828,6 @@ export default function Workload() {
             if (existingHgp.subject !== 'HGP' || String(existingHgp.sectionId) !== String(sec.id) || existingHgp.gradeLevel !== sec.gradeLevel) {
               updatedRows[hgpIdx] = {
                 ...existingHgp,
-                subject: 'HGP',
                 sectionId: String(sec.id),
                 gradeLevel: sec.gradeLevel,
                 startTime: existingHgp.startTime || startTime,
@@ -3767,7 +3839,7 @@ export default function Workload() {
         });
       }
 
-      // Post-sanitization: Strictly enforce maximum ONE ADVISORY row and ONE HGP row per teacher
+      // Post-sanitization: Enforce maximum ONE ADVISORY row and ONE HGP row per section
       const finalSanitizedRows = [];
       const seenAdvFinal = new Set();
       const seenHgpFinal = new Set();
@@ -3777,13 +3849,13 @@ export default function Workload() {
         if (subUpper === 'ADVISORY') {
           if (seenAdvFinal.has('ADVISORY_SINGLETON')) {
             rowsChanged = true;
-            return; // Drop duplicate ADVISORY row
+            return;
           }
           seenAdvFinal.add('ADVISORY_SINGLETON');
         } else if (subUpper === 'HGP') {
           if (seenHgpFinal.has('HGP_SINGLETON')) {
             rowsChanged = true;
-            return; // Drop duplicate HGP row
+            return;
           }
           seenHgpFinal.add('HGP_SINGLETON');
         }
@@ -4322,7 +4394,13 @@ export default function Workload() {
   const addTaskRow = (key, optionsList) => {
     const rows = [...(currentPerson[key] || [])];
     if (key === 'teachingRelatedRows' || key === 'administrativeRows') {
-      rows.push({ task: optionsList[0], dates: [{ date: '', startTime: '08:00', endTime: '09:00' }] });
+      rows.push({
+        task: optionsList[0],
+        startTime: '08:00',
+        endTime: '09:00',
+        days: ['M', 'T', 'W', 'TH', 'F'],
+        hours: 1
+      });
     } else {
       rows.push({ task: optionsList[0], hours: 0, days: [] });
     }
@@ -4336,7 +4414,13 @@ export default function Workload() {
 
   const updateTaskField = (key, index, field, value) => {
     const rows = [...(currentPerson[key] || [])];
-    rows[index] = { ...rows[index], [field]: value };
+    if (field === 'startTime') {
+      const sTime = value;
+      const eTime = add60MinutesToTime(sTime);
+      rows[index] = { ...rows[index], startTime: sTime, endTime: eTime, hours: 1 };
+    } else {
+      rows[index] = { ...rows[index], [field]: value };
+    }
     handleFieldChange(key, rows);
   };
 
@@ -4798,24 +4882,7 @@ export default function Workload() {
               >
                 ✓ Confirm All & Save
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  setShowOrganizedClassCheckModal(true);
-                }}
-                style={{ background: '#0284c7', color: 'white', fontWeight: 'bold', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <span>📤</span> Delegation Package (HTML)
-              </button>
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={() => batchImportFileRef.current?.click()}
-                style={{ border: '1.5px solid #0284c7', color: '#0284c7', fontWeight: 'bold', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <span>📥</span> Import Batch (.json)
-              </button>
+              {/* Temporarily hidden: Delegation Package (HTML) & Import Batch (.json) */}
               <input
                 type="file"
                 ref={batchImportFileRef}
@@ -5082,8 +5149,9 @@ export default function Workload() {
                       <label>Start Time</label>
                       <input type="time" list="school-times" value={newSlot.startTime} onChange={(e) => {
                         const startTime = e.target.value;
+                        const endTime = add60MinutesToTime(startTime);
                         setNewSlot(prev => {
-                          const updated = { ...prev, startTime };
+                          const updated = { ...prev, startTime, endTime, days: prev.days && prev.days.length > 0 ? prev.days : ['M', 'T', 'W', 'TH', 'F'] };
                           const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
                           setSlotConflict(c);
                           return updated;
@@ -5092,7 +5160,7 @@ export default function Workload() {
                     </div>
                     <div>
                       <label>End Time</label>
-                      <input type="time" list="school-times" value={newSlot.endTime} onChange={(e) => {
+                      <input type="time" list="school-times" value={newSlot.endTime || add60MinutesToTime(newSlot.startTime)} onChange={(e) => {
                         const endTime = e.target.value;
                         setNewSlot(prev => {
                           const updated = { ...prev, endTime };
@@ -5403,6 +5471,17 @@ export default function Workload() {
                         (currentPerson?.workloadRows || []).forEach(r => {
                           if (!isSHSRow(r) && Array.isArray(r.days) && r.days.includes(day.code)) {
                             if (r.startTime && r.endTime) {
+                              const subUpper = String(r.subject || '').toUpperCase().trim();
+                              if (subUpper === 'HGP' || subUpper === 'HOMEROOM GUIDANCE') {
+                                const hasMatchingAdv = (currentPerson?.workloadRows || []).some(adv =>
+                                  adv.subject === 'ADVISORY' &&
+                                  String(adv.sectionId) === String(r.sectionId) &&
+                                  adv.startTime === r.startTime &&
+                                  adv.endTime === r.endTime &&
+                                  Array.isArray(adv.days) && adv.days.includes(day.code)
+                                );
+                                if (hasMatchingAdv) return; // HGP occurs within Friday Advisory slot
+                              }
                               dayMins += getTimeDiffMins(r.startTime, r.endTime);
                             }
                           }
@@ -5584,7 +5663,7 @@ export default function Workload() {
                           {layoutType === 'list' && (currentPerson.workloadRows || []).length > 0 && (
                             <div style={{
                               display: 'grid',
-                              gridTemplateColumns: '150px 1fr 125px 125px 170px 80px',
+                              gridTemplateColumns: '140px 1fr 105px 105px 200px 75px',
                               gap: '12px',
                               alignItems: 'center',
                               padding: '8px 16px',
@@ -5702,31 +5781,52 @@ export default function Workload() {
                                   )}
 
                                   {layoutType === 'list' ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 125px 125px 170px 80px', gap: '12px', alignItems: 'center', width: '100%' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 110px 110px 170px 80px', gap: '12px', alignItems: 'center', width: '100%' }}>
                                       {/* Section */}
                                       <div>
                                         {(() => {
                                           const filteredSections = [...(classSections || [])];
-                                          const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
-                                          if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) {
-                                            filteredSections.push(advisorySec);
-                                          }
+                                          const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
+                                          const advisorySec = (classSections || []).find(s => {
+                                            const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
+                                            const advName = String(s.advisorName || s.advisor_name || '').toLowerCase().trim();
+                                            const pFn = String(dbPerson?.firstName || currentPerson?.firstName || '').toLowerCase().trim();
+                                            const pLn = String(dbPerson?.lastName || currentPerson?.lastName || '').toLowerCase().trim();
+                                            const fullName = `${pFn} ${pLn}`.trim();
+                                            return (advId && advId === activePersonIdToMatch) || (advName && fullName && (advName.includes(pLn) || fullName.includes(advName)));
+                                          }) || (classSections || []).find(s => s.gradeLevel === row.gradeLevel) || (classSections || [])[0];
+
+                                          const matchingAdvRow = (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (r.sectionId || r.section_id));
                                           const currentSecId = String(row.sectionId || row.section_id || '');
-                                          if (currentSecId) {
-                                            const currentSavedSec = (classSections || []).find(s => String(s.id) === currentSecId);
-                                            if (currentSavedSec && !filteredSections.some(s => String(s.id) === currentSecId)) {
-                                              filteredSections.push(currentSavedSec);
+                                          const resolvedSecVal = (row.subject === 'ADVISORY' || row.subject === 'HGP')
+                                            ? (currentSecId || (matchingAdvRow ? String(matchingAdvRow.sectionId || matchingAdvRow.section_id) : '') || (advisorySec ? String(advisorySec.id) : '') || (classSections && classSections[0] ? String(classSections[0].id) : ''))
+                                            : currentSecId;
+
+                                          if (resolvedSecVal && !row.sectionId) {
+                                            row.sectionId = resolvedSecVal;
+                                          }
+
+                                          if (resolvedSecVal && !filteredSections.some(s => String(s.id) === String(resolvedSecVal))) {
+                                            const matchInAll = (classSections || []).find(s => String(s.id) === String(resolvedSecVal));
+                                            if (matchInAll) {
+                                              filteredSections.push(matchInAll);
+                                            } else {
+                                              filteredSections.push({
+                                                id: resolvedSecVal,
+                                                sectionName: row.sectionName || row.section_name || 'APPLE',
+                                                gradeLevel: row.gradeLevel || 'Grade 1'
+                                              });
                                             }
                                           }
 
                                           const sectionOptions = filteredSections.map(s => ({
                                             value: String(s.id),
-                                            label: `${s.sectionName} (${s.gradeLevel})`
+                                            label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'})`
                                           }));
                                           return (
                                             <SearchableSelect
                                               disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
-                                              value={(row.subject === 'ADVISORY' || row.subject === 'HGP') && advisorySec ? String(advisorySec.id) : currentSecId}
+                                              value={resolvedSecVal}
                                               onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
                                               options={sectionOptions}
                                               placeholder="Select section…"
@@ -5745,7 +5845,7 @@ export default function Workload() {
                                               onChange={(e) => {
                                                 const newCat = e.target.value;
                                                 const newSubjects = getSubjectsForGrade(row.gradeLevel, newCat);
-                                                updateWorkloadRowFields(idx, { category: newCat, subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY' && s !== 'HGP') || '') });
+                                                updateWorkloadRowFields(idx, { category: newCat, subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY') || '') });
                                               }}
                                               options={[
                                                 { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
@@ -5788,6 +5888,8 @@ export default function Workload() {
 
                                           const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
                                           const subjectOptions = [
+                                            ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY' }] : []),
+                                            ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP' }] : []),
                                             ...(isCustom ? [{ value: currentSub, label: `${currentSub} (Custom)` }] : []),
                                             ...subjectList.map(sub => ({ value: sub, label: sub }))
                                           ];
@@ -5799,21 +5901,7 @@ export default function Workload() {
                                               onChange={(e) => {
                                                 const newSub = e.target.value;
                                                 if (!newSub) return;
-                                                const isSHS = isSHSRow({ ...row, subject: newSub });
-                                                const maxMins = isSHS ? 360 : 60;
-                                                let newStart = row.startTime || '07:30';
-                                                let newEnd = row.endTime || '08:30';
-                                                if (newStart && newEnd) {
-                                                  const diff = getTimeDiffMins(newStart, newEnd);
-                                                  if (diff > maxMins) {
-                                                    const [sh, sm] = newStart.split(':').map(Number);
-                                                    const maxEndMins = sh * 60 + sm + maxMins;
-                                                    const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-                                                    const maxEndM = String(maxEndMins % 60).padStart(2, '0');
-                                                    newEnd = `${maxEndH}:${maxEndM}`;
-                                                  }
-                                                }
-                                                updateWorkloadRowFields(idx, { subject: newSub, startTime: newStart, endTime: newEnd });
+                                                updateWorkloadRowFields(idx, { subject: newSub });
                                               }}
                                               options={subjectOptions}
                                               placeholder="Select subject…"
@@ -5822,54 +5910,73 @@ export default function Workload() {
                                         })()}
                                       </div>
 
-                                      {/* Start Time */}
-                                      <div>
-                                        <input
-                                          type="time"
-                                          list="school-times"
-                                          value={row.startTime || ''}
-                                          onChange={(e) => updateWorkloadRowFields(idx, { startTime: e.target.value })}
-                                          disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
-                                          style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
-                                        />
-                                      </div>
+                                      {/* Start Time & End Time */}
+                                      {row.subject === 'ADVISORY' ? (
+                                        <div style={{ gridColumn: 'span 2', textAlign: 'center' }}>
+                                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 12px', borderRadius: '6px', display: 'inline-block', border: '1px solid #bae6fd' }}>
+                                            ⏱️ 60 Mins / Day (Fixed)
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          {/* Start Time */}
+                                          <div>
+                                            <input
+                                              type="time"
+                                              list="school-times"
+                                              value={row.startTime || '07:30'}
+                                              onChange={(e) => {
+                                                const sTime = e.target.value;
+                                                const eTime = add60MinutesToTime(sTime);
+                                                updateWorkloadRowFields(idx, { startTime: sTime, endTime: eTime });
+                                              }}
+                                              style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                            />
+                                          </div>
 
-                                      {/* End Time */}
-                                      <div>
-                                        <input
-                                          type="time"
-                                          list="school-times"
-                                          value={row.endTime || ''}
-                                          onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
-                                          disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
-                                          style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
-                                        />
-                                      </div>
+                                          {/* End Time */}
+                                          <div>
+                                            <input
+                                              type="time"
+                                              list="school-times"
+                                              value={row.endTime || '08:30'}
+                                              onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
+                                              style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                            />
+                                          </div>
+                                        </>
+                                      )}
 
                                       {/* Usual Days */}
-                                      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-                                        {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => {
-                                          const isSelected = (row.days || []).includes(day);
-                                          return (
-                                            <button
-                                              key={day}
-                                              type="button"
-                                              onClick={() => toggleWorkloadDay(idx, day)}
-                                              style={{
-                                                padding: '2px 6px',
-                                                fontSize: '10px',
-                                                fontWeight: '800',
-                                                borderRadius: '4px',
-                                                border: 'none',
-                                                background: isSelected ? 'var(--blue)' : '#f1f5f9',
-                                                color: isSelected ? 'white' : '#64748b',
-                                                cursor: 'pointer'
-                                              }}
-                                            >
-                                              {day}
-                                            </button>
-                                          );
-                                        })}
+                                      <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
+                                        {row.subject === 'ADVISORY' ? (
+                                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '4px 10px', borderRadius: '6px', display: 'inline-block', border: '1px solid #bae6fd' }}>
+                                            FIXED MONDAY to FRIDAY
+                                          </span>
+                                        ) : (
+                                          ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => {
+                                            const isSelected = (row.days || ['M', 'T', 'W', 'TH', 'F']).includes(day);
+                                            return (
+                                              <button
+                                                key={day}
+                                                type="button"
+                                                onClick={() => toggleWorkloadDay(idx, day)}
+                                                style={{
+                                                  padding: '2px 5px',
+                                                  fontSize: '10px',
+                                                  fontWeight: '800',
+                                                  borderRadius: '4px',
+                                                  border: 'none',
+                                                  background: isSelected ? 'var(--blue)' : '#f1f5f9',
+                                                  color: isSelected ? 'white' : '#64748b',
+                                                  cursor: 'pointer'
+                                                }}
+                                              >
+                                                {day}
+                                              </button>
+                                            );
+                                          })
+                                        )}
                                       </div>
 
                                       {/* Actions */}
@@ -5930,27 +6037,48 @@ export default function Workload() {
                                         <div>
                                           <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Section</label>
                                           {(() => {
-                                            const filteredSections = (classSections || []).filter(s => {
-                                              const g = String(s.gradeLevel || '').toUpperCase();
-                                              return !g.includes('11') && !g.includes('12') && !g.includes('SHS') && !g.includes('SENIOR');
-                                            });
-                                            const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
-                                            if (advisorySec && !filteredSections.some(s => String(s.id) === String(advisorySec.id))) filteredSections.push(advisorySec);
-                                            let currentSecId = String(row.sectionId || row.section_id || '');
-                                            if (!currentSecId && row.gradeLevel) {
-                                              const targetGradeNorm = row.gradeLevel.replace(/\s*[\u2013\u2014-]\s*/g, ' - ');
-                                              const autoSec = (classSections || []).find(s => (s.gradeLevel || '').replace(/\s*[\u2013\u2014-]\s*/g, ' - ') === targetGradeNorm);
-                                              if (autoSec) currentSecId = String(autoSec.id);
+                                            const filteredSections = [...(classSections || [])];
+                                            const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
+                                            const advisorySec = (classSections || []).find(s => {
+                                              const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
+                                              const advName = String(s.advisorName || s.advisor_name || '').toLowerCase().trim();
+                                              const pFn = String(dbPerson?.firstName || currentPerson?.firstName || '').toLowerCase().trim();
+                                              const pLn = String(dbPerson?.lastName || currentPerson?.lastName || '').toLowerCase().trim();
+                                              const fullName = `${pFn} ${pLn}`.trim();
+                                              return (advId && advId === activePersonIdToMatch) || (advName && fullName && (advName.includes(pLn) || fullName.includes(advName)));
+                                            }) || (classSections || []).find(s => s.gradeLevel === row.gradeLevel) || (classSections || [])[0];
+
+                                            const matchingAdvRow = (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (r.sectionId || r.section_id));
+                                            const currentSecId = String(row.sectionId || row.section_id || '');
+                                            const resolvedSecVal = (row.subject === 'ADVISORY' || row.subject === 'HGP')
+                                              ? (currentSecId || (matchingAdvRow ? String(matchingAdvRow.sectionId || matchingAdvRow.section_id) : '') || (advisorySec ? String(advisorySec.id) : '') || (classSections && classSections[0] ? String(classSections[0].id) : ''))
+                                              : currentSecId;
+
+                                            if (resolvedSecVal && !row.sectionId) {
+                                              row.sectionId = resolvedSecVal;
                                             }
-                                            if (currentSecId) {
-                                              const currentSavedSec = (classSections || []).find(s => String(s.id) === currentSecId);
-                                              if (currentSavedSec && !filteredSections.some(s => String(s.id) === currentSecId)) filteredSections.push(currentSavedSec);
+
+                                            if (resolvedSecVal && !filteredSections.some(s => String(s.id) === String(resolvedSecVal))) {
+                                              const matchInAll = (classSections || []).find(s => String(s.id) === String(resolvedSecVal));
+                                              if (matchInAll) {
+                                                filteredSections.push(matchInAll);
+                                              } else {
+                                                filteredSections.push({
+                                                  id: resolvedSecVal,
+                                                  sectionName: row.sectionName || row.section_name || 'APPLE',
+                                                  gradeLevel: row.gradeLevel || 'Grade 1'
+                                                });
+                                              }
                                             }
-                                            const sectionOptions = filteredSections.map(s => ({ value: String(s.id), label: `${s.sectionName} (${s.gradeLevel})` }));
+
+                                            const sectionOptions = filteredSections.map(s => ({
+                                              value: String(s.id),
+                                              label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'})`
+                                            }));
                                             return (
                                               <SearchableSelect
-                                                disabled={isAdvisorySub(row.subject)}
-                                                value={isAdvisorySub(row.subject) && advisorySec ? String(advisorySec.id) : currentSecId}
+                                                disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                                value={resolvedSecVal}
                                                 onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
                                                 options={sectionOptions}
                                                 placeholder="Select section…"
@@ -5994,6 +6122,8 @@ export default function Workload() {
 
                                             const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
                                             const subjectOptions = [
+                                              ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY' }] : []),
+                                              ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP' }] : []),
                                               ...(isCustom ? [{ value: currentSub, label: `${currentSub} (Custom)` }] : []),
                                               ...subjectList.map(sub => ({ value: sub, label: sub }))
                                             ];
@@ -6132,7 +6262,7 @@ export default function Workload() {
                                             }
                                           };
                                         });
-                                        setHasUnsavedChanges(true);
+                                        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
                                       };
 
                                       const updateShsRowForActiveTerm = (rowIdx, updatedFields) => {
@@ -6150,7 +6280,7 @@ export default function Workload() {
                                             }
                                           };
                                         });
-                                        setHasUnsavedChanges(true);
+                                        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
                                       };
 
                                       const removeShsRowForActiveTerm = (rowIdx) => {
@@ -6165,7 +6295,7 @@ export default function Workload() {
                                             }
                                           };
                                         });
-                                        setHasUnsavedChanges(true);
+                                        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
                                       };
 
                                       return (
@@ -6241,24 +6371,15 @@ export default function Workload() {
                                                     />
                                                   </div>
 
-                                                  {/* Start Time */}
-                                                  <input
-                                                    type="time"
-                                                    value={row.startTime || '08:00'}
-                                                    onChange={(e) => updateShsRowForActiveTerm(rIdx, { startTime: e.target.value })}
-                                                    style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
-                                                  />
-
-                                                  {/* End Time */}
-                                                  <input
-                                                    type="time"
-                                                    value={row.endTime || '09:00'}
-                                                    onChange={(e) => updateShsRowForActiveTerm(rIdx, { endTime: e.target.value })}
-                                                    style={{ width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
-                                                  />
+                                                  {/* Duration */}
+                                                  <div>
+                                                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', display: 'inline-block' }}>
+                                                      ⏱️ 60 Mins (Fixed)
+                                                    </span>
+                                                  </div>
 
                                                   {/* Days */}
-                                                  <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                                                  <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
                                                     {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(d => {
                                                       const isSel = (row.days || []).includes(d);
                                                       return (
@@ -6270,7 +6391,7 @@ export default function Workload() {
                                                             updateShsRowForActiveTerm(rIdx, { days: newDays });
                                                           }}
                                                           style={{
-                                                            padding: '2px 6px', fontSize: '10px', fontWeight: '800', borderRadius: '4px', border: 'none',
+                                                            padding: '2px 5px', fontSize: '10px', fontWeight: '800', borderRadius: '4px', border: 'none',
                                                             background: isSel ? 'var(--blue)' : '#f1f5f9', color: isSel ? 'white' : '#64748b', cursor: 'pointer'
                                                           }}
                                                         >
@@ -6367,121 +6488,62 @@ export default function Workload() {
                           )}
 
                           <div className="multi-task-rows">
-                            {(currentPerson.teachingRelatedRows || []).map((row, idx) => (
-                              <div key={idx} className="multi-task-row teaching-related-layout" style={{ alignItems: 'flex-start' }}>
-                                <div>
-                                  <label>Task Type</label>
-                                  <SearchableSelect
-                                    value={row.task}
-                                    onChange={(e) => updateTaskField('teachingRelatedRows', idx, 'task', e.target.value)}
-                                    options={allTeachingRelatedOptions.map(opt => ({ value: opt, label: opt }))}
-                                  />
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                                  {(row.dates || []).map((dateEntry, dateIdx) => (
-                                    <div key={dateIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-                                      <div style={{ flex: 1 }}>
-                                        <label>Date</label>
-                                        <DatePickerDropdowns
-                                          value={dateEntry.date || ''}
-                                          onChange={(val) => {
-                                            const updatedDates = [...(row.dates || [])];
-                                            updatedDates[dateIdx] = { ...updatedDates[dateIdx], date: val };
-                                            updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
-                                          }}
-                                        />
-                                      </div>
-                                      <div style={{ width: '110px' }}>
-                                        <label>Start Time</label>
-                                        <input
-                                          type="time"
-                                          value={dateEntry.startTime || ''}
-                                          onChange={(e) => {
-                                            const updatedDates = [...(row.dates || [])];
-                                            updatedDates[dateIdx] = { ...updatedDates[dateIdx], startTime: e.target.value };
-                                            updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
-                                          }}
-                                        />
-                                      </div>
-                                      <div style={{ width: '110px' }}>
-                                        <label>End Time</label>
-                                        <input
-                                          type="time"
-                                          value={dateEntry.endTime || ''}
-                                          onChange={(e) => {
-                                            const updatedDates = [...(row.dates || [])];
-                                            updatedDates[dateIdx] = { ...updatedDates[dateIdx], endTime: e.target.value };
-                                            updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
-                                          }}
-                                        />
-                                      </div>
-                                      {(row.dates || []).length > 1 && (
-                                        <button
-                                          type="button"
-                                          style={{
-                                            padding: 0,
-                                            height: '34px',
-                                            width: '34px',
-                                            minWidth: '34px',
-                                            borderRadius: '50%',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            marginTop: '20px',
-                                            fontSize: '14px',
-                                            background: '#FEE2E2',
-                                            color: '#EF4444',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            marginRight: '8px'
-                                          }}
-                                          onClick={() => {
-                                            const updatedDates = (row.dates || []).filter((_, dIdx) => dIdx !== dateIdx);
-                                            updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
-                                          }}
-                                        >
-                                          ✕
-                                        </button>
-                                      )}
+                            {(currentPerson.teachingRelatedRows || []).map((row, idx) => {
+                              const selectedDays = Array.isArray(row.days) && row.days.length > 0 ? row.days : ['M', 'T', 'W', 'TH', 'F'];
+
+                              return (
+                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 220px 80px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Task Type</label>
+                                    <SearchableSelect
+                                      value={row.task}
+                                      onChange={(e) => updateTaskField('teachingRelatedRows', idx, 'task', e.target.value)}
+                                      options={allTeachingRelatedOptions.map(opt => ({ value: opt, label: opt }))}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Duration</label>
+                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', textAlign: 'center' }}>
+                                      ⏱️ 60 Mins (Fixed)
                                     </div>
-                                  ))}
-                                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
-                                    <button
-                                      type="button"
-                                      className="btn secondary"
-                                      style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto' }}
-                                      onClick={() => {
-                                        const updatedDates = [...(row.dates || [])];
-                                        updatedDates.push({ date: '', startTime: '08:00', endTime: '09:00' });
-                                        updateTaskField('teachingRelatedRows', idx, 'dates', updatedDates);
-                                      }}
-                                    >
-                                      + Add Single Date
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn"
-                                      style={{
-                                        background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-                                        color: 'white',
-                                        fontWeight: 'bold',
-                                        fontSize: '11px',
-                                        padding: '4px 12px',
-                                        minHeight: 'auto',
-                                        borderRadius: '6px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px'
-                                      }}
-                                      onClick={() => openCalendarModal('teachingRelatedRows', idx, row)}
-                                    >
-                                      📅 Select Dates on Calendar
-                                    </button>
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Days (M-F)</label>
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                      {['M', 'T', 'W', 'TH', 'F'].map(day => {
+                                        const isSel = selectedDays.includes(day);
+                                        return (
+                                          <button
+                                            key={day}
+                                            type="button"
+                                            onClick={() => {
+                                              const currentDays = [...selectedDays];
+                                              const nextDays = isSel ? currentDays.filter(d => d !== day) : [...currentDays, day];
+                                              updateTaskField('teachingRelatedRows', idx, 'days', nextDays);
+                                            }}
+                                            style={{
+                                              padding: '4px 8px',
+                                              fontSize: '11px',
+                                              fontWeight: 'bold',
+                                              borderRadius: '4px',
+                                              border: isSel ? 'none' : '1px solid var(--line)',
+                                              background: isSel ? '#0284C7' : '#FFFFFF',
+                                              color: isSel ? '#FFFFFF' : '#334155',
+                                              cursor: 'pointer'
+                                            }}
+                                          >
+                                            {day}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <button className="btn danger sm" type="button" onClick={() => removeTaskRow('teachingRelatedRows', idx)}>Remove</button>
                                   </div>
                                 </div>
-                                <button className="btn danger" type="button" onClick={() => removeTaskRow('teachingRelatedRows', idx)} style={{ marginTop: '20px' }}>Remove</button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -6494,178 +6556,62 @@ export default function Workload() {
                             </button>
                           </div>
                           <div className="multi-task-rows">
-                            {(currentPerson.administrativeRows || []).map((row, idx) => (
-                              <div key={idx} className="multi-task-row" style={{ alignItems: 'flex-start' }}>
-                                <div>
-                                  <label>Task Type</label>
-                                  <SearchableSelect
-                                    value={row.task}
-                                    onChange={(e) => updateTaskField('administrativeRows', idx, 'task', e.target.value)}
-                                    options={ADMINISTRATIVE_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
-                                  />
+                            {(currentPerson.administrativeRows || []).map((row, idx) => {
+                              const selectedDays = Array.isArray(row.days) && row.days.length > 0 ? row.days : ['M', 'T', 'W', 'TH', 'F'];
 
-                                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                                    {(!row.dates || row.dates.length === 0) && (
-                                      <>
-                                        <div style={{ width: '120px' }}>
-                                          <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
-                                          <input
-                                            type="time"
-                                            value={row.startTime || '08:00'}
-                                            onChange={(e) => updateTaskField('administrativeRows', idx, 'startTime', e.target.value)}
-                                            style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
-                                          />
-                                        </div>
-                                        <div style={{ width: '120px' }}>
-                                          <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
-                                          <input
-                                            type="time"
-                                            value={row.endTime || '12:00'}
-                                            onChange={(e) => updateTaskField('administrativeRows', idx, 'endTime', e.target.value)}
-                                            style={{ width: '100%', padding: '4px 6px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--line)' }}
-                                          />
-                                        </div>
-                                      </>
-                                    )}
-                                    <div style={{ flex: 1, minWidth: '180px' }}>
-                                      <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Usual Days (MTWTHF)</label>
-                                      <div style={{ display: 'flex', gap: '4px' }}>
-                                        {['M', 'T', 'W', 'Th', 'F'].map(day => {
-                                          const selectedDays = Array.isArray(row.days) ? row.days : ['M', 'T', 'W', 'Th', 'F'];
-                                          const isSel = selectedDays.includes(day);
-                                          return (
-                                            <button
-                                              key={day}
-                                              type="button"
-                                              onClick={() => {
-                                                const currentDays = [...selectedDays];
-                                                const nextDays = isSel ? currentDays.filter(d => d !== day) : [...currentDays, day];
-                                                updateTaskField('administrativeRows', idx, 'days', nextDays);
-                                              }}
-                                              style={{
-                                                padding: '3px 8px',
-                                                fontSize: '11px',
-                                                fontWeight: 'bold',
-                                                borderRadius: '4px',
-                                                border: isSel ? 'none' : '1px solid var(--line)',
-                                                background: isSel ? '#0284C7' : '#FFFFFF',
-                                                color: isSel ? '#FFFFFF' : '#334155',
-                                                cursor: 'pointer'
-                                              }}
-                                            >
-                                              {day}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
+                              return (
+                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 220px 80px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Task Type</label>
+                                    <SearchableSelect
+                                      value={row.task}
+                                      onChange={(e) => updateTaskField('administrativeRows', idx, 'task', e.target.value)}
+                                      options={ADMINISTRATIVE_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Duration</label>
+                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', textAlign: 'center' }}>
+                                      ⏱️ 60 Mins (Fixed)
                                     </div>
                                   </div>
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                                  {(row.dates || []).map((dateEntry, dateIdx) => (
-                                    <div key={dateIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-                                      <div style={{ flex: 1 }}>
-                                        <label>Date</label>
-                                        <DatePickerDropdowns
-                                          value={dateEntry.date || ''}
-                                          onChange={(val) => {
-                                            const updatedDates = [...(row.dates || [])];
-                                            updatedDates[dateIdx] = { ...updatedDates[dateIdx], date: val };
-                                            updateTaskField('administrativeRows', idx, 'dates', updatedDates);
-                                          }}
-                                        />
-                                      </div>
-                                      <div style={{ width: '110px' }}>
-                                        <label>Start Time</label>
-                                        <input
-                                          type="time"
-                                          value={dateEntry.startTime || ''}
-                                          onChange={(e) => {
-                                            const updatedDates = [...(row.dates || [])];
-                                            updatedDates[dateIdx] = { ...updatedDates[dateIdx], startTime: e.target.value };
-                                            updateTaskField('administrativeRows', idx, 'dates', updatedDates);
-                                          }}
-                                        />
-                                      </div>
-                                      <div style={{ width: '110px' }}>
-                                        <label>End Time</label>
-                                        <input
-                                          type="time"
-                                          value={dateEntry.endTime || ''}
-                                          onChange={(e) => {
-                                            const updatedDates = [...(row.dates || [])];
-                                            updatedDates[dateIdx] = { ...updatedDates[dateIdx], endTime: e.target.value };
-                                            updateTaskField('administrativeRows', idx, 'dates', updatedDates);
-                                          }}
-                                        />
-                                      </div>
-                                      {(row.dates || []).length > 1 && (
-                                        <button
-                                          type="button"
-                                          style={{
-                                            padding: 0,
-                                            height: '34px',
-                                            width: '34px',
-                                            minWidth: '34px',
-                                            borderRadius: '50%',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            marginTop: '20px',
-                                            fontSize: '14px',
-                                            background: '#FEE2E2',
-                                            color: '#EF4444',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            marginRight: '8px'
-                                          }}
-                                          onClick={() => {
-                                            const updatedDates = (row.dates || []).filter((_, dIdx) => dIdx !== dateIdx);
-                                            updateTaskField('administrativeRows', idx, 'dates', updatedDates);
-                                          }}
-                                        >
-                                          ✕
-                                        </button>
-                                      )}
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Days (M-F)</label>
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                      {['M', 'T', 'W', 'TH', 'F'].map(day => {
+                                        const isSel = selectedDays.includes(day);
+                                        return (
+                                          <button
+                                            key={day}
+                                            type="button"
+                                            onClick={() => {
+                                              const currentDays = [...selectedDays];
+                                              const nextDays = isSel ? currentDays.filter(d => d !== day) : [...currentDays, day];
+                                              updateTaskField('administrativeRows', idx, 'days', nextDays);
+                                            }}
+                                            style={{
+                                              padding: '4px 8px',
+                                              fontSize: '11px',
+                                              fontWeight: 'bold',
+                                              borderRadius: '4px',
+                                              border: isSel ? 'none' : '1px solid var(--line)',
+                                              background: isSel ? '#0284C7' : '#FFFFFF',
+                                              color: isSel ? '#FFFFFF' : '#334155',
+                                              cursor: 'pointer'
+                                            }}
+                                          >
+                                            {day}
+                                          </button>
+                                        );
+                                      })}
                                     </div>
-                                  ))}
-                                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
-                                    <button
-                                      type="button"
-                                      className="btn secondary"
-                                      style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto' }}
-                                      onClick={() => {
-                                        const updatedDates = [...(row.dates || [])];
-                                        updatedDates.push({ date: '', startTime: '08:00', endTime: '09:00' });
-                                        updateTaskField('administrativeRows', idx, 'dates', updatedDates);
-                                      }}
-                                    >
-                                      + Add Single Date
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn"
-                                      style={{
-                                        background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-                                        color: 'white',
-                                        fontWeight: 'bold',
-                                        fontSize: '11px',
-                                        padding: '4px 12px',
-                                        minHeight: 'auto',
-                                        borderRadius: '6px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px'
-                                      }}
-                                      onClick={() => openCalendarModal('administrativeRows', idx, row)}
-                                    >
-                                      📅 Select Dates on Calendar
-                                    </button>
+                                  </div>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <button className="btn danger sm" type="button" onClick={() => removeTaskRow('administrativeRows', idx)}>Remove</button>
                                   </div>
                                 </div>
-                                <button className="btn danger" type="button" onClick={() => removeTaskRow('administrativeRows', idx)} style={{ marginTop: '20px' }}>Remove</button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </div>

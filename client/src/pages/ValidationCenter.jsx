@@ -7,6 +7,7 @@ import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
 export default function ValidationCenter() {
   const {
     personnel,
+    classSections,
     getValidationIssues,
     setActivePersonnelId,
     setActiveView,
@@ -1203,7 +1204,9 @@ export default function ValidationCenter() {
                                     const m = gradeVal.match(/\d+/);
                                     if (m) gradeVal = m[0];
                                   }
-                                  const secVal   = (w.sectionName || w.section_name || 'BONIFACIO').toUpperCase();
+                                   const matchedSec = (classSections || []).find(s => String(s.id) === String(w.sectionId)) || 
+                                                      (classSections || []).find(s => String(s.adviserId || s.adviser_id) === String(p.id));
+                                   const secVal   = (w.sectionName || w.section_name || matchedSec?.sectionName || matchedSec?.section_name || (w.subject === 'ADVISORY' || w.subject === 'HGP' ? 'ADVISORY SECTION' : 'GENERIC')).toUpperCase();
 
                                   return (
                                     <tr key={w.id || wIdx} style={{ borderBottom: '1px solid #F1F5F9' }}>
