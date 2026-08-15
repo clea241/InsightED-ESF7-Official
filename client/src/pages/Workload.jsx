@@ -1,5 +1,19 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 
+export const normalizeSubjectName = (sub) => {
+  if (!sub || typeof sub !== 'string') return sub;
+  const upper = sub.trim().toUpperCase();
+  if (
+    upper.includes('HOMEROOM GUIDANCE') ||
+    upper.startsWith('HOMEROOM GUIDANCE') ||
+    upper.startsWith('HGP (') ||
+    upper === 'HGP'
+  ) {
+    return 'HGP';
+  }
+  return sub;
+};
+
 const isAdvisorySub = (sub) => {
   if (!sub) return false;
   const s = String(sub).toUpperCase();
@@ -40,7 +54,15 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
       firstName: t.firstName,
       lastName: t.lastName,
       position: t.position || 'Teacher',
-      workloadRows: (t.workloadRows || []).map(r => ({
+      workloadRows: (t.workloadRows || []).slice().sort((a, b) => {
+        const getPriority = (row) => {
+          const sub = String(row.subject || '').toUpperCase().trim();
+          if (sub === 'ADVISORY') return 0;
+          if (sub === 'HGP' || sub.includes('HOMEROOM')) return 1;
+          return 2;
+        };
+        return getPriority(a) - getPriority(b);
+      }).map(r => ({
         id: r.id || `r-${Math.random().toString(36).substring(2, 7)}`,
         category: r.category || 'Elementary',
         subject: r.subject || '',
@@ -299,14 +321,12 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         list = (data.gradeSubjects && (data.gradeSubjects['Grade 1'] || data.gradeSubjects['Elementary'])) || [];
       }
 
-      if (data.customSubjects && Array.isArray(data.customSubjects)) {
-        const customNames = data.customSubjects.map(cs => typeof cs === 'string' ? cs : cs.name).filter(Boolean);
-        list = Array.from(new Set([...list, ...customNames]));
-      }
-
-      // Unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS into one subject option, and filter out ADVISORY from dropdowns
+      // Unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS into one subject option, and filter out ADVISORY and HGP from dropdowns
       list = list.map(s => (s === 'REMEDIATION' || s === 'REMEDIAL/ENHANCEMENT CLASS') ? 'REMEDIAL / ENHANCEMENT CLASS' : s)
-                 .filter(s => s !== 'ADVISORY');
+                 .filter(s => {
+                   const u = String(s || '').toUpperCase().trim();
+                   return u !== 'ADVISORY' && u !== 'HGP' && !u.includes('HOMEROOM GUIDANCE');
+                 });
 
       return Array.from(new Set(list));
     }
@@ -364,6 +384,16 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 30px;">No workload rows. Click "+ Add Workload Row" above.</td></tr>';
         return;
       }
+
+      t.workloadRows.sort((a, b) => {
+        const getPriority = (row) => {
+          const sub = String(row.subject || '').toUpperCase().trim();
+          if (sub === 'ADVISORY') return 0;
+          if (sub === 'HGP' || sub.includes('HOMEROOM')) return 1;
+          return 2;
+        };
+        return getPriority(a) - getPriority(b);
+      });
 
       t.workloadRows.forEach((row, idx) => {
         const tr = document.createElement('tr');
@@ -515,17 +545,16 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
           t.workloadRows[idx].category = 'Elementary';
         }
 
-        const available = getSubjectsForGradeInHTML(sec.gradeLevel, t.workloadRows[idx].category);
-        if (!available.includes(t.workloadRows[idx].subject)) {
-          t.workloadRows[idx].subject = '';
-          t.workloadRows[idx].remediationSubject = '';
+        if (!t.workloadRows[idx].subject) {
+          const available = getSubjectsForGradeInHTML(sec.gradeLevel, t.workloadRows[idx].category);
+          if (available.length > 0) {
+            t.workloadRows[idx].subject = available[0];
+          }
         }
       } else {
         t.workloadRows[idx].sectionId = '';
         t.workloadRows[idx].sectionName = '';
         t.workloadRows[idx].gradeLevel = '';
-        t.workloadRows[idx].subject = '';
-        t.workloadRows[idx].remediationSubject = '';
       }
       renderWorkloadRows();
       renderTeacherList();
@@ -1245,6 +1274,357 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
               );
             })}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MultiDatePickerDropdown({ value = [], onChange, disabled = false }) {
+  const [showCalendar, setShowCalendar] = React.useState(false);
+  const [viewDate, setViewDate] = React.useState(new Date());
+  const containerRef = React.useRef(null);
+
+  const selectedDates = Array.isArray(value)
+    ? value.map(v => typeof v === 'string' ? v.substring(0, 10) : '').filter(Boolean)
+    : (typeof value === 'string' && value ? [value.substring(0, 10)] : []);
+
+  const formatDate = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  React.useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setShowCalendar(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const handlePrevMonth = (e) => {
+    e.stopPropagation();
+    setViewDate(new Date(year, month - 1, 1));
+  };
+
+  const handleNextMonth = (e) => {
+    e.stopPropagation();
+    setViewDate(new Date(year, month + 1, 1));
+  };
+
+  const firstDayOfMonth = new Date(year, month, 1);
+  let startDayIndex = firstDayOfMonth.getDay() - 1;
+  if (startDayIndex < 0) startDayIndex = 6;
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  const cells = [];
+  for (let i = startDayIndex - 1; i >= 0; i--) {
+    cells.push({ day: daysInPrevMonth - i, monthOffset: -1, date: new Date(year, month - 1, daysInPrevMonth - i) });
+  }
+  for (let i = 1; i <= daysInMonth; i++) {
+    cells.push({ day: i, monthOffset: 0, date: new Date(year, month, i) });
+  }
+  const totalCells = 42;
+  const nextPadding = totalCells - cells.length;
+  for (let i = 1; i <= nextPadding; i++) {
+    cells.push({ day: i, monthOffset: 1, date: new Date(year, month + 1, i) });
+  }
+
+  const toggleAllDayOfWeekInMonth = (targetDayNumber) => {
+    const monthDates = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(year, month, d);
+      if (dt.getDay() === targetDayNumber) {
+        monthDates.push(formatDate(dt));
+      }
+    }
+
+    const allSelected = monthDates.length > 0 && monthDates.every(dStr => selectedDates.includes(dStr));
+
+    if (allSelected) {
+      onChange(selectedDates.filter(dStr => !monthDates.includes(dStr)));
+    } else {
+      const newSet = new Set([...selectedDates, ...monthDates]);
+      onChange(Array.from(newSet));
+    }
+  };
+
+  const toggleAllWeekdaysInMonth = () => {
+    const monthDates = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(year, month, d);
+      const dayNum = dt.getDay();
+      if (dayNum >= 1 && dayNum <= 5) { // Mon - Fri
+        monthDates.push(formatDate(dt));
+      }
+    }
+
+    const allSelected = monthDates.length > 0 && monthDates.every(dStr => selectedDates.includes(dStr));
+
+    if (allSelected) {
+      onChange(selectedDates.filter(dStr => !monthDates.includes(dStr)));
+    } else {
+      const newSet = new Set([...selectedDates, ...monthDates]);
+      onChange(Array.from(newSet));
+    }
+  };
+
+  const handleToggleDay = (cellDate, e) => {
+    e.stopPropagation();
+    if (disabled) return;
+    const dateStr = formatDate(cellDate);
+    if (!dateStr) return;
+
+    if (selectedDates.includes(dateStr)) {
+      onChange(selectedDates.filter(d => d !== dateStr));
+    } else {
+      onChange([...selectedDates, dateStr]);
+    }
+  };
+
+  const handleRemoveDate = (dateStr, e) => {
+    e.stopPropagation();
+    onChange(selectedDates.filter(d => d !== dateStr));
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', minHeight: '28px', alignItems: 'center' }}>
+          {selectedDates.map(dateStr => (
+            <span
+              key={dateStr}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: '#E0F2FE',
+                color: '#0369A1',
+                border: '1px solid #BAE6FD',
+                borderRadius: '6px',
+                padding: '2px 6px',
+                fontSize: '11px',
+                fontWeight: 'bold'
+              }}
+            >
+              📅 {formatDisplayDate(dateStr)}
+              <button
+                type="button"
+                onClick={(e) => handleRemoveDate(dateStr, e)}
+                style={{
+                  background: 'transparent',
+                  border: 0,
+                  color: '#0284C7',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '11px',
+                  padding: 0,
+                  marginLeft: '2px'
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          {selectedDates.length === 0 && (
+            <span style={{ fontSize: '11px', color: '#94A3B8', fontStyle: 'italic' }}>No dates selected</span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => !disabled && setShowCalendar(!showCalendar)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            border: '1.5px solid var(--blue)',
+            background: showCalendar ? 'var(--blue)' : 'var(--blue-50)',
+            color: showCalendar ? 'white' : 'var(--blue)',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            width: 'fit-content',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          {showCalendar ? 'Close ✕' : '+ Add Date 📅'}
+        </button>
+      </div>
+
+      {showCalendar && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            zIndex: 9999,
+            background: '#FFFFFF',
+            border: '1.5px solid var(--line)',
+            borderRadius: '14px',
+            boxShadow: '0 10px 25px -5px rgba(8, 49, 95, 0.25)',
+            padding: '14px',
+            width: '285px',
+            boxSizing: 'border-box'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <button type="button" onClick={handlePrevMonth} style={{ background: '#F1F5F9', border: 0, borderRadius: '6px', padding: '3px 8px', cursor: 'pointer', fontWeight: 'bold' }}>‹</button>
+            <span style={{ fontWeight: 'bold', fontSize: '12px', color: 'var(--navy)' }}>
+              {monthNames[month]} {year}
+            </span>
+            <button type="button" onClick={handleNextMonth} style={{ background: '#F1F5F9', border: 0, borderRadius: '6px', padding: '3px 8px', cursor: 'pointer', fontWeight: 'bold' }}>›</button>
+          </div>
+
+          {/* Quick Shortcuts Bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px', marginBottom: '8px' }}>
+            <button
+              type="button"
+              onClick={toggleAllWeekdaysInMonth}
+              style={{
+                flex: 1,
+                padding: '4px 2px',
+                fontSize: '10px',
+                fontWeight: 'bold',
+                borderRadius: '6px',
+                border: '1px solid #BAE6FD',
+                background: '#E0F2FE',
+                color: '#0369A1',
+                cursor: 'pointer'
+              }}
+              title="Select/Unselect all Monday to Friday dates in this month"
+            >
+              + All Weekdays (M-F)
+            </button>
+            {selectedDates.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                style={{
+                  padding: '4px 6px',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  borderRadius: '6px',
+                  border: '1px solid #FECDD3',
+                  background: '#FFF1F2',
+                  color: '#E11D48',
+                  cursor: 'pointer'
+                }}
+                title="Clear all selected dates"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+
+          {/* Day of Week Clickable Headers (All Mon, All Tue, etc.) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', marginBottom: '6px' }}>
+            {[
+              { label: 'Mon', dayNum: 1 },
+              { label: 'Tue', dayNum: 2 },
+              { label: 'Wed', dayNum: 3 },
+              { label: 'Thu', dayNum: 4 },
+              { label: 'Fri', dayNum: 5 },
+              { label: 'Sat', dayNum: 6 },
+              { label: 'Sun', dayNum: 0 }
+            ].map(({ label, dayNum }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleAllDayOfWeekInMonth(dayNum); }}
+                title={`Click to select/unselect all ${label}days in ${monthNames[month]}`}
+                style={{
+                  background: '#F1F5F9',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '4px',
+                  color: '#0284C7',
+                  fontSize: '10px',
+                  fontWeight: 'bold',
+                  padding: '3px 0',
+                  cursor: 'pointer'
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Date Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+            {cells.map((cell, idx) => {
+              const dStr = formatDate(cell.date);
+              const isSelected = selectedDates.includes(dStr);
+              const isOtherMonth = cell.monthOffset !== 0;
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={(e) => handleToggleDay(cell.date, e)}
+                  style={{
+                    padding: '5px 0',
+                    fontSize: '11px',
+                    fontWeight: isSelected ? 'bold' : 'normal',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: isSelected ? '#0284C7' : (isOtherMonth ? '#F8FAFC' : '#F1F5F9'),
+                    color: isSelected ? 'white' : (isOtherMonth ? '#94A3B8' : '#1E293B'),
+                    cursor: 'pointer',
+                    transition: 'all 0.10s ease'
+                  }}
+                >
+                  {cell.day}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowCalendar(false)}
+            style={{
+              marginTop: '10px',
+              width: '100%',
+              padding: '6px',
+              background: '#0284C7',
+              color: 'white',
+              border: 0,
+              borderRadius: '6px',
+              fontWeight: 'bold',
+              fontSize: '11px',
+              cursor: 'pointer'
+            }}
+          >
+            Done ({selectedDates.length} Selected)
+          </button>
         </div>
       )}
     </div>
@@ -3715,9 +4095,14 @@ export default function Workload() {
       let didClean = false;
 
       updatedRows.forEach(r => {
-        const subUpper = String(r.subject || '').toUpperCase().trim();
-        if (subUpper === 'HOMEROOM GUIDANCE' || subUpper === 'HOMEROOM GUIDANCE (HGP)') {
+        let subUpper = String(r.subject || '').toUpperCase().trim();
+        if (subUpper === 'CUSTOM' || subUpper.startsWith('CUSTOM (')) {
+          didClean = true;
+          return;
+        }
+        if (subUpper.includes('HOMEROOM GUIDANCE') || subUpper.startsWith('HOMEROOM GUIDANCE') || subUpper.startsWith('HGP (')) {
           r.subject = 'HGP';
+          subUpper = 'HGP';
         }
         if (subUpper === 'ADVISORY') {
           let secKey = String(r.sectionId || r.section_id || defaultAdvSecId || 'GLOBAL_ADV');
@@ -3736,7 +4121,14 @@ export default function Workload() {
             didClean = true;
           }
         } else {
-          cleanedRows.push(r);
+          // Check if subject is enabled and valid for the grade level / category
+          const availableForGrade = getSubjectsForGrade(r.gradeLevel, r.category);
+          const isAllowed = availableForGrade.some(s => String(s).toUpperCase().trim() === subUpper);
+          if (isAllowed) {
+            cleanedRows.push(r);
+          } else {
+            didClean = true;
+          }
         }
       });
 
@@ -3860,6 +4252,16 @@ export default function Workload() {
           seenHgpFinal.add('HGP_SINGLETON');
         }
         finalSanitizedRows.push(r);
+      });
+
+      finalSanitizedRows.sort((a, b) => {
+        const getPriority = (row) => {
+          const sub = String(row.subject || '').toUpperCase().trim();
+          if (sub === 'ADVISORY') return 0;
+          if (sub === 'HGP' || sub.includes('HOMEROOM')) return 1;
+          return 2;
+        };
+        return getPriority(a) - getPriority(b);
       });
 
       if (finalSanitizedRows.length !== updatedRows.length) {
@@ -3988,27 +4390,11 @@ export default function Workload() {
       baseList = GRADE_LEVEL_SUBJECTS[grade] || SUBJECT_OPTIONS;
     }
 
-    // Load custom subjects added under "Subjects Taught"
-    const storedCustom = (() => {
-      try {
-        const saved = schoolInfo?.subjectsConfig?.customSubjects || (localStorage.getItem('school_custom_subjects') ? JSON.parse(localStorage.getItem('school_custom_subjects')) : []);
-        return Array.isArray(saved) ? saved : [];
-      } catch (e) {
-        return [];
-      }
-    })();
-
-    const customNames = storedCustom
-      .map(cs => typeof cs === 'string' ? cs : cs?.name)
-      .filter(Boolean);
-
-    // Merge base subjects with custom subjects, unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS, filter ADVISORY
+    // Unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS into one subject option, and filter out ADVISORY
     const unifiedList = (baseList || []).map(s => {
       const u = String(s || '').toUpperCase().trim();
       return (u === 'REMEDIATION' || u === 'REMEDIAL/ENHANCEMENT CLASS') ? 'REMEDIAL / ENHANCEMENT CLASS' : u;
     });
-    const uppercaseCustom = customNames.map(c => String(c || '').toUpperCase().trim());
-    const merged = Array.from(new Set([...unifiedList, ...uppercaseCustom]));
 
     // Check disabled map for standard subjects
     const disabledMap = (() => {
@@ -4019,9 +4405,9 @@ export default function Workload() {
       }
     })();
 
-    return merged.filter(subName => {
-      if (subName === 'ADVISORY') return false; // ADVISORY is auto-assigned to Section Advisors only
-      if (customNames.includes(subName)) return true; // Always include custom subjects (e.g. TEST)
+    return unifiedList.filter(subName => {
+      const u = String(subName || '').toUpperCase().trim();
+      if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE')) return false; // ADVISORY and HGP are auto-assigned to Section Advisors only
       if (disabledMap[subName] === true) return false;
       return true;
     });
@@ -5467,9 +5853,30 @@ export default function Workload() {
                       ].map(day => {
                         let dayMins = 0;
 
+                        const isRowActiveOnDay = (r, dayCode) => {
+                          if (!r) return false;
+                          const rDays = (Array.isArray(r.days) && r.days.length > 0)
+                            ? r.days
+                            : (r.daySchedule || r.day_schedule)
+                              ? String(r.daySchedule || r.day_schedule).split(',').map(s => s.trim())
+                              : ['M', 'T', 'W', 'TH', 'F'];
+                          
+                          return rDays.some(d => {
+                            const s = String(d).toUpperCase().trim();
+                            if (dayCode === 'M') return s === 'M' || s.startsWith('MON');
+                            if (dayCode === 'T') return s === 'T' || s.startsWith('TUE');
+                            if (dayCode === 'W') return s === 'W' || s.startsWith('WED');
+                            if (dayCode === 'TH') return s === 'TH' || s.startsWith('THU');
+                            if (dayCode === 'F') return s === 'F' || s.startsWith('FRI');
+                            if (dayCode === 'SAT') return s === 'SAT';
+                            if (dayCode === 'SUN') return s === 'SUN';
+                            return false;
+                          });
+                        };
+
                         // 1. Elementary / JHS active teaching subject periods
                         (currentPerson?.workloadRows || []).forEach(r => {
-                          if (!isSHSRow(r) && Array.isArray(r.days) && r.days.includes(day.code)) {
+                          if (!isSHSRow(r) && isRowActiveOnDay(r, day.code)) {
                             if (r.startTime && r.endTime) {
                               const subUpper = String(r.subject || '').toUpperCase().trim();
                               if (subUpper === 'HGP' || subUpper === 'HOMEROOM GUIDANCE') {
@@ -5478,7 +5885,7 @@ export default function Workload() {
                                   String(adv.sectionId) === String(r.sectionId) &&
                                   adv.startTime === r.startTime &&
                                   adv.endTime === r.endTime &&
-                                  Array.isArray(adv.days) && adv.days.includes(day.code)
+                                  isRowActiveOnDay(adv, day.code)
                                 );
                                 if (hasMatchingAdv) return; // HGP occurs within Friday Advisory slot
                               }
@@ -5487,13 +5894,13 @@ export default function Workload() {
                           }
                         });
 
-                        // 2. Senior High School active term subject periods (from shsWorkloadMap for selected term or workloadRows matching selected term)
+                        // 2. Senior High School active term subject periods
                         const activePersonId = currentPerson?.id;
                         const currentPersonShsMap = shsWorkloadMap[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
                         const activeShsTermRows = currentPersonShsMap[selectedShsTerm] || [];
                         
                         activeShsTermRows.forEach(r => {
-                          if (Array.isArray(r.days) && r.days.includes(day.code)) {
+                          if (isRowActiveOnDay(r, day.code)) {
                             if (r.startTime && r.endTime) {
                               dayMins += getTimeDiffMins(r.startTime, r.endTime);
                             }
@@ -5503,7 +5910,7 @@ export default function Workload() {
                         (currentPerson?.workloadRows || []).forEach(r => {
                           if (isSHSRow(r)) {
                             const rowTerm = r.term || r.semester || '1st';
-                            if ((rowTerm === selectedShsTerm || (selectedShsTerm === '1st' && !r.term)) && Array.isArray(r.days) && r.days.includes(day.code)) {
+                            if ((rowTerm === selectedShsTerm || (selectedShsTerm === '1st' && !r.term)) && isRowActiveOnDay(r, day.code)) {
                               if (r.startTime && r.endTime) {
                                 dayMins += getTimeDiffMins(r.startTime, r.endTime);
                               }
@@ -5511,9 +5918,9 @@ export default function Workload() {
                           }
                         });
 
-                        // 3. Extra Tasks (Teaching-Related & Administrative) with assigned start and end times
+                        // 3. Extra Tasks (Teaching-Related & Administrative)
                         (currentPerson?.teachingRelatedRows || []).forEach(r => {
-                          if (Array.isArray(r.days) && r.days.includes(day.code)) {
+                          if (isRowActiveOnDay(r, day.code)) {
                             if (r.startTime && r.endTime) {
                               dayMins += getTimeDiffMins(r.startTime, r.endTime);
                             }
@@ -5521,8 +5928,7 @@ export default function Workload() {
                         });
 
                         (currentPerson?.administrativeRows || []).forEach(r => {
-                          const rDays = Array.isArray(r.days) ? r.days : ['M', 'T', 'W', 'TH', 'F'];
-                          if (rDays.includes(day.code)) {
+                          if (isRowActiveOnDay(r, day.code)) {
                             if (r.startTime && r.endTime) {
                               dayMins += getTimeDiffMins(r.startTime, r.endTime);
                             }
@@ -5684,30 +6090,43 @@ export default function Workload() {
                           )}
 
                           {(() => {
-                            const rawRows = currentPerson.workloadRows || [];
+                            const rawRows = (currentPerson.workloadRows || []).filter(r => {
+                              const subUpper = String(r.subject || '').toUpperCase().trim();
+                              if (subUpper === 'ADVISORY' || subUpper === 'HGP') return true;
+                              const availableForGrade = getSubjectsForGrade(r.gradeLevel, r.category);
+                              return availableForGrade.some(s => String(s).toUpperCase().trim() === subUpper);
+                            });
                             const indexedRows = rawRows.map((r, originalIdx) => ({ ...r, originalIdx }));
                             let sortedRows = [...indexedRows];
-                            if (timeSortOrder === 'asc') {
-                              sortedRows.sort((a, b) => {
+
+                            sortedRows.sort((a, b) => {
+                              const getPriority = (row) => {
+                                const sub = String(row.subject || '').toUpperCase().trim();
+                                if (sub === 'ADVISORY') return 0;
+                                if (sub === 'HGP' || sub.includes('HOMEROOM')) return 1;
+                                return 2;
+                              };
+                              const prioA = getPriority(a);
+                              const prioB = getPriority(b);
+                              if (prioA !== prioB) return prioA - prioB;
+
+                              if (timeSortOrder === 'asc') {
                                 const minA = parseTimeToMinutes(a.startTime);
                                 const minB = parseTimeToMinutes(b.startTime);
                                 if (minA !== minB) return minA - minB;
                                 const endMinA = parseTimeToMinutes(a.endTime);
                                 const endMinB = parseTimeToMinutes(b.endTime);
                                 if (endMinA !== endMinB) return endMinA - endMinB;
-                                return a.originalIdx - b.originalIdx;
-                              });
-                            } else if (timeSortOrder === 'desc') {
-                              sortedRows.sort((a, b) => {
+                              } else if (timeSortOrder === 'desc') {
                                 const minA = parseTimeToMinutes(a.startTime);
                                 const minB = parseTimeToMinutes(b.startTime);
                                 if (minA !== minB) return minB - minA;
                                 const endMinA = parseTimeToMinutes(a.endTime);
                                 const endMinB = parseTimeToMinutes(b.endTime);
                                 if (endMinA !== endMinB) return endMinB - endMinA;
-                                return a.originalIdx - b.originalIdx;
-                              });
-                            }
+                              }
+                              return a.originalIdx - b.originalIdx;
+                            });
 
 
                             const renderWorkloadRowCardItem = (row) => {
@@ -5797,7 +6216,11 @@ export default function Workload() {
                                           }) || (classSections || []).find(s => s.gradeLevel === row.gradeLevel) || (classSections || [])[0];
 
                                           const matchingAdvRow = (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (r.sectionId || r.section_id));
-                                          const currentSecId = String(row.sectionId || row.section_id || '');
+                                          const matchedSecByName = (classSections || []).find(s => 
+                                            s.sectionName && (row.sectionName || row.section_name) &&
+                                            String(s.sectionName).trim().toLowerCase() === String(row.sectionName || row.section_name).trim().toLowerCase()
+                                          );
+                                          const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
                                           const resolvedSecVal = (row.subject === 'ADVISORY' || row.subject === 'HGP')
                                             ? (currentSecId || (matchingAdvRow ? String(matchingAdvRow.sectionId || matchingAdvRow.section_id) : '') || (advisorySec ? String(advisorySec.id) : '') || (classSections && classSections[0] ? String(classSections[0].id) : ''))
                                             : currentSecId;
@@ -5890,7 +6313,7 @@ export default function Workload() {
                                           const subjectOptions = [
                                             ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY' }] : []),
                                             ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP' }] : []),
-                                            ...(isCustom ? [{ value: currentSub, label: `${currentSub} (Custom)` }] : []),
+                                            ...(isCustom ? [{ value: currentSub, label: currentSub }] : []),
                                             ...subjectList.map(sub => ({ value: sub, label: sub }))
                                           ];
 
@@ -5955,7 +6378,22 @@ export default function Workload() {
                                           </span>
                                         ) : (
                                           ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => {
-                                            const isSelected = (row.days || ['M', 'T', 'W', 'TH', 'F']).includes(day);
+                                             const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+                                               ? row.days
+                                               : (row.daySchedule || row.day_schedule)
+                                                 ? String(row.daySchedule || row.day_schedule).split(',').map(s => s.trim())
+                                                 : ['M', 'T', 'W', 'TH', 'F'];
+                                             const isSelected = rowDays.some(d => {
+                                               const s = String(d).toUpperCase().trim();
+                                               if (day === 'M') return s === 'M' || s.startsWith('MON');
+                                               if (day === 'T') return s === 'T' || s.startsWith('TUE');
+                                               if (day === 'W') return s === 'W' || s.startsWith('WED');
+                                               if (day === 'TH') return s === 'TH' || s.startsWith('THU');
+                                               if (day === 'F') return s === 'F' || s.startsWith('FRI');
+                                               if (day === 'SAT') return s === 'SAT';
+                                               if (day === 'SUN') return s === 'SUN';
+                                               return false;
+                                             });
                                             return (
                                               <button
                                                 key={day}
@@ -6049,7 +6487,11 @@ export default function Workload() {
                                             }) || (classSections || []).find(s => s.gradeLevel === row.gradeLevel) || (classSections || [])[0];
 
                                             const matchingAdvRow = (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (r.sectionId || r.section_id));
-                                            const currentSecId = String(row.sectionId || row.section_id || '');
+                                            const matchedSecByName = (classSections || []).find(s => 
+                                              s.sectionName && (row.sectionName || row.section_name) &&
+                                              String(s.sectionName).trim().toLowerCase() === String(row.sectionName || row.section_name).trim().toLowerCase()
+                                            );
+                                            const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
                                             const resolvedSecVal = (row.subject === 'ADVISORY' || row.subject === 'HGP')
                                               ? (currentSecId || (matchingAdvRow ? String(matchingAdvRow.sectionId || matchingAdvRow.section_id) : '') || (advisorySec ? String(advisorySec.id) : '') || (classSections && classSections[0] ? String(classSections[0].id) : ''))
                                               : currentSecId;
@@ -6089,8 +6531,12 @@ export default function Workload() {
                                         <div>
                                           <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Subject</label>
                                           {(() => {
-                                            const currentSecId = String(row.sectionId || row.section_id || '');
-                                            const currentSub = row.subject || row.subject_name || '';
+                                            const matchedSecByName = (classSections || []).find(s => 
+                                              s.sectionName && (row.sectionName || row.section_name) &&
+                                              String(s.sectionName).trim().toLowerCase() === String(row.sectionName || row.section_name).trim().toLowerCase()
+                                            );
+                                            const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
+                                            const currentSub = row.subject || row.subjectName || row.subject_name || '';
                                             const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId);
                                             const effectiveGrade = String(row.gradeLevel || linkedSec?.gradeLevel || '').toLowerCase();
 
@@ -6124,7 +6570,7 @@ export default function Workload() {
                                             const subjectOptions = [
                                               ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY' }] : []),
                                               ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP' }] : []),
-                                              ...(isCustom ? [{ value: currentSub, label: `${currentSub} (Custom)` }] : []),
+                                              ...(isCustom ? [{ value: currentSub, label: currentSub }] : []),
                                               ...subjectList.map(sub => ({ value: sub, label: sub }))
                                             ];
 
@@ -6489,10 +6935,8 @@ export default function Workload() {
 
                           <div className="multi-task-rows">
                             {(currentPerson.teachingRelatedRows || []).map((row, idx) => {
-                              const selectedDays = Array.isArray(row.days) && row.days.length > 0 ? row.days : ['M', 'T', 'W', 'TH', 'F'];
-
                               return (
-                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 220px 80px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
+                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1.2fr 240px 110px 110px 80px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
                                   <div>
                                     <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Task Type</label>
                                     <SearchableSelect
@@ -6502,41 +6946,38 @@ export default function Workload() {
                                     />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Duration</label>
-                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', textAlign: 'center' }}>
-                                      ⏱️ 60 Mins (Fixed)
-                                    </div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Calendar Dates</label>
+                                    <MultiDatePickerDropdown
+                                      value={row.dates || (row.taskDate ? [row.taskDate] : [])}
+                                      onChange={(newDates) => updateTaskField('teachingRelatedRows', idx, 'dates', newDates)}
+                                    />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Days (M-F)</label>
-                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                      {['M', 'T', 'W', 'TH', 'F'].map(day => {
-                                        const isSel = selectedDays.includes(day);
-                                        return (
-                                          <button
-                                            key={day}
-                                            type="button"
-                                            onClick={() => {
-                                              const currentDays = [...selectedDays];
-                                              const nextDays = isSel ? currentDays.filter(d => d !== day) : [...currentDays, day];
-                                              updateTaskField('teachingRelatedRows', idx, 'days', nextDays);
-                                            }}
-                                            style={{
-                                              padding: '4px 8px',
-                                              fontSize: '11px',
-                                              fontWeight: 'bold',
-                                              borderRadius: '4px',
-                                              border: isSel ? 'none' : '1px solid var(--line)',
-                                              background: isSel ? '#0284C7' : '#FFFFFF',
-                                              color: isSel ? '#FFFFFF' : '#334155',
-                                              cursor: 'pointer'
-                                            }}
-                                          >
-                                            {day}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
+                                    <input
+                                      type="time"
+                                      list="school-times"
+                                      value={row.startTime || '07:30'}
+                                      onChange={(e) => {
+                                        const sTime = e.target.value;
+                                        const eTime = row.endTime || add60MinutesToTime(sTime);
+                                        updateTaskField('teachingRelatedRows', idx, 'startTime', sTime);
+                                        if (!row.endTime) updateTaskField('teachingRelatedRows', idx, 'endTime', eTime);
+                                      }}
+                                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
+                                    <input
+                                      type="time"
+                                      list="school-times"
+                                      value={row.endTime || add60MinutesToTime(row.startTime || '07:30')}
+                                      onChange={(e) => {
+                                        updateTaskField('teachingRelatedRows', idx, 'endTime', e.target.value);
+                                      }}
+                                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
+                                    />
                                   </div>
                                   <div style={{ textAlign: 'right' }}>
                                     <button className="btn danger sm" type="button" onClick={() => removeTaskRow('teachingRelatedRows', idx)}>Remove</button>
@@ -6557,10 +6998,8 @@ export default function Workload() {
                           </div>
                           <div className="multi-task-rows">
                             {(currentPerson.administrativeRows || []).map((row, idx) => {
-                              const selectedDays = Array.isArray(row.days) && row.days.length > 0 ? row.days : ['M', 'T', 'W', 'TH', 'F'];
-
                               return (
-                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 220px 80px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
+                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1.2fr 240px 110px 110px 80px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
                                   <div>
                                     <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Task Type</label>
                                     <SearchableSelect
@@ -6570,41 +7009,38 @@ export default function Workload() {
                                     />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Duration</label>
-                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', textAlign: 'center' }}>
-                                      ⏱️ 60 Mins (Fixed)
-                                    </div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Calendar Dates</label>
+                                    <MultiDatePickerDropdown
+                                      value={row.dates || (row.taskDate ? [row.taskDate] : [])}
+                                      onChange={(newDates) => updateTaskField('administrativeRows', idx, 'dates', newDates)}
+                                    />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Days (M-F)</label>
-                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                      {['M', 'T', 'W', 'TH', 'F'].map(day => {
-                                        const isSel = selectedDays.includes(day);
-                                        return (
-                                          <button
-                                            key={day}
-                                            type="button"
-                                            onClick={() => {
-                                              const currentDays = [...selectedDays];
-                                              const nextDays = isSel ? currentDays.filter(d => d !== day) : [...currentDays, day];
-                                              updateTaskField('administrativeRows', idx, 'days', nextDays);
-                                            }}
-                                            style={{
-                                              padding: '4px 8px',
-                                              fontSize: '11px',
-                                              fontWeight: 'bold',
-                                              borderRadius: '4px',
-                                              border: isSel ? 'none' : '1px solid var(--line)',
-                                              background: isSel ? '#0284C7' : '#FFFFFF',
-                                              color: isSel ? '#FFFFFF' : '#334155',
-                                              cursor: 'pointer'
-                                            }}
-                                          >
-                                            {day}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
+                                    <input
+                                      type="time"
+                                      list="school-times"
+                                      value={row.startTime || '07:30'}
+                                      onChange={(e) => {
+                                        const sTime = e.target.value;
+                                        const eTime = row.endTime || add60MinutesToTime(sTime);
+                                        updateTaskField('administrativeRows', idx, 'startTime', sTime);
+                                        if (!row.endTime) updateTaskField('administrativeRows', idx, 'endTime', eTime);
+                                      }}
+                                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
+                                    <input
+                                      type="time"
+                                      list="school-times"
+                                      value={row.endTime || add60MinutesToTime(row.startTime || '07:30')}
+                                      onChange={(e) => {
+                                        updateTaskField('administrativeRows', idx, 'endTime', e.target.value);
+                                      }}
+                                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
+                                    />
                                   </div>
                                   <div style={{ textAlign: 'right' }}>
                                     <button className="btn danger sm" type="button" onClick={() => removeTaskRow('administrativeRows', idx)}>Remove</button>

@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { get10MinPasscode } from '../utils/passcode';
+import { api } from '../services/api';
 
 export default function RoomQR() {
-  const { scannedRoom, setScannedRoom, personnel, updatePersonnelInfo, savePersonnelChanges } = useApp();
+  const { scannedRoom, setScannedRoom, personnel: appPersonnel, setPersonnel, updatePersonnelInfo, savePersonnelChanges, schoolInfo } = useApp() || {};
+  const { user: authUser } = useAuth() || {};
+  const [effectivePersonnel, setEffectivePersonnel] = useState(appPersonnel || []);
   const [selectedRoom, setSelectedRoom] = useState(scannedRoom || 'Faculty Room 1');
   const [copied, setCopied] = useState(false);
 
@@ -49,26 +53,66 @@ export default function RoomQR() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
+  // Sync personnel records with fallback to local cache & API
+  useEffect(() => {
+    if (Array.isArray(appPersonnel) && appPersonnel.length > 0) {
+      setEffectivePersonnel(appPersonnel);
+      try {
+        localStorage.setItem('insighted_personnel_cache', JSON.stringify(appPersonnel));
+      } catch (e) {}
+    } else {
+      let cached = null;
+      try {
+        const raw = localStorage.getItem('insighted_personnel_cache');
+        if (raw) cached = JSON.parse(raw);
+      } catch (e) {}
+
+      if (Array.isArray(cached) && cached.length > 0) {
+        setEffectivePersonnel(cached);
+      } else {
+        api.getPersonnel().then(res => {
+          if (Array.isArray(res) && res.length > 0) {
+            setEffectivePersonnel(res);
+            if (setPersonnel) setPersonnel(res);
+            try {
+              localStorage.setItem('insighted_personnel_cache', JSON.stringify(res));
+            } catch (e) {}
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [appPersonnel, setPersonnel]);
+
   // Auto-generate missing passcodes for personnel who don't have one yet
   useEffect(() => {
-    if (Array.isArray(personnel) && personnel.length > 0) {
-      personnel.forEach(p => {
+    if (Array.isArray(effectivePersonnel) && effectivePersonnel.length > 0) {
+      effectivePersonnel.forEach(p => {
         if (!p.profilingCode && !p.profiling_code && !p.passcode) {
           const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
           let code = '';
           for (let i = 0; i < 6; i++) {
             code += chars.charAt(Math.floor(Math.random() * chars.length));
           }
-          updatePersonnelInfo(p.id, { profilingCode: code });
+          if (updatePersonnelInfo) updatePersonnelInfo(p.id, { profilingCode: code });
         }
       });
     }
-  }, [personnel]);
+  }, [effectivePersonnel, updatePersonnelInfo]);
 
   const getPortalUrl = (roomName) => {
     const origin = window.location.origin;
     const path = window.location.pathname;
-    return `${origin}${path}?view=room-profiling&room=${encodeURIComponent(roomName)}`;
+    const activeId = (schoolInfo?.schoolId && schoolInfo.schoolId !== '123456' ? schoolInfo.schoolId : null) ||
+      authUser?.school_id ||
+      authUser?.schoolId ||
+      (effectivePersonnel && effectivePersonnel[0] && (effectivePersonnel[0].schoolId || effectivePersonnel[0].school_id)) ||
+      localStorage.getItem('activeSchoolId') ||
+      localStorage.getItem('school_id') ||
+      localStorage.getItem('schoolId') ||
+      schoolInfo?.schoolId ||
+      '502624';
+
+    return `${origin}${path}?view=room-profiling&room=${encodeURIComponent(roomName)}&schoolId=${encodeURIComponent(activeId)}`;
   };
 
   const handleCopyLink = () => {
@@ -143,13 +187,45 @@ export default function RoomQR() {
 
   useEffect(() => {
     loadPendingSubmissions();
+
+    let channel;
+    try {
+      channel = new BroadcastChannel('insighted_room_qr_channel');
+      channel.onmessage = (event) => {
+        if (event.data && event.data.type === 'NEW_SUBMISSION') {
+          loadPendingSubmissions();
+        }
+      };
+    } catch (e) {}
+
     window.addEventListener('storage', loadPendingSubmissions);
-    const interval = setInterval(loadPendingSubmissions, 2000);
+    const interval = setInterval(loadPendingSubmissions, 1500);
+
     return () => {
+      if (channel) channel.close();
       window.removeEventListener('storage', loadPendingSubmissions);
       clearInterval(interval);
     };
   }, []);
+
+  const handleCommitAllSubmissions = async () => {
+    if (pendingSubmissions.length === 0) return;
+    let count = 0;
+    for (const item of pendingSubmissions) {
+      if (item && item.id) {
+        const fullProfile = decompressProfile(item);
+        await savePersonnelChanges(fullProfile.id, {
+          ...fullProfile,
+          personalVerified: true
+        });
+        localStorage.removeItem(`pending_submission_${fullProfile.id}`);
+        count++;
+      }
+    }
+    loadPendingSubmissions();
+    setIngestionSuccess(`✓ Approved & Merged ${count} Teacher Profiling Record(s) directly into Personnel Roster!`);
+    setTimeout(() => setIngestionSuccess(''), 6000);
+  };
 
   // File Upload QR Code Reader
   const handleFileChange = (e) => {
@@ -454,39 +530,63 @@ export default function RoomQR() {
             </div>
           </article>
 
-          {/* Pending Submissions Dropdown Box */}
+          {/* Pending Submissions Dropdown & Action Box */}
           <article className="card" style={{ border: '2.5px solid var(--blue-400)', background: 'var(--blue-50)' }}>
-            <div className="card-inner" style={{ display: 'grid', gap: '10px' }}>
-              <h2 style={{ fontSize: '16px', color: 'var(--navy)' }}>📨 Detected Local Submissions</h2>
-              <p className="subtext" style={{ fontSize: '12px' }}>
-                InsightED automatically detects when a teacher completes profiling in the other tab. Choose their name to review and validate it!
+            <div className="card-inner" style={{ display: 'grid', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '16px', color: 'var(--navy)', margin: 0 }}>⚡ Live Detected Teacher Submissions</h2>
+                {pendingSubmissions.length > 0 && (
+                  <button
+                    className="btn"
+                    onClick={handleCommitAllSubmissions}
+                    style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px' }}
+                  >
+                    ✓ Approve All ({pendingSubmissions.length})
+                  </button>
+                )}
+              </div>
+              <p className="subtext" style={{ fontSize: '11px', margin: 0 }}>
+                InsightED automatically detects teacher submissions in your local browser. No camera scanning or VM database required!
               </p>
 
               {pendingSubmissions.length > 0 ? (
-                <div style={{ display: 'grid', gap: '6px' }}>
-                  <label htmlFor="pending-ingest-select" style={{ fontSize: '9px', fontWeight: 800 }}>Pending submissions</label>
-                  <select
-                    id="pending-ingest-select"
-                    onChange={(e) => {
-                      const val = pendingSubmissions.find(p => p.id === e.target.value);
-                      if (val) {
-                        handleIngestData(val);
-                      }
-                    }}
-                    value=""
-                    style={{ background: '#FFF', border: '1.5px solid var(--blue)', fontSize: '14px', fontWeight: 'bold' }}
-                  >
-                    <option value="">-- Choose teacher submission to scan --</option>
-                    {pendingSubmissions.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.ln.toUpperCase()}, {p.fn} (Pending Submission QR)
-                      </option>
-                    ))}
-                  </select>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                  {pendingSubmissions.map(p => (
+                    <div
+                      key={p.id}
+                      style={{
+                        display: 'flex',
+                        justify: 'space-between',
+                        alignItems: 'center',
+                        background: 'white',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #BAE6FD',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                      }}
+                    >
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--navy)', display: 'block' }}>
+                          {p.ln.toUpperCase()}, {p.fn} {p.mn ? p.mn.charAt(0) + '.' : ''}
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#64748B' }}>
+                          Position: {p.psn || 'Teacher'} · ID: {p.id}
+                        </span>
+                      </div>
+                      <button
+                        className="btn secondary"
+                        type="button"
+                        onClick={() => handleIngestData(p)}
+                        style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold' }}
+                      >
+                        Review & Merge
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div style={{ padding: '12px', background: '#FFF', color: 'var(--muted)', borderRadius: '10px', fontSize: '12px', textAlign: 'center', border: '1.5px solid var(--line)' }}>
-                  No pending teacher submissions detected yet. Open the teacher portal, submit a profile, and it will appear here.
+                  No pending teacher submissions detected yet. When a teacher submits on this browser, their profile will automatically appear here!
                 </div>
               )}
             </div>
@@ -603,9 +703,9 @@ export default function RoomQR() {
                   className="btn secondary"
                   style={{ minHeight: '36px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
                   onClick={() => {
-                    (personnel || []).forEach(p => {
+                    (effectivePersonnel || []).forEach(p => {
                       const dynamic = get10MinPasscode(p.id, 0);
-                      updatePersonnelInfo(p.id, { profilingCode: dynamic });
+                      if (updatePersonnelInfo) updatePersonnelInfo(p.id, { profilingCode: dynamic });
                     });
                   }}
                 >
@@ -624,7 +724,7 @@ export default function RoomQR() {
                   </thead>
                   <tbody>
                     {(() => {
-                      const filteredList = (personnel || []).filter(p => {
+                      const filteredList = (effectivePersonnel || []).filter(p => {
                         const fn = (p.firstName || p.first_name || '').toLowerCase();
                         const ln = (p.lastName || p.last_name || '').toLowerCase();
                         const full = `${fn} ${ln} ${p.name || ''}`.toLowerCase();
@@ -635,7 +735,7 @@ export default function RoomQR() {
                         return (
                           <tr>
                             <td colSpan="3" style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '12px' }}>
-                              {(personnel || []).length === 0 ? 'No personnel records loaded.' : 'No teachers matching search.'}
+                              {(effectivePersonnel || []).length === 0 ? 'No personnel records loaded.' : 'No teachers matching search.'}
                             </td>
                           </tr>
                         );

@@ -160,7 +160,7 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
           let taskOrSubj = String(w.subject || w.task || '').trim();
           let taskUpper = taskOrSubj.toUpperCase();
 
-          if (taskUpper === 'HOMEROOM GUIDANCE PROGRAM' || taskUpper === 'HOMEROOM GUIDANCE' || taskUpper === 'HOMEROOM GUIDANCE (HGP)') {
+          if (taskUpper.includes('HOMEROOM GUIDANCE') || taskUpper.startsWith('HOMEROOM GUIDANCE') || taskUpper.startsWith('HGP (')) {
             taskOrSubj = 'HGP';
             taskUpper = 'HGP';
           }

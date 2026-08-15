@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp, POSITION_OPTIONS_BY_CATEGORY } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
+import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 
 export default function Roster() {
   const { personnel, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges } = useApp();
@@ -9,6 +10,7 @@ export default function Roster() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'lastName', direction: 'asc' });
   const [isSavingDrafts, setIsSavingDrafts] = useState(false);
+  const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
 
   // Add Personnel Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -196,7 +198,34 @@ export default function Roster() {
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('firstName')}>First Name</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('middleName')}>Middle Name</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('lastName')}>Last Name</button></th>
-                  <th><button className="roster-sort-button" type="button" onClick={() => handleSort('depedEmail')}>DepEd Email</button></th>
+                  <th>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <button className="roster-sort-button" type="button" onClick={() => handleSort('depedEmail')}>DepEd Email</button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setIsEmailInfoOpen(true); }}
+                        title="DepEd Email Policy & Validation Notice"
+                        style={{
+                          background: '#E0F2FE',
+                          color: '#0284C7',
+                          border: '1px solid #BAE6FD',
+                          borderRadius: '50%',
+                          width: '18px',
+                          height: '18px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '11px',
+                          fontWeight: '800',
+                          cursor: 'pointer',
+                          lineHeight: 1,
+                          padding: 0
+                        }}
+                      >
+                        i
+                      </button>
+                    </div>
+                  </th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('type')}>Position Category</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('position')}>Position</button></th>
                   <th style={{ width: '100px', textAlign: 'center' }}><button className="roster-sort-button" type="button" onClick={() => handleSort('isSchoolHead')}>School Head</button></th>
@@ -437,7 +466,32 @@ export default function Roster() {
                   />
                 </div>
                 <div>
-                  <label>DepEd Email</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <label style={{ margin: 0 }}>DepEd Email</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsEmailInfoOpen(true)}
+                      title="DepEd Email Policy & Validation Notice"
+                      style={{
+                        background: '#E0F2FE',
+                        color: '#0284C7',
+                        border: '1px solid #BAE6FD',
+                        borderRadius: '50%',
+                        width: '18px',
+                        height: '18px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '11px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        lineHeight: 1,
+                        padding: 0
+                      }}
+                    >
+                      i
+                    </button>
+                  </div>
                   <div className="deped-email-field">
                     <input
                       placeholder="name"
@@ -470,10 +524,43 @@ export default function Roster() {
                   <label>Position</label>
                   <SearchableDropdown
                     options={POSITION_OPTIONS_BY_CATEGORY[newPerson.type] || []}
-                    value={newPerson.position}
-                    onChange={(val) => setNewPerson({ ...newPerson, position: val })}
+                    value={newPerson.position?.startsWith('OTHERS') ? 'OTHERS' : newPerson.position}
+                    onChange={(val) => {
+                      if (val === 'OTHERS') {
+                        setNewPerson({ ...newPerson, position: 'OTHERS' });
+                      } else {
+                        setNewPerson({ ...newPerson, position: val });
+                      }
+                    }}
                     placeholder="SELECT POSITION..."
                   />
+                  {newPerson.type === 'non-teaching' && (newPerson.position === 'OTHERS' || newPerson.position?.startsWith('OTHERS')) && (
+                    <div style={{ marginTop: '8px' }}>
+                      <label style={{ fontSize: '11px', color: '#64748B' }}>Specify Position (Max 50 characters)</label>
+                      <input
+                        type="text"
+                        maxLength={50}
+                        placeholder="Specify position title..."
+                        value={newPerson.position === 'OTHERS' ? '' : newPerson.position.replace(/^OTHERS\s*-\s*/i, '')}
+                        onChange={(e) => {
+                          const val = e.target.value.substring(0, 50).toUpperCase();
+                          setNewPerson({ ...newPerson, position: val ? `OTHERS - ${val}` : 'OTHERS' });
+                        }}
+                        required
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                          borderRadius: '8px',
+                          border: '1.5px solid #BAE6FD',
+                          background: '#F0F9FF'
+                        }}
+                      />
+                      <div style={{ fontSize: '10px', color: '#94A3B8', textAlign: 'right', marginTop: '2px' }}>
+                        {(newPerson.position === 'OTHERS' ? '' : newPerson.position.replace(/^OTHERS\s*-\s*/i, '')).length}/50 characters
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="modal-actions">
@@ -484,6 +571,12 @@ export default function Roster() {
           </div>
         </div>
       )}
+
+      {/* DepEd Email Warning & Info Modal */}
+      <DepEdEmailInfoModal 
+        isOpen={isEmailInfoOpen}
+        onClose={() => setIsEmailInfoOpen(false)}
+      />
     </section>
   );
 }

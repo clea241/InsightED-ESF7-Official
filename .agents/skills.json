@@ -1,6 +1,7 @@
 {
   "entries": [
     { "path": "../.claude/skills" },
-    { "path": "./skills" }
+    { "path": "./skills" },
+    { "path": "./esf7_agents" }
   ]
 }

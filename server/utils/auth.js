@@ -18,6 +18,12 @@ function getSchoolIdFromRequest(req) {
       }
     }
   }
+  if (req.headers && req.headers['x-school-id']) {
+    return req.headers['x-school-id'];
+  }
+  if (req.query && (req.query.school_id || req.query.schoolId)) {
+    return req.query.school_id || req.query.schoolId;
+  }
   return null;
 }
 

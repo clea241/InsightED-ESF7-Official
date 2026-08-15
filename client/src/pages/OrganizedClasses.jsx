@@ -314,7 +314,7 @@ const GRADE_SUBJECT_MAP = {
 };
 
 export default function OrganizedClasses() {
-  const { classSections, addClassSection, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
+  const { classSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMultigrade, setIsMultigrade] = useState(false);
@@ -442,6 +442,43 @@ export default function OrganizedClasses() {
       return [];
     }
   });
+
+  // Edit Section Modal state
+  const [editModalSection, setEditModalSection] = useState(null);
+  const [editMale, setEditMale] = useState('');
+  const [editFemale, setEditFemale] = useState('');
+  const [editAdvisorId, setEditAdvisorId] = useState('');
+  const [editSectionName, setEditSectionName] = useState('');
+  const [editGradeLevel, setEditGradeLevel] = useState('');
+
+  const openEditModal = (sec) => {
+    setEditModalSection(sec);
+    setEditSectionName(sec.sectionName || '');
+    setEditGradeLevel(sec.gradeLevel || '');
+    setEditMale(sec.maleLearners !== undefined && sec.maleLearners !== null ? String(sec.maleLearners) : '');
+    setEditFemale(sec.femaleLearners !== undefined && sec.femaleLearners !== null ? String(sec.femaleLearners) : '');
+    setEditAdvisorId(sec.advisorId || '');
+  };
+
+  const handleSaveEditSection = (e) => {
+    if (e) e.preventDefault();
+    if (!editModalSection) return;
+    const rawM = editMale.slice(0, 2);
+    const rawF = editFemale.slice(0, 2);
+    const mVal = rawM === '' ? null : Math.min(99, Math.max(0, Number(rawM)));
+    const fVal = rawF === '' ? null : Math.min(99, Math.max(0, Number(rawF)));
+    const total = (mVal || 0) + (fVal || 0);
+
+    updateSectionDetails(editModalSection.id, {
+      sectionName: editSectionName,
+      gradeLevel: editGradeLevel,
+      maleLearners: mVal,
+      femaleLearners: fVal,
+      numberOfLearners: total,
+      advisorId: editAdvisorId
+    });
+    setEditModalSection(null);
+  };
 
   React.useEffect(() => {
     if (schoolInfo?.subjectsConfig) {
@@ -592,7 +629,10 @@ export default function OrganizedClasses() {
     sectionName: '',
     advisorId: '',
     advisoryMinutes: 300,
-    hgpMinutes: 60
+    hgpMinutes: 60,
+    numberOfLearners: '',
+    maleLearners: '',
+    femaleLearners: ''
   });
 
   const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
@@ -624,7 +664,10 @@ export default function OrganizedClasses() {
           sectionName: '',
           advisorId: '',
           advisoryMinutes: 300,
-          hgpMinutes: 60
+          hgpMinutes: 60,
+          numberOfLearners: '',
+          maleLearners: '',
+          femaleLearners: ''
         });
       }
     }
@@ -694,18 +737,20 @@ export default function OrganizedClasses() {
       finalSectionType = 'NON GRADED';
     }
 
-    addClassSection(
-      finalGradeLevel,
-      newSection.sectionName.toUpperCase().trim(),
-      newSection.advisorId,
-      finalSectionType,
-      Number(newSection.advisoryMinutes || 300),
-      Number(newSection.hgpMinutes || 60),
-      newSection.numberOfLearners
-    );
+    addClassSection({
+      gradeLevel: finalGradeLevel,
+      sectionName: newSection.sectionName.toUpperCase().trim(),
+      advisorId: newSection.advisorId,
+      sectionType: finalSectionType,
+      advisoryMinutes: Number(newSection.advisoryMinutes || 300),
+      hgpMinutes: Number(newSection.hgpMinutes || 60),
+      numberOfLearners: newSection.numberOfLearners,
+      maleLearners: newSection.maleLearners,
+      femaleLearners: newSection.femaleLearners
+    });
     
     // Reset and close
-    setNewSection({ gradeLevel: availableGrades[0] || 'Grade 7', sectionName: '', advisorId: '', advisoryMinutes: 300, hgpMinutes: 60, numberOfLearners: '' });
+    setNewSection({ gradeLevel: availableGrades[0] || 'Grade 7', sectionName: '', advisorId: '', advisoryMinutes: 300, hgpMinutes: 60, numberOfLearners: '', maleLearners: '', femaleLearners: '' });
     setIsMultigrade(false);
     setSelectedGrades([]);
     setIsModalOpen(false);
@@ -757,6 +802,35 @@ export default function OrganizedClasses() {
               </button>
             </div>
           </div>
+
+          {/* Total Enrollment Header Cards */}
+          {(() => {
+            const totalMale = classSections.reduce((acc, sec) => acc + (Number(sec.maleLearners) || 0), 0);
+            const totalFemale = classSections.reduce((acc, sec) => acc + (Number(sec.femaleLearners) || 0), 0);
+            const totalSchool = classSections.reduce((acc, sec) => {
+              if (sec.maleLearners !== undefined && sec.maleLearners !== null && sec.femaleLearners !== undefined && sec.femaleLearners !== null && (sec.maleLearners !== '' || sec.femaleLearners !== '')) {
+                return acc + (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0);
+              }
+              return acc + (Number(sec.numberOfLearners) || 0);
+            }, 0);
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', margin: '16px 0 20px 0' }}>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL ENROLLED</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e40af' }}>{totalSchool} <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>Learners</span></div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MALE LEARNERS</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#166534' }}>{totalMale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Males</span></div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #fdf2f8, #fce7f3)', borderRadius: '12px', border: '1px solid #fbcfe8' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FEMALE LEARNERS</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#9d174d' }}>{totalFemale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#ec4899' }}>Females</span></div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{ display: 'flex', gap: '12px', margin: '20px 0', alignItems: 'center' }}>
             <input 
@@ -831,47 +905,44 @@ export default function OrganizedClasses() {
                         <td>{sec.gradeLevel}</td>
                         <td>{sec.sectionName}</td>
                         <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="0"
-                            value={sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : ''}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? '' : Number(e.target.value);
-                              updateSectionLearners(sec.id, val);
-                            }}
-                            style={{ width: '90px', fontSize: '13px', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', background: 'white', textAlign: 'center', fontWeight: 'bold' }}
-                          />
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: (sec.numberOfLearners || (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0)) > 0 ? '#047857' : '#B45309', background: (sec.numberOfLearners || (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0)) > 0 ? '#DCFCE7' : '#FEF3C7', padding: '3px 8px', borderRadius: '6px' }}>
+                            {sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : ((Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0))}
+                          </span>
                         </td>
                         <td>
-                          <select
-                            value={sec.advisorId || ''}
-                            onChange={(e) => updateSectionAdviser(sec.id, e.target.value)}
-                            style={{ fontSize: '13px', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', background: 'white' }}
-                          >
-                            <option value="">-- Select Adviser --</option>
-                            {teachingPersonnel.map(p => (
-                              <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
-                            ))}
-                          </select>
+                          {advisor ? (
+                            <span style={{ fontWeight: '700', color: 'var(--navy)' }}>{advisor.firstName} {advisor.lastName}</span>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600' }}>ⓘ Unassigned Adviser</span>
+                          )}
                         </td>
                         <td>{advisor ? advisor.position : '—'}</td>
                         <td>
-                          <button
-                            className="btn danger"
-                            style={{ minHeight: '28px', padding: '4px 8px', fontSize: '11px' }}
-                            onClick={async () => {
-                              const confirmed = await showConfirm(
-                                'Remove Section',
-                                `Remove section ${sec.gradeLevel} - ${sec.sectionName}?`
-                              );
-                              if (confirmed) {
-                                removeClassSection(sec.id);
-                              }
-                            }}
-                          >
-                            Remove
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              className="btn secondary"
+                              style={{ minHeight: '28px', padding: '4px 8px', fontSize: '11px' }}
+                              onClick={() => openEditModal(sec)}
+                            >
+                              ✎ Edit
+                            </button>
+                            <button
+                              className="btn danger"
+                              style={{ minHeight: '28px', padding: '4px 8px', fontSize: '11px' }}
+                              onClick={async () => {
+                                const confirmed = await showConfirm(
+                                  'Remove Section',
+                                  `Remove section ${sec.gradeLevel} - ${sec.sectionName}?`
+                                );
+                                if (confirmed) {
+                                  removeClassSection(sec.id);
+                                }
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -906,11 +977,17 @@ export default function OrganizedClasses() {
                     badgeColor = '#6b21a8';
                   }
                   
+                  const hasEnrollment = (sec.maleLearners !== undefined && sec.maleLearners !== null && sec.maleLearners !== '') ||
+                                        (sec.femaleLearners !== undefined && sec.femaleLearners !== null && sec.femaleLearners !== '') ||
+                                        (sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '' && Number(sec.numberOfLearners) > 0);
+                  const hasAdviser = Boolean(advisor);
+                  const isCardIncomplete = !hasEnrollment || !hasAdviser;
+
                   return (
                     <div key={sec.id} style={{
-                      background: 'white',
+                      background: isCardIncomplete ? '#FEF2F2' : 'white',
                       borderRadius: '16px',
-                      border: '1.5px solid var(--line)',
+                      border: isCardIncomplete ? '1.5px solid #FCA5A5' : '1.5px solid var(--line)',
                       padding: '20px',
                       boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                       position: 'relative',
@@ -919,39 +996,45 @@ export default function OrganizedClasses() {
                       gap: '12px',
                       transition: 'all 0.2s ease-in-out'
                     }}>
-                      {/* Remove Button */}
-                      <button
-                        onClick={async () => {
-                          const confirmed = await showConfirm(
-                            'Remove Section',
-                            `Remove section ${sec.gradeLevel} - ${sec.sectionName}?`
-                          );
-                          if (confirmed) {
-                            removeClassSection(sec.id);
-                          }
-                        }}
-                        style={{
-                          position: 'absolute',
-                          top: '16px',
-                          right: '16px',
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '18px',
-                          fontWeight: 'bold',
-                          color: '#ef4444',
-                          opacity: 0.6,
-                          transition: 'opacity 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.target.style.opacity = 1}
-                        onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                        title="Remove Section"
-                      >
-                        ✕
-                      </button>
+                      {/* Action buttons on card header */}
+                      <div style={{ position: 'absolute', top: '14px', right: '14px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(sec)}
+                          style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                        >
+                          ✎ Edit Section
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const confirmed = await showConfirm(
+                              'Remove Section',
+                              `Remove section ${sec.gradeLevel} - ${sec.sectionName}?`
+                            );
+                            if (confirmed) {
+                              removeClassSection(sec.id);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: 'bold',
+                            color: '#ef4444',
+                            opacity: 0.6,
+                            transition: 'opacity 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.target.style.opacity = 1}
+                          onMouseLeave={(e) => e.target.style.opacity = 0.6}
+                          title="Remove Section"
+                        >
+                          ✕
+                        </button>
+                      </div>
 
                       {/* Badges / Header Info */}
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginRight: '140px' }}>
                         <span style={{
                           background: badgeBg,
                           color: badgeColor,
@@ -984,66 +1067,74 @@ export default function OrganizedClasses() {
                         {sec.sectionName}
                       </h3>
 
-                      {/* Total Learners Input Box */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#F8FAFC', padding: '6px 10px', borderRadius: '10px', border: '1px solid var(--line)', margin: '4px 0' }}>
-                        <span style={{ fontSize: '14px' }}>👥</span>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: '9.5px', fontWeight: 'bold', color: 'var(--muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
-                            Total Learners
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            placeholder="e.g. 40"
-                            value={sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : ''}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? '' : Number(e.target.value);
-                              updateSectionLearners(sec.id, val);
-                            }}
-                            style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: '800', color: 'var(--navy)', outline: 'none', padding: 0 }}
-                          />
-                        </div>
-                      </div>
+                      {/* Gender Learners & Magic Math Total Read-Only Box */}
+                      {(() => {
+                        if (!hasEnrollment) {
+                          return (
+                            <div style={{ padding: '8px 12px', background: 'rgba(255, 255, 255, 0.7)', borderRadius: '10px', border: '1px solid #FCA5A5', fontSize: '11px', color: '#991B1B', fontWeight: '700', margin: '4px 0' }}>
+                              ⓘ No enrollment input. Click Edit Section above.
+                            </div>
+                          );
+                        }
+
+                        const mVal = Number(sec.maleLearners) || 0;
+                        const fVal = Number(sec.femaleLearners) || 0;
+                        const totVal = sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : (mVal + fVal);
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255, 255, 255, 0.8)', padding: '8px 12px', borderRadius: '10px', border: '1px solid var(--line)', margin: '4px 0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '700', color: '#334155' }}>
+                              <span>Male: {mVal}  ·  Female: {fVal}</span>
+                              <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '1px 8px', borderRadius: '6px' }}>
+                                Total: {totVal} Learners
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Divider */}
                       <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '4px 0' }} />
 
-                      {/* Adviser Profile info */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 'auto' }}>
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '50%',
-                          background: 'linear-gradient(135deg, var(--blue), var(--navy))',
-                          color: 'white',
-                          display: 'grid',
-                          placeItems: 'center',
-                          fontSize: '12px',
-                          fontWeight: 'bold'
-                        }}>
-                          {advisor ? `${advisor.firstName.charAt(0)}${advisor.lastName.charAt(0)}` : '—'}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: '2px' }}>
-                            Class Adviser
-                          </div>
-                          <select
-                            value={sec.advisorId || ''}
-                            onChange={(e) => updateSectionAdviser(sec.id, e.target.value)}
-                            style={{ width: '100%', fontSize: '12px', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', background: 'white', fontWeight: '600', color: 'var(--navy)' }}
-                          >
-                            <option value="">-- Select Adviser --</option>
-                            {teachingPersonnel.map(p => (
-                              <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
-                            ))}
-                          </select>
-                          {advisor && (
-                            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
-                              {advisor.position}
+                      {/* Adviser Profile Read-Only Info Box */}
+                      {(() => {
+                        if (!advisor) {
+                          return (
+                            <div style={{ padding: '8px 12px', background: 'rgba(255, 255, 255, 0.7)', borderRadius: '10px', border: '1px solid #FCA5A5', fontSize: '11px', color: '#991B1B', fontWeight: '700', marginTop: 'auto' }}>
+                              ⓘ Unassigned Adviser. Click Edit Section above.
                             </div>
-                          )}
-                        </div>
-                      </div>
+                          );
+                        }
+
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 'auto', background: 'rgba(255, 255, 255, 0.8)', padding: '8px 12px', borderRadius: '10px', border: '1px solid var(--line)' }}>
+                            <div style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              background: 'linear-gradient(135deg, var(--blue), var(--navy))',
+                              color: 'white',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: '12px',
+                              fontWeight: 'bold'
+                            }}>
+                              {advisor.firstName.charAt(0)}{advisor.lastName.charAt(0)}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '9px', fontWeight: 'bold', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: '2px' }}>
+                                Class Adviser
+                              </div>
+                              <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>
+                                {advisor.firstName} {advisor.lastName}
+                              </div>
+                              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                                {advisor.position || 'Teacher'}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -1371,15 +1462,69 @@ export default function OrganizedClasses() {
                     required
                   />
                 </div>
-                <div>
-                  <label>Number of Learners</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 35"
-                    value={newSection.numberOfLearners || ''}
-                    onChange={(e) => setNewSection({ ...newSection, numberOfLearners: e.target.value })}
-                  />
+                <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '14px' }}>♂</span> Male (Max 99)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      placeholder="0"
+                      value={newSection.maleLearners !== undefined && newSection.maleLearners !== null ? newSection.maleLearners : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.slice(0, 2);
+                        const mVal = raw === '' ? '' : Math.min(99, Math.max(0, Number(raw)));
+                        const fVal = newSection.femaleLearners !== undefined && newSection.femaleLearners !== null && newSection.femaleLearners !== '' ? Number(newSection.femaleLearners) : 0;
+                        const total = (mVal === '' ? 0 : Number(mVal)) + fVal;
+                        setNewSection(prev => ({
+                          ...prev,
+                          maleLearners: mVal,
+                          numberOfLearners: total
+                        }));
+                      }}
+                      style={{ width: '100%', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
+                    />
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#9d174d', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ fontSize: '14px' }}>♀</span> Female (Max 99)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      placeholder="0"
+                      value={newSection.femaleLearners !== undefined && newSection.femaleLearners !== null ? newSection.femaleLearners : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.slice(0, 2);
+                        const fVal = raw === '' ? '' : Math.min(99, Math.max(0, Number(raw)));
+                        const mVal = newSection.maleLearners !== undefined && newSection.maleLearners !== null && newSection.maleLearners !== '' ? Number(newSection.maleLearners) : 0;
+                        const total = mVal + (fVal === '' ? 0 : Number(fVal));
+                        setNewSection(prev => ({
+                          ...prev,
+                          femaleLearners: fVal,
+                          numberOfLearners: total
+                        }));
+                      }}
+                      style={{ width: '100%', border: '1px solid #fbcfe8', borderRadius: '6px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
+                    />
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      👥 Total <span style={{ fontSize: '9px', background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '6px' }}>Magic Math</span>
+                    </label>
+                    <input
+                      type="number"
+                      readOnly
+                      placeholder="Auto-calculated"
+                      value={newSection.numberOfLearners !== undefined && newSection.numberOfLearners !== null ? newSection.numberOfLearners : ''}
+                      style={{ background: '#f1f5f9', fontWeight: '800', color: '#047857', border: '1.5px solid #a7f3d0' }}
+                    />
+                  </div>
                 </div>
                 <div className="full">
                   <label>Section Adviser</label>
@@ -1614,7 +1759,7 @@ export default function OrganizedClasses() {
                             textAlign: 'center'
                           }}
                         >
-                          <div style={{ fontSize: '15px', marginBottom: '2px' }}>📖</div>
+                          <div style={{ fontSize: '14px', marginBottom: '2px', fontWeight: 'bold', color: isSel ? '#0369A1' : '#64748B' }}>☷</div>
                           <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>CRLA</div>
                           <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Reading (Gr 1-3)</div>
                         </div>
@@ -1640,7 +1785,7 @@ export default function OrganizedClasses() {
                             textAlign: 'center'
                           }}
                         >
-                          <div style={{ fontSize: '15px', marginBottom: '2px' }}>📖</div>
+                          <div style={{ fontSize: '14px', marginBottom: '2px', fontWeight: 'bold', color: isSel ? '#0369A1' : '#64748B' }}>☷</div>
                           <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>Phil-IRI</div>
                           <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Reading (Gr 4-10)</div>
                         </div>
@@ -1666,7 +1811,7 @@ export default function OrganizedClasses() {
                             textAlign: 'center'
                           }}
                         >
-                          <div style={{ fontSize: '15px', marginBottom: '2px' }}>🔢</div>
+                          <div style={{ fontSize: '14px', marginBottom: '2px', fontWeight: 'bold', color: isSel ? '#0369A1' : '#64748B' }}>◷</div>
                           <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>RMA</div>
                           <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Math (Gr 1-10)</div>
                         </div>
@@ -1681,7 +1826,7 @@ export default function OrganizedClasses() {
                     return (
                       <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                         <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#0369A1', marginBottom: '4px' }}>
-                          🎯 {toolObj.tool} Assessment Profile Level:
+                          ⓘ {toolObj.tool} Assessment Profile Level:
                         </label>
                         <select
                           value={levels.includes(aralProfileLevel) ? aralProfileLevel : levels[0]}
@@ -1716,6 +1861,148 @@ export default function OrganizedClasses() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
                 <button type="button" onClick={() => setIsAralModalOpen(false)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', background: 'white', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
                 <button type="submit" style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#16A34A', color: 'white', fontWeight: '800', cursor: 'pointer', fontSize: '13px' }}>Create ARAL Section</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT SECTION MODAL ── */}
+      {editModalSection && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'grid',
+          placeItems: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '20px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '460px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            animation: 'modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1.5px solid var(--line)', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
+                  ✎ Edit Section Setup
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '600' }}>
+                  {editModalSection.gradeLevel} — {editModalSection.sectionName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditModalSection(null)}
+                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#94a3b8', fontWeight: 'bold' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSection} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Grade Level & Section Name Inputs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Grade Level
+                  </label>
+                  <select
+                    value={editGradeLevel}
+                    onChange={(e) => setEditGradeLevel(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
+                  >
+                    {availableGrades.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Section Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editSectionName}
+                    onChange={(e) => setEditSectionName(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
+                  />
+                </div>
+              </div>
+              {/* Gender Learners Input (2-digit limit max 99) */}
+              <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <label style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                  Class Learners Enrollment (Max 99 per gender)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#1d4ed8', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Male (Max 99)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      placeholder="0"
+                      value={editMale}
+                      onChange={(e) => setEditMale(e.target.value.slice(0, 2))}
+                      style={{ width: '100%', border: '1.5px solid #bfdbfe', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#be185d', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Female (Max 99)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      placeholder="0"
+                      value={editFemale}
+                      onChange={(e) => setEditFemale(e.target.value.slice(0, 2))}
+                      style={{ width: '100%', border: '1.5px solid #fbcfe8', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed var(--line)' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>Calculated Total Learners:</span>
+                  <span style={{ fontSize: '14px', fontWeight: '900', color: '#047857', background: '#dcfce7', padding: '2px 10px', borderRadius: '10px' }}>
+                    {(Number(editMale.slice(0, 2)) || 0) + (Number(editFemale.slice(0, 2)) || 0)} Learners
+                  </span>
+                </div>
+              </div>
+
+              {/* Class Adviser Selection */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Assign Class Adviser
+                </label>
+                <select
+                  value={editAdvisorId}
+                  onChange={(e) => setEditAdvisorId(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
+                >
+                  <option value="">-- Select Adviser --</option>
+                  {teachingPersonnel.map(p => (
+                    <option key={p.id} value={p.id}>{p.firstName} {p.lastName} ({p.position || 'Teacher'})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+                <button type="button" onClick={() => setEditModalSection(null)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', background: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+                  Cancel
+                </button>
+                <button type="submit" style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: 'var(--blue)', color: 'white', fontWeight: '800', cursor: 'pointer', fontSize: '13px' }}>
+                  Save Section Setup
+                </button>
               </div>
             </form>
           </div>

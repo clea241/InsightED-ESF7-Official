@@ -22,7 +22,8 @@ import LoadingScreen from './components/LoadingScreen';
 
 function MainAppContent() {
   const { user, loading: authLoading } = useAuth();
-  const { activeView, toast, setToast, customModal } = useApp();
+  const appState = useApp() || {};
+  const { activeView = 'dashboard', toast = null, setToast = () => {}, customModal = null } = appState;
 
   React.useEffect(() => {
     if (toast) {

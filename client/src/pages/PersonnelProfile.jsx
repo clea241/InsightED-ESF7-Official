@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import SearchableDropdown from '../components/SearchableDropdown';
+import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import { api } from '../services/api';
 import {
   useApp,
@@ -27,6 +28,7 @@ const CURRICULUM_ERAS = [
 ];
 
 const PRIMARY_SUBJECTS = [
+  'Kinder Blocks of Time',
   'Filipino',
   'English',
   'Mathematics',
@@ -583,6 +585,8 @@ export default function PersonnelProfile() {
     districtSchools
   } = useApp();
 
+  const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
+
   const [activeTab, setActiveTab] = useState('identity');
   const [showRa1080Modal, setShowRa1080Modal] = useState(false);
   const [ra1080InputText, setRa1080InputText] = useState('');
@@ -623,6 +627,15 @@ export default function PersonnelProfile() {
     if (!currentPerson?.id) return;
     let isMounted = true;
     setLearningAreaLoading(true);
+
+    // Initialize with local draft if present
+    const localDraft = localStorage.getItem(`draft_learning_areas_${currentPerson.id}`);
+    if (localDraft) {
+      try {
+        setLearningAreaMap(JSON.parse(localDraft));
+      } catch (e) {}
+    }
+
     api.getLearningAreas(currentPerson.id)
       .then(res => {
         if (!isMounted) return;
@@ -635,6 +648,7 @@ export default function PersonnelProfile() {
           };
         });
         setLearningAreaMap(map);
+        localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(map));
       })
       .catch(err => {
         console.error('Failed to fetch learning areas:', err);
@@ -645,17 +659,63 @@ export default function PersonnelProfile() {
     return () => { isMounted = false; };
   }, [currentPerson?.id]);
 
+  const getMaxAllowedServiceYears = (person) => {
+    const d = person?.firstServiceDate || person?.first_service_date || '';
+    if (!d || typeof d !== 'string' || d.length < 4) return 70;
+    const startYear = parseInt(d.substring(0, 4), 10);
+    if (isNaN(startYear)) return 70;
+    const currentYear = new Date().getFullYear();
+    const years = currentYear - startYear;
+    return Math.min(70, Math.max(1, years));
+  };
+
+  const getCellMaxYears = (eraKey, subjectKey, person, currentMap) => {
+    const totalMaxService = getMaxAllowedServiceYears(person);
+    const d = person?.firstServiceDate || person?.first_service_date || '';
+    const firstServiceYear = (d && typeof d === 'string' && d.length >= 4) ? parseInt(d.substring(0, 4), 10) : null;
+    const currentYear = new Date().getFullYear();
+
+    const era = CURRICULUM_ERAS.find(e => e.key === eraKey);
+    let eraMax = totalMaxService;
+    if (era && firstServiceYear !== null) {
+      const start = Math.max(era.startYear, firstServiceYear);
+      const end = Math.min(era.endYear, currentYear);
+      eraMax = Math.max(1, end - start + 1);
+    }
+
+    let otherErasSum = 0;
+    Object.keys(currentMap || {}).forEach(k => {
+      const [eKey, sKey] = k.split('||');
+      if (sKey === subjectKey && eKey !== eraKey && currentMap[k]?.checked) {
+        otherErasSum += Number(currentMap[k]?.years || 0);
+      }
+    });
+
+    const subjectRemaining = Math.max(0, totalMaxService - otherErasSum);
+    return Math.min(totalMaxService, eraMax, subjectRemaining);
+  };
+
   const handleToggleLearningAreaCell = async (eraKey, subjectKey) => {
     if (!currentPerson?.id || currentPerson.isShared) return;
     const key = `${eraKey}||${subjectKey}`;
     const existing = learningAreaMap[key];
     const newChecked = !existing?.checked;
-    const newYears = newChecked ? (existing?.years || 1) : 0;
+    
+    let newYears = 0;
+    if (newChecked) {
+      const cellMax = getCellMaxYears(eraKey, subjectKey, currentPerson, learningAreaMap);
+      if (cellMax <= 0) {
+        showToast(`⚠️ Cannot add ${subjectKey} in this era. Total service limit (${getMaxAllowedServiceYears(currentPerson)} yrs) reached.`, 'warning');
+        return;
+      }
+      newYears = Math.min(cellMax, Math.max(1, existing?.years || 1));
+    }
 
-    setLearningAreaMap(prev => ({
-      ...prev,
-      [key]: { checked: newChecked, years: newYears }
-    }));
+    setLearningAreaMap(prev => {
+      const updated = { ...prev, [key]: { checked: newChecked, years: newYears } };
+      localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(updated));
+      return updated;
+    });
 
     try {
       await api.saveLearningArea({
@@ -674,12 +734,23 @@ export default function PersonnelProfile() {
   const handleYearsChange = async (eraKey, subjectKey, yearsVal) => {
     if (!currentPerson?.id || currentPerson.isShared) return;
     const key = `${eraKey}||${subjectKey}`;
-    const parsedYears = Math.max(1, parseInt(yearsVal || 1, 10));
+    let cleanVal = String(yearsVal || '').replace(/\D/g, '');
+    if (cleanVal.length > 2) {
+      cleanVal = cleanVal.slice(0, 2);
+    }
+    const cellMax = getCellMaxYears(eraKey, subjectKey, currentPerson, learningAreaMap);
+    const inputVal = parseInt(cleanVal || '1', 10);
+    const parsedYears = Math.min(cellMax, Math.max(1, inputVal));
 
-    setLearningAreaMap(prev => ({
-      ...prev,
-      [key]: { checked: true, years: parsedYears }
-    }));
+    if (inputVal > cellMax && cellMax > 0) {
+      showToast(`⚠️ Capped at ${cellMax} yrs (${subjectKey} total cannot exceed total ${getMaxAllowedServiceYears(currentPerson)} yrs of service)`, 'warning');
+    }
+
+    setLearningAreaMap(prev => {
+      const updated = { ...prev, [key]: { checked: true, years: parsedYears } };
+      localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(updated));
+      return updated;
+    });
 
     try {
       await api.saveLearningArea({
@@ -712,7 +783,35 @@ export default function PersonnelProfile() {
 
   const handleFieldChange = (key, value) => {
     if (!currentPerson) return;
-    const updated = { ...currentPerson, [key]: value };
+    let updated = { ...currentPerson, [key]: value };
+    if (key === 'fundSource' && String(value).toUpperCase() === 'NATIONAL') {
+      if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
+      if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
+      if (updated.newStationDate === 'N/A') updated.newStationDate = '';
+    }
+
+    if (key === 'firstServiceDate' && value && typeof value === 'string' && value.length >= 10) {
+      const firstDateStr = value.substring(0, 10);
+      let resetCount = 0;
+
+      if (updated.lastPromotionDate && updated.lastPromotionDate !== 'N/A' && updated.lastPromotionDate.substring(0, 10) < firstDateStr) {
+        updated.lastPromotionDate = '';
+        resetCount++;
+      }
+      if (updated.lastLateralMovementDate && updated.lastLateralMovementDate !== 'N/A' && updated.lastLateralMovementDate.substring(0, 10) < firstDateStr) {
+        updated.lastLateralMovementDate = '';
+        resetCount++;
+      }
+      if (updated.newStationDate && updated.newStationDate !== 'N/A' && updated.newStationDate.substring(0, 10) < firstDateStr) {
+        updated.newStationDate = '';
+        resetCount++;
+      }
+
+      if (resetCount > 0) {
+        showToast(`⚠️ Reset ${resetCount} service date(s) that were earlier than 1st Day of Service (${firstDateStr})`, 'warning');
+      }
+    }
+
     setEditPerson(updated);
     localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
   };
@@ -1588,11 +1687,44 @@ export default function PersonnelProfile() {
                             <label>Plantilla Position</label>
                             <SearchableDropdown
                               options={POSITION_OPTIONS_BY_CATEGORY[currentPerson.type || 'teaching'].map(p => p.toUpperCase())}
-                              value={currentPerson.position || ''}
-                              onChange={(val) => handleFieldChange('position', val)}
+                              value={currentPerson.position?.startsWith('OTHERS') ? 'OTHERS' : (currentPerson.position || '')}
+                              onChange={(val) => {
+                                if (val === 'OTHERS') {
+                                  handleFieldChange('position', 'OTHERS');
+                                } else {
+                                  handleFieldChange('position', val);
+                                }
+                              }}
                               placeholder="SELECT PLANTILLA POSITION..."
                               required
                             />
+                            {(currentPerson.type === 'non-teaching' || currentPerson.type === 'NON-TEACHING') && (currentPerson.position === 'OTHERS' || currentPerson.position?.startsWith('OTHERS')) && (
+                              <div style={{ marginTop: '8px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748B' }}>Specify Position (Max 50 characters)</label>
+                                <input
+                                  type="text"
+                                  maxLength={50}
+                                  placeholder="Specify position title..."
+                                  value={currentPerson.position === 'OTHERS' ? '' : currentPerson.position.replace(/^OTHERS\s*-\s*/i, '')}
+                                  onChange={(e) => {
+                                    const val = e.target.value.substring(0, 50).toUpperCase();
+                                    handleFieldChange('position', val ? `OTHERS - ${val}` : 'OTHERS');
+                                  }}
+                                  required
+                                  style={{
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    fontSize: '13px',
+                                    borderRadius: '8px',
+                                    border: '1.5px solid #BAE6FD',
+                                    background: '#F0F9FF'
+                                  }}
+                                />
+                                <div style={{ fontSize: '10px', color: '#94A3B8', textAlign: 'right', marginTop: '2px' }}>
+                                  {(currentPerson.position === 'OTHERS' ? '' : currentPerson.position.replace(/^OTHERS\s*-\s*/i, '')).length}/50 characters
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label>Salary Step Increment</label>
@@ -1674,7 +1806,32 @@ export default function PersonnelProfile() {
                             <input className={!currentPerson.employeeNo ? 'empty-field' : ''} value={currentPerson.employeeNo || ''} onChange={(e) => handleFieldChange('employeeNo', e.target.value)} />
                           </div>
                           <div>
-                            <label>DepEd Email</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                              <label style={{ margin: 0 }}>DepEd Email</label>
+                              <button
+                                type="button"
+                                onClick={() => setIsEmailInfoOpen(true)}
+                                title="DepEd Email Policy & Validation Notice"
+                                style={{
+                                  background: '#E0F2FE',
+                                  color: '#0284C7',
+                                  border: '1px solid #BAE6FD',
+                                  borderRadius: '50%',
+                                  width: '18px',
+                                  height: '18px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer',
+                                  lineHeight: 1,
+                                  padding: 0
+                                }}
+                              >
+                                i
+                              </button>
+                            </div>
                             <div className="deped-email-field" style={{ display: 'flex', alignItems: 'center' }}>
                               <input
                                 style={{ borderRight: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
@@ -1715,119 +1872,153 @@ export default function PersonnelProfile() {
 
                           {['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(currentPerson.deploymentStatus) && (
                             <div className="full" style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                              {(() => {
+                                const currentDistrictStr = String(schoolInfo?.district || '').trim().toLowerCase();
+                                const currentSchoolIdStr = String(schoolInfo?.schoolId || '').trim();
 
-                              {String(currentPerson.deploymentStatus).toUpperCase() !== 'CLUSTERED' && (
-                                <div>
-                                  <label>Other School Assignment</label>
-                                  <SearchableDropdown
-                                    options={DIVISION_SCHOOL_OPTIONS.map(s => `${s.name.toUpperCase()} (${s.schoolId})`)}
-                                    value={
-                                      (() => {
-                                        const activeSchool = (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools[0]) ||
-                                          (typeof currentPerson.assignedSchools === 'string' ? currentPerson.assignedSchools : '');
+                                const formatSchoolOption = (s) => {
+                                  if (typeof s === 'string') return s;
+                                  const name = s.schoolName || s.school_name || s.name || s.school || 'SCHOOL';
+                                  const id = s.schoolId || s.school_id || s.id || s.schoolid || '';
+                                  return id ? `${String(name).toUpperCase()} (${id})` : String(name).toUpperCase();
+                                };
 
-                                        if (!activeSchool) return '';
+                                const getSchoolId = (s) => String(s.schoolId || s.school_id || s.id || s.schoolid || '');
+                                const getSchoolDistrict = (s) => String(s.district || s.school_district || '').trim().toLowerCase();
 
-                                        return DIVISION_SCHOOL_OPTIONS.map(s => `${s.name.toUpperCase()} (${s.schoolId})`)
-                                          .find(opt => opt.toUpperCase().startsWith(activeSchool.toUpperCase())) || activeSchool;
-                                      })()
-                                    }
-                                    onChange={(val) => {
-                                      const schoolName = val.split(' (')[0];
-                                      handleFieldChange('assignedSchools', schoolName ? [schoolName] : []);
-                                    }}
-                                    placeholder="SELECT OTHER ASSIGNED SCHOOL..."
-                                  />
-                                  <p className="field-help">Appears only for Reassigned or Borrowed deployment.</p>
-                                </div>
-                              )}
+                                const filteredDistrictSchools = (Array.isArray(districtSchools) && districtSchools.length > 0)
+                                  ? districtSchools.filter(s => getSchoolId(s) !== currentSchoolIdStr)
+                                  : DIVISION_SCHOOL_OPTIONS.filter(s => {
+                                      if (getSchoolId(s) === currentSchoolIdStr) return false;
+                                      if (!currentDistrictStr) return true;
+                                      const sDist = getSchoolDistrict(s);
+                                      return !sDist || sDist === currentDistrictStr || sDist.includes(currentDistrictStr) || currentDistrictStr.includes(sDist);
+                                    });
 
-                              {String(currentPerson.deploymentStatus).toUpperCase() === 'CLUSTERED' && (
-                                <div style={{
-                                  padding: '16px',
-                                  background: '#F8FAFC',
-                                  border: '1.5px solid var(--line)',
-                                  borderRadius: '12px',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '12px',
-                                  marginTop: '10px'
-                                }}>
-                                  <span style={{ fontWeight: 'bold', color: 'var(--navy)', fontSize: '13px' }}>Clustered School Assignments</span>
-                                  <p className="field-help" style={{ marginTop: '-8px' }}>Select the satellite schools where this personnel is deployed to teach.</p>
+                                const schoolOptionsList = filteredDistrictSchools.map(formatSchoolOption).filter(Boolean);
 
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
-                                    {(Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : []).map((school, index) => (
-                                      <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
-                                        <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{school}</span>
+                                return (
+                                  <>
+                                    {String(currentPerson.deploymentStatus).toUpperCase() !== 'CLUSTERED' && (
+                                      <div>
+                                        <label>Other School Assignment (Same District)</label>
+                                        <SearchableDropdown
+                                          options={schoolOptionsList}
+                                          value={
+                                            (() => {
+                                              const activeSchool = (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools[0]) ||
+                                                (typeof currentPerson.assignedSchools === 'string' ? currentPerson.assignedSchools : '');
+
+                                              if (!activeSchool) return '';
+
+                                              return schoolOptionsList
+                                                .find(opt => opt.toUpperCase().startsWith(activeSchool.toUpperCase())) || activeSchool;
+                                            })()
+                                          }
+                                          onChange={(val) => {
+                                            const schoolName = val.split(' (')[0];
+                                            handleFieldChange('assignedSchools', schoolName ? [schoolName] : []);
+                                          }}
+                                          placeholder="SELECT OTHER ASSIGNED SCHOOL..."
+                                        />
+                                        <p className="field-help">Appears only for Reassigned or Borrowed deployment within {schoolInfo?.district || 'the same district'}.</p>
+                                      </div>
+                                    )}
+
+                                    {String(currentPerson.deploymentStatus).toUpperCase() === 'CLUSTERED' && (
+                                      <div style={{
+                                        padding: '16px',
+                                        background: '#F8FAFC',
+                                        border: '1.5px solid var(--line)',
+                                        borderRadius: '12px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '12px',
+                                        marginTop: '10px'
+                                      }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ fontWeight: 'bold', color: 'var(--navy)', fontSize: '13px' }}>Clustered School Assignments</span>
+                                          <span style={{ fontSize: '11px', color: '#0369A1', background: '#E0F2FE', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
+                                            📍 District: {schoolInfo?.district || 'Same District'}
+                                          </span>
+                                        </div>
+                                        <p className="field-help" style={{ marginTop: '-8px' }}>Select satellite schools in the same district where this personnel is deployed to teach.</p>
+
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
+                                          {(Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : []).map((school, index) => (
+                                            <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
+                                              <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{school}</span>
+                                              <button
+                                                type="button"
+                                                style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
+                                                onClick={() => {
+                                                  const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
+                                                  const newList = currentList.filter((_, idx) => idx !== index);
+                                                  handleFieldChange('assignedSchools', newList);
+                                                }}
+                                              >
+                                                ✕
+                                              </button>
+                                            </div>
+                                          ))}
+                                          {(Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : []).length === 0 && (
+                                            <span style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic' }}>No clustered schools assigned yet.</span>
+                                          )}
+                                        </div>
+
+                                        <SearchableDropdown
+                                          options={schoolOptionsList}
+                                          value=""
+                                          onChange={(val) => {
+                                            if (!val) return;
+                                            const schoolName = val.split(' (')[0];
+                                            const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
+                                            if (!currentList.includes(schoolName)) {
+                                              handleFieldChange('assignedSchools', [...currentList, schoolName]);
+                                            }
+                                          }}
+                                          placeholder="+ ADD CLUSTERED SCHOOL (SAME DISTRICT)..."
+                                        />
+
                                         <button
                                           type="button"
-                                          style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
-                                          onClick={() => {
-                                            const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
-                                            const newList = currentList.filter((_, idx) => idx !== index);
-                                            handleFieldChange('assignedSchools', newList);
+                                          className="btn"
+                                          style={{ marginTop: '8px', width: 'fit-content' }}
+                                          disabled={!currentPerson.profilingCode || (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools.length === 0)}
+                                          onClick={async () => {
+                                            if (!currentPerson.profilingCode) {
+                                              await showAlert("Missing PRN", "A valid PRN is required before sharing.");
+                                              return;
+                                            }
+                                            try {
+                                              const { api } = await import('../services/api');
+                                              const targetSchoolIds = currentPerson.assignedSchools.map(name => {
+                                                const match = DIVISION_SCHOOL_OPTIONS.find(s => s.name.toUpperCase() === name.toUpperCase());
+                                                return match ? match.schoolId : null;
+                                              }).filter(Boolean);
+
+                                              if (targetSchoolIds.length === 0) {
+                                                await showAlert("Error", "No valid target schools found.");
+                                                return;
+                                              }
+
+                                              await api.sharePersonnelToClusteredSchools(currentPerson.profilingCode, targetSchoolIds, currentPerson.firstName, currentPerson.lastName);
+                                              await showAlert("Success", "Personnel shared to clustered schools successfully.");
+                                            } catch (err) {
+                                              await showAlert("Error", "Failed to share personnel: " + err.message);
+                                            }
                                           }}
                                         >
-                                          ✕
+                                          Share to Clustered Schools 🔗
                                         </button>
+                                        {!currentPerson.profilingCode && (
+                                          <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sharing.</p>
+                                        )}
                                       </div>
-                                    ))}
-                                    {(Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : []).length === 0 && (
-                                      <span style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic' }}>No clustered schools assigned yet.</span>
                                     )}
-                                  </div>
-
-                                  <SearchableDropdown
-                                    options={DIVISION_SCHOOL_OPTIONS.map(s => `${s.name.toUpperCase()} (${s.schoolId})`)}
-                                    value=""
-                                    onChange={(val) => {
-                                      if (!val) return;
-                                      const schoolName = val.split(' (')[0];
-                                      const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
-                                      if (!currentList.includes(schoolName)) {
-                                        handleFieldChange('assignedSchools', [...currentList, schoolName]);
-                                      }
-                                    }}
-                                    placeholder="+ ADD CLUSTERED SCHOOL..."
-                                  />
-
-                                  <button
-                                    type="button"
-                                    className="btn"
-                                    style={{ marginTop: '8px', width: 'fit-content' }}
-                                    disabled={!currentPerson.profilingCode || (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools.length === 0)}
-                                    onClick={async () => {
-                                      if (!currentPerson.profilingCode) {
-                                        await showAlert("Missing PRN", "A valid PRN is required before sharing.");
-                                        return;
-                                      }
-                                      try {
-                                        const { api } = await import('../services/api');
-                                        const targetSchoolIds = currentPerson.assignedSchools.map(name => {
-                                          const match = DIVISION_SCHOOL_OPTIONS.find(s => s.name.toUpperCase() === name.toUpperCase());
-                                          return match ? match.schoolId : null;
-                                        }).filter(Boolean);
-
-                                        if (targetSchoolIds.length === 0) {
-                                          await showAlert("Error", "No valid target schools found.");
-                                          return;
-                                        }
-
-                                        await api.sharePersonnelToClusteredSchools(currentPerson.profilingCode, targetSchoolIds, currentPerson.firstName, currentPerson.lastName);
-                                        await showAlert("Success", "Personnel shared to clustered schools successfully.");
-                                      } catch (err) {
-                                        await showAlert("Error", "Failed to share personnel: " + err.message);
-                                      }
-                                    }}
-                                  >
-                                    Share to Clustered Schools 🔗
-                                  </button>
-                                  {!currentPerson.profilingCode && (
-                                    <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sharing.</p>
-                                  )}
-                                </div>
-                              )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           )}
                           <div>
@@ -1841,60 +2032,69 @@ export default function PersonnelProfile() {
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <label style={{ margin: 0 }}>Date of Last Promotion</label>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
-                                <input
-                                  type="checkbox"
-                                  style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                  checked={currentPerson.lastPromotionDate === 'N/A'}
-                                  onChange={(e) => handleFieldChange('lastPromotionDate', e.target.checked ? 'N/A' : '')}
-                                />
-                                N/A
-                              </label>
+                              {String(currentPerson.fundSource || '').toUpperCase() !== 'NATIONAL' && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
+                                  <input
+                                    type="checkbox"
+                                    style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
+                                    checked={currentPerson.lastPromotionDate === 'N/A'}
+                                    onChange={(e) => handleFieldChange('lastPromotionDate', e.target.checked ? 'N/A' : '')}
+                                  />
+                                  N/A
+                                </label>
+                              )}
                             </div>
                             <DatePickerDropdowns
                               value={currentPerson.lastPromotionDate === 'N/A' ? '' : (currentPerson.lastPromotionDate || '')}
                               onChange={(val) => handleFieldChange('lastPromotionDate', val)}
                               maxDate={new Date()}
+                              minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
                               disabled={currentPerson.lastPromotionDate === 'N/A'}
                             />
                           </div>
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <label style={{ margin: 0 }}>Date of Last Lateral Movement</label>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
-                                <input
-                                  type="checkbox"
-                                  style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                  checked={currentPerson.lastLateralMovementDate === 'N/A'}
-                                  onChange={(e) => handleFieldChange('lastLateralMovementDate', e.target.checked ? 'N/A' : '')}
-                                />
-                                N/A
-                              </label>
+                              {String(currentPerson.fundSource || '').toUpperCase() !== 'NATIONAL' && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
+                                  <input
+                                    type="checkbox"
+                                    style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
+                                    checked={currentPerson.lastLateralMovementDate === 'N/A'}
+                                    onChange={(e) => handleFieldChange('lastLateralMovementDate', e.target.checked ? 'N/A' : '')}
+                                  />
+                                  N/A
+                                </label>
+                              )}
                             </div>
                             <DatePickerDropdowns
                               value={currentPerson.lastLateralMovementDate === 'N/A' ? '' : (currentPerson.lastLateralMovementDate || '')}
                               onChange={(val) => handleFieldChange('lastLateralMovementDate', val)}
                               maxDate={new Date()}
+                              minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
                               disabled={currentPerson.lastLateralMovementDate === 'N/A'}
                             />
                           </div>
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <label style={{ margin: 0 }}>Date of First Day in Current Station</label>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
-                                <input
-                                  type="checkbox"
-                                  style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                  checked={currentPerson.newStationDate === 'N/A'}
-                                  onChange={(e) => handleFieldChange('newStationDate', e.target.checked ? 'N/A' : '')}
-                                />
-                                N/A
-                              </label>
+                              {String(currentPerson.fundSource || '').toUpperCase() !== 'NATIONAL' && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
+                                  <input
+                                    type="checkbox"
+                                    style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
+                                    checked={currentPerson.newStationDate === 'N/A'}
+                                    onChange={(e) => handleFieldChange('newStationDate', e.target.checked ? 'N/A' : '')}
+                                  />
+                                  N/A
+                                </label>
+                              )}
                             </div>
                             <DatePickerDropdowns
                               value={currentPerson.newStationDate === 'N/A' ? '' : (currentPerson.newStationDate || '')}
                               onChange={(val) => handleFieldChange('newStationDate', val)}
                               maxDate={new Date()}
+                              minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
                               disabled={currentPerson.newStationDate === 'N/A'}
                             />
                           </div>
@@ -2486,6 +2686,21 @@ export default function PersonnelProfile() {
                             </div>
                           </div>
 
+                          {(() => {
+                            const maxYears = getMaxAllowedServiceYears(currentPerson);
+                            const serviceStartYear = currentPerson?.firstServiceDate || currentPerson?.first_service_date;
+                            return (
+                              <div style={{ background: '#EFF6FF', border: '1px solid #93C5FD', padding: '10px 16px', borderRadius: '12px', fontSize: '12px', color: '#1E40AF', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>ℹ️</span>
+                                <span>
+                                  {serviceStartYear
+                                    ? `Max allowed teaching experience: ${maxYears} ${maxYears === 1 ? 'Year' : 'Years'} (calculated from 1st Service Date: ${serviceStartYear.substring(0, 10)})`
+                                    : 'Max allowed experience: 70 Years (specify Date of First Day of Service in Employment tab to enable dynamic service validation)'}
+                                </span>
+                              </div>
+                            );
+                          })()}
+
                           {learningAreaLoading ? (
                             <p style={{ padding: '1rem', color: 'var(--muted)' }}>Loading learning area matrix...</p>
                           ) : (
@@ -2556,15 +2771,28 @@ export default function PersonnelProfile() {
                                                   />
                                                   {isChecked && !isDisabledEra && (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginTop: '2px' }}>
-                                                      <input
-                                                        type="number"
-                                                        min="1"
-                                                        max="50"
-                                                        value={cellData.years || 1}
-                                                        onChange={(e) => handleYearsChange(era.key, sub, e.target.value)}
-                                                        disabled={currentPerson.isShared || isDisabledEra}
-                                                        style={{ width: '42px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', padding: '2px', border: '1.5px solid #0284C7', borderRadius: '4px', background: '#FFFFFF' }}
-                                                      />
+                                                      {(() => {
+                                                        const cellMax = getCellMaxYears(era.key, sub, currentPerson, learningAreaMap);
+                                                        return (
+                                                          <input
+                                                            type="number"
+                                                            min="1"
+                                                            max={cellMax}
+                                                            value={cellData.years || 1}
+                                                            onInput={(e) => {
+                                                              if (e.target.value.length > 2) {
+                                                                e.target.value = e.target.value.slice(0, 2);
+                                                              }
+                                                              if (parseInt(e.target.value, 10) > cellMax) {
+                                                                e.target.value = String(cellMax);
+                                                              }
+                                                            }}
+                                                            onChange={(e) => handleYearsChange(era.key, sub, e.target.value)}
+                                                            disabled={currentPerson.isShared || isDisabledEra}
+                                                            style={{ width: '42px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', padding: '2px', border: '1.5px solid #0284C7', borderRadius: '4px', background: '#FFFFFF' }}
+                                                          />
+                                                        );
+                                                      })()}
                                                       <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--navy)' }}>yr{cellData.years > 1 ? 's' : ''}</span>
                                                     </div>
                                                   )}
@@ -2661,6 +2889,12 @@ export default function PersonnelProfile() {
           </div>
         </div>
       )}
+
+      {/* DepEd Email Warning & Policy Info Modal */}
+      <DepEdEmailInfoModal 
+        isOpen={isEmailInfoOpen}
+        onClose={() => setIsEmailInfoOpen(false)}
+      />
     </section>
   );
 }

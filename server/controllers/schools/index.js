@@ -71,16 +71,45 @@ router.get('/', async (req, res) => {
     let result = await insightEdPool.query('SELECT * FROM unit1_school_identity WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1', [schoolId]);
 
     if (result.rows.length === 0) {
+      // Check esf7_database table for historical school submission identity
+      const esfMatch = await insightEdPool.query(
+        'SELECT DISTINCT school_name, division, region, muncipality as district FROM esf7_database WHERE school_id = $1 OR schoool_id = $1 LIMIT 1',
+        [schoolId]
+      ).catch(() => ({ rows: [] }));
+
+      if (esfMatch.rows.length > 0) {
+        const esf = esfMatch.rows[0];
+        const esfSchoolName = esf.school_name || `School ${schoolId}`;
+        const esfRegion = esf.region ? (String(esf.region).toUpperCase().startsWith('REGION') ? esf.region : `REGION ${esf.region}`) : 'REGION V';
+        const esfDivision = esf.division || 'DIVISION';
+        const esfDistrict = esf.district || 'DISTRICT';
+
+        return res.json({
+          schoolId: schoolId,
+          schoolName: esfSchoolName,
+          region: esfRegion,
+          division: esfDivision,
+          district: esfDistrict,
+          schoolYear: "SY 26-27",
+          numberOfShifts: "1",
+          curricularOffering: ['Elementary', 'JHS', 'SHS'],
+          certifiedBy: null,
+          certifiedSignature: null,
+          certifiedAt: null,
+          subjectsConfig: null
+        });
+      }
+
       result = await insightEdPool.query('SELECT * FROM unit1_school_identity ORDER BY updated_at DESC LIMIT 1');
     }
 
     if (result.rows.length === 0) {
       return res.json({
         schoolId: schoolId || '199999',
-        schoolName: "TEST K-12 INTEGRATED SCHOOL",
-        region: "REGION VIII",
-        division: "SAMAR (WESTERN SAMAR)",
-        district: "BASEY I",
+        schoolName: `School ${schoolId}`,
+        region: "REGION V",
+        division: "DIVISION",
+        district: "DISTRICT",
         schoolYear: "SY 26-27",
         numberOfShifts: "1",
         curricularOffering: ['Elementary', 'JHS', 'SHS'],
@@ -218,6 +247,37 @@ router.put('/subjects', async (req, res) => {
     );
 
     res.json({ success: true, subjectsConfig });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/schools/curricular-config - Save special_programs and shs_curriculum_model
+router.put('/curricular-config', async (req, res) => {
+  try {
+    const schoolId = getSchoolIdFromRequest(req) || '123456';
+    const { hasSpecialPrograms, specialPrograms, shsCurriculumModel, schoolYear } = req.body;
+
+    await db.query(
+      `INSERT INTO schools (id, school_id, school_name, region, division, school_year, special_programs, shs_curriculum_model)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (school_id, school_year) DO UPDATE
+       SET special_programs = EXCLUDED.special_programs,
+           shs_curriculum_model = EXCLUDED.shs_curriculum_model,
+           updated_at = NOW()`,
+      [
+        `SCH-${schoolId}`, 
+        schoolId, 
+        'School', 
+        'Region', 
+        'Division', 
+        schoolYear || 'SY 26-27', 
+        JSON.stringify(specialPrograms || []), 
+        shsCurriculumModel || null
+      ]
+    );
+
+    res.json({ success: true, hasSpecialPrograms, specialPrograms, shsCurriculumModel });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

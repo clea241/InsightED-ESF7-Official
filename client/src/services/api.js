@@ -2,14 +2,30 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const fetchWithAuth = async (url, options = {}) => {
   const token = localStorage.getItem('token');
+  let activeSchoolId = localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+  if (!activeSchoolId && token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      activeSchoolId = payload.school_id || payload.schoolId;
+    } catch (e) {}
+  }
+
   const headers = {
     ...options.headers,
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(activeSchoolId ? { 'x-school-id': activeSchoolId } : {})
   };
   return fetch(url, { ...options, headers });
 };
 
 export const api = {
+  // Dashboard stats
+  getDashboardStats: async (simulatedDate = null) => {
+    const query = simulatedDate ? `?simulated_date=${encodeURIComponent(simulatedDate)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/dashboard/stats${query}`);
+    return res.json();
+  },
+
   // School Profile
   getSchool: async () => {
     const res = await fetchWithAuth(`${API_BASE}/school`);
@@ -31,14 +47,26 @@ export const api = {
     });
     return res.json();
   },
-
-  // Personnel Roster
-  getPersonnel: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/personnel`);
+  updateCurricularConfig: async (configData) => {
+    const res = await fetchWithAuth(`${API_BASE}/school-info/curricular-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(configData)
+    });
     return res.json();
   },
-  getAutofillTemplate: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/personnel/autofill-template`);
+
+  // Personnel Roster
+  getPersonnel: async (targetSchoolId = null) => {
+    const customHeaders = targetSchoolId ? { 'x-school-id': targetSchoolId } : {};
+    const query = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/personnel${query}`, { headers: customHeaders });
+    return res.json();
+  },
+  getAutofillTemplate: async (targetSchoolId = null) => {
+    const customHeaders = targetSchoolId ? { 'x-school-id': targetSchoolId } : {};
+    const query = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/personnel/autofill-template${query}`, { headers: customHeaders });
     return res.json();
   },
   saveBulkPersonnel: async (personnelList) => {
@@ -289,11 +317,11 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch learning areas');
     return res.json();
   },
-  saveLearningArea: async ({ personnelId, schoolYear, learningArea, checked }) => {
+  saveLearningArea: async ({ personnelId, schoolYear, learningArea, checked, yearsTaught }) => {
     const res = await fetchWithAuth(`${API_BASE}/learning-areas/toggle`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ personnelId, schoolYear, learningArea, checked })
+      body: JSON.stringify({ personnelId, schoolYear, learningArea, checked, yearsTaught })
     });
     if (!res.ok) throw new Error('Failed to save learning area');
     return res.json();

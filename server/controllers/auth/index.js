@@ -12,7 +12,7 @@ require('dotenv').config();
 const PILOT_SCHOOLS = [
   '305337', '101190', '305280', '110416', '500552',
   '500484', '124214', '125789', '305514', '131280',
-  '199999', '130113', '123325', '104126', '114196',
+  '199999', '199888', '130113', '123325', '104126', '114196',
   '123458', '312311', '300844', '300744', '500273',
   '500522', '500369'
 ];
@@ -93,7 +93,7 @@ const handleLogin = async (req, res) => {
   }
 
   // ── Pilot school shortcut login (includes 199901-199921 sandbox range) ────
-  const isPilotSeries = PILOT_SCHOOLS.includes(inputId) || /^1999\d{2}$/.test(inputId);
+  const isPilotSeries = PILOT_SCHOOLS.includes(inputId) || /^199\d{3}$/.test(inputId);
   if (isPilotSeries && password === PILOT_PASSWORD) {
     const token = jwt.sign(
       { uid: `pilot-${inputId}`, email: `pilot-${inputId}@esf7.pilot`, role: 'school', school_id: inputId },

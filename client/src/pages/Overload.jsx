@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, DEFAULT_PH_HOLIDAYS } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import { api } from '../services/api';
 
@@ -63,7 +63,9 @@ export default function Overload() {
     schoolInfo,
     showConfirm,
     showAlert,
-    salaryMatrix
+    salaryMatrix,
+    localNonWorkingDays,
+    setLocalNonWorkingDays
   } = useApp();
 
   const calculatePHTR = (teacher) => {
@@ -134,7 +136,58 @@ export default function Overload() {
   const [selectedQuarter, setSelectedQuarter] = useState('Term 1');
   const [teacherSearch, setTeacherSearch] = useState('');
 
-  // Tardiness & Late Log form state (Step 1)
+  // Local Holidays & Suspensions form state (Step 1)
+  const [step1Month, setStep1Month] = useState('June');
+  const [holidayDate, setHolidayDate] = useState('');
+  const [holidayType, setHolidayType] = useState('Local Holiday');
+  const [holidayDesc, setHolidayDesc] = useState('');
+
+  const handleAddHoliday = () => {
+    if (!holidayDate || !holidayDesc.trim()) {
+      showAlert('Please fill in both Date and Description.');
+      return;
+    }
+    const newHoliday = {
+      id: `hol-${Date.now()}`,
+      date: holidayDate,
+      type: holidayType,
+      description: holidayDesc.trim()
+    };
+    const existingIdx = (localNonWorkingDays || []).findIndex(h => h.date === holidayDate);
+    let updated;
+    if (existingIdx >= 0) {
+      updated = [...(localNonWorkingDays || [])];
+      updated[existingIdx] = newHoliday;
+    } else {
+      updated = [...(localNonWorkingDays || []), newHoliday];
+    }
+    setLocalNonWorkingDays(updated);
+    try {
+      localStorage.setItem('insighted_non_working_days', JSON.stringify(updated));
+    } catch(e) {}
+    setHolidayDate('');
+    setHolidayDesc('');
+    showConfirm('Holiday / Suspension Added!', 'The selected date has been marked as a non-working day and will be excluded from overload computations.');
+  };
+
+  const handleRemoveHoliday = (id) => {
+    const updated = (localNonWorkingDays || []).filter(h => h.id !== id);
+    setLocalNonWorkingDays(updated);
+    try {
+      localStorage.setItem('insighted_non_working_days', JSON.stringify(updated));
+    } catch(e) {}
+  };
+
+  const handleResetDefaultHolidays = async () => {
+    if (await showConfirm('Restore Standard PH Holidays?', 'This will reset and restore standard Philippine National Holidays to your calendar. Do you want to proceed?')) {
+      setLocalNonWorkingDays(DEFAULT_PH_HOLIDAYS);
+      try {
+        localStorage.setItem('insighted_non_working_days', JSON.stringify(DEFAULT_PH_HOLIDAYS));
+      } catch (e) {}
+    }
+  };
+
+  // Tardiness & Late Log form state (Step 2)
   const [tardinessTeacherId, setTardinessTeacherId] = useState('');
   const [tardinessMonth, setTardinessMonth] = useState('June');
 
@@ -518,6 +571,12 @@ export default function Overload() {
       const isNonInstructional = NON_INSTRUCTIONAL_RANGES.some(r => dateStr >= r.start && dateStr <= r.end);
       if (isNonInstructional) {
         return; // Teachers have no teaching load / overload pay during End-of-Term blocks or Vacation
+      }
+
+      // Check if date is a declared local holiday or suspension
+      const isLocalHolidayOrSuspension = (localNonWorkingDays || []).some(d => d.date === dateStr);
+      if (isLocalHolidayOrSuspension) {
+        return; // No teaching load / overload pay on holidays or suspensions
       }
       
       // Calculate teaching load for this teacher on this day
@@ -1006,8 +1065,8 @@ export default function Overload() {
         </div>
       </header>
 
-      {/* 5-Step Wizard Navigation Stepper */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '8px' }}>
+      {/* 6-Step Wizard Navigation Stepper */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '8px' }}>
         <button 
           onClick={() => setActiveStep(1)}
           style={{
@@ -1024,7 +1083,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 1</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🏖️ Absences & Leave</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📅 Calendar</div>
         </button>
 
         <button 
@@ -1043,7 +1102,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 2</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness Log</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🏖️ Absences</div>
         </button>
 
         <button 
@@ -1062,7 +1121,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 3</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🔄 Workload Transfers</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness Log</div>
         </button>
 
         <button 
@@ -1081,7 +1140,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 4</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>💼 Work Immersion (for SHS)</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🔄 Workload Transfers</div>
         </button>
 
         <button 
@@ -1100,12 +1159,279 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 5</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>💼 Work Immersion (for SHS)</div>
+        </button>
+
+        <button 
+          onClick={() => setActiveStep(6)}
+          style={{
+            padding: '14px 18px',
+            borderRadius: '14px',
+            border: '2px solid',
+            borderColor: activeStep === 6 ? 'var(--blue)' : 'var(--line)',
+            background: activeStep === 6 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+            color: activeStep === 6 ? 'var(--navy)' : 'var(--muted)',
+            fontWeight: 'bold',
+            textAlign: 'left',
+            cursor: 'pointer',
+            boxShadow: activeStep === 6 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
+          }}
+        >
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 6</div>
           <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📈 Teaching Overload</div>
         </button>
       </div>
 
-      {/* STEP 2: Tardiness & Late Log */}
-      {activeStep === 2 && (
+      {/* STEP 1: School Calendar & Suspensions */}
+      {activeStep === 1 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
+          {/* Interactive Calendar Selector Card */}
+          <article className="card" style={{ height: 'fit-content' }}>
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>📅 Interactive School Calendar Picker</h2>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Select a month and click any weekday below to select dates for holidays or class suspensions.</p>
+
+              {/* Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>SELECT MONTH</label>
+                  <select 
+                    value={step1Month}
+                    onChange={(e) => setStep1Month(e.target.value)}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
+                  >
+                    {MONTHS_LIST.map(m => (
+                      <option key={m.name} value={m.name}>{m.name} ({m.quarter})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#1e40af', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#dbeafe', border: '1px solid #60a5fa' }}></span> 🇵🇭 Nat'l Holiday
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> 🌴 Local Holiday
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⚠️ Suspension
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#475569', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#f1f5f9', border: '1px solid #cbd5e1' }}></span> 🛑 Non-Instructional
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Workday
+                </span>
+              </div>
+
+              {/* Interactive Calendar Grid */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{step1Month} 2026 Workdays Calendar</span>
+                  <small style={{ color: 'var(--muted)', fontWeight: 'normal' }}>Click date to select</small>
+                </div>
+
+                {/* Calendar Grid (5 Weekdays) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
+                    <div key={day} style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', padding: '4px', background: '#e2e8f0', borderRadius: '4px' }}>
+                      {day}
+                    </div>
+                  ))}
+                  {(() => {
+                    const monthDates = getWeekdaysInMonth(step1Month, 'SY 26-27');
+
+                    return monthDates.map((dateObj, idx) => {
+                      const dateStr = getLocalDateString(dateObj);
+                      const dayNum = dateObj.getDate();
+                      
+                      const existingHoliday = (localNonWorkingDays || []).find(h => h.date === dateStr);
+                      const nonInstructionalRange = NON_INSTRUCTIONAL_RANGES.find(r => dateStr >= r.start && dateStr <= r.end);
+                      
+                      const isSelected = holidayDate === dateStr;
+                      const isNationalHoliday = existingHoliday && existingHoliday.type === 'National Holiday';
+                      const isSuspension = existingHoliday && existingHoliday.type === 'Class Suspension';
+                      const isLocalHoliday = existingHoliday && existingHoliday.type === 'Local Holiday';
+                      const isNonInstructional = !existingHoliday && nonInstructionalRange;
+
+                      let bg = 'white';
+                      let border = '1.5px solid var(--line)';
+                      let color = 'var(--navy)';
+                      let badgeText = '';
+
+                      if (isSelected) {
+                        bg = '#eff6ff';
+                        border = '2px solid var(--blue)';
+                        color = 'var(--navy)';
+                        badgeText = 'SELECTED';
+                      } else if (isNationalHoliday) {
+                        bg = '#dbeafe';
+                        border = '1.5px solid #60a5fa';
+                        color = '#1e40af';
+                        badgeText = "🇵🇭 NAT'L HOLIDAY";
+                      } else if (isSuspension) {
+                        bg = '#fee2e2';
+                        border = '1.5px solid #fca5a5';
+                        color = '#991b1b';
+                        badgeText = '⚠️ SUSPENSION';
+                      } else if (isLocalHoliday) {
+                        bg = '#fef08a';
+                        border = '1.5px solid #eab308';
+                        color = '#854d0e';
+                        badgeText = '🌴 LOCAL HOLIDAY';
+                      } else if (isNonInstructional) {
+                        bg = '#f1f5f9';
+                        border = '1.5px solid #cbd5e1';
+                        color = '#475569';
+                        badgeText = '🛑 NO OVERLOAD';
+                      }
+
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setHolidayDate(dateStr);
+                            if (existingHoliday) {
+                              setHolidayType(existingHoliday.type || 'Local Holiday');
+                              setHolidayDesc(existingHoliday.description || '');
+                            } else {
+                              setHolidayType('Local Holiday');
+                              setHolidayDesc('');
+                            }
+                          }}
+                          style={{
+                            padding: '10px 4px',
+                            borderRadius: '10px',
+                            background: bg,
+                            border: border,
+                            color: color,
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minHeight: '52px',
+                            boxShadow: isSelected ? '0 2px 8px rgba(14, 116, 144, 0.25)' : 'none',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span style={{ fontSize: '15px' }}>{dayNum}</span>
+                          <span style={{ fontSize: '9px', textTransform: 'uppercase', marginTop: '2px', fontWeight: '800' }}>
+                            {badgeText || 'Workday'}
+                          </span>
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          {/* Form & Holidays / Suspensions Table Card */}
+          <article className="card">
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>📅 Add / Manage Holidays & Suspensions</h2>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    className="btn secondary"
+                    onClick={handleResetDefaultHolidays}
+                    style={{ fontSize: '11px', padding: '6px 12px', background: '#eff6ff', border: '1px solid #93c5fd', color: '#1e40af', fontWeight: 'bold' }}
+                    title="Restore standard Philippine national holidays"
+                  >
+                    🇵🇭 Restore PH Holidays
+                  </button>
+                  <button 
+                    className="btn" 
+                    onClick={() => setActiveStep(2)}
+                    style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
+                  >
+                    Proceed to Step 2: Absences & Leave →
+                  </button>
+                </div>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Define national or local holidays and class suspensions. Teachers do not earn overload pay on these dates.</p>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr auto', gap: '10px', alignItems: 'end' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>DATE</label>
+                  <input type="date" value={holidayDate} onChange={e => setHolidayDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>TYPE</label>
+                  <select value={holidayType} onChange={e => setHolidayType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}>
+                    <option value="National Holiday">National Holiday</option>
+                    <option value="Local Holiday">Local Holiday</option>
+                    <option value="Class Suspension">Class Suspension</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>DESCRIPTION</label>
+                  <input type="text" placeholder="e.g. Independence Day, Typhoon Carina" value={holidayDesc} onChange={e => setHolidayDesc(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontSize: '13px' }} />
+                </div>
+                <button onClick={handleAddHoliday} className="btn primary" style={{ height: '40px', padding: '0 24px' }}>+ Save</button>
+              </div>
+
+              {localNonWorkingDays && localNonWorkingDays.length > 0 ? (
+                <div style={{ marginTop: '10px', border: '1px solid var(--line)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead style={{ background: '#F8FAFC' }}>
+                      <tr>
+                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--navy)' }}>Date</th>
+                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--navy)' }}>Type</th>
+                        <th style={{ padding: '10px', textAlign: 'left', color: 'var(--navy)' }}>Description</th>
+                        <th style={{ padding: '10px', textAlign: 'right', color: 'var(--navy)' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {localNonWorkingDays.map(h => {
+                        let tagBg = '#fef08a';
+                        let tagColor = '#b45309';
+                        if (h.type === 'National Holiday') {
+                          tagBg = '#dbeafe';
+                          tagColor = '#1e40af';
+                        } else if (h.type === 'Class Suspension') {
+                          tagBg = '#fee2e2';
+                          tagColor = '#b91c1c';
+                        }
+
+                        return (
+                          <tr key={h.id} style={{ borderTop: '1px solid var(--line)' }}>
+                            <td style={{ padding: '10px', fontWeight: 'bold' }}>{h.date}</td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', background: tagBg, color: tagColor }}>
+                                {h.type}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px' }}>{h.description}</td>
+                            <td style={{ padding: '10px', textAlign: 'right' }}>
+                              <button onClick={() => handleRemoveHoliday(h.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>Remove</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
+                  No holidays or suspensions logged yet. Select dates on the calendar to add entries.
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+
+      {/* STEP 3: Tardiness & Late Log */}
+      {activeStep === 3 && (
         <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
           {/* Interactive Calendar Selector Card */}
           <article className="card" style={{ height: 'fit-content' }}>
@@ -1344,8 +1670,8 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 1: Absences & Leave Log */}
-      {activeStep === 1 && (
+      {/* STEP 2: Absences & Leave Log */}
+      {activeStep === 2 && (
         <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
           {/* Interactive Range Picker Card */}
           <article className="card" style={{ height: 'fit-content' }}>
@@ -1364,6 +1690,7 @@ export default function Overload() {
                     onChange={(e) => setLeaveType(e.target.value)}
                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
                   >
+                    <option value="Official Business (OB)">Official Business (OB) / Training</option>
                     <option value="Sick Leave">Sick Leave</option>
                     <option value="Wellness Leave">Wellness Leave</option>
                     <option value="Maternity Leave">Maternity Leave</option>
@@ -1410,9 +1737,12 @@ export default function Overload() {
               </div>
 
               {/* Legend */}
-              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> Selected Range
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#1e40af', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#dbeafe', border: '1px solid #60a5fa' }}></span> 🏢 OB / Training
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⏰ Tardy
@@ -1475,10 +1805,18 @@ export default function Overload() {
                           color = '#854d0e';
                           badgeText = 'SELECTED';
                         } else if (isLoggedLeave) {
-                          bg = '#fef3c7';
-                          border = '1.5px solid #fde68a';
-                          color = '#92400e';
-                          badgeText = '🏖️ ' + (lType.split(' ')[0].toUpperCase());
+                          const isOB = lType.includes('Official Business') || lType.includes('OB') || lType.includes('Training');
+                          if (isOB) {
+                            bg = '#dbeafe';
+                            border = '1.5px solid #60a5fa';
+                            color = '#1e40af';
+                            badgeText = '🏢 OB / TRN';
+                          } else {
+                            bg = '#fef3c7';
+                            border = '1.5px solid #fde68a';
+                            color = '#92400e';
+                            badgeText = '🏖️ ' + (lType.split(' ')[0].toUpperCase());
+                          }
                         } else if (isTardy) {
                           bg = '#fee2e2';
                           border = '1.5px solid #fca5a5';
@@ -1650,9 +1988,21 @@ export default function Overload() {
                               </span>
                             </td>
                             <td style={{ padding: '12px 10px' }}>
-                              <span style={{ background: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                                {lType}
-                              </span>
+                              {(() => {
+                                const isOB = lType.includes('Official Business') || lType.includes('OB') || lType.includes('Training');
+                                return (
+                                  <span style={{ 
+                                    background: isOB ? '#dbeafe' : '#fef3c7', 
+                                    color: isOB ? '#1e40af' : '#b45309', 
+                                    padding: '3px 8px', 
+                                    borderRadius: '6px', 
+                                    fontSize: '11px', 
+                                    fontWeight: 'bold' 
+                                  }}>
+                                    {lType}
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                               <button
@@ -1679,8 +2029,8 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 3: Workload Transfers */}
-      {activeStep === 3 && (
+      {/* STEP 4: Workload Transfers */}
+      {activeStep === 4 && (
         <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', gap: '20px' }}>
           {/* Create Transfer Form */}
           <article className="card" style={{ height: 'fit-content' }}>
@@ -1967,8 +2317,8 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 4: Work Immersion (for SHS) */}
-      {activeStep === 4 && (
+      {/* STEP 5: Work Immersion (for SHS) */}
+      {activeStep === 5 && (
         <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '20px' }}>
           <article className="card">
             <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2111,8 +2461,8 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 5: Computation of Teaching Overload */}
-      {activeStep === 5 && (
+      {/* STEP 6: Computation of Teaching Overload */}
+      {activeStep === 6 && (
         <article className="card">
           <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>

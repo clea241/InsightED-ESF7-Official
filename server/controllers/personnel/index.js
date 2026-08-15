@@ -3,7 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const db = require('../../db');
-const { generatePersonnelId, generateEmploymentId, generateQualificationId } = require('../../db/idGenerator');
+const { generateSchoolId, generatePersonnelId, generateEmploymentId, generateQualificationId } = require('../../db/idGenerator');
 
 
 // Helper to generate a random 6-character profiling code
@@ -29,12 +29,208 @@ const calculateAge = (dobString) => {
   return age;
 };
 
+function excelTimeToString(fractionVal) {
+  if (!fractionVal) return '';
+  const num = parseFloat(fractionVal);
+  if (isNaN(num)) return String(fractionVal).trim();
+  if (num >= 0 && num <= 1) {
+    const totalMinutes = Math.round(num * 24 * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const hh = String(hrs).padStart(2, '0');
+    const mm = String(mins).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return String(fractionVal).trim();
+}
+
+function calculateDurationMinutes(startTimeStr, endTimeStr) {
+  if (!startTimeStr || !endTimeStr) return 40;
+  const [h1, m1] = startTimeStr.split(':').map(Number);
+  const [h2, m2] = endTimeStr.split(':').map(Number);
+  if (isNaN(h1) || isNaN(m1) || isNaN(h2) || isNaN(m2)) return 40;
+  const startMins = h1 * 60 + m1;
+  const endMins = h2 * 60 + m2;
+  const diff = endMins - startMins;
+  return diff > 0 ? diff : 40;
+}
+
+function extractWorkloadRowsFromTeacher(teacher) {
+  const rows = [];
+  for (let i = 1; i <= 20; i++) {
+    const lvlKey = i === 1 ? 'lvl_1' : `lvl_1_${i}`;
+    const subjKey = i === 1 ? 'subject_1' : `subject_1_${i}`;
+    const secKey = i === 1 ? 'section_1' : `section_1_${i}`;
+    const fromKey = i === 1 ? 'from_1' : `from_1_${i}`;
+    const toKey = i === 1 ? 'to_1' : `to_1_${i}`;
+
+    const lvl = teacher[lvlKey];
+    const subj = teacher[subjKey];
+    const sec = teacher[secKey];
+    const fromVal = teacher[fromKey];
+    const toVal = teacher[toKey];
+
+    if (lvl || subj || sec) {
+      const activeDays = [];
+      const dayCodes = ['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'];
+      ['1','2','3','4','5','6','7'].forEach((dNum, idx) => {
+        const dKey = i === 1 ? `d${dNum}_1` : `d${dNum}_1_${i}`;
+        const val = teacher[dKey];
+        const isDayActive = String(val).toLowerCase() === 'true' || val === '1' || val === 1 || val === true || String(val).toLowerCase() === 't';
+        if (isDayActive) activeDays.push(dayCodes[idx]);
+      });
+
+      const startTime = excelTimeToString(fromVal);
+      const endTime = excelTimeToString(toVal);
+      const durationMinutes = calculateDurationMinutes(startTime, endTime);
+      const gradeStr = String(lvl || '').trim();
+      const formattedGrade = gradeStr.toLowerCase().startsWith('grade') ? gradeStr : (gradeStr ? `Grade ${gradeStr}` : 'Grade 7');
+      const subjStr = String(subj || '').trim().toUpperCase();
+      const secStr = String(sec || '').trim().toUpperCase();
+
+      rows.push({
+        id: `wk-draft-${i}-${Math.random().toString(36).substring(2, 7)}`,
+        gradeLevel: formattedGrade,
+        grade_level: formattedGrade,
+        sectionName: secStr,
+        section_name: secStr,
+        subjectName: subjStr,
+        subject_name: subjStr,
+        subject: subjStr,
+        daySchedule: activeDays.length > 0 ? activeDays.join(', ') : 'Mon, Tue, Wed, Thu, Fri',
+        days: activeDays.length > 0 ? activeDays : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        startTime: startTime || '07:30',
+        endTime: endTime || '08:20',
+        durationMinutes: durationMinutes
+      });
+    }
+  }
+  return rows;
+}
+
+async function autoSeedPersonnelForSchool(schoolId) {
+  try {
+    await db.query(
+      `INSERT INTO schools (id, school_id, school_name, region, division, district, school_year, number_of_shifts, curricular_offering)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (school_id, school_year) DO NOTHING`,
+      [generateSchoolId(), schoolId, 'InsightED School', 'Region IV-A', 'Division', 'District', '2026-2027', 1, ['Elementary', 'JHS', 'SHS']]
+    );
+
+    let masterRes = await db.query('SELECT * FROM insighted_esf7_pilot WHERE school_id = $1', [schoolId]);
+    let isPilotTableSource = masterRes.rows.length > 0;
+
+    if (!isPilotTableSource) {
+      masterRes = await db.query('SELECT * FROM insighted_esf7_pilot WHERE school_id = $1', ['502624']);
+      if (!masterRes.rows || masterRes.rows.length === 0) {
+        masterRes = await db.query('SELECT * FROM insighted_esf7_pilot LIMIT 25');
+      }
+      isPilotTableSource = true;
+    }
+
+    if (!masterRes || !masterRes.rows || masterRes.rows.length === 0) {
+      return false;
+    }
+
+    console.log(`[AutoSeed] Seeding ${masterRes.rows.length} personnel from ${isPilotTableSource ? 'insighted_esf7_pilot' : 'esf7_database'} for school_id=${schoolId}...`);
+
+    for (const teacher of masterRes.rows) {
+      const rawName = teacher.name || '';
+      const nameParts = rawName.includes(',') ? rawName.split(',').map(s => s.trim()) : [rawName, ''];
+      
+      let lastName = '';
+      let firstName = '';
+      let middleName = 'N/A';
+
+      if (isPilotTableSource) {
+        lastName = nameParts[0] || '';
+        const firstAndMiddle = (nameParts[1] || '').trim();
+        const firstParts = firstAndMiddle.split(' ');
+        if (firstParts.length > 1 && firstParts[firstParts.length - 1].length <= 2) {
+          middleName = firstParts.pop();
+          firstName = firstParts.join(' ');
+        } else {
+          firstName = firstAndMiddle;
+        }
+      } else {
+        lastName = teacher.last || teacher.last_name || '';
+        firstName = teacher.first || teacher.first_name || '';
+        middleName = teacher.middle || teacher.middle_name || 'N/A';
+      }
+
+      if (!firstName && !lastName) continue;
+
+      const position = teacher.position || 'TEACHER I';
+      const posStr = String(position).toUpperCase();
+      const type = (posStr.includes('PRINCIPAL') || posStr.includes('HEAD TEACHER') || posStr.includes('TIC')) ? 'teaching-related' : (posStr.includes('TEACHER') ? 'teaching' : 'non-teaching');
+      const isSchoolHead = posStr.includes('PRINCIPAL') || posStr.includes('TEACHER-IN-CHARGE') || posStr.includes('TIC');
+
+      const prn = Math.floor(100000000000 + Math.random() * 900000000000).toString();
+      const profilingCode = generateProfilingCode();
+      const newPersonnelId = generatePersonnelId();
+      const employmentId = generateEmploymentId();
+      const qualificationId = generateQualificationId();
+
+      await db.query(
+        `INSERT INTO personnel (id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, philsys_no, tin, no_tin, employee_no, deped_email, deployment_status, profiling_code, step_increment, age, is_school_head)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+         ON CONFLICT DO NOTHING`,
+        [newPersonnelId, prn, schoolId, '2026-2027', type, 'MR.', firstName, middleName, lastName, null, 'Female', 'SINGLE', false, 'CHRISTIANITY', 'OTHERS', teacher.birthdate || null, null, teacher.tin || null, false, teacher.employee_no || null, null, 'Full-time', profilingCode, 1, 30, isSchoolHead]
+      );
+
+      await db.query(
+        `INSERT INTO personnel_employment (id, personnel_id, position, designation, fund_source, nature_of_appointment, hiring_arrangement, assigned_schools)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT DO NOTHING`,
+        [employmentId, newPersonnelId, position, 'Adviser', 'National', 'Regular Permanent', 'DepEd Regular', ['Main Campus']]
+      );
+
+      await db.query(
+        `INSERT INTO personnel_qualifications (id, personnel_id, college_degree, major, minor, post_graduate_degree, discipline, eligibility, prc_specialization)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT DO NOTHING`,
+        [qualificationId, newPersonnelId, teacher.degree || 'BACHELOR OF SECONDARY EDUCATION', teacher.major || 'GENERAL', 'NONE', 'N/A', 'N/A', 'PBET / LET', 'N/A']
+      );
+
+      const workloadRows = extractWorkloadRowsFromTeacher(teacher);
+      for (const wRow of workloadRows) {
+        const wrId = `wr-${newPersonnelId}-${Math.random().toString(36).substring(2, 7)}`;
+        await db.query(
+          `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, section_name, grade_level, day_schedule, start_time, end_time, duration_minutes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           ON CONFLICT DO NOTHING`,
+          [wrId, newPersonnelId, schoolId, '2026-2027', 'teaching', wRow.subjectName, wRow.sectionName, wRow.gradeLevel, wRow.daySchedule, wRow.startTime, wRow.endTime, wRow.durationMinutes]
+        );
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[AutoSeed] Failed to auto-seed personnel:', err);
+    return false;
+  }
+}
+
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 
 // GET all personnel (detailed join)
 router.get('/', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || '199999';
+    let schoolId = getSchoolIdFromRequest(req);
+    if (!schoolId || schoolId === '199999') {
+      const activeRes = await db.query(`SELECT school_id FROM personnel WHERE school_id IS NOT NULL AND school_id != '' AND school_id != '199999' LIMIT 1`);
+      if (activeRes.rows.length > 0 && activeRes.rows[0].school_id) {
+        schoolId = activeRes.rows[0].school_id;
+      } else {
+        const pilotRes = await db.query(`SELECT school_id FROM insighted_esf7_pilot WHERE school_id IS NOT NULL AND school_id != '' LIMIT 1`);
+        if (pilotRes.rows.length > 0 && pilotRes.rows[0].school_id) {
+          schoolId = pilotRes.rows[0].school_id;
+        } else {
+          schoolId = '502624';
+        }
+      }
+    }
+
     let personnelResult = await db.query(`
       SELECT p.*, false as is_shared 
       FROM personnel p 
@@ -48,8 +244,20 @@ router.get('/', async (req, res) => {
     `, [schoolId]);
 
     if (personnelResult.rows.length === 0) {
-      personnelResult = await db.query('SELECT *, false as is_shared FROM personnel ORDER BY id ASC');
+      await autoSeedPersonnelForSchool(schoolId);
+      personnelResult = await db.query(`
+        SELECT p.*, false as is_shared 
+        FROM personnel p 
+        WHERE p.school_id = $1
+        UNION ALL
+        SELECT p.*, true as is_shared 
+        FROM personnel p 
+        JOIN clustered_personnel cp ON p.prn = cp.prn 
+        WHERE cp.target_school_id = $1
+        ORDER BY id ASC
+      `, [schoolId]);
     }
+
     const personnelList = [];
 
     for (const p of personnelResult.rows) {
@@ -197,10 +405,10 @@ router.post('/', async (req, res) => {
     const schoolId = school_id || '999163';
     const schoolYear = school_year || '2026-2027';
     await client.query(
-      `INSERT INTO schools (school_id, school_name, region, division, district, school_year, number_of_shifts, curricular_offering)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO schools (id, school_id, school_name, region, division, district, school_year, number_of_shifts, curricular_offering)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (school_id, school_year) DO NOTHING`,
-      [schoolId, 'InsightED School', 'Region IV-A', 'Sample Division', 'Sample District', schoolYear, 1, ['Elementary', 'JHS', 'SHS']]
+      [generateSchoolId(), schoolId, 'InsightED School', 'Region IV-A', 'Sample Division', 'Sample District', schoolYear, 1, ['Elementary', 'JHS', 'SHS']]
     );
 
     // 1. Generate PRN
@@ -355,22 +563,30 @@ function parseDateFromParts(yyyy, mm, dd) {
 // GET auto-fill template from master database
 router.get('/autofill-template', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || '199999';
+    let schoolId = getSchoolIdFromRequest(req);
+    if (!schoolId || schoolId === '199999') {
+      const activeRes = await db.query(`SELECT school_id FROM personnel WHERE school_id IS NOT NULL AND school_id != '' AND school_id != '199999' LIMIT 1`);
+      if (activeRes.rows.length > 0 && activeRes.rows[0].school_id) {
+        schoolId = activeRes.rows[0].school_id;
+      } else {
+        const pilotRes = await db.query(`SELECT school_id FROM insighted_esf7_pilot WHERE school_id IS NOT NULL AND school_id != '' LIMIT 1`);
+        if (pilotRes.rows.length > 0 && pilotRes.rows[0].school_id) {
+          schoolId = pilotRes.rows[0].school_id;
+        } else {
+          schoolId = '502624';
+        }
+      }
+    }
 
     // Check if the school has pre-defined pilot personnel in the local PG pilot table first
     let masterRes = await db.query('SELECT * FROM insighted_esf7_pilot WHERE school_id = $1', [schoolId]);
     let isPilotTableSource = masterRes.rows.length > 0;
 
     if (!isPilotTableSource) {
-      masterRes = await db.query('SELECT * FROM insighted_esf7_pilot LIMIT 100');
-      isPilotTableSource = masterRes.rows.length > 0;
-    }
-
-    if (!isPilotTableSource) {
       try {
-        masterRes = await insightEdPool.query('SELECT * FROM esf7_database WHERE school_id = $1', [schoolId]);
+        masterRes = await insightEdPool.query('SELECT * FROM esf7_database WHERE school_id = $1 OR schoool_id = $1', [schoolId]);
       } catch (e) {
-        // master pool fail safe
+        console.error('Error fetching from esf7_database:', e);
       }
     }
     
@@ -429,7 +645,7 @@ router.get('/autofill-template', async (req, res) => {
       const employeeNo = teacher.employee_no || null;
       const deploymentStatus = (isPilotTableSource ? (teacher.deployment_status || 'OWN STATION') : (teacher.deployment_status || teacher.status__item_ || 'OWN STATION')).toUpperCase();
       const profilingCode = teacher.profiling_code || Math.random().toString(36).substring(2, 8).toUpperCase();
-      const depedEmail = isPilotTableSource ? `${firstName.replace(/\s+/g, '').toLowerCase()}.${lastName.replace(/\s+/g, '').toLowerCase()}@deped.gov.ph` : null;
+      const depedEmail = teacher.deped_email || teacher.depedemail || `${(firstName || 'user').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}.${(lastName || 'staff').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}@deped.gov.ph`;
 
       // Qualifications
       const collegeDegree = isPilotTableSource ? (teacher.college_degree || 'N/A') : (teacher.college_degree || teacher.degree_finished__baccalaureate || 'N/A');
@@ -488,7 +704,7 @@ router.get('/autofill-template', async (req, res) => {
         minor,
         postGraduateDegree,
         eligibility,
-        workloadRows: [],
+        workloadRows: isPilotTableSource ? [] : extractWorkloadRowsFromTeacher(teacher),
         neapTrainingRows: [],
         certificationRows: [],
         otherTrainingRows: []
@@ -519,8 +735,8 @@ router.post('/bulk', async (req, res) => {
     const division = masterSchoolRes.rows[0]?.division || 'Division';
     
     await db.query(
-      'INSERT INTO schools (school_id, school_name, region, division, school_year) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING',
-      [schoolId, schoolName, region, division, schoolYear]
+      'INSERT INTO schools (id, school_id, school_name, region, division, school_year) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (school_id, school_year) DO NOTHING',
+      [generateSchoolId(), schoolId, schoolName, region, division, schoolYear]
     );
   } else {
     schoolYear = schoolRes.rows[0].school_year;
@@ -529,6 +745,8 @@ router.post('/bulk', async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+
+    const seenEmpNos = new Set();
 
     for (const p of personnelList) {
       // 1. Insert into personnel
@@ -546,10 +764,26 @@ router.post('/bulk', async (req, res) => {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
         RETURNING id
       `;
+      const safeDepedEmail = p.depedEmail || `${(p.firstName || 'user').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}.${(p.lastName || 'staff').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}@deped.gov.ph`;
+
+      let rawEmp = (p.employeeNo || '').trim().toUpperCase();
+      let safeEmployeeNo = null;
+      if (rawEmp && rawEmp !== 'N/A' && rawEmp !== 'NONE' && rawEmp !== 'NULL') {
+        if (seenEmpNos.has(rawEmp)) {
+          safeEmployeeNo = `${rawEmp}-${Math.floor(100 + Math.random() * 900)}`;
+        } else {
+          seenEmpNos.add(rawEmp);
+          safeEmployeeNo = rawEmp;
+        }
+      }
+
+      const safePhilsysNo = (p.philsys_no && p.philsys_no.trim() !== '' && p.philsys_no !== 'N/A' && p.philsys_no !== 'NONE') ? p.philsys_no : (p.philsysNo && p.philsysNo.trim() !== '' && p.philsysNo !== 'N/A' && p.philsysNo !== 'NONE' ? p.philsysNo : null);
+      const safeTin = (p.tin && p.tin.trim() !== '' && p.tin !== 'N/A' && p.tin !== 'NONE') ? p.tin : null;
+
       const pResult = await client.query(insertPersonnelQuery, [
         newPid, generatedPrn, schoolId, schoolYear, p.type, p.salutation, p.firstName, p.middleName || 'N/A', p.lastName,
         p.sexAtBirth, p.civilStatus, p.soloParent === 'Yes', p.religion, p.ethnicGroup, p.birthdate,
-        p.philsys_no || null, p.tin || null, p.employeeNo || null, p.depedEmail, p.deploymentStatus, p.profilingCode,
+        safePhilsysNo, safeTin, safeEmployeeNo, safeDepedEmail, p.deploymentStatus, p.profilingCode,
         computedAge
       ]);
       const personnelId = pResult.rows[0].id;
@@ -578,6 +812,55 @@ router.post('/bulk', async (req, res) => {
         newQualId, personnelId, p.collegeDegree, p.major, p.minor, p.postGraduateDegree, p.discipline || null, p.eligibility,
         p.prcSpecialization || null, p.prcLicenseNo || null, p.prcExpiryDate || null
       ]);
+
+      // 4. Insert extracted workloadRows & auto-populate class_sections
+      if (Array.isArray(p.workloadRows) && p.workloadRows.length > 0) {
+        for (const wk of p.workloadRows) {
+          if (wk.gradeLevel && wk.sectionName) {
+            // Auto-populate Organized Classes (class_sections)
+            const secCheck = await client.query(`
+              SELECT id FROM class_sections
+              WHERE school_id = $1 AND grade_level = $2 AND LOWER(section_name) = LOWER($3)
+              LIMIT 1
+            `, [schoolId, wk.gradeLevel, wk.sectionName]);
+
+            let sectionId = secCheck.rows[0]?.id;
+            if (!sectionId) {
+              sectionId = `sec-${Math.random().toString(36).substring(2, 9)}`;
+              const secIns = await client.query(`
+                INSERT INTO class_sections (id, school_id, school_year, grade_level, section_name, section_type)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (school_id, school_year, grade_level, section_name) DO NOTHING
+                RETURNING id
+              `, [sectionId, schoolId, schoolYear, wk.gradeLevel, wk.sectionName, 'MONO GRADE']);
+              if (secIns.rows[0]?.id) sectionId = secIns.rows[0].id;
+            }
+
+            const daysArr = typeof wk.daySchedule === 'string'
+              ? wk.daySchedule.split(',').map(s => s.trim()).filter(Boolean)
+              : (Array.isArray(wk.daySchedule) ? wk.daySchedule : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+
+            // Insert workload row
+            await client.query(`
+              INSERT INTO workload_rows (
+                id, personnel_id, school_id, school_year, grade_level, section_id, subject, start_time, end_time, days, row_type
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            `, [
+              `wk-${Math.random().toString(36).substring(2, 9)}`,
+              personnelId,
+              schoolId,
+              schoolYear,
+              wk.gradeLevel,
+              sectionId || null,
+              wk.subjectName || 'GENERAL EDUCATION',
+              wk.startTime || '07:30',
+              wk.endTime || '08:20',
+              daysArr,
+              'teaching'
+            ]);
+          }
+        }
+      }
     }
 
     await client.query('COMMIT');

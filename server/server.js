@@ -35,6 +35,7 @@ app.use('/api/learning-areas', require('./controllers/learningAreas/index.js'));
 app.use('/api/work-immersion', require('./controllers/work_immersion/index.js'));
 app.use('/api/shs-workloads', require('./controllers/shs_workload_rows/index.js'));
 app.use('/api/shs-transfers', require('./controllers/shs_workload_transfers/index.js'));
+app.use('/api/dashboard', require('./controllers/dashboard'));
 
 
 const queueWorker = require('./queue_worker');

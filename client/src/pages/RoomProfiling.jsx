@@ -16,29 +16,70 @@ export default function RoomProfiling() {
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    if (Array.isArray(appPersonnel) && appPersonnel.length > 0) {
-      setPersonnelList(appPersonnel);
-    } else {
-      api.getPersonnel().then(res => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetSchoolId = urlParams.get('schoolId') || urlParams.get('school_id');
+
+    if (targetSchoolId) {
+      // Always fetch personnel for target school specified in URL link
+      api.getPersonnel(targetSchoolId).then(res => {
         if (Array.isArray(res) && res.length > 0) {
           setPersonnelList(res);
-          if (setPersonnel) setPersonnel(res);
+          try {
+            localStorage.setItem('insighted_personnel_cache', JSON.stringify(res));
+          } catch (e) {}
         } else {
+          api.getAutofillTemplate(targetSchoolId).then(tmpl => {
+            if (Array.isArray(tmpl) && tmpl.length > 0) {
+              setPersonnelList(tmpl);
+            }
+          });
+        }
+      }).catch(() => {
+        api.getAutofillTemplate(targetSchoolId).then(tmpl => {
+          if (Array.isArray(tmpl) && tmpl.length > 0) {
+            setPersonnelList(tmpl);
+          }
+        });
+      });
+    } else if (Array.isArray(appPersonnel) && appPersonnel.length > 0) {
+      setPersonnelList(appPersonnel);
+      try {
+        localStorage.setItem('insighted_personnel_cache', JSON.stringify(appPersonnel));
+      } catch (e) {}
+    } else {
+      let cached = null;
+      try {
+        const raw = localStorage.getItem('insighted_personnel_cache');
+        if (raw) cached = JSON.parse(raw);
+      } catch (e) {}
+
+      if (Array.isArray(cached) && cached.length > 0) {
+        setPersonnelList(cached);
+      } else {
+        api.getPersonnel().then(res => {
+          if (Array.isArray(res) && res.length > 0) {
+            setPersonnelList(res);
+            if (setPersonnel) setPersonnel(res);
+            try {
+              localStorage.setItem('insighted_personnel_cache', JSON.stringify(res));
+            } catch (e) {}
+          } else {
+            api.getAutofillTemplate().then(tmpl => {
+              if (Array.isArray(tmpl) && tmpl.length > 0) {
+                setPersonnelList(tmpl);
+                if (setPersonnel) setPersonnel(tmpl);
+              }
+            });
+          }
+        }).catch(() => {
           api.getAutofillTemplate().then(tmpl => {
             if (Array.isArray(tmpl) && tmpl.length > 0) {
               setPersonnelList(tmpl);
               if (setPersonnel) setPersonnel(tmpl);
             }
           });
-        }
-      }).catch(() => {
-        api.getAutofillTemplate().then(tmpl => {
-          if (Array.isArray(tmpl) && tmpl.length > 0) {
-            setPersonnelList(tmpl);
-            if (setPersonnel) setPersonnel(tmpl);
-          }
         });
-      });
+      }
     }
   }, [appPersonnel, setPersonnel]);
 
@@ -193,6 +234,13 @@ export default function RoomProfiling() {
     if (formData) {
       const compressed = compressProfile(formData);
       localStorage.setItem(`pending_submission_${formData.id}`, JSON.stringify(compressed));
+
+      try {
+        const channel = new BroadcastChannel('insighted_room_qr_channel');
+        channel.postMessage({ type: 'NEW_SUBMISSION', payload: compressed });
+        channel.close();
+      } catch (err) {}
+
       setIsSubmitted(true);
     }
   };

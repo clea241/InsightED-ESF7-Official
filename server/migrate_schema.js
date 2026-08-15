@@ -12,6 +12,12 @@ async function run() {
     await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_at TIMESTAMPTZ`);
     console.log('✅ Added certified_at column');
 
+    // Add special_programs and shs_curriculum_model columns to schools table
+    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS special_programs JSONB`);
+    console.log('✅ Added special_programs column to schools table');
+    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS shs_curriculum_model TEXT`);
+    console.log('✅ Added shs_curriculum_model column to schools table');
+
     // Fix deped_email constraint - make it allow empty string
     try {
       await db.query(`ALTER TABLE personnel DROP CONSTRAINT IF EXISTS personnel_deped_email_check`);
@@ -232,6 +238,16 @@ async function run() {
       console.log('✅ Legacy designations backfill completed');
     } catch (e) {
       console.log('ℹ️  Legacy designation backfill:', e.message);
+    }
+
+    // Automatically normalize legacy HOMEROOM GUIDANCE entries in database to HGP
+    try {
+      await db.query(`UPDATE workload_rows SET subject = 'HGP' WHERE UPPER(subject) LIKE '%HOMEROOM GUIDANCE%'`);
+      await db.query(`UPDATE shs_workload_rows SET subject = 'HGP' WHERE UPPER(subject) LIKE '%HOMEROOM GUIDANCE%'`);
+      await db.query(`UPDATE personnel_learning_areas SET learning_area = 'HGP' WHERE UPPER(learning_area) LIKE '%HOMEROOM GUIDANCE%'`);
+      console.log('✅ Normalized HOMEROOM GUIDANCE to HGP in database');
+    } catch (e) {
+      console.log('ℹ️  HGP DB normalization:', e.message);
     }
 
     console.log('\nAll migrations completed!');

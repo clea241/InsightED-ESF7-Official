@@ -28,6 +28,8 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('token', tokenVal);
         localStorage.setItem('remembered_user', JSON.stringify(userData));
         localStorage.setItem('schoolId', userData.school_id || '');
+        localStorage.setItem('school_id', userData.school_id || '');
+        localStorage.setItem('activeSchoolId', userData.school_id || '');
         setUser(userData);
         setToken(tokenVal);
     };
@@ -36,6 +38,9 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('token');
         localStorage.removeItem('remembered_user');
         localStorage.removeItem('schoolId');
+        localStorage.removeItem('school_id');
+        localStorage.removeItem('activeSchoolId');
+        localStorage.removeItem('insighted_personnel_cache');
         setUser(null);
         setToken(null);
     };

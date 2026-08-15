@@ -5,6 +5,27 @@ import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
 
 const AppContext = createContext();
 
+export const DEFAULT_PH_HOLIDAYS = [
+  { id: 'ph-hol-1', date: '2026-06-12', type: 'National Holiday', description: 'Independence Day' },
+  { id: 'ph-hol-2', date: '2026-08-21', type: 'National Holiday', description: 'Ninoy Aquino Day' },
+  { id: 'ph-hol-3', date: '2026-08-31', type: 'National Holiday', description: 'National Heroes Day' },
+  { id: 'ph-hol-4', date: '2026-11-01', type: 'National Holiday', description: "All Saints' Day" },
+  { id: 'ph-hol-5', date: '2026-11-02', type: 'National Holiday', description: "All Souls' Day" },
+  { id: 'ph-hol-6', date: '2026-11-30', type: 'National Holiday', description: 'Bonifacio Day' },
+  { id: 'ph-hol-7', date: '2026-12-08', type: 'National Holiday', description: 'Feast of the Immaculate Conception' },
+  { id: 'ph-hol-8', date: '2026-12-24', type: 'National Holiday', description: 'Christmas Eve' },
+  { id: 'ph-hol-9', date: '2026-12-25', type: 'National Holiday', description: 'Christmas Day' },
+  { id: 'ph-hol-10', date: '2026-12-30', type: 'National Holiday', description: 'Rizal Day' },
+  { id: 'ph-hol-11', date: '2026-12-31', type: 'National Holiday', description: 'Last Day of the Year' },
+  { id: 'ph-hol-12', date: '2027-01-01', type: 'National Holiday', description: "New Year's Day" },
+  { id: 'ph-hol-13', date: '2027-02-10', type: 'National Holiday', description: 'Chinese New Year' },
+  { id: 'ph-hol-14', date: '2027-03-25', type: 'National Holiday', description: 'Maundy Thursday' },
+  { id: 'ph-hol-15', date: '2027-03-26', type: 'National Holiday', description: 'Good Friday' },
+  { id: 'ph-hol-16', date: '2027-03-27', type: 'National Holiday', description: 'Black Saturday' },
+  { id: 'ph-hol-17', date: '2027-04-09', type: 'National Holiday', description: 'Araw ng Kagitingan' },
+  { id: 'ph-hol-18', date: '2027-05-01', type: 'National Holiday', description: 'Labor Day' }
+];
+
 export const NEAP_TRAINING_OPTIONS = [
   "HIGHER ORDER THINKING SKILLS PROFESSIONAL LEARNING PACKAGES FOR MATHEMATICS, SCIENCE, AND ENGLISH TEACHERS",
   "INSTRUCTIONAL LEADERSHIP TRAINING (ILT): STRENGTHENING LEARNING CONDITIONS FOR EARLY LITERACY",
@@ -558,8 +579,25 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "ACCOUNTANT",
     "ACCOUNTING CLERK",
     "ADMINISTRATIVE AIDE",
+    "ADMINISTRATIVE AIDE I (ADA I)",
+    "ADMINISTRATIVE AIDE II (ADA II)",
+    "ADMINISTRATIVE AIDE III (ADA III)",
+    "ADMINISTRATIVE AIDE IV (ADA IV)",
+    "ADMINISTRATIVE AIDE V (ADA V)",
+    "ADMINISTRATIVE AIDE VI (ADA VI)",
     "ADMINISTRATIVE ASSISTANT",
+    "ADMINISTRATIVE ASSISTANT I (ADAS I)",
+    "ADMINISTRATIVE ASSISTANT II (ADAS II)",
+    "ADMINISTRATIVE ASSISTANT III (ADAS III)",
+    "ADMINISTRATIVE ASSISTANT IV (ADAS IV)",
+    "ADMINISTRATIVE ASSISTANT V (ADAS V)",
+    "ADMINISTRATIVE ASSISTANT VI (ADAS VI)",
     "ADMINISTRATIVE OFFICER",
+    "ADMINISTRATIVE OFFICER I (AO I)",
+    "ADMINISTRATIVE OFFICER II (AO II)",
+    "ADMINISTRATIVE OFFICER III (AO III)",
+    "ADMINISTRATIVE OFFICER IV (AO IV)",
+    "ADMINISTRATIVE OFFICER V (AO V)",
     "AGRICULTURIST",
     "AQUACULTURAL TECHNICIAN",
     "AQUACULTURIST",
@@ -625,6 +663,7 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
 };
 
 export const SUBJECT_OPTIONS = [
+  "KINDER BLOCKS OF TIME",
   "English",
   "Filipino",
   "Mathematics",
@@ -726,7 +765,12 @@ export const OFFICIAL_DESIGNATIONS = [
 ];
 
 export const COLLEGE_DEGREE_OPTIONS = [
-  "N/A",
+  "ELEMENTARY GRADUATE",
+  "HIGH SCHOOL GRADUATE",
+  "SENIOR HIGH SCHOOL GRADUATE",
+  "VOCATIONAL / TECHNICAL COURSE GRADUATE (TESDA)",
+  "ASSOCIATE DEGREE / DIPLOMA COURSE",
+  "COLLEGE UNDERGRADUATE",
   "BACHELOR OF ELEMENTARY EDUCATION",
   "BACHELOR OF SECONDARY EDUCATION",
   "BACHELOR/BS/BA EDUCATION",
@@ -1321,6 +1365,7 @@ export const AppProvider = ({ children }) => {
   });
   const [workloadTransfers, setWorkloadTransfers] = useState([]);
   const [absences, setAbsences] = useState([]);
+  const [localNonWorkingDays, setLocalNonWorkingDays] = useState([]);
   const [salaryMatrix, setSalaryMatrix] = useState([]);
   const [allowancesMap, setAllowancesMap] = useState({});
 
@@ -1570,39 +1615,127 @@ export const AppProvider = ({ children }) => {
         }
 
         if (activeDraft) {
-          // Fetch DB personnel to find newly approved shared personnel
-          let dbSharedPersonnel = [];
+          // Fetch DB personnel to restore draft personnel or merge newly approved shared personnel
+          let dbList = [];
           try {
-            const dbList = await fetchAndNormalizePersonnel();
-            if (Array.isArray(dbList)) {
-              dbSharedPersonnel = dbList.filter(p => p.isShared);
-            }
+            const res = await fetchAndNormalizePersonnel();
+            if (Array.isArray(res)) dbList = res;
           } catch(e) {
             console.error('Failed to fetch DB personnel for draft sync', e);
           }
-          
+
           let draftPersonnel = activeDraft.personnel || [];
-          if (dbSharedPersonnel.length > 0) {
-            const draftPrns = new Set(draftPersonnel.map(p => p.employeeReferenceId).filter(Boolean));
-            const newShared = dbSharedPersonnel.filter(p => !draftPrns.has(p.employeeReferenceId));
-            if (newShared.length > 0) {
-              console.log('[Draft Sync] Injecting new shared personnel into draft:', newShared);
-              draftPersonnel = [...draftPersonnel, ...newShared];
-              activeDraft.personnel = draftPersonnel;
+          if (draftPersonnel.length === 0 && dbList.length > 0) {
+            console.log('[Draft Sync] Draft personnel was empty, restoring from DB:', dbList.length);
+            draftPersonnel = dbList;
+            activeDraft.personnel = draftPersonnel;
+          } else if (dbList.length > 0) {
+            const dbSharedPersonnel = dbList.filter(p => p.isShared);
+            if (dbSharedPersonnel.length > 0) {
+              const draftPrns = new Set(draftPersonnel.map(p => p.employeeReferenceId).filter(Boolean));
+              const newShared = dbSharedPersonnel.filter(p => !draftPrns.has(p.employeeReferenceId));
+              if (newShared.length > 0) {
+                console.log('[Draft Sync] Injecting new shared personnel into draft:', newShared);
+                draftPersonnel = [...draftPersonnel, ...newShared];
+                activeDraft.personnel = draftPersonnel;
+              }
             }
           }
 
+          // Self-healing: If draft personnel has 0 total workloads across all teachers, repair from autofill template
+          const totalDraftWorkloads = draftPersonnel.reduce((acc, p) => acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0), 0);
+          if (totalDraftWorkloads === 0 && draftPersonnel.length > 0) {
+            try {
+              const autofillDrafts = await api.getAutofillTemplate();
+              if (Array.isArray(autofillDrafts) && autofillDrafts.length > 0) {
+                const templateMap = new Map();
+                autofillDrafts.forEach(tpl => {
+                  const key = `${(tpl.firstName || '').toLowerCase()}_${(tpl.lastName || '').toLowerCase()}`;
+                  templateMap.set(key, tpl.workloadRows || []);
+                });
+                draftPersonnel = draftPersonnel.map(p => {
+                  const key = `${(p.firstName || '').toLowerCase()}_${(p.lastName || '').toLowerCase()}`;
+                  const tplWorkloads = templateMap.get(key);
+                  if (Array.isArray(tplWorkloads) && tplWorkloads.length > 0 && (!p.workloadRows || p.workloadRows.length === 0)) {
+                    return { ...p, workloadRows: tplWorkloads };
+                  }
+                  return p;
+                });
+                activeDraft.personnel = draftPersonnel;
+              }
+            } catch (e) {
+              console.error('Failed to repair draft workloads:', e);
+            }
+          }
+
+          // Extract classSections fallback from draft workloads if empty
+          const extractClassSectionsFromPersonnel = (personnelList, schoolInf) => {
+            if (!Array.isArray(personnelList) || personnelList.length === 0) return [];
+            const extractedSecsMap = new Map();
+            personnelList.forEach(p => {
+              if (Array.isArray(p.workloadRows)) {
+                p.workloadRows.forEach(wk => {
+                  if (wk.gradeLevel && wk.sectionName) {
+                    const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
+                    const isAdvRow = wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY';
+                    const existing = extractedSecsMap.get(key);
+                    
+                    if (!existing) {
+                      extractedSecsMap.set(key, {
+                        id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
+                        schoolId: schoolInf?.schoolId || '199999',
+                        schoolYear: schoolInf?.schoolYear || 'SY 26-27',
+                        gradeLevel: wk.gradeLevel,
+                        sectionName: wk.sectionName,
+                        sectionType: 'MONO GRADE',
+                        advisorId: isAdvRow ? String(p.id) : null,
+                        advisoryMinutes: 300,
+                        hgpMinutes: 60,
+                        numberOfLearners: null
+                      });
+                    } else if (isAdvRow && !existing.advisorId) {
+                      existing.advisorId = String(p.id);
+                    }
+                  }
+                });
+              }
+            });
+            return Array.from(extractedSecsMap.values());
+          };
+
           // Load draft state
+          let loadedDraftSecs = activeDraft.classSections || [];
+          if (loadedDraftSecs.length === 0) {
+            loadedDraftSecs = extractClassSectionsFromPersonnel(draftPersonnel, currentSchoolInfo);
+          }
+
+          // Sync advisorId for any section missing advisorId from teacher ADVISORY workloads
+          loadedDraftSecs.forEach(sec => {
+            if (!sec.advisorId) {
+              const advTeacher = draftPersonnel.find(p =>
+                Array.isArray(p.workloadRows) &&
+                p.workloadRows.some(wk =>
+                  (wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY') &&
+                  ((wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
+                   (wk.sectionName && String(wk.sectionName).trim().toLowerCase() === String(sec.sectionName).trim().toLowerCase() && String(wk.gradeLevel).trim().toLowerCase() === String(sec.gradeLevel).trim().toLowerCase()))
+                )
+              );
+              if (advTeacher) {
+                sec.advisorId = String(advTeacher.id);
+              }
+            }
+          });
+
           setSchoolInfo(activeDraft.schoolInfo || currentSchoolInfo);
           setPersonnel(draftPersonnel);
-          setClassSections(activeDraft.classSections || []);
+          setClassSections(loadedDraftSecs);
           setWorkloadTransfers(activeDraft.workloadTransfers || []);
           setAbsences(activeDraft.absences || []);
           if (draftPersonnel.length > 0) {
             setActivePersonnelId(draftPersonnel[0].id);
           }
           // Make sure local IndexedDB is synced with the loaded draft
-          await setLocalDraft(draftKey, activeDraft);
+          await setLocalDraft(draftKey, { ...activeDraft, classSections: loadedDraftSecs });
           setHasUnsavedChanges(true);
         } else {
           // Initialize from official PostgreSQL DB
@@ -1617,8 +1750,40 @@ export const AppProvider = ({ children }) => {
             loadedPersonnel = Array.isArray(autofillDrafts) ? autofillDrafts : [];
           }
 
+          const extractClassSectionsFromPersonnel = (personnelList, schoolInf) => {
+            if (!Array.isArray(personnelList) || personnelList.length === 0) return [];
+            const extractedSecsMap = new Map();
+            personnelList.forEach(p => {
+              if (Array.isArray(p.workloadRows)) {
+                p.workloadRows.forEach(wk => {
+                  if (wk.gradeLevel && wk.sectionName) {
+                    const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
+                    if (!extractedSecsMap.has(key)) {
+                      extractedSecsMap.set(key, {
+                        id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
+                        schoolId: schoolInf?.schoolId || '199999',
+                        schoolYear: schoolInf?.schoolYear || 'SY 26-27',
+                        gradeLevel: wk.gradeLevel,
+                        sectionName: wk.sectionName,
+                        sectionType: 'MONO GRADE',
+                        advisorId: null,
+                        advisoryMinutes: 300,
+                        hgpMinutes: 60,
+                        numberOfLearners: null
+                      });
+                    }
+                  }
+                });
+              }
+            });
+            return Array.from(extractedSecsMap.values());
+          };
+
           const sections = await api.getSections();
-          const loadedSections = Array.isArray(sections) ? sections : [];
+          let loadedSections = Array.isArray(sections) ? sections : [];
+          if (loadedSections.length === 0) {
+            loadedSections = extractClassSectionsFromPersonnel(loadedPersonnel, currentSchoolInfo);
+          }
 
           const transfers = await api.getTransfers();
           const loadedTransfers = Array.isArray(transfers) ? transfers : [];
@@ -1644,6 +1809,20 @@ export const AppProvider = ({ children }) => {
             lastUpdated: new Date().toISOString()
           };
           await setLocalDraft(draftKey, initialDraft);
+          try {
+            const storedHolidays = localStorage.getItem('insighted_non_working_days');
+            if (storedHolidays) {
+              const parsed = JSON.parse(storedHolidays);
+              setLocalNonWorkingDays(parsed && parsed.length > 0 ? parsed : DEFAULT_PH_HOLIDAYS);
+            } else {
+              setLocalNonWorkingDays(DEFAULT_PH_HOLIDAYS);
+              localStorage.setItem('insighted_non_working_days', JSON.stringify(DEFAULT_PH_HOLIDAYS));
+            }
+          } catch (e) {
+            console.error('Failed to load local non-working days', e);
+            setLocalNonWorkingDays(DEFAULT_PH_HOLIDAYS);
+          }
+
           setHasUnsavedChanges(false);
         }
 
@@ -1671,6 +1850,68 @@ export const AppProvider = ({ children }) => {
       setHasUnsavedChanges(false);
     }
   }, [user]);
+
+  // Auto-sync classSections from personnel workloads if classSections is empty
+  useEffect(() => {
+    if (classSections.length === 0 && Array.isArray(personnel) && personnel.length > 0) {
+      const extractedSecsMap = new Map();
+      personnel.forEach(p => {
+        if (Array.isArray(p.workloadRows)) {
+          p.workloadRows.forEach(wk => {
+            if (wk.gradeLevel && wk.sectionName) {
+              const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
+              const isAdvRow = wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY';
+              const existing = extractedSecsMap.get(key);
+
+              if (!existing) {
+                extractedSecsMap.set(key, {
+                  id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
+                  schoolId: schoolInfo?.schoolId || '199999',
+                  schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
+                  gradeLevel: wk.gradeLevel,
+                  sectionName: wk.sectionName,
+                  sectionType: 'MONO GRADE',
+                  advisorId: isAdvRow ? String(p.id) : null,
+                  advisoryMinutes: 300,
+                  hgpMinutes: 60,
+                  numberOfLearners: null
+                });
+              } else if (isAdvRow && !existing.advisorId) {
+                existing.advisorId = String(p.id);
+              }
+            }
+          });
+        }
+      });
+      const extracted = Array.from(extractedSecsMap.values());
+      if (extracted.length > 0) {
+        setClassSections(extracted);
+      }
+    } else if (classSections.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
+      // Check if any classSections are missing advisorId but have teacher ADVISORY workload
+      let modified = false;
+      const updatedSecs = classSections.map(sec => {
+        if (!sec.advisorId) {
+          const advTeacher = personnel.find(p =>
+            Array.isArray(p.workloadRows) &&
+            p.workloadRows.some(wk =>
+              (wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY') &&
+              ((wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
+               (wk.sectionName && String(wk.sectionName).trim().toLowerCase() === String(sec.sectionName).trim().toLowerCase() && String(wk.gradeLevel).trim().toLowerCase() === String(sec.gradeLevel).trim().toLowerCase()))
+            )
+          );
+          if (advTeacher) {
+            modified = true;
+            return { ...sec, advisorId: String(advTeacher.id) };
+          }
+        }
+        return sec;
+      });
+      if (modified) {
+        setClassSections(updatedSecs);
+      }
+    }
+  }, [personnel, classSections, schoolInfo]);
 
   // Periodically poll requests every 10 seconds if logged in
   useEffect(() => {
@@ -1703,6 +1944,11 @@ export const AppProvider = ({ children }) => {
         };
         // 1. Save to local IndexedDB
         await setLocalDraft(draftKey, draftData);
+        try {
+          if (Array.isArray(personnel) && personnel.length > 0) {
+            localStorage.setItem('insighted_personnel_cache', JSON.stringify(personnel));
+          }
+        } catch (e) {}
         // 2. Save to cloud Postgres drafts table
         await api.saveSchoolDraft(schoolInfo.schoolYear, draftData);
         
@@ -2015,7 +2261,7 @@ export const AppProvider = ({ children }) => {
     showToast(isSchoolHead ? "School Head designated in draft locally." : "School Head designation removed in draft locally.");
   };
 
-  const addClassSection = async (gradeLevelOrObj, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
+  const addClassSection = async (gradeLevelOrObj, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null, maleLearners = null, femaleLearners = null) => {
     let finalGradeLevel = gradeLevelOrObj;
     let finalSectionName = sectionName;
     let finalAdvisorId = advisorId;
@@ -2023,6 +2269,8 @@ export const AppProvider = ({ children }) => {
     let finalAdvisoryMins = advisoryMinutes;
     let finalHgpMins = hgpMinutes;
     let finalLearners = numberOfLearners;
+    let finalMale = maleLearners;
+    let finalFemale = femaleLearners;
 
     if (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) {
       finalGradeLevel = gradeLevelOrObj.gradeLevel;
@@ -2032,6 +2280,15 @@ export const AppProvider = ({ children }) => {
       finalAdvisoryMins = gradeLevelOrObj.advisoryMinutes || 300;
       finalHgpMins = gradeLevelOrObj.hgpMinutes || 60;
       finalLearners = gradeLevelOrObj.numberOfLearners;
+      finalMale = gradeLevelOrObj.maleLearners;
+      finalFemale = gradeLevelOrObj.femaleLearners;
+    }
+
+    const calcMale = finalMale !== undefined && finalMale !== null && finalMale !== '' ? Number(finalMale) : null;
+    const calcFemale = finalFemale !== undefined && finalFemale !== null && finalFemale !== '' ? Number(finalFemale) : null;
+    let computedTotal = finalLearners !== undefined && finalLearners !== null && finalLearners !== '' ? Number(finalLearners) : null;
+    if (calcMale !== null || calcFemale !== null) {
+      computedTotal = (calcMale || 0) + (calcFemale || 0);
     }
 
     try {
@@ -2042,7 +2299,9 @@ export const AppProvider = ({ children }) => {
         section_type: finalSectionType || 'MONO GRADE',
         advisory_minutes: Number(finalAdvisoryMins) || 300,
         hgp_minutes: Number(finalHgpMins) || 60,
-        number_of_learners: finalLearners !== undefined && finalLearners !== null && finalLearners !== '' ? Number(finalLearners) : null
+        number_of_learners: computedTotal,
+        male_learners: calcMale,
+        female_learners: calcFemale
       });
 
       if (dbRes && dbRes.id) {
@@ -2052,10 +2311,12 @@ export const AppProvider = ({ children }) => {
           sectionName: dbRes.sectionName || finalSectionName,
           advisorId: dbRes.advisorId || finalAdvisorId,
           sectionType: dbRes.sectionType || finalSectionType || 'MONO GRADE',
-          numberOfLearners: dbRes.numberOfLearners !== undefined && dbRes.numberOfLearners !== null ? dbRes.numberOfLearners : finalLearners
+          numberOfLearners: dbRes.numberOfLearners !== undefined && dbRes.numberOfLearners !== null ? dbRes.numberOfLearners : computedTotal,
+          maleLearners: calcMale,
+          femaleLearners: calcFemale
         };
         setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), persistedSec]);
-        showToast('✅ ARAL Section saved directly to database!');
+        showToast('✅ Section saved directly to database!');
         return persistedSec;
       }
     } catch (err) {
@@ -2071,7 +2332,9 @@ export const AppProvider = ({ children }) => {
       sectionType: finalSectionType || 'MONO GRADE',
       advisoryMinutes: Number(finalAdvisoryMins) || 300,
       hgpMinutes: Number(finalHgpMins) || 60,
-      numberOfLearners: finalLearners !== undefined && finalLearners !== null && finalLearners !== '' ? Number(finalLearners) : null
+      numberOfLearners: computedTotal,
+      maleLearners: calcMale,
+      femaleLearners: calcFemale
     };
 
     setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), newSec]);
@@ -2079,27 +2342,98 @@ export const AppProvider = ({ children }) => {
     showToast('Class section added to draft locally.');
   };
 
-  const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
-    const finalLearners = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
-    setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
-      ...s,
-      advisorId: advisorId ? String(advisorId) : null,
-      advisoryMinutes: Number(advisoryMinutes) || 300,
-      hgpMinutes: Number(hgpMinutes) || 60,
-      numberOfLearners: finalLearners !== null ? finalLearners : s.numberOfLearners
-    } : s));
+  const updateSectionDetails = async (sectionId, updates = {}) => {
+    const { sectionName, gradeLevel, sectionType, numberOfLearners, maleLearners, femaleLearners, advisorId } = updates;
+    const calcMale = maleLearners !== null && maleLearners !== undefined && maleLearners !== '' ? Number(maleLearners) : null;
+    const calcFemale = femaleLearners !== null && femaleLearners !== undefined && femaleLearners !== '' ? Number(femaleLearners) : null;
+    let computedTotal = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
+    if (calcMale !== null || calcFemale !== null) {
+      computedTotal = (calcMale || 0) + (calcFemale || 0);
+    }
+    const strAdvisorId = advisorId !== undefined ? (advisorId ? String(advisorId) : null) : undefined;
+
+    let targetSec = null;
+    setClassSections(prev => prev.map(s => {
+      if (String(s.id) === String(sectionId)) {
+        targetSec = {
+          ...s,
+          sectionName: sectionName || s.sectionName,
+          gradeLevel: gradeLevel || s.gradeLevel,
+          sectionType: sectionType || s.sectionType,
+          numberOfLearners: computedTotal !== null ? computedTotal : s.numberOfLearners,
+          maleLearners: calcMale !== null ? calcMale : s.maleLearners,
+          femaleLearners: calcFemale !== null ? calcFemale : s.femaleLearners,
+          advisorId: strAdvisorId !== undefined ? strAdvisorId : s.advisorId
+        };
+        return targetSec;
+      }
+      return s;
+    }));
+
+    if (targetSec && strAdvisorId !== undefined) {
+      setPersonnel(prevPersonnel => {
+        return prevPersonnel.map(p => {
+          let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
+          const isTargetTeacher = strAdvisorId && String(p.id) === strAdvisorId;
+          const wasOldTeacher = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+
+          if (isTargetTeacher) {
+            const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+            if (!hasAdv) {
+              rows.unshift({
+                id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: targetSec.id,
+                sectionName: targetSec.sectionName,
+                gradeLevel: targetSec.gradeLevel,
+                subject: 'ADVISORY',
+                subjectName: 'ADVISORY',
+                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                days: ['M', 'T', 'W', 'TH', 'F'],
+                startTime: '07:30',
+                endTime: '08:30',
+                durationMinutes: 60
+              });
+            } else {
+              rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+            }
+            const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+            if (!hasHgp) {
+              rows.push({
+                id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: targetSec.id,
+                sectionName: targetSec.sectionName,
+                gradeLevel: targetSec.gradeLevel,
+                subject: 'HGP',
+                subjectName: 'HGP',
+                daySchedule: 'Fri',
+                days: ['F'],
+                startTime: '07:30',
+                endTime: '08:30',
+                durationMinutes: 60
+              });
+            } else {
+              rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+            }
+            return { ...p, workloadRows: rows };
+          } else if (wasOldTeacher && (!strAdvisorId || String(p.id) !== strAdvisorId)) {
+            rows = rows.filter(r => !( (r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)) ));
+            return { ...p, workloadRows: rows };
+          }
+          return p;
+        });
+      });
+    }
+
     setHasUnsavedChanges(true);
-    showToast("Section updated in draft locally.");
+    showToast("Section details updated in draft locally.");
   };
 
-  const updateSectionLearners = async (sectionId, numberOfLearners) => {
-    const finalLearners = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
-    setClassSections(prev => prev.map(s => String(s.id) === String(sectionId) ? {
-      ...s,
-      numberOfLearners: finalLearners
-    } : s));
-    setHasUnsavedChanges(true);
-    showToast("Total learners updated in draft locally.");
+  const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
+    return updateSectionDetails(sectionId, { advisorId, numberOfLearners });
+  };
+
+  const updateSectionLearners = async (sectionId, numberOfLearners, maleLearners = null, femaleLearners = null) => {
+    return updateSectionDetails(sectionId, { numberOfLearners, maleLearners, femaleLearners });
   };
 
   const removeClassSection = async (id) => {
@@ -2220,14 +2554,46 @@ export const AppProvider = ({ children }) => {
 
         setSchoolInfo(currentSchoolInfo);
 
-        const list = await fetchAndNormalizePersonnel();
+        let list = await fetchAndNormalizePersonnel();
+        if (!Array.isArray(list) || list.length === 0) {
+          const autofillDrafts = await api.getAutofillTemplate();
+          list = Array.isArray(autofillDrafts) ? autofillDrafts : [];
+        }
         setPersonnel(list || []);
         if (list && list.length > 0) {
           setActivePersonnelId(list[0].id);
         }
 
         const sections = await api.getSections();
-        setClassSections(sections || []);
+        let loadedSections = Array.isArray(sections) ? sections : [];
+        if (loadedSections.length === 0 && list.length > 0) {
+          const extractedSecsMap = new Map();
+          list.forEach(p => {
+            if (Array.isArray(p.workloadRows)) {
+              p.workloadRows.forEach(wk => {
+                if (wk.gradeLevel && wk.sectionName) {
+                  const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
+                  if (!extractedSecsMap.has(key)) {
+                    extractedSecsMap.set(key, {
+                      id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
+                      schoolId: currentSchoolInfo?.schoolId || '199999',
+                      schoolYear: currentSchoolInfo?.schoolYear || 'SY 26-27',
+                      gradeLevel: wk.gradeLevel,
+                      sectionName: wk.sectionName,
+                      sectionType: 'MONO GRADE',
+                      advisorId: null,
+                      advisoryMinutes: 300,
+                      hgpMinutes: 60,
+                      numberOfLearners: null
+                    });
+                  }
+                }
+              });
+            }
+          });
+          loadedSections = Array.from(extractedSecsMap.values());
+        }
+        setClassSections(loadedSections);
 
         const transfers = await api.getTransfers();
         setWorkloadTransfers(transfers || []);
@@ -2546,6 +2912,7 @@ export const AppProvider = ({ children }) => {
       deletePersonnel,
       toggleSchoolHead,
       addClassSection,
+      updateSectionDetails,
       updateSectionAdviser,
       updateSectionLearners,
       removeClassSection,
@@ -2560,6 +2927,8 @@ export const AppProvider = ({ children }) => {
       removeWorkloadTransfer,
       absences,
       setAbsences,
+      localNonWorkingDays,
+      setLocalNonWorkingDays,
       salaryMatrix,
       setSalaryMatrix,
       addPersonnelAbsence,
@@ -2597,4 +2966,23 @@ export const AppProvider = ({ children }) => {
   );
 };
 
-export const useApp = () => useContext(AppContext);
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    return {
+      activeView: 'dashboard',
+      setActiveView: () => {},
+      toast: null,
+      setToast: () => {},
+      customModal: null,
+      setCustomModal: () => {},
+      showToast: () => {},
+      showAlert: () => {},
+      showConfirm: () => {},
+      schoolInfo: {},
+      selectedTeachers: [],
+      personnel: []
+    };
+  }
+  return context;
+};
