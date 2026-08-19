@@ -759,6 +759,9 @@ export const OFFICIAL_DESIGNATIONS = [
   { id: 'school_paper_adviser', name: 'SCHOOL PAPER TRAINER/ADVISER', description: 'Trains and advises campus journalists, school publication staff, and editorial teams.' },
   { id: 'sports_development_adviser', name: 'SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER', description: 'Manages school sports programs, athletic training, and sports competition delegations.' },
   { id: 'selg_sslg_adviser', name: 'SELG / SSLG TRAINER/ADVISER', description: 'Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).' },
+  { id: 'learner_formation_officer', name: 'LEARNER FORMATION OFFICER', description: 'Oversees learner formation programs, student government, youth development, and co-curricular student activities.' },
+  { id: 'assistant_school_head_designate', name: 'ASSISTANT SCHOOL HEAD DESIGNATE', description: 'Assists the School Head in administrative management, school operations, and instructional supervision.' },
+  { id: 'department_head_designate', name: 'DEPARTMENT HEAD DESIGNATE', description: 'Serves as designated Department Head leading subject area faculty management and curriculum implementation.' },
   { id: 'grade_level_chairperson', name: 'GRADE LEVEL CHAIRPERSON', description: 'Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.', parameterized: 'grade' },
   { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments.', parameterized: 'grade' },
   { id: 'department_head_ecp', name: 'DEPARTMENT HEAD (Based on ECP)', description: 'Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.', parameterized: 'ecp' }
@@ -1376,6 +1379,7 @@ export const AppProvider = ({ children }) => {
   // Request Center States
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [outgoingRequests, setOutgoingRequests] = useState([]);
+  const [requestHistory, setRequestHistory] = useState([]);
   const [districtSchools, setDistrictSchools] = useState([]);
 
   const refreshRequests = async () => {
@@ -1385,6 +1389,9 @@ export const AppProvider = ({ children }) => {
       
       const outgoing = await api.getOutgoingRequests();
       if (Array.isArray(outgoing)) setOutgoingRequests(outgoing);
+
+      const history = await api.getRequestHistory();
+      if (Array.isArray(history)) setRequestHistory(history);
     } catch (e) {
       console.error('Failed to refresh requests:', e);
     }
@@ -1534,6 +1541,22 @@ export const AppProvider = ({ children }) => {
         category: r.category || gradeToCategory[r.gradeLevel] || 'Elementary'
       }))
     }));
+  };
+
+  const refreshPersonnelList = async () => {
+    try {
+      const res = await fetchAndNormalizePersonnel();
+      if (Array.isArray(res)) {
+        setPersonnel(prev => {
+          const currentList = Array.isArray(prev) ? prev : [];
+          const currentPrns = new Set(currentList.map(p => p.employeeReferenceId || p.profilingCode || p.id).filter(Boolean));
+          const newItems = res.filter(p => !currentPrns.has(p.employeeReferenceId || p.profilingCode || p.id));
+          return [...currentList, ...newItems];
+        });
+      }
+    } catch(e) {
+      console.error('Failed to refresh personnel from server:', e);
+    }
   };
 
   const { user } = useAuth();
@@ -2946,11 +2969,13 @@ export const AppProvider = ({ children }) => {
       submissionStatus,
       setSubmissionStatus,
       resetToDatabase,
-      fetchPersonnel,
+      refreshPersonnelList,
       incomingRequests,
       setIncomingRequests,
       outgoingRequests,
       setOutgoingRequests,
+      requestHistory,
+      setRequestHistory,
       districtSchools,
       refreshRequests,
       loadDistrictSchools,

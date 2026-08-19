@@ -6090,12 +6090,7 @@ export default function Workload() {
                           )}
 
                           {(() => {
-                            const rawRows = (currentPerson.workloadRows || []).filter(r => {
-                              const subUpper = String(r.subject || '').toUpperCase().trim();
-                              if (subUpper === 'ADVISORY' || subUpper === 'HGP') return true;
-                              const availableForGrade = getSubjectsForGrade(r.gradeLevel, r.category);
-                              return availableForGrade.some(s => String(s).toUpperCase().trim() === subUpper);
-                            });
+                            const rawRows = (currentPerson.workloadRows || []);
                             const indexedRows = rawRows.map((r, originalIdx) => ({ ...r, originalIdx }));
                             let sortedRows = [...indexedRows];
 

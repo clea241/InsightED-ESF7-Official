@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
@@ -171,6 +171,120 @@ export default function Dashboard() {
       outOfFieldCount++;
     }
   });
+
+  // 6. SUBJECT-SPECIALIZATION ALIGNMENT SUMMARY (EXACT SUBJECTS FROM SCREENSHOT)
+  const [activeSubjectLevel, setActiveSubjectLevel] = useState('jhs'); // 'jhs', 'elem', 'shs'
+
+  const TARGET_SUBJECTS = useMemo(() => [
+    { key: 'ENGLISH', label: 'ENGLISH', aliases: ['ENGLISH', 'ENG'] },
+    { key: 'MATHEMATICS', label: 'MATHEMATICS', aliases: ['MATHEMATICS', 'MATH'] },
+    { key: 'SCIENCE', label: 'SCIENCE', aliases: ['SCIENCE', 'SCI'] },
+    { key: 'EPP/TLE', label: 'EPP/TLE', aliases: ['EPP', 'TLE', 'HOME ECONOMICS', 'AGRICULTURE', 'INDUSTRIAL ARTS', 'ICT', 'TVL', 'TECHNOLOGY'] },
+    { key: 'ARALING PANLIPUNAN', label: 'ARALING PANLIPUNAN', aliases: ['ARALING PANLIPUNAN', 'AP', 'SOCIAL STUDIES', 'PANLIPUNAN'] },
+    { key: 'FILIPINO', label: 'FILIPINO', aliases: ['FILIPINO', 'FIL'] },
+    { key: 'MAPEH', label: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PHYSICAL EDUCATION', 'HEALTH', 'PE', 'SPORTS'] },
+    { key: 'GMRC/ESP/VALUES EDUCATION', label: 'GMRC/ESP/VALUES EDUCATION', aliases: ['GMRC', 'ESP', 'VALUES', 'EDUKASYON SA PAGPAPAKATAO', 'VALUES EDUCATION', 'RELIGION'] }
+  ], []);
+
+  const subjectAlignmentData = useMemo(() => {
+    const isLevelMatch = (gradeStr) => {
+      const g = String(gradeStr || '').toLowerCase();
+      if (activeSubjectLevel === 'elem') {
+        return g.includes('kinder') || g.includes('grade 1') || g.includes('grade 2') || g.includes('grade 3') || g.includes('grade 4') || g.includes('grade 5') || g.includes('grade 6');
+      }
+      if (activeSubjectLevel === 'shs') {
+        return g.includes('grade 11') || g.includes('grade 12');
+      }
+      return g.includes('grade 7') || g.includes('grade 8') || g.includes('grade 9') || g.includes('grade 10');
+    };
+
+    return TARGET_SUBJECTS.map(subj => {
+      let alignedMinutes = 0;
+      let misalignedMinutes = 0;
+
+      personnel.forEach(p => {
+        const pMajors = [
+          p.degreeMajor, p.major, p.specialization, p.minor, p.discipline, p.prcSpecialization, p.collegeDegree
+        ].filter(Boolean).map(s => String(s).toUpperCase().trim());
+
+        const rows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
+        rows.forEach(r => {
+          if (!r.gradeLevel || !isLevelMatch(r.gradeLevel)) return;
+
+          const subName = String(r.subject || r.subjectName || '').toUpperCase().trim();
+          const matchesSubject = subj.aliases.some(alias => subName.includes(alias) || alias.includes(subName));
+
+          if (matchesSubject) {
+            let mins = Number(r.durationMinutes) || 0;
+            if (!mins && r.startTime && r.endTime) {
+              const [sH, sM] = r.startTime.split(':').map(Number);
+              const [eH, eM] = r.endTime.split(':').map(Number);
+              mins = (eH * 60 + eM) - (sH * 60 + sM);
+            }
+            if (!mins) mins = 60;
+            const daysCount = Array.isArray(r.days) ? r.days.length : (typeof r.daySchedule === 'string' ? r.daySchedule.split(',').length : 5);
+            const weeklyMins = mins * (daysCount || 1);
+
+            let isTeacherAligned = pMajors.some(m => subj.aliases.some(alias => m.includes(alias) || alias.includes(m)));
+
+            if (!isTeacherAligned) {
+              // Check Learning Area Matrix experience (any recorded years)
+              const laRows = Array.isArray(p.learningAreaRows) ? p.learningAreaRows : [];
+              const laMap = p.learningAreaMap || {};
+              const hasLAExp = laRows.some(r => {
+                const name = String(r.subject || r.subjectName || '').toUpperCase();
+                return subj.aliases.some(alias => name.includes(alias) || alias.includes(name)) && (r.checked || Number(r.years) > 0);
+              }) || Object.entries(laMap).some(([k, v]) => {
+                const subName = k.split('||')[1] || '';
+                return subj.aliases.some(alias => subName.toUpperCase().includes(alias)) && (v?.checked || Number(v?.years) > 0);
+              });
+
+              if (hasLAExp) {
+                isTeacherAligned = true;
+              }
+            }
+
+            if (!isTeacherAligned) {
+              // Check L&D / Training seminars (>= 8 hours)
+              const allTrainings = [
+                ...(Array.isArray(p.neapTrainingRows) ? p.neapTrainingRows : []),
+                ...(Array.isArray(p.certificationRows) ? p.certificationRows : []),
+                ...(Array.isArray(p.otherTrainingRows) ? p.otherTrainingRows : [])
+              ];
+              const hasLDTraining = allTrainings.some(tr => {
+                const title = String(tr.title || tr.topic || tr.name || tr.course || '').toUpperCase();
+                const hrs = Number(tr.totalHours || tr.hours || tr.durationHours) || 0;
+                return hrs >= 8 && subj.aliases.some(alias => title.includes(alias) || alias.includes(title));
+              });
+
+              if (hasLDTraining) {
+                isTeacherAligned = true;
+              }
+            }
+
+            if (isTeacherAligned) {
+              alignedMinutes += weeklyMins;
+            } else {
+              misalignedMinutes += weeklyMins;
+            }
+          }
+        });
+      });
+
+      const total = alignedMinutes + misalignedMinutes;
+      const alignedPct = total > 0 ? Math.round((alignedMinutes / total) * 100) : 0;
+      const misalignedPct = total > 0 ? (100 - alignedPct) : 0;
+
+      return {
+        ...subj,
+        alignedMinutes,
+        misalignedMinutes,
+        total,
+        alignedPct,
+        misalignedPct
+      };
+    });
+  }, [personnel, activeSubjectLevel, TARGET_SUBJECTS]);
 
   return (
     <section id="dashboard" className="view premium-dashboard" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -424,60 +538,224 @@ export default function Dashboard() {
 
           </div>
 
-          {/* SECOND ROW: AGE BRACKETS & APPOINTMENT STATUS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          {/* SECOND ROW: AGE BRACKETS, APPOINTMENT STATUS & SUBJECT SPECIALIZATION SUMMARY */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
             
-            {/* AGE RANGE SUMMARY CARD */}
-            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiPieChart style={{ color: '#F59E0B' }} /> Personnel Age Bracket Summary
-                </h3>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FEF3C7', padding: '2px 8px', borderRadius: '6px' }}>
-                  Demographic Profile
-                </span>
+            {/* LEFT COLUMN: DEMOGRAPHICS & APPOINTMENTS */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* AGE RANGE SUMMARY CARD */}
+              <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiPieChart style={{ color: '#F59E0B' }} /> Personnel Age Bracket Summary
+                  </h3>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FEF3C7', padding: '2px 8px', borderRadius: '6px' }}>
+                    Demographic Profile
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {Object.entries(ageBrackets).map(([range, count]) => {
+                    const pct = totalPersonnel > 0 ? Math.round((count / totalPersonnel) * 100) : 0;
+                    return (
+                      <div key={range}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: 'var(--navy)', marginBottom: '3px' }}>
+                          <span>Ages {range}</span>
+                          <span style={{ color: '#64748B' }}>{count} Staff ({pct}%)</span>
+                        </div>
+                        <div style={{ height: '7px', background: '#F1F5F9', borderRadius: '9999px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: range === '60+' ? '#EF4444' : (range === '51-60' ? '#F59E0B' : '#3B82F6'), borderRadius: '9999px' }}></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {Object.entries(ageBrackets).map(([range, count]) => {
-                  const pct = totalPersonnel > 0 ? Math.round((count / totalPersonnel) * 100) : 0;
+              {/* APPOINTMENT STATUS BREAKDOWN CARD */}
+              <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiUserCheck style={{ color: '#8B5CF6' }} /> Employment Appointment Status
+                  </h3>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#6D28D9', background: '#F3E8FF', padding: '2px 8px', borderRadius: '6px' }}>
+                    Plantilla & HR Status
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                  {Object.entries(appointmentCounts).map(([status, count]) => (
+                    <div key={status} style={{ background: '#F8FAFC', padding: '12px', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                      <div style={{ fontSize: '11px', color: '#64748B', fontWeight: '700' }}>{status}</div>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy)', marginTop: '2px' }}>{count}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#64748B', background: '#F1F5F9', padding: '10px 12px', borderRadius: '8px' }}>
+                  📌 Regular Permanent staff constitute <strong>{totalPersonnel > 0 ? Math.round(((appointmentCounts['PERMANENT'] || 0) / totalPersonnel) * 100) : 0}%</strong> of the school's personnel roster.
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: JUNIOR HIGH SCHOOL SUBJECTS (UNIFIED CARD WITH STACKED BARS & COMPETENCY MATRIX) */}
+            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+              {/* Header & Level Filter Tabs */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#1D4ED8', margin: 0 }}>
+                    {activeSubjectLevel === 'jhs' ? 'Junior High School Subjects' : activeSubjectLevel === 'elem' ? 'Elementary Subjects' : 'Senior High School Subjects'}
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
+                    Subject workload specialization alignment & competency breakdown
+                  </p>
+                </div>
+
+                {/* Level Filter Tabs */}
+                <div style={{ display: 'flex', background: '#F1F5F9', padding: '3px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubjectLevel('elem')}
+                    style={{
+                      border: 0,
+                      background: activeSubjectLevel === 'elem' ? '#FFFFFF' : 'transparent',
+                      color: activeSubjectLevel === 'elem' ? '#1D4ED8' : '#64748B',
+                      fontWeight: activeSubjectLevel === 'elem' ? '800' : '600',
+                      fontSize: '11px',
+                      padding: '4px 10px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      boxShadow: activeSubjectLevel === 'elem' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    Elementary
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubjectLevel('jhs')}
+                    style={{
+                      border: 0,
+                      background: activeSubjectLevel === 'jhs' ? '#FFFFFF' : 'transparent',
+                      color: activeSubjectLevel === 'jhs' ? '#1D4ED8' : '#64748B',
+                      fontWeight: activeSubjectLevel === 'jhs' ? '800' : '600',
+                      fontSize: '11px',
+                      padding: '4px 10px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      boxShadow: activeSubjectLevel === 'jhs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    Junior High School
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubjectLevel('shs')}
+                    style={{
+                      border: 0,
+                      background: activeSubjectLevel === 'shs' ? '#FFFFFF' : 'transparent',
+                      color: activeSubjectLevel === 'shs' ? '#1D4ED8' : '#64748B',
+                      fontWeight: activeSubjectLevel === 'shs' ? '800' : '600',
+                      fontSize: '11px',
+                      padding: '4px 10px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      boxShadow: activeSubjectLevel === 'shs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    Senior High School
+                  </button>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', fontSize: '12px', fontWeight: '600', color: '#475569', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '16px', height: '12px', background: '#1D68D8', borderRadius: '3px', display: 'inline-block' }}></span>
+                  <span>ALIGNED Subject-Specialization</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '16px', height: '12px', background: '#B91C1C', borderRadius: '3px', display: 'inline-block' }}></span>
+                  <span>MISALIGNED Subject-Specialization</span>
+                </div>
+              </div>
+
+              {/* SECTION A: Horizontal Stacked Bars */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+                {subjectAlignmentData.map(subj => {
+                  const alignVal = subj.alignedPct;
+                  const misalignVal = subj.misalignedPct;
+                  const hasData = subj.total > 0;
+
                   return (
-                    <div key={range}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: 'var(--navy)', marginBottom: '3px' }}>
-                        <span>Ages {range}</span>
-                        <span style={{ color: '#64748B' }}>{count} Staff ({pct}%)</span>
+                    <div key={subj.key} style={{ display: 'grid', gridTemplateColumns: '170px 1fr', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '800', color: '#334155', textAlign: 'right', textTransform: 'uppercase', lineHeight: 1.2 }}>
+                        {subj.label}
                       </div>
-                      <div style={{ height: '7px', background: '#F1F5F9', borderRadius: '9999px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: range === '60+' ? '#EF4444' : (range === '51-60' ? '#F59E0B' : '#3B82F6'), borderRadius: '9999px' }}></div>
+                      <div style={{ position: 'relative', height: '26px', background: '#F1F5F9', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+                        {hasData ? (
+                          <>
+                            {alignVal > 0 && (
+                              <div
+                                style={{
+                                  width: `${alignVal}%`,
+                                  background: '#1D68D8',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justify: 'flex-end',
+                                  paddingRight: alignVal > 15 ? '8px' : '2px',
+                                  color: 'white',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  whiteSpace: 'nowrap',
+                                  transition: 'width 0.3s ease'
+                                }}
+                              >
+                                {alignVal}%
+                              </div>
+                            )}
+                            {misalignVal > 0 && (
+                              <div
+                                style={{
+                                  width: `${misalignVal}%`,
+                                  background: '#B91C1C',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justify: 'center',
+                                  color: 'white',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  whiteSpace: 'nowrap',
+                                  transition: 'width 0.3s ease'
+                                }}
+                              >
+                                {misalignVal}%
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#94A3B8', fontStyle: 'italic' }}>
+                            No active workload rows
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
 
-            {/* APPOINTMENT STATUS BREAKDOWN CARD */}
-            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiUserCheck style={{ color: '#8B5CF6' }} /> Employment Appointment Status
-                </h3>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6D28D9', background: '#F3E8FF', padding: '2px 8px', borderRadius: '6px' }}>
-                  Plantilla & HR Status
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                {Object.entries(appointmentCounts).map(([status, count]) => (
-                  <div key={status} style={{ background: '#F8FAFC', padding: '12px', borderRadius: '12px', border: '1px solid var(--line)' }}>
-                    <div style={{ fontSize: '11px', color: '#64748B', fontWeight: '700' }}>{status}</div>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy)', marginTop: '2px' }}>{count}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ fontSize: '12px', color: '#64748B', background: '#F1F5F9', padding: '10px 12px', borderRadius: '8px' }}>
-                📌 Regular Permanent staff constitute <strong>{totalPersonnel > 0 ? Math.round(((appointmentCounts['PERMANENT'] || 0) / totalPersonnel) * 100) : 0}%</strong> of the school's personnel roster.
+              {/* X-Axis Scale Labels */}
+              <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: '12px', marginTop: '12px' }}>
+                <div></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: '700', color: '#94A3B8' }}>
+                  <span>0%</span>
+                  <span>20%</span>
+                  <span>40%</span>
+                  <span>60%</span>
+                  <span>80%</span>
+                  <span>100%</span>
+                </div>
               </div>
             </div>
 

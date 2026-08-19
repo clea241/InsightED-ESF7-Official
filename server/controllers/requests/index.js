@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const { generatePersonnelId, generateEmploymentId, generateQualificationId } = require('../../db/idGenerator');
 const { Pool } = require('pg');
 require('dotenv').config();
 
@@ -65,6 +66,24 @@ router.get('/outgoing', async (req, res) => {
   }
 });
 
+// GET /api/requests/history
+router.get('/history', async (req, res) => {
+  const schoolId = getSchoolId(req);
+  if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const result = await db.query(
+      `SELECT * FROM clustered_connections 
+       WHERE (target_school_id = $1 OR requester_school_id = $1) AND status IN ('approved', 'rejected') 
+       ORDER BY updated_at DESC`,
+      [schoolId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/requests/district-schools
 // Returns all schools in the current school's district from the read-only schools_IERN table
 router.get('/district-schools', async (req, res) => {
@@ -72,31 +91,48 @@ router.get('/district-schools', async (req, res) => {
   if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    // 1. Get the current school's district
-    const schoolRes = await db.query(`SELECT district FROM schools WHERE school_id = $1`, [schoolId]);
-    let district = schoolRes.rows[0]?.district;
+    const sId = String(schoolId);
+    let district = null;
 
-    if (!district) {
-      // Fallback: check schools_IERN in the master database
-      const fallbackRes = await insightEdPool.query(
-        `SELECT "District" as district FROM "schools_IERN" WHERE "SchoolID" = $1`,
-        [schoolId]
-      );
-      district = fallbackRes.rows[0]?.district;
+    // 1. Primary source: check authoritative schools_IERN table for school's official district
+    const iernDistrictRes = await insightEdPool.query(
+      `SELECT "District" as district FROM "schools_IERN" WHERE CAST("SchoolID" AS TEXT) = $1 LIMIT 1`,
+      [sId]
+    );
+
+    if (iernDistrictRes.rows.length > 0 && iernDistrictRes.rows[0].district) {
+      district = iernDistrictRes.rows[0].district;
+    } else {
+      // Fallback: check local schools table
+      const schoolRes = await db.query(`SELECT district FROM schools WHERE school_id = $1`, [sId]);
+      district = schoolRes.rows[0]?.district;
     }
 
-    if (!district) {
+    if (!district || district === 'District' || district === 'UNSPECIFIED') {
       return res.json([]);
     }
 
-    // 2. Fetch all other schools in that same district
-    const districtSchools = await insightEdPool.query(
+    // 2. Fetch all other schools in that same district from schools_IERN
+    let districtSchools = await insightEdPool.query(
       `SELECT "SchoolID" as school_id, "School_Name" as school_name, "Curricular_Offering" as offering 
        FROM "schools_IERN" 
-       WHERE "District" = $1 AND "SchoolID" != $2 AND status = 'Active'
+       WHERE LOWER("District") = LOWER($1) 
+         AND CAST("SchoolID" AS TEXT) != $2 
+         AND (LOWER(status) = 'active' OR status IS NULL)
        ORDER BY "School_Name"`,
-      [district, schoolId]
+      [district, sId]
     );
+
+    // Fallback if schools_IERN returns 0 rows (e.g. custom pilot sandbox schools)
+    if (districtSchools.rows.length === 0) {
+      districtSchools = await db.query(
+        `SELECT school_id, school_name 
+         FROM schools 
+         WHERE LOWER(district) = LOWER($1) AND school_id != $2
+         ORDER BY school_name`,
+        [district, sId]
+      );
+    }
 
     res.json(districtSchools.rows);
   } catch (err) {
@@ -193,15 +229,53 @@ router.post('/:id/respond', async (req, res) => {
           `INSERT INTO school_merger_registry (parent_school_id, child_school_id) VALUES ($1, $2)`,
           [parentId, childId]
         );
-      } else if (request.request_type === 'clustered_teacher') {
+      } else if (['clustered_teacher', 'reassigned_teacher'].includes(request.request_type)) {
         if (request.personnel_id) {
+          // Check if personnel exists in personnel table
+          const pCheck = await client.query(
+            `SELECT id, prn FROM personnel WHERE prn = $1 OR profiling_code = $1 OR id = $1 LIMIT 1`,
+            [request.personnel_id]
+          );
+
+          let prnToInsert = request.personnel_id;
+          if (pCheck.rows.length > 0) {
+            prnToInsert = pCheck.rows[0].prn || pCheck.rows[0].profiling_code || pCheck.rows[0].id;
+          } else {
+            // Ensure personnel row exists in personnel table so JOIN in GET /api/personnel succeeds!
+            const newPersonnelId = generatePersonnelId();
+            const names = (request.personnel_name || 'Clustered Teacher').trim().split(' ');
+            const fName = names[0] || 'Clustered';
+            const lName = names.slice(1).join(' ') || 'Teacher';
+            await client.query(
+              `INSERT INTO personnel (id, prn, school_id, school_year, type, salutation, first_name, last_name, deployment_status, profiling_code, is_school_head)
+               VALUES ($1, $2, $3, 'SY 2026-2027', 'teaching', 'Mr/Ms', $4, $5, 'CLUSTERED', $6, false)
+               ON CONFLICT DO NOTHING`,
+              [newPersonnelId, request.personnel_id, request.requester_school_id, fName, lName, request.personnel_id]
+            );
+
+            // Also insert employment row for new personnel
+            await client.query(
+              `INSERT INTO personnel_employment (id, personnel_id, position, designation, fund_source, nature_of_appointment, hiring_arrangement, first_service_date, last_promotion_date, new_station_date)
+               VALUES ($1, $2, 'Teacher I', '', 'NATIONAL', 'REGULAR PERMANENT', 'TEACHING', '2020-01-01', '2020-01-01', '2020-01-01')
+               ON CONFLICT DO NOTHING`,
+              [generateEmploymentId(), newPersonnelId]
+            );
+
+            // Also insert qualification row
+            await client.query(
+              `INSERT INTO personnel_qualifications (id, personnel_id, college_degree, major, post_graduate_degree, eligibility)
+               VALUES ($1, $2, 'Bachelor of Secondary Education', 'General Education', 'N/A', 'LET')
+               ON CONFLICT DO NOTHING`,
+              [generateQualificationId(), newPersonnelId]
+            );
+          }
+
           // Officially link the shared personnel to the target school in clustered_personnel table
-          // Avoid duplicates if they click approve multiple times or it was already inserted
           await client.query(
             `INSERT INTO clustered_personnel (prn, source_school_id, target_school_id) 
              VALUES ($1, $2, $3) 
              ON CONFLICT (prn, target_school_id) DO NOTHING`,
-            [request.personnel_id, request.requester_school_id, request.target_school_id]
+            [prnToInsert, request.requester_school_id, request.target_school_id]
           );
         }
       }

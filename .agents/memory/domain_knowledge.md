@@ -35,3 +35,12 @@
 - **Teaching Workload Slot Duration Limits**:
   - **Elementary & Junior High**: Max period duration is **1 hour (60 minutes)** per subject slot.
   - **Senior High School (Grade 11 & Grade 12 / SHS subjects)**: Max period duration is **6 hours (360 minutes)** per subject slot.
+
+### Added 2026-08-17
+- **Reassigned vs Borrowed & Clustered Inter-School Flow**:
+  - **Clustered Status Symmetry**: If a teacher is **CLUSTERED**, both Mother Station and Destination Satellite Schools display the status as **`CLUSTERED`**.
+  - **Reassigned vs Borrowed Status Asymmetry**:
+    - **Mother Station (Origin)**: Displays status as **`REASSIGNED`**.
+    - **Destination Station (Borrowed)**: Automatically displays status as **`BORROWED`** upon accepting the inter-school request.
+  - **Shared Personnel Limitations**: In Borrowed/Clustered destination stations, master profiling fields (plantilla item, identity, GSIS/TIN, eligibility) are read-only (`isShared = true`).
+  - **Dual-School Workload Assignment**: Both Mother School and Borrowed/Clustered Destination School can add and manage teaching workload rows for their own sections/subjects in `Workload.jsx`.

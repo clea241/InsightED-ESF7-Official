@@ -238,7 +238,7 @@ router.get('/', async (req, res) => {
       UNION ALL
       SELECT p.*, true as is_shared 
       FROM personnel p 
-      JOIN clustered_personnel cp ON p.prn = cp.prn 
+      JOIN clustered_personnel cp ON (p.prn = cp.prn OR p.profiling_code = cp.prn OR p.id = cp.prn)
       WHERE cp.target_school_id = $1
       ORDER BY id ASC
     `, [schoolId]);
@@ -252,7 +252,7 @@ router.get('/', async (req, res) => {
         UNION ALL
         SELECT p.*, true as is_shared 
         FROM personnel p 
-        JOIN clustered_personnel cp ON p.prn = cp.prn 
+        JOIN clustered_personnel cp ON (p.prn = cp.prn OR p.profiling_code = cp.prn OR p.id = cp.prn)
         WHERE cp.target_school_id = $1
         ORDER BY id ASC
       `, [schoolId]);
@@ -334,7 +334,7 @@ router.get('/', async (req, res) => {
         noTin: p.no_tin,
         employeeNo: p.employee_no,
         depedEmail: p.deped_email,
-        deploymentStatus: p.deployment_status,
+        deploymentStatus: (p.is_shared && String(p.deployment_status).toUpperCase() === 'REASSIGNED') ? 'BORROWED' : p.deployment_status,
         personalVerified: p.personal_verified,
         workloadVerified: p.workload_verified,
         profilingCode: p.profiling_code,
@@ -885,11 +885,16 @@ router.post('/share', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Fetch personnel name for the request
-    const pRes = await client.query('SELECT first_name, last_name FROM personnel WHERE prn = $1 AND school_id = $2 LIMIT 1', [prn, source_school_id]);
+    // Fetch personnel name and canonical PRN for the request
+    const pRes = await client.query(
+      'SELECT first_name, last_name, prn, profiling_code, id FROM personnel WHERE (prn = $1 OR profiling_code = $1 OR id = $1) AND school_id = $2 LIMIT 1',
+      [prn, source_school_id]
+    );
     let pName = prn;
+    let canonicalPrn = prn;
     if (pRes.rows.length > 0) {
       pName = `${pRes.rows[0].first_name} ${pRes.rows[0].last_name}`;
+      canonicalPrn = pRes.rows[0].prn || pRes.rows[0].profiling_code || pRes.rows[0].id;
     } else if (first_name || last_name) {
       pName = `${first_name || ''} ${last_name || ''}`.trim();
     }
@@ -897,17 +902,17 @@ router.post('/share', async (req, res) => {
     // We don't delete existing clustered_personnel here anymore because they are active.
     // Instead, we will manage the requests.
     // First, clear existing PENDING shares for this PRN from this source school
-    await client.query(`DELETE FROM clustered_connections WHERE personnel_id = $1 AND requester_school_id = $2 AND status = 'pending'`, [prn, source_school_id]);
+    await client.query(`DELETE FROM clustered_connections WHERE (personnel_id = $1 OR personnel_id = $2) AND requester_school_id = $3 AND status = 'pending'`, [prn, canonicalPrn, source_school_id]);
     
     // Then insert the requested target schools as pending requests
     for (const target_id of target_school_ids) {
       // Check if it already exists in clustered_personnel
-      const existing = await client.query('SELECT 1 FROM clustered_personnel WHERE prn = $1 AND target_school_id = $2', [prn, target_id]);
+      const existing = await client.query('SELECT 1 FROM clustered_personnel WHERE (prn = $1 OR prn = $2) AND target_school_id = $3', [prn, canonicalPrn, target_id]);
       if (existing.rows.length === 0) {
         await client.query(
           `INSERT INTO clustered_connections (requester_school_id, target_school_id, request_type, personnel_id, personnel_name, status)
            VALUES ($1, $2, 'clustered_teacher', $3, $4, 'pending')`,
-          [source_school_id, target_id, prn, pName]
+          [source_school_id, target_id, canonicalPrn, pName]
         );
       }
     }

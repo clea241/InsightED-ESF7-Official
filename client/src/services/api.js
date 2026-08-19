@@ -410,6 +410,10 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/requests/outgoing`);
     return res.json();
   },
+  getRequestHistory: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/history`);
+    return res.json();
+  },
   getDistrictSchools: async () => {
     const res = await fetchWithAuth(`${API_BASE}/requests/district-schools`);
     return res.json();
@@ -420,7 +424,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || 'Failed to create request');
+    }
+    return json;
   },
   respondToRequest: async (id, action) => {
     const res = await fetchWithAuth(`${API_BASE}/requests/${id}/respond`, {

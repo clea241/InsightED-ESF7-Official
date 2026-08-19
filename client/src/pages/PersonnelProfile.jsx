@@ -1890,18 +1890,129 @@ export default function PersonnelProfile() {
                                   ? districtSchools.filter(s => getSchoolId(s) !== currentSchoolIdStr)
                                   : DIVISION_SCHOOL_OPTIONS.filter(s => {
                                       if (getSchoolId(s) === currentSchoolIdStr) return false;
-                                      if (!currentDistrictStr) return true;
+                                      if (!currentDistrictStr || currentDistrictStr === 'district' || currentDistrictStr === 'unspecified') return true;
                                       const sDist = getSchoolDistrict(s);
-                                      return !sDist || sDist === currentDistrictStr || sDist.includes(currentDistrictStr) || currentDistrictStr.includes(sDist);
+                                      return !sDist || sDist === 'district' || sDist === currentDistrictStr || sDist.includes(currentDistrictStr) || currentDistrictStr.includes(sDist);
                                     });
 
                                 const schoolOptionsList = filteredDistrictSchools.map(formatSchoolOption).filter(Boolean);
 
+                                const resolveSchoolMeta = (item) => {
+                                  if (!item) return null;
+                                  const str = String(item).trim();
+                                  const parenMatch = str.match(/\((\d{5,})\)/);
+                                  const idFromParen = parenMatch ? parenMatch[1] : null;
+                                  const cleanName = str.split(' (')[0].trim().toUpperCase();
+
+                                  const dsMatch = filteredDistrictSchools.find(s => {
+                                    const sId = String(s.schoolId || s.school_id || s.id || s.schoolid || '');
+                                    const sName = String(s.schoolName || s.school_name || s.name || s.school || '').trim().toUpperCase();
+                                    return (idFromParen && sId === idFromParen) || sName === cleanName || sId === str;
+                                  });
+                                  if (dsMatch) {
+                                    return {
+                                      schoolId: String(dsMatch.schoolId || dsMatch.school_id || dsMatch.id || dsMatch.schoolid || ''),
+                                      name: dsMatch.schoolName || dsMatch.school_name || dsMatch.name || cleanName
+                                    };
+                                  }
+
+                                  const divMatch = DIVISION_SCHOOL_OPTIONS.find(s => {
+                                    const sId = String(s.schoolId || s.id || '');
+                                    const sName = String(s.name || '').trim().toUpperCase();
+                                    return (idFromParen && sId === idFromParen) || sName === cleanName || sId === str;
+                                  });
+                                  if (divMatch) {
+                                    return {
+                                      schoolId: String(divMatch.schoolId || divMatch.id || ''),
+                                      name: divMatch.name || cleanName
+                                    };
+                                  }
+
+                                  if (idFromParen) return { schoolId: idFromParen, name: cleanName };
+                                  if (/^\d{5,}$/.test(str)) return { schoolId: str, name: str };
+
+                                  return null;
+                                };
+
                                 return (
                                   <>
-                                    {String(currentPerson.deploymentStatus).toUpperCase() !== 'CLUSTERED' && (
+                                    {String(currentPerson.deploymentStatus).toUpperCase() === 'REASSIGNED' && (
+                                      <div style={{
+                                        padding: '16px',
+                                        background: '#F8FAFC',
+                                        border: '1.5px solid var(--line)',
+                                        borderRadius: '12px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '12px',
+                                        marginTop: '10px'
+                                      }}>
+                                        <div>
+                                          <label>Reassigned Target School (Same District)</label>
+                                          <SearchableDropdown
+                                            options={schoolOptionsList}
+                                            value={
+                                              (() => {
+                                                const activeSchool = (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools[0]) ||
+                                                  (typeof currentPerson.assignedSchools === 'string' ? currentPerson.assignedSchools : '');
+
+                                                if (!activeSchool) return '';
+
+                                                return schoolOptionsList
+                                                  .find(opt => opt.toUpperCase().startsWith(activeSchool.toUpperCase())) || activeSchool;
+                                              })()
+                                            }
+                                            onChange={(val) => {
+                                              const schoolName = val.split(' (')[0];
+                                              handleFieldChange('assignedSchools', schoolName ? [schoolName] : []);
+                                            }}
+                                            placeholder="SELECT REASSIGNED TARGET SCHOOL..."
+                                          />
+                                          <p className="field-help">Select the destination school in {schoolInfo?.district || 'the same district'} where this personnel is reassigned to teach.</p>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          className="btn"
+                                          style={{ marginTop: '4px', width: 'fit-content' }}
+                                          disabled={!currentPerson.profilingCode || !Array.isArray(currentPerson.assignedSchools) || currentPerson.assignedSchools.length === 0}
+                                          onClick={async () => {
+                                            if (!currentPerson.profilingCode) {
+                                              await showAlert("Missing PRN", "A valid PRN is required before sending reassignment request.");
+                                              return;
+                                            }
+                                            try {
+                                              const { api } = await import('../services/api');
+                                              const targetSchoolName = currentPerson.assignedSchools[0];
+                                              const match = resolveSchoolMeta(targetSchoolName);
+                                              if (!match || !match.schoolId) {
+                                                await showAlert("Error", "Selected target school not found in division registry.");
+                                                return;
+                                              }
+
+                                              await api.createRequest({
+                                                targetSchoolId: match.schoolId,
+                                                requestType: 'reassigned_teacher',
+                                                personnelId: currentPerson.profilingCode,
+                                                personnelName: `${currentPerson.firstName} ${currentPerson.lastName}`
+                                              });
+                                              await showAlert("Success", `Reassignment request sent to ${match.name} successfully. Once accepted by that school, the personnel's status in their roster will be BORROWED.`);
+                                            } catch (err) {
+                                              await showAlert("Error", "Failed to send reassignment request: " + err.message);
+                                            }
+                                          }}
+                                        >
+                                          Send Reassignment Request 🔗
+                                        </button>
+                                        {!currentPerson.profilingCode && (
+                                          <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sending reassignment request.</p>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' && (
                                       <div>
-                                        <label>Other School Assignment (Same District)</label>
+                                        <label>Origin / Mother Station (Same District)</label>
                                         <SearchableDropdown
                                           options={schoolOptionsList}
                                           value={
@@ -1919,9 +2030,9 @@ export default function PersonnelProfile() {
                                             const schoolName = val.split(' (')[0];
                                             handleFieldChange('assignedSchools', schoolName ? [schoolName] : []);
                                           }}
-                                          placeholder="SELECT OTHER ASSIGNED SCHOOL..."
+                                          placeholder="SELECT ORIGIN STATION..."
                                         />
-                                        <p className="field-help">Appears only for Reassigned or Borrowed deployment within {schoolInfo?.district || 'the same district'}.</p>
+                                        <p className="field-help">Mother station from which this personnel is borrowed within {schoolInfo?.district || 'the same district'}.</p>
                                       </div>
                                     )}
 
@@ -1947,7 +2058,7 @@ export default function PersonnelProfile() {
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
                                           {(Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : []).map((school, index) => (
                                             <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
-                                              <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{school}</span>
+                                              <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{school.split(' (')[0]}</span>
                                               <button
                                                 type="button"
                                                 style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
@@ -1971,10 +2082,9 @@ export default function PersonnelProfile() {
                                           value=""
                                           onChange={(val) => {
                                             if (!val) return;
-                                            const schoolName = val.split(' (')[0];
                                             const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
-                                            if (!currentList.includes(schoolName)) {
-                                              handleFieldChange('assignedSchools', [...currentList, schoolName]);
+                                            if (!currentList.includes(val)) {
+                                              handleFieldChange('assignedSchools', [...currentList, val]);
                                             }
                                           }}
                                           placeholder="+ ADD CLUSTERED SCHOOL (SAME DISTRICT)..."
@@ -1992,9 +2102,9 @@ export default function PersonnelProfile() {
                                             }
                                             try {
                                               const { api } = await import('../services/api');
-                                              const targetSchoolIds = currentPerson.assignedSchools.map(name => {
-                                                const match = DIVISION_SCHOOL_OPTIONS.find(s => s.name.toUpperCase() === name.toUpperCase());
-                                                return match ? match.schoolId : null;
+                                              const targetSchoolIds = currentPerson.assignedSchools.map(item => {
+                                                const meta = resolveSchoolMeta(item);
+                                                return meta ? meta.schoolId : null;
                                               }).filter(Boolean);
 
                                               if (targetSchoolIds.length === 0) {

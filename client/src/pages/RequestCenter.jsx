@@ -7,8 +7,10 @@ export default function RequestCenter() {
   const { 
     incomingRequests, 
     outgoingRequests, 
+    requestHistory = [],
     districtSchools, 
     refreshRequests, 
+    refreshPersonnelList,
     showToast, 
     showAlert 
   } = useApp();
@@ -23,11 +25,8 @@ export default function RequestCenter() {
       if (res.success) {
         showToast(`Request successfully ${action === 'approved' ? 'Approved' : 'Rejected'}.`);
         refreshRequests();
-        if (action === 'approved') {
-          // Reload the window to clear local draft overrides and load the newly transferred/approved personnel fresh from PostgreSQL
-          setTimeout(() => {
-            window.location.reload();
-          }, 1500);
+        if (action === 'approved' && refreshPersonnelList) {
+          refreshPersonnelList();
         }
       } else {
         showAlert('Action Failed', res.error || 'Could not process response.');
@@ -108,6 +107,21 @@ export default function RequestCenter() {
               Outgoing Requests ({outgoingRequests.length})
             </button>
             <button
+              onClick={() => setActiveSubTab('history')}
+              style={{
+                background: 'none',
+                border: 0,
+                padding: '10px 16px',
+                fontSize: '13px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                color: activeSubTab === 'history' ? 'var(--blue)' : 'var(--muted)',
+                borderBottom: activeSubTab === 'history' ? '3px solid var(--blue)' : '3px solid transparent'
+              }}
+            >
+              Request History ({requestHistory.length})
+            </button>
+            <button
               onClick={() => setActiveSubTab('merge')}
               style={{
                 background: 'none',
@@ -145,11 +159,17 @@ export default function RequestCenter() {
                     >
                       <div>
                         <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
-                          {req.request_type === 'school_merger' ? 'Integration / School Merger Request' : 'Incoming Clustered Personnel'}
+                          {req.request_type === 'school_merger'
+                            ? 'Integration / School Merger Request'
+                            : req.request_type === 'reassigned_teacher'
+                            ? 'Reassigned Personnel Request'
+                            : 'Incoming Clustered Personnel'}
                         </strong>
                         <p style={{ fontSize: '13px', color: 'var(--muted)', margin: '4px 0 0 0' }}>
                           {req.request_type === 'school_merger'
                             ? `School ID ${req.requester_school_id} requested to merge and transfer all their personnel into your school.`
+                            : req.request_type === 'reassigned_teacher'
+                            ? `School ID ${req.requester_school_id} (Mother School) requested to reassign teacher "${req.personnel_name}" to your school. Upon approval, status in your roster will be BORROWED.`
                             : `School ID ${req.requester_school_id} (Mother School) shared a clustered teacher "${req.personnel_name}" to your school.`}
                         </p>
                       </div>
@@ -195,11 +215,17 @@ export default function RequestCenter() {
                     >
                       <div>
                         <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
-                          {req.request_type === 'school_merger' ? 'Integration / School Merger Request' : 'Outgoing Clustered Personnel'}
+                          {req.request_type === 'school_merger' 
+                            ? 'Integration / School Merger Request' 
+                            : req.request_type === 'reassigned_teacher' 
+                            ? 'Outgoing Reassigned Personnel'
+                            : 'Outgoing Clustered Personnel'}
                         </strong>
                         <p style={{ fontSize: '13px', color: 'var(--muted)', margin: '4px 0 0 0' }}>
                           {req.request_type === 'school_merger'
                             ? `Requested merger into School ID ${req.target_school_id}`
+                            : req.request_type === 'reassigned_teacher'
+                            ? `Requested reassignment of teacher "${req.personnel_name}" to Target School ID ${req.target_school_id}`
                             : `Shared clustered teacher "${req.personnel_name}" to Clustered School ID ${req.target_school_id}`}
                         </p>
                       </div>
@@ -216,6 +242,67 @@ export default function RequestCenter() {
                             borderRadius: '20px',
                             background: req.status === 'approved' ? '#E0F2FE' : req.status === 'rejected' ? '#FEE2E2' : '#FEF3C7',
                             color: req.status === 'approved' ? '#0369A1' : req.status === 'rejected' ? '#B91C1C' : '#D97706'
+                          }}
+                        >
+                          ● {req.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {activeSubTab === 'history' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {requestHistory.length === 0 ? (
+                  <p style={{ color: 'var(--muted)', fontStyle: 'italic', padding: '10px' }}>No completed request history yet.</p>
+                ) : (
+                  requestHistory.map((req) => (
+                    <div
+                      key={req.id}
+                      style={{
+                        padding: '16px',
+                        background: 'white',
+                        border: '1.5px solid var(--line)',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
+                          {req.request_type === 'school_merger'
+                            ? 'Integration / School Merger Request'
+                            : req.request_type === 'reassigned_teacher'
+                            ? 'Reassigned Personnel Request'
+                            : 'Clustered Personnel Request'}
+                        </strong>
+                        <p style={{ fontSize: '13px', color: 'var(--muted)', margin: '4px 0 0 0' }}>
+                          {req.request_type === 'school_merger'
+                            ? `School Merger with School ID ${req.target_school_id}`
+                            : req.request_type === 'reassigned_teacher'
+                            ? `Reassigned Personnel "${req.personnel_name}" (Mother Station: ${req.requester_school_id} → Target: ${req.target_school_id})`
+                            : `Clustered Personnel "${req.personnel_name}" (Mother Station: ${req.requester_school_id} → Target: ${req.target_school_id})`}
+                        </p>
+                        <span style={{ fontSize: '11px', color: '#64748B', display: 'block', marginTop: '4px' }}>
+                          Processed Date: {req.updated_at ? new Date(req.updated_at).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                      <div>
+                        <span
+                          className={`badge ${
+                            req.status === 'approved' ? 'ok' : 'err'
+                          }`}
+                          style={{
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                            fontSize: '11px',
+                            padding: '6px 12px',
+                            borderRadius: '20px',
+                            background: req.status === 'approved' ? '#E0F2FE' : '#FEE2E2',
+                            color: req.status === 'approved' ? '#0369A1' : '#B91C1C'
                           }}
                         >
                           ● {req.status}

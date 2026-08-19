@@ -131,3 +131,9 @@ Whenever new cards, features, or action handlers are added to `Dashboard.jsx`, a
 
 * **Version 1.0 (2026-08-12)**: Initial master flow blueprint established.
   * Baseline data cards: Hero Banner, Roster Summary, Organized Classes, Major Alignment KPI, Age Brackets, Appointment Breakdown, Teacher Excess & Shortage by Grade Level, `ESF7UploadModal` integration.
+* **Version 1.1 (2026-08-18)**: Added Subject-Specialization Alignment Summary Chart.
+  * Features 100% stacked horizontal bar chart for exact DepEd subject list (`ENGLISH`, `MATHEMATICS`, `SCIENCE`, `EPP/TLE`, `ARALING PANLIPUNAN`, `FILIPINO`, `MAPEH`, `GMRC/ESP/VALUES EDUCATION`).
+  * Supports level toggling (`Elementary`, `Junior High School`, `Senior High School`) and computes alignment based on weekly workload teaching minutes.
+* **Version 1.2 (2026-08-18)**: Added Learning Area & L&D Competency Heatmap Grid.
+  * Features 5-column breakdown (`SUBJECT`, `DIRECT DEGREE MATCH`, `LEARNING AREA MATCHED`, `L&D / TRAINING MATCHED (≥8 HRS)`, `UNQUALIFIED OUT-OF-FIELD`).
+  * Evaluates teacher qualifications across degree majors, learning area experience history, and L&D seminars with $\ge 8$ total hours.

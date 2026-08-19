@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS clustered_connections (
     target_school_id TEXT NOT NULL,
     personnel_id TEXT,
     personnel_name TEXT,
-    request_type TEXT NOT NULL CHECK (request_type IN ('clustered_teacher', 'school_merger')),
+    request_type TEXT NOT NULL CHECK (request_type IN ('clustered_teacher', 'reassigned_teacher', 'school_merger')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
