@@ -85,6 +85,13 @@ const initDB = async () => {
 
     await db.query(sql);
     
+    // Ensure personnel table has step_increment column if missing
+    await db.query(`
+      ALTER TABLE personnel ADD COLUMN IF NOT EXISTS step_increment INTEGER DEFAULT 1;
+      ALTER TABLE personnel ADD COLUMN IF NOT EXISTS age INTEGER;
+      ALTER TABLE personnel ADD COLUMN IF NOT EXISTS is_school_head BOOLEAN NOT NULL DEFAULT FALSE;
+    `);
+
     // Ensure personnel_absences exists with matching VARCHAR(50) FK
     await db.query(`
       CREATE TABLE IF NOT EXISTS personnel_absences (

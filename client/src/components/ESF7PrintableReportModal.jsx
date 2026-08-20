@@ -214,7 +214,7 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
             {/* DepEd Official Seal Logo */}
             <div style={{ flexShrink: 0, paddingLeft: '8px' }}>
               <img
-                src="/OFFICIAL LOGO/deped.png"
+                src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/deped.png`}
                 alt="DepEd Logo"
                 style={{ height: '75px', width: 'auto', objectFit: 'contain', display: 'block' }}
                 onError={(e) => { e.target.style.display = 'none'; }}

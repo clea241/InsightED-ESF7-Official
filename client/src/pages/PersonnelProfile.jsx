@@ -28,7 +28,7 @@ const CURRICULUM_ERAS = [
 ];
 
 const PRIMARY_SUBJECTS = [
-  'Kinder Blocks of Time',
+  'Kinder',
   'Filipino',
   'English',
   'Mathematics',
@@ -642,7 +642,11 @@ export default function PersonnelProfile() {
         const rows = res.rows || [];
         const map = {};
         rows.forEach(r => {
-          map[`${r.school_year}||${r.learning_area}`] = {
+          let areaName = r.learning_area;
+          if (areaName === 'Kinder Blocks of Time' || areaName === 'KINDER BLOCKS OF TIME') {
+            areaName = 'Kinder';
+          }
+          map[`${r.school_year}||${areaName}`] = {
             checked: true,
             years: Number(r.years_taught || 1)
           };
@@ -1391,6 +1395,22 @@ export default function PersonnelProfile() {
                   {currentPerson.profilingCode && (
                     <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#f1f5f9', color: '#475569', fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em' }}>PRN: {currentPerson.profilingCode}</span>
                   )}
+                  {currentPerson.tin && (
+                    <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#f1f5f9', color: '#475569', fontSize: '11px', fontWeight: '700', letterSpacing: '0.05em' }}>TIN: {currentPerson.tin}</span>
+                  )}
+                  {currentPerson.deploymentStatus && (
+                    <span style={{
+                      padding: '1px 7px',
+                      borderRadius: '5px',
+                      background: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#E0F2FE',
+                      color: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#0369A1',
+                      border: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #BAE6FD',
+                      fontSize: '11px',
+                      fontWeight: '700'
+                    }}>
+                      STATUS: {String(currentPerson.deploymentStatus).toUpperCase()}
+                    </span>
+                  )}
                   {currentPerson.isShared && (
                     <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#e0e7ff', color: '#3730a3', fontSize: '11px', fontWeight: '700' }}>🔗 Shared from {DIVISION_SCHOOL_OPTIONS.find(s => s.schoolId === currentPerson.sourceSchoolId)?.name?.toUpperCase() || 'Mother School'}</span>
                   )}
@@ -1419,8 +1439,7 @@ export default function PersonnelProfile() {
               gap: '0',
               borderBottom: '1.5px solid var(--line)',
               background: '#f8fafc',
-              overflowX: 'auto',
-              flexShrink: 0
+              padding: '0 24px'
             }}>
               {tabs.map(({ tab, label, icon }) => (
                 <button
@@ -1428,19 +1447,18 @@ export default function PersonnelProfile() {
                   type="button"
                   onClick={() => setActiveTab(tab)}
                   style={{
-                    padding: '11px 18px',
-                    border: 'none',
-                    borderBottom: activeTab === tab ? '2.5px solid var(--blue)' : '2.5px solid transparent',
-                    background: activeTab === tab ? 'white' : 'transparent',
-                    color: activeTab === tab ? 'var(--blue)' : '#64748b',
-                    fontWeight: activeTab === tab ? '700' : '500',
+                    padding: '12px 18px',
                     fontSize: '13px',
+                    fontWeight: activeTab === tab ? '700' : '600',
+                    color: activeTab === tab ? 'var(--blue)' : '#64748b',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: activeTab === tab ? '3px solid var(--blue)' : '3px solid transparent',
                     cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.15s',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px'
+                    gap: '6px',
+                    transition: 'all 0.15s'
                   }}
                 >
                   <span>{icon}</span>
@@ -1459,9 +1477,29 @@ export default function PersonnelProfile() {
               )}
               <div style={{ pointerEvents: currentPerson.isShared ? 'none' : 'auto', opacity: currentPerson.isShared ? 0.8 : 1 }}>
                 {currentPerson.isShared && (
-                  <div style={{ background: '#e0e7ff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #c7d2fe', marginBottom: '20px' }}>
-                    <p style={{ margin: 0, color: '#3730a3', fontSize: '13px', fontWeight: '600' }}>
-                      ℹ️ This personnel is shared from their Mother School. Basic details are read-only. You can manage their workload for your school in the <strong>Workload Profile</strong> module.
+                  <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1.5px solid var(--line)', marginBottom: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>ℹ️ Reassigned / Borrowed Personnel Profile</strong>
+                      <span style={{
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        background: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#E0E7FF',
+                        color: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#3730A3',
+                        fontWeight: 'bold',
+                        fontSize: '11px',
+                        border: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #C7D2FE'
+                      }}>
+                        STATUS: {String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? 'BORROWED' : String(currentPerson.deploymentStatus).toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', fontSize: '13px', background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>First Name</span><strong>{currentPerson.firstName || '—'}</strong></div>
+                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Last Name</span><strong>{currentPerson.lastName || '—'}</strong></div>
+                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>TIN</span><strong>{currentPerson.tin || 'N/A'}</strong></div>
+                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>PRN</span><strong>{currentPerson.profilingCode || '—'}</strong></div>
+                    </div>
+                    <p style={{ margin: '10px 0 0 0', color: '#64748B', fontSize: '12px' }}>
+                      This personnel is borrowed from their Mother School. Basic identity details are managed by the Mother Station. You can manage their subject schedules in <strong>Workload Profile</strong>.
                     </p>
                   </div>
                 )}
@@ -1863,7 +1901,7 @@ export default function PersonnelProfile() {
                           <div>
                             <label>Status of Deployment</label>
                             <SearchableDropdown
-                              options={['OWN STATION', 'CLUSTERED', 'REASSIGNED', 'BORROWED']}
+                              options={['OWN STATION', 'CLUSTERED', 'REASSIGNED']}
                               value={currentPerson.deploymentStatus || ''}
                               onChange={(val) => handleFieldChange('deploymentStatus', val)}
                               placeholder="SELECT STATUS OF DEPLOYMENT..."

@@ -313,6 +313,51 @@ const GRADE_SUBJECT_MAP = {
   ]
 };
 
+export const getSectionSizeStatus = (gradeLevel, totalLearners) => {
+  const total = Number(totalLearners) || 0;
+  const gradeStr = String(gradeLevel || '').toUpperCase().trim();
+
+  // Kindergarten
+  if (gradeStr.includes('KINDER')) {
+    if (total < 15) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<15)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 25) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (15-25)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>25)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+  }
+
+  // Grades 1 to 3 (Key Stage 1)
+  if (['GRADE 1', 'GRADE 2', 'GRADE 3', '1', '2', '3', 'G1', 'G2', 'G3'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 25) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<25)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 35) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (25-35)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>35)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+  }
+
+  // Grades 4 to 6 (Key Stage 2)
+  if (['GRADE 4', 'GRADE 5', 'GRADE 6', '4', '5', '6', 'G4', 'G5', 'G6'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 30) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<30)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (30-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+  }
+
+  // Grades 7 to 10 (Junior High School / Key Stage 3)
+  if (['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '7', '8', '9', '10', 'G7', 'G8', 'G9', 'G10', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 35) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<35)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (35-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+  }
+
+  // Grades 11 to 12 (Senior High School / Key Stage 4)
+  if (['GRADE 11', 'GRADE 12', '11', '12', 'G11', 'G12', 'SHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 30) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<30)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 40) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (30-40)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>40)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+  }
+
+  // Default fallback (35-45)
+  if (total < 35) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<35)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+  if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (35-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+  return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+};
+
 export default function OrganizedClasses() {
   const { classSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
@@ -814,19 +859,52 @@ export default function OrganizedClasses() {
               return acc + (Number(sec.numberOfLearners) || 0);
             }, 0);
 
+            let withinCount = 0;
+            let belowCount = 0;
+            let aboveCount = 0;
+
+            classSections.forEach(sec => {
+              const total = sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? Number(sec.numberOfLearners) : ((Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0));
+              const statusObj = getSectionSizeStatus(sec.gradeLevel, total);
+              if (statusObj.status === 'WITHIN STANDARD') withinCount++;
+              else if (statusObj.status === 'BELOW STANDARD') belowCount++;
+              else if (statusObj.status === 'ABOVE STANDARD') aboveCount++;
+            });
+
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', margin: '16px 0 20px 0' }}>
-                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL ENROLLED</span>
-                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e40af' }}>{totalSchool} <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>Learners</span></div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '16px 0 20px 0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL ENROLLED</span>
+                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e40af' }}>{totalSchool} <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>Learners</span></div>
+                  </div>
+                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MALE LEARNERS</span>
+                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#166534' }}>{totalMale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Males</span></div>
+                  </div>
+                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #fdf2f8, #fce7f3)', borderRadius: '12px', border: '1px solid #fbcfe8' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FEMALE LEARNERS</span>
+                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#9d174d' }}>{totalFemale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#ec4899' }}>Females</span></div>
+                  </div>
                 </div>
-                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MALE LEARNERS</span>
-                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#166534' }}>{totalMale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Males</span></div>
-                </div>
-                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #fdf2f8, #fce7f3)', borderRadius: '12px', border: '1px solid #fbcfe8' }}>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FEMALE LEARNERS</span>
-                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#9d174d' }}>{totalFemale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#ec4899' }}>Females</span></div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+                  <div style={{ padding: '10px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748B' }}>TOTAL SECTIONS</span>
+                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#1E293B' }}>{classSections.length}</span>
+                  </div>
+                  <div style={{ padding: '10px 14px', background: '#DCFCE7', borderRadius: '10px', border: '1.5px solid #6EE7B7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>🟢 WITHIN STANDARD</span>
+                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#047857' }}>{withinCount}</span>
+                  </div>
+                  <div style={{ padding: '10px 14px', background: '#FEF3C7', borderRadius: '10px', border: '1.5px solid #FCD34D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#D97706' }}>🟡 BELOW STANDARD</span>
+                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#D97706' }}>{belowCount}</span>
+                  </div>
+                  <div style={{ padding: '10px 14px', background: '#FEE2E2', borderRadius: '10px', border: '1.5px solid #FCA5A5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#B91C1C' }}>🔴 ABOVE STANDARD</span>
+                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#B91C1C' }}>{aboveCount}</span>
+                  </div>
                 </div>
               </div>
             );
@@ -892,6 +970,7 @@ export default function OrganizedClasses() {
                     <th>Grade Level</th>
                     <th>Section Name</th>
                     <th style={{ width: '130px', textAlign: 'center' }}>Total Learners</th>
+                    <th>Section Size Standard</th>
                     <th>Class Adviser</th>
                     <th>Position</th>
                     <th style={{ width: '80px' }}>Action</th>
@@ -900,13 +979,30 @@ export default function OrganizedClasses() {
                 <tbody>
                   {filteredSections.map((sec) => {
                     const advisor = personnel.find(p => p.id === sec.advisorId);
+                    const totalLearnersCount = sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? Number(sec.numberOfLearners) : ((Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0));
+                    const statusObj = getSectionSizeStatus(sec.gradeLevel, totalLearnersCount);
+
                     return (
                       <tr key={sec.id}>
                         <td>{sec.gradeLevel}</td>
                         <td>{sec.sectionName}</td>
                         <td style={{ textAlign: 'center' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: (sec.numberOfLearners || (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0)) > 0 ? '#047857' : '#B45309', background: (sec.numberOfLearners || (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0)) > 0 ? '#DCFCE7' : '#FEF3C7', padding: '3px 8px', borderRadius: '6px' }}>
-                            {sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? sec.numberOfLearners : ((Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0))}
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: totalLearnersCount > 0 ? '#047857' : '#B45309', background: totalLearnersCount > 0 ? '#DCFCE7' : '#FEF3C7', padding: '3px 8px', borderRadius: '6px' }}>
+                            {totalLearnersCount}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            background: statusObj.bg,
+                            color: statusObj.color,
+                            border: `1px solid ${statusObj.border}`,
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            textTransform: 'uppercase'
+                          }}>
+                            ● {statusObj.status}
                           </span>
                         </td>
                         <td>
@@ -1046,6 +1142,25 @@ export default function OrganizedClasses() {
                         }}>
                           {sec.gradeLevel}
                         </span>
+                        {(() => {
+                          const total = sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? Number(sec.numberOfLearners) : ((Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0));
+                          const statusObj = getSectionSizeStatus(sec.gradeLevel, total);
+                          return (
+                            <span style={{
+                              background: statusObj.bg,
+                              color: statusObj.color,
+                              border: `1px solid ${statusObj.border}`,
+                              padding: '4px 10px',
+                              borderRadius: '20px',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              letterSpacing: '0.02em',
+                              textTransform: 'uppercase'
+                            }}>
+                              ● {statusObj.status}
+                            </span>
+                          );
+                        })()}
                         {sec.sectionType && (
                           <span style={{
                             background: sec.sectionType === 'MULTIGRADE' ? '#fffbeb' : '#f0fdf4',
@@ -1465,17 +1580,16 @@ export default function OrganizedClasses() {
                 <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '14px' }}>♂</span> Male (Max 99)
+                      <span style={{ fontSize: '14px' }}>♂</span> Male Learners
                     </label>
                     <input
                       type="number"
                       min="0"
-                      max="99"
                       placeholder="0"
                       value={newSection.maleLearners !== undefined && newSection.maleLearners !== null ? newSection.maleLearners : ''}
                       onChange={(e) => {
-                        const raw = e.target.value.slice(0, 2);
-                        const mVal = raw === '' ? '' : Math.min(99, Math.max(0, Number(raw)));
+                        const raw = e.target.value;
+                        const mVal = raw === '' ? '' : Math.max(0, Number(raw));
                         const fVal = newSection.femaleLearners !== undefined && newSection.femaleLearners !== null && newSection.femaleLearners !== '' ? Number(newSection.femaleLearners) : 0;
                         const total = (mVal === '' ? 0 : Number(mVal)) + fVal;
                         setNewSection(prev => ({
@@ -1490,17 +1604,16 @@ export default function OrganizedClasses() {
 
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: '800', color: '#9d174d', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '14px' }}>♀</span> Female (Max 99)
+                      <span style={{ fontSize: '14px' }}>♀</span> Female Learners
                     </label>
                     <input
                       type="number"
                       min="0"
-                      max="99"
                       placeholder="0"
                       value={newSection.femaleLearners !== undefined && newSection.femaleLearners !== null ? newSection.femaleLearners : ''}
                       onChange={(e) => {
-                        const raw = e.target.value.slice(0, 2);
-                        const fVal = raw === '' ? '' : Math.min(99, Math.max(0, Number(raw)));
+                        const raw = e.target.value;
+                        const fVal = raw === '' ? '' : Math.max(0, Number(raw));
                         const mVal = newSection.maleLearners !== undefined && newSection.maleLearners !== null && newSection.maleLearners !== '' ? Number(newSection.maleLearners) : 0;
                         const total = mVal + (fVal === '' ? 0 : Number(fVal));
                         setNewSection(prev => ({
@@ -1515,7 +1628,7 @@ export default function OrganizedClasses() {
 
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '11px', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      👥 Total <span style={{ fontSize: '9px', background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '6px' }}>Magic Math</span>
+                      👥 Total Learners
                     </label>
                     <input
                       type="number"
@@ -1525,6 +1638,30 @@ export default function OrganizedClasses() {
                       style={{ background: '#f1f5f9', fontWeight: '800', color: '#047857', border: '1.5px solid #a7f3d0' }}
                     />
                   </div>
+
+                  {(() => {
+                    const targetGrade = isMultigrade ? (selectedGrades[0] || 'Grade 1') : newSection.gradeLevel;
+                    const statusObj = getSectionSizeStatus(targetGrade, newSection.numberOfLearners);
+                    return (
+                      <div style={{
+                        gridColumn: '1 / -1',
+                        marginTop: '4px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        background: statusObj.bg,
+                        color: statusObj.color,
+                        border: `1.5px solid ${statusObj.border}`,
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <span>DepEd Section Size Standard: <strong>{statusObj.status}</strong></span>
+                        <span style={{ fontSize: '11px', fontWeight: '700' }}>{statusObj.label}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="full">
                   <label>Section Adviser</label>
@@ -1939,44 +2076,65 @@ export default function OrganizedClasses() {
                   />
                 </div>
               </div>
-              {/* Gender Learners Input (2-digit limit max 99) */}
+              {/* Gender Learners Input */}
               <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid var(--line)' }}>
                 <label style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                  Class Learners Enrollment (Max 99 per gender)
+                  Class Learners Enrollment
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
-                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#1d4ed8', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Male (Max 99)</label>
+                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#1d4ed8', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Male Learners</label>
                     <input
                       type="number"
                       min="0"
-                      max="99"
                       placeholder="0"
                       value={editMale}
-                      onChange={(e) => setEditMale(e.target.value.slice(0, 2))}
+                      onChange={(e) => setEditMale(e.target.value)}
                       style={{ width: '100%', border: '1.5px solid #bfdbfe', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#be185d', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Female (Max 99)</label>
+                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#be185d', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Female Learners</label>
                     <input
                       type="number"
                       min="0"
-                      max="99"
                       placeholder="0"
                       value={editFemale}
-                      onChange={(e) => setEditFemale(e.target.value.slice(0, 2))}
+                      onChange={(e) => setEditFemale(e.target.value)}
                       style={{ width: '100%', border: '1.5px solid #fbcfe8', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed var(--line)' }}>
-                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>Calculated Total Learners:</span>
-                  <span style={{ fontSize: '14px', fontWeight: '900', color: '#047857', background: '#dcfce7', padding: '2px 10px', borderRadius: '10px' }}>
-                    {(Number(editMale.slice(0, 2)) || 0) + (Number(editFemale.slice(0, 2)) || 0)} Learners
-                  </span>
-                </div>
+                {(() => {
+                  const totalLearnersCount = (Number(editMale) || 0) + (Number(editFemale) || 0);
+                  const statusObj = getSectionSizeStatus(editGradeLevel, totalLearnersCount);
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed var(--line)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>Calculated Total Learners:</span>
+                        <span style={{ fontSize: '14px', fontWeight: '900', color: '#047857', background: '#dcfce7', padding: '2px 10px', borderRadius: '10px' }}>
+                          {totalLearnersCount} Learners
+                        </span>
+                      </div>
+                      <div style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        background: statusObj.bg,
+                        color: statusObj.color,
+                        border: `1.5px solid ${statusObj.border}`,
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <span>DepEd Section Size Standard: <strong>{statusObj.status}</strong></span>
+                        <span style={{ fontSize: '11px', fontWeight: '700' }}>{statusObj.label}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Class Adviser Selection */}

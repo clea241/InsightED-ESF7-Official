@@ -53,22 +53,22 @@ export default function Sidebar() {
       {/* Brand Logos */}
       <div className="brand-container">
         <img 
-          src="/OFFICIAL LOGO/InsightED logo 5 x 3 in white outline.png" 
+          src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/InsightED logo 5 x 3 in white outline.png`} 
           alt="InsightED Logo" 
           className="brand-logo brand-logo-landscape"
           onError={(e) => {
             e.target.onerror = null;
-            e.target.src = "/OFFICIAL LOGO/InsightED logo 5 x 3 in.png";
+            e.target.src = `${import.meta.env.BASE_URL}OFFICIAL LOGO/InsightED logo 5 x 3 in.png`;
           }}
         />
         <div className="brand-divider"></div>
         <img 
-          src="/OFFICIAL LOGO/ESF7_logo02.png" 
+          src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo02.png`} 
           alt="ESF7 Logo" 
           className="brand-logo"
           onError={(e) => {
             e.target.onerror = null;
-            e.target.src = "/OFFICIAL LOGO/deped.png";
+            e.target.src = `${import.meta.env.BASE_URL}OFFICIAL LOGO/deped.png`;
           }}
         />
       </div>

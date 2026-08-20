@@ -33,10 +33,11 @@ def error(msg): print(f"{RED}❌ {msg}{NC}", flush=True)
 
 # Build SSH options with explicit key path if available and 45s ConnectTimeout
 SSH_OPTS = [
+    "-o", "BatchMode=yes",
     "-o", "StrictHostKeyChecking=no",
-    "-o", "ConnectTimeout=45",
-    "-o", "ServerAliveInterval=15",
-    "-o", "ServerAliveCountMax=4"
+    "-o", "ConnectTimeout=10",
+    "-o", "ServerAliveInterval=5",
+    "-o", "ServerAliveCountMax=3"
 ]
 if os.path.exists(SSH_KEY_PATH):
     SSH_OPTS.extend(["-i", SSH_KEY_PATH])

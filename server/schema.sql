@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS personnel (
     profiling_code TEXT NOT NULL,
     age INTEGER,
     is_school_head BOOLEAN NOT NULL DEFAULT FALSE,
+    step_increment INTEGER DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -170,12 +170,13 @@ async function autoSeedPersonnelForSchool(schoolId) {
       const newPersonnelId = generatePersonnelId();
       const employmentId = generateEmploymentId();
       const qualificationId = generateQualificationId();
+      const depedEmail = teacher.deped_email || teacher.email || `${(firstName || 'user').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}.${(lastName || 'staff').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}@deped.gov.ph`;
 
       await db.query(
         `INSERT INTO personnel (id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, philsys_no, tin, no_tin, employee_no, deped_email, deployment_status, profiling_code, step_increment, age, is_school_head)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
          ON CONFLICT DO NOTHING`,
-        [newPersonnelId, prn, schoolId, '2026-2027', type, 'MR.', firstName, middleName, lastName, null, 'Female', 'SINGLE', false, 'CHRISTIANITY', 'OTHERS', teacher.birthdate || null, null, teacher.tin || null, false, teacher.employee_no || null, null, 'Full-time', profilingCode, 1, 30, isSchoolHead]
+        [newPersonnelId, prn, schoolId, '2026-2027', type, 'MR.', firstName, middleName, lastName, null, 'Female', 'SINGLE', false, 'CHRISTIANITY', 'OTHERS', teacher.birthdate || null, null, teacher.tin || null, false, teacher.employee_no || null, depedEmail, 'Full-time', profilingCode, 1, 30, isSchoolHead]
       );
 
       await db.query(
@@ -432,7 +433,7 @@ router.post('/', async (req, res) => {
     const personnelRes = await client.query(
       `INSERT INTO personnel (id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, philsys_no, tin, no_tin, employee_no, deped_email, deployment_status, profiling_code, step_increment, age, is_school_head)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING id`,
-      [newPersonnelId, prn, schoolId, schoolYear, type, salutation, first_name, middle_name || null, last_name, name_extension || null, sex_at_birth || null, civil_status || null, solo_parent === 'Yes', religion || null, ethnic_group || null, birthdate || null, philsys_no || null, tin || null, no_tin === true, employee_no || null, deped_email || null, deployment_status || null, profilingCode, Number(step_increment), computedAge, isSchoolHead]
+      [newPersonnelId, prn, schoolId, schoolYear, type, salutation, first_name, middle_name || null, last_name, name_extension || null, sex_at_birth || null, civil_status || null, solo_parent === 'Yes', religion || null, ethnic_group || null, birthdate || null, philsys_no || null, tin || null, no_tin === true, employee_no || null, deped_email || '', deployment_status || null, profilingCode, Number(step_increment), computedAge, isSchoolHead]
     );
     const personnelId = personnelRes.rows[0].id;
 

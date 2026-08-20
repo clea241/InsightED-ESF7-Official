@@ -106,7 +106,6 @@ export default function Deployment() {
                 <option value="OWN STATION">OWN STATION</option>
                 <option value="CLUSTERED">CLUSTERED</option>
                 <option value="REASSIGNED">REASSIGNED</option>
-                <option value="BORROWED">BORROWED</option>
               </select>
             </div>
             <div>

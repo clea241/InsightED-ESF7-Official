@@ -817,7 +817,7 @@ export default function ValidationCenter() {
               {/* DepEd Official Logo */}
               <div style={{ flexShrink: 0, paddingLeft: '8px' }}>
                 <img
-                  src="/OFFICIAL LOGO/deped.png"
+                  src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/deped.png`}
                   alt="DepEd Official Seal Logo"
                   style={{ height: '80px', width: 'auto', objectFit: 'contain', display: 'block' }}
                   onError={(e) => { e.target.style.display = 'none'; }}

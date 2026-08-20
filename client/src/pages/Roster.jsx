@@ -263,15 +263,15 @@ export default function Roster() {
                           display: 'inline-flex',
                           alignItems: 'center',
                           padding: '2px 6px',
-                          background: '#e0e7ff',
-                          color: '#3730a3',
-                          border: '1px solid #c7d2fe',
+                          background: String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#e0e7ff',
+                          color: String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#3730a3',
+                          border: String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #c7d2fe',
                           borderRadius: '6px',
                           fontSize: '10px',
                           fontWeight: 'bold',
                           textTransform: 'uppercase'
-                        }} title="Shared from Mother School">
-                          🔗 Shared
+                        }} title="Borrowed from Mother School">
+                          {String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '🏷️ BORROWED' : '🔗 SHARED'}
                         </span>
                       )}
                     </td>

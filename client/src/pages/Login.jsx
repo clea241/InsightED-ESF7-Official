@@ -167,9 +167,9 @@ export default function Login() {
               border: '1.5px solid rgba(255, 255, 255, 0.1)',
               backdropFilter: 'blur(12px)'
             }}>
-              <img src="/OFFICIAL LOGO/deped.png" alt="DepEd" style={{ height: '36px', objectFit: 'contain' }} />
-              <img src="/OFFICIAL LOGO/bagongpilipinas.png" alt="Bagong Pilipinas" style={{ height: '36px', objectFit: 'contain' }} />
-              <img src="/OFFICIAL LOGO/hrod.png" alt="HROD" style={{ height: '36px', objectFit: 'contain' }} />
+              <img src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/deped.png`} alt="DepEd" style={{ height: '36px', objectFit: 'contain' }} />
+              <img src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/bagongpilipinas.png`} alt="Bagong Pilipinas" style={{ height: '36px', objectFit: 'contain' }} />
+              <img src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/hrod.png`} alt="HROD" style={{ height: '36px', objectFit: 'contain' }} />
             </div>
 
             {/* Large Centered Logo Box */}
@@ -196,13 +196,13 @@ export default function Login() {
                   height: '100%'
                 }}>
                   <img 
-                    src="/OFFICIAL LOGO/InsightED logo 2x2.png" 
+                    src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/InsightED logo 2x2.png`} 
                     alt="InsightED Logo" 
                     style={{ height: '78px', width: 'auto', objectFit: 'contain' }}
                   />
                   <span style={{ fontSize: '22px', fontWeight: '850', color: '#1e293b' }}>+</span>
                   <img 
-                    src="/OFFICIAL LOGO/ESF7_logo.png" 
+                    src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo.png`} 
                     alt="ESF7 Logo" 
                     style={{ height: '62px', width: 'auto', objectFit: 'contain' }}
                   />
