@@ -359,7 +359,7 @@ export const getSectionSizeStatus = (gradeLevel, totalLearners) => {
 };
 
 export default function OrganizedClasses() {
-  const { classSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm } = useApp();
+  const { classSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm, completeNode, setActiveView } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMultigrade, setIsMultigrade] = useState(false);
@@ -2166,6 +2166,71 @@ export default function OrganizedClasses() {
           </div>
         </div>
       )}
+
+      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
+      <div className="sticky-journey-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{
+            background: 'rgba(59, 130, 246, 0.25)',
+            color: '#60A5FA',
+            border: '1px solid rgba(96, 165, 250, 0.4)',
+            padding: '4px 12px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: '900'
+          }}>
+            NODE 05 OF 09
+          </span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
+              Organized Classes Setup
+            </h4>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
+              Confirm section organization and proceed to Node 05 (Workload & Timetable).
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setActiveView('nodemap')}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#E2E8F0',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '10px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            🗺️ Node Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => completeNode('classes', 'workload')}
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px 20px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Save & Continue to Workload ➔
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

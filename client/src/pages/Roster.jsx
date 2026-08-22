@@ -4,7 +4,7 @@ import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 
 export default function Roster() {
-  const { personnel, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges } = useApp();
+  const { personnel, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges, completeNode } = useApp();
   
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -572,11 +572,70 @@ export default function Roster() {
         </div>
       )}
 
-      {/* DepEd Email Warning & Info Modal */}
-      <DepEdEmailInfoModal 
-        isOpen={isEmailInfoOpen}
-        onClose={() => setIsEmailInfoOpen(false)}
-      />
+      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
+      <div className="sticky-journey-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{
+            background: 'rgba(59, 130, 246, 0.25)',
+            color: '#60A5FA',
+            border: '1px solid rgba(96, 165, 250, 0.4)',
+            padding: '4px 12px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: '900'
+          }}>
+            NODE 02 OF 09
+          </span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
+              Personnel Roster Review
+            </h4>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
+              Confirm master roster list and proceed to Node 03 (Personnel Profiling).
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setActiveView('nodemap')}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#E2E8F0',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '10px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            🗺️ Node Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => completeNode('roster', 'profile')}
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px 20px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Save & Continue to Profiling ➔
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

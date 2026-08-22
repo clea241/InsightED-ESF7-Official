@@ -582,7 +582,9 @@ export default function PersonnelProfile() {
     showAlert,
     showConfirm,
     hasUnsavedChanges,
-    districtSchools
+    districtSchools,
+    completeNode,
+    setActiveView
   } = useApp();
 
   const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
@@ -3043,6 +3045,71 @@ export default function PersonnelProfile() {
         isOpen={isEmailInfoOpen}
         onClose={() => setIsEmailInfoOpen(false)}
       />
+
+      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
+      <div className="sticky-journey-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{
+            background: 'rgba(59, 130, 246, 0.25)',
+            color: '#60A5FA',
+            border: '1px solid rgba(96, 165, 250, 0.4)',
+            padding: '4px 12px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: '900'
+          }}>
+            NODE 03 OF 09
+          </span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
+              Personnel Profiling & Qualifications
+            </h4>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
+              Confirm staff qualifications & specializations, then proceed to Node 04 (Organized Classes).
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setActiveView('nodemap')}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#E2E8F0',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '10px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            🗺️ Node Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => completeNode('profile', 'classes')}
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px 20px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Save & Continue to Organized Classes ➔
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

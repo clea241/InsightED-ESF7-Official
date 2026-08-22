@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Dashboard from './pages/Dashboard';
+import NodeMap from './pages/NodeMap';
 import Roster from './pages/Roster';
 import PersonnelProfile from './pages/PersonnelProfile';
 import OrganizedClasses from './pages/OrganizedClasses';
@@ -15,6 +16,8 @@ import RoomProfiling from './pages/RoomProfiling';
 import SchoolProfile from './pages/SchoolProfile';
 import Allowances from './pages/Allowances';
 import Designations from './pages/Designations';
+import Deployment from './pages/Deployment';
+import Submission from './pages/Submission';
 import SchoolHeadChatWidget from './components/SchoolHeadChatWidget';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -23,7 +26,22 @@ import LoadingScreen from './components/LoadingScreen';
 function MainAppContent() {
   const { user, loading: authLoading } = useAuth();
   const appState = useApp() || {};
-  const { activeView = 'dashboard', toast = null, setToast = () => {}, customModal = null } = appState;
+  const { 
+    activeView = 'dashboard', 
+    setActiveView = () => {}, 
+    isNodeUnlocked = () => true, 
+    showToast = () => {}, 
+    toast = null, 
+    setToast = () => {}, 
+    customModal = null 
+  } = appState;
+
+  React.useEffect(() => {
+    if (activeView !== 'dashboard' && activeView !== 'nodemap' && isNodeUnlocked && !isNodeUnlocked(activeView)) {
+      showToast('This node is locked. Complete the preceding steps on the Node Map first.', 'error');
+      setActiveView('nodemap');
+    }
+  }, [activeView, isNodeUnlocked, setActiveView, showToast]);
 
   React.useEffect(() => {
     if (toast) {
@@ -60,20 +78,22 @@ function MainAppContent() {
       `}</style>
 
       <div className="app">
-        <Sidebar />
-        <main className="main">
+        <main className="main" style={{ marginLeft: 0, width: '100%' }}>
           <Topbar />
           
           {activeView === 'dashboard' && <Dashboard />}
+          {activeView === 'nodemap' && <NodeMap />}
           {activeView === 'school' && <SchoolProfile />}
           {activeView === 'roster' && <Roster />}
           {activeView === 'profile' && <PersonnelProfile />}
           {activeView === 'designation' && <Designations />}
           {activeView === 'classes' && <OrganizedClasses />}
           {activeView === 'workload' && <Workload />}
+          {activeView === 'deployment' && <Deployment />}
           {activeView === 'overload' && <Overload />}
           {activeView === 'allowances' && <Allowances />}
           {activeView === 'validation' && <ValidationCenter />}
+          {activeView === 'submission' && <Submission />}
           {activeView === 'room-qr' && <RoomQR />}
           {activeView === 'requests' && <RequestCenter />}
         </main>

@@ -187,10 +187,15 @@ router.get('/draft', async (req, res) => {
 router.put('/draft', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || '123456';
-    const { schoolYear, payload } = req.body;
+    const { schoolYear, payload, journey_state } = req.body;
 
     if (!payload) {
       return res.status(400).json({ error: 'Missing draft payload' });
+    }
+
+    let finalPayload = payload;
+    if (typeof payload === 'object' && payload !== null && journey_state) {
+      finalPayload = { ...payload, journey_state };
     }
 
     const result = await db.query(
@@ -199,7 +204,7 @@ router.put('/draft', async (req, res) => {
        ON CONFLICT (school_id, school_year)
        DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
        RETURNING updated_at`,
-      [schoolId, schoolYear || 'SY 26-27', JSON.stringify(payload)]
+      [schoolId, schoolYear || 'SY 26-27', JSON.stringify(finalPayload)]
     );
 
     res.json({

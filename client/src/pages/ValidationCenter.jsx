@@ -15,7 +15,8 @@ export default function ValidationCenter() {
     hasUnsavedChanges,
     setHasUnsavedChanges,
     showToast,
-    showAlert
+    showAlert,
+    completeNode
   } = useApp();
 
   const [certified, setCertified] = useState(false);
@@ -1448,6 +1449,74 @@ export default function ValidationCenter() {
         schoolInfo={schoolInfo}
         personnel={personnel}
       />
+
+      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
+      <div className="sticky-journey-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{
+            background: 'rgba(59, 130, 246, 0.25)',
+            color: '#60A5FA',
+            border: '1px solid rgba(96, 165, 250, 0.4)',
+            padding: '4px 12px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: '900'
+          }}>
+            NODE 08 OF 09
+          </span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
+              Validation Center & Quality Checks
+            </h4>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
+              Verify records & certify eSF7 document, then proceed to Node 09 (eSF7 Final Submission).
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setActiveView('nodemap')}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#E2E8F0',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '10px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            🗺️ Node Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (completeNode) completeNode('validation', 'submission');
+              setActiveView('submission');
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px 20px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Save & Continue to eSF7 Submission ➔
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

@@ -1371,6 +1371,64 @@ export const AppProvider = ({ children }) => {
   const [localNonWorkingDays, setLocalNonWorkingDays] = useState([]);
   const [salaryMatrix, setSalaryMatrix] = useState([]);
   const [allowancesMap, setAllowancesMap] = useState({});
+  const [journeyState, setJourneyState] = useState({
+    unlockedNodes: ['school'],
+    completedNodes: [],
+    currentNode: 'school'
+  });
+
+  const [bypassNodeLocks, setBypassNodeLocks] = useState(false);
+
+  const isNodeUnlocked = (nodeId) => {
+    if (bypassNodeLocks) return true;
+    if (!nodeId || nodeId === 'dashboard') return true;
+    return (journeyState?.unlockedNodes || ['school']).includes(nodeId);
+  };
+
+  const isNodeCompleted = (nodeId) => {
+    return (journeyState?.completedNodes || []).includes(nodeId);
+  };
+
+  const completeNode = async (nodeId, nextNodeId) => {
+    const updatedCompleted = Array.from(new Set([...(journeyState.completedNodes || []), nodeId]));
+    const updatedUnlocked = Array.from(new Set([...(journeyState.unlockedNodes || ['school']), nodeId, ...(nextNodeId ? [nextNodeId] : [])]));
+    const newJourneyState = {
+      unlockedNodes: updatedUnlocked,
+      completedNodes: updatedCompleted,
+      currentNode: nextNodeId || nodeId
+    };
+
+    setJourneyState(newJourneyState);
+
+    // Save to local draft and cloud
+    if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
+      const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
+      const timestamp = new Date().toISOString();
+      const draftData = {
+        schoolInfo,
+        personnel,
+        classSections,
+        workloadTransfers,
+        absences,
+        journey_state: newJourneyState,
+        lastUpdated: timestamp
+      };
+      try {
+        await setLocalDraft(draftKey, draftData);
+        await api.saveSchoolDraft(schoolInfo.schoolYear, draftData);
+      } catch (err) {
+        console.error('Failed to save journey state in draft:', err);
+      }
+    }
+
+    if (nextNodeId) {
+      setActiveView(nextNodeId);
+      showToast(`Step completed! Proceeding to next step.`);
+    } else {
+      setActiveView('dashboard');
+      showToast(`All journey steps completed!`);
+    }
+  };
 
   // Toast & Modal States
   const [toast, setToast] = useState(null);
@@ -1754,6 +1812,14 @@ export const AppProvider = ({ children }) => {
           setClassSections(loadedDraftSecs);
           setWorkloadTransfers(activeDraft.workloadTransfers || []);
           setAbsences(activeDraft.absences || []);
+          if (activeDraft.journey_state || activeDraft.journeyState) {
+            const jState = activeDraft.journey_state || activeDraft.journeyState;
+            setJourneyState({
+              unlockedNodes: Array.from(new Set(['school', ...(jState.unlockedNodes || [])])),
+              completedNodes: jState.completedNodes || [],
+              currentNode: jState.currentNode || 'school'
+            });
+          }
           if (draftPersonnel.length > 0) {
             setActivePersonnelId(draftPersonnel[0].id);
           }
@@ -1853,6 +1919,12 @@ export const AppProvider = ({ children }) => {
         refreshRequests();
         loadDistrictSchools();
         fetchAllowances(currentSchoolInfo.schoolYear);
+        try {
+          const matrix = await api.getSalaryMatrix();
+          if (Array.isArray(matrix)) setSalaryMatrix(matrix);
+        } catch (e) {
+          console.error('[AppContext] Failed to load salary matrix:', e);
+        }
       } catch (err) {
         console.error('Error loading initial data:', err);
       }
@@ -1963,6 +2035,7 @@ export const AppProvider = ({ children }) => {
           classSections,
           workloadTransfers,
           absences,
+          journey_state: journeyState,
           lastUpdated: timestamp
         };
         // 1. Save to local IndexedDB
@@ -1984,7 +2057,7 @@ export const AppProvider = ({ children }) => {
     }, 1500);
 
     return () => clearTimeout(debounceId);
-  }, [schoolInfo, personnel, classSections, workloadTransfers, absences]);
+  }, [schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState]);
 
   // Save changes to schoolInfo to the backend (Disabled: school profile is read-only in ESF7 Personnel Portal)
   /*
@@ -2984,7 +3057,14 @@ export const AppProvider = ({ children }) => {
       toggleAllowance,
       workImmersionSchedulesMap,
       fetchWorkImmersionSchedules,
-      saveWorkImmersionSchedules
+      saveWorkImmersionSchedules,
+      journeyState,
+      setJourneyState,
+      completeNode,
+      isNodeUnlocked,
+      isNodeCompleted,
+      bypassNodeLocks,
+      setBypassNodeLocks
     }}>
       {children}
     </AppContext.Provider>
@@ -3006,7 +3086,11 @@ export const useApp = () => {
       showConfirm: () => {},
       schoolInfo: {},
       selectedTeachers: [],
-      personnel: []
+      personnel: [],
+      journeyState: { unlockedNodes: ['school'], completedNodes: [], currentNode: 'school' },
+      isNodeUnlocked: () => true,
+      isNodeCompleted: () => false,
+      completeNode: () => {}
     };
   }
   return context;

@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import OverloadPayModal from '../components/OverloadPayModal';
 
 export default function Submission() {
-  const { getValidationIssues, setActiveView, school } = useApp();
+  const { getValidationIssues, setActiveView, school, completeNode } = useApp();
   const [isOverloadModalOpen, setIsOverloadModalOpen] = useState(false);
 
   const issues = getValidationIssues();
@@ -109,6 +109,74 @@ export default function Submission() {
         schoolId={school?.school_id || '123456'}
         schoolYear={school?.school_year || 'SY 2026-2027'}
       />
+
+      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
+      <div className="sticky-journey-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{
+            background: 'rgba(16, 185, 129, 0.25)',
+            color: '#34D399',
+            border: '1px solid rgba(52, 211, 153, 0.4)',
+            padding: '4px 12px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: '900'
+          }}>
+            NODE 09 OF 09 (FINAL STEP)
+          </span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
+              eSF7 Final Submission & Certification
+            </h4>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
+              Final sign-off, digital certification & official eSF7 submission to command center.
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setActiveView('nodemap')}
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#E2E8F0',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '10px',
+              padding: '8px 16px',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            🗺️ Node Map
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (completeNode) completeNode('submission', null);
+              setActiveView('nodemap');
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '10px 20px',
+              fontSize: '13px',
+              fontWeight: '800',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Finish & Return to Node Map 🎉
+          </button>
+        </div>
+      </div>
     </section>
   );
 }

@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
-import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart } from 'react-icons/fi';
+import PortalHeader from '../components/PortalHeader';
+import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight } from 'react-icons/fi';
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
-  const { personnel, classSections, schoolInfo, setActiveView, showToast } = useApp();
+  const { personnel, classSections, schoolInfo, setActiveView, showToast, isNodeUnlocked, isNodeCompleted } = useApp();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -33,6 +34,65 @@ export default function Dashboard() {
 
   const schoolName = stats?.school_overview?.school_name || schoolInfo?.schoolName || 'DepEd Integrated School';
   const totalPersonnel = personnel.length;
+
+  const NODES = [
+    {
+      id: 'school',
+      nodeNumber: '01',
+      title: 'School Profile',
+      subtitle: 'School identity, shift configuration & offerings',
+      icon: '🏛',
+      view: 'school',
+      summary: schoolInfo?.schoolId ? `School ID: ${schoolInfo.schoolId}` : 'Configure school identity'
+    },
+    {
+      id: 'roster',
+      nodeNumber: '02',
+      title: 'Personnel Roster',
+      subtitle: 'Master personnel list & appointment status',
+      icon: '☷',
+      view: 'roster',
+      summary: `${personnel.length} Registered Personnel`
+    },
+    {
+      id: 'profile',
+      nodeNumber: '03',
+      title: 'Personnel Profiling',
+      subtitle: 'Educational qualifications, LET & eligibility',
+      icon: '✎',
+      view: 'profile',
+      summary: `${personnel.filter(p => p.degreeMajor || p.major).length} Profiles Configured`
+    },
+    {
+      id: 'classes',
+      nodeNumber: '04',
+      title: 'Organized Classes',
+      subtitle: 'Section setup, advisers & learner counts',
+      icon: '▦',
+      view: 'classes',
+      summary: `${classSections.length} Class Sections`
+    },
+    {
+      id: 'workload',
+      nodeNumber: '05',
+      title: 'Workload & Timetable',
+      subtitle: 'Teaching schedules, period durations & timetable',
+      icon: '◷',
+      view: 'workload',
+      summary: `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`
+    },
+    {
+      id: 'validation',
+      nodeNumber: '06',
+      title: 'Submission & Certification',
+      subtitle: 'Validation rules, eSF7 preview & certification',
+      icon: '⛨',
+      view: 'validation',
+      summary: 'Final review & digital school head certification'
+    }
+  ];
+
+  const completedCount = NODES.filter(n => isNodeCompleted(n.id)).length;
   const maleCount = personnel.filter(p => String(p.sexAtBirth || p.gender || '').toUpperCase().startsWith('M')).length;
   const femaleCount = personnel.filter(p => String(p.sexAtBirth || p.gender || '').toUpperCase().startsWith('F')).length;
 
@@ -287,141 +347,50 @@ export default function Dashboard() {
   }, [personnel, activeSubjectLevel, TARGET_SUBJECTS]);
 
   return (
-    <section id="dashboard" className="view premium-dashboard" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <section id="dashboard" className="view premium-dashboard" style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       
-      {/* 1. HERO HEADER BANNER */}
-      <div style={{
-        background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
-        borderRadius: '20px',
-        padding: '24px 32px',
-        color: '#FFFFFF',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        display: 'flex',
-        justify: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '20px'
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{
-              background: 'rgba(59, 130, 246, 0.2)',
-              color: '#60A5FA',
-              border: '1px solid rgba(96, 165, 250, 0.3)',
-              padding: '4px 12px',
-              borderRadius: '9999px',
-              fontSize: '12px',
-              fontWeight: '700',
-              letterSpacing: '0.05em'
-            }}>
-              {termStatus.current_school_year}
-            </span>
-
-            <span style={{
-              background: termStatus.block_type === 'INSTRUCTIONAL' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-              color: termStatus.block_type === 'INSTRUCTIONAL' ? '#34D399' : '#FBBF24',
-              border: `1px solid ${termStatus.block_type === 'INSTRUCTIONAL' ? 'rgba(52, 211, 153, 0.3)' : 'rgba(251, 191, 36, 0.3)'}`,
-              padding: '4px 12px',
-              borderRadius: '9999px',
-              fontSize: '12px',
-              fontWeight: '700',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: termStatus.block_type === 'INSTRUCTIONAL' ? '#10B981' : '#F59E0B'
-              }}></span>
-              {termStatus.active_term} — {termStatus.block_type === 'INSTRUCTIONAL' ? 'Instructional Block' : 'End of Term'}
-            </span>
-
-            {termStatus.overload_pay_eligible ? (
-              <span style={{ fontSize: '11px', color: '#A7F3D0', background: 'rgba(6, 78, 59, 0.4)', padding: '2px 8px', borderRadius: '6px' }}>
-                ⚡ Overload Pay Eligible
-              </span>
-            ) : (
-              <span style={{ fontSize: '11px', color: '#FDE68A', background: 'rgba(120, 53, 15, 0.4)', padding: '2px 8px', borderRadius: '6px' }}>
-                ⛔ No Overload Pay
-              </span>
-            )}
-          </div>
-
-          <h1 style={{ fontSize: '24px', fontWeight: '800', margin: 0, color: '#F8FAFC', letterSpacing: '-0.025em' }}>
-            {schoolName}
-          </h1>
-          <p style={{ margin: 0, color: '#94A3B8', fontSize: '13px' }}>
-            📅 Active Date Range: <strong style={{ color: '#E2E8F0' }}>{termStatus.active_date_range}</strong>
-          </p>
-        </div>
-
-        {/* QUICK ACTION BUTTONS */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button 
-            onClick={() => setActiveView('roster')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#FFFFFF',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              padding: '10px 18px',
-              borderRadius: '12px',
-              fontWeight: '700',
-              fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <FiUsers size={16} /> + Add Personnel
-          </button>
-
-          <button 
-            onClick={() => setActiveView('organized_classes')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#FFFFFF',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              padding: '10px 18px',
-              borderRadius: '12px',
-              fontWeight: '700',
-              fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <FiLayers size={16} /> Organized Classes
-          </button>
-
-          <button 
-            onClick={() => setActiveView('validation')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
-              color: '#FFFFFF',
-              border: 0,
-              padding: '10px 20px',
-              borderRadius: '12px',
-              fontWeight: '800',
-              fontSize: '13px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.4)',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <FiFileText size={16} /> Generate Form 7
-          </button>
-        </div>
-      </div>
+      {/* 1. TYPOGRAPHIC PORTAL HEADER SYSTEM */}
+      <PortalHeader
+        departmentText="DEPARTMENT OF EDUCATION"
+        bureauText={`${schoolName} • ${termStatus.current_school_year}`}
+        title="eSF7 Executive Dashboard"
+        description="Real-time personnel analytics, specialization alignment, class section organization, and workload monitoring across regional divisions."
+        showLogout={true}
+        actionButton={
+          <button
+            type="button"
+            onClick={() => setActiveView('nodemap')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                fontWeight: '900',
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: '#FFFFFF',
+                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                border: 'none',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 18px rgba(16, 185, 129, 0.45)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'none';
+                e.currentTarget.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.35)';
+              }}
+            >
+              <span>🗺️ Open Node Map</span>
+              <FiArrowRight style={{ fontSize: '15px' }} />
+            </button>
+        }
+      />
 
       {/* CONTENT GRID */}
       {loading ? (
