@@ -48,7 +48,7 @@ export const api = {
     return res.json();
   },
   updateCurricularConfig: async (configData) => {
-    const res = await fetchWithAuth(`${API_BASE}/school-info/curricular-config`, {
+    const res = await fetchWithAuth(`${API_BASE}/schools/curricular-config`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(configData)

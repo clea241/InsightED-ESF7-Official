@@ -3,9 +3,11 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { get10MinPasscode } from '../utils/passcode';
 import { api } from '../services/api';
+import PortalHeader from '../components/PortalHeader';
 
 export default function RoomQR() {
-  const { scannedRoom, setScannedRoom, personnel: appPersonnel, setPersonnel, updatePersonnelInfo, savePersonnelChanges, schoolInfo } = useApp() || {};
+  const { scannedRoom, setScannedRoom, personnel: appPersonnel, setPersonnel, updatePersonnelInfo, savePersonnelChanges, schoolInfo, setActiveView } = useApp() || {};
+
   const { user: authUser } = useAuth() || {};
   const [effectivePersonnel, setEffectivePersonnel] = useState(appPersonnel || []);
   const [selectedRoom, setSelectedRoom] = useState(scannedRoom || 'Faculty Room 1');
@@ -442,6 +444,12 @@ export default function RoomQR() {
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'grid', gap: '24px' }}>
+      <PortalHeader
+        title="Room QR Mobile Profiling Station"
+        description="Scan room QR codes to allow teachers to self-profile directly on mobile devices."
+        onBack={() => setActiveView && setActiveView('dashboard')}
+      />
+
       
       {/* Status Messages */}
       {ingestionSuccess && (

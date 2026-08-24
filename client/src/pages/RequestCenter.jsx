@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import SearchableDropdown from '../components/SearchableDropdown';
+import PortalHeader from '../components/PortalHeader';
 
 export default function RequestCenter() {
   const { 
@@ -12,8 +13,10 @@ export default function RequestCenter() {
     refreshRequests, 
     refreshPersonnelList,
     showToast, 
-    showAlert 
+    showAlert,
+    setActiveView
   } = useApp();
+
 
   const [activeSubTab, setActiveSubTab] = useState('incoming');
   const [mergeTargetSchool, setMergeTargetSchool] = useState('');
@@ -68,7 +71,13 @@ export default function RequestCenter() {
 
   return (
     <section id="requests" className="view grid">
+      <PortalHeader
+        title="Inter-School Request Center"
+        description="Manage requests for clustered teachers, reassigned personnel, and school merger data transfers."
+        onBack={() => setActiveView('dashboard')}
+      />
       <article className="card">
+
         <div className="card-inner">
           <h2>Request Center</h2>
           <p className="subtext">

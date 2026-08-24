@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { FiArrowLeft, FiLogOut } from 'react-icons/fi';
+import { FiArrowLeft, FiLogOut, FiRotateCcw } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import LogoutPasscodeModal from './LogoutPasscodeModal';
 
 export default function PortalHeader({
   departmentText = "DEPARTMENT OF EDUCATION",
-  bureauText = "BHROD & INFRASTRUCTURE",
+  bureauText,
   title = "Registry Management Portal",
   description = "Access, audit, and organize personnel registries across regional divisions in a unified visual system.",
   onBack,
   backText = "Back to Dashboard",
   actionButton,
   onLogout,
-  showLogout = false
+  showLogout = false,
+  showDiscard = true,
+  onDiscard
 }) {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
@@ -22,13 +25,32 @@ export default function PortalHeader({
     if (auth && auth.logout) {
       authLogout = auth.logout;
     }
-  } catch (e) {
-    // fallback if used outside AuthProvider
-  }
+  } catch (e) {}
+
+  let schoolInfo = null;
+  let appDiscardDraft = null;
+  try {
+    const app = useApp();
+    if (app) {
+      schoolInfo = app.schoolInfo;
+      appDiscardDraft = app.discardLocalDraft;
+    }
+  } catch (e) {}
+
+  const dynamicBureauText = bureauText || (schoolInfo && schoolInfo.schoolName ? `${String(schoolInfo.schoolName).toUpperCase()} • ${schoolInfo.schoolYear || 'SY 2026-2027'}` : "PURO INTEGRATED SCHOOL • SY 2026-2027");
 
   const handleLogoutClick = () => {
     setIsLogoutModalOpen(true);
   };
+
+  const handleDiscardClick = () => {
+    if (onDiscard) {
+      onDiscard();
+    } else if (appDiscardDraft) {
+      appDiscardDraft();
+    }
+  };
+
 
   return (
     <>
@@ -70,7 +92,7 @@ export default function PortalHeader({
               textTransform: 'uppercase',
               lineHeight: '1.4'
             }}>
-              {bureauText}
+              {dynamicBureauText}
             </span>
           </div>
 
@@ -101,7 +123,7 @@ export default function PortalHeader({
         </header>
 
         {/* 2. Standalone Controls Row BELOW Header Card */}
-        {(onBack || actionButton || (showLogout && (handleLogoutClick || onLogout || authLogout))) && (
+        {(onBack || actionButton || showDiscard || (showLogout && (handleLogoutClick || onLogout || authLogout))) && (
           <div style={{
             width: '100%',
             display: 'flex',
@@ -184,14 +206,52 @@ export default function PortalHeader({
               </button>
             ) : <div />}
 
-            {/* Right Side: Action Buttons / Badges */}
-            {actionButton && (
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {actionButton}
-              </div>
-            )}
+            {/* Right Side: Discard Changes & Custom Action Buttons */}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {showDiscard && (
+                <button
+                  type="button"
+                  onClick={handleDiscardClick}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    borderRadius: '12px',
+                    fontSize: '11.5px',
+                    fontWeight: '800',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    color: '#DC2626',
+                    background: 'rgba(254, 226, 226, 0.7)',
+                    border: '1px solid rgba(252, 165, 165, 0.8)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#EF4444';
+                    e.currentTarget.style.color = '#FFFFFF';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(254, 226, 226, 0.7)';
+                    e.currentTarget.style.color = '#DC2626';
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.03)';
+                  }}
+                  title="Discard unsaved local changes and reload template"
+                >
+                  <FiRotateCcw style={{ fontSize: '14px' }} />
+                  <span>Discard Changes</span>
+                </button>
+              )}
+              {actionButton}
+            </div>
           </div>
         )}
+
       </div>
 
       {/* Security Passcode Modal on Logout */}

@@ -14,7 +14,7 @@ export default function NodeMap() {
     {
       key: 'esf7',
       title: 'ESF7 Core Registry & Operations',
-      subtitle: 'Primary school metadata, staffing roster, class sections, assignments, deployments, quality validations, and final certification',
+      subtitle: 'Primary school metadata, staffing roster, class sections, assignments, and workload schedules',
       nodes: [
         {
           id: 'school',
@@ -69,33 +69,6 @@ export default function NodeMap() {
           icon: '◷',
           view: 'workload',
           summary: `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`
-        },
-        {
-          id: 'deployment',
-          nodeNumber: '07',
-          title: 'Deployment & Transfers',
-          subtitle: 'Clustered schools, reassigned staff & inter-school flow',
-          icon: '⇄',
-          view: 'deployment',
-          summary: `${personnel.filter(p => p.deploymentStatus && p.deploymentStatus !== 'OWN STATION').length} Deployed Personnel`
-        },
-        {
-          id: 'validation',
-          nodeNumber: '08',
-          title: 'Validation Center',
-          subtitle: 'Validation rules, error auditing & quality flags',
-          icon: '⛨',
-          view: 'validation',
-          summary: 'Error & Warning Quality Checks'
-        },
-        {
-          id: 'submission',
-          nodeNumber: '09',
-          title: 'eSF7 Final Submission',
-          subtitle: 'Final sign-off, digital certification & eSF7 submission',
-          icon: '📋',
-          view: 'submission',
-          summary: 'Official DepEd eSF7 Certification'
         }
       ]
     },
@@ -106,7 +79,7 @@ export default function NodeMap() {
       nodes: [
         {
           id: 'room-qr',
-          nodeNumber: '10',
+          nodeNumber: '07',
           title: 'Room QR Portal',
           subtitle: 'Teacher passcode identity & self-profiling QR scanner',
           icon: '⛶',
@@ -115,7 +88,7 @@ export default function NodeMap() {
         },
         {
           id: 'requests',
-          nodeNumber: '11',
+          nodeNumber: '08',
           title: 'Request Center',
           subtitle: 'Incoming and outgoing personnel transfer requests',
           icon: '✉',
@@ -131,7 +104,7 @@ export default function NodeMap() {
       nodes: [
         {
           id: 'overload',
-          nodeNumber: '12',
+          nodeNumber: '09',
           title: 'Teaching Overload Center',
           subtitle: 'Overload minutes tracking, calendar terms & monthly pay calculations',
           icon: '⇄',
@@ -147,12 +120,28 @@ export default function NodeMap() {
       nodes: [
         {
           id: 'allowances',
-          nodeNumber: '13',
+          nodeNumber: '10',
           title: 'Allowances & Incentives',
           subtitle: 'Financial incentives, medical allowance & uniform indicators',
           icon: '₱',
           view: 'allowances',
           summary: 'Teacher Allowance & Incentive Matrix'
+        }
+      ]
+    },
+    {
+      key: 'validation',
+      title: 'Validation & Certification',
+      subtitle: 'Official DepEd eSF7 record validation rules, error auditing, printable reports, and digital certification',
+      nodes: [
+        {
+          id: 'validation',
+          nodeNumber: '11',
+          title: 'Validation Center',
+          subtitle: 'Validation rules, error auditing & quality flags',
+          icon: '⛨',
+          view: 'validation',
+          summary: 'Error & Warning Quality Checks & Digital Certification'
         }
       ]
     }

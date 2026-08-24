@@ -231,6 +231,50 @@ export default function Allowances() {
           </div>
         </div>
 
+        {/* BOTTOM ACTION BAR */}
+        <div style={{
+          marginTop: '30px',
+          padding: '16px 24px',
+          background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+          borderRadius: '16px',
+          display: 'flex',
+          justify: 'space-between',
+          alignItems: 'center',
+          boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.3)'
+        }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
+              Allowances & Incentives Configured
+            </h4>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
+              Proceed to Node 11 (Validation Center) for final quality checks & eSF7 report generation.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setActiveView('validation')}
+              style={{
+                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '10px 20px',
+                fontSize: '13px',
+                fontWeight: '800',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span>Save & Proceed to Validation Center ➔</span>
+            </button>
+          </div>
+        </div>
+
       </div>
     </PageTransition>
   );

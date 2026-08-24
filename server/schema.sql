@@ -1,370 +1,525 @@
 -- PostgreSQL Schema for InsightED eSF7 (Alphanumeric String IDs PK Architecture)
 
--- DROP TABLE IF EXISTS workload_transfers CASCADE;
--- DROP TABLE IF EXISTS workload_row_dates CASCADE;
--- DROP TABLE IF EXISTS workload_rows CASCADE;
--- DROP TABLE IF EXISTS class_sections CASCADE;
--- DROP TABLE IF EXISTS personnel_trainings CASCADE;
--- DROP TABLE IF EXISTS personnel_qualifications CASCADE;
--- DROP TABLE IF EXISTS personnel_employment CASCADE;
--- DROP TABLE IF EXISTS personnel CASCADE;
--- DROP TABLE IF EXISTS schools CASCADE;
-
--- 1. Schools Table
-CREATE TABLE IF NOT EXISTS schools (
-    id VARCHAR(50) PRIMARY KEY,
-    school_id TEXT NOT NULL,
-    iern TEXT,
-    school_name TEXT NOT NULL,
-    region TEXT NOT NULL,
-    division TEXT NOT NULL,
-    district TEXT,
-    municipality TEXT,
-    school_year TEXT NOT NULL,
-    number_of_shifts INTEGER NOT NULL DEFAULT 1,
-    curricular_offering TEXT[] NOT NULL DEFAULT '{}',
-    subjects_config JSONB,
-    contact_email TEXT,
-    certified_by TEXT,
-    certified_signature TEXT,
-    certified_at TIMESTAMPTZ,
+-- 1. Salary Matrix Table (DepEd SSL Salary Grades 1-33, Steps 1-8)
+CREATE TABLE IF NOT EXISTS salary_matrix (
+    id SERIAL PRIMARY KEY,
+    salary_grade INTEGER NOT NULL,
+    step_number INTEGER NOT NULL,
+    basic_salary NUMERIC(10,2) NOT NULL,
+    position_title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_school_year UNIQUE (school_id, school_year)
+    CONSTRAINT uq_salary_grade_step UNIQUE (salary_grade, step_number)
 );
+CREATE INDEX IF NOT EXISTS idx_salary_matrix_lookup ON salary_matrix (salary_grade, step_number);
 
--- 2. Personnel Table
-CREATE TABLE IF NOT EXISTS personnel (
+-- 2. Personnel Profile Table (Identity & Personal Tabs + Raw JSON Payload)
+CREATE TABLE IF NOT EXISTS esf7_personnel_profile (
     id VARCHAR(50) PRIMARY KEY,
-    prn TEXT NOT NULL UNIQUE,
+    prn TEXT UNIQUE NOT NULL,
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('teaching', 'teaching-related', 'non-teaching')),
-    salutation TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'teaching' CHECK (type IN ('teaching', 'teaching-related', 'non-teaching')),
+    
+    -- IDENTITY TAB COLUMNS
+    salutation TEXT NOT NULL DEFAULT 'MR.',
     first_name TEXT NOT NULL,
     middle_name TEXT,
     last_name TEXT NOT NULL,
     name_extension TEXT,
+    tin TEXT,
+    no_tin BOOLEAN NOT NULL DEFAULT FALSE,
+    
+    -- PERSONAL TAB COLUMNS
     sex_at_birth TEXT CHECK (sex_at_birth IN ('Male', 'Female', 'MALE', 'FEMALE')),
     civil_status TEXT,
     solo_parent BOOLEAN NOT NULL DEFAULT FALSE,
     religion TEXT,
     ethnic_group TEXT,
     birthdate DATE,
-    philsys_no TEXT UNIQUE,
-    tin TEXT UNIQUE,
-    no_tin BOOLEAN NOT NULL DEFAULT FALSE,
-    employee_no TEXT UNIQUE,
-    deped_email TEXT NOT NULL DEFAULT '' CHECK (deped_email = '' OR deped_email LIKE '%@deped.gov.ph'),
-    deployment_status TEXT,
-    personal_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    workload_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    profiling_code TEXT NOT NULL,
     age INTEGER,
+    philsys_no TEXT,
+    employee_no TEXT,
+    deped_email TEXT,
     is_school_head BOOLEAN NOT NULL DEFAULT FALSE,
-    step_increment INTEGER DEFAULT 1,
+    
+    -- FLEXIBLE DATA STORAGE (JSONB)
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    -- TIMESTAMPTZ
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. Personnel Employment Table
-CREATE TABLE IF NOT EXISTS personnel_employment (
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_profile_school_sy ON esf7_personnel_profile (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_profile_prn ON esf7_personnel_profile (prn);
+
+-- 3. Personnel Employment Table (Role, Appointment, Tenure & JSON Arrays)
+CREATE TABLE IF NOT EXISTS esf7_personnel_employment (
     id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES personnel (id) ON DELETE CASCADE,
+    personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    
+    position_category TEXT NOT NULL CHECK (position_category IN ('TEACHING', 'RELATED TEACHING', 'NON-TEACHING', 'teaching', 'teaching-related', 'non-teaching')),
     position TEXT NOT NULL,
-    designation TEXT,
+    step_increment INTEGER DEFAULT 1 CHECK (step_increment BETWEEN 1 AND 8),
     fund_source TEXT NOT NULL,
     nature_of_appointment TEXT NOT NULL,
     hiring_arrangement TEXT NOT NULL,
-    assigned_schools TEXT[] DEFAULT '{}',
-    grade_levels_taught TEXT[] NOT NULL DEFAULT '{}',
-    first_service_date DATE NOT NULL,
-    last_promotion_date DATE NOT NULL,
-    new_station_date DATE NOT NULL,
+    deployment_status TEXT DEFAULT 'OWN STATION',
+    
+    assigned_schools JSONB DEFAULT '[]'::jsonb,
+    grade_levels_taught JSONB DEFAULT '[]'::jsonb,
+    
+    first_service_date DATE,
+    last_promotion_date DATE,
+    new_station_date DATE,
     last_lateral_movement_date DATE,
-    step_number INTEGER DEFAULT 1,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. Personnel Qualifications Table
-CREATE TABLE IF NOT EXISTS personnel_qualifications (
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_employment_personnel ON esf7_personnel_employment (personnel_id);
+
+-- 4. Personnel Education Table (Degree, Postgraduate, Discipline & Eligibility JSONB)
+CREATE TABLE IF NOT EXISTS esf7_perssonel_educ (
     id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES personnel (id) ON DELETE CASCADE,
+    personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    
     college_degree TEXT NOT NULL,
-    major TEXT NOT NULL,
+    major TEXT,
     minor TEXT,
-    post_graduate_degree TEXT NOT NULL,
-    discipline TEXT,
-    eligibility TEXT NOT NULL,
+    post_graduate_degree TEXT DEFAULT 'N/A',
+    post_graduate_discipline TEXT,
+    
+    eligibility JSONB DEFAULT '[]'::jsonb,
     prc_specialization TEXT,
-    prc_license_no TEXT,
-    prc_expiry_date DATE,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 5. Personnel Trainings Table
-CREATE TABLE IF NOT EXISTS personnel_trainings (
+CREATE INDEX IF NOT EXISTS idx_esf7_perssonel_educ_personnel ON esf7_perssonel_educ (personnel_id);
+
+-- 5. Personnel L&D Trainings Table (NEAP, TESDA & Other Seminars / Certifications)
+CREATE TABLE IF NOT EXISTS esf7_personnel_ld_trainings (
     id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    training_type TEXT NOT NULL CHECK (training_type IN ('neap', 'certification', 'other')),
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    
+    training_type TEXT NOT NULL CHECK (training_type IN ('NEAP', 'TESDA', 'OTHER', 'neap', 'tesda', 'other')),
     title TEXT NOT NULL,
-    conductor TEXT NOT NULL,
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    days INTEGER NOT NULL,
-    hours_per_day NUMERIC NOT NULL,
-    total_hours NUMERIC NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 6. Class Sections Table
-CREATE TABLE IF NOT EXISTS class_sections (
-    id VARCHAR(50) PRIMARY KEY,
-    school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL,
-    grade_level TEXT NOT NULL,
-    section_name TEXT NOT NULL,
-    adviser_id VARCHAR(50) REFERENCES personnel (id) ON DELETE SET NULL,
-    section_type TEXT NOT NULL DEFAULT 'MONO GRADE' CHECK (section_type IN ('MULTIGRADE', 'MONO GRADE', 'NON GRADED', 'Regular', 'regular')),
-    number_of_learners INTEGER,
+    conductor TEXT,
+    start_date DATE,
+    end_date DATE,
+    days INTEGER,
+    total_hours NUMERIC,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_section UNIQUE (school_id, school_year, grade_level, section_name)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 7. Personnel Designations Table
-CREATE TABLE IF NOT EXISTS personnel_designations (
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_ld_trainings_personnel ON esf7_personnel_ld_trainings (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_ld_trainings_type ON esf7_personnel_ld_trainings (training_type);
+
+-- 6. Personnel Learning Area Matrix Table (Curriculum Era & Primary Subject Grid Map)
+CREATE TABLE IF NOT EXISTS esf7_personnel_learning_areas (
     id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL,
+    personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    
+    matrix_data JSONB DEFAULT '{}'::jsonb,
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_learning_areas_personnel ON esf7_personnel_learning_areas (personnel_id);
+
+-- 7. Personnel Designations Table (Official Designations, SDS Approval & External sds_confirmed)
+CREATE TABLE IF NOT EXISTS esf7_personnel_designations (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    
     designation_name TEXT NOT NULL,
     grade_level TEXT,
-    learning_area TEXT,
+    subject_area TEXT,
     track TEXT,
-    approved_by_sds BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_personnel_designation UNIQUE (personnel_id, designation_name, grade_level, learning_area, track)
-);
-
-CREATE INDEX IF NOT EXISTS idx_personnel_designations_lookup ON personnel_designations (school_id, school_year, personnel_id);
-
--- 8. Workload Rows Table
-CREATE TABLE IF NOT EXISTS workload_rows (
-    id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL,
-    row_type TEXT NOT NULL CHECK (row_type IN ('teaching', 'teaching-related', 'administrative')),
-    subject TEXT,
-    task TEXT,
-    grade_level TEXT,
-    section_id VARCHAR(50) REFERENCES class_sections (id) ON DELETE CASCADE,
-    designation_id VARCHAR(50) REFERENCES personnel_designations (id) ON DELETE CASCADE,
-    start_time VARCHAR(20),
-    end_time VARCHAR(20),
-    days TEXT[] NOT NULL DEFAULT '{}',
-    designated_by_sds BOOLEAN DEFAULT FALSE,
+    is_sds_approved BOOLEAN NOT NULL DEFAULT FALSE,
+    sds_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    serialized_key TEXT NOT NULL,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 8. Workload Transfers Table
-CREATE TABLE IF NOT EXISTS workload_transfers (
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_designations_personnel ON esf7_personnel_designations (personnel_id);
+
+-- 8. Class Sections Table (Mono-grade, Multigrade, Non-Graded & ARAL Class Sections + Standard Status)
+CREATE TABLE IF NOT EXISTS esf7_class_sections (
     id VARCHAR(50) PRIMARY KEY,
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL,
-    absent_personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    substitute_personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    workload_row_id VARCHAR(50) NOT NULL REFERENCES workload_rows (id) ON DELETE CASCADE,
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    reason TEXT,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended', 'cancelled')),
-    logged_by TEXT,
+    
+    grade_level TEXT NOT NULL,
+    section_name TEXT NOT NULL,
+    section_type TEXT NOT NULL DEFAULT 'MONO GRADE',
+    
+    advisor_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+    
+    advisory_minutes INTEGER DEFAULT 300,
+    
+    male_learners INTEGER DEFAULT 0,
+    female_learners INTEGER DEFAULT 0,
+    number_of_learners INTEGER DEFAULT 0,
+    
+    standard TEXT DEFAULT 'WITHIN STANDARD' CHECK (standard IN ('BELOW STANDARD', 'WITHIN STANDARD', 'ABOVE STANDARD', 'BELOW', 'WITHIN', 'ABOVE')),
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 9. Workload Row Dates Table
-CREATE TABLE IF NOT EXISTS workload_row_dates (
-    id VARCHAR(50) PRIMARY KEY,
-    workload_row_id VARCHAR(50) NOT NULL REFERENCES workload_rows (id) ON DELETE CASCADE,
-    task_date DATE,
-    start_time VARCHAR(20),
-    end_time VARCHAR(20),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 10. School Drafts Table
-CREATE TABLE IF NOT EXISTS school_drafts (
-    school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL,
-    payload JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (school_id, school_year)
+    
+    CONSTRAINT uq_school_sy_grade_section UNIQUE (school_id, school_year, grade_level, section_name)
 );
 
--- 11. Performance Optimization Indexes
-CREATE INDEX IF NOT EXISTS idx_personnel_school_sy ON personnel (school_id, school_year);
-CREATE INDEX IF NOT EXISTS idx_class_sections_school_sy ON class_sections (school_id, school_year);
-CREATE INDEX IF NOT EXISTS idx_workload_rows_personnel ON workload_rows (personnel_id);
-CREATE INDEX IF NOT EXISTS idx_workload_rows_school ON workload_rows (school_id);
-CREATE INDEX IF NOT EXISTS idx_workload_row_dates_row ON workload_row_dates (workload_row_id);
-CREATE INDEX IF NOT EXISTS idx_school_drafts_school_sy ON school_drafts (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_esf7_class_sections_school_sy ON esf7_class_sections (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_esf7_class_sections_advisor ON esf7_class_sections (advisor_id);
 
--- 12. SHS Workload Tables (Senior High School — term-based)
-
--- SHS Workload Rows (mirrors workload_rows + term column)
-CREATE TABLE IF NOT EXISTS shs_workload_rows (
+-- 9. School Subjects Table (Stores Custom Added Subjects per School & Key Stage)
+CREATE TABLE IF NOT EXISTS esf7_school_subjects (
     id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL,
-    term TEXT NOT NULL CHECK (term IN ('1st', '2nd', '3rd')),
-    row_type TEXT NOT NULL CHECK (row_type IN ('teaching', 'teaching-related', 'administrative')),
-    subject TEXT,
+    
+    subject_name TEXT NOT NULL,
+    key_stage TEXT NOT NULL,
+    grade_level TEXT DEFAULT 'All',
     shs_category TEXT,
-    task TEXT,
+    
+    is_custom BOOLEAN NOT NULL DEFAULT TRUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_school_sy_custom_subject UNIQUE (school_id, school_year, key_stage, subject_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_school_subjects_school_sy ON esf7_school_subjects (school_id, school_year);
+
+-- 10. Elementary & Junior High School Workload Rows Table
+CREATE TABLE IF NOT EXISTS esf7_workload_rows (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
     grade_level TEXT,
-    section_id VARCHAR(50) REFERENCES class_sections (id) ON DELETE CASCADE,
-    start_time VARCHAR(20),
-    end_time VARCHAR(20),
-    days TEXT[] NOT NULL DEFAULT '{}',
-    designated_by_sds BOOLEAN DEFAULT FALSE,
+    section_id VARCHAR(50) REFERENCES esf7_class_sections(id) ON DELETE SET NULL,
+    section_name TEXT,
+    
+    subject TEXT NOT NULL,
+    subject_id VARCHAR(50),
+    remediation_subject TEXT,
+    
+    start_time TIME,
+    end_time TIME,
+    days JSONB DEFAULT '["M","T","W","TH","F"]'::jsonb,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- SHS Workload Transfers (mirrors workload_transfers + term column)
-CREATE TABLE IF NOT EXISTS shs_workload_transfers (
+CREATE INDEX IF NOT EXISTS idx_esf7_workload_rows_personnel ON esf7_workload_rows (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_workload_rows_school_sy ON esf7_workload_rows (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_esf7_workload_rows_section ON esf7_workload_rows (section_id);
+
+-- 11. Senior High School Workload Rows Table (1st, 2nd, 3rd Terms)
+CREATE TABLE IF NOT EXISTS esf7_shs_workload_rows (
     id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL,
-    term TEXT NOT NULL CHECK (term IN ('1st', '2nd', '3rd')),
-    absent_personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    substitute_personnel_id VARCHAR(50) NOT NULL REFERENCES personnel (id) ON DELETE CASCADE,
-    shs_workload_row_id VARCHAR(50) NOT NULL REFERENCES shs_workload_rows (id) ON DELETE CASCADE,
+    
+    term TEXT NOT NULL DEFAULT '1st',
+    semester TEXT,
+    
+    grade_level TEXT NOT NULL,
+    track_strand TEXT,
+    shs_subject_category TEXT,
+    section_id VARCHAR(50) REFERENCES esf7_class_sections(id) ON DELETE SET NULL,
+    section_name TEXT,
+    
+    subject TEXT NOT NULL,
+    subject_id VARCHAR(50),
+    remediation_subject TEXT,
+    
+    start_time TIME,
+    end_time TIME,
+    days JSONB DEFAULT '["M","T","W","TH","F"]'::jsonb,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_shs_workload_rows_personnel ON esf7_shs_workload_rows (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_shs_workload_rows_term ON esf7_shs_workload_rows (personnel_id, term);
+CREATE INDEX IF NOT EXISTS idx_esf7_shs_workload_rows_school_sy ON esf7_shs_workload_rows (school_id, school_year);
+
+-- 12. Personnel Allowances Table (Boolean Flags & Amounts per Allowance)
+CREATE TABLE IF NOT EXISTS esf7_personnel_allowances (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
+    has_pera BOOLEAN NOT NULL DEFAULT FALSE,
+    pera_amount NUMERIC(10,2) DEFAULT 2000.00,
+    
+    has_uniform BOOLEAN NOT NULL DEFAULT FALSE,
+    uniform_amount NUMERIC(10,2) DEFAULT 7000.00,
+    
+    has_supplies BOOLEAN NOT NULL DEFAULT FALSE,
+    supplies_amount NUMERIC(10,2) DEFAULT 10000.00,
+    
+    has_medical BOOLEAN NOT NULL DEFAULT FALSE,
+    medical_amount NUMERIC(10,2) DEFAULT 7000.00,
+    
+    has_hardship BOOLEAN NOT NULL DEFAULT FALSE,
+    hardship_amount NUMERIC(10,2) DEFAULT 0.00,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_personnel_sy_allowances UNIQUE (personnel_id, school_year)
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_allowances_personnel ON esf7_personnel_allowances (personnel_id);
+
+-- 13. Overload No Work Table (Local Holidays & Class Suspensions for Overload Deductions)
+CREATE TABLE IF NOT EXISTS overload_no_work (
+    id VARCHAR(50) PRIMARY KEY,
+    region TEXT NOT NULL,
+    division TEXT NOT NULL,
+    school_id TEXT NOT NULL DEFAULT 'ALL',
+    school_year TEXT NOT NULL,
+    
+    no_work_date DATE NOT NULL,
+    event_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_region_div_school_date UNIQUE (region, division, school_id, school_year, no_work_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_overload_no_work_region_div ON overload_no_work (region, division);
+CREATE INDEX IF NOT EXISTS idx_overload_no_work_school ON overload_no_work (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_overload_no_work_date ON overload_no_work (no_work_date);
+
+-- 14. Overload Absences Table (Teacher Absences for Overload Deductions)
+CREATE TABLE IF NOT EXISTS overload_absences (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    reason TEXT,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended', 'cancelled')),
-    logged_by TEXT,
+    leave_type TEXT NOT NULL DEFAULT 'SICK_LEAVE',
+    total_days INTEGER DEFAULT 1,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- SHS Workload Row Dates (mirrors workload_row_dates for SHS)
-CREATE TABLE IF NOT EXISTS shs_workload_row_dates (
+CREATE INDEX IF NOT EXISTS idx_overload_absences_personnel ON overload_absences (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_overload_absences_dates ON overload_absences (start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_overload_absences_school_sy ON overload_absences (school_id, school_year);
+
+-- 15. Workload Transfer Table (Relieving Duty / Temporary Workload Transfer)
+CREATE TABLE IF NOT EXISTS esf7_workload_transfer (
     id VARCHAR(50) PRIMARY KEY,
-    shs_workload_row_id VARCHAR(50) NOT NULL REFERENCES shs_workload_rows (id) ON DELETE CASCADE,
-    task_date DATE,
-    start_time VARCHAR(20),
-    end_time VARCHAR(20),
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
+    absent_personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    relieving_personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    
+    absence_id VARCHAR(50) REFERENCES overload_absences(id) ON DELETE CASCADE,
+    workload_id VARCHAR(50) NOT NULL,
+    workload_type TEXT NOT NULL DEFAULT 'ELEM_JHS',
+    subject TEXT NOT NULL,
+    
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    relieving_hours NUMERIC(4,2) DEFAULT 1.00,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- SHS Workload Indexes
-CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_personnel ON shs_workload_rows (personnel_id);
-CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_school ON shs_workload_rows (school_id);
-CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_term ON shs_workload_rows (term);
-CREATE INDEX IF NOT EXISTS idx_shs_row_dates_row ON shs_workload_row_dates (shs_workload_row_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_workload_transfer_relieving ON esf7_workload_transfer (relieving_personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_workload_transfer_absent ON esf7_workload_transfer (absent_personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_workload_transfer_absence ON esf7_workload_transfer (absence_id);
 
--- 12. Request Center Tables (Clustered & Mergers)
-CREATE TABLE IF NOT EXISTS clustered_connections (
-    id SERIAL PRIMARY KEY,
+-- 16. Overload Late Table (Teacher Tardiness Logs for Overload Disqualification on Specific Date)
+CREATE TABLE IF NOT EXISTS overload_late (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
+    tardiness_date DATE NOT NULL,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_personnel_sy_tardiness_date UNIQUE (personnel_id, school_year, tardiness_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_overload_late_personnel ON overload_late (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_overload_late_date ON overload_late (tardiness_date);
+CREATE INDEX IF NOT EXISTS idx_overload_late_school_sy ON overload_late (school_id, school_year);
+
+-- 17. Work Immersion Table (SHS Work Immersion Coordinator / Teacher Daily Venue Visit Schedules)
+CREATE TABLE IF NOT EXISTS esf7_work_immersion (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
+    visit_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    duration_minutes INTEGER DEFAULT 0,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_personnel_sy_immersion_date UNIQUE (personnel_id, school_year, visit_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_work_immersion_personnel ON esf7_work_immersion (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_work_immersion_date ON esf7_work_immersion (visit_date);
+CREATE INDEX IF NOT EXISTS idx_esf7_work_immersion_school_sy ON esf7_work_immersion (school_id, school_year);
+
+-- 18. Overload Pay and Reason Table (Stores computed Overload Hours, Pay, Net Term Pay, and Reasons JSONB)
+CREATE TABLE IF NOT EXISTS overload_pay_and_reason (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    
+    term TEXT NOT NULL DEFAULT 'Term 1',
+    month TEXT,
+    
+    overload_hours NUMERIC(6,2) DEFAULT 0.00,
+    overload_pay NUMERIC(10,2) DEFAULT 0.00,
+    net_term_pay NUMERIC(10,2) DEFAULT 0.00,
+    
+    reasons JSONB DEFAULT '[]'::jsonb,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_personnel_sy_term_month_overload UNIQUE (personnel_id, school_year, term, month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_overload_pay_reason_personnel ON overload_pay_and_reason (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_overload_pay_reason_school_sy ON overload_pay_and_reason (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_overload_pay_reason_term_month ON overload_pay_and_reason (personnel_id, school_year, term, month);
+
+-- 19. Requests Table (Inter-School Requests: Clustered Teacher, Reassigned Teacher, School Merger)
+CREATE TABLE IF NOT EXISTS esf7_requests (
+    id VARCHAR(50) PRIMARY KEY,
     requester_school_id TEXT NOT NULL,
     target_school_id TEXT NOT NULL,
-    personnel_id TEXT,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    request_type TEXT NOT NULL,
+    personnel_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
     personnel_name TEXT,
-    request_type TEXT NOT NULL CHECK (request_type IN ('clustered_teacher', 'reassigned_teacher', 'school_merger')),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'CANCELLED')),
+    remarks TEXT,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS school_merger_registry (
-    id SERIAL PRIMARY KEY,
-    parent_school_id TEXT NOT NULL,
-    child_school_id TEXT NOT NULL,
-    merged_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE INDEX IF NOT EXISTS idx_esf7_requests_target ON esf7_requests (target_school_id, status);
+CREATE INDEX IF NOT EXISTS idx_esf7_requests_requester ON esf7_requests (requester_school_id, status);
+CREATE INDEX IF NOT EXISTS idx_esf7_requests_personnel ON esf7_requests (personnel_id);
+
+-- 20. School Profile Table (Stores Elementary, JHS, JHS JSONB Special Programs, and SHS Curriculum Model)
+CREATE TABLE IF NOT EXISTS esf7_school_profile (
+    id VARCHAR(50) PRIMARY KEY,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    has_elem_special_programs BOOLEAN NOT NULL DEFAULT FALSE,
+    has_jhs_special_programs BOOLEAN NOT NULL DEFAULT FALSE,
+    jhs_special_programs JSONB DEFAULT '[]'::jsonb,
+    shs_curriculum_model TEXT,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_school_sy_profile UNIQUE (school_id, school_year)
 );
 
-CREATE INDEX IF NOT EXISTS idx_clustered_connections_target ON clustered_connections (target_school_id, status);
-CREATE INDEX IF NOT EXISTS idx_clustered_connections_requester ON clustered_connections (requester_school_id);
-CREATE INDEX IF NOT EXISTS idx_school_merger_registry_child ON school_merger_registry (child_school_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_school_profile_school_sy ON esf7_school_profile (school_id, school_year);
 
--- 13. School Calendar Terms Table
-CREATE TABLE IF NOT EXISTS school_calendar_terms (
+-- 21. Submission Queue Table (Offline-First Queue Processing for Certified E-Sign Submissions)
+CREATE TABLE IF NOT EXISTS esf7_submission_queue (
     id SERIAL PRIMARY KEY,
     school_id TEXT NOT NULL,
-    school_year VARCHAR(50) NOT NULL,
-    term_name VARCHAR(100) NOT NULL,
-    block_type VARCHAR(50) NOT NULL CHECK (block_type IN ('instructional', 'end_of_term', 'vacation')),
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    is_teaching BOOLEAN NOT NULL DEFAULT true,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    signature TEXT,
+    certified_by TEXT,
+    
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'CANCELLED')),
+    error_message TEXT,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_school_calendar_terms_school_sy ON school_calendar_terms (school_id, school_year);
-
--- 14. Personnel Learning Areas Table (Feature A)
-CREATE TABLE IF NOT EXISTS personnel_learning_areas (
-    id SERIAL PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
-    school_year TEXT NOT NULL,
-    learning_area TEXT NOT NULL,
-    UNIQUE(personnel_id, school_year, learning_area)
-);
-
--- 15. Work Immersion Minutes Table (Feature B)
-CREATE TABLE IF NOT EXISTS work_immersion_minutes (
-    id SERIAL PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
-    school_year TEXT NOT NULL,
-    month TEXT NOT NULL,
-    day INTEGER NOT NULL,
-    minutes INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(personnel_id, school_year, month, day)
-);
-
--- 16. Personnel Allowances & Financial Incentives Table (Boolean Flags)
-CREATE TABLE IF NOT EXISTS personnel_allowances (
-    id SERIAL PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
-    school_year VARCHAR(20) NOT NULL DEFAULT 'SY 26-27',
-    pera BOOLEAN DEFAULT FALSE,
-    uniform BOOLEAN DEFAULT FALSE,
-    supplies BOOLEAN DEFAULT FALSE,
-    medical BOOLEAN DEFAULT FALSE,
-    hardship BOOLEAN DEFAULT FALSE,
-    overload BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(personnel_id, school_year)
-);
-
--- 17. Work Immersion Schedules Table (Daily Start/End Times & Overload Integration)
-CREATE TABLE IF NOT EXISTS work_immersion_schedules (
-    id SERIAL PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
-    school_id TEXT NOT NULL DEFAULT '123456',
-    school_year TEXT NOT NULL DEFAULT '2026-2027',
-    schedule_date DATE NOT NULL,
-    start_time VARCHAR(20) NOT NULL,
-    end_time VARCHAR(20) NOT NULL,
-    duration_minutes INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(personnel_id, school_year, schedule_date)
-);
-
-CREATE INDEX IF NOT EXISTS idx_work_immersion_personnel_sy ON work_immersion_schedules (personnel_id, school_year);
-
+CREATE INDEX IF NOT EXISTS idx_esf7_submission_queue_status_id ON esf7_submission_queue (status, id ASC);
+CREATE INDEX IF NOT EXISTS idx_esf7_submission_queue_school_sy ON esf7_submission_queue (school_id, school_year);

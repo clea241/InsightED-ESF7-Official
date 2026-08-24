@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import PortalHeader from '../components/PortalHeader';
+
 
 export const normalizeSubjectName = (sub) => {
   if (!sub || typeof sub !== 'string') return sub;
@@ -5199,6 +5201,12 @@ export default function Workload() {
 
   return (
     <section id="workload" className="view grid">
+      <PortalHeader
+        title="Workload & Timetable Schedule"
+        description="Manage teacher teaching loads, HGP advisory rules, relieving duties, and schedule conflict resolution."
+        onBack={() => setActiveView('dashboard')}
+      />
+
       <datalist id="school-times">
         <option value="06:00" />
         <option value="06:30" />
@@ -7664,7 +7672,7 @@ export default function Workload() {
               Workload & Timetable Assignment
             </h4>
             <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
-              Confirm teaching load distribution and proceed to Node 07 (Deployment & Transfers).
+              Confirm teaching load distribution and proceed to Node 07 (Room QR Portal).
             </p>
           </div>
         </div>
@@ -7690,8 +7698,8 @@ export default function Workload() {
           <button
             type="button"
             onClick={() => {
-              if (completeNode) completeNode('workload', 'deployment');
-              setActiveView('deployment');
+              if (completeNode) completeNode('workload', 'room-qr');
+              setActiveView('room-qr');
             }}
             style={{
               background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',

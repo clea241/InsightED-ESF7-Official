@@ -1,163 +1,158 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
-const { generateWorkloadId } = require('../../db/idGenerator');
 
-/**
- * GET /api/shs-workloads/:personnel_id
- * Returns all SHS workload rows for a personnel (all terms)
- */
-router.get('/:personnel_id', async (req, res) => {
+function formatShsWorkloadRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    term: row.term || '1st',
+    semester: row.semester || null,
+    gradeLevel: row.grade_level || 'Grade 11',
+    grade_level: row.grade_level || 'Grade 11',
+    trackStrand: row.track_strand || '',
+    track_strand: row.track_strand || '',
+    shsSubjectCategory: row.shs_subject_category || '',
+    shs_subject_category: row.shs_subject_category || '',
+    sectionId: row.section_id || null,
+    section_id: row.section_id || null,
+    sectionName: row.section_name || '',
+    section_name: row.section_name || '',
+    subject: row.subject,
+    subjectId: row.subject_id || null,
+    subject_id: row.subject_id || null,
+    remediationSubject: row.remediation_subject || '',
+    remediation_subject: row.remediation_subject || '',
+    startTime: row.start_time ? String(row.start_time).substring(0, 5) : null,
+    start_time: row.start_time ? String(row.start_time).substring(0, 5) : null,
+    endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
+    end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
+    days: row.days || ['M', 'T', 'W', 'TH', 'F'],
+    rawPayload: raw
+  };
+}
+
+// GET all SHS workload rows for a personnel (optionally filter by term)
+router.get('/personnel/:personnel_id', async (req, res) => {
   try {
     const { personnel_id } = req.params;
-    const result = await db.query(
-      `SELECT swr.*, cs.section_name
-       FROM shs_workload_rows swr
-       LEFT JOIN class_sections cs ON swr.section_id = cs.id
-       WHERE swr.personnel_id = $1
-       ORDER BY swr.term, swr.created_at ASC`,
-      [personnel_id]
-    );
+    const { term } = req.query;
 
-    const rows = result.rows.map(r => ({
-      id: String(r.id),
-      personnelId: String(r.personnel_id),
-      term: r.term,
-      rowType: r.row_type,
-      subject: r.subject || r.task || '',
-      shsCategory: r.shs_category || '',
-      task: r.task || '',
-      gradeLevel: r.grade_level,
-      sectionId: r.section_id ? String(r.section_id) : null,
-      sectionName: r.section_name || null,
-      startTime: r.start_time ? r.start_time.substring(0, 5) : null,
-      endTime: r.end_time ? r.end_time.substring(0, 5) : null,
-      days: r.days || [],
-      designatedBySds: !!r.designated_by_sds,
-    }));
+    let query = `SELECT * FROM esf7_shs_workload_rows WHERE personnel_id = $1`;
+    const values = [personnel_id];
 
-    res.json({ success: true, data: rows });
-  } catch (err) {
-    console.error('[SHS Workload GET Error]:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * POST /api/shs-workloads
- * Add a single SHS workload row
- */
-router.post('/', async (req, res) => {
-  const {
-    personnel_id, school_id, school_year,
-    term, row_type, subject, shs_category, task,
-    grade_level, section_id, days, designatedBySds
-  } = req.body;
-
-  const start_time = req.body.start_time || req.body.startTime || null;
-  const end_time   = req.body.end_time   || req.body.endTime   || null;
-  const isSds      = !!designatedBySds;
-
-  if (!term || !['1st', '2nd', '3rd'].includes(term)) {
-    return res.status(400).json({ error: 'term is required and must be 1st, 2nd, or 3rd.' });
-  }
-
-  try {
-    const rowId = generateWorkloadId();
-    const result = await db.query(
-      `INSERT INTO shs_workload_rows
-        (id, personnel_id, school_id, school_year, term, row_type, subject, shs_category, task, grade_level, section_id, start_time, end_time, days, designated_by_sds)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       RETURNING *`,
-      [rowId, personnel_id, school_id || '123456', school_year || '2026-2027',
-       term, row_type, subject || null, shs_category || null, task || null,
-       grade_level || null, section_id || null, start_time, end_time,
-       days || [], isSds]
-    );
-    const row = result.rows[0];
-    res.status(201).json({
-      success: true,
-      data: {
-        id: row.id,
-        term: row.term,
-        rowType: row.row_type,
-        subject: row.subject,
-        shsCategory: row.shs_category,
-        task: row.task,
-        gradeLevel: row.grade_level,
-        sectionId: row.section_id || '',
-        startTime: row.start_time ? row.start_time.substring(0, 5) : '',
-        endTime: row.end_time ? row.end_time.substring(0, 5) : '',
-        days: row.days,
-        designatedBySds: !!row.designated_by_sds,
-      }
-    });
-  } catch (err) {
-    console.error('[SHS Workload POST Error]:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * PUT /api/shs-workloads/personnel/:personnel_id
- * Full replace of all SHS workload rows for a personnel (all terms).
- * Body: { shsWorkloadRows: { '1st': [...], '2nd': [...], '3rd': [...] } }
- */
-router.put('/personnel/:personnel_id', async (req, res) => {
-  const { personnel_id } = req.params;
-  const { shsWorkloadRows = {} } = req.body;
-
-  const client = await db.pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const pInfo = await client.query('SELECT school_id, school_year FROM personnel WHERE id = $1', [personnel_id]);
-    const { school_id, school_year } = pInfo.rows[0] || { school_id: '123456', school_year: '2026-2027' };
-
-    await client.query('DELETE FROM shs_workload_rows WHERE personnel_id = $1', [personnel_id]);
-
-    for (const term of ['1st', '2nd', '3rd']) {
-      const termRows = shsWorkloadRows[term] || [];
-      for (const r of termRows) {
-        const rowId = generateWorkloadId();
-        const isSds = !!(r.designatedBySds || r.designated_by_sds);
-        const result = await client.query(
-          `INSERT INTO shs_workload_rows
-            (id, personnel_id, school_id, school_year, term, row_type, subject, shs_category, task, grade_level, section_id, start_time, end_time, days, designated_by_sds)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-          [rowId, personnel_id, school_id, school_year, term,
-           r.rowType || 'teaching', r.subject || null, r.shsCategory || null,
-           r.task || null, r.gradeLevel || null, r.sectionId || null,
-           r.startTime || null, r.endTime || null, r.days || [], isSds]
-        );
-        for (const d of (r.dates || [])) {
-          const dateId = generateWorkloadId();
-          await client.query(
-            `INSERT INTO shs_workload_row_dates (id, shs_workload_row_id, task_date, start_time, end_time) VALUES ($1,$2,$3,$4,$5)`,
-            [dateId, result.rows[0].id, d.date || null, d.startTime || null, d.endTime || null]
-          );
-        }
-      }
+    if (term) {
+      query += ` AND (term = $2 OR semester = $2)`;
+      values.push(term);
     }
 
-    await client.query('COMMIT');
-    res.json({ success: true });
+    query += ` ORDER BY term ASC, created_at ASC`;
+    const result = await db.query(query, values);
+    res.json(result.rows.map(formatShsWorkloadRecord));
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('[SHS Workload PUT Error]:', err.message);
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-/**
- * DELETE /api/shs-workloads/:id
- */
+// GET all SHS workload rows in school
+router.get('/', async (req, res) => {
+  try {
+    const result = await db.query(`SELECT * FROM esf7_shs_workload_rows ORDER BY term ASC, created_at ASC`);
+    res.json(result.rows.map(formatShsWorkloadRecord));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Add a new SHS workload row into esf7_shs_workload_rows
+router.post('/', async (req, res) => {
+  try {
+    const {
+      personnel_id, personnelId,
+      school_id, schoolId: bodySchoolId,
+      school_year, schoolYear: bodySchoolYear,
+      term, semester,
+      grade_level, gradeLevel,
+      track_strand, trackStrand,
+      shs_subject_category, shsSubjectCategory,
+      section_id, sectionId,
+      section_name, sectionName,
+      subject,
+      subject_id, subjectId,
+      remediation_subject, remediationSubject,
+      start_time, startTime,
+      end_time, endTime,
+      days
+    } = req.body;
+
+    const targetPersonnelId = personnel_id || personnelId;
+    if (!targetPersonnelId) {
+      return res.status(400).json({ error: 'personnel_id is required' });
+    }
+
+    const personRes = await db.query(
+      `SELECT school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [targetPersonnelId]
+    );
+    const targetSchoolId = school_id || bodySchoolId || (personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348');
+    const targetSchoolYear = school_year || bodySchoolYear || (personRes.rows.length > 0 ? personRes.rows[0].school_year : '2026-2027');
+
+    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_shs_workload_rows`);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const shsWklId = req.body.id || `SHS-WKL-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+
+    const query = `
+      INSERT INTO esf7_shs_workload_rows (
+        id, personnel_id, school_id, school_year, term, semester, grade_level,
+        track_strand, shs_subject_category, section_id, section_name,
+        subject, subject_id, remediation_subject, start_time, end_time, days, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb)
+      RETURNING *;
+    `;
+
+    const values = [
+      shsWklId,
+      targetPersonnelId,
+      targetSchoolId,
+      targetSchoolYear,
+      term || '1st',
+      semester || null,
+      grade_level || gradeLevel || 'Grade 11',
+      track_strand || trackStrand || null,
+      shs_subject_category || shsSubjectCategory || null,
+      section_id || sectionId || null,
+      section_name || sectionName || null,
+      subject || 'GENERAL MATHEMATICS',
+      subject_id || subjectId || null,
+      remediation_subject || remediationSubject || null,
+      start_time || startTime || null,
+      end_time || endTime || null,
+      JSON.stringify(days || ['M', 'T', 'W', 'TH', 'F']),
+      JSON.stringify(req.body)
+    ];
+
+    const result = await db.query(query, values);
+    res.status(201).json(formatShsWorkloadRecord(result.rows[0]));
+  } catch (err) {
+    console.error('Error inserting esf7_shs_workload_rows:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE an SHS workload row
 router.delete('/:id', async (req, res) => {
   try {
-    await db.query('DELETE FROM shs_workload_rows WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
+    await db.query(`DELETE FROM esf7_shs_workload_rows WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `SHS Workload row ${req.params.id} deleted successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

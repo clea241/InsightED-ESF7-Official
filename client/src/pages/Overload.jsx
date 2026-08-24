@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useApp, DEFAULT_PH_HOLIDAYS } from '../context/AppContext';
+import { useApp, DEFAULT_PH_HOLIDAYS, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
+import PortalHeader from '../components/PortalHeader';
 import { api } from '../services/api';
+
 
 // Helper to convert "HH:MM" or "HH:MM AM/PM" time to minutes
 const timeToMins = (t) => {
@@ -97,7 +99,7 @@ export default function Overload() {
     return 0.000781 * 12 * salary;
   };
 
-  const checkSubstituteConflict = (candidateTeacher, slotRow) => {
+  const checkSubstituteConflict = (candidateTeacher, slotRow, targetStartDate, targetEndDate, currentSlotIdx, currentFormSlots, allSlots) => {
     if (!candidateTeacher || !slotRow || !slotRow.startTime || !slotRow.endTime) {
       return { hasConflict: false };
     }
@@ -107,6 +109,7 @@ export default function Overload() {
       ? slotRow.days 
       : String(slotRow.days || '').split(/[\s,]+/).filter(Boolean);
 
+    // 1. Check candidate teacher's own regular class schedule
     for (const subRow of candidateTeacher.workloadRows || []) {
       if (!subRow.startTime || !subRow.endTime) continue;
       const subDays = Array.isArray(subRow.days) 
@@ -120,12 +123,83 @@ export default function Overload() {
         if (subStartMins < slotEndMins && subEndMins > slotStartMins) {
           return {
             hasConflict: true,
-            conflictingSubject: subRow.subject || 'Class',
+            conflictingSubject: subRow.subject || 'Regular Class',
             conflictingTime: `${subRow.startTime} - ${subRow.endTime}`
           };
         }
       }
     }
+
+    // 2. Check candidate teacher's existing active workload transfers
+    const sDate = targetStartDate || '';
+    const eDate = targetEndDate || targetStartDate || '';
+
+    if (Array.isArray(workloadTransfers)) {
+      for (const t of workloadTransfers) {
+        if (t.status === 'ended') continue;
+        const subId = t.substituteTeacherId || t.substitute_personnel_id || t.substitute_teacher_id;
+        if (String(subId) !== String(candidateTeacher.id)) continue;
+
+        const tStart = t.startDate || t.start_date || '';
+        const tEnd = t.endDate || t.end_date || tStart;
+
+        // Check if date ranges overlap
+        const dateOverlap = (!sDate || !tStart) || (sDate <= tEnd && eDate >= tStart);
+        if (!dateOverlap) continue;
+
+        for (const tRow of t.workloadRows || []) {
+          if (!tRow.startTime && !tRow.start_time) continue;
+          const tRowStart = tRow.startTime || tRow.start_time;
+          const tRowEnd = tRow.endTime || tRow.end_time;
+          const tRowDays = Array.isArray(tRow.days) 
+            ? tRow.days 
+            : String(tRow.days || '').split(/[\s,]+/).filter(Boolean);
+
+          const hasCommonDay = slotDays.some(d => tRowDays.includes(d));
+          if (hasCommonDay) {
+            const tStartMins = timeToMins(tRowStart);
+            const tEndMins = timeToMins(tRowEnd);
+            if (tStartMins < slotEndMins && tEndMins > slotStartMins) {
+              return {
+                hasConflict: true,
+                conflictingSubject: `Already Covering: ${tRow.subject || tRow.subject_name || 'Transferred Class'}`,
+                conflictingTime: `${tRowStart} - ${tRowEnd} (${tStart} to ${tEnd})`
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Check current form assignments for simultaneous slots
+    if (currentFormSlots && allSlots && currentSlotIdx !== undefined) {
+      for (const [idxStr, assignedTeacherId] of Object.entries(currentFormSlots)) {
+        const otherIdx = Number(idxStr);
+        if (otherIdx === currentSlotIdx) continue;
+        if (String(assignedTeacherId) !== String(candidateTeacher.id)) continue;
+
+        const otherSlot = allSlots[otherIdx];
+        if (!otherSlot || !otherSlot.startTime || !otherSlot.endTime) continue;
+
+        const otherDays = Array.isArray(otherSlot.days) 
+          ? otherSlot.days 
+          : String(otherSlot.days || '').split(/[\s,]+/).filter(Boolean);
+        const hasCommonDay = slotDays.some(d => otherDays.includes(d));
+
+        if (hasCommonDay) {
+          const otherStartMins = timeToMins(otherSlot.startTime);
+          const otherEndMins = timeToMins(otherSlot.endTime);
+          if (otherStartMins < slotEndMins && otherEndMins > slotStartMins) {
+            return {
+              hasConflict: true,
+              conflictingSubject: `Assigned in this form: ${otherSlot.subject || 'Class'}`,
+              conflictingTime: `${otherSlot.startTime} - ${otherSlot.endTime}`
+            };
+          }
+        }
+      }
+    }
+
     return { hasConflict: false };
   };
 
@@ -422,24 +496,24 @@ export default function Overload() {
     });
   }, [personnel]);
 
-  // Helper to determine eligibility for Teaching Overload Pay
-  // Include ALL teaching staff who are not school heads, principals, or head teachers
-  const isOverloadEligible = (p) => {
-    if (!p) return false;
-    if (p.isDraft && !p.type) return false; // Skip empty draft stubs
+  // Helper to determine eligibility for Teaching Overload (Strictly Teaching Personnel Only)
+  const isStrictTeachingPersonnel = (p) => {
+    if (!p || p.isDraft) return false;
     if (p.is_school_head || p.isSchoolHead) return false;
-    // Only exclude if type is EXPLICITLY non-teaching (not undefined/null)
-    if (p.type === 'non-teaching') return false;
 
+    // Check position-based auto-categorization
+    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    const t = String(autoType).toLowerCase().trim();
+    if (t !== 'teaching') return false;
+
+    // Explicitly exclude leadership & non-teaching positions
     const pos = String(p.position || '').toUpperCase().trim();
-    // Only exclude clearly non-teaching positions
-    if (pos.startsWith('PRINCIPAL')) return false;
-    if (pos === 'HEAD TEACHER' || pos.startsWith('HEAD TEACHER ')) return false;
-    if (pos === 'TEACHER-IN-CHARGE' || pos === 'TEACHER IN CHARGE') return false;
-    if (pos === 'OFFICER-IN-CHARGE' || pos === 'OFFICER IN CHARGE') return false;
-    if (pos === 'ADMINISTRATIVE AIDE I' || pos === 'ADMINISTRATIVE AIDE II' || pos === 'ADMINISTRATIVE AIDE III' || pos === 'ADMINISTRATIVE AIDE IV' || pos === 'ADMINISTRATIVE AIDE V' || pos === 'ADMINISTRATIVE AIDE VI') return false;
-    if (pos === 'ADMINISTRATIVE OFFICER I' || pos === 'ADMINISTRATIVE OFFICER II') return false;
-    if (pos === 'BOOKKEEPER' || pos === 'CLERK' || pos === 'NURSE' || pos === 'DRIVER' || pos === 'UTILITY WORKER' || pos === 'SECURITY GUARD') return false;
+    if (pos.startsWith('PRINCIPAL') || pos.startsWith('HEAD TEACHER') || pos.includes('DIRECTOR') || pos.includes('SUPERVISOR') || pos.includes('GUIDANCE')) {
+      return false;
+    }
+    if (pos.includes('ADMINISTRATIVE') || pos.includes('BOOKKEEPER') || pos.includes('CLERK') || pos.includes('NURSE') || pos.includes('DRIVER') || pos.includes('UTILITY') || pos.includes('GUARD')) {
+      return false;
+    }
 
     return true;
   };
@@ -447,11 +521,11 @@ export default function Overload() {
   // Use AppContext personnel (current school roster) as single source of truth
   const effectivePersonnel = (Array.isArray(personnel) && personnel.length > 0) ? personnel : freshPersonnel;
 
-  // Filter out draft personnel for general views
-  const activePersonnel = effectivePersonnel.filter(p => !p.isDraft);
+  // Filter strictly to TEACHING PERSONNEL ONLY across all steps, dropdowns, and views
+  const activePersonnel = effectivePersonnel.filter(isStrictTeachingPersonnel);
 
-  // Filter personnel eligible for Teaching Overload Pay
-  const overloadEligiblePersonnel = effectivePersonnel.filter(isOverloadEligible);
+  // Overload eligible personnel is strictly teaching personnel
+  const overloadEligiblePersonnel = activePersonnel;
 
   // Filter active personnel who have recorded absences (for Step 3 Workload Transfer filtering)
   const personnelWithAbsences = activePersonnel.filter(p => {
@@ -727,10 +801,11 @@ export default function Overload() {
       quarterStats
     };
   });
-  // Show ALL eligible teachers — even those with 0 computed overload hours
-  // so admins can always see who is overload-eligible
-
+  // Step 6: Filter to ONLY include teachers who have actual computed overload (> 0 hours)
   const filteredRoster = overloadRoster.filter(item => {
+    const hasOverload = Number(item.quarterStats?.net || 0) > 0 || Number(item.monthStats?.net || 0) > 0 || Number(item.weeklyOverload || 0) > 0;
+    if (!hasOverload) return false;
+
     const fullName = `${item.teacher.firstName} ${item.teacher.lastName}`.toLowerCase();
     return fullName.includes(teacherSearch.toLowerCase().trim());
   });
@@ -862,7 +937,7 @@ export default function Overload() {
     // Schedule conflict check for all assigned slots
     for (const slot of slotsToTransfer) {
       const subTeacher = activePersonnel.find(p => p.id === slot.substituteTeacherId);
-      const conflict = checkSubstituteConflict(subTeacher, slot);
+      const conflict = checkSubstituteConflict(subTeacher, slot, transferStartDate, transferEndDate);
       if (conflict.hasConflict) {
         await showAlert("Schedule Conflict Detected", `Cannot assign ${subTeacher.firstName} ${subTeacher.lastName} to ${slot.subject} (${slot.startTime}-${slot.endTime}) because they have a conflicting schedule (${conflict.conflictingSubject} ${conflict.conflictingTime}).`);
         return;
@@ -1058,12 +1133,12 @@ export default function Overload() {
 
   return (
     <main style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '26px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Teaching Overload Center</h1>
-          <p style={{ color: 'var(--muted)', margin: '4px 0 0 0', fontSize: '14px' }}>Automatically track, deduct, and transfer workloads to calculate official teacher overload.</p>
-        </div>
-      </header>
+      <PortalHeader
+        title="Teaching Overload Pay Calculator"
+        description="Calculate teaching overload hours, non-working days, tardiness deductions, and overload pay."
+        onBack={() => setActiveView('dashboard')}
+      />
+
 
       {/* 6-Step Wizard Navigation Stepper */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '8px' }}>
@@ -2082,7 +2157,7 @@ export default function Overload() {
                               >
                                 <option value="">Select substitute teacher...</option>
                                 {activePersonnel.filter(p => p.id !== transferAbsentTeacherId).map(p => {
-                                  const conflictInfo = checkSubstituteConflict(p, row);
+                                  const conflictInfo = checkSubstituteConflict(p, row, transferStartDate, transferEndDate, idx, selectedTransferSlots, slots);
                                   return (
                                     <option 
                                       key={p.id} 
@@ -2091,7 +2166,7 @@ export default function Overload() {
                                       style={{ color: conflictInfo.hasConflict ? '#b91c1c' : '#15803d' }}
                                     >
                                       {conflictInfo.hasConflict 
-                                        ? `⚠️ WITH CONFLICT: ${p.lastName}, ${p.firstName} (${p.position}) — Conflict: ${conflictInfo.conflictingSubject} (${conflictInfo.conflictingTime})`
+                                        ? `⚠️ WITH CONFLICT: ${p.lastName}, ${p.firstName} (${p.position}) — ${conflictInfo.conflictingSubject} (${conflictInfo.conflictingTime})`
                                         : `✓ AVAILABLE: ${p.lastName}, ${p.firstName} (${p.position})`
                                       }
                                     </option>
@@ -2106,91 +2181,115 @@ export default function Overload() {
                   </div>
                 )}
 
-                {/* Single-Calendar Range Picker for Transfer Dates */}
-                <div style={{ marginTop: '4px', background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* Logged Absence Record Cards Selection for Transfer Dates (Option 1) */}
+                <div style={{ marginTop: '4px', background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1.5px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>COVERAGE DATES (SINGLE CALENDAR RANGE)</label>
-                    <select 
-                      value={transferMonth}
-                      onChange={(e) => {
-                        setTransferMonth(e.target.value);
-                        setTransferRangeStart(null);
-                        setTransferRangeEnd(null);
-                        setTransferStartDate('');
-                        setTransferEndDate('');
-                      }}
-                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '11px' }}
-                    >
-                      {MONTHS_LIST.map(m => (
-                        <option key={m.name} value={m.name}>{m.name}</option>
-                      ))}
-                    </select>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>📅 Select Logged Absence Period to Transfer</span>
+                      <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    {transferAbsentTeacherId && (
+                      <span style={{ fontSize: '10px', color: '#64748B', fontWeight: '700' }}>
+                        Step 2 Synced Leave Records
+                      </span>
+                    )}
                   </div>
 
-                  {/* Calendar Grid (5 Weekdays) */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
-                      <div key={day} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 'bold', color: 'var(--navy)', padding: '3px', background: '#e2e8f0', borderRadius: '4px' }}>
-                        {day}
+                  {!transferAbsentTeacherId ? (
+                    <div style={{ padding: '16px', background: '#FFFFFF', borderRadius: '10px', border: '1.5px dashed #CBD5E1', textAlign: 'center', fontSize: '12px', color: '#64748B' }}>
+                      👈 Please select an absent teacher above to view their recorded absence periods.
+                    </div>
+                  ) : (() => {
+                    const teacherAbsenceRecords = absences.filter(a => String(a.personnelId || a.personnel_id) === String(transferAbsentTeacherId));
+
+                    if (teacherAbsenceRecords.length === 0) {
+                      return (
+                        <div style={{ padding: '14px', background: '#FEF2F2', borderRadius: '10px', border: '1.5px solid #FCA5A5', color: '#991B1B', fontSize: '12px', textAlign: 'center' }}>
+                          ⚠️ No recorded absences found for this teacher. Please log their leave or absence dates in <strong>Step 2: Absences & Leave</strong> first before delegating workloads.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {teacherAbsenceRecords.map((a, aIdx) => {
+                          const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+                          const eStr = a.endDate || a.end_date || sStr;
+                          const lType = a.leaveType || a.leave_type || a.type || 'ABSENCE / LEAVE';
+                          const isSelected = transferStartDate === sStr && transferEndDate === eStr;
+
+                          // Compute total calendar days in range
+                          let dayCount = 1;
+                          if (sStr && eStr && sStr !== eStr) {
+                            const d1 = new Date(sStr);
+                            const d2 = new Date(eStr);
+                            if (!isNaN(d1) && !isNaN(d2)) {
+                              dayCount = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+                            }
+                          }
+
+                          return (
+                            <div
+                              key={a.id || aIdx}
+                              onClick={() => {
+                                setTransferStartDate(sStr);
+                                setTransferEndDate(eStr);
+                                setTransferRangeStart(sStr);
+                                setTransferRangeEnd(eStr);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '12px 14px',
+                                borderRadius: '10px',
+                                background: isSelected ? '#EFF6FF' : '#FFFFFF',
+                                border: isSelected ? '2px solid #0284C7' : '1.5px solid var(--line)',
+                                boxShadow: isSelected ? '0 2px 8px rgba(2, 132, 199, 0.15)' : 'none',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{
+                                  width: '18px',
+                                  height: '18px',
+                                  borderRadius: '50%',
+                                  border: isSelected ? '5px solid #0284C7' : '2px solid #94A3B8',
+                                  background: 'white',
+                                  flexShrink: 0
+                                }} />
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '11px', fontWeight: '900', color: isSelected ? '#0369A1' : 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                                      {lType}
+                                    </span>
+                                    <span style={{ fontSize: '10px', fontWeight: '800', background: isSelected ? '#DBEAFE' : '#F1F5F9', color: isSelected ? '#1E40AF' : '#475569', padding: '1px 6px', borderRadius: '4px' }}>
+                                      {dayCount} {dayCount === 1 ? 'Day' : 'Days'}
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', fontWeight: '700', color: isSelected ? '#0284C7' : '#334155', marginTop: '2px' }}>
+                                    📅 {sStr} {eStr && eStr !== sStr ? `➔ ${eStr}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {isSelected && (
+                                <span style={{ fontSize: '11px', fontWeight: '800', color: '#0284C7', background: '#DBEAFE', padding: '3px 8px', borderRadius: '6px' }}>
+                                  ✓ Selected
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                    {(() => {
-                      const monthDates = getWeekdaysInMonth(transferMonth, 'SY 26-27');
-                      const effectiveStart = transferRangeStart;
-                      const effectiveEnd = transferRangeEnd || transferRangeStart;
+                    );
+                  })()}
 
-                      return monthDates.map((dateObj) => {
-                        const dateStr = getLocalDateString(dateObj);
-                        const dayNum = dateObj.getDate();
-                        const isInRange = effectiveStart && dateStr >= effectiveStart && dateStr <= effectiveEnd;
-
-                        return (
-                          <button
-                            key={dateStr}
-                            type="button"
-                            onClick={() => {
-                              if (!transferRangeStart || (transferRangeStart && transferRangeEnd)) {
-                                setTransferRangeStart(dateStr);
-                                setTransferRangeEnd(null);
-                                setTransferStartDate(dateStr);
-                                setTransferEndDate(dateStr);
-                              } else {
-                                if (dateStr >= transferRangeStart) {
-                                  setTransferRangeEnd(dateStr);
-                                  setTransferStartDate(transferRangeStart);
-                                  setTransferEndDate(dateStr);
-                                } else {
-                                  setTransferRangeStart(dateStr);
-                                  setTransferRangeEnd(null);
-                                  setTransferStartDate(dateStr);
-                                  setTransferEndDate(dateStr);
-                                }
-                              }
-                            }}
-                            style={{
-                              padding: '6px 2px',
-                              borderRadius: '6px',
-                              border: isInRange ? '1.5px solid #eab308' : '1px solid var(--line)',
-                              background: isInRange ? '#fef08a' : 'white',
-                              color: isInRange ? '#854d0e' : 'var(--navy)',
-                              fontWeight: 'bold',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              textAlign: 'center',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            {dayNum}
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-
-                  {/* Range Status Preview */}
+                  {/* Range Status Confirmation Preview */}
                   {transferStartDate && (
-                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#854d0e', background: '#fefce8', padding: '6px 10px', borderRadius: '6px', border: '1px solid #fef08a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>📅 Selected Range: <strong>{transferStartDate}</strong> {transferEndDate && transferEndDate !== transferStartDate ? `to ${transferEndDate}` : ''}</span>
+                    <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', background: '#EFF6FF', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #BAE6FD', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                      <span>✓ Active Coverage Delegation: <strong>{transferStartDate}</strong> {transferEndDate && transferEndDate !== transferStartDate ? `to ${transferEndDate}` : ''}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -2199,9 +2298,9 @@ export default function Overload() {
                           setTransferStartDate('');
                           setTransferEndDate('');
                         }}
-                        style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontWeight: 'bold', fontSize: '10px' }}
+                        style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontWeight: '800', fontSize: '11px' }}
                       >
-                        Clear
+                        ✕ Clear
                       </button>
                     </div>
                   )}

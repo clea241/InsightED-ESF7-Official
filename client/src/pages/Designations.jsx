@@ -320,16 +320,21 @@ export default function Designations() {
                   >
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
-                          {desig.name}
-                        </h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
+                            {desig.name}
+                          </h3>
+                          <span style={{ padding: '2px 6px', borderRadius: '6px', background: '#FEF2F2', color: '#DC2626', fontSize: '10px', fontWeight: '800', border: '1px solid #FCA5A5' }}>
+                            * REQUIRED
+                          </span>
+                        </div>
                         {assignedPersonnel.length > 0 ? (
                           <span style={{ padding: '3px 10px', borderRadius: '999px', background: '#EFF6FF', color: '#0284C7', fontSize: '11px', fontWeight: '800', border: '1px solid #BAE6FD' }}>
                             {assignedPersonnel.length} Assigned
                           </span>
                         ) : (
-                          <span style={{ padding: '3px 10px', borderRadius: '999px', background: '#F8FAFC', color: '#94A3B8', fontSize: '11px', fontWeight: '700', border: '1px solid #E2E8F0' }}>
-                            Vacant
+                          <span style={{ padding: '3px 10px', borderRadius: '999px', background: '#FEF2F2', color: '#DC2626', fontSize: '11px', fontWeight: '800', border: '1px solid #FCA5A5' }}>
+                            Vacant (Required)
                           </span>
                         )}
                       </div>
@@ -342,12 +347,14 @@ export default function Designations() {
                       {desig.parameterized && (
                         <div style={{ background: '#F0F9FF', border: '1.5px solid #BAE6FD', borderRadius: '12px', padding: '12px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase' }}>
-                            ⚙️ Sub-Categorization & Limits
+                            ⚙️ Sub-Categorization & Limits <span style={{ color: '#EF4444' }}>* REQUIRED</span>
                           </div>
 
                           <div style={{ display: 'grid', gridTemplateColumns: isGrade4to10 || isSHS ? '1fr 1fr' : '1fr', gap: '8px' }}>
                             <div>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>Grade Level</label>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>
+                                Grade Level <span style={{ color: '#EF4444' }}>*</span>
+                              </label>
                               <select
                                 value={params.grade}
                                 onChange={(e) => handleParamChange(desig.id, 'grade', e.target.value)}
@@ -361,7 +368,9 @@ export default function Designations() {
 
                             {isGrade4to10 && (
                               <div>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>Learning Area</label>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>
+                                  Learning Area <span style={{ color: '#EF4444' }}>*</span>
+                                </label>
                                 <select
                                   value={params.learningArea}
                                   onChange={(e) => handleParamChange(desig.id, 'learningArea', e.target.value)}
@@ -376,7 +385,9 @@ export default function Designations() {
 
                             {isSHS && (
                               <div>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>Track</label>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#075985', marginBottom: '3px' }}>
+                                  Track <span style={{ color: '#EF4444' }}>*</span>
+                                </label>
                                 <select
                                   value={params.track}
                                   onChange={(e) => handleParamChange(desig.id, 'track', e.target.value)}

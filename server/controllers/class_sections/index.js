@@ -1,248 +1,294 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
-const { generateSectionId, generateWorkloadId } = require('../../db/idGenerator');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 
-function calculateEndTime(startTimeStr, minutes) {
-  const parts = (startTimeStr || '07:30:00').split(':').map(Number);
-  const startH = parts[0] || 7;
-  const startM = parts[1] || 30;
-  const totalMinutes = startH * 60 + startM + minutes;
-  const endH = Math.floor(totalMinutes / 60) % 24;
-  const endM = totalMinutes % 60;
-  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`;
+function computeSectionStandard(gradeLevel, totalLearners) {
+  const total = Number(totalLearners) || 0;
+  const g = String(gradeLevel || '').toUpperCase().trim();
+
+  if (g.includes('KINDER')) {
+    if (total < 15) return 'BELOW STANDARD';
+    if (total <= 25) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+
+  if (['GRADE 1', 'GRADE 2', 'GRADE 3', 'G1', 'G2', 'G3'].some(k => g === k || g.includes(k))) {
+    if (total < 25) return 'BELOW STANDARD';
+    if (total <= 35) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+
+  if (['GRADE 4', 'GRADE 5', 'GRADE 6', 'G4', 'G5', 'G6'].some(k => g === k || g.includes(k))) {
+    if (total < 30) return 'BELOW STANDARD';
+    if (total <= 45) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+
+  if (['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', 'G7', 'G8', 'G9', 'G10', 'JHS'].some(k => g === k || g.includes(k))) {
+    if (total < 35) return 'BELOW STANDARD';
+    if (total <= 45) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+
+  if (['GRADE 11', 'GRADE 12', 'G11', 'G12', 'SHS'].some(k => g === k || g.includes(k))) {
+    if (total < 30) return 'BELOW STANDARD';
+    if (total <= 40) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+
+  if (total < 35) return 'BELOW STANDARD';
+  if (total <= 45) return 'WITHIN STANDARD';
+  return 'ABOVE STANDARD';
 }
 
-// Get all class sections
+function formatSectionRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  const m = Number(row.male_learners || 0);
+  const f = Number(row.female_learners || 0);
+  const total = row.number_of_learners !== null && row.number_of_learners !== undefined ? Number(row.number_of_learners) : (m + f);
+  const evaluatedStandard = row.standard || computeSectionStandard(row.grade_level, total);
+
+  return {
+    ...raw,
+    id: row.id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    gradeLevel: row.grade_level,
+    grade_level: row.grade_level,
+    sectionName: row.section_name,
+    section_name: row.section_name,
+    sectionType: row.section_type || 'MONO GRADE',
+    section_type: row.section_type || 'MONO GRADE',
+    advisorId: row.advisor_id ? String(row.advisor_id) : null,
+    advisor_id: row.advisor_id ? String(row.advisor_id) : null,
+    adviserId: row.advisor_id ? String(row.advisor_id) : null,
+    adviser_id: row.advisor_id ? String(row.advisor_id) : null,
+    advisoryMinutes: Number(row.advisory_minutes || 300),
+    advisory_minutes: Number(row.advisory_minutes || 300),
+    maleLearners: m,
+    male_learners: m,
+    femaleLearners: f,
+    female_learners: f,
+    numberOfLearners: total,
+    number_of_learners: total,
+    standard: evaluatedStandard,
+    rawPayload: raw
+  };
+}
+
+// GET all class sections from esf7_class_sections
 router.get('/', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req);
-    let result;
-    if (schoolId) {
-      result = await db.query('SELECT * FROM class_sections WHERE school_id = $1 ORDER BY grade_level ASC, section_name ASC', [schoolId]);
-    } else {
-      result = await db.query('SELECT * FROM class_sections ORDER BY grade_level ASC, section_name ASC');
+    const schoolId = getSchoolIdFromRequest(req) || '108348';
+    const result = await db.query(
+      `SELECT * FROM esf7_class_sections WHERE school_id = $1 OR school_id = $2 ORDER BY grade_level ASC, section_name ASC`,
+      [schoolId, schoolId.replace('SCH-', '')]
+    );
+    res.json(result.rows.map(formatSectionRecord));
+  } catch (err) {
+    console.error('Error fetching esf7_class_sections:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET single section by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT * FROM esf7_class_sections WHERE id = $1 LIMIT 1`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found' });
     }
-    res.json(result.rows.map(row => ({
-      id: String(row.id),
-      gradeLevel: row.grade_level,
-      sectionName: row.section_name,
-      advisorId: row.adviser_id ? String(row.adviser_id) : null,
-      sectionType: row.section_type,
-      numberOfLearners: row.number_of_learners !== null && row.number_of_learners !== undefined ? Number(row.number_of_learners) : null
-    })));
+    res.json(formatSectionRecord(result.rows[0]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Add a class section
+// POST Add a new class section into esf7_class_sections
 router.post('/', async (req, res) => {
   const {
-    school_id,
-    school_year,
-    grade_level,
-    section_name,
-    adviser_id,
-    advisor_id,
-    advisorId,
-    section_type,
-    advisory_minutes,
-    advisoryMinutes,
-    number_of_learners,
-    numberOfLearners
+    school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
+    grade_level, gradeLevel, section_name, sectionName,
+    adviser_id, advisor_id, advisorId,
+    section_type, sectionType,
+    advisory_minutes, advisoryMinutes,
+    male_learners, maleLearners, female_learners, femaleLearners,
+    number_of_learners, numberOfLearners,
+    standard: inputStandard
   } = req.body;
 
+  const targetSchoolId = school_id || bodySchoolId || '108348';
+  const targetSchoolYear = school_year || bodySchoolYear || '2026-2027';
+  const targetGradeLevel = grade_level || gradeLevel || 'Grade 1';
+  const targetSectionName = (section_name || sectionName || 'SECTION 1').toUpperCase().trim();
   const targetAdvisorId = adviser_id || advisor_id || advisorId || null;
-  const advisoryMins = Number(advisory_minutes || advisoryMinutes || 300);
-  const rawLearners = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
-  const targetLearners = rawLearners !== undefined && rawLearners !== null && rawLearners !== '' ? Number(rawLearners) : null;
+  const targetType = section_type || sectionType || 'MONO GRADE';
+  const advMins = Number(advisory_minutes || advisoryMinutes || 300);
 
-  const client = await db.pool.connect();
+  const mVal = Number(male_learners || maleLearners || 0);
+  const fVal = Number(female_learners || femaleLearners || 0);
+  const rawTotal = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
+  const totalLearners = rawTotal !== undefined && rawTotal !== null && rawTotal !== '' ? Number(rawTotal) : (mVal + fVal);
+  const evaluatedStandard = inputStandard || computeSectionStandard(targetGradeLevel, totalLearners);
+
   try {
-    await client.query('BEGIN');
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM esf7_class_sections WHERE school_id = $1`,
+      [targetSchoolId]
+    );
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const secId = req.body.id || `SEC-${targetSchoolId.replace('SCH-', '')}-${seq}`;
 
+    // Verify advisor ID exists in esf7_personnel_profile if provided
     let validAdvisorId = null;
     if (targetAdvisorId) {
-      const pCheck = await client.query('SELECT id FROM personnel WHERE id = $1', [targetAdvisorId]);
+      const pCheck = await db.query(
+        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+        [targetAdvisorId]
+      );
       if (pCheck.rows.length > 0) {
-        validAdvisorId = targetAdvisorId;
+        validAdvisorId = pCheck.rows[0].id;
       }
     }
 
-    const newSecId = generateSectionId();
-    const result = await client.query(
-      `INSERT INTO class_sections (id, school_id, school_year, grade_level, section_name, adviser_id, section_type, number_of_learners)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (school_id, school_year, grade_level, section_name)
-       DO UPDATE SET adviser_id = COALESCE(EXCLUDED.adviser_id, class_sections.adviser_id),
-                     section_type = EXCLUDED.section_type,
-                     number_of_learners = COALESCE(EXCLUDED.number_of_learners, class_sections.number_of_learners),
-                     updated_at = NOW()
-       RETURNING *`,
-      [newSecId, school_id || '123456', school_year || '2026-2027', grade_level, section_name, validAdvisorId, section_type || 'MONO GRADE', targetLearners]
-    );
+    const query = `
+      INSERT INTO esf7_class_sections (
+        id, school_id, school_year, grade_level, section_name, section_type,
+        advisor_id, advisory_minutes, male_learners, female_learners, number_of_learners,
+        standard, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
+        advisor_id = COALESCE(EXCLUDED.advisor_id, esf7_class_sections.advisor_id),
+        section_type = EXCLUDED.section_type,
+        advisory_minutes = EXCLUDED.advisory_minutes,
+        male_learners = EXCLUDED.male_learners,
+        female_learners = EXCLUDED.female_learners,
+        number_of_learners = EXCLUDED.number_of_learners,
+        standard = EXCLUDED.standard,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+      RETURNING *;
+    `;
 
-    const section = result.rows[0];
+    const values = [
+      secId,
+      targetSchoolId,
+      targetSchoolYear,
+      targetGradeLevel,
+      targetSectionName,
+      targetType,
+      validAdvisorId,
+      advMins,
+      mVal,
+      fVal,
+      totalLearners,
+      evaluatedStandard,
+      JSON.stringify(req.body)
+    ];
 
-    if (validAdvisorId) {
-      const advWklId = generateWorkloadId();
-
-      const dailyAdvisoryMins = Math.round(advisoryMins / 5);
-      const advStartTime = '07:30:00';
-      const advEndTime = calculateEndTime(advStartTime, dailyAdvisoryMins);
-
-      // ADVISORY row (teaching task)
-      await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, grade_level, section_id, start_time, end_time, days)
-         VALUES ($1, $2, $3, $4, 'teaching', 'ADVISORY', $5, $6, $7, $8, ARRAY['M','T','W','TH','F'])`,
-        [advWklId, validAdvisorId, section.school_id, section.school_year, section.grade_level, section.id, advStartTime, advEndTime]
-      );
-
-      // HGP row (nested under ADVISORY time window)
-      const hgpWklId = generateWorkloadId();
-      await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, grade_level, section_id, start_time, end_time, days)
-         VALUES ($1, $2, $3, $4, 'teaching', 'HGP', $5, $6, $7, $8, ARRAY['F'])`,
-        [hgpWklId, validAdvisorId, section.school_id, section.school_year, section.grade_level, section.id, advStartTime, advEndTime]
-      );
-    }
-
-    await client.query('COMMIT');
-    res.status(201).json({
-      id: section.id,
-      gradeLevel: section.grade_level,
-      sectionName: section.section_name,
-      advisorId: section.adviser_id ? String(section.adviser_id) : null,
-      sectionType: section.section_type,
-      numberOfLearners: section.number_of_learners !== null && section.number_of_learners !== undefined ? Number(section.number_of_learners) : null
-    });
+    const result = await db.query(query, values);
+    res.status(201).json(formatSectionRecord(result.rows[0]));
   } catch (err) {
-    await client.query('ROLLBACK');
+    console.error('Error inserting esf7_class_sections:', err);
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-// Update a section's adviser and workload minutes
+// PUT Update details of a class section
 router.put('/:id', async (req, res) => {
+  const targetId = req.params.id;
   const {
-    advisorId,
-    adviser_id,
-    advisor_id,
-    advisory_minutes,
-    advisoryMinutes,
-    number_of_learners,
-    numberOfLearners
+    grade_level, gradeLevel, section_name, sectionName,
+    adviser_id, advisor_id, advisorId,
+    section_type, sectionType,
+    advisory_minutes, advisoryMinutes,
+    male_learners, maleLearners, female_learners, femaleLearners,
+    number_of_learners, numberOfLearners,
+    standard: inputStandard
   } = req.body;
 
-  const targetAdvisorId = advisorId || adviser_id || advisor_id || null;
-  const advisoryMins = Number(advisory_minutes || advisoryMinutes || 300);
-  const rawLearners = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
-  const targetLearners = rawLearners !== undefined && rawLearners !== null && rawLearners !== '' ? Number(rawLearners) : null;
-
-  const client = await db.pool.connect();
   try {
-    await client.query('BEGIN');
-
-    // 1. Get the current section details before updating
-    const sectionRes = await client.query('SELECT * FROM class_sections WHERE id = $1', [req.params.id]);
-    if (sectionRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Class section not found.' });
+    const existingRes = await db.query(`SELECT * FROM esf7_class_sections WHERE id = $1 LIMIT 1`, [targetId]);
+    if (existingRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found' });
     }
-    const section = sectionRes.rows[0];
+
+    const existingRow = existingRes.rows[0];
+    const targetGrade = grade_level || gradeLevel || existingRow.grade_level;
+    const targetName = (section_name || sectionName || existingRow.section_name).toUpperCase().trim();
+    const targetType = section_type || sectionType || existingRow.section_type;
+    const targetAdvisorId = adviser_id !== undefined ? adviser_id : (advisor_id !== undefined ? advisor_id : (advisorId !== undefined ? advisorId : existingRow.advisor_id));
+
+    const mVal = male_learners !== undefined ? Number(male_learners) : (maleLearners !== undefined ? Number(maleLearners) : Number(existingRow.male_learners || 0));
+    const fVal = female_learners !== undefined ? Number(female_learners) : (femaleLearners !== undefined ? Number(femaleLearners) : Number(existingRow.female_learners || 0));
+    const rawTotal = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
+    const totalLearners = rawTotal !== undefined && rawTotal !== null && rawTotal !== '' ? Number(rawTotal) : (mVal + fVal);
+    const evaluatedStandard = inputStandard || computeSectionStandard(targetGrade, totalLearners);
 
     let validAdvisorId = null;
     if (targetAdvisorId) {
-      const pCheck = await client.query('SELECT id FROM personnel WHERE id = $1', [targetAdvisorId]);
+      const pCheck = await db.query(
+        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+        [targetAdvisorId]
+      );
       if (pCheck.rows.length > 0) {
-        validAdvisorId = targetAdvisorId;
+        validAdvisorId = pCheck.rows[0].id;
       }
     }
 
-    // 2. Update the adviser and number_of_learners in the class_sections table
-    const result = await client.query(
-      `UPDATE class_sections 
-       SET adviser_id = $1, 
-           number_of_learners = CASE WHEN $2::integer IS NOT NULL THEN $2::integer ELSE number_of_learners END, 
-           updated_at = NOW() 
-       WHERE id = $3 RETURNING *`,
-      [validAdvisorId, targetLearners, req.params.id]
-    );
+    const query = `
+      UPDATE esf7_class_sections
+      SET
+        grade_level = $1,
+        section_name = $2,
+        section_type = $3,
+        advisor_id = $4,
+        male_learners = $5,
+        female_learners = $6,
+        number_of_learners = $7,
+        standard = $8,
+        raw_payload = $9::jsonb,
+        updated_at = NOW()
+      WHERE id = $10
+      RETURNING *;
+    `;
 
-    // 3. Delete existing auto-generated ADVISORY & HGP rows for this section
-    await client.query(
-      `DELETE FROM workload_rows 
-       WHERE section_id = $1 AND (subject = 'ADVISORY' OR subject = 'HGP' OR subject = 'HOMEROOM GUIDANCE')`,
-      [req.params.id]
-    );
+    const values = [
+      targetGrade,
+      targetName,
+      targetType,
+      validAdvisorId,
+      mVal,
+      fVal,
+      totalLearners,
+      evaluatedStandard,
+      JSON.stringify({ ...(existingRow.raw_payload || {}), ...req.body }),
+      targetId
+    ];
 
-    // 4. If a valid adviser is assigned, insert section-scoped ADVISORY & HGP workload rows
-    if (validAdvisorId) {
-      const advWklId = generateWorkloadId();
-
-      const dailyAdvisoryMins = Math.round(advisoryMins / 5);
-      const advStartTime = '07:30:00';
-      const advEndTime = calculateEndTime(advStartTime, dailyAdvisoryMins);
-
-      // ADVISORY row
-      await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, grade_level, section_id, start_time, end_time, days)
-         VALUES ($1, $2, $3, $4, 'teaching', 'ADVISORY', $5, $6, $7, $8, ARRAY['M','T','W','TH','F'])`,
-        [advWklId, validAdvisorId, section.school_id, section.school_year, section.grade_level, section.id, advStartTime, advEndTime]
-      );
-
-      // HGP row (nested under ADVISORY time window)
-      const hgpWklId = generateWorkloadId();
-      await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, grade_level, section_id, start_time, end_time, days)
-         VALUES ($1, $2, $3, $4, 'teaching', 'HGP', $5, $6, $7, $8, ARRAY['F'])`,
-        [hgpWklId, validAdvisorId, section.school_id, section.school_year, section.grade_level, section.id, advStartTime, advEndTime]
-      );
-    }
-
-    await client.query('COMMIT');
-
-    res.json({
-      id: result.rows[0].id,
-      gradeLevel: result.rows[0].grade_level,
-      sectionName: result.rows[0].section_name,
-      advisorId: result.rows[0].adviser_id ? String(result.rows[0].adviser_id) : null,
-      sectionType: result.rows[0].section_type,
-      numberOfLearners: result.rows[0].number_of_learners !== null && result.rows[0].number_of_learners !== undefined ? Number(result.rows[0].number_of_learners) : null
-    });
+    const result = await db.query(query, values);
+    res.json(formatSectionRecord(result.rows[0]));
   } catch (err) {
-    await client.query('ROLLBACK');
+    console.error('Error updating esf7_class_sections:', err);
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-// Delete a class section
+// DELETE a class section
 router.delete('/:id', async (req, res) => {
-  const client = await db.pool.connect();
   try {
-    await client.query('BEGIN');
-    
-    // Delete any workload rows associated with this section
-    await client.query(
-      `DELETE FROM workload_rows WHERE section_id = $1`,
-      [req.params.id]
-    );
-
-    await client.query('DELETE FROM class_sections WHERE id = $1', [req.params.id]);
-    
-    await client.query('COMMIT');
-    res.json({ success: true });
+    await db.query(`DELETE FROM esf7_class_sections WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `Class section ${req.params.id} deleted successfully.` });
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import PortalHeader from '../components/PortalHeader';
@@ -93,8 +93,26 @@ export default function Dashboard() {
   ];
 
   const completedCount = NODES.filter(n => isNodeCompleted(n.id)).length;
-  const maleCount = personnel.filter(p => String(p.sexAtBirth || p.gender || '').toUpperCase().startsWith('M')).length;
-  const femaleCount = personnel.filter(p => String(p.sexAtBirth || p.gender || '').toUpperCase().startsWith('F')).length;
+  const maleCount = personnel.filter(p => String(p.sexAtBirth || p.sex_at_birth || p.sex || p.gender || '').toUpperCase().startsWith('M')).length;
+  const femaleCount = personnel.filter(p => String(p.sexAtBirth || p.sex_at_birth || p.sex || p.gender || '').toUpperCase().startsWith('F')).length;
+
+  const teachingCount = personnel.filter(p => {
+    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    const t = String(autoType).toLowerCase().trim();
+    return t === 'teaching';
+  }).length;
+
+  const relatedTeachingCount = personnel.filter(p => {
+    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    const t = String(autoType).toLowerCase().trim();
+    return t === 'teaching-related' || t === 'teaching_related' || t === 'related' || t.includes('related');
+  }).length;
+
+  const nonTeachingCount = personnel.filter(p => {
+    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    const t = String(autoType).toLowerCase().trim();
+    return t === 'non-teaching' || t === 'non_teaching' || (t !== 'teaching' && !t.includes('related'));
+  }).length;
 
   const termStatus = stats?.term_calendar_status || {
     current_school_year: 'SY 2026-2027',
@@ -158,6 +176,74 @@ export default function Dashboard() {
     else if (appt.includes('SUBSTITUTE')) appointmentCounts['SUBSTITUTE']++;
     else if (appt.includes('CONTRACT') || appt.includes('COS') || appt.includes('JOB ORDER')) appointmentCounts['CONTRACT OF SERVICE']++;
     else appointmentCounts['OTHERS']++;
+  });
+
+  // -------------------------------------------------------------
+  // WORKLOAD HOURS & MONO/MULTI GRADE SUMMARY CALCULATIONS
+  // -------------------------------------------------------------
+  let underload6hCount = 0; // < 6 hours (< 360 mins)
+  let standard6to7hCount = 0; // 6 to < 7 hours (360 - 419 mins)
+  let heavy7hPlusCount = 0; // 7+ hours (>= 420 mins)
+
+  let monoGradeTeacherCount = 0;
+  let multiGradeTeacherCount = 0;
+
+  personnel.forEach(p => {
+    const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    if (pType === 'non-teaching') return; // Exclude non-teaching staff
+
+    // Calculate daily workload minutes
+    let dailyMins = 0;
+    const rows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
+    rows.forEach(wk => {
+      let mins = Number(wk.durationMinutes || wk.minutes) || 0;
+      if (!mins && wk.startTime && wk.endTime) {
+        const [sh, sm] = wk.startTime.split(':').map(Number);
+        const [eh, em] = wk.endTime.split(':').map(Number);
+        if (!isNaN(sh) && !isNaN(eh)) {
+          mins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+        }
+      }
+      if (mins > 0) dailyMins += mins;
+    });
+
+    if (dailyMins < 360) {
+      underload6hCount++;
+    } else if (dailyMins >= 420) {
+      heavy7hPlusCount++;
+    } else {
+      standard6to7hCount++;
+    }
+
+    // Section Type (Mono-Grade vs Multi-Grade)
+    let handlesMulti = false;
+    let handlesMono = false;
+
+    rows.forEach(wk => {
+      const g = String(wk.gradeLevel || '').toUpperCase();
+      const secType = String(wk.sectionType || '').toUpperCase();
+      const secName = String(wk.sectionName || '').toUpperCase();
+
+      const matchingSection = classSections.find(s => 
+        (wk.sectionId && String(s.id) === String(wk.sectionId)) ||
+        (s.sectionName && String(s.sectionName).toUpperCase() === secName && String(s.gradeLevel).toUpperCase() === g)
+      );
+
+      const isMulti = (matchingSection && (matchingSection.sectionType === 'MULTIGRADE' || String(matchingSection.sectionType).toUpperCase().includes('MULTI') || String(matchingSection.gradeLevel || '').includes(' - '))) ||
+                      secType.includes('MULTI') || g.includes(' - ') || g.includes(',') || secName.includes('MULTI');
+
+      if (isMulti) {
+        handlesMulti = true;
+      } else if (g || secName) {
+        handlesMono = true;
+      }
+    });
+
+    if (handlesMulti) {
+      multiGradeTeacherCount++;
+    } else if (handlesMono) {
+      monoGradeTeacherCount++;
+    }
   });
 
   // 3. ORGANIZED CLASSES BREAKDOWN BY GRADE LEVEL
@@ -424,15 +510,31 @@ export default function Dashboard() {
                 </span>
               </div>
 
-              <div style={{ display: 'flex', gap: '16px', background: '#F8FAFC', padding: '12px', borderRadius: '12px', border: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', gap: '12px', background: '#F8FAFC', padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--line)', marginBottom: '12px' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '700' }}>MALE</div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>MALE</div>
                   <div style={{ fontSize: '16px', fontWeight: '800', color: '#1E40AF' }}>{maleCount}</div>
                 </div>
                 <div style={{ width: '1px', background: 'var(--line)' }}></div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '700' }}>FEMALE</div>
+                  <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>FEMALE</div>
                   <div style={{ fontSize: '16px', fontWeight: '800', color: '#9333EA' }}>{femaleCount}</div>
+                </div>
+              </div>
+
+              {/* Personnel Category Breakdown */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                <div style={{ background: '#F0F9FF', padding: '8px 6px', borderRadius: '8px', border: '1px solid #BAE6FD', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.02em' }}>TEACHING</div>
+                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#0284C7', marginTop: '2px' }}>{teachingCount}</div>
+                </div>
+                <div style={{ background: '#F5F3FF', padding: '8px 6px', borderRadius: '8px', border: '1px solid #DDD6FE', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#6D28D9', textTransform: 'uppercase', letterSpacing: '0.02em' }}>RELATED</div>
+                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#7C3AED', marginTop: '2px' }}>{relatedTeachingCount}</div>
+                </div>
+                <div style={{ background: '#ECFDF5', padding: '8px 6px', borderRadius: '8px', border: '1px solid #A7F3D0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.02em' }}>NON-TEACHING</div>
+                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#059669', marginTop: '2px' }}>{nonTeachingCount}</div>
                 </div>
               </div>
             </div>
@@ -507,6 +609,81 @@ export default function Dashboard() {
 
           </div>
 
+          {/* WORKLOAD HOURS & MONO/MULTI GRADE SUMMARY ROW */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            
+            {/* WORKLOAD HOURS DISTRIBUTION CARD */}
+            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiSliders style={{ color: '#D97706' }} /> Teacher Workload Hours Summary
+                </h3>
+                <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FEF3C7', padding: '2px 8px', borderRadius: '6px' }}>
+                  Workload Audit
+                </span>
+              </div>
+
+              <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748B' }}>
+                Daily teaching and ancillary load duration breakdown per teacher (<strong style={{ color: '#0F172A' }}>6 hrs standard</strong>).
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                <div style={{ background: '#FFFBEB', padding: '12px 8px', borderRadius: '12px', border: '1.5px solid #FDE68A', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.03em' }}>&lt; 6 HOURS WORKLOAD</div>
+                  <div style={{ fontSize: '24px', fontWeight: '900', color: '#D97706', margin: '4px 0 2px' }}>{underload6hCount}</div>
+                  <div style={{ fontSize: '10px', color: '#78350F', fontWeight: '700' }}>Teachers (Underload)</div>
+                </div>
+
+                <div style={{ background: '#F0F9FF', padding: '12px 8px', borderRadius: '12px', border: '1.5px solid #BAE6FD', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.03em' }}>6 - 7 HOURS WORKLOAD</div>
+                  <div style={{ fontSize: '24px', fontWeight: '900', color: '#0284C7', margin: '4px 0 2px' }}>{standard6to7hCount}</div>
+                  <div style={{ fontSize: '10px', color: '#0C4A6E', fontWeight: '700' }}>Teachers (Standard)</div>
+                </div>
+
+                <div style={{ background: '#FDF2F8', padding: '12px 8px', borderRadius: '12px', border: '1.5px solid #FBCFE8', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#BE185D', textTransform: 'uppercase', letterSpacing: '0.03em' }}>7+ HOURS WORKLOAD</div>
+                  <div style={{ fontSize: '24px', fontWeight: '900', color: '#DB2777', margin: '4px 0 2px' }}>{heavy7hPlusCount}</div>
+                  <div style={{ fontSize: '10px', color: '#831843', fontWeight: '700' }}>Teachers (Heavy Load)</div>
+                </div>
+              </div>
+            </div>
+
+            {/* MONO-GRADE vs MULTI-GRADE SECTION DELIVERY CARD */}
+            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiLayers style={{ color: '#059669' }} /> Section Delivery Type Summary
+                </h3>
+                <span style={{ fontSize: '11px', fontWeight: '700', color: '#047857', background: '#D1FAE5', padding: '2px 8px', borderRadius: '6px' }}>
+                  Class Organization
+                </span>
+              </div>
+
+              <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748B' }}>
+                Distribution of teachers handling single-grade vs. combined multigrade sections.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: '#ECFDF5', padding: '14px 16px', borderRadius: '12px', border: '1.5px solid #A7F3D0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.04em' }}>MONO-GRADE TEACHERS</div>
+                    <div style={{ fontSize: '11px', color: '#065F46', marginTop: '2px', fontWeight: '600' }}>Single grade sections</div>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: '900', color: '#059669' }}>{monoGradeTeacherCount}</div>
+                </div>
+
+                <div style={{ background: '#FFFBEB', padding: '14px 16px', borderRadius: '12px', border: '1.5px solid #FDE68A', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.04em' }}>MULTI-GRADE TEACHERS</div>
+                    <div style={{ fontSize: '11px', color: '#78350F', marginTop: '2px', fontWeight: '600' }}>Combined grade sections</div>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: '900', color: '#D97706' }}>{multiGradeTeacherCount}</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
           {/* SECOND ROW: AGE BRACKETS, APPOINTMENT STATUS & SUBJECT SPECIALIZATION SUMMARY */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
             
@@ -538,6 +715,48 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* PERSONNEL CLASSIFICATION SUMMARY CARD */}
+              <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiUsers style={{ color: '#2563EB' }} /> Personnel Category Breakdown
+                  </h3>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#1E40AF', background: '#DBEAFE', padding: '2px 8px', borderRadius: '6px' }}>
+                    DepEd Staff Categories
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ background: 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)', padding: '14px 10px', borderRadius: '12px', border: '1.5px solid #BAE6FD', textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.03em' }}>TEACHING</div>
+                    <div style={{ fontSize: '26px', fontWeight: '900', color: '#0284C7', marginTop: '4px', lineHeight: 1 }}>{teachingCount}</div>
+                    <div style={{ fontSize: '11px', color: '#0284C7', fontWeight: '700', marginTop: '6px' }}>
+                      {totalPersonnel > 0 ? Math.round((teachingCount / totalPersonnel) * 100) : 0}% of Total
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)', padding: '14px 10px', borderRadius: '12px', border: '1.5px solid #DDD6FE', textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#6D28D9', textTransform: 'uppercase', letterSpacing: '0.03em' }}>RELATED TEACHING</div>
+                    <div style={{ fontSize: '26px', fontWeight: '900', color: '#7C3AED', marginTop: '4px', lineHeight: 1 }}>{relatedTeachingCount}</div>
+                    <div style={{ fontSize: '11px', color: '#7C3AED', fontWeight: '700', marginTop: '6px' }}>
+                      {totalPersonnel > 0 ? Math.round((relatedTeachingCount / totalPersonnel) * 100) : 0}% of Total
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)', padding: '14px 10px', borderRadius: '12px', border: '1.5px solid #A7F3D0', textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.03em' }}>NON-TEACHING</div>
+                    <div style={{ fontSize: '26px', fontWeight: '900', color: '#059669', marginTop: '4px', lineHeight: 1 }}>{nonTeachingCount}</div>
+                    <div style={{ fontSize: '11px', color: '#059669', fontWeight: '700', marginTop: '6px' }}>
+                      {totalPersonnel > 0 ? Math.round((nonTeachingCount / totalPersonnel) * 100) : 0}% of Total
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#64748B', background: '#F8FAFC', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                  📊 Total Staff: <strong>{totalPersonnel}</strong> personnel (<strong>{teachingCount}</strong> Teaching, <strong>{relatedTeachingCount}</strong> Related Teaching, <strong>{nonTeachingCount}</strong> Non-Teaching).
                 </div>
               </div>
 

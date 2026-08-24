@@ -11,18 +11,16 @@ const VALID_REASONS = [
 
 /**
  * GET /api/overload-reasons
- * Query params: schoolYear (optional, defaults to 'SY 26-27'), term (optional, defaults to 'Term 1')
- * Returns object mapping personnel_id -> array of reason strings
  */
 router.get('/', async (req, res) => {
   try {
-    const schoolYear = req.query.schoolYear || 'SY 26-27';
+    const schoolYear = req.query.schoolYear || '2026-2027';
     const term = req.query.term || 'Term 1';
 
     const result = await db.query(
       `SELECT personnel_id, school_year, term, reasons, updated_at
-       FROM overload_reasons
-       WHERE school_year = $1 AND term = $2`,
+       FROM overload_pay_and_reason
+       WHERE (school_year = $1 OR school_year = 'SY 26-27') AND (term = $2 OR term = 'Term 1')`,
       [schoolYear, term]
     );
 
@@ -46,46 +44,43 @@ router.get('/', async (req, res) => {
 
 /**
  * POST /api/overload-reasons/save
- * Body: { personnelId, schoolYear, term, reasons }
- * UPSERT endpoint to save overload reasons for a teacher
  */
 router.post('/save', async (req, res) => {
   try {
-    const { personnelId, schoolYear = 'SY 26-27', term = 'Term 1', reasons } = req.body;
+    const { personnelId, schoolYear = '2026-2027', term = 'Term 1', month = 'All', reasons } = req.body;
 
     if (!personnelId) {
       return res.status(400).json({ success: false, error: 'personnelId is required.' });
-    }
-
-    // Check if personnel exists in database (handle draft / local temporary personnel gracefully)
-    const personCheck = await db.query('SELECT id FROM personnel WHERE id = $1', [personnelId]);
-    if (personCheck.rows.length === 0) {
-      return res.json({
-        success: true,
-        message: 'Draft personnel reason updated locally.',
-        data: { personnel_id: personnelId, school_year: schoolYear, term, reasons }
-      });
     }
 
     if (!Array.isArray(reasons) || reasons.length < 1) {
       return res.status(400).json({ success: false, error: 'At least 1 overload reason is required.' });
     }
 
-    // Filter to ensure only valid allowed reasons are stored
     const cleanedReasons = reasons.filter(r => VALID_REASONS.includes(r));
     if (cleanedReasons.length === 0) {
       return res.status(400).json({ success: false, error: `Invalid reasons provided. Valid options: ${VALID_REASONS.join(', ')}` });
     }
 
+    const personRes = await db.query(
+      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [personnelId]
+    );
+    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348';
+
+    const countRes = await db.query(`SELECT COUNT(*) FROM overload_pay_and_reason`);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const oprId = `OPR-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+
     const sql = `
-      INSERT INTO overload_reasons (personnel_id, school_year, term, reasons, updated_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT (personnel_id, school_year, term)
+      INSERT INTO overload_pay_and_reason (id, personnel_id, school_id, school_year, term, month, reasons, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+      ON CONFLICT (personnel_id, school_year, term, month)
       DO UPDATE SET reasons = EXCLUDED.reasons, updated_at = NOW()
       RETURNING *;
     `;
 
-    const result = await db.query(sql, [personnelId, schoolYear, term, cleanedReasons]);
+    const result = await db.query(sql, [oprId, personnelId, targetSchoolId, schoolYear, term, month, JSON.stringify(cleanedReasons)]);
 
     res.json({
       success: true,

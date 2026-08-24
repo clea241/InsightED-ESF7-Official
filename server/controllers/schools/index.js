@@ -257,33 +257,66 @@ router.put('/subjects', async (req, res) => {
   }
 });
 
-// PUT /api/schools/curricular-config - Save special_programs and shs_curriculum_model
+// PUT /api/schools/curricular-config - Save esf7_school_profile Special Curricular Programs
 router.put('/curricular-config', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || '123456';
-    const { hasSpecialPrograms, specialPrograms, shsCurriculumModel, schoolYear } = req.body;
+    const schoolId = getSchoolIdFromRequest(req) || req.body.schoolId || req.body.school_id || '108348';
+    const {
+      hasElemSpecialPrograms, has_elem_special_programs,
+      hasJhsSpecialPrograms, has_jhs_special_programs,
+      jhsSpecialPrograms, jhs_special_programs,
+      shsCurriculumModel, shs_curriculum_model,
+      schoolYear = '2026-2027'
+    } = req.body;
 
-    await db.query(
-      `INSERT INTO schools (id, school_id, school_name, region, division, school_year, special_programs, shs_curriculum_model)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (school_id, school_year) DO UPDATE
-       SET special_programs = EXCLUDED.special_programs,
-           shs_curriculum_model = EXCLUDED.shs_curriculum_model,
-           updated_at = NOW()`,
-      [
-        `SCH-${schoolId}`, 
-        schoolId, 
-        'School', 
-        'Region', 
-        'Division', 
-        schoolYear || 'SY 26-27', 
-        JSON.stringify(specialPrograms || []), 
-        shsCurriculumModel || null
-      ]
-    );
+    const profileId = `SCH-PROFILE-${schoolId.replace('SCH-', '')}`;
+    const elemFlag = hasElemSpecialPrograms === true || has_elem_special_programs === true;
+    const jhsFlag = hasJhsSpecialPrograms === true || has_jhs_special_programs === true;
+    const jhsProgs = Array.isArray(jhsSpecialPrograms) ? jhsSpecialPrograms : (Array.isArray(jhs_special_programs) ? jhs_special_programs : []);
+    const shsModel = shsCurriculumModel || shs_curriculum_model || 'Standard K-12 SHS Curriculum';
 
-    res.json({ success: true, hasSpecialPrograms, specialPrograms, shsCurriculumModel });
+    const sql = `
+      INSERT INTO esf7_school_profile (
+        id, school_id, school_year, has_elem_special_programs, has_jhs_special_programs,
+        jhs_special_programs, shs_curriculum_model, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)
+      ON CONFLICT (school_id, school_year) DO UPDATE
+      SET
+        has_elem_special_programs = EXCLUDED.has_elem_special_programs,
+        has_jhs_special_programs = EXCLUDED.has_jhs_special_programs,
+        jhs_special_programs = EXCLUDED.jhs_special_programs,
+        shs_curriculum_model = EXCLUDED.shs_curriculum_model,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+      RETURNING *;
+    `;
+
+    const result = await db.query(sql, [
+      profileId,
+      schoolId,
+      schoolYear,
+      elemFlag,
+      jhsFlag,
+      JSON.stringify(jhsProgs),
+      shsModel,
+      JSON.stringify(req.body)
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        id: result.rows[0].id,
+        schoolId: result.rows[0].school_id,
+        schoolYear: result.rows[0].school_year,
+        hasElemSpecialPrograms: result.rows[0].has_elem_special_programs,
+        hasJhsSpecialPrograms: result.rows[0].has_jhs_special_programs,
+        jhsSpecialPrograms: result.rows[0].jhs_special_programs,
+        shsCurriculumModel: result.rows[0].shs_curriculum_model
+      }
+    });
   } catch (err) {
+    console.error('[Curricular Config PUT Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

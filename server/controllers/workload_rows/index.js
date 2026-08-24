@@ -1,192 +1,136 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
-const { generateWorkloadId } = require('../../db/idGenerator');
-const { validateWorkloadSchedules } = require('../../utils/scheduleValidator');
 
-// Get workloads for a specific personnel
-router.get('/:personnel_id', async (req, res) => {
+function formatWorkloadRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    gradeLevel: row.grade_level || '',
+    grade_level: row.grade_level || '',
+    sectionId: row.section_id || null,
+    section_id: row.section_id || null,
+    sectionName: row.section_name || '',
+    section_name: row.section_name || '',
+    subject: row.subject,
+    subjectId: row.subject_id || null,
+    subject_id: row.subject_id || null,
+    remediationSubject: row.remediation_subject || '',
+    remediation_subject: row.remediation_subject || '',
+    startTime: row.start_time ? String(row.start_time).substring(0, 5) : null,
+    start_time: row.start_time ? String(row.start_time).substring(0, 5) : null,
+    endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
+    end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
+    days: row.days || ['M', 'T', 'W', 'TH', 'F'],
+    rawPayload: raw
+  };
+}
+
+// GET all workload rows for a personnel
+router.get('/personnel/:personnel_id', async (req, res) => {
   try {
     const { personnel_id } = req.params;
     const result = await db.query(
-      `SELECT wr.*, cs.section_name 
-       FROM workload_rows wr
-       LEFT JOIN class_sections cs ON wr.section_id = cs.id
-       WHERE wr.personnel_id = $1`,
+      `SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
       [personnel_id]
     );
-
-    const rows = result.rows.map(r => ({
-      id: String(r.id),
-      personnelId: String(r.personnel_id),
-      subject: r.subject || r.task || '',
-      subject_name: r.subject || r.task || '',
-      teaching_type: (r.subject && (r.subject.includes('Advisory') || r.subject === 'ADVISORY')) ? 'Advisory' : 'Teaching',
-      gradeLevel: r.grade_level,
-      grade_level: r.grade_level,
-      sectionId: r.section_id ? String(r.section_id) : null,
-      sectionName: r.section_name || null,
-      section_name: r.section_name || null,
-      startTime: r.start_time ? r.start_time.substring(0, 5) : null,
-      endTime: r.end_time ? r.end_time.substring(0, 5) : null,
-      days: r.days || [],
-      designated_by_sds: !!r.designated_by_sds,
-      designatedBySds: !!r.designated_by_sds,
-      minutes_per_week: (r.subject && (r.subject.includes('Advisory') || r.subject === 'ADVISORY')) ? 240 : 60
-    }));
-
-    res.json(rows);
+    res.json(result.rows.map(formatWorkloadRecord));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Add a workload row (teaching, teaching-related, or administrative)
+// GET all workload rows in school
+router.get('/', async (req, res) => {
+  try {
+    const result = await db.query(`SELECT * FROM esf7_workload_rows ORDER BY created_at ASC`);
+    res.json(result.rows.map(formatWorkloadRecord));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Add a new workload row into esf7_workload_rows
 router.post('/', async (req, res) => {
-  const { personnel_id, school_id, school_year, row_type, subject, remediation_subject, task, grade_level, section_id, days, designatedBySds, designated_by_sds } = req.body;
-  const isSds = !!(designatedBySds || designated_by_sds);
-  const start_time = req.body.start_time || req.body.startTime || null;
-  const end_time = req.body.end_time || req.body.endTime || null;
   try {
-    if (row_type === 'teaching' && start_time && end_time) {
-      // Validate against existing workload rows
-      const existingRes = await db.query('SELECT * FROM workload_rows WHERE personnel_id = $1 AND row_type = \'teaching\'', [personnel_id]);
-      const combinedRows = [
-        ...existingRes.rows.map(r => ({
-          sectionId: String(r.section_id || ''),
-          subject: r.subject,
-          startTime: r.start_time ? r.start_time.substring(0, 5) : '',
-          endTime: r.end_time ? r.end_time.substring(0, 5) : '',
-          days: r.days || []
-        })),
-        {
-          sectionId: String(section_id || ''),
-          subject: subject,
-          startTime: start_time.substring(0, 5),
-          endTime: end_time.substring(0, 5),
-          days: days || []
-        }
-      ];
+    const {
+      personnel_id, personnelId,
+      school_id, schoolId: bodySchoolId,
+      school_year, schoolYear: bodySchoolYear,
+      grade_level, gradeLevel,
+      section_id, sectionId,
+      section_name, sectionName,
+      subject,
+      subject_id, subjectId,
+      remediation_subject, remediationSubject,
+      start_time, startTime,
+      end_time, endTime,
+      days
+    } = req.body;
 
-      const validationError = validateWorkloadSchedules(combinedRows);
-      if (validationError) {
-        return res.status(400).json({ error: validationError.error, type: validationError.type });
-      }
+    const targetPersonnelId = personnel_id || personnelId;
+    if (!targetPersonnelId) {
+      return res.status(400).json({ error: 'personnel_id is required' });
     }
 
-    const workloadId = generateWorkloadId();
-    const result = await db.query(
-      `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, remediation_subject, task, grade_level, section_id, start_time, end_time, days, designated_by_sds)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
-      [workloadId, personnel_id, school_id || '123456', school_year || '2026-2027', row_type, subject || null, remediation_subject || null, task || null, grade_level || null, section_id || null, start_time, end_time, days || [], isSds]
+    const personRes = await db.query(
+      `SELECT school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [targetPersonnelId]
     );
-    const row = result.rows[0];
-    res.status(201).json({
-      id: row.id,
-      subject: row.subject,
-      remediationSubject: row.remediation_subject,
-      task: row.task,
-      gradeLevel: row.grade_level,
-      sectionId: row.section_id || '',
-      startTime: row.start_time ? row.start_time.substring(0, 5) : '',
-      endTime: row.end_time ? row.end_time.substring(0, 5) : '',
-      days: row.days,
-      designatedBySds: !!row.designated_by_sds
-    });
+    const targetSchoolId = school_id || bodySchoolId || (personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348');
+    const targetSchoolYear = school_year || bodySchoolYear || (personRes.rows.length > 0 ? personRes.rows[0].school_year : '2026-2027');
+
+    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_workload_rows`);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const wklId = req.body.id || `WKL-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+
+    const query = `
+      INSERT INTO esf7_workload_rows (
+        id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
+        subject, subject_id, remediation_subject, start_time, end_time, days, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb)
+      RETURNING *;
+    `;
+
+    const values = [
+      wklId,
+      targetPersonnelId,
+      targetSchoolId,
+      targetSchoolYear,
+      grade_level || gradeLevel || null,
+      section_id || sectionId || null,
+      section_name || sectionName || null,
+      subject || 'MATHEMATICS',
+      subject_id || subjectId || null,
+      remediation_subject || remediationSubject || null,
+      start_time || startTime || null,
+      end_time || endTime || null,
+      JSON.stringify(days || ['M', 'T', 'W', 'TH', 'F']),
+      JSON.stringify(req.body)
+    ];
+
+    const result = await db.query(query, values);
+    res.status(201).json(formatWorkloadRecord(result.rows[0]));
   } catch (err) {
+    console.error('Error inserting esf7_workload_rows:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update an entire personnel's workloadRows list
-router.put('/personnel/:personnel_id', async (req, res) => {
-  const { personnel_id } = req.params;
-  const { workloadRows, teachingRelatedRows, administrativeRows } = req.body;
-
-  // Validate schedule conflicts before opening transaction
-  const validationError = validateWorkloadSchedules(workloadRows || []);
-  if (validationError) {
-    return res.status(400).json({ error: validationError.error, type: validationError.type });
-  }
-
-  const client = await db.pool.connect();
-  try {
-    await client.query('BEGIN');
-    
-    // Get personnel info to get school context
-    const pInfo = await client.query('SELECT school_id, school_year FROM personnel WHERE id = $1', [personnel_id]);
-    const { school_id, school_year } = pInfo.rows[0] || { school_id: '123456', school_year: '2026-2027' };
-
-    // Clear all old workload rows for this personnel
-    await client.query('DELETE FROM workload_rows WHERE personnel_id = $1', [personnel_id]);
-
-    const inserted = [];
-
-    // Insert teaching rows
-    for (const r of workloadRows || []) {
-      const workloadId = generateWorkloadId();
-      const isSds = !!(r.designatedBySds || r.designated_by_sds);
-      const result = await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, subject, remediation_subject, grade_level, section_id, start_time, end_time, days, designated_by_sds)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-        [workloadId, personnel_id, school_id, school_year, 'teaching', r.subject, r.remediationSubject || null, r.gradeLevel, r.sectionId || null, r.startTime || null, r.endTime || null, r.days || [], isSds]
-      );
-      inserted.push(result.rows[0]);
-    }
-
-    // Insert teaching-related rows
-    for (const r of teachingRelatedRows || []) {
-      const workloadId = generateWorkloadId();
-      const isSds = !!(r.designatedBySds || r.designated_by_sds);
-      const result = await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, task, designated_by_sds)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [workloadId, personnel_id, school_id, school_year, 'teaching-related', r.task, isSds]
-      );
-      const rowId = result.rows[0].id;
-      for (const d of r.dates || []) {
-        await client.query(
-          `INSERT INTO workload_row_dates (workload_row_id, task_date, start_time, end_time)
-           VALUES ($1, $2, $3, $4)`,
-          [rowId, d.date || null, d.startTime || null, d.endTime || null]
-        );
-      }
-    }
-
-    // Insert administrative rows
-    for (const r of administrativeRows || []) {
-      const workloadId = generateWorkloadId();
-      const isSds = !!(r.designatedBySds || r.designated_by_sds);
-      const result = await client.query(
-        `INSERT INTO workload_rows (id, personnel_id, school_id, school_year, row_type, task, designated_by_sds)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [workloadId, personnel_id, school_id, school_year, 'administrative', r.task, isSds]
-      );
-      const rowId = result.rows[0].id;
-      for (const d of r.dates || []) {
-        await client.query(
-          `INSERT INTO workload_row_dates (workload_row_id, task_date, start_time, end_time)
-           VALUES ($1, $2, $3, $4)`,
-          [rowId, d.date || null, d.startTime || null, d.endTime || null]
-        );
-      }
-    }
-
-    await client.query('COMMIT');
-    res.json({ success: true });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-// Delete a workload row
+// DELETE a workload row
 router.delete('/:id', async (req, res) => {
   try {
-    await db.query('DELETE FROM workload_rows WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
+    await db.query(`DELETE FROM esf7_workload_rows WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `Workload row ${req.params.id} deleted successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

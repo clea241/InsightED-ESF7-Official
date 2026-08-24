@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import PortalHeader from '../components/PortalHeader';
+
 
 const MASTER_SUBJECTS_CATALOG = {
   Elementary: {
@@ -821,7 +823,14 @@ export default function OrganizedClasses() {
   });
 
   return (
-    <section id="classes" className="view grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '24px', alignItems: 'start' }}>
+    <div style={{ width: '100%' }}>
+      <PortalHeader
+        title="Organized Classes & Section Setup"
+        description="Configure curriculum-level sections, assign class advisers, and manage active subjects offered."
+        onBack={() => setActiveView('dashboard')}
+      />
+      <section id="classes" className="view grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '24px', alignItems: 'start' }}>
+
       <article className="card">
         <div className="card-inner">
           <div className="roster-card-header">
@@ -2232,5 +2241,7 @@ export default function OrganizedClasses() {
         </div>
       </div>
     </section>
+    </div>
   );
 }
+

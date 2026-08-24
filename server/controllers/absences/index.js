@@ -1,109 +1,125 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
-const { getSchoolIdFromRequest } = require('../../utils/auth');
 
-// GET /api/absences
+function formatAbsenceRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    startDate: row.start_date ? (row.start_date instanceof Date ? row.start_date.toISOString().split('T')[0] : String(row.start_date).split('T')[0]) : null,
+    start_date: row.start_date ? (row.start_date instanceof Date ? row.start_date.toISOString().split('T')[0] : String(row.start_date).split('T')[0]) : null,
+    endDate: row.end_date ? (row.end_date instanceof Date ? row.end_date.toISOString().split('T')[0] : String(row.end_date).split('T')[0]) : null,
+    end_date: row.end_date ? (row.end_date instanceof Date ? row.end_date.toISOString().split('T')[0] : String(row.end_date).split('T')[0]) : null,
+    leaveType: row.leave_type,
+    leave_type: row.leave_type,
+    totalDays: row.total_days || 1,
+    total_days: row.total_days || 1,
+    rawPayload: raw
+  };
+}
+
+// GET all absence records for school or personnel
 router.get('/', async (req, res) => {
-  const schoolId = getSchoolIdFromRequest(req);
-  if (!schoolId) {
-    return res.status(400).json({ error: 'Authentication required' });
-  }
   try {
-    const result = await db.query(`
-      SELECT a.id, a.personnel_id as "personnelId", a.absence_date as "absenceDate", a.leave_type as "leaveType",
-             COALESCE(a.first_name, p.first_name) as "firstName", 
-             COALESCE(a.last_name, p.last_name) as "lastName",
-             COALESCE(a.prn, p.prn) as "prn",
-             COALESCE(a.tin, p.tin) as "tin"
-      FROM personnel_absences a
-      LEFT JOIN personnel p ON a.personnel_id = p.id
-      WHERE p.school_id = $1
-      ORDER BY a.absence_date DESC
-    `, [schoolId]);
-    
-    // Format date as YYYY-MM-DD
-    const formatted = result.rows.map(row => ({
-      ...row,
-      absenceDate: row.absenceDate ? new Date(row.absenceDate).toISOString().substring(0, 10) : ''
-    }));
-    
-    res.json(formatted);
+    const { personnel_id, personnelId, school_id, schoolId, school_year, schoolYear } = req.query;
+    const targetPersonnelId = personnel_id || personnelId;
+
+    let query = `SELECT * FROM overload_absences WHERE 1=1`;
+    const values = [];
+    let counter = 1;
+
+    if (targetPersonnelId) {
+      query += ` AND personnel_id = $${counter}`;
+      values.push(targetPersonnelId);
+      counter++;
+    }
+
+    query += ` ORDER BY start_date DESC, created_at DESC`;
+
+    const result = await db.query(query, values);
+    res.json(result.rows.map(formatAbsenceRecord));
   } catch (err) {
+    console.error('Error fetching overload_absences:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/absences
+// POST Create new absence record in overload_absences
 router.post('/', async (req, res) => {
-  const { personnel_id, start_date, end_date, leave_type } = req.body;
-  if (!personnel_id || !start_date || !end_date || !leave_type) {
-    return res.status(400).json({ error: 'personnel_id, start_date, end_date, and leave_type are required' });
-  }
-
-  const start = new Date(start_date);
-  const end = new Date(end_date);
-  if (end < start) {
-    return res.status(400).json({ error: 'End date cannot be before start date.' });
-  }
-
-  const client = await db.pool.connect();
   try {
-    await client.query('BEGIN');
-    const datesToInsert = [];
-    let current = new Date(start);
-    while (current <= end) {
-      const day = current.getDay();
-      // Skip Saturdays (6) and Sundays (0)
-      if (day !== 0 && day !== 6) {
-        const yyyy = current.getFullYear();
-        const mm = String(current.getMonth() + 1).padStart(2, '0');
-        const dd = String(current.getDate()).padStart(2, '0');
-        datesToInsert.push(`${yyyy}-${mm}-${dd}`);
-      }
-      current.setDate(current.getDate() + 1);
+    const {
+      personnel_id, personnelId,
+      school_id, schoolId: bodySchoolId,
+      school_year, schoolYear: bodySchoolYear,
+      start_date, startDate,
+      end_date, endDate,
+      leave_type, leaveType,
+      total_days, totalDays
+    } = req.body;
+
+    const targetPersonnelId = personnel_id || personnelId;
+    if (!targetPersonnelId) {
+      return res.status(400).json({ error: 'personnel_id is required' });
     }
 
-    if (datesToInsert.length === 0) {
-      return res.status(400).json({ error: 'No school weekdays found in the selected date range.' });
+    const personRes = await db.query(
+      `SELECT school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [targetPersonnelId]
+    );
+    const targetSchoolId = school_id || bodySchoolId || (personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348');
+    const targetSchoolYear = school_year || bodySchoolYear || (personRes.rows.length > 0 ? personRes.rows[0].school_year : '2026-2027');
+    const sDate = start_date || startDate;
+    const eDate = end_date || endDate || sDate;
+
+    if (!sDate) {
+      return res.status(400).json({ error: 'start_date is required' });
     }
 
-    const personnelRes = await client.query('SELECT prn, first_name, last_name, tin FROM personnel WHERE id = $1', [personnel_id]);
-    if (personnelRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Personnel not found.' });
-    }
-    const { prn, first_name, last_name, tin } = personnelRes.rows[0];
+    const countRes = await db.query(`SELECT COUNT(*) FROM overload_absences`);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const absId = req.body.id || `ABS-${targetSchoolId.replace('SCH-', '')}-${seq}`;
 
-    const inserted = [];
-    for (const dateStr of datesToInsert) {
-      const checkDup = await client.query(
-        'SELECT id FROM personnel_absences WHERE personnel_id = $1 AND absence_date = $2',
-        [personnel_id, dateStr]
-      );
-      if (checkDup.rows.length === 0) {
-        const result = await client.query(`
-          INSERT INTO personnel_absences (personnel_id, absence_date, leave_type, prn, first_name, last_name, tin)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING id, personnel_id as "personnelId", absence_date as "absenceDate", leave_type as "leaveType", prn, first_name as "firstName", last_name as "lastName", tin
-        `, [personnel_id, dateStr, leave_type, prn, first_name, last_name, tin]);
-        inserted.push(result.rows[0]);
-      }
-    }
-    await client.query('COMMIT');
-    res.status(201).json({ success: true, count: inserted.length });
+    const query = `
+      INSERT INTO overload_absences (
+        id, personnel_id, school_id, school_year, start_date, end_date, leave_type, total_days, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      RETURNING *;
+    `;
+
+    const values = [
+      absId,
+      targetPersonnelId,
+      targetSchoolId,
+      targetSchoolYear,
+      sDate,
+      eDate,
+      leave_type || leaveType || 'SICK_LEAVE',
+      total_days || totalDays || 1,
+      JSON.stringify(req.body)
+    ];
+
+    const result = await db.query(query, values);
+    res.status(201).json(formatAbsenceRecord(result.rows[0]));
   } catch (err) {
-    await client.query('ROLLBACK');
+    console.error('Error inserting overload_absences:', err);
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 
-// DELETE /api/absences/:id
+// DELETE an absence record
 router.delete('/:id', async (req, res) => {
   try {
-    await db.query('DELETE FROM personnel_absences WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
+    await db.query(`DELETE FROM overload_absences WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `Absence record ${req.params.id} deleted successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

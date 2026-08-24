@@ -11,7 +11,8 @@ export default function Sidebar() {
     esf7: true,
     portals: true,
     overload: true,
-    others: true
+    others: true,
+    validation: true
   });
 
   const toggleSection = (key) => {
@@ -29,10 +30,7 @@ export default function Sidebar() {
         { view: 'profile', label: 'Personnel Profiling', icon: '✎' },
         { view: 'designation', label: 'Designations', icon: '⚜' },
         { view: 'classes', label: 'Organized Classes', icon: '▦' },
-        { view: 'workload', label: 'Workload', icon: '◷' },
-        { view: 'deployment', label: 'Deployment', icon: '⇄' },
-        { view: 'validation', label: 'Validation Center', icon: '⛨' },
-        { view: 'submission', label: 'eSF7 Submission', icon: '📋' }
+        { view: 'workload', label: 'Workload', icon: '◷' }
       ]
     },
     {
@@ -55,6 +53,13 @@ export default function Sidebar() {
       title: 'Others',
       items: [
         { view: 'allowances', label: 'Allowances & Incentives', icon: '₱' }
+      ]
+    },
+    {
+      key: 'validation',
+      title: 'Quality Audit & Certification',
+      items: [
+        { view: 'validation', label: 'Validation Center', icon: '⛨' }
       ]
     }
   ];
@@ -128,7 +133,7 @@ export default function Sidebar() {
             </div>
           ))}
 
-          {/* VERY BOTTOM SECTION: Validation Center, Submission & Sign Out */}
+          {/* VERY BOTTOM SECTION: Validation Center & Sign Out */}
           <div className="sidebar-bottom-section">
             {/* Validation Center Button - Quality Assurance */}
             <button
@@ -138,16 +143,6 @@ export default function Sidebar() {
               type="button"
             >
               <span>Validation Center</span>
-            </button>
-
-            {/* Submission Button - Final Sign-off */}
-            <button
-              className={activeView === 'submission' ? 'active' : ''}
-              data-icon="📋"
-              onClick={() => setActiveView('submission')}
-              type="button"
-            >
-              <span>eSF7 Submission</span>
             </button>
 
             {/* Sign Out Button */}

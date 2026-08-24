@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
 import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
+import PortalHeader from '../components/PortalHeader';
+
 
 export default function ValidationCenter() {
   const {
@@ -349,7 +351,13 @@ export default function ValidationCenter() {
 
   return (
     <section id="validation" className="view grid">
+      <PortalHeader
+        title="Validation Center & Digital Certification"
+        description="Review data completeness, run compliance checks, and submit eSF7 with School Head E-Signature."
+        onBack={() => setActiveView('dashboard')}
+      />
       <article className="card">
+
         <div className="card-inner">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
             <div>
@@ -1495,8 +1503,8 @@ export default function ValidationCenter() {
           <button
             type="button"
             onClick={() => {
-              if (completeNode) completeNode('validation', 'submission');
-              setActiveView('submission');
+              if (completeNode) completeNode('validation', null);
+              if (showToast) showToast('eSF7 Quality Audit & Validation completed!', 'success');
             }}
             style={{
               background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
@@ -1510,10 +1518,10 @@ export default function ValidationCenter() {
               boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px'
+              gap: '8px'
             }}
           >
-            Save & Continue to eSF7 Submission ➔
+            <span>Mark Validation Complete ➔</span>
           </button>
         </div>
       </div>

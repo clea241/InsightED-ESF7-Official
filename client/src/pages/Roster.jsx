@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { useApp, POSITION_OPTIONS_BY_CATEGORY } from '../context/AppContext';
+import { useApp, POSITION_OPTIONS_BY_CATEGORY, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
+import PortalHeader from '../components/PortalHeader';
+
 
 export default function Roster() {
   const { personnel, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges, completeNode } = useApp();
@@ -91,7 +93,8 @@ export default function Roster() {
   // Filter & Search Logic
   const filteredPersonnel = personnel
     .filter(p => {
-      const matchesType = typeFilter === 'all' || p.type === typeFilter;
+      const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+      const matchesType = typeFilter === 'all' || pType === typeFilter;
       
       const fullName = `${p.firstName || ''} ${p.middleName || ''} ${p.lastName || ''} ${p.nameExtension || ''}`.toLowerCase();
       const email = (p.depedEmail || '').toLowerCase();
@@ -118,7 +121,13 @@ export default function Roster() {
 
   return (
     <section id="roster" className="view grid">
+      <PortalHeader
+        title="Personnel Roster & Profile Directory"
+        description="Master roster of all registered school personnel, position items, and status tracking."
+        onBack={() => setActiveView('dashboard')}
+      />
       <article className="card">
+
         <div className="card-inner">
           <div className="roster-card-header">
             <div>
@@ -277,14 +286,20 @@ export default function Roster() {
                     </td>
                     <td>{p.depedEmail}</td>
                     <td>
-                      <span className={`category-badge category-${p.type}`}>
-                        {p.type === 'teaching' ? 'Teaching' : p.type === 'teaching-related' ? 'Related' : 'Non-Teaching'}
-                      </span>
+                      {(() => {
+                        const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+                        return (
+                          <span className={`category-badge category-${pType}`}>
+                            {pType === 'teaching' ? 'Teaching' : pType === 'teaching-related' ? 'Related' : 'Non-Teaching'}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td>{p.position}</td>
                     <td style={{ textAlign: 'center', width: '100px' }}>
                        {(() => {
-                         const isNonTeaching = p.type === 'non-teaching' || p.type === 'non_teaching' || (p.type && p.type !== 'teaching' && p.type !== 'teaching-related');
+                         const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+                         const isNonTeaching = pType === 'non-teaching';
                          return (
                            <label
                              className="switch"

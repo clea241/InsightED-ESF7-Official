@@ -77,7 +77,10 @@ router.get('/stats', async (req, res) => {
     const simulatedDate = req.query.simulated_date || null;
 
     // Parallel optimized DB queries
-    const [
+    const cleanSchoolId = schoolId.replace('SCH-', '');
+
+    // Parallel optimized DB queries from active esf7 tables
+    let [
       schoolRes,
       personnelRes,
       qualificationsRes,
@@ -86,14 +89,57 @@ router.get('/stats', async (req, res) => {
       queueRes,
       recentExportRes
     ] = await Promise.all([
-      db.query('SELECT school_id, school_name FROM schools WHERE school_id = $1 LIMIT 1', [schoolId]).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, sex, type, is_school_head, position FROM personnel WHERE school_id = $1 OR school_id IS NULL`, [schoolId]).catch(() => ({ rows: [] })),
-      db.query(`SELECT personnel_id, bachelors_degree FROM personnel_qualifications`).catch(() => ({ rows: [] })),
-      db.query(`SELECT personnel_id, duration_minutes, subject_name, grade_level FROM workload_rows`).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, adviser_id, hgp_minutes FROM class_sections WHERE school_id = $1`, [schoolId]).catch(() => ({ rows: [] })),
-      db.query(`SELECT status, COUNT(*) as count FROM submission_queue GROUP BY status`).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, status, output_filepath, created_at FROM submission_queue ORDER BY created_at DESC LIMIT 1`).catch(() => ({ rows: [] }))
+      db.query('SELECT school_id, school_name FROM esf7_school_profile WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] })),
+      db.query(`
+        SELECT p.id, p.sex_at_birth AS sex, p.type, p.is_school_head, e.position
+        FROM esf7_personnel_profile p
+        LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+        WHERE p.school_id = $1 OR p.school_id = $2
+      `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
+      db.query(`SELECT personnel_id, college_degree AS bachelors_degree FROM esf7_perssonel_educ`).catch(() => ({ rows: [] })),
+      db.query(`SELECT personnel_id, subject AS subject_name, grade_level FROM esf7_workload_rows WHERE school_id = $1`, [cleanSchoolId]).catch(() => ({ rows: [] })),
+      db.query(`SELECT id, advisor_id AS adviser_id, advisory_minutes AS hgp_minutes FROM esf7_class_sections WHERE school_id = $1`, [cleanSchoolId]).catch(() => ({ rows: [] })),
+      db.query(`SELECT status, COUNT(*) as count FROM esf7_submission_queue GROUP BY status`).catch(() => ({ rows: [] })),
+      db.query(`SELECT id, status, created_at FROM esf7_submission_queue ORDER BY created_at DESC LIMIT 1`).catch(() => ({ rows: [] }))
     ]);
+
+    // If 0 personnel rows found in esf7_personnel_profile, query master insightEd.esf7_database in-memory!
+    let personnelList = personnelRes.rows;
+    if (personnelList.length === 0) {
+      try {
+        const { Pool } = require('pg');
+        const poolString = process.env.DATABASE_URL
+          ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
+          : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
+        const insightEdPool = new Pool({
+          connectionString: poolString,
+          ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+        });
+
+        const masterPersonnelRes = await insightEdPool.query(
+          `SELECT sex, position FROM esf7_database WHERE CAST(school_id AS TEXT) = $1`,
+          [cleanSchoolId]
+        ).catch((err) => {
+          console.error('[Dashboard Master Fallback Error]:', err.message);
+          return { rows: [] };
+        });
+
+        if (masterPersonnelRes.rows.length > 0) {
+          personnelList = masterPersonnelRes.rows.map(r => ({
+            sex: (r.sex || 'FEMALE').toUpperCase(),
+            type: 'teaching',
+            is_school_head: false,
+            position: r.position || 'TEACHER I'
+          }));
+        }
+
+
+
+        await insightEdPool.end().catch(() => {});
+      } catch (e) {
+        console.error('[Dashboard Master Fallback Error]:', e.message);
+      }
+    }
 
     let schoolInfo = schoolRes.rows[0];
     if (!schoolInfo || !schoolInfo.school_name || schoolInfo.school_name.includes('Sample National') || schoolInfo.school_name.includes('TEST K-12')) {
@@ -106,11 +152,11 @@ router.get('/stats', async (req, res) => {
           connectionString: poolString,
           ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
         });
-        const identityRes = await insightEdPool.query('SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1', [schoolId]).catch(() => ({ rows: [] }));
+        const identityRes = await insightEdPool.query('SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] }));
         if (identityRes.rows.length > 0 && identityRes.rows[0].school_name) {
           schoolInfo = identityRes.rows[0];
         } else {
-          const esfMatch = await insightEdPool.query('SELECT DISTINCT school_id, school_name FROM esf7_database WHERE school_id = $1 OR schoool_id = $1 LIMIT 1', [schoolId]).catch(() => ({ rows: [] }));
+          const esfMatch = await insightEdPool.query('SELECT DISTINCT school_id, school_name FROM esf7_database WHERE school_id = $1 OR schoool_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] }));
           if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
             schoolInfo = esfMatch.rows[0];
           }
@@ -120,10 +166,11 @@ router.get('/stats', async (req, res) => {
     }
 
     if (!schoolInfo || !schoolInfo.school_name) {
-      schoolInfo = { school_id: schoolId, school_name: `School ${schoolId}` };
+      schoolInfo = { school_id: cleanSchoolId, school_name: `School ${cleanSchoolId}` };
     }
 
-    const personnel = personnelRes.rows;
+    const personnel = personnelList;
+
 
     // 1. School Overview
     let males = 0;

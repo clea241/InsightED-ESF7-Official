@@ -1,170 +1,160 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
-const { generateDesignationId, generateWorkloadId } = require('../../db/idGenerator');
 
-// Get all normalized designations for a personnel
-router.get('/:personnel_id/designations', async (req, res) => {
+// Helper function to format employment DB row
+function formatEmploymentRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  const grades = row.grade_levels_taught || [];
+  const hasShsGrade = Array.isArray(grades) && grades.some(g => String(g).includes('11') || String(g).includes('12'));
+  const teachesShsFlag = raw.teachesShs !== undefined ? !!raw.teachesShs : (raw.teaches_shs !== undefined ? !!raw.teaches_shs : hasShsGrade);
+
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    positionCategory: row.position_category,
+    position_category: row.position_category,
+    position: row.position,
+    stepIncrement: row.step_increment,
+    step_increment: row.step_increment,
+    fundSource: row.fund_source,
+    fund_source: row.fund_source,
+    natureOfAppointment: row.nature_of_appointment,
+    nature_of_appointment: row.nature_of_appointment,
+    hiringArrangement: row.hiring_arrangement,
+    hiring_arrangement: row.hiring_arrangement,
+    deploymentStatus: row.deployment_status,
+    deployment_status: row.deployment_status,
+    assignedSchools: row.assigned_schools || [],
+    assigned_schools: row.assigned_schools || [],
+    gradeLevelsTaught: grades,
+    grade_levels_taught: grades,
+    assignedGradeLevels: grades,
+    assigned_grade_levels: grades,
+    teachesShs: teachesShsFlag,
+    teaches_shs: teachesShsFlag,
+    firstServiceDate: row.first_service_date ? (row.first_service_date instanceof Date ? row.first_service_date.toISOString().split('T')[0] : String(row.first_service_date).split('T')[0]) : null,
+    lastPromotionDate: row.last_promotion_date ? (row.last_promotion_date instanceof Date ? row.last_promotion_date.toISOString().split('T')[0] : String(row.last_promotion_date).split('T')[0]) : null,
+    newStationDate: row.new_station_date ? (row.new_station_date instanceof Date ? row.new_station_date.toISOString().split('T')[0] : String(row.new_station_date).split('T')[0]) : null,
+    lastLateralMovementDate: row.last_lateral_movement_date ? (row.last_lateral_movement_date instanceof Date ? row.last_lateral_movement_date.toISOString().split('T')[0] : String(row.last_lateral_movement_date).split('T')[0]) : null,
+    rawPayload: raw
+  };
+}
+
+// GET employment record by personnel_id
+router.get('/:personnel_id', async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const result = await db.query(
-      `SELECT * FROM personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      `SELECT * FROM esf7_personnel_employment WHERE personnel_id = $1 LIMIT 1`,
       [personnel_id]
     );
-    res.json(result.rows);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Employment record not found' });
+    }
+    res.json(formatEmploymentRecord(result.rows[0]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update / Assign multiple designations transactionally
-router.put('/:personnel_id/designations', async (req, res) => {
+// POST / PUT Upsert employment details for a personnel record
+router.post('/:personnel_id', async (req, res) => {
   const { personnel_id } = req.params;
-  const { designations } = req.body; // Array of designation objects
-
-  if (!Array.isArray(designations)) {
-    return res.status(400).json({ error: 'Designations must be an array' });
-  }
-
-  let client;
   try {
-    client = await db.getClient();
-    await client.query('BEGIN');
+    const {
+      position_category, positionCategory, position, step_increment, stepIncrement,
+      fund_source, fundSource, nature_of_appointment, natureOfAppointment,
+      hiring_arrangement, hiringArrangement, deployment_status, deploymentStatus,
+      assigned_schools, assignedSchools, grade_levels_taught, gradeLevelsTaught, assignedGradeLevels, assigned_grade_levels,
+      first_service_date, firstServiceDate, last_promotion_date, lastPromotionDate,
+      new_station_date, newStationDate, last_lateral_movement_date, lastLateralMovementDate
+    } = req.body;
 
-    // 1. Get school_id and school_year for personnel
-    const personRes = await client.query(
-      `SELECT school_id, school_year FROM personnel WHERE id = $1`,
+    // Get school_id from linked personnel profile to construct EMP ID
+    const personRes = await db.query(
+      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
       [personnel_id]
     );
 
-    if (personRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Personnel not found' });
-    }
+    const schoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348';
+    
+    // Count existing for sequence ID
+    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_employment`);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const empId = `EMP-${schoolId.replace('SCH-', '')}-${seq}`;
 
-    const { school_id, school_year } = personRes.rows[0];
+    const cat = (position_category || positionCategory || 'TEACHING').toUpperCase();
+    const pos = (position || 'TEACHER I').toUpperCase();
+    const step = Number(step_increment || stepIncrement || 1);
+    const fund = (fund_source || fundSource || 'NATIONAL').toUpperCase();
+    const appt = (nature_of_appointment || natureOfAppointment || 'REGULAR PERMANENT').toUpperCase();
+    const hire = (hiring_arrangement || hiringArrangement || 'PERMANENT').toUpperCase();
+    const deploy = (deployment_status || deploymentStatus || 'OWN STATION').toUpperCase();
 
-    // 2. Fetch existing designations for comparison
-    const existingRes = await client.query(
-      `SELECT * FROM personnel_designations WHERE personnel_id = $1`,
-      [personnel_id]
-    );
-    const existingMap = new Map(existingRes.rows.map(d => [`${d.designation_name}|${d.grade_level || ''}|${d.learning_area || ''}|${d.track || ''}`, d]));
+    const targetGrades = assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [];
+    const schoolsJson = JSON.stringify(assigned_schools || assignedSchools || []);
+    const gradesJson = JSON.stringify(targetGrades);
 
-    const keptIds = new Set();
-    const resultDesignations = [];
+    const query = `
+      INSERT INTO esf7_personnel_employment (
+        id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
+        hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
+        first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16::jsonb)
+      ON CONFLICT (personnel_id) DO UPDATE SET
+        position_category = EXCLUDED.position_category,
+        position = EXCLUDED.position,
+        step_increment = EXCLUDED.step_increment,
+        fund_source = EXCLUDED.fund_source,
+        nature_of_appointment = EXCLUDED.nature_of_appointment,
+        hiring_arrangement = EXCLUDED.hiring_arrangement,
+        deployment_status = EXCLUDED.deployment_status,
+        assigned_schools = EXCLUDED.assigned_schools,
+        grade_levels_taught = EXCLUDED.grade_levels_taught,
+        first_service_date = EXCLUDED.first_service_date,
+        last_promotion_date = EXCLUDED.last_promotion_date,
+        new_station_date = EXCLUDED.new_station_date,
+        last_lateral_movement_date = EXCLUDED.last_lateral_movement_date,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+      RETURNING *;
+    `;
 
-    // 3. Process each designation in payload
-    for (const d of designations) {
-      const key = `${d.designation_name}|${d.grade_level || ''}|${d.learning_area || ''}|${d.track || ''}`;
-      const existing = existingMap.get(key);
-      const desigId = existing ? existing.id : generateDesignationId();
-      const isApproved = !!d.approved_by_sds;
+    const values = [
+      empId,
+      personnel_id,
+      cat,
+      pos,
+      step,
+      fund,
+      appt,
+      hire,
+      deploy,
+      schoolsJson,
+      gradesJson,
+      first_service_date || firstServiceDate || null,
+      last_promotion_date || lastPromotionDate || null,
+      new_station_date || newStationDate || null,
+      last_lateral_movement_date || lastLateralMovementDate || null,
+      JSON.stringify(req.body)
+    ];
 
-      const upsertRes = await client.query(
-        `INSERT INTO personnel_designations 
-          (id, personnel_id, school_id, school_year, designation_name, grade_level, learning_area, track, approved_by_sds, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-         ON CONFLICT (personnel_id, designation_name, grade_level, learning_area, track)
-         DO UPDATE SET approved_by_sds = EXCLUDED.approved_by_sds, updated_at = NOW()
-         RETURNING *`,
-        [desigId, personnel_id, school_id, school_year, d.designation_name, d.grade_level || null, d.learning_area || null, d.track || null, isApproved]
-      );
-
-      const savedDesig = upsertRes.rows[0];
-      keptIds.add(savedDesig.id);
-      resultDesignations.push(savedDesig);
-
-      // Workload Sync: If approved by SDS, ensure workload_rows entry exists
-      if (isApproved) {
-        let formattedTask = savedDesig.designation_name;
-        if (savedDesig.grade_level) formattedTask += ` - ${savedDesig.grade_level}`;
-        if (savedDesig.learning_area) formattedTask += ` - ${savedDesig.learning_area}`;
-        if (savedDesig.track) formattedTask += ` - ${savedDesig.track}`;
-
-        const existingWkl = await client.query(
-          `SELECT id FROM workload_rows WHERE designation_id = $1`,
-          [savedDesig.id]
-        );
-
-        if (existingWkl.rows.length === 0) {
-          const wklId = generateWorkloadId();
-          await client.query(
-            `INSERT INTO workload_rows 
-              (id, personnel_id, school_id, school_year, row_type, task, designated_by_sds, designation_id, days)
-             VALUES ($1, $2, $3, $4, 'teaching-related', $5, TRUE, $6, $7)`,
-            [wklId, personnel_id, school_id, school_year, formattedTask, savedDesig.id, ['M', 'T', 'W', 'TH', 'F']]
-          );
-        }
-      } else {
-        // If not approved by SDS, delete any linked workload_row
-        await client.query(
-          `DELETE FROM workload_rows WHERE designation_id = $1`,
-          [savedDesig.id]
-        );
-      }
-    }
-
-    // 4. Delete designations no longer present in payload (ON DELETE CASCADE removes linked workload_rows automatically)
-    const existingIds = existingRes.rows.map(d => d.id);
-    const toDelete = existingIds.filter(id => !keptIds.has(id));
-    if (toDelete.length > 0) {
-      await client.query(
-        `DELETE FROM personnel_designations WHERE id = ANY($1::varchar[])`,
-        [toDelete]
-      );
-    }
-
-    // 5. Backfill cache string into personnel_employment.designation for backward compatibility
-    const currentAllRes = await client.query(
-      `SELECT * FROM personnel_designations WHERE personnel_id = $1`,
-      [personnel_id]
-    );
-
-    const serializedParts = currentAllRes.rows.map(d => {
-      let str = d.designation_name;
-      if (d.grade_level) str += ` - ${d.grade_level}`;
-      if (d.learning_area) str += ` - ${d.learning_area}`;
-      if (d.track) str += ` - ${d.track}`;
-      if (d.approved_by_sds) str += `::APPROVED_SDS`;
-      return str;
-    });
-    const serializedString = serializedParts.join(', ');
-
-    await client.query(
-      `UPDATE personnel_employment SET designation = $1, updated_at = NOW() WHERE personnel_id = $2`,
-      [serializedString, personnel_id]
-    );
-
-    await client.query('COMMIT');
-    res.json({ designations: resultDesignations, serializedDesignation: serializedString });
+    const result = await db.query(query, values);
+    res.json(formatEmploymentRecord(result.rows[0]));
   } catch (err) {
-    if (client) await client.query('ROLLBACK');
+    console.error('Error upserting esf7_personnel_employment:', err);
     res.status(500).json({ error: err.message });
-  } finally {
-    if (client) client.release();
   }
 });
 
-// Legacy single update route for employment details
+// PUT Single update route
 router.put('/:personnel_id', async (req, res) => {
-  const { personnel_id } = req.params;
-  const { position, designation, fund_source, nature_of_appointment, hiring_arrangement, assigned_schools, grade_levels_taught, first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date, step_number, teaches_shs } = req.body;
-  try {
-    const result = await db.query(
-      `UPDATE personnel_employment 
-       SET position = $1, designation = $2, fund_source = $3, nature_of_appointment = $4, 
-           hiring_arrangement = $5, assigned_schools = $6, grade_levels_taught = $7, 
-           first_service_date = $8, last_promotion_date = $9, new_station_date = $10,
-           last_lateral_movement_date = $11, step_number = $12, teaches_shs = $13,
-           updated_at = NOW()
-       WHERE personnel_id = $14 RETURNING *`,
-      [position, designation, fund_source, nature_of_appointment, hiring_arrangement, assigned_schools, grade_levels_taught, first_service_date || null, last_promotion_date || null, new_station_date || null, last_lateral_movement_date || null, step_number ? Number(step_number) : 1, !!teaches_shs, personnel_id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  return router.handle({ ...req, method: 'POST' }, res);
 });
 
 module.exports = router;

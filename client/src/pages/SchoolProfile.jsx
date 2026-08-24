@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { getLocalDraft, setLocalDraft } from '../services/db';
 import { api } from '../services/api';
+import PortalHeader from '../components/PortalHeader';
+
 
 const OFFERING_METADATA = {
   'Elementary': { title: 'Elementary', subtitle: 'Kinder to Grade 6', icon: '🏫', color: '#10b981', bg: '#ecfdf5', border: '#a7f3d0' },
@@ -147,7 +149,13 @@ export default function SchoolProfile() {
 
   return (
     <section id="school" className="view grid" style={{ padding: '20px', maxWidth: '1240px', margin: '0 auto' }}>
+      <PortalHeader
+        title="School Profile & Registry"
+        description="Official administrative details, curricular offerings, and special programs setup."
+        onBack={() => setActiveView('dashboard')}
+      />
       <article className="card" style={{ border: '1px solid #e2e8f0', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.05)' }}>
+
         
         {/* Sleek Header Banner */}
         <div style={{

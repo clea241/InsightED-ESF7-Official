@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
+import PortalHeader from '../components/PortalHeader';
 import { api } from '../services/api';
+
 import {
   useApp,
   POSITION_OPTIONS_BY_CATEGORY,
+  detectPersonnelTypeFromPosition,
   RELIGION_OPTIONS,
   ETHNIC_GROUP_OPTIONS,
   MAJOR_OPTIONS,
@@ -17,7 +20,8 @@ import {
   POST_GRADUATE_DEGREE_OPTIONS,
   COLLEGE_DEGREE_OPTIONS,
   TESDA_CERTIFICATION_OPTIONS,
-  NEAP_TRAINING_OPTIONS
+  NEAP_TRAINING_OPTIONS,
+  OFFICIAL_DESIGNATIONS
 } from '../context/AppContext';
 
 const CURRICULUM_ERAS = [
@@ -610,15 +614,21 @@ export default function PersonnelProfile() {
     if (dbPerson) {
       const draftKey = `draft_personnel_${dbPerson.id}`;
       const savedDraft = localStorage.getItem(draftKey);
+      let personObj = dbPerson;
       if (savedDraft) {
         try {
-          setEditPerson(JSON.parse(savedDraft));
-          return;
+          personObj = JSON.parse(savedDraft);
         } catch (e) {
           console.error("Failed to parse draft", e);
         }
       }
-      setEditPerson(dbPerson);
+
+      const autoType = detectPersonnelTypeFromPosition(personObj.position || dbPerson.position);
+      if (autoType && (personObj.type !== autoType || !personObj.type)) {
+        personObj = { ...personObj, type: autoType };
+      }
+
+      setEditPerson(personObj);
     }
   }, [activePersonnelId, dbPerson]);
 
@@ -796,6 +806,13 @@ export default function PersonnelProfile() {
       if (updated.newStationDate === 'N/A') updated.newStationDate = '';
     }
 
+    if (key === 'position' && value) {
+      const autoType = detectPersonnelTypeFromPosition(value);
+      if (autoType && autoType !== updated.type) {
+        updated.type = autoType;
+      }
+    }
+
     if (key === 'firstServiceDate' && value && typeof value === 'string' && value.length >= 10) {
       const firstDateStr = value.substring(0, 10);
       let resetCount = 0;
@@ -948,7 +965,8 @@ export default function PersonnelProfile() {
     if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
 
     // Employment
-    if (!p.position) errors.push("POSITION / DESIGNATION");
+    if (!p.position) errors.push("PLANTILLA POSITION");
+    if (!p.designation?.trim()) errors.push("OFFICIAL DESIGNATION");
     if (!p.fundSource) errors.push("FUND SOURCE");
     if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
     if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
@@ -1018,7 +1036,8 @@ export default function PersonnelProfile() {
       if (!p.philsysNo?.trim()) errors.push("PHILSYS NO.");
       if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
       if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
-      if (!p.position) errors.push("POSITION / DESIGNATION");
+      if (!p.position) errors.push("PLANTILLA POSITION");
+      if (!p.designation?.trim()) errors.push("OFFICIAL DESIGNATION");
       if (!p.fundSource) errors.push("FUND SOURCE");
       if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
       if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
@@ -1186,8 +1205,13 @@ export default function PersonnelProfile() {
     }
   };
 
+  const getPersonCategoryType = (p) => {
+    return detectPersonnelTypeFromPosition(p?.position || p?.plantilla_position || p?.position_title || '') || p?.type || 'teaching';
+  };
+
   const sidebarPeople = nonDraftPersonnel.filter(p => {
-    const matchesCat = categoryFilter === 'all' || p.type === categoryFilter;
+    const pType = getPersonCategoryType(p);
+    const matchesCat = categoryFilter === 'all' || pType === categoryFilter;
     const fullName = `${p.firstName || ''} ${p.lastName || ''} ${p.position || ''}`.toLowerCase();
     const matchesSearch = !personnelSearch || fullName.includes(personnelSearch.toLowerCase());
     return matchesCat && matchesSearch;
@@ -1207,13 +1231,19 @@ export default function PersonnelProfile() {
     { tab: 'employment', label: 'Employment', icon: '💼' },
     { tab: 'education', label: 'Education', icon: '🎓' },
     { tab: 'development', label: 'L&D', icon: '📋' },
-    ...(currentPerson && currentPerson.type !== 'non-teaching' ? [{ tab: 'teaching', label: 'Teaching', icon: '📚' }] : []),
+    ...(currentPerson && getPersonCategoryType(currentPerson) !== 'non-teaching' ? [{ tab: 'teaching', label: 'Teaching', icon: '📚' }] : []),
     { tab: 'learning-area', label: 'Learning Area', icon: '📖' }
   ];
 
   return (
     <section id="profile" className="view grid">
+      <PortalHeader
+        title="Personnel Profile & Specialization"
+        description="Detailed personnel identity, employment history, degree specializations, and Learning Area matrix."
+        onBack={() => setActiveView('dashboard')}
+      />
       <article className="card" style={{ overflow: 'hidden' }}>
+
         <div style={{ display: 'flex', height: '100%', minHeight: '80vh' }}>
 
           {/* ── LEFT SIDEBAR ─────────────────────────────── */}
@@ -1307,7 +1337,8 @@ export default function PersonnelProfile() {
               {sidebarPeople.map(p => {
                 const isActive = p.id === currentPerson.id;
                 const hasDraft = !!localStorage.getItem(`draft_personnel_${p.id}`);
-                const catInfo = categoryLabels[p.type] || { label: p.type, color: '#64748b', bg: '#f1f5f9' };
+                const pType = getPersonCategoryType(p);
+                const catInfo = categoryLabels[pType] || { label: pType, color: '#64748b', bg: '#f1f5f9' };
                 const initials = `${(p.firstName || '')[0] || ''}${(p.lastName || '')[0] || ''}`.toUpperCase();
                 return (
                   <div
@@ -1701,9 +1732,9 @@ export default function PersonnelProfile() {
                             <SearchableDropdown
                               options={['TEACHING', 'RELATED TEACHING', 'NON-TEACHING']}
                               value={
-                                currentPerson.type === 'teaching' ? 'TEACHING' :
-                                  currentPerson.type === 'teaching-related' ? 'RELATED TEACHING' :
-                                    currentPerson.type === 'non-teaching' ? 'NON-TEACHING' : ''
+                                (currentPerson.type === 'non-teaching' || detectPersonnelTypeFromPosition(currentPerson.position) === 'non-teaching') ? 'NON-TEACHING' :
+                                (currentPerson.type === 'teaching-related' || detectPersonnelTypeFromPosition(currentPerson.position) === 'teaching-related') ? 'RELATED TEACHING' :
+                                'TEACHING'
                               }
                               onChange={(val) => {
                                 const mapping = {
@@ -1714,8 +1745,7 @@ export default function PersonnelProfile() {
                                 const newType = mapping[val];
                                 const updated = {
                                   ...currentPerson,
-                                  type: newType,
-                                  position: POSITION_OPTIONS_BY_CATEGORY[newType][0]
+                                  type: newType
                                 };
                                 setEditPerson(updated);
                                 localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
@@ -1726,14 +1756,18 @@ export default function PersonnelProfile() {
                           <div>
                             <label>Plantilla Position</label>
                             <SearchableDropdown
-                              options={POSITION_OPTIONS_BY_CATEGORY[currentPerson.type || 'teaching'].map(p => p.toUpperCase())}
+                              options={
+                                Array.from(new Set([
+                                  ...(POSITION_OPTIONS_BY_CATEGORY[currentPerson.type || 'teaching'] || []),
+                                  ...(POSITION_OPTIONS_BY_CATEGORY.teaching || []),
+                                  ...(POSITION_OPTIONS_BY_CATEGORY['teaching-related'] || []),
+                                  ...(POSITION_OPTIONS_BY_CATEGORY['non-teaching'] || [])
+                                ])).map(p => p.toUpperCase())
+                              }
                               value={currentPerson.position?.startsWith('OTHERS') ? 'OTHERS' : (currentPerson.position || '')}
                               onChange={(val) => {
-                                if (val === 'OTHERS') {
-                                  handleFieldChange('position', 'OTHERS');
-                                } else {
-                                  handleFieldChange('position', val);
-                                }
+                                const selectedPos = val === 'OTHERS' ? 'OTHERS' : val;
+                                handleFieldChange('position', selectedPos);
                               }}
                               placeholder="SELECT PLANTILLA POSITION..."
                               required
@@ -1765,6 +1799,19 @@ export default function PersonnelProfile() {
                                 </div>
                               </div>
                             )}
+                          </div>
+                          <div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span>Official Designation / Special Assignment</span>
+                              <span style={{ color: '#EF4444', fontWeight: '800' }}>*</span>
+                            </label>
+                            <SearchableDropdown
+                              options={OFFICIAL_DESIGNATIONS.map(d => d.name.toUpperCase())}
+                              value={currentPerson.designation || ''}
+                              onChange={(val) => handleFieldChange('designation', val)}
+                              placeholder="SELECT OFFICIAL DESIGNATION..."
+                              required
+                            />
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label>Salary Step Increment</label>
