@@ -7,7 +7,7 @@ async function processNextJobDebug() {
   try {
     // Auto-recover stuck processing jobs
     const recoverRes = await client.query(`
-      UPDATE submission_queue
+      UPDATE esf7_submission_queue
       SET status = 'pending', updated_at = NOW()
       WHERE status = 'processing'
         AND updated_at < NOW() - INTERVAL '2 minutes'
@@ -19,7 +19,7 @@ async function processNextJobDebug() {
 
     const jobRes = await client.query(`
       SELECT id, school_id, school_year, payload, signature, certified_by 
-      FROM submission_queue 
+      FROM esf7_submission_queue 
       WHERE status = 'pending' 
       ORDER BY id ASC 
       LIMIT 1 
@@ -36,7 +36,7 @@ async function processNextJobDebug() {
     console.log(`[DEBUG] Found job ID=${job.id}, school=${job.school_id}`);
 
     await client.query(
-      `UPDATE submission_queue SET status = 'processing', updated_at = NOW() WHERE id = $1`,
+      `UPDATE esf7_submission_queue SET status = 'processing', updated_at = NOW() WHERE id = $1`,
       [job.id]
     );
 
@@ -120,7 +120,7 @@ async function processNextJobDebug() {
 
     await client.query('COMMIT');
     await client.query(
-      `UPDATE submission_queue SET status = 'completed', error_message = NULL, updated_at = NOW() WHERE id = $1`,
+      `UPDATE esf7_submission_queue SET status = 'completed', error_message = NULL, updated_at = NOW() WHERE id = $1`,
       [job.id]
     );
     console.log(`[DEBUG] Job ${job.id} COMPLETED successfully!`);
@@ -131,8 +131,8 @@ async function processNextJobDebug() {
     try {
       await client.query('ROLLBACK');
       await client.query(
-        `UPDATE submission_queue SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-        [err.message, 1]
+        `UPDATE esf7_submission_queue SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
+        [err.message, job ? job.id : 1]
       );
       console.log('[DEBUG] Job marked as failed.');
     } catch (rbErr) {

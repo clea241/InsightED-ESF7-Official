@@ -21,7 +21,7 @@ import {
   COLLEGE_DEGREE_OPTIONS,
   TESDA_CERTIFICATION_OPTIONS,
   NEAP_TRAINING_OPTIONS,
-  OFFICIAL_DESIGNATIONS
+  validateDepEdEmail
 } from '../context/AppContext';
 
 const CURRICULUM_ERAS = [
@@ -605,6 +605,11 @@ export default function PersonnelProfile() {
   const [personnelSearch, setPersonnelSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [positionFilter, setPositionFilter] = useState('all');
+  const [sidebarPage, setSidebarPage] = useState(1);
+
+  useEffect(() => {
+    setSidebarPage(1);
+  }, [personnelSearch, categoryFilter, positionFilter]);
 
   const nonDraftPersonnel = personnel.filter(p => !p.isDraft);
   const dbPerson = nonDraftPersonnel.find(p => p.id === activePersonnelId) || nonDraftPersonnel[0];
@@ -636,35 +641,50 @@ export default function PersonnelProfile() {
 
   // Fetch Learning Areas for active personnel
   useEffect(() => {
-    if (!currentPerson?.id) return;
+    if (!currentPerson?.id) {
+      setLearningAreaMap({});
+      return;
+    }
     let isMounted = true;
     setLearningAreaLoading(true);
 
-    // Initialize with local draft if present
+    // CRITICAL: Reset learningAreaMap to empty immediately on personnel change before fetching!
+    let initialMap = {};
     const localDraft = localStorage.getItem(`draft_learning_areas_${currentPerson.id}`);
     if (localDraft) {
       try {
-        setLearningAreaMap(JSON.parse(localDraft));
+        initialMap = JSON.parse(localDraft) || {};
       } catch (e) {}
     }
+    setLearningAreaMap(initialMap);
 
     api.getLearningAreas(currentPerson.id)
       .then(res => {
         if (!isMounted) return;
-        const rows = res.rows || [];
-        const map = {};
-        rows.forEach(r => {
-          let areaName = r.learning_area;
-          if (areaName === 'Kinder Blocks of Time' || areaName === 'KINDER BLOCKS OF TIME') {
-            areaName = 'Kinder';
-          }
-          map[`${r.school_year}||${areaName}`] = {
-            checked: true,
-            years: Number(r.years_taught || 1)
-          };
-        });
-        setLearningAreaMap(map);
-        localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(map));
+        let incomingMap = res?.learningAreaMap || res?.matrix_data || {};
+        if (Array.isArray(res?.rows)) {
+          const mapped = {};
+          res.rows.forEach(r => {
+            let areaName = r.learning_area;
+            if (areaName === 'Kinder Blocks of Time' || areaName === 'KINDER BLOCKS OF TIME') {
+              areaName = 'Kinder';
+            }
+            mapped[`${r.school_year}||${areaName}`] = {
+              checked: true,
+              years: Number(r.years_taught || 1)
+            };
+          });
+          incomingMap = { ...incomingMap, ...mapped };
+        }
+        
+        // Always set incomingMap (even if empty, so teacher with 0 learning areas shows 0 learning areas!)
+        const finalMap = incomingMap && typeof incomingMap === 'object' ? incomingMap : {};
+        setLearningAreaMap(finalMap);
+        if (Object.keys(finalMap).length > 0) {
+          localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(finalMap));
+        } else if (!localDraft) {
+          localStorage.removeItem(`draft_learning_areas_${currentPerson.id}`);
+        }
       })
       .catch(err => {
         console.error('Failed to fetch learning areas:', err);
@@ -733,18 +753,8 @@ export default function PersonnelProfile() {
       return updated;
     });
 
-    try {
-      await api.saveLearningArea({
-        personnelId: currentPerson.id,
-        schoolYear: eraKey,
-        learningArea: subjectKey,
-        checked: newChecked,
-        yearsTaught: newYears
-      });
-      showToast(`Learning area ${newChecked ? 'added' : 'removed'}`, 'success');
-    } catch (err) {
-      console.error('Failed to toggle learning area:', err);
-    }
+    if (setHasUnsavedChanges) setHasUnsavedChanges(true);
+    showToast(`Learning area ${newChecked ? 'added' : 'removed'} in draft`, 'success');
   };
 
   const handleYearsChange = async (eraKey, subjectKey, yearsVal) => {
@@ -768,17 +778,7 @@ export default function PersonnelProfile() {
       return updated;
     });
 
-    try {
-      await api.saveLearningArea({
-        personnelId: currentPerson.id,
-        schoolYear: eraKey,
-        learningArea: subjectKey,
-        checked: true,
-        yearsTaught: parsedYears
-      });
-    } catch (err) {
-      console.error('Failed to update years taught:', err);
-    }
+    if (setHasUnsavedChanges) setHasUnsavedChanges(true);
   };
 
   useEffect(() => {
@@ -804,6 +804,7 @@ export default function PersonnelProfile() {
       if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
       if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
       if (updated.newStationDate === 'N/A') updated.newStationDate = '';
+      if (updated.depedEmail === 'N/A') updated.depedEmail = '';
     }
 
     if (key === 'position' && value) {
@@ -811,6 +812,13 @@ export default function PersonnelProfile() {
       if (autoType && autoType !== updated.type) {
         updated.type = autoType;
       }
+      if (autoType !== 'non-teaching' && updated.depedEmail === 'N/A') {
+        updated.depedEmail = '';
+      }
+    }
+
+    if (key === 'type' && value !== 'non-teaching' && updated.depedEmail === 'N/A') {
+      updated.depedEmail = '';
     }
 
     if (key === 'firstServiceDate' && value && typeof value === 'string' && value.length >= 10) {
@@ -966,7 +974,6 @@ export default function PersonnelProfile() {
 
     // Employment
     if (!p.position) errors.push("PLANTILLA POSITION");
-    if (!p.designation?.trim()) errors.push("OFFICIAL DESIGNATION");
     if (!p.fundSource) errors.push("FUND SOURCE");
     if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
     if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
@@ -1037,7 +1044,6 @@ export default function PersonnelProfile() {
       if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
       if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
       if (!p.position) errors.push("PLANTILLA POSITION");
-      if (!p.designation?.trim()) errors.push("OFFICIAL DESIGNATION");
       if (!p.fundSource) errors.push("FUND SOURCE");
       if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
       if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
@@ -1070,8 +1076,13 @@ export default function PersonnelProfile() {
     }
 
     try {
-      await savePersonnelChanges(currentPerson.id, currentPerson);
+      await savePersonnelChanges(currentPerson.id, {
+        ...currentPerson,
+        learningAreaMap,
+        matrix_data: learningAreaMap
+      });
       localStorage.removeItem(`draft_personnel_${currentPerson.id}`);
+      localStorage.removeItem(`draft_learning_areas_${currentPerson.id}`);
       showToast("Changes saved to database successfully.");
     } catch (err) {
       await showAlert("Error", "Failed to save changes: " + err.message);
@@ -1104,12 +1115,24 @@ export default function PersonnelProfile() {
   // DepEd email local sync helpers
   const getEmailLocal = (email) => {
     if (!email) return '';
-    return email.split('@')[0] || '';
+    if (email === 'N/A') return 'N/A';
+    if (email.endsWith('@deped.gov.ph')) {
+      return email.slice(0, -13);
+    }
+    return email;
   };
 
   const handleEmailLocalChange = (val) => {
-    const local = val.toLowerCase().replace(/[^a-z0-9._-]/g, '');
-    handleFieldChange('depedEmail', local ? `${local}@deped.gov.ph` : '');
+    const raw = String(val || '').replace(/@/g, '').trim().toLowerCase();
+    if (!raw) {
+      handleFieldChange('depedEmail', '');
+      return;
+    }
+    if (raw === 'n/a') {
+      handleFieldChange('depedEmail', 'N/A');
+      return;
+    }
+    handleFieldChange('depedEmail', `${raw}@deped.gov.ph`);
   };
 
   // Filtered list for sidebar
@@ -1231,8 +1254,10 @@ export default function PersonnelProfile() {
     { tab: 'employment', label: 'Employment', icon: '💼' },
     { tab: 'education', label: 'Education', icon: '🎓' },
     { tab: 'development', label: 'L&D', icon: '📋' },
-    ...(currentPerson && getPersonCategoryType(currentPerson) !== 'non-teaching' ? [{ tab: 'teaching', label: 'Teaching', icon: '📚' }] : []),
-    { tab: 'learning-area', label: 'Learning Area', icon: '📖' }
+    ...(currentPerson && getPersonCategoryType(currentPerson) !== 'non-teaching' ? [
+      { tab: 'teaching', label: 'Teaching', icon: '📚' },
+      { tab: 'learning-area', label: 'Learning Area', icon: '📖' }
+    ] : [])
   ];
 
   return (
@@ -1241,6 +1266,9 @@ export default function PersonnelProfile() {
         title="Personnel Profile & Specialization"
         description="Detailed personnel identity, employment history, degree specializations, and Learning Area matrix."
         onBack={() => setActiveView('dashboard')}
+        showNodeMap={true}
+        onContinue={() => completeNode('profile', 'classes')}
+        continueText="Save & Continue to Organized Classes ➔"
       />
       <article className="card" style={{ overflow: 'hidden' }}>
 
@@ -1327,74 +1355,128 @@ export default function PersonnelProfile() {
               </div>
             </div>
 
-            {/* Scrollable People List */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-              {sidebarPeople.length === 0 && (
-                <div style={{ padding: '24px 12px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
-                  No personnel match your search.
-                </div>
-              )}
-              {sidebarPeople.map(p => {
-                const isActive = p.id === currentPerson.id;
-                const hasDraft = !!localStorage.getItem(`draft_personnel_${p.id}`);
-                const pType = getPersonCategoryType(p);
-                const catInfo = categoryLabels[pType] || { label: pType, color: '#64748b', bg: '#f1f5f9' };
-                const initials = `${(p.firstName || '')[0] || ''}${(p.lastName || '')[0] || ''}`.toUpperCase();
+            {/* Scrollable People List (10 per page) */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column' }}>
+              {(() => {
+                const totalPages = Math.ceil(sidebarPeople.length / 10) || 1;
+                const paginatedPeople = sidebarPeople.slice((sidebarPage - 1) * 10, sidebarPage * 10);
+
                 return (
-                  <div
-                    key={p.id}
-                    onClick={() => { setActivePersonnelId(p.id); setActiveTab('identity'); }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '10px 12px',
-                      borderRadius: '12px',
-                      marginBottom: '4px',
-                      cursor: 'pointer',
-                      background: isActive ? 'white' : 'transparent',
-                      border: isActive ? '1.5px solid var(--line)' : '1.5px solid transparent',
-                      boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
-                      transition: 'all 0.15s'
-                    }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'white'; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {/* Avatar */}
-                    <div style={{
-                      width: '36px', height: '36px', borderRadius: '50%',
-                      background: isActive ? catInfo.bg : '#e2e8f0',
-                      color: isActive ? catInfo.color : '#64748b',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: '800', fontSize: '13px', flexShrink: 0, position: 'relative'
-                    }}>
-                      {initials || '?'}
-                      {hasDraft && (
-                        <span style={{
-                          position: 'absolute', top: '-2px', right: '-2px',
-                          width: '10px', height: '10px', borderRadius: '50%',
-                          background: '#f59e0b', border: '2px solid #f8fafc'
-                        }} title="Has unsaved changes" />
+                  <>
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                      {sidebarPeople.length === 0 && (
+                        <div style={{ padding: '24px 12px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+                          No personnel match your search.
+                        </div>
                       )}
+                      {paginatedPeople.map(p => {
+                        const isActive = p.id === currentPerson.id;
+                        const hasDraft = !!localStorage.getItem(`draft_personnel_${p.id}`);
+                        const pType = getPersonCategoryType(p);
+                        const catInfo = categoryLabels[pType] || { label: pType, color: '#64748b', bg: '#f1f5f9' };
+                        const initials = `${(p.firstName || '')[0] || ''}${(p.lastName || '')[0] || ''}`.toUpperCase();
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => { setActivePersonnelId(p.id); setActiveTab('identity'); }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              padding: '10px 12px',
+                              borderRadius: '12px',
+                              marginBottom: '4px',
+                              cursor: 'pointer',
+                              background: isActive ? 'white' : 'transparent',
+                              border: isActive ? '1.5px solid var(--line)' : '1.5px solid transparent',
+                              boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
+                              transition: 'all 0.15s'
+                            }}
+                            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'white'; }}
+                            onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            {/* Avatar */}
+                            <div style={{
+                              width: '36px', height: '36px', borderRadius: '50%',
+                              background: isActive ? catInfo.bg : '#e2e8f0',
+                              color: isActive ? catInfo.color : '#64748b',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontWeight: '800', fontSize: '13px', flexShrink: 0, position: 'relative'
+                            }}>
+                              {initials || '?'}
+                              {hasDraft && (
+                                <span style={{
+                                  position: 'absolute', top: '-2px', right: '-2px',
+                                  width: '10px', height: '10px', borderRadius: '50%',
+                                  background: '#f59e0b', border: '2px solid #f8fafc'
+                                }} title="Has unsaved changes" />
+                              )}
+                            </div>
+                            {/* Name & Position */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ margin: 0, fontSize: '13px', fontWeight: isActive ? '700' : '600', color: isActive ? 'var(--navy)' : '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {p.salutation} {p.firstName} {p.lastName}{p.nameExtension ? ` ${p.nameExtension}` : ''}
+                              </p>
+                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {p.position || 'No position set'}
+                              </p>
+                            </div>
+                            {/* Category badge */}
+                            <span style={{
+                              padding: '2px 6px', borderRadius: '6px',
+                              background: catInfo.bg, color: catInfo.color,
+                              fontSize: '10px', fontWeight: '700', flexShrink: 0
+                            }}>{catInfo.label}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    {/* Name & Position */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: '13px', fontWeight: isActive ? '700' : '600', color: isActive ? 'var(--navy)' : '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {p.salutation} {p.firstName} {p.lastName}{p.nameExtension ? ` ${p.nameExtension}` : ''}
-                      </p>
-                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {p.position || 'No position set'}
-                      </p>
-                    </div>
-                    {/* Category badge */}
-                    <span style={{
-                      padding: '2px 6px', borderRadius: '6px',
-                      background: catInfo.bg, color: catInfo.color,
-                      fontSize: '10px', fontWeight: '700', flexShrink: 0
-                    }}>{catInfo.label}</span>
-                  </div>
+
+                    {/* Pagination Bar */}
+                    {totalPages > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1.5px solid var(--line)', marginTop: 'auto' }}>
+                        <button
+                          type="button"
+                          disabled={sidebarPage === 1}
+                          onClick={() => setSidebarPage(prev => Math.max(1, prev - 1))}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--line)',
+                            background: sidebarPage === 1 ? '#f8fafc' : 'white',
+                            color: sidebarPage === 1 ? '#cbd5e1' : 'var(--navy)',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            cursor: sidebarPage === 1 ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          ◀ Prev
+                        </button>
+                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700' }}>
+                          Page {sidebarPage} of {totalPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={sidebarPage >= totalPages}
+                          onClick={() => setSidebarPage(prev => Math.min(totalPages, prev + 1))}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--line)',
+                            background: sidebarPage >= totalPages ? '#f8fafc' : 'white',
+                            color: sidebarPage >= totalPages ? '#cbd5e1' : 'var(--navy)',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            cursor: sidebarPage >= totalPages ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </div>
           </div>
 
@@ -1421,7 +1503,7 @@ export default function PersonnelProfile() {
               </div>
               <div style={{ flex: 1 }}>
                 <h2 style={{ margin: '0 0 2px', fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
-                  {currentPerson.salutation} {currentPerson.firstName} {currentPerson.lastName}{currentPerson.nameExtension ? ` ${currentPerson.nameExtension}` : ''}
+                  {currentPerson.firstName} {currentPerson.lastName}{currentPerson.nameExtension ? ` ${currentPerson.nameExtension}` : ''}
                 </h2>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{currentPerson.position || 'No position'}</span>
@@ -1605,18 +1687,6 @@ export default function PersonnelProfile() {
                           </div>
                           <div className="profile-subsection">Legal Name</div>
                           <div>
-                            <label>Title / Salutation</label>
-                            <select
-                              value={currentPerson.salutation || 'MR.'}
-                              onChange={(e) => handleFieldChange('salutation', e.target.value)}
-                              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: 'white' }}
-                            >
-                              <option>MR.</option>
-                              <option>MRS.</option>
-                              <option>MS.</option>
-                            </select>
-                          </div>
-                          <div>
                             <label>First Name</label>
                             <input className={!currentPerson.firstName ? 'empty-field' : ''} value={currentPerson.firstName || ''} onChange={(e) => handleFieldChange('firstName', e.target.value.toUpperCase())} />
                           </div>
@@ -1732,8 +1802,8 @@ export default function PersonnelProfile() {
                             <SearchableDropdown
                               options={['TEACHING', 'RELATED TEACHING', 'NON-TEACHING']}
                               value={
-                                (currentPerson.type === 'non-teaching' || detectPersonnelTypeFromPosition(currentPerson.position) === 'non-teaching') ? 'NON-TEACHING' :
-                                (currentPerson.type === 'teaching-related' || detectPersonnelTypeFromPosition(currentPerson.position) === 'teaching-related') ? 'RELATED TEACHING' :
+                                (currentPerson.type === 'non-teaching') ? 'NON-TEACHING' :
+                                (currentPerson.type === 'teaching-related') ? 'RELATED TEACHING' :
                                 'TEACHING'
                               }
                               onChange={(val) => {
@@ -1742,10 +1812,16 @@ export default function PersonnelProfile() {
                                   'RELATED TEACHING': 'teaching-related',
                                   'NON-TEACHING': 'non-teaching'
                                 };
-                                const newType = mapping[val];
+                                const newType = mapping[val] || 'teaching';
+                                const validPositions = (POSITION_OPTIONS_BY_CATEGORY[newType] || []).map(p => p.toUpperCase());
+                                let newPosition = currentPerson.position || '';
+                                if (newPosition && !validPositions.includes(newPosition.toUpperCase()) && !newPosition.toUpperCase().startsWith('OTHERS')) {
+                                  newPosition = '';
+                                }
                                 const updated = {
                                   ...currentPerson,
-                                  type: newType
+                                  type: newType,
+                                  position: newPosition
                                 };
                                 setEditPerson(updated);
                                 localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
@@ -1757,17 +1833,28 @@ export default function PersonnelProfile() {
                             <label>Plantilla Position</label>
                             <SearchableDropdown
                               options={
-                                Array.from(new Set([
-                                  ...(POSITION_OPTIONS_BY_CATEGORY[currentPerson.type || 'teaching'] || []),
-                                  ...(POSITION_OPTIONS_BY_CATEGORY.teaching || []),
-                                  ...(POSITION_OPTIONS_BY_CATEGORY['teaching-related'] || []),
-                                  ...(POSITION_OPTIONS_BY_CATEGORY['non-teaching'] || [])
-                                ])).map(p => p.toUpperCase())
+                                (() => {
+                                  const rawType = String(currentPerson.type || 'teaching').toLowerCase();
+                                  const categoryKey = rawType === 'teaching'
+                                    ? 'teaching'
+                                    : rawType === 'teaching-related'
+                                      ? 'teaching-related'
+                                      : 'non-teaching';
+                                  const list = POSITION_OPTIONS_BY_CATEGORY[categoryKey] || POSITION_OPTIONS_BY_CATEGORY.teaching || [];
+                                  return list.map(p => p.toUpperCase());
+                                })()
                               }
                               value={currentPerson.position?.startsWith('OTHERS') ? 'OTHERS' : (currentPerson.position || '')}
                               onChange={(val) => {
                                 const selectedPos = val === 'OTHERS' ? 'OTHERS' : val;
-                                handleFieldChange('position', selectedPos);
+                                const autoType = detectPersonnelTypeFromPosition(selectedPos) || currentPerson.type || 'teaching';
+                                const updated = {
+                                  ...currentPerson,
+                                  position: selectedPos,
+                                  type: autoType
+                                };
+                                setEditPerson(updated);
+                                localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
                               }}
                               placeholder="SELECT PLANTILLA POSITION..."
                               required
@@ -1799,19 +1886,6 @@ export default function PersonnelProfile() {
                                 </div>
                               </div>
                             )}
-                          </div>
-                          <div>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span>Official Designation / Special Assignment</span>
-                              <span style={{ color: '#EF4444', fontWeight: '800' }}>*</span>
-                            </label>
-                            <SearchableDropdown
-                              options={OFFICIAL_DESIGNATIONS.map(d => d.name.toUpperCase())}
-                              value={currentPerson.designation || ''}
-                              onChange={(val) => handleFieldChange('designation', val)}
-                              placeholder="SELECT OFFICIAL DESIGNATION..."
-                              required
-                            />
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label>Salary Step Increment</label>
@@ -1890,60 +1964,158 @@ export default function PersonnelProfile() {
                           </div>
                           <div>
                             <label>Employee No.</label>
-                            <input className={!currentPerson.employeeNo ? 'empty-field' : ''} value={currentPerson.employeeNo || ''} onChange={(e) => handleFieldChange('employeeNo', e.target.value)} />
+                            {(() => {
+                              const cleanEmpNo = (currentPerson.employeeNo && !String(currentPerson.employeeNo).toUpperCase().startsWith('PRN')) ? currentPerson.employeeNo : '';
+                              return (
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 4250732"
+                                  className={!cleanEmpNo ? 'empty-field' : ''}
+                                  value={cleanEmpNo}
+                                  onChange={(e) => handleFieldChange('employeeNo', e.target.value)}
+                                />
+                              );
+                            })()}
                           </div>
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                              <label style={{ margin: 0 }}>DepEd Email</label>
-                              <button
-                                type="button"
-                                onClick={() => setIsEmailInfoOpen(true)}
-                                title="DepEd Email Policy & Validation Notice"
-                                style={{
-                                  background: '#E0F2FE',
-                                  color: '#0284C7',
-                                  border: '1px solid #BAE6FD',
-                                  borderRadius: '50%',
-                                  width: '18px',
-                                  height: '18px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '11px',
-                                  fontWeight: '800',
-                                  cursor: 'pointer',
-                                  lineHeight: 1,
-                                  padding: 0
-                                }}
-                              >
-                                i
-                              </button>
-                            </div>
-                            <div className="deped-email-field" style={{ display: 'flex', alignItems: 'center' }}>
-                              <input
-                                style={{ borderRight: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
-                                value={getEmailLocal(currentPerson.depedEmail)}
-                                onChange={(e) => handleEmailLocalChange(e.target.value)}
-                                placeholder="name"
-                                className={!getEmailLocal(currentPerson.depedEmail) ? 'empty-field' : ''}
-                              />
-                              <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                height: '42px',
-                                padding: '0 12px',
-                                background: 'var(--blue-50)',
-                                border: '1.5px solid var(--line)',
-                                borderLeft: 0,
-                                borderTopRightRadius: '12px',
-                                borderBottomRightRadius: '12px',
-                                fontSize: '13px',
-                                color: 'var(--blue)',
-                                fontWeight: 'bold'
-                              }}>
-                                @deped.gov.ph
-                              </span>
-                            </div>
+                            {(() => {
+                              const isNonTeaching = currentPerson.type === 'non-teaching';
+                              const isNationalFund = String(currentPerson.fundSource || '').trim().toUpperCase() === 'NATIONAL';
+                              const isNonNationalNonTeaching = isNonTeaching && !isNationalFund;
+                              const isEmailNA = isNonNationalNonTeaching && currentPerson.depedEmail === 'N/A';
+                              const rawEmail = isNonNationalNonTeaching ? (currentPerson.depedEmail || '') : (currentPerson.depedEmail === 'N/A' ? '' : (currentPerson.depedEmail || ''));
+                              const emailVal = (!rawEmail || isEmailNA)
+                                ? { isValid: true, error: null }
+                                : validateDepEdEmail(rawEmail, currentPerson.firstName, currentPerson.lastName);
+
+                              const localVal = isEmailNA ? 'N/A' : getEmailLocal(rawEmail);
+                              const hasError = !emailVal.isValid && !isEmailNA;
+
+                              return (
+                                <>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <label style={{ margin: 0 }}>DepEd Email</label>
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsEmailInfoOpen(true)}
+                                        title="DepEd Email Policy & Validation Notice"
+                                        style={{
+                                          background: '#E0F2FE',
+                                          color: '#0284C7',
+                                          border: '1px solid #BAE6FD',
+                                          borderRadius: '50%',
+                                          width: '18px',
+                                          height: '18px',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: '11px',
+                                          fontWeight: '800',
+                                          cursor: 'pointer',
+                                          lineHeight: 1,
+                                          padding: 0
+                                        }}
+                                      >
+                                        i
+                                      </button>
+                                    </div>
+                                    {isNonNationalNonTeaching && (
+                                      <span style={{ fontSize: '10.5px', color: '#047857', background: '#ECFDF5', padding: '1px 6px', borderRadius: '4px', border: '1px solid #A7F3D0', fontWeight: '700' }}>
+                                        Optional for Non-National
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="deped-email-field" style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    borderRadius: '12px',
+                                    border: hasError ? '2px solid #EF4444' : (isEmailNA ? '1.5px solid #CBD5E1' : '1.5px solid var(--line, #BAE6FD)'),
+                                    background: hasError ? '#FEF2F2' : (isEmailNA ? '#F1F5F9' : 'white'),
+                                    overflow: 'hidden'
+                                  }}>
+                                    <input
+                                      type="text"
+                                      disabled={isEmailNA}
+                                      value={localVal}
+                                      onKeyDown={(e) => {
+                                        if (e.key === '@') {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      onChange={(e) => {
+                                        const clean = e.target.value.replace(/@/g, '');
+                                        handleEmailLocalChange(clean);
+                                      }}
+                                      placeholder={isEmailNA ? 'N/A' : ''}
+                                      className={!localVal && !isEmailNA ? 'empty-field' : ''}
+                                      style={{
+                                        flex: 1,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        borderRadius: 0,
+                                        padding: '10px 12px',
+                                        fontSize: '14px',
+                                        color: isEmailNA ? '#64748B' : (hasError ? '#B91C1C' : 'var(--text, #0F172A)'),
+                                        fontWeight: isEmailNA ? 'bold' : 'normal',
+                                        outline: 'none'
+                                      }}
+                                    />
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      height: '42px',
+                                      padding: '0 12px',
+                                      background: hasError ? '#FEE2E2' : (isEmailNA ? '#E2E8F0' : 'var(--blue-50, #F0F9FF)'),
+                                      borderLeft: hasError ? '1px solid #FCA5A5' : '1px solid var(--line, #BAE6FD)',
+                                      fontSize: '13px',
+                                      color: hasError ? '#DC2626' : (isEmailNA ? '#94A3B8' : 'var(--blue, #0284C7)'),
+                                      fontWeight: 'bold',
+                                      userSelect: 'none',
+                                      whiteSpace: 'nowrap'
+                                    }}>
+                                      @deped.gov.ph
+                                    </span>
+                                  </div>
+
+                                  {/* Red error alert inline if invalid */}
+                                  {hasError && (
+                                    <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#DC2626', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span>⚠️</span> {emailVal.error}
+                                    </p>
+                                  )}
+
+                                  {/* N/A Checkbox Toggle for Non-National Non-Teaching */}
+                                  {isNonNationalNonTeaching && (
+                                    <label style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      marginTop: '6px',
+                                      fontSize: '12px',
+                                      color: 'var(--navy)',
+                                      cursor: 'pointer',
+                                      fontWeight: '600'
+                                    }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isEmailNA}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            handleFieldChange('depedEmail', 'N/A');
+                                          } else {
+                                            handleFieldChange('depedEmail', '');
+                                          }
+                                        }}
+                                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+                                      />
+                                      <span>No DepEd email issued (Mark as N/A)</span>
+                                    </label>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
 
                           <div className="profile-subsection">Deployment and Service Dates</div>
@@ -2058,42 +2230,59 @@ export default function PersonnelProfile() {
                                           <p className="field-help">Select the destination school in {schoolInfo?.district || 'the same district'} where this personnel is reassigned to teach.</p>
                                         </div>
 
-                                        <button
-                                          type="button"
-                                          className="btn"
-                                          style={{ marginTop: '4px', width: 'fit-content' }}
-                                          disabled={!currentPerson.profilingCode || !Array.isArray(currentPerson.assignedSchools) || currentPerson.assignedSchools.length === 0}
-                                          onClick={async () => {
-                                            if (!currentPerson.profilingCode) {
-                                              await showAlert("Missing PRN", "A valid PRN is required before sending reassignment request.");
-                                              return;
-                                            }
-                                            try {
-                                              const { api } = await import('../services/api');
-                                              const targetSchoolName = currentPerson.assignedSchools[0];
-                                              const match = resolveSchoolMeta(targetSchoolName);
-                                              if (!match || !match.schoolId) {
-                                                await showAlert("Error", "Selected target school not found in division registry.");
-                                                return;
-                                              }
+                                        {(() => {
+                                          const prnToShare = currentPerson.prn || currentPerson.profilingCode || (currentPerson.id && String(currentPerson.id).startsWith('PRN') ? currentPerson.id : (currentPerson.id ? 'PRN-' + String(currentPerson.id).replace('PER-', '') : null));
+                                          const hasAssignedSchools = (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools.length > 0) || (typeof currentPerson.assignedSchools === 'string' && currentPerson.assignedSchools.trim().length > 0);
+                                          const canSend = Boolean(prnToShare) && hasAssignedSchools;
 
-                                              await api.createRequest({
-                                                targetSchoolId: match.schoolId,
-                                                requestType: 'reassigned_teacher',
-                                                personnelId: currentPerson.profilingCode,
-                                                personnelName: `${currentPerson.firstName} ${currentPerson.lastName}`
-                                              });
-                                              await showAlert("Success", `Reassignment request sent to ${match.name} successfully. Once accepted by that school, the personnel's status in their roster will be BORROWED.`);
-                                            } catch (err) {
-                                              await showAlert("Error", "Failed to send reassignment request: " + err.message);
-                                            }
-                                          }}
-                                        >
-                                          Send Reassignment Request 🔗
-                                        </button>
-                                        {!currentPerson.profilingCode && (
-                                          <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sending reassignment request.</p>
-                                        )}
+                                          return (
+                                            <>
+                                              <button
+                                                type="button"
+                                                className="btn btn-primary"
+                                                style={{ marginTop: '8px', width: 'fit-content', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                disabled={!canSend}
+                                                onClick={async () => {
+                                                  if (!prnToShare) {
+                                                    await showAlert("Missing PRN", "A valid PRN is required before sending a reassignment request. Please save this personnel profile first.");
+                                                    return;
+                                                  }
+                                                  try {
+                                                    const { api } = await import('../services/api');
+                                                    const rawSchool = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools[0] : currentPerson.assignedSchools;
+                                                    const match = resolveSchoolMeta(rawSchool);
+                                                    const targetSchoolId = match?.schoolId || (typeof rawSchool === 'string' ? rawSchool.match(/\((\d+)\)/)?.[1] : null);
+
+                                                    if (!targetSchoolId) {
+                                                      await showAlert("No Target School", "Please select a target destination school from the dropdown before sending the reassignment request.");
+                                                      return;
+                                                    }
+
+                                                    await api.createRequest({
+                                                      targetSchoolId: targetSchoolId,
+                                                      requestType: 'reassigned_teacher',
+                                                      personnelId: prnToShare,
+                                                      personnelName: `${currentPerson.firstName || ''} ${currentPerson.lastName || ''}`.trim()
+                                                    });
+
+                                                    showToast("Reassignment request sent successfully!", "success");
+                                                    await showAlert(
+                                                      "Reassignment Request Sent 🔗",
+                                                      `Reassignment request for ${currentPerson.firstName || ''} ${currentPerson.lastName || ''} (${prnToShare}) has been sent to ${match?.name || rawSchool} successfully!\n\nOnce accepted by that school, the personnel's status in their roster will be BORROWED.`
+                                                    );
+                                                  } catch (err) {
+                                                    await showAlert("Reassignment Request Error", "Failed to send reassignment request: " + err.message);
+                                                  }
+                                                }}
+                                              >
+                                                Send Reassignment Request 🔗
+                                              </button>
+                                              {!prnToShare && (
+                                                <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sending reassignment request.</p>
+                                              )}
+                                            </>
+                                          );
+                                        })()}
                                       </div>
                                     )}
 
@@ -2177,40 +2366,62 @@ export default function PersonnelProfile() {
                                           placeholder="+ ADD CLUSTERED SCHOOL (SAME DISTRICT)..."
                                         />
 
-                                        <button
-                                          type="button"
-                                          className="btn"
-                                          style={{ marginTop: '8px', width: 'fit-content' }}
-                                          disabled={!currentPerson.profilingCode || (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools.length === 0)}
-                                          onClick={async () => {
-                                            if (!currentPerson.profilingCode) {
-                                              await showAlert("Missing PRN", "A valid PRN is required before sharing.");
-                                              return;
-                                            }
-                                            try {
-                                              const { api } = await import('../services/api');
-                                              const targetSchoolIds = currentPerson.assignedSchools.map(item => {
-                                                const meta = resolveSchoolMeta(item);
-                                                return meta ? meta.schoolId : null;
-                                              }).filter(Boolean);
+                                        {(() => {
+                                          const prnToShare = currentPerson.prn || currentPerson.profilingCode || (currentPerson.id && String(currentPerson.id).startsWith('PRN') ? currentPerson.id : (currentPerson.id ? 'PRN-' + String(currentPerson.id).replace('PER-', '') : null));
+                                          const hasAssignedSchools = Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools.length > 0;
+                                          const canShare = Boolean(prnToShare) && hasAssignedSchools;
 
-                                              if (targetSchoolIds.length === 0) {
-                                                await showAlert("Error", "No valid target schools found.");
-                                                return;
-                                              }
+                                          return (
+                                            <>
+                                              <button
+                                                type="button"
+                                                className="btn btn-primary"
+                                                style={{ marginTop: '8px', width: 'fit-content', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                disabled={!canShare}
+                                                onClick={async () => {
+                                                  if (!prnToShare) {
+                                                    await showAlert("Missing PRN", "A valid PRN is required before sharing. Please save this personnel profile first.");
+                                                    return;
+                                                  }
+                                                  try {
+                                                    const { api } = await import('../services/api');
+                                                    const targetSchoolIds = (currentPerson.assignedSchools || []).map(item => {
+                                                      const meta = resolveSchoolMeta(item);
+                                                      return meta ? meta.schoolId : (typeof item === 'string' ? item : null);
+                                                    }).filter(Boolean);
 
-                                              await api.sharePersonnelToClusteredSchools(currentPerson.profilingCode, targetSchoolIds, currentPerson.firstName, currentPerson.lastName);
-                                              await showAlert("Success", "Personnel shared to clustered schools successfully.");
-                                            } catch (err) {
-                                              await showAlert("Error", "Failed to share personnel: " + err.message);
-                                            }
-                                          }}
-                                        >
-                                          Share to Clustered Schools 🔗
-                                        </button>
-                                        {!currentPerson.profilingCode && (
-                                          <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sharing.</p>
-                                        )}
+                                                    if (targetSchoolIds.length === 0) {
+                                                      await showAlert("No Target Schools", "Please add at least one clustered school from the dropdown before sharing.");
+                                                      return;
+                                                    }
+
+                                                    for (const targetId of targetSchoolIds) {
+                                                      await api.createRequest({
+                                                        targetSchoolId: targetId,
+                                                        requestType: 'clustered_teacher',
+                                                        personnelId: prnToShare,
+                                                        personnelName: `${currentPerson.firstName || ''} ${currentPerson.lastName || ''}`.trim()
+                                                      });
+                                                    }
+
+                                                    showToast("Clustered personnel request(s) sent successfully!", "success");
+                                                    await showAlert(
+                                                      "Clustered Request(s) Sent 🔗",
+                                                      `Clustering request for ${currentPerson.firstName || ''} ${currentPerson.lastName || ''} (${prnToShare}) has been sent to the selected satellite school(s)!\n\nOnce accepted in their Request Center, the personnel will appear in their Roster as CLUSTERED.`
+                                                    );
+                                                  } catch (err) {
+                                                    await showAlert("Share Error", "Failed to share personnel: " + err.message);
+                                                  }
+                                                }}
+                                              >
+                                                Share to Clustered Schools 🔗
+                                              </button>
+                                              {!prnToShare && (
+                                                <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sharing.</p>
+                                              )}
+                                            </>
+                                          );
+                                        })()}
                                       </div>
                                     )}
                                   </>
@@ -2373,10 +2584,10 @@ export default function PersonnelProfile() {
                               <label>Post-Graduate Discipline</label>
                               {(() => {
                                 const currentVal = currentPerson.postGraduateDiscipline || '';
-                                const presetOptions = DISCIPLINE_OPTIONS.filter(opt => opt !== 'Others');
+                                const presetOptions = DISCIPLINE_OPTIONS.filter(opt => opt !== 'OTHERS' && opt !== 'Others');
                                 const matchedPreset = presetOptions.find(opt => opt.toUpperCase() === currentVal.toUpperCase());
-                                const selectedDropdownValue = matchedPreset ? matchedPreset : (currentVal ? 'Others' : '');
-                                const isCustomMode = selectedDropdownValue === 'Others';
+                                const selectedDropdownValue = matchedPreset ? matchedPreset : (currentVal ? 'OTHERS' : '');
+                                const isCustomMode = selectedDropdownValue === 'OTHERS' || selectedDropdownValue === 'Others';
 
                                 return (
                                   <div>
@@ -2384,7 +2595,7 @@ export default function PersonnelProfile() {
                                       options={DISCIPLINE_OPTIONS}
                                       value={selectedDropdownValue}
                                       onChange={(val) => {
-                                        if (val === 'Others') {
+                                        if (val === 'OTHERS' || val === 'Others') {
                                           if (matchedPreset || !currentVal) {
                                             handleFieldChange('postGraduateDiscipline', 'OTHERS');
                                           }
@@ -2486,10 +2697,14 @@ export default function PersonnelProfile() {
                                 <option value="REGISTERED GUIDANCE COUNSELOR">REGISTERED GUIDANCE COUNSELOR</option>
                                 <option value="REGISTERED LIBRARIAN">REGISTERED LIBRARIAN</option>
                                 <option value="REGISTERED NURSE">REGISTERED NURSE</option>
-                                <option value="CS - 1ST LEVEL (SUB-PROFESSIONAL)">CS - 1ST LEVEL (SUB-PROFESSIONAL)</option>
-                                <option value="CS - 2ND LEVEL (PROFESSIONAL)">CS - 2ND LEVEL (PROFESSIONAL)</option>
+                                {(currentPerson.type === 'non-teaching' || currentPerson.type === 'teaching-related') && (
+                                  <>
+                                    <option value="CS - 1ST LEVEL (SUB-PROFESSIONAL)">CS - 1ST LEVEL (SUB-PROFESSIONAL)</option>
+                                    <option value="CS - 2ND LEVEL (PROFESSIONAL)">CS - 2ND LEVEL (PROFESSIONAL)</option>
+                                  </>
+                                )}
                                 <option value="RA 1080 (OTHERS, PLEASE SPECIFY)">RA 1080 (OTHERS, PLEASE SPECIFY)</option>
-                                <option value="N/A">N/A</option>
+                                {currentPerson.type === 'non-teaching' && <option value="N/A">N/A</option>}
                               </select>
                             </div>
 
@@ -2814,28 +3029,30 @@ export default function PersonnelProfile() {
                               </select>
                             </div>
 
-                            {/* Dedicated SHS Teacher Toggle */}
-                            <div style={{ marginTop: '20px', padding: '12px 16px', background: '#F0F9FF', border: '1.5px solid #0284C7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <div>
-                                <label style={{ fontWeight: 'bold', color: '#0369A1', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span>📗</span> Teaches Senior High School (Grade 11 / Grade 12)
-                                </label>
-                                <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
-                                  Enabling this unlocks the <strong>SHS Term Workload Card</strong> (1st, 2nd, 3rd Term) in the Workload module.
-                                </p>
+                            {/* Dedicated SHS Teacher Toggle - Only shown if school offers Senior High School */}
+                            {((schoolInfo?.curricularOffering || []).some(o => String(o).toUpperCase().includes('SHS') || String(o).toUpperCase().includes('SENIOR'))) && (
+                              <div style={{ marginTop: '20px', padding: '12px 16px', background: '#F0F9FF', border: '1.5px solid #0284C7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                  <label style={{ fontWeight: 'bold', color: '#0369A1', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span>📗</span> Teaches Senior High School (Grade 11 / Grade 12)
+                                  </label>
+                                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
+                                    Enabling this unlocks the <strong>SHS Term Workload Card</strong> (1st, 2nd, 3rd Term) in the Workload module.
+                                  </p>
+                                </div>
+                                <input
+                                  type="checkbox"
+                                  checked={!!currentPerson.teachesShs || (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.some(g => String(g).includes('11') || String(g).includes('12')))}
+                                  onChange={(e) => handleFieldChange('teachesShs', e.target.checked)}
+                                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0284C7' }}
+                                />
                               </div>
-                              <input
-                                type="checkbox"
-                                checked={!!currentPerson.teachesShs || (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.some(g => String(g).includes('11') || String(g).includes('12')))}
-                                onChange={(e) => handleFieldChange('teachesShs', e.target.checked)}
-                                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0284C7' }}
-                              />
-                            </div>
+                            )}
                           </div>
                         </>
                       )}
 
-                      {activeTab === 'learning-area' && (
+                      {activeTab === 'learning-area' && getPersonCategoryType(currentPerson) !== 'non-teaching' && (
                         <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                             <div>
@@ -3092,71 +3309,6 @@ export default function PersonnelProfile() {
         isOpen={isEmailInfoOpen}
         onClose={() => setIsEmailInfoOpen(false)}
       />
-
-      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
-      <div className="sticky-journey-bar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{
-            background: 'rgba(59, 130, 246, 0.25)',
-            color: '#60A5FA',
-            border: '1px solid rgba(96, 165, 250, 0.4)',
-            padding: '4px 12px',
-            borderRadius: '999px',
-            fontSize: '11px',
-            fontWeight: '900'
-          }}>
-            NODE 03 OF 09
-          </span>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
-              Personnel Profiling & Qualifications
-            </h4>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
-              Confirm staff qualifications & specializations, then proceed to Node 04 (Organized Classes).
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
-          <button
-            type="button"
-            onClick={() => setActiveView('nodemap')}
-            style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#E2E8F0',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '10px',
-              padding: '8px 16px',
-              fontSize: '12px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            🗺️ Node Map
-          </button>
-
-          <button
-            type="button"
-            onClick={() => completeNode('profile', 'classes')}
-            style={{
-              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '10px 20px',
-              fontSize: '13px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            Save & Continue to Organized Classes ➔
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

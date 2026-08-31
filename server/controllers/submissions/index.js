@@ -13,9 +13,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing submission payload data' });
     }
 
-    // 1. Insert into submission_queue
+    // 1. Insert into esf7_submission_queue
     const result = await db.query(
-      `INSERT INTO submission_queue (school_id, school_year, payload, signature, certified_by, status)
+      `INSERT INTO esf7_submission_queue (school_id, school_year, payload, signature, certified_by, status)
        VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id`,
       [schoolId, schoolYear || 'SY 26-27', JSON.stringify(payload), signature || null, certifiedBy || null]
     );
@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
 
     // 2. Fetch initial queue position
     const posRes = await db.query(
-      `SELECT COUNT(*) FROM submission_queue WHERE status = 'pending' AND id < $1`,
+      `SELECT COUNT(*) FROM esf7_submission_queue WHERE status = 'pending' AND id < $1`,
       [jobId]
     );
     const queuePosition = parseInt(posRes.rows[0].count, 10) + 1;
@@ -50,7 +50,7 @@ router.get('/status/:job_id', async (req, res) => {
     }
 
     const result = await db.query(
-      `SELECT status, error_message FROM submission_queue WHERE id = $1`,
+      `SELECT status, error_message FROM esf7_submission_queue WHERE id = $1`,
       [jobId]
     );
 
@@ -64,7 +64,7 @@ router.get('/status/:job_id', async (req, res) => {
     let queuePosition = 0;
     if (job.status === 'pending') {
       const posRes = await db.query(
-        `SELECT COUNT(*) FROM submission_queue WHERE status = 'pending' AND id < $1`,
+        `SELECT COUNT(*) FROM esf7_submission_queue WHERE status = 'pending' AND id < $1`,
         [jobId]
       );
       queuePosition = parseInt(posRes.rows[0].count, 10) + 1;
@@ -90,7 +90,7 @@ router.get('/history', async (req, res) => {
       return res.status(400).json({ error: 'School ID required' });
     }
     const result = await db.query(
-      `SELECT id, status, created_at FROM submission_queue WHERE school_id = $1 ORDER BY created_at DESC`,
+      `SELECT id, status, created_at FROM esf7_submission_queue WHERE school_id = $1 ORDER BY created_at DESC`,
       [schoolId]
     );
     res.json(result.rows);

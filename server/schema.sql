@@ -162,36 +162,84 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_designations (
 
 CREATE INDEX IF NOT EXISTS idx_esf7_personnel_designations_personnel ON esf7_personnel_designations (personnel_id);
 
--- 8. Class Sections Table (Mono-grade, Multigrade, Non-Graded & ARAL Class Sections + Standard Status)
-CREATE TABLE IF NOT EXISTS esf7_class_sections (
+-- 8A. Regular Base Sections Table (Official Base Enrollment)
+CREATE TABLE IF NOT EXISTS esf7_regular_sections (
     id VARCHAR(50) PRIMARY KEY,
     school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
     
     grade_level TEXT NOT NULL,
     section_name TEXT NOT NULL,
     section_type TEXT NOT NULL DEFAULT 'MONO GRADE',
     
-    advisor_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
-    
-    advisory_minutes INTEGER DEFAULT 300,
+    adviser_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
     
     male_learners INTEGER DEFAULT 0,
     female_learners INTEGER DEFAULT 0,
     number_of_learners INTEGER DEFAULT 0,
-    
-    standard TEXT DEFAULT 'WITHIN STANDARD' CHECK (standard IN ('BELOW STANDARD', 'WITHIN STANDARD', 'ABOVE STANDARD', 'BELOW', 'WITHIN', 'ABOVE')),
     
     raw_payload JSONB DEFAULT '{}'::jsonb,
     
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     
-    CONSTRAINT uq_school_sy_grade_section UNIQUE (school_id, school_year, grade_level, section_name)
+    CONSTRAINT uq_regular_section_school_sy UNIQUE (school_id, school_year, grade_level, section_name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_esf7_class_sections_school_sy ON esf7_class_sections (school_id, school_year);
-CREATE INDEX IF NOT EXISTS idx_esf7_class_sections_advisor ON esf7_class_sections (advisor_id);
+CREATE INDEX IF NOT EXISTS idx_regular_sections_school_sy ON esf7_regular_sections (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_regular_sections_adviser ON esf7_regular_sections (adviser_id);
+
+-- 8B. ARAL Sections Table (Academic Recovery & Accessible Learning - RA 12028)
+CREATE TABLE IF NOT EXISTS esf7_aral_sections (
+    id VARCHAR(50) PRIMARY KEY,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    basis_type TEXT NOT NULL DEFAULT 'grade',
+    grade_level TEXT NOT NULL,
+    assessment_tool TEXT,
+    profile_level TEXT,
+    section_name TEXT NOT NULL,
+    
+    tutor_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+    
+    male_learners INTEGER DEFAULT 0,
+    female_learners INTEGER DEFAULT 0,
+    total_learners INTEGER DEFAULT 0,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_aral_sections_school_sy ON esf7_aral_sections (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_aral_sections_tutor ON esf7_aral_sections (tutor_id);
+
+-- 8C. Remedial & Enrichment Sections Table (School-Based Interventions)
+CREATE TABLE IF NOT EXISTS esf7_remedial_enrichment_sections (
+    id VARCHAR(50) PRIMARY KEY,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    intervention_type TEXT NOT NULL DEFAULT 'REMEDIAL',
+    grade_level TEXT NOT NULL,
+    section_name TEXT NOT NULL,
+    
+    assigned_teacher_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+    
+    male_learners INTEGER DEFAULT 0,
+    female_learners INTEGER DEFAULT 0,
+    total_learners INTEGER DEFAULT 0,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_remedial_sections_school_sy ON esf7_remedial_enrichment_sections (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_remedial_sections_teacher ON esf7_remedial_enrichment_sections (assigned_teacher_id);
 
 -- 9. School Subjects Table (Stores Custom Added Subjects per School & Key Stage)
 CREATE TABLE IF NOT EXISTS esf7_school_subjects (

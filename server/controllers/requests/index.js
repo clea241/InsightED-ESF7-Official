@@ -5,7 +5,14 @@ const { getSchoolIdFromRequest } = require('../../utils/auth');
 
 function formatRequestRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  let raw = row.raw_payload || {};
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = {};
+    }
+  }
   return {
     ...raw,
     id: row.id,
@@ -78,38 +85,112 @@ router.get('/history', async (req, res) => {
 router.get('/district-schools', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || req.query.schoolId || req.query.school_id || '502949';
-    const cleanSchoolId = schoolId.replace('SCH-', '');
+    const cleanSchoolId = schoolId.replace('SCH-', '').trim();
     
     const { Pool } = require('pg');
     const poolString = process.env.DATABASE_URL
-      ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-      : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-    const insightEdPool = new Pool({
+      ? process.env.DATABASE_URL.replace(/insighted_esf7|insightEd/gi, 'users_database')
+      : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/users_database`;
+    
+    const usersDbPool = new Pool({
       connectionString: poolString,
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
     });
 
-    const schoolsRes = await insightEdPool.query(
-      `SELECT DISTINCT CAST(school_id AS TEXT) as school_id, school_name FROM esf7_database WHERE CAST(school_id AS TEXT) != $1 LIMIT 20`,
-      [cleanSchoolId]
-    ).catch(() => ({ rows: [] }));
+    let currentSchoolMeta = null;
+    try {
+      const metaRes = await usersDbPool.query(
+        `SELECT school_id, school_name, district, division, region 
+         FROM schools_iern 
+         WHERE CAST(school_id AS TEXT) = $1 
+         LIMIT 1`,
+        [cleanSchoolId]
+      );
+      if (metaRes.rows.length > 0) {
+        currentSchoolMeta = metaRes.rows[0];
+      }
+    } catch (e) {
+      console.warn('[users_database.schools_iern lookup error]:', e.message);
+    }
 
-    await insightEdPool.end().catch(() => {});
+    let schoolsRes = { rows: [] };
 
-    const districtList = schoolsRes.rows.map(r => ({
-      schoolId: r.school_id,
-      schoolName: r.school_name || `School ${r.school_id}`
-    }));
+    // 1. If current school district is known, get schools in the same district from schools_iern
+    if (currentSchoolMeta && currentSchoolMeta.district) {
+      schoolsRes = await usersDbPool.query(
+        `SELECT school_id, school_name, district, division, region 
+         FROM schools_iern 
+         WHERE UPPER(district) = UPPER($1) 
+           AND CAST(school_id AS TEXT) != $2 
+           AND (is_testaccount IS NOT TRUE)
+         ORDER BY school_name ASC`,
+        [currentSchoolMeta.district, cleanSchoolId]
+      ).catch(() => ({ rows: [] }));
+    }
+
+    // 2. If district query has few/no results, query same division from schools_iern
+    if (schoolsRes.rows.length === 0 && currentSchoolMeta && currentSchoolMeta.division) {
+      schoolsRes = await usersDbPool.query(
+        `SELECT school_id, school_name, district, division, region 
+         FROM schools_iern 
+         WHERE UPPER(division) = UPPER($1) 
+           AND CAST(school_id AS TEXT) != $2 
+           AND (is_testaccount IS NOT TRUE)
+         ORDER BY school_name ASC`,
+        [currentSchoolMeta.division, cleanSchoolId]
+      ).catch(() => ({ rows: [] }));
+    }
+
+    // 3. Fallback: query schools_iern for Legazpi / Albay
+    if (schoolsRes.rows.length === 0) {
+      schoolsRes = await usersDbPool.query(
+        `SELECT school_id, school_name, district, division, region 
+         FROM schools_iern 
+         WHERE (division ILIKE '%legazpi%' OR division ILIKE '%legaspi%' OR division ILIKE '%albay%')
+           AND CAST(school_id AS TEXT) != $1
+           AND (is_testaccount IS NOT TRUE)
+         ORDER BY school_name ASC`,
+        [cleanSchoolId]
+      ).catch(() => ({ rows: [] }));
+    }
+
+    await usersDbPool.end().catch(() => {});
+
+    let districtList = schoolsRes.rows.map(r => ({
+      schoolId: String(r.school_id || '').trim(),
+      schoolName: (r.school_name || `School ${r.school_id}`).trim(),
+      district: r.district || '',
+      division: r.division || ''
+    })).filter(s => s.schoolId !== cleanSchoolId && s.schoolId !== '199997' && s.schoolId !== '199998');
+
+    // ── Orientation Demo Pairing Exclusivity ──
+    // School 199997 only appears in 199998, and School 199998 only appears in 199997.
+    // They NEVER appear in any real/production school's dropdown list.
+    if (cleanSchoolId === '199998') {
+      districtList.unshift({
+        schoolId: '199997',
+        schoolName: 'Orientation Satellite Elementary School',
+        district: 'ALBAY II DISTRICT',
+        division: 'LEGASPI CITY'
+      });
+    } else if (cleanSchoolId === '199997') {
+      districtList.unshift({
+        schoolId: '199998',
+        schoolName: 'Orientation Demonstration Integrated School',
+        district: 'ALBAY II DISTRICT',
+        division: 'LEGASPI CITY'
+      });
+    }
 
     res.json(districtList.length > 0 ? districtList : [
-      { schoolId: '108348', schoolName: 'Legazpi Port District Central School' },
-      { schoolId: '135245', schoolName: 'Albay National High School' }
+      { schoolId: '108348', schoolName: 'Legazpi Port District Central School', district: 'Legazpi Port District', division: 'LEGASPI CITY' },
+      { schoolId: '135245', schoolName: 'Albay National High School', district: 'Legazpi City District', division: 'LEGASPI CITY' }
     ]);
   } catch (err) {
     console.error('[District Schools Error]:', err.message);
     res.json([
-      { schoolId: '108348', schoolName: 'Legazpi Port District Central School' },
-      { schoolId: '135245', schoolName: 'Albay National High School' }
+      { schoolId: '108348', schoolName: 'Legazpi Port District Central School', district: 'Legazpi Port District', division: 'LEGASPI CITY' },
+      { schoolId: '135245', schoolName: 'Albay National High School', district: 'Legazpi City District', division: 'LEGASPI CITY' }
     ]);
   }
 });
@@ -137,6 +218,53 @@ router.post('/create', async (req, res) => {
       return res.status(400).json({ error: 'A pending request already exists for this connection.' });
     }
 
+    let targetPersonnelId = personnelId || personnel_id || null;
+    if (targetPersonnelId) {
+      const pRes = await db.query(
+        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+        [targetPersonnelId]
+      );
+      if (pRes.rows.length > 0) {
+        targetPersonnelId = pRes.rows[0].id;
+      } else {
+        const idParts = String(targetPersonnelId).split('-');
+        const schoolId = idParts.length > 1 ? idParts[1] : requesterId;
+        const cleanSchoolId = schoolId.replace('SCH-', '');
+        const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
+        
+        const { Pool } = require('pg');
+        const poolString = process.env.DATABASE_URL
+          ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
+          : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
+        const insightEdPool = new Pool({
+          connectionString: poolString,
+          ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+        });
+        
+        const seqIndex = idParts.length > 2 ? parseInt(idParts[2], 10) - 1 : 0;
+        const masterRows = await insightEdPool.query(
+          `SELECT * FROM ${tableName} WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+        await insightEdPool.end().catch(() => {});
+        
+        const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
+        const pName = personnelName || personnel_name || '';
+        const fName = masterRow.first || masterRow.first_name || (pName ? pName.split(' ')[0] : 'TEACHER');
+        const lName = masterRow.last || masterRow.last_name || (pName ? pName.split(' ').slice(1).join(' ') : 'STAFF');
+        const actualPrn = masterRow.prn || String(targetPersonnelId).replace('PER-', 'PRN-');
+        const actualId = String(targetPersonnelId).replace('PRN-', 'PER-');
+
+        await db.query(
+          `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, type, first_name, last_name, created_at, updated_at)
+           VALUES ($1, $2, $3, 'SY 26-27', 'teaching', $4, $5, NOW(), NOW())
+           ON CONFLICT (id) DO NOTHING`,
+          [actualId, actualPrn, schoolId, fName, lName]
+        ).catch(() => {});
+        targetPersonnelId = actualId;
+      }
+    }
+
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_requests`);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
     const reqId = req.body.id || `REQ-${requesterId.replace('SCH-', '')}-${seq}`;
@@ -149,7 +277,7 @@ router.post('/create', async (req, res) => {
         requesterId,
         tSchoolId,
         rType,
-        personnelId || personnel_id || null,
+        targetPersonnelId,
         personnelName || personnel_name || null,
         remarks || null,
         JSON.stringify(req.body)

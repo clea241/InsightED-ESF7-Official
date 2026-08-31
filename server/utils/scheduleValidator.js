@@ -74,8 +74,34 @@ function validateWorkloadSchedules(rows) {
   return null;
 }
 
+/**
+ * Validates that any HGP rows for a section total exactly 60 minutes per week.
+ */
+function validateHgpWeeklyMinutes(rows) {
+  if (!rows || !Array.isArray(rows)) return null;
+  for (const row of rows) {
+    const sub = String(row.subject || row.task || '').trim().toUpperCase();
+    if (sub === 'HGP' || sub.includes('HOMEROOM GUIDANCE')) {
+      const start = row.startTime || row.start_time;
+      const end = row.endTime || row.end_time;
+      const days = row.days || (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : []);
+      if (!start || !end || !days.length) continue;
+      const dailyMins = timeToMins(end) - timeToMins(start);
+      const weeklyMins = dailyMins * days.length;
+      if (weeklyMins !== 60) {
+        return {
+          error: `HGP Policy Violation: Homeroom Guidance (HGP) must total exactly 60 minutes per week (Current: ${dailyMins} mins/day × ${days.length} days = ${weeklyMins} mins/week).`,
+          type: 'hgp_weekly_error'
+        };
+      }
+    }
+  }
+  return null;
+}
+
 module.exports = {
   timeToMins,
   isAdvisoryRow,
-  validateWorkloadSchedules
+  validateWorkloadSchedules,
+  validateHgpWeeklyMinutes
 };

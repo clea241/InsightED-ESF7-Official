@@ -4,7 +4,7 @@ async function run() {
   try {
     // Reset stuck 'processing' jobs back to 'pending' so the worker picks them up again
     const r = await db.query(
-      `UPDATE submission_queue 
+      `UPDATE esf7_submission_queue 
        SET status = 'pending', updated_at = NOW()
        WHERE status = 'processing'
        RETURNING id, school_id, school_year`

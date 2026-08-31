@@ -98,47 +98,54 @@ router.get('/stats', async (req, res) => {
       `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
       db.query(`SELECT personnel_id, college_degree AS bachelors_degree FROM esf7_perssonel_educ`).catch(() => ({ rows: [] })),
       db.query(`SELECT personnel_id, subject AS subject_name, grade_level FROM esf7_workload_rows WHERE school_id = $1`, [cleanSchoolId]).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, advisor_id AS adviser_id, advisory_minutes AS hgp_minutes FROM esf7_class_sections WHERE school_id = $1`, [cleanSchoolId]).catch(() => ({ rows: [] })),
+      db.query(`SELECT id, adviser_id, number_of_learners FROM esf7_regular_sections WHERE school_id = $1 OR school_id = $2`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
       db.query(`SELECT status, COUNT(*) as count FROM esf7_submission_queue GROUP BY status`).catch(() => ({ rows: [] })),
       db.query(`SELECT id, status, created_at FROM esf7_submission_queue ORDER BY created_at DESC LIMIT 1`).catch(() => ({ rows: [] }))
     ]);
 
-    // If 0 personnel rows found in esf7_personnel_profile, query master insightEd.esf7_database in-memory!
+    // Fetch master insightEd personnel in-memory to ensure complete count
     let personnelList = personnelRes.rows;
-    if (personnelList.length === 0) {
-      try {
-        const { Pool } = require('pg');
-        const poolString = process.env.DATABASE_URL
-          ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-          : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-        const insightEdPool = new Pool({
-          connectionString: poolString,
-          ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-        });
+    try {
+      const { Pool } = require('pg');
+      const poolString = process.env.DATABASE_URL
+        ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
+        : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
+      const insightEdPool = new Pool({
+        connectionString: poolString,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+      });
 
-        const masterPersonnelRes = await insightEdPool.query(
-          `SELECT sex, position FROM esf7_database WHERE CAST(school_id AS TEXT) = $1`,
-          [cleanSchoolId]
-        ).catch((err) => {
-          console.error('[Dashboard Master Fallback Error]:', err.message);
-          return { rows: [] };
-        });
+      const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
+      const masterPersonnelRes = await insightEdPool.query(
+        `SELECT sex, position FROM ${tableName} WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
+        [cleanSchoolId]
+      ).catch((err) => {
+        console.error('[Dashboard Master Fallback Error]:', err.message);
+        return { rows: [] };
+      });
 
-        if (masterPersonnelRes.rows.length > 0) {
-          personnelList = masterPersonnelRes.rows.map(r => ({
-            sex: (r.sex || 'FEMALE').toUpperCase(),
-            type: 'teaching',
-            is_school_head: false,
-            position: r.position || 'TEACHER I'
-          }));
+      if (masterPersonnelRes.rows.length > 0) {
+        const masterList = masterPersonnelRes.rows.map(r => ({
+          sex: (r.sex || 'FEMALE').toUpperCase(),
+          type: 'teaching',
+          is_school_head: false,
+          position: r.position || 'TEACHER I'
+        }));
+
+        if (personnelRes.rows.length === 0) {
+          personnelList = masterList;
+        } else if (personnelRes.rows.length < masterList.length) {
+          const merged = [...personnelRes.rows];
+          for (let i = personnelRes.rows.length; i < masterList.length; i++) {
+            merged.push(masterList[i]);
+          }
+          personnelList = merged;
         }
-
-
-
-        await insightEdPool.end().catch(() => {});
-      } catch (e) {
-        console.error('[Dashboard Master Fallback Error]:', e.message);
       }
+
+      await insightEdPool.end().catch(() => {});
+    } catch (e) {
+      console.error('[Dashboard Master Fallback Error]:', e.message);
     }
 
     let schoolInfo = schoolRes.rows[0];
@@ -156,7 +163,8 @@ router.get('/stats', async (req, res) => {
         if (identityRes.rows.length > 0 && identityRes.rows[0].school_name) {
           schoolInfo = identityRes.rows[0];
         } else {
-          const esfMatch = await insightEdPool.query('SELECT DISTINCT school_id, school_name FROM esf7_database WHERE school_id = $1 OR schoool_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] }));
+          const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
+          const esfMatch = await insightEdPool.query(`SELECT DISTINCT school_id, school_name FROM ${tableName} WHERE school_id = $1 OR schoool_id = $1 LIMIT 1`, [cleanSchoolId]).catch(() => ({ rows: [] }));
           if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
             schoolInfo = esfMatch.rows[0];
           }

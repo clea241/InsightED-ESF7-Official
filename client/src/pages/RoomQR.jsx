@@ -9,7 +9,7 @@ export default function RoomQR() {
   const { scannedRoom, setScannedRoom, personnel: appPersonnel, setPersonnel, updatePersonnelInfo, savePersonnelChanges, schoolInfo, setActiveView } = useApp() || {};
 
   const { user: authUser } = useAuth() || {};
-  const [effectivePersonnel, setEffectivePersonnel] = useState(appPersonnel || []);
+  const effectivePersonnel = Array.isArray(appPersonnel) ? appPersonnel : [];
   const [selectedRoom, setSelectedRoom] = useState(scannedRoom || 'Faculty Room 1');
   const [copied, setCopied] = useState(false);
 
@@ -55,52 +55,6 @@ export default function RoomQR() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Sync personnel records with fallback to local cache & API
-  useEffect(() => {
-    if (Array.isArray(appPersonnel) && appPersonnel.length > 0) {
-      setEffectivePersonnel(appPersonnel);
-      try {
-        localStorage.setItem('insighted_personnel_cache', JSON.stringify(appPersonnel));
-      } catch (e) {}
-    } else {
-      let cached = null;
-      try {
-        const raw = localStorage.getItem('insighted_personnel_cache');
-        if (raw) cached = JSON.parse(raw);
-      } catch (e) {}
-
-      if (Array.isArray(cached) && cached.length > 0) {
-        setEffectivePersonnel(cached);
-      } else {
-        api.getPersonnel().then(res => {
-          if (Array.isArray(res) && res.length > 0) {
-            setEffectivePersonnel(res);
-            if (setPersonnel) setPersonnel(res);
-            try {
-              localStorage.setItem('insighted_personnel_cache', JSON.stringify(res));
-            } catch (e) {}
-          }
-        }).catch(() => {});
-      }
-    }
-  }, [appPersonnel, setPersonnel]);
-
-  // Auto-generate missing passcodes for personnel who don't have one yet
-  useEffect(() => {
-    if (Array.isArray(effectivePersonnel) && effectivePersonnel.length > 0) {
-      effectivePersonnel.forEach(p => {
-        if (!p.profilingCode && !p.profiling_code && !p.passcode) {
-          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-          let code = '';
-          for (let i = 0; i < 6; i++) {
-            code += chars.charAt(Math.floor(Math.random() * chars.length));
-          }
-          if (updatePersonnelInfo) updatePersonnelInfo(p.id, { profilingCode: code });
-        }
-      });
-    }
-  }, [effectivePersonnel, updatePersonnelInfo]);
-
   const getPortalUrl = (roomName) => {
     const origin = window.location.origin;
     const path = window.location.pathname;
@@ -131,39 +85,78 @@ export default function RoomQR() {
     window.open(url, '_blank');
   };
 
-  const decompressProfile = (short) => {
+  const compressProfile = (full) => {
+    if (!full) return {};
     return {
-      id: short.id,
-      firstName: short.fn,
-      lastName: short.ln,
-      middleName: short.mn,
-      sexAtBirth: short.sx,
-      civilStatus: short.cs,
-      soloParent: short.sp,
-      religion: short.rl,
-      ethnicGroup: short.eg,
-      birthdate: short.bd,
-      philsysNo: short.ps,
-      type: short.ty,
-      position: short.psn,
-      fundSource: short.fs,
-      natureOfAppointment: short.na,
-      noTin: short.nt,
-      tin: short.tn,
-      collegeDegree: short.cd,
-      major: short.mj,
-      minor: short.mr,
-      eligibility: short.el,
-      prcSpecialization: short.pr,
-      neapTrainingRows: short.ntr || [],
-      certificationRows: short.ctr || [],
-      otherTrainingRows: short.otr || []
+      id: full.id,
+      fn: full.firstName || full.first_name,
+      ln: full.lastName || full.last_name,
+      mn: full.middleName || full.middle_name,
+      sx: full.sexAtBirth || full.sex_at_birth,
+      cs: full.civilStatus || full.civil_status,
+      sp: full.soloParent || full.solo_parent,
+      rl: full.religion,
+      eg: full.ethnicGroup || full.ethnic_group,
+      bd: full.birthdate,
+      ps: full.philsysNo || full.philsys_no,
+      ty: full.type,
+      psn: full.position,
+      fs: full.fundSource || full.fund_source,
+      na: full.natureOfAppointment || full.nature_of_appointment,
+      nt: full.noTin || full.no_tin,
+      tn: full.tin,
+      cd: full.collegeDegree || full.college_degree,
+      mj: full.major,
+      mr: full.minor,
+      el: full.eligibility,
+      pr: full.prcSpecialization || full.prc_specialization,
+      ntr: full.neapTrainingRows || [],
+      ctr: full.certificationRows || [],
+      otr: full.otherTrainingRows || []
     };
   };
 
-  const handleIngestData = (compressedData) => {
+  const decompressProfile = (short) => {
+    if (!short) return {};
+    return {
+      id: short.id,
+      firstName: short.fn || short.firstName,
+      lastName: short.ln || short.lastName,
+      middleName: short.mn || short.middleName,
+      sexAtBirth: short.sx || short.sexAtBirth,
+      civilStatus: short.cs || short.civilStatus,
+      soloParent: short.sp !== undefined ? short.sp : short.soloParent,
+      religion: short.rl || short.religion,
+      ethnicGroup: short.eg || short.ethnicGroup,
+      birthdate: short.bd || short.birthdate,
+      philsysNo: short.ps || short.philsysNo,
+      type: short.ty || short.type,
+      position: short.psn || short.position,
+      fundSource: short.fs || short.fundSource,
+      natureOfAppointment: short.na || short.natureOfAppointment,
+      noTin: short.nt !== undefined ? short.nt : short.noTin,
+      tin: short.tn || short.tin,
+      collegeDegree: short.cd || short.collegeDegree,
+      major: short.mj || short.major,
+      minor: short.mr || short.minor,
+      eligibility: short.el || short.eligibility,
+      prcSpecialization: short.pr || short.prcSpecialization,
+      neapTrainingRows: short.ntr || short.neapTrainingRows || [],
+      certificationRows: short.ctr || short.certificationRows || [],
+      otherTrainingRows: short.otr || short.otherTrainingRows || []
+    };
+  };
+
+  const handleIngestData = (compressedOrFullData) => {
     try {
-      const fullProfile = decompressProfile(compressedData);
+      let fullProfile;
+      if (compressedOrFullData.rawProfile) {
+        fullProfile = compressedOrFullData.rawProfile;
+      } else if (compressedOrFullData.firstName || compressedOrFullData.first_name) {
+        fullProfile = compressedOrFullData;
+      } else {
+        fullProfile = decompressProfile(compressedOrFullData);
+      }
       setPendingReviewData(fullProfile);
       setShowReviewModal(true);
     } catch (err) {
@@ -172,19 +165,64 @@ export default function RoomQR() {
     }
   };
 
-  // Load pending submissions from localStorage
-  const loadPendingSubmissions = () => {
-    const items = [];
+  const activeSchoolId = String(
+    (schoolInfo?.schoolId && schoolInfo.schoolId !== '123456' ? schoolInfo.schoolId : null) ||
+    authUser?.school_id ||
+    authUser?.schoolId ||
+    localStorage.getItem('activeSchoolId') ||
+    localStorage.getItem('school_id') ||
+    localStorage.getItem('schoolId') ||
+    '199998'
+  ).replace('SCH-', '').trim();
+
+  // Load pending submissions from LocalStorage + Server RAM Buffer (Zero DB Load)
+  const loadPendingSubmissions = async () => {
+    const itemsMap = new Map();
+
+    // 1. Local browser submissions
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('pending_submission_')) {
         try {
           const val = JSON.parse(localStorage.getItem(key));
-          items.push(val);
+          if (val && val.id) {
+            itemsMap.set(String(val.id), {
+              ...val,
+              source: 'local'
+            });
+          }
         } catch (e) {}
       }
     }
-    setPendingSubmissions(items);
+
+    // 2. Server Ephemeral RAM submissions from mobile teachers
+    try {
+      const remoteList = await api.getPendingRoomSubmissions(activeSchoolId);
+      if (Array.isArray(remoteList)) {
+        for (const rem of remoteList) {
+          const pData = rem.profileData || {};
+          const pId = String(rem.personnelId || pData.id || '');
+          if (pId) {
+            const decompressed = pData.fn ? decompressProfile(pData) : pData;
+            itemsMap.set(pId, {
+              ...decompressed,
+              id: pId,
+              personnelId: pId,
+              personnelName: rem.personnelName || `${decompressed.firstName || ''} ${decompressed.lastName || ''}`.trim(),
+              rawProfile: decompressed,
+              submissionId: rem.id,
+              submittedAt: rem.submittedAt,
+              roomName: rem.roomName || rem.room || 'Faculty Room',
+              source: 'remote'
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[RoomQR] Pending submissions fetch notice:', e.message);
+    }
+
+    setPendingSubmissions(Array.from(itemsMap.values()));
   };
 
   useEffect(() => {
@@ -201,32 +239,99 @@ export default function RoomQR() {
     } catch (e) {}
 
     window.addEventListener('storage', loadPendingSubmissions);
-    const interval = setInterval(loadPendingSubmissions, 1500);
+    // Poll lightweight RAM buffer every 3 seconds
+    const interval = setInterval(loadPendingSubmissions, 3000);
 
     return () => {
       if (channel) channel.close();
       window.removeEventListener('storage', loadPendingSubmissions);
       clearInterval(interval);
     };
-  }, []);
+  }, [activeSchoolId]);
 
   const handleCommitAllSubmissions = async () => {
     if (pendingSubmissions.length === 0) return;
     let count = 0;
+    const remoteSubmissionIds = [];
+    const remotePersonnelIds = [];
+
     for (const item of pendingSubmissions) {
       if (item && item.id) {
-        const fullProfile = decompressProfile(item);
-        await savePersonnelChanges(fullProfile.id, {
-          ...fullProfile,
-          personalVerified: true
-        });
+        const fullProfile = item.rawProfile || decompressProfile(item);
+        if (savePersonnelChanges) {
+          await savePersonnelChanges(fullProfile.id, {
+            ...fullProfile,
+            personalVerified: true
+          });
+        }
         localStorage.removeItem(`pending_submission_${fullProfile.id}`);
+        if (item.submissionId) {
+          remoteSubmissionIds.push(item.submissionId);
+        }
+        remotePersonnelIds.push(fullProfile.id);
         count++;
       }
     }
-    loadPendingSubmissions();
-    setIngestionSuccess(`✓ Approved & Merged ${count} Teacher Profiling Record(s) directly into Personnel Roster!`);
+
+    if (remoteSubmissionIds.length > 0 || remotePersonnelIds.length > 0) {
+      try {
+        await api.ackRoomSubmissions({
+          schoolId: activeSchoolId,
+          submissionIds: remoteSubmissionIds,
+          personnelIds: remotePersonnelIds
+        });
+      } catch (e) {}
+    }
+
+    await loadPendingSubmissions();
+    setIngestionSuccess(`✓ Approved & Merged ${count} Teacher Profiling Record(s) directly into your Local Draft Roster!`);
     setTimeout(() => setIngestionSuccess(''), 6000);
+  };
+
+  // Compile comparison rows between database and submitted QR data
+  const getComparisonRows = () => {
+    if (!pendingReviewData) return [];
+    
+    // Find current record in effectivePersonnel
+    const current = effectivePersonnel.find(p => p.id === pendingReviewData.id) || {};
+
+    const fields = [
+      { label: 'First Name', key: 'firstName' },
+      { label: 'Middle Name', key: 'middleName' },
+      { label: 'Last Name', key: 'lastName' },
+      { label: 'Extension Name', key: 'nameExtension', format: (v, item) => v || item.extensionName || 'N/A' },
+      { label: 'DepEd Official Email', key: 'depedEmail', format: (v) => v || 'N/A' },
+      { label: 'PhilSys No. (National ID)', key: 'philsysNo', format: (v) => v || 'N/A' },
+      { label: 'Birthdate', key: 'birthdate', format: (v) => v ? String(v).substring(0, 10) : 'N/A' },
+      { 
+        label: 'NEAP Trainings Recorded', 
+        key: 'neapTrainingRows', 
+        format: (v) => Array.isArray(v) && v.length > 0 ? `${v.length} program(s) (${v.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0)} hrs)` : 'None (0 hrs)' 
+      },
+      { 
+        label: 'TESDA NC & Certifications', 
+        key: 'certificationRows', 
+        format: (v) => Array.isArray(v) && v.length > 0 ? `${v.length} cert(s) (${v.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0)} hrs)` : 'None (0 hrs)' 
+      },
+      { 
+        label: 'Other L&D Programs', 
+        key: 'otherTrainingRows', 
+        format: (v) => Array.isArray(v) && v.length > 0 ? `${v.length} program(s) (${v.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0)} hrs)` : 'None (0 hrs)' 
+      }
+    ];
+
+    return fields.map(f => {
+      const curVal = f.format ? f.format(current[f.key], current) : current[f.key];
+      const subVal = f.format ? f.format(pendingReviewData[f.key], pendingReviewData) : pendingReviewData[f.key];
+      const hasChanged = String(curVal || '').trim().toUpperCase() !== String(subVal || '').trim().toUpperCase();
+      
+      return {
+        label: f.label,
+        current: curVal || 'N/A',
+        submitted: subVal || 'N/A',
+        hasChanged
+      };
+    });
   };
 
   // File Upload QR Code Reader
@@ -376,58 +481,30 @@ export default function RoomQR() {
   // Commit reviewed data to central context
   const handleCommitReview = async () => {
     if (pendingReviewData) {
-      await savePersonnelChanges(pendingReviewData.id, {
-        ...pendingReviewData,
-        personalVerified: true
-      });
+      if (savePersonnelChanges) {
+        await savePersonnelChanges(pendingReviewData.id, {
+          ...pendingReviewData,
+          personalVerified: true
+        });
+      }
       
       // Clean up localStorage keys if they exist
       localStorage.removeItem(`pending_submission_${pendingReviewData.id}`);
-      loadPendingSubmissions();
+
+      try {
+        await api.ackRoomSubmissions({
+          schoolId: activeSchoolId,
+          personnelIds: [pendingReviewData.id]
+        });
+      } catch (e) {}
+
+      await loadPendingSubmissions();
 
       setIngestionSuccess(`✓ Approved & Merged: Profiling details for ${pendingReviewData.firstName} ${pendingReviewData.lastName} have been successfully saved locally!`);
       setShowReviewModal(false);
       setPendingReviewData(null);
       setTimeout(() => setIngestionSuccess(''), 6000);
     }
-  };
-
-  // Compile comparison rows between database and submitted QR data
-  const getComparisonRows = () => {
-    if (!pendingReviewData) return [];
-    
-    // Find current record in DB
-    const current = personnel.find(p => p.id === pendingReviewData.id) || {};
-
-    const fields = [
-      { label: 'First Name', key: 'firstName' },
-      { label: 'Last Name', key: 'lastName' },
-      { label: 'Middle Name', key: 'middleName' },
-      { label: 'Sex at Birth', key: 'sexAtBirth' },
-      { label: 'Civil Status', key: 'civilStatus' },
-      { label: 'Solo Parent?', key: 'soloParent' },
-      { label: 'Religion', key: 'religion' },
-      { label: 'Birthdate', key: 'birthdate' },
-      { label: 'TIN Number', key: 'tin', format: (v, item) => item.noTin ? 'No TIN (N/A)' : (v || 'N/A') },
-      { label: 'College Degree', key: 'collegeDegree' },
-      { label: 'Major', key: 'major' },
-      { label: 'Minor', key: 'minor' },
-      { label: 'Eligibilities', key: 'eligibility' },
-      { label: 'PRC Specialization', key: 'prcSpecialization' }
-    ];
-
-    return fields.map(f => {
-      const curVal = f.format ? f.format(current[f.key], current) : current[f.key];
-      const subVal = f.format ? f.format(pendingReviewData[f.key], pendingReviewData) : pendingReviewData[f.key];
-      const hasChanged = String(curVal || '').trim().toUpperCase() !== String(subVal || '').trim().toUpperCase();
-      
-      return {
-        label: f.label,
-        current: curVal || 'N/A',
-        submitted: subVal || 'N/A',
-        hasChanged
-      };
-    });
   };
 
   // Cleanup scanner on unmount
@@ -442,15 +519,145 @@ export default function RoomQR() {
   const comparisonRows = getComparisonRows();
   const hasChangesDetected = comparisonRows.some(r => r.hasChanged);
 
+  const [activeQueueTab, setActiveQueueTab] = useState('pending'); // 'pending' | 'verified' | 'awaiting'
+
+  // Robust matching helper: connects a personnel record to a pending queue submission
+  const matchSubmissionForTeacher = (teacher, subList) => {
+    if (!teacher || !Array.isArray(subList)) return null;
+    const tId = String(teacher.id || '').toLowerCase().trim();
+    const tFn = String(teacher.firstName || teacher.first_name || '').trim().toLowerCase();
+    const tLn = String(teacher.lastName || teacher.last_name || '').trim().toLowerCase();
+
+    return subList.find(s => {
+      const sId = String(s.personnelId || s.id || s.rawProfile?.id || '').toLowerCase().trim();
+      if (sId && tId && sId === tId) return true;
+
+      // Numeric suffix matching (e.g. PER-199998-003 vs PER-003 vs 3)
+      const cleanTId = tId.replace(/[^0-9]/g, '');
+      const cleanSId = sId.replace(/[^0-9]/g, '');
+      if (cleanTId && cleanSId && (cleanTId.endsWith(cleanSId) || cleanSId.endsWith(cleanTId))) return true;
+
+      // Full Name matching
+      const sName = String(s.personnelName || `${s.firstName || s.fn || s.rawProfile?.firstName || ''} ${s.lastName || s.ln || s.rawProfile?.lastName || ''}`).toLowerCase();
+      if (tFn && tLn && sName.includes(tFn) && sName.includes(tLn)) return true;
+
+      return false;
+    });
+  };
+
+  // Compute 3 structured groups
+  const pendingTeachers = [];
+  const handledSubKeys = new Set();
+
+  effectivePersonnel.forEach(p => {
+    const matchedSub = matchSubmissionForTeacher(p, pendingSubmissions);
+    if (matchedSub) {
+      pendingTeachers.push({ teacher: p, submission: matchedSub });
+      handledSubKeys.add(matchedSub.submissionId || matchedSub.id || matchedSub.personnelId);
+    }
+  });
+
+  // Include any pending submission that arrived for a teacher not yet in the active local array
+  pendingSubmissions.forEach(s => {
+    const sKey = s.submissionId || s.id || s.personnelId;
+    if (!handledSubKeys.has(sKey)) {
+      const raw = s.rawProfile || s;
+      pendingTeachers.push({
+        teacher: {
+          id: s.personnelId || s.id,
+          firstName: raw.firstName || raw.fn || '',
+          lastName: raw.lastName || raw.ln || s.personnelName || 'Teacher',
+          position: raw.position || raw.psn || 'Teacher',
+          name: s.personnelName
+        },
+        submission: s
+      });
+    }
+  });
+
+  const verifiedTeachers = effectivePersonnel.filter(p => {
+    const hasPending = matchSubmissionForTeacher(p, pendingSubmissions);
+    return !hasPending && p.personalVerified;
+  });
+
+  const awaitingTeachers = effectivePersonnel.filter(p => {
+    const hasPending = matchSubmissionForTeacher(p, pendingSubmissions);
+    return !hasPending && !p.personalVerified;
+  });
+
+  const handleCommitSingle = async (pSub) => {
+    if (!pSub) return;
+    const fullProfile = pSub.rawProfile || decompressProfile(pSub);
+    const targetId = fullProfile.id || pSub.personnelId || pSub.id;
+
+    if (savePersonnelChanges) {
+      await savePersonnelChanges(targetId, {
+        ...fullProfile,
+        personalVerified: true
+      });
+    }
+
+    localStorage.removeItem(`pending_submission_${targetId}`);
+    try {
+      await api.ackRoomSubmissions({
+        schoolId: activeSchoolId,
+        submissionIds: pSub.submissionId ? [pSub.submissionId] : [],
+        personnelIds: [targetId]
+      });
+    } catch (e) {}
+
+    await loadPendingSubmissions();
+    setIngestionSuccess(`✓ Approved & Merged profiling details for ${fullProfile.firstName || ''} ${fullProfile.lastName || ''} into local draft!`);
+    setTimeout(() => setIngestionSuccess(''), 6000);
+  };
+
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'grid', gap: '24px' }}>
+    <div style={{ maxWidth: '1080px', margin: '0 auto', display: 'grid', gap: '20px' }}>
       <PortalHeader
         title="Room QR Mobile Profiling Station"
         description="Scan room QR codes to allow teachers to self-profile directly on mobile devices."
         onBack={() => setActiveView && setActiveView('dashboard')}
       />
 
-      
+      {/* Prominent Top Notification Banner when Submissions are In Queue */}
+      {pendingTeachers.length > 0 && (
+        <div style={{
+          padding: '16px 20px',
+          background: 'linear-gradient(135deg, #065F46, #047857)',
+          color: 'white',
+          borderRadius: '16px',
+          boxShadow: '0 8px 24px rgba(4, 120, 87, 0.25)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span style={{ fontSize: '28px' }}>🔔</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>
+                {pendingTeachers.length} Teacher Profiling Submission{pendingTeachers.length > 1 ? 's' : ''} Ready for Review!
+              </h3>
+              <p style={{ margin: '3px 0 0 0', fontSize: '13px', opacity: 0.9 }}>
+                {pendingTeachers.map(({ teacher, submission }) => {
+                  const name = submission.personnelName || `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim();
+                  const room = submission.roomName || submission.room || 'Faculty Room';
+                  return `${name} (${room})`;
+                }).filter(Boolean).join(' · ')}
+              </p>
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={handleCommitAllSubmissions}
+            style={{ background: 'white', color: '#065F46', fontWeight: 800, padding: '8px 18px', border: 0, borderRadius: '10px', fontSize: '12px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}
+          >
+            ✓ 1-Click Approve & Merge All ({pendingTeachers.length})
+          </button>
+        </div>
+      )}
+
       {/* Status Messages */}
       {ingestionSuccess && (
         <div style={{ padding: '16px', background: '#D4EDDA', color: '#155724', border: '1.5px solid #C3E6CB', borderRadius: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -458,9 +665,7 @@ export default function RoomQR() {
         </div>
       )}
 
-
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', alignItems: 'start' }}>
         
         {/* Left Column: Admin QR Poster & Setup */}
         <div style={{ display: 'grid', gap: '20px' }}>
@@ -489,14 +694,14 @@ export default function RoomQR() {
                 padding: '16px', 
                 background: 'white', 
                 border: '1.5px solid var(--line)', 
-                borderRadius: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '8px',
-                width: '100%',
-                boxShadow: '0 8px 16px rgba(8, 49, 95, 0.05)',
-                boxSizing: 'border-box'
+                borderRadius: '16px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                gap: '8px', 
+                width: '100%', 
+                boxShadow: '0 8px 16px rgba(8, 49, 95, 0.05)', 
+                boxSizing: 'border-box' 
               }}>
                 <img 
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getPortalUrl(selectedRoom))}`}
@@ -538,170 +743,248 @@ export default function RoomQR() {
             </div>
           </article>
 
-          {/* Pending Submissions Dropdown & Action Box */}
-          <article className="card" style={{ border: '2.5px solid var(--blue-400)', background: 'var(--blue-50)' }}>
-            <div className="card-inner" style={{ display: 'grid', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontSize: '16px', color: 'var(--navy)', margin: 0 }}>⚡ Live Detected Teacher Submissions</h2>
-                {pendingSubmissions.length > 0 && (
+        </div>
+
+        {/* Right Column: Profiling Queue & Passcodes */}
+        <div style={{ display: 'grid', gap: '20px' }}>
+          
+          {/* Panel 1: Teacher Submissions & Verification Queue */}
+          <article className="card" style={{ border: '2.5px solid var(--outline)', background: '#FFFFFF' }}>
+            <div className="card-inner" style={{ display: 'grid', gap: '14px' }}>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '17px' }}>📥 Teacher Submissions & Ingestion Queue</h2>
+                  <p className="subtext" style={{ margin: '2px 0 0 0', fontSize: '12px' }}>
+                    Review and approve verified profile updates submitted by teachers on mobile.
+                  </p>
+                </div>
+                {pendingTeachers.length > 0 && (
                   <button
                     className="btn"
                     onClick={handleCommitAllSubmissions}
-                    style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px' }}
+                    style={{ background: '#059669', color: 'white', border: 0, padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', borderRadius: '8px' }}
                   >
-                    ✓ Approve All ({pendingSubmissions.length})
+                    ✓ Approve All ({pendingTeachers.length})
                   </button>
                 )}
               </div>
-              <p className="subtext" style={{ fontSize: '11px', margin: 0 }}>
-                InsightED automatically detects teacher submissions in your local browser. No camera scanning or VM database required!
-              </p>
 
-              {pendingSubmissions.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-                  {pendingSubmissions.map(p => (
-                    <div
-                      key={p.id}
-                      style={{
-                        display: 'flex',
-                        justify: 'space-between',
-                        alignItems: 'center',
-                        background: 'white',
-                        padding: '10px 12px',
-                        borderRadius: '10px',
-                        border: '1.5px solid #BAE6FD',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                      }}
-                    >
-                      <div>
-                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--navy)', display: 'block' }}>
-                          {p.ln.toUpperCase()}, {p.fn} {p.mn ? p.mn.charAt(0) + '.' : ''}
-                        </span>
-                        <span style={{ fontSize: '11px', color: '#64748B' }}>
-                          Position: {p.psn || 'Teacher'} · ID: {p.id}
-                        </span>
-                      </div>
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={() => handleIngestData(p)}
-                        style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold' }}
-                      >
-                        Review & Merge
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: '12px', background: '#FFF', color: 'var(--muted)', borderRadius: '10px', fontSize: '12px', textAlign: 'center', border: '1.5px solid var(--line)' }}>
-                  No pending teacher submissions detected yet. When a teacher submits on this browser, their profile will automatically appear here!
-                </div>
-              )}
-            </div>
-          </article>
-
-        </div>
-
-        {/* Right Column: Scanner & Passcodes */}
-        <div style={{ display: 'grid', gap: '20px' }}>
-          
-          {/* Scanner Panel */}
-          <article className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div className="card-inner" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h2>2. Scan Teacher Submissions</h2>
-              <p className="subtext">Scan the Submission QR Code using your device's camera, or upload/drop a QR Code screenshot file.</p>
-              
-              {!scanning ? (
-                <div style={{ display: 'grid', gap: '14px' }}>
-                  
-                  {/* Compact Webcam Option */}
-                  <div style={{ 
-                    border: '2px solid var(--line)', 
-                    borderRadius: '16px', 
-                    background: '#F0F9FF', 
-                    padding: '14px',
+              {/* 2-Tab Selector for Queue & Verified */}
+              <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--line)', paddingBottom: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveQueueTab('pending')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: activeQueueTab === 'pending' ? 'var(--navy)' : '#F1F5F9',
+                    color: activeQueueTab === 'pending' ? '#FFFFFF' : '#475569',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    cursor: 'pointer',
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    alignItems: 'center'
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  📥 In Queue
+                  <span style={{
+                    background: activeQueueTab === 'pending' ? '#10B981' : '#CBD5E1',
+                    color: activeQueueTab === 'pending' ? '#FFFFFF' : '#1E293B',
+                    padding: '1px 6px',
+                    borderRadius: '8px',
+                    fontSize: '10px',
+                    fontWeight: 800
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', justifyContent: 'center' }}>
-                      <span style={{ fontSize: '24px' }}>📷</span>
-                      <button className="btn" onClick={startCameraScan} style={{ minHeight: '38px', padding: '6px 16px' }}>
-                        Scan with Webcam
-                      </button>
-                    </div>
-                    
-                    <div style={{ width: '100%', height: '1.5px', background: 'var(--line)' }}></div>
-                    
-                    {/* File Drop/Upload Option */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', width: '100%' }}>
-                      <label htmlFor="qr-image-upload" style={{ margin: 0, fontWeight: 800, color: 'var(--navy)', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>📁</span> Upload QR Screenshot File:
-                      </label>
-                      <input 
-                        type="file" 
-                        id="qr-image-upload" 
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        style={{ fontSize: '12px', border: '1px solid var(--line)', background: '#F8FAFC', borderRadius: '8px', padding: '6px', width: '100%', maxWidth: '240px', boxSizing: 'border-box' }}
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Hidden temporary div required by Html5Qrcode for file scanning */}
-                  <div id="file-scanner-temp" style={{ display: 'none' }}></div>
+                    {pendingTeachers.length}
+                  </span>
+                </button>
 
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ 
-                    position: 'relative', 
-                    width: '100%', 
-                    maxWidth: '300px',
-                    margin: '0 auto',
-                    background: '#000', 
-                    borderRadius: '12px', 
-                    overflow: 'hidden',
-                    aspectRatio: '4/3',
-                    boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5)'
+                <button
+                  type="button"
+                  onClick={() => setActiveQueueTab('verified')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: activeQueueTab === 'verified' ? 'var(--navy)' : '#F1F5F9',
+                    color: activeQueueTab === 'verified' ? '#FFFFFF' : '#475569',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  ✓ Verified Profiles
+                  <span style={{
+                    background: activeQueueTab === 'verified' ? '#3B82F6' : '#CBD5E1',
+                    color: activeQueueTab === 'verified' ? '#FFFFFF' : '#1E293B',
+                    padding: '1px 6px',
+                    borderRadius: '8px',
+                    fontSize: '10px',
+                    fontWeight: 800
                   }}>
-                    <div id="scanner-video" style={{ width: '100%', height: '100%' }}></div>
-                  </div>
-                  
-                  <button className="btn danger" onClick={stopCameraScan} style={{ width: '100%', minHeight: '36px', padding: '6px' }}>
-                    Cancel Scanning
-                  </button>
+                    {verifiedTeachers.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* TAB 1: In Queue Submissions */}
+              {activeQueueTab === 'pending' && (
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  {pendingTeachers.length === 0 ? (
+                    <div style={{ padding: '24px 16px', textAlign: 'center', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid var(--line)' }}>
+                      <span style={{ fontSize: '24px', display: 'block', marginBottom: '4px' }}>🎉</span>
+                      <h4 style={{ margin: 0, color: 'var(--navy)', fontSize: '14px' }}>No Pending Submissions</h4>
+                      <p style={{ margin: '3px 0 0 0', color: 'var(--muted)', fontSize: '12px' }}>
+                        When teachers submit their profiles via mobile, they will appear here for your review and approval.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'grid', gap: '8px' }}>
+                      {pendingTeachers.map(({ teacher, submission }) => {
+                        const raw = submission.rawProfile || submission;
+                        const fName = teacher.firstName || raw.firstName || '';
+                        const lName = teacher.lastName || raw.lastName || '';
+                        const displayName = lName && fName ? `${lName.toUpperCase()}, ${fName}` : (teacher.name || submission.personnelName || 'Teacher').toUpperCase();
+                        const roomTag = submission.roomName || submission.room || 'Faculty Room';
+
+                        return (
+                          <div
+                            key={submission.submissionId || submission.id || teacher.id}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              background: '#F0FDF4',
+                              padding: '10px 14px',
+                              borderRadius: '10px',
+                              border: '1.5px solid #86EFAC',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                              flexWrap: 'wrap',
+                              gap: '8px'
+                            }}
+                          >
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--navy)' }}>
+                                  {displayName}
+                                </span>
+                                <span style={{ background: '#DCFCE7', color: '#16A34A', border: '1px solid #86EFAC', padding: '1px 5px', borderRadius: '6px', fontSize: '9px', fontWeight: 800 }}>
+                                  🟢 SUBMITTED
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '11px', color: '#64748B', display: 'block', marginTop: '1px' }}>
+                                {teacher.position || raw.position || 'Teacher'} · 📱 {roomTag} · ID: {teacher.id}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <button
+                                className="btn secondary"
+                                type="button"
+                                onClick={() => handleIngestData(submission)}
+                                style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold' }}
+                              >
+                                Review
+                              </button>
+                              <button
+                                className="btn"
+                                type="button"
+                                onClick={() => handleCommitSingle(submission)}
+                                style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px' }}
+                              >
+                                ✓ Approve & Merge
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* TAB 2: Already Verified Profiles */}
+              {activeQueueTab === 'verified' && (
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  {verifiedTeachers.length === 0 ? (
+                    <div style={{ padding: '24px 16px', textAlign: 'center', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid var(--line)' }}>
+                      <span style={{ fontSize: '24px', display: 'block', marginBottom: '4px' }}>📝</span>
+                      <p style={{ margin: 0, color: 'var(--muted)', fontSize: '12px' }}>
+                        No profiles marked as verified yet. When you approve submissions, they will be listed here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1.5px solid var(--line)', borderRadius: '10px' }}>
+                      <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid var(--line)' }}>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 800 }}>Teacher Name</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 800 }}>Position</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 800 }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {verifiedTeachers.map(p => {
+                            const fName = p.firstName || p.first_name || '';
+                            const lName = p.lastName || p.last_name || '';
+                            const displayName = lName && fName ? `${lName.toUpperCase()}, ${fName}` : (p.name || 'TEACHER').toUpperCase();
+
+                            return (
+                              <tr key={p.id} style={{ borderBottom: '1px solid #E2E8F0' }}>
+                                <td style={{ padding: '6px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{displayName}</td>
+                                <td style={{ padding: '6px 10px', color: '#64748B' }}>{p.position || 'Teacher'}</td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  <span style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800 }}>
+                                    ✓ Verified & Merged
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </article>
 
-          {/* Roster Passcodes Management Card */}
-          <article className="card" style={{ border: '2.5px solid var(--outline)' }}>
+          {/* Panel 2: Teacher Passcodes (Dedicated Full Panel) */}
+          <article className="card" style={{ border: '2.5px solid var(--outline)', background: '#FFFFFF' }}>
             <div className="card-inner" style={{ display: 'grid', gap: '12px' }}>
+              
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <h2 style={{ margin: 0 }}>🔑 Teacher Passcodes</h2>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '17px' }}>🔑 Teacher Passcodes</h2>
+                  <p className="subtext" style={{ margin: '2px 0 0 0', fontSize: '12px' }}>
+                    Teachers must enter their unique 6-digit passcode to unlock their profiling forms.
+                  </p>
+                </div>
                 <span style={{ background: '#F0F9FF', color: '#0369A1', border: '1px solid #BAE6FD', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   ⏱️ Rotates in {formatCountdown(timeLeftSeconds)}
                 </span>
               </div>
-              <p className="subtext" style={{ margin: 0 }}>
-                Teachers must enter their unique 6-digit passcode to unlock their profiling forms. Codes dynamically rotate every 10 minutes.
-              </p>
-              
+
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input
                   type="text"
                   placeholder="Search teacher by name..."
                   value={passcodeSearch}
                   onChange={(e) => setPasscodeSearch(e.target.value)}
-                  style={{ flex: 1, minHeight: '36px', padding: '6px 12px', fontSize: '13px' }}
+                  style={{ flex: 1, minHeight: '34px', padding: '4px 10px', fontSize: '12px' }}
                 />
                 <button
                   type="button"
                   className="btn secondary"
-                  style={{ minHeight: '36px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  style={{ minHeight: '34px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
                   onClick={() => setAllRevealed(prev => !prev)}
                 >
                   {allRevealed ? '🙈 Hide All' : '👁 Reveal All'}
@@ -709,7 +992,7 @@ export default function RoomQR() {
                 <button
                   type="button"
                   className="btn secondary"
-                  style={{ minHeight: '36px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  style={{ minHeight: '34px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
                   onClick={() => {
                     (effectivePersonnel || []).forEach(p => {
                       const dynamic = get10MinPasscode(p.id, 0);
@@ -721,7 +1004,7 @@ export default function RoomQR() {
                 </button>
               </div>
 
-              <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1.5px solid var(--line)', borderRadius: '12px' }}>
+              <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1.5px solid var(--line)', borderRadius: '10px' }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid var(--line)' }}>
@@ -807,6 +1090,7 @@ export default function RoomQR() {
                   </tbody>
                 </table>
               </div>
+
             </div>
           </article>
 

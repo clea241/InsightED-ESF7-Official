@@ -65,7 +65,7 @@ function formatAllowanceRecord(row) {
 // Retrieves all personnel allowance records for school
 router.get('/', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || req.query.schoolId || req.query.school_id || '108348';
+    const schoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.query.schoolId || req.query.school_id || '108348';
     const schoolYear = req.query.schoolYear || req.query.school_year || '2026-2027';
 
     // 1. Fetch all personnel profiles for school
@@ -81,19 +81,30 @@ router.get('/', async (req, res) => {
     );
 
     const existingMap = {};
-    result.rows.forEach(r => {
-      existingMap[r.personnel_id] = r;
-    });
-
     const allowancesMap = {};
     const fullRecords = [];
 
-    // Ensure EVERY personnel profile gets an allowance record even if all flags are FALSE
-    for (const p of personnelRes.rows) {
-      let row = existingMap[p.id];
+    result.rows.forEach(r => {
+      existingMap[r.personnel_id] = r;
+      const formatted = formatAllowanceRecord(r);
+      allowancesMap[r.personnel_id] = {
+        pera: formatted.pera,
+        uniform: formatted.uniform,
+        supplies: formatted.supplies,
+        medical: formatted.medical,
+        hardship: formatted.hardship,
+        pera_amount: formatted.pera_amount,
+        uniform_amount: formatted.uniform_amount,
+        supplies_amount: formatted.supplies_amount,
+        medical_amount: formatted.medical_amount,
+        hardship_amount: formatted.hardship_amount
+      };
+      fullRecords.push(formatted);
+    });
 
-      if (!row) {
-        // Auto-create a default FALSE record for personnel
+    // Ensure EVERY personnel profile in DB also gets a record if missing
+    for (const p of personnelRes.rows) {
+      if (!existingMap[p.id]) {
         const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
         const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
         const alwId = `ALW-${p.school_id.replace('SCH-', '')}-${seq}`;
@@ -109,23 +120,21 @@ router.get('/', async (req, res) => {
            RETURNING *;`,
           [alwId, p.id, p.school_id, schoolYear, DEFAULT_AMOUNTS.pera, DEFAULT_AMOUNTS.uniform, DEFAULT_AMOUNTS.supplies, DEFAULT_AMOUNTS.medical, DEFAULT_AMOUNTS.hardship]
         );
-        row = insertRes.rows[0];
+        const formatted = formatAllowanceRecord(insertRes.rows[0]);
+        allowancesMap[p.id] = {
+          pera: formatted.pera,
+          uniform: formatted.uniform,
+          supplies: formatted.supplies,
+          medical: formatted.medical,
+          hardship: formatted.hardship,
+          pera_amount: formatted.pera_amount,
+          uniform_amount: formatted.uniform_amount,
+          supplies_amount: formatted.supplies_amount,
+          medical_amount: formatted.medical_amount,
+          hardship_amount: formatted.hardship_amount
+        };
+        fullRecords.push(formatted);
       }
-
-      const formatted = formatAllowanceRecord(row);
-      allowancesMap[p.id] = {
-        pera: formatted.pera,
-        uniform: formatted.uniform,
-        supplies: formatted.supplies,
-        medical: formatted.medical,
-        hardship: formatted.hardship,
-        pera_amount: formatted.pera_amount,
-        uniform_amount: formatted.uniform_amount,
-        supplies_amount: formatted.supplies_amount,
-        medical_amount: formatted.medical_amount,
-        hardship_amount: formatted.hardship_amount
-      };
-      fullRecords.push(formatted);
     }
 
     res.json({
@@ -159,7 +168,9 @@ router.post('/toggle', async (req, res) => {
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
       [personnelId]
     );
-    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348';
+    const headerSchoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.body.schoolId || req.body.school_id;
+    const parsedIdMatch = String(personnelId).match(/^PER-(\d+)-\d+$/i);
+    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : (headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : '108348'));
 
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
@@ -219,7 +230,9 @@ router.post('/bulk', async (req, res) => {
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
       [personnelId]
     );
-    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348';
+    const headerSchoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.body.schoolId || req.body.school_id;
+    const parsedIdMatch = String(personnelId).match(/^PER-(\d+)-\d+$/i);
+    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : (headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : '108348'));
 
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');

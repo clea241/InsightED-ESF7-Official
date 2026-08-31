@@ -67,7 +67,8 @@ export default function Overload() {
     showAlert,
     salaryMatrix,
     localNonWorkingDays,
-    setLocalNonWorkingDays
+    setLocalNonWorkingDays,
+    setActiveView
   } = useApp();
 
   const calculatePHTR = (teacher) => {
@@ -94,7 +95,8 @@ export default function Overload() {
       'MASTER TEACHER IV': [73303, 74337, 75388, 76456, 77542, 78645, 79692, 80831],
       'MASTER TEACHER V': [81796, 82963, 84151, 85356, 86582, 87746, 89011, 90295]
     };
-    const steps = fallbackSalaries[pos] || fallbackSalaries['TEACHER I'];
+    const cleanPos = String(pos || '').replace(/\s*-\s*SNED/i, '').trim();
+    const steps = fallbackSalaries[pos] || fallbackSalaries[cleanPos] || fallbackSalaries['TEACHER I'];
     const salary = steps[step - 1] || steps[0];
     return 0.000781 * 12 * salary;
   };

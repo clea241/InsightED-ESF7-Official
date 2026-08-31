@@ -126,7 +126,103 @@ router.post('/', async (req, res) => {
   }
 });
 
-// DELETE a workload row
+// PUT Update an existing workload row
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      grade_level, gradeLevel,
+      section_id, sectionId,
+      section_name, sectionName,
+      subject,
+      subject_id, subjectId,
+      remediation_subject, remediationSubject,
+      start_time, startTime,
+      end_time, endTime,
+      days
+    } = req.body;
+
+    const existingRes = await db.query(`SELECT * FROM esf7_workload_rows WHERE id = $1`, [id]);
+    if (existingRes.rows.length === 0) {
+      return res.status(404).json({ error: `Workload row ${id} not found` });
+    }
+
+    const current = existingRes.rows[0];
+    const mergedRaw = { ...(current.raw_payload || {}), ...req.body };
+
+    const query = `
+      UPDATE esf7_workload_rows
+      SET
+        grade_level = COALESCE($1, grade_level),
+        section_id = COALESCE($2, section_id),
+        section_name = COALESCE($3, section_name),
+        subject = COALESCE($4, subject),
+        subject_id = COALESCE($5, subject_id),
+        remediation_subject = COALESCE($6, remediation_subject),
+        start_time = COALESCE($7, start_time),
+        end_time = COALESCE($8, end_time),
+        days = COALESCE($9::jsonb, days),
+        raw_payload = $10::jsonb,
+        updated_at = NOW()
+      WHERE id = $11
+      RETURNING *;
+    `;
+
+    const values = [
+      grade_level || gradeLevel || null,
+      section_id || sectionId || null,
+      section_name || sectionName || null,
+      subject || null,
+      subject_id || subjectId || null,
+      remediation_subject || remediationSubject || null,
+      start_time || startTime || null,
+      end_time || endTime || null,
+      days ? JSON.stringify(days) : null,
+      JSON.stringify(mergedRaw),
+      id
+    ];
+
+    const result = await db.query(query, values);
+    res.json(formatWorkloadRecord(result.rows[0]));
+  } catch (err) {
+    console.error('Error updating esf7_workload_rows:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE all workload rows for a personnel
+router.delete('/personnel/:personnel_id', async (req, res) => {
+  try {
+    const { personnel_id } = req.params;
+    await db.query(`DELETE FROM esf7_workload_rows WHERE personnel_id = $1`, [personnel_id]);
+    res.json({ success: true, message: `All workload rows for personnel ${personnel_id} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE all workload rows in a school
+router.delete('/school/:school_id', async (req, res) => {
+  try {
+    const { school_id } = req.params;
+    await db.query(`DELETE FROM esf7_workload_rows WHERE school_id = $1`, [school_id]);
+    res.json({ success: true, message: `All workload rows for school ${school_id} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE all workload rows (bulk clear)
+router.delete('/clear-all', async (req, res) => {
+  try {
+    await db.query(`DELETE FROM esf7_workload_rows`);
+    res.json({ success: true, message: 'All workload rows deleted successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a specific workload row by ID
 router.delete('/:id', async (req, res) => {
   try {
     await db.query(`DELETE FROM esf7_workload_rows WHERE id = $1`, [req.params.id]);

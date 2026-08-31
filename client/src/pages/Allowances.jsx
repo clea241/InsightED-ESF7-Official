@@ -1,9 +1,10 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import PageTransition from '../components/PageTransition';
+import PortalHeader from '../components/PortalHeader';
 
 export default function Allowances() {
-  const { personnel, showToast, allowancesMap, toggleAllowance, schoolInfo } = useApp();
+  const { personnel, showToast, allowancesMap, toggleAllowance, schoolInfo, setActiveView } = useApp();
   const currentSchoolYear = schoolInfo?.schoolYear || 'SY 26-27';
 
   // Configured Allowance Items (Boolean tracking per teacher)
@@ -39,17 +40,12 @@ export default function Allowances() {
     <PageTransition>
       <div style={{ padding: '30px', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
         
-        {/* Header Block */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '800', color: 'var(--navy, #0f172a)' }}>
-              Allowances & Incentives Portal
-            </h1>
-            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '14px' }}>
-              Select allowances and manage financial incentives for registered school personnel ({currentSchoolYear}).
-            </p>
-          </div>
-        </div>
+        {/* Portal Header with Node Navigation */}
+        <PortalHeader
+          title="Allowances & Incentives Portal"
+          description={`Select allowances and manage financial incentives for registered school personnel (${currentSchoolYear}).`}
+          onBack={() => setActiveView('nodemap')}
+        />
 
         {/* Excel style Table Container */}
         <div style={{
@@ -252,6 +248,25 @@ export default function Allowances() {
           </div>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setActiveView('nodemap')}
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: '#FFFFFF',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '10px',
+                padding: '10px 18px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span>🗺️ Return to Node Map</span>
+            </button>
             <button
               type="button"
               onClick={() => setActiveView('validation')}

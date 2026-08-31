@@ -1,5 +1,5 @@
 /**
- * Static Audit Script for ESF7 Workload Flows
+ * Static Audit Script for ESF7 Workload Flows (Version 1.1)
  * 
  * Usage: node esf7_agents/workload-architect/scripts/audit_workload_flows.js
  */
@@ -10,7 +10,7 @@ const path = require('path');
 const WORKLOAD_PATH = path.resolve(__dirname, '../../../client/src/pages/Workload.jsx');
 
 console.log('====================================================');
-console.log('  🔍 ESF7 WORKLOAD FLOW & BLUEPRINT AUDITOR');
+console.log('  🔍 ESF7 WORKLOAD FLOW & BLUEPRINT AUDITOR (V1.1)');
 console.log('====================================================');
 console.log(` Target File: ${WORKLOAD_PATH}`);
 
@@ -44,19 +44,25 @@ checkRule('HGP Normalization Rule', code.includes("return 'HGP'"), 'Must normali
 checkRule('Advisory Subject Detector', code.includes('isAdvisorySub'), 'Must define isAdvisorySub helper.');
 checkRule('Advisory/HGP Pair Exclusion', code.includes('isAdvisoryOrHgpPair'), 'Must define isAdvisoryOrHgpPair conflict exclusion rule.');
 
-console.log('\n--- 2. Delegation HTML Package Exporter Audit ---');
+console.log('\n--- 2. Work Immersion Monthly Calendar & Overload Integration Audit ---');
+checkRule('Work Immersion Section Panel', code.includes('Work Immersion') || code.includes('Immersion'), 'Must integrate Work Immersion Monthly Calendar panel.');
+checkRule('Month Pattern Copy Handler', code.includes('handleCopyMonthPattern'), 'Must provide handleCopyMonthPattern handler.');
+checkRule('Month Pattern Paste Handler', code.includes('handlePasteMonthPattern'), 'Must provide handlePasteMonthPattern handler.');
+checkRule('Single Date Slot Drawer', code.includes('editingDate'), 'Must support single date slot editing drawer.');
+
+console.log('\n--- 3. Delegation HTML Package Exporter Audit ---');
 checkRule('generateWorkloadDelegationHTML Function', code.includes('generateWorkloadDelegationHTML'), 'Must define generateWorkloadDelegationHTML exporter.');
 checkRule('Delegation Package Version Marker', code.includes('INSIGHTED_WORKLOAD_DELEGATION_V1'), 'Must include INSIGHTED_WORKLOAD_DELEGATION_V1 payload marker.');
 checkRule('Base64 Payload Encoding', code.includes('btoa(') || code.includes('jsonB64'), 'Must encode delegation payload in Base64.');
 
-console.log('\n--- 3. Timetable Grid & Categories Audit ---');
+console.log('\n--- 4. Timetable Grid & Category Audit ---');
 checkRule('Elementary Category Support', code.includes('Elementary'), 'Must support Elementary workload category.');
 checkRule('Junior High Category Support', code.includes('Junior High'), 'Must support Junior High workload category.');
 checkRule('Senior High Category Support', code.includes('Senior High'), 'Must support Senior High workload category.');
 
 console.log('\n====================================================');
 if (errors === 0 && warnings === 0) {
-  console.log('🎉 AUDIT COMPLETE: ALL WORKLOAD FLOW CONTRACTS INTACT & VALIDATED!');
+  console.log('🎉 AUDIT COMPLETE: ALL WORKLOAD V1.1 FLOW CONTRACTS INTACT & VALIDATED!');
   process.exit(0);
 } else if (errors === 0) {
   console.log(`⚠️ AUDIT PASSED WITH ${warnings} WARNING(S). Review suggestions above.`);

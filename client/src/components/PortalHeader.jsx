@@ -15,7 +15,12 @@ export default function PortalHeader({
   onLogout,
   showLogout = false,
   showDiscard = true,
-  onDiscard
+  onDiscard,
+  showNodeMap = false,
+  onNodeMap,
+  onContinue,
+  continueText = "Save & Continue ➔",
+  continueDisabled = false
 }) {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
@@ -29,11 +34,13 @@ export default function PortalHeader({
 
   let schoolInfo = null;
   let appDiscardDraft = null;
+  let appSetActiveView = null;
   try {
     const app = useApp();
     if (app) {
       schoolInfo = app.schoolInfo;
       appDiscardDraft = app.discardLocalDraft;
+      appSetActiveView = app.setActiveView;
     }
   } catch (e) {}
 
@@ -206,8 +213,8 @@ export default function PortalHeader({
               </button>
             ) : <div />}
 
-            {/* Right Side: Discard Changes & Custom Action Buttons */}
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Right Side: Discard Changes, Node Map, Save & Continue, & Custom Action Buttons */}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               {showDiscard && (
                 <button
                   type="button"
@@ -247,6 +254,79 @@ export default function PortalHeader({
                   <span>Discard Changes</span>
                 </button>
               )}
+
+              {showNodeMap && (
+                <button
+                  type="button"
+                  onClick={onNodeMap || (() => appSetActiveView && appSetActiveView('nodemap'))}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    borderRadius: '12px',
+                    fontSize: '11.5px',
+                    fontWeight: '800',
+                    color: 'var(--navy, #08315F)',
+                    background: '#FFFFFF',
+                    border: '1.5px solid var(--line, #BAE6FD)',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--blue, #0284C7)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(2, 132, 199, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--line, #BAE6FD)';
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.03)';
+                  }}
+                  title="Return to Journey Node Map"
+                >
+                  <span>🗺️ Node Map</span>
+                </button>
+              )}
+
+              {onContinue && (
+                <button
+                  type="button"
+                  onClick={onContinue}
+                  disabled={continueDisabled}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 18px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    color: '#FFFFFF',
+                    background: continueDisabled ? '#94A3B8' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    border: 'none',
+                    cursor: continueDisabled ? 'not-allowed' : 'pointer',
+                    boxShadow: continueDisabled ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.35)',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!continueDisabled) {
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.45)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!continueDisabled) {
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.35)';
+                    }
+                  }}
+                >
+                  <span>{continueText}</span>
+                </button>
+              )}
+
               {actionButton}
             </div>
           </div>

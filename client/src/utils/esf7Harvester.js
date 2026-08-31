@@ -37,7 +37,8 @@ export const parseESF7File = (fileBuffer) => {
           const uSex = getUVal(r, 5);
           const uPos = getUVal(r, 6);
           const uEmail = getUVal(r, 7) || getUVal(r, 8);
-          const uEmpNo = getUVal(r, 9);
+          const rawEmpNo = String(getUVal(r, 9) || '').trim();
+          const uEmpNo = rawEmpNo.toUpperCase().startsWith('PRN') ? '' : rawEmpNo;
           const uCivil = getUVal(r, 10);
           const uBirth = getUVal(r, 11);
 

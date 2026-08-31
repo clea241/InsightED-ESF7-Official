@@ -449,20 +449,12 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "TEACHER III",
     "TEACHER IV",
     "TEACHER IV - SNED",
-    "TEACHER I - SNED",
-    "TEACHER II - SNED",
-    "TEACHER III - SNED",
-    "TEACHER V - SNED",
-    "TEACHER VI - SNED",
-    "TEACHER VII - SNED",
     "TEACHER V",
+    "TEACHER V - SNED",
     "TEACHER VI",
+    "TEACHER VI - SNED",
     "TEACHER VII",
-    "SNED TEACHER I",
-    "SNED TEACHER II",
-    "SNED TEACHER III",
-    "SNED TEACHER IV",
-    "SNED TEACHER V",
+    "TEACHER VII - SNED",
     "EXTERNAL TUTOR",
     "SPED TEACHER I",
     "SPED TEACHER II",
@@ -772,34 +764,34 @@ export const ETHNIC_GROUP_OPTIONS = [
 export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const DISCIPLINE_OPTIONS = [
-  "Business Administration and Related",
-  "Education Science and Teacher Training",
-  "Agriculture, Forestry, Fisheries",
-  "Engineering and Tech",
-  "Humanities",
-  "IT-Related Disciplines",
-  "Mathematics",
-  "Medical and Allied",
-  "Natural Science",
-  "Social Work and Development, Disaster Risk Management",
-  "Law and Jurisprudence",
-  "Religion and Theology",
-  "Social and Behavioral Sciences",
-  "Criminology, Forensic Science, Police Administration, and Other Civil Security and Military",
-  "Mass Communication and Documentation",
-  "General",
-  "Home Economics",
-  "Fine and Applied Arts",
-  "Maritime",
-  "Service Trades",
-  "Architecture and Town Planning",
-  "Others"
+  "OTHERS",
+  "BUSINESS ADMINISTRATION AND RELATED",
+  "EDUCATION SCIENCE AND TEACHER TRAINING",
+  "AGRICULTURE, FORESTRY, FISHERIES",
+  "ENGINEERING AND TECH",
+  "HUMANITIES",
+  "IT-RELATED DISCIPLINES",
+  "MATHEMATICS",
+  "MEDICAL AND ALLIED",
+  "NATURAL SCIENCE",
+  "SOCIAL WORK AND DEVELOPMENT, DISASTER RISK MANAGEMENT",
+  "LAW AND JURISPRUDENCE",
+  "RELIGION AND THEOLOGY",
+  "SOCIAL AND BEHAVIORAL SCIENCES",
+  "CRIMINOLOGY, FORENSIC SCIENCE, POLICE ADMINISTRATION, AND OTHER CIVIL SECURITY AND MILITARY",
+  "MASS COMMUNICATION AND DOCUMENTATION",
+  "GENERAL",
+  "HOME ECONOMICS",
+  "FINE AND APPLIED ARTS",
+  "MARITIME",
+  "SERVICE TRADES",
+  "ARCHITECTURE AND TOWN PLANNING"
 ];
 export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 
 export const NATURE_OF_APPOINTMENT_OPTIONS = ["REGULAR PERMANENT", "PROVISIONAL", "CONTRACTUAL", "SUBSTITUTE", "CASUAL/EMERGENCY", "JOB ORDER/CONTRACT OF SERVICE", "VOLUNTEER"];
-export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "OTHERS", "N/A"];
-export const POST_GRADUATE_DEGREE_OPTIONS = ["MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE", "OTHERS", "N/A"];
+export const HIRING_ARRANGEMENT_OPTIONS = ["OTHERS", "N/A", "REGULAR", "SPIMS", "DOST", "4PS"];
+export const POST_GRADUATE_DEGREE_OPTIONS = ["OTHERS", "N/A", "MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE"];
 
 export const DESIGNATION_GRADE_LEVELS = [
   "Kinder", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
@@ -809,23 +801,146 @@ export const DESIGNATION_GRADE_LEVELS = [
 export const SHS_TRACKS = ["ACADEMIC", "TECHPRO"];
 
 export const OFFICIAL_DESIGNATIONS = [
-  { id: 'guidance_designate', name: 'GUIDANCE DESIGNATE', description: 'Handles student guidance, counseling, and student welfare support.' },
-  { id: 'reading_literacy_numeracy', name: 'READING / LITERACY AND NUMERACY SCHOOL COORDINATOR', description: 'Leads reading and numeracy interventions, literacy assessments, and learning remediation.' },
-  { id: 'research_coordinator', name: 'RESEARCH SCHOOL COORDINATOR', description: 'Coordinates school-level action research, innovation projects, and research capability building.' },
-  { id: 'sned_coordinator', name: 'SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR', description: 'Manages SNED programs, individualized education plans, and inclusive learning needs.' },
-  { id: 'ict_coordinator', name: 'ICT SCHOOL COORDINATOR', description: 'Handles school IT infrastructure, DepEd computerization program (DCP), and digital reporting systems.' },
-  { id: 'guidance_counselling_coordinator', name: 'GUIDANCE AND COUNSELLING SCHOOL COORDINATOR', description: 'Oversees guidance services, child protection policy enforcement, and career guidance.' },
-  { id: 'inclusive_education_coordinator', name: 'INCLUSIVE EDUCATION SCHOOL COORDINATOR', description: 'Coordinates inclusive education initiatives and mainstreaming support for learners.' },
-  { id: 'school_paper_adviser', name: 'SCHOOL PAPER TRAINER/ADVISER', description: 'Trains and advises campus journalists, school publication staff, and editorial teams.' },
-  { id: 'sports_development_adviser', name: 'SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER', description: 'Manages school sports programs, athletic training, and sports competition delegations.' },
-  { id: 'selg_sslg_adviser', name: 'SELG / SSLG TRAINER/ADVISER', description: 'Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).' },
-  { id: 'learner_formation_officer', name: 'LEARNER FORMATION OFFICER', description: 'Oversees learner formation programs, student government, youth development, and co-curricular student activities.' },
-  { id: 'assistant_school_head_designate', name: 'ASSISTANT SCHOOL HEAD DESIGNATE', description: 'Assists the School Head in administrative management, school operations, and instructional supervision.' },
-  { id: 'department_head_designate', name: 'DEPARTMENT HEAD DESIGNATE', description: 'Serves as designated Department Head leading subject area faculty management and curriculum implementation.' },
-  { id: 'grade_level_chairperson', name: 'GRADE LEVEL CHAIRPERSON', description: 'Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.', parameterized: 'grade' },
-  { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments.', parameterized: 'grade' },
-  { id: 'department_head_ecp', name: 'DEPARTMENT HEAD (Based on ECP)', description: 'Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.', parameterized: 'ecp' }
+  { id: 'guidance_designate', name: 'GUIDANCE DESIGNATE', isRequired: true, description: 'Handles student guidance, counseling, and student welfare support.' },
+  { id: 'learner_information_officer', name: 'LEARNER INFORMATION OFFICER', isRequired: true, description: 'Oversees learner information, student records, LIS management, and learner support services.' },
+  { id: 'department_head_designate', name: 'DEPARTMENT HEAD DESIGNATE', isRequired: true, description: 'Serves as designated Department Head leading subject area faculty management and curriculum implementation.' },
+  { id: 'assistant_school_head_designate', name: 'ASSISTANT SCHOOL HEAD DESIGNATE', isRequired: true, description: 'Assists the School Head in administrative management, school operations, and instructional supervision.' },
+  { id: 'reading_literacy_numeracy', name: 'READING / LITERACY AND NUMERACY SCHOOL COORDINATOR', isRequired: false, description: 'Leads reading and numeracy interventions, literacy assessments, and learning remediation.' },
+  { id: 'research_coordinator', name: 'RESEARCH SCHOOL COORDINATOR', isRequired: false, description: 'Coordinates school-level action research, innovation projects, and research capability building.' },
+  { id: 'sned_coordinator', name: 'SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR', isRequired: false, description: 'Manages SNED programs, individualized education plans, and inclusive learning needs.' },
+  { id: 'ict_coordinator', name: 'ICT SCHOOL COORDINATOR', isRequired: false, description: 'Handles school IT infrastructure, DepEd computerization program (DCP), and digital reporting systems.' },
+  { id: 'guidance_counselling_coordinator', name: 'GUIDANCE AND COUNSELLING SCHOOL COORDINATOR', isRequired: false, description: 'Oversees guidance services, child protection policy enforcement, and career guidance.' },
+  { id: 'inclusive_education_coordinator', name: 'INCLUSIVE EDUCATION SCHOOL COORDINATOR', isRequired: false, description: 'Coordinates inclusive education initiatives and mainstreaming support for learners.' },
+  { id: 'school_paper_adviser', name: 'SCHOOL PAPER TRAINER/ADVISER', isRequired: false, description: 'Trains and advises campus journalists, school publication staff, and editorial teams.' },
+  { id: 'sports_development_adviser', name: 'SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER', isRequired: false, description: 'Manages school sports programs, athletic training, and sports competition delegations.' },
+  { id: 'selg_sslg_adviser', name: 'SELG / SSLG TRAINER/ADVISER', isRequired: false, description: 'Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).' },
+  { id: 'grade_level_chairperson', name: 'GRADE LEVEL CHAIRPERSON', isRequired: false, description: 'Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.', parameterized: 'grade' },
+  { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', isRequired: false, description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments.', parameterized: 'grade' },
+  { id: 'department_head_ecp', name: 'DEPARTMENT HEAD (Based on ECP)', isRequired: false, description: 'Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.', parameterized: 'ecp' }
 ];
+
+export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolInfo) => {
+  if (!subjectName) return true;
+  const sub = String(subjectName).trim().toUpperCase();
+  const gradeStr = String(gradeOrBand || '').trim().toUpperCase();
+
+  // Helper to read school special programs config
+  const getMergedConfig = () => {
+    let progs = Array.isArray(schoolInfo?.specialPrograms) ? [...schoolInfo.specialPrograms] : [];
+    let jhsProgs = Array.isArray(schoolInfo?.jhsSpecialPrograms) ? [...schoolInfo.jhsSpecialPrograms] : [];
+    let hasElem = schoolInfo?.hasElemSpecialPrograms === true || schoolInfo?.hasElemSpecialPrograms === 'yes';
+    let elemProg = Boolean(schoolInfo?.elemSpecialProgram);
+    let hasJhs = schoolInfo?.hasJhsSpecialPrograms === true || schoolInfo?.hasJhsSpecialPrograms === 'yes';
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const draftKey = `insighted_school_curricular_config_${schoolInfo?.schoolId || 'default'}`;
+        const draft = localStorage.getItem(draftKey);
+        if (draft) {
+          const parsed = JSON.parse(draft);
+          if (parsed.hasElemSpecialPrograms !== undefined) hasElem = parsed.hasElemSpecialPrograms === true || parsed.hasElemSpecialPrograms === 'yes';
+          if (parsed.elemSpecialProgram !== undefined) elemProg = Boolean(parsed.elemSpecialProgram);
+          if (parsed.hasJhsSpecialPrograms !== undefined) hasJhs = parsed.hasJhsSpecialPrograms === true || parsed.hasJhsSpecialPrograms === 'yes';
+          if (Array.isArray(parsed.jhsSpecialPrograms)) jhsProgs = [...new Set([...jhsProgs, ...parsed.jhsSpecialPrograms])];
+          if (Array.isArray(parsed.specialPrograms)) progs = [...new Set([...progs, ...parsed.specialPrograms])];
+        }
+      } catch (e) {}
+    }
+    return { hasElem, elemProg, hasJhs, progs, jhsProgs };
+  };
+
+  const config = getMergedConfig();
+
+  // 1. Elementary check: SPECIAL PROGRAM IN SCIENCE
+  const isElem = ['KINDER', 'GRADE 1', 'GRADE 2', 'GRADE 3', 'GRADE 4', 'GRADE 5', 'GRADE 6', 'ELEMENTARY', '1', '2', '3', '4', '5', '6', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'].some(g => gradeStr === g || gradeStr.includes(g));
+
+  if (sub === 'SPECIAL PROGRAM IN SCIENCE' || sub.includes('SPECIAL PROGRAM IN SCIENCE')) {
+    if (isElem) {
+      const isElemScienceActive = config.hasElem && (config.elemProg || config.progs.some(p => String(p).toUpperCase().includes('SCIENCE')));
+      return isElemScienceActive;
+    }
+  }
+
+  // 2. JHS checks: Grade 7 to Grade 10 / Junior High School
+  const isJHS = ['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '7', '8', '9', '10', 'G7', 'G8', 'G9', 'G10', 'JUNIOR HIGH SCHOOL', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g));
+
+  const JHS_SPECIAL_PROGRAM_MAP = {
+    'SPECIAL PROGRAM IN THE ARTS (SPA)': ['SPA', 'SPECIAL PROGRAM IN THE ARTS'],
+    'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)': ['SPFL', 'SPECIAL PROGRAM IN FOREIGN LANGUAGE'],
+    'SPECIAL PROGRAM IN JOURNALISM (SPJ)': ['SPJ', 'SPECIAL PROGRAM IN JOURNALISM'],
+    'SPECIAL PROGRAM IN SPORTS (SPS)': ['SPS', 'SPECIAL PROGRAM IN SPORTS'],
+    'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM': ['STE', 'SCIENCE, TECHNOLOGY, AND ENGINEERING'],
+    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL'],
+    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL  EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL'],
+    'SPECIAL PROGRAM IN SCIENCE': ['SPECIAL PROGRAM IN SCIENCE', 'SPECIAL SCIENCE']
+  };
+
+  for (const [canonicalSubject, keywords] of Object.entries(JHS_SPECIAL_PROGRAM_MAP)) {
+    if (sub === canonicalSubject || keywords.some(k => sub === k || (sub.startsWith('SPECIAL PROGRAM') && sub.includes(k)) || (sub.includes('STE') && sub.includes('ENGINEERING')))) {
+      if (isJHS) {
+        if (!config.hasJhs) return false;
+        const allJhsActive = [...config.progs, ...config.jhsProgs].map(p => String(p).toUpperCase());
+        const isMatch = allJhsActive.some(p => keywords.some(k => p.includes(k)));
+        return isMatch;
+      }
+    }
+  }
+
+  // Standard subjects (Math, English, SPED, IP, etc.) remain always allowed
+  return true;
+};
+
+export const validateDepEdEmail = (email, firstName = '', lastName = '') => {
+  if (!email || email === 'N/A') return { isValid: true, error: null };
+  const rawEmail = String(email).trim().toLowerCase();
+
+  // 1. Check for duplicate @deped.gov.ph or multiple '@'
+  const atCount = (rawEmail.match(/@/g) || []).length;
+  const depedDomainCount = (rawEmail.match(/deped\.gov\.ph/g) || []).length;
+  if (atCount > 1 || depedDomainCount > 1) {
+    return {
+      isValid: false,
+      error: "Duplicate domain '@deped.gov.ph' detected. Please enter a valid single email."
+    };
+  }
+
+  // 2. Check official @deped.gov.ph domain suffix
+  if (!rawEmail.endsWith('@deped.gov.ph')) {
+    return {
+      isValid: false,
+      error: "Email must end with official '@deped.gov.ph' domain."
+    };
+  }
+
+  // 3. Extract local part
+  const localPart = rawEmail.split('@')[0];
+  if (!localPart) {
+    return {
+      isValid: false,
+      error: "Email local part cannot be empty."
+    };
+  }
+
+  // 4. Validate First Name and Last Name matching (letters only normalized)
+  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const cleanFn = cleanStr(firstName);
+  const cleanLn = cleanStr(lastName);
+  const cleanLocal = cleanStr(localPart);
+
+  // Multi-word first names (e.g. Mary Jane -> check 'mary' or 'jane' or 'maryjane')
+  const fnTokens = String(firstName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const fnMatches = fnTokens.length > 0 ? fnTokens.some(t => cleanLocal.includes(t)) || cleanLocal.includes(cleanFn) : true;
+  const lnMatches = cleanLn ? cleanLocal.includes(cleanLn) : true;
+
+  if (!fnMatches || !lnMatches) {
+    return {
+      isValid: false,
+      error: `Email should contain personnel's first and last name (e.g. ${cleanFn ? cleanFn : 'firstname'}.${cleanLn ? cleanLn : 'lastname'}@deped.gov.ph).`
+    };
+  }
+
+  return { isValid: true, error: null };
+};
 
 export const COLLEGE_DEGREE_OPTIONS = [
   "ELEMENTARY GRADUATE",
@@ -1362,6 +1477,8 @@ export const computeWeeklyTeachingMinutes = (rows) => {
   if (!Array.isArray(rows)) return 0;
   return rows.reduce((total, row) => {
     if (!row.startTime || !row.endTime) return total;
+    const subUpper = String(row.subject || row.subjectName || '').toUpperCase().trim();
+    if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) return total;
     if (isTeachingRelatedSubject(row.subject) || isAdministrativeSubject(row.subject)) return total;
     const [startH, startM] = row.startTime.split(':').map(Number);
     const [endH, endM] = row.endTime.split(':').map(Number);
@@ -1410,15 +1527,25 @@ export const AppProvider = ({ children }) => {
     return params.get('room') ? decodeURIComponent(params.get('room')) : "Faculty Room 1";
   });
   const [activePersonnelId, setActivePersonnelId] = useState("P-001");
-  const [schoolInfo, setSchoolInfo] = useState({
-    schoolId: "123456",
-    schoolName: "Sample National High School",
-    region: "Region IV-A",
-    division: "Sample Division",
-    district: "Sample District",
-    schoolYear: "SY 26-27",
-    numberOfShifts: "1",
-    curricularOffering: ['Elementary', 'JHS', 'SHS', 'SHS-CORE SUBJECTS', 'SHS-APPLIED SUBJECTS', 'SHS-SPECIALIZED SUBJECTS', 'SSHS-CORE', 'SSHS-ACADEMIC', 'SSHS-TECHPRO']
+  const [schoolInfo, setSchoolInfo] = useState(() => {
+    const rememberedUser = localStorage.getItem('remembered_user');
+    let userSchoolId = localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || "";
+    if (rememberedUser) {
+      try {
+        const parsed = JSON.parse(rememberedUser);
+        if (parsed.school_id || parsed.schoolId) userSchoolId = parsed.school_id || parsed.schoolId;
+      } catch (e) {}
+    }
+    return {
+      schoolId: userSchoolId || "100093",
+      schoolName: userSchoolId ? `School ${userSchoolId}` : "Loading School...",
+      region: "",
+      division: "",
+      district: "",
+      schoolYear: "SY 26-27",
+      numberOfShifts: "1",
+      curricularOffering: ['Elementary', 'JHS', 'SHS']
+    };
   });
 
   const [personnel, setPersonnel] = useState([]);
@@ -1432,7 +1559,7 @@ export const AppProvider = ({ children }) => {
   const [salaryMatrix, setSalaryMatrix] = useState([]);
   const [allowancesMap, setAllowancesMap] = useState({});
   const [journeyState, setJourneyState] = useState({
-    unlockedNodes: ['school'],
+    unlockedNodes: ['school', 'requests'],
     completedNodes: [],
     currentNode: 'school'
   });
@@ -1441,8 +1568,8 @@ export const AppProvider = ({ children }) => {
 
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
-    if (!nodeId || nodeId === 'dashboard') return true;
-    return (journeyState?.unlockedNodes || ['school']).includes(nodeId);
+    if (!nodeId || nodeId === 'dashboard' || nodeId === 'requests' || nodeId === 'request-center') return true;
+    return (journeyState?.unlockedNodes || ['school', 'requests']).includes(nodeId);
   };
 
   const isNodeCompleted = (nodeId) => {
@@ -1651,14 +1778,22 @@ export const AppProvider = ({ children }) => {
       'NON-GRADED': 'Elementary', 'MONO-GRADE': 'Elementary'
     };
 
-    return list.map(p => ({
-      ...p,
-      assignedGradeLevels: p.assignedGradeLevels || p.gradeLevelsTaught || [],
-      workloadRows: (p.workloadRows || []).map(r => ({
-        ...r,
-        category: r.category || gradeToCategory[r.gradeLevel] || 'Elementary'
-      }))
-    }));
+    return list.map(p => {
+      const cleanEmpNo = (p.employeeNo && !String(p.employeeNo).toUpperCase().startsWith('PRN')) 
+        ? String(p.employeeNo).trim() 
+        : ((p.employee_no && !String(p.employee_no).toUpperCase().startsWith('PRN')) ? String(p.employee_no).trim() : '');
+
+      return {
+        ...p,
+        employeeNo: cleanEmpNo,
+        employee_no: cleanEmpNo,
+        assignedGradeLevels: p.assignedGradeLevels || p.gradeLevelsTaught || [],
+        workloadRows: (p.workloadRows || []).map(r => ({
+          ...r,
+          category: r.category || gradeToCategory[r.gradeLevel] || 'Elementary'
+        }))
+      };
+    });
   };
 
   const refreshPersonnelList = async () => {
@@ -1686,34 +1821,38 @@ export const AppProvider = ({ children }) => {
     const loadInitialData = async () => {
       try {
         // 1. Fetch current school configuration
-        const school = await api.getSchool();
+        const activeSchoolId = user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || '100093';
+        const school = await api.getSchool(activeSchoolId);
         let currentSchoolInfo = {
-          schoolId: "123456",
-          schoolName: "Sample National High School",
-          region: "Region IV-A",
-          division: "Sample Division",
-          district: "Sample District",
+          schoolId: String(activeSchoolId),
+          schoolName: `School ${activeSchoolId}`,
+          region: "",
+          division: "",
+          district: "",
           schoolYear: "SY 26-27",
           numberOfShifts: "1",
-          curricularOffering: ['Elementary', 'JHS', 'SHS', 'SHS-CORE SUBJECTS', 'SHS-APPLIED SUBJECTS', 'SHS-SPECIALIZED SUBJECTS', 'SSHS-CORE', 'SSHS-ACADEMIC', 'SSHS-TECHPRO']
+          curricularOffering: ['Elementary']
         };
 
-        if (school && !school.error) {
+        if (school && !school.error && school.schoolId) {
           currentSchoolInfo = {
-            schoolId: school.schoolId,
-            schoolName: school.schoolName,
-            region: school.region,
-            division: school.division,
-            district: school.district,
-            schoolYear: school.schoolYear,
+            schoolId: String(school.schoolId),
+            schoolName: school.schoolName || `School ${school.schoolId}`,
+            region: school.region || '',
+            division: school.division || '',
+            district: school.district || '',
+            schoolYear: school.schoolYear || 'SY 26-27',
             numberOfShifts: String(school.numberOfShifts || 1),
-            curricularOffering: school.curricularOffering || [],
+            curricularOffering: Array.isArray(school.curricularOffering) && school.curricularOffering.length > 0 ? school.curricularOffering : ['Elementary'],
             certifiedBy: school.certifiedBy || null,
             certifiedSignature: school.certifiedSignature || null,
             certifiedAt: school.certifiedAt || null,
-            subjectsConfig: school.subjectsConfig || null
+            subjectsConfig: school.subjectsConfig || null,
+            specialPrograms: school.specialPrograms || [],
+            shsCurriculumModel: school.shsCurriculumModel || 'Standard K-12 SHS Curriculum'
           };
         }
+        setSchoolInfo(currentSchoolInfo);
 
         // 2. Load Salary Matrix (always static from DB)
         const matrix = await api.getSalaryMatrix();
@@ -1800,7 +1939,9 @@ export const AppProvider = ({ children }) => {
                         advisorId: isAdvRow ? String(p.id) : null,
                         advisoryMinutes: 300,
                         hgpMinutes: 60,
-                        numberOfLearners: 35
+                        numberOfLearners: null,
+                        maleLearners: null,
+                        femaleLearners: null
                       });
                     } else if (isAdvRow && !existing.advisorId) {
                       existing.advisorId = String(p.id);
@@ -1873,10 +2014,19 @@ export const AppProvider = ({ children }) => {
           // Load draft state
           const extractedSecs = extractClassSectionsFromPersonnel(draftPersonnel, currentSchoolInfo);
           let loadedDraftSecs = activeDraft.classSections || [];
-          if (loadedDraftSecs.length === 0 || loadedDraftSecs.length < extractedSecs.length) {
+          if (!activeDraft.sectionsCleared && loadedDraftSecs.length === 0 && extractedSecs.length > 0) {
             console.log('[Draft Sync] Auto-populating organized class sections from workload rows:', extractedSecs.length);
             loadedDraftSecs = extractedSecs;
           }
+
+          // Sanitize legacy 35 hardcoded default value if male/female were not entered
+          loadedDraftSecs.forEach(sec => {
+            if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
+              sec.numberOfLearners = null;
+              sec.maleLearners = null;
+              sec.femaleLearners = null;
+            }
+          });
 
           // Sync advisorId for any section missing advisorId from teacher ADVISORY workloads
           loadedDraftSecs.forEach(sec => {
@@ -1895,9 +2045,18 @@ export const AppProvider = ({ children }) => {
             }
           });
 
-          draftPersonnel = autoEnrichPersonnel(draftPersonnel);
-
-          setSchoolInfo(activeDraft.schoolInfo || currentSchoolInfo);
+          if (activeDraft.schoolInfo && String(activeDraft.schoolInfo.schoolId) === String(currentSchoolInfo.schoolId)) {
+            setSchoolInfo({
+              ...currentSchoolInfo,
+              certifiedBy: activeDraft.schoolInfo.certifiedBy || currentSchoolInfo.certifiedBy,
+              certifiedSignature: activeDraft.schoolInfo.certifiedSignature || currentSchoolInfo.certifiedSignature,
+              certifiedAt: activeDraft.schoolInfo.certifiedAt || currentSchoolInfo.certifiedAt,
+              specialPrograms: activeDraft.schoolInfo.specialPrograms || currentSchoolInfo.specialPrograms,
+              shsCurriculumModel: activeDraft.schoolInfo.shsCurriculumModel || currentSchoolInfo.shsCurriculumModel
+            });
+          } else {
+            setSchoolInfo(currentSchoolInfo);
+          }
           setPersonnel(draftPersonnel);
           setClassSections(loadedDraftSecs);
           setWorkloadTransfers(activeDraft.workloadTransfers || []);
@@ -1931,12 +2090,20 @@ export const AppProvider = ({ children }) => {
 
           loadedPersonnel = autoEnrichPersonnel(loadedPersonnel);
 
-          const sections = await api.getSections();
+          const rawSections = await api.getSections();
+          let loadedSections = Array.isArray(rawSections) ? rawSections : (rawSections && Array.isArray(rawSections.allSections) ? rawSections.allSections : []);
           const extractedFallbackSecs = extractClassSectionsFromPersonnel(loadedPersonnel, currentSchoolInfo);
-          let loadedSections = Array.isArray(sections) ? sections : [];
-          if (loadedSections.length === 0 || loadedSections.length < extractedFallbackSecs.length) {
+          if (loadedSections.length === 0 && !activeDraft?.sectionsCleared && extractedFallbackSecs.length > 0) {
             loadedSections = extractedFallbackSecs;
           }
+
+          loadedSections.forEach(sec => {
+            if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
+              sec.numberOfLearners = null;
+              sec.maleLearners = null;
+              sec.femaleLearners = null;
+            }
+          });
 
           const transfers = await api.getTransfers();
           const loadedTransfers = Array.isArray(transfers) ? transfers : [];
@@ -2008,46 +2175,11 @@ export const AppProvider = ({ children }) => {
       initialLoadCompleteRef.current = false;
       setHasUnsavedChanges(false);
     }
-  }, [user]);
+  }, [user, user?.school_id, user?.schoolId]);
 
-  // Auto-sync classSections from personnel workloads if classSections is empty
+  // Sync advisorId for existing classSections if missing but teacher has ADVISORY workload
   useEffect(() => {
-    if (classSections.length === 0 && Array.isArray(personnel) && personnel.length > 0) {
-      const extractedSecsMap = new Map();
-      personnel.forEach(p => {
-        if (Array.isArray(p.workloadRows)) {
-          p.workloadRows.forEach(wk => {
-            if (wk.gradeLevel && wk.sectionName) {
-              const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
-              const isAdvRow = wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY';
-              const existing = extractedSecsMap.get(key);
-
-              if (!existing) {
-                extractedSecsMap.set(key, {
-                  id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
-                  schoolId: schoolInfo?.schoolId || '199999',
-                  schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
-                  gradeLevel: wk.gradeLevel,
-                  sectionName: wk.sectionName,
-                  sectionType: 'MONO GRADE',
-                  advisorId: isAdvRow ? String(p.id) : null,
-                  advisoryMinutes: 300,
-                  hgpMinutes: 60,
-                  numberOfLearners: null
-                });
-              } else if (isAdvRow && !existing.advisorId) {
-                existing.advisorId = String(p.id);
-              }
-            }
-          });
-        }
-      });
-      const extracted = Array.from(extractedSecsMap.values());
-      if (extracted.length > 0) {
-        setClassSections(extracted);
-      }
-    } else if (classSections.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
-      // Check if any classSections are missing advisorId but have teacher ADVISORY workload
+    if (classSections.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
       let modified = false;
       const updatedSecs = classSections.map(sec => {
         if (!sec.advisorId) {
@@ -2070,7 +2202,7 @@ export const AppProvider = ({ children }) => {
         setClassSections(updatedSecs);
       }
     }
-  }, [personnel, classSections, schoolInfo]);
+  }, [personnel, classSections]);
 
   // Periodically poll requests every 10 seconds if logged in
   useEffect(() => {
@@ -2438,7 +2570,7 @@ export const AppProvider = ({ children }) => {
     if (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) {
       finalGradeLevel = gradeLevelOrObj.gradeLevel;
       finalSectionName = gradeLevelOrObj.sectionName;
-      finalAdvisorId = gradeLevelOrObj.advisorId || gradeLevelOrObj.adviserId;
+      finalAdvisorId = gradeLevelOrObj.advisorId || gradeLevelOrObj.adviserId || gradeLevelOrObj.assignedTeacherId || gradeLevelOrObj.tutorId || gradeLevelOrObj.adviser_id;
       finalSectionType = gradeLevelOrObj.sectionType;
       finalAdvisoryMins = gradeLevelOrObj.advisoryMinutes || 300;
       finalHgpMins = gradeLevelOrObj.hgpMinutes || 60;
@@ -2454,39 +2586,8 @@ export const AppProvider = ({ children }) => {
       computedTotal = (calcMale || 0) + (calcFemale || 0);
     }
 
-    try {
-      const dbRes = await api.createSection({
-        grade_level: finalGradeLevel,
-        section_name: finalSectionName,
-        adviser_id: finalAdvisorId ? String(finalAdvisorId) : null,
-        section_type: finalSectionType || 'MONO GRADE',
-        advisory_minutes: Number(finalAdvisoryMins) || 300,
-        hgp_minutes: Number(finalHgpMins) || 60,
-        number_of_learners: computedTotal,
-        male_learners: calcMale,
-        female_learners: calcFemale
-      });
-
-      if (dbRes && dbRes.id) {
-        const persistedSec = {
-          id: String(dbRes.id),
-          gradeLevel: dbRes.gradeLevel || finalGradeLevel,
-          sectionName: dbRes.sectionName || finalSectionName,
-          advisorId: dbRes.advisorId || finalAdvisorId,
-          sectionType: dbRes.sectionType || finalSectionType || 'MONO GRADE',
-          numberOfLearners: dbRes.numberOfLearners !== undefined && dbRes.numberOfLearners !== null ? dbRes.numberOfLearners : computedTotal,
-          maleLearners: calcMale,
-          femaleLearners: calcFemale
-        };
-        setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), persistedSec]);
-        showToast('✅ Section saved directly to database!');
-        return persistedSec;
-      }
-    } catch (err) {
-      console.warn('Failed backend section persist, fallback to local state:', err);
-    }
-
     const localSecId = `sec-draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
     const newSec = {
       id: localSecId,
       gradeLevel: finalGradeLevel,
@@ -2501,8 +2602,107 @@ export const AppProvider = ({ children }) => {
     };
 
     setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), newSec]);
+
+    if (finalAdvisorId) {
+      setPersonnel(prevPersonnel => {
+        return prevPersonnel.map(p => {
+          if (String(p.id) !== String(finalAdvisorId)) return p;
+          let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
+          const secId = localSecId;
+
+          if (finalSectionType === 'REMEDIAL') {
+            const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasRem) {
+              rows.push({
+                id: `wk-rem-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'REMEDIATION',
+                subjectName: 'REMEDIATION',
+                daySchedule: 'Mon, Wed, Fri',
+                days: ['M', 'W', 'F'],
+                startTime: '15:00',
+                endTime: '16:00',
+                durationMinutes: 60
+              });
+            }
+          } else if (finalSectionType === 'ENRICHMENT') {
+            const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasEnr) {
+              rows.push({
+                id: `wk-enr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'ENRICHMENT',
+                subjectName: 'ENRICHMENT',
+                daySchedule: 'Tue, Thu',
+                days: ['T', 'TH'],
+                startTime: '15:00',
+                endTime: '16:00',
+                durationMinutes: 60
+              });
+            }
+          } else if (finalSectionType === 'ARAL' || String(finalSectionType || '').startsWith('ARAL')) {
+            const hasAral = rows.some(r => (r.subject === 'ARAL' || r.subjectName === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasAral) {
+              rows.push({
+                id: `wk-aral-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'ARAL TUTORING',
+                subjectName: 'ARAL TUTORING',
+                daySchedule: 'Mon, Tue, Wed, Thu',
+                days: ['M', 'T', 'W', 'TH'],
+                startTime: '15:00',
+                endTime: '16:00',
+                durationMinutes: 60
+              });
+            }
+          } else {
+            const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasAdv) {
+              rows.unshift({
+                id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'ADVISORY',
+                subjectName: 'ADVISORY',
+                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                days: ['M', 'T', 'W', 'TH', 'F'],
+                startTime: '07:30',
+                endTime: '08:30',
+                durationMinutes: 60
+              });
+            }
+            const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasHgp) {
+              rows.push({
+                id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'HGP',
+                subjectName: 'HGP',
+                daySchedule: 'Fri',
+                days: ['F'],
+                startTime: '07:30',
+                endTime: '08:30',
+                durationMinutes: 60
+              });
+            }
+          }
+          return { ...p, workloadRows: rows };
+        });
+      });
+    }
+
     setHasUnsavedChanges(true);
-    showToast('Class section added to draft locally.');
+    showToast('Class section added.');
+    return newSec;
   };
 
   const updateSectionDetails = async (sectionId, updates = {}) => {
@@ -2538,48 +2738,95 @@ export const AppProvider = ({ children }) => {
         return prevPersonnel.map(p => {
           let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
           const isTargetTeacher = strAdvisorId && String(p.id) === strAdvisorId;
-          const wasOldTeacher = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+          const isRemedial = targetSec.sectionType === 'REMEDIAL';
+          const isEnrichment = targetSec.sectionType === 'ENRICHMENT';
+          const linkedSub = isRemedial ? 'REMEDIATION' : (isEnrichment ? 'ENRICHMENT' : 'ADVISORY');
+
+          const wasOldTeacher = rows.some(r => 
+            (r.subject === linkedSub || r.subjectName === linkedSub || (linkedSub === 'ADVISORY' && (r.subject === 'HGP' || r.subjectName === 'HGP'))) && 
+            (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel))
+          );
 
           if (isTargetTeacher) {
-            const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
-            if (!hasAdv) {
-              rows.unshift({
-                id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-                sectionId: targetSec.id,
-                sectionName: targetSec.sectionName,
-                gradeLevel: targetSec.gradeLevel,
-                subject: 'ADVISORY',
-                subjectName: 'ADVISORY',
-                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                days: ['M', 'T', 'W', 'TH', 'F'],
-                startTime: '07:30',
-                endTime: '08:30',
-                durationMinutes: 60
-              });
+            if (isRemedial) {
+              const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              if (!hasRem) {
+                rows.push({
+                  id: `wk-rem-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'REMEDIATION',
+                  subjectName: 'REMEDIATION',
+                  daySchedule: 'Mon, Wed, Fri',
+                  days: ['M', 'W', 'F'],
+                  startTime: '15:00',
+                  endTime: '16:00',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+              }
+            } else if (isEnrichment) {
+              const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              if (!hasEnr) {
+                rows.push({
+                  id: `wk-enr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'ENRICHMENT',
+                  subjectName: 'ENRICHMENT',
+                  daySchedule: 'Tue, Thu',
+                  days: ['T', 'TH'],
+                  startTime: '15:00',
+                  endTime: '16:00',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+              }
             } else {
-              rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
-            }
-            const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
-            if (!hasHgp) {
-              rows.push({
-                id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-                sectionId: targetSec.id,
-                sectionName: targetSec.sectionName,
-                gradeLevel: targetSec.gradeLevel,
-                subject: 'HGP',
-                subjectName: 'HGP',
-                daySchedule: 'Fri',
-                days: ['F'],
-                startTime: '07:30',
-                endTime: '08:30',
-                durationMinutes: 60
-              });
-            } else {
-              rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+              const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              if (!hasAdv) {
+                rows.unshift({
+                  id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'ADVISORY',
+                  subjectName: 'ADVISORY',
+                  daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                  days: ['M', 'T', 'W', 'TH', 'F'],
+                  startTime: '07:30',
+                  endTime: '08:30',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+              }
+              const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              if (!hasHgp) {
+                rows.push({
+                  id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'HGP',
+                  subjectName: 'HGP',
+                  daySchedule: 'Fri',
+                  days: ['F'],
+                  startTime: '07:30',
+                  endTime: '08:30',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+              }
             }
             return { ...p, workloadRows: rows };
           } else if (wasOldTeacher && (!strAdvisorId || String(p.id) !== strAdvisorId)) {
-            rows = rows.filter(r => !( (r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)) ));
+            rows = rows.filter(r => !( (r.subject === linkedSub || r.subject === 'HGP' || r.subjectName === linkedSub || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)) ));
             return { ...p, workloadRows: rows };
           }
           return p;
@@ -2588,7 +2835,7 @@ export const AppProvider = ({ children }) => {
     }
 
     setHasUnsavedChanges(true);
-    showToast("Section details updated in draft locally.");
+    showToast("Section details updated.");
   };
 
   const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
@@ -2600,9 +2847,23 @@ export const AppProvider = ({ children }) => {
   };
 
   const removeClassSection = async (id) => {
+    const target = classSections.find(s => String(s.id) === String(id));
     setClassSections(prev => prev.filter(s => String(s.id) !== String(id)));
+    if (target) {
+      setPersonnel(prevPersonnel => {
+        return prevPersonnel.map(p => {
+          if (!Array.isArray(p.workloadRows)) return p;
+          const rows = p.workloadRows.filter(r => !(
+            (String(r.sectionId) === String(id)) ||
+            (r.sectionName === target.sectionName && r.gradeLevel === target.gradeLevel && ['ADVISORY', 'HGP', 'REMEDIATION', 'ENRICHMENT'].includes(r.subject))
+          ));
+          return { ...p, workloadRows: rows };
+        });
+      });
+    }
+
     setHasUnsavedChanges(true);
-    showToast("Class section removed from draft locally.");
+    showToast("Class section removed from local setup.");
   };
 
   const addWorkloadTransfer = async (transferData) => {
@@ -2922,7 +3183,6 @@ export const AppProvider = ({ children }) => {
         { field: "fundSource", label: "Fund Source", cat: "Employment" },
         { field: "natureOfAppointment", label: "Nature of Appointment", cat: "Employment" },
         { field: "hiringArrangement", label: "Hiring Arrangement", cat: "Employment" },
-        { field: "depedEmail", label: "DepEd Email", cat: "Contact" },
         { field: "collegeDegree", label: "College Degree / Baccalaureate", cat: "Qualifications" },
         { field: "eligibility", label: "Eligibility", cat: "Qualifications" }
       ];
@@ -2933,21 +3193,33 @@ export const AppProvider = ({ children }) => {
         }
       });
 
-      // TIN Validation
-      if (!p.noTin && !/^\d{3}-\d{3}-\d{3}$/.test(p.tin || "")) {
-        issues.push({ id: `${p.id}-tin-format`, personId: p.id, type: "error", category: "Identity", message: `${name}: TIN must be valid 9-digit format (123-456-789), or select 'No TIN'.` });
-      }
-      if (p.noTin && !p.employeeReferenceId) {
-        issues.push({ id: `${p.id}-no-tin-no-prn`, personId: p.id, type: "error", category: "Identity", message: `${name}: 'No TIN' checked, but no perpetual Personnel Registry Number (PRN) found.` });
-      }
-      if (p.tin && hasDuplicate("tin", p.tin, p.id)) {
-        issues.push({ id: `${p.id}-tin-dup`, personId: p.id, type: "error", category: "Identity", message: `${name}: Possible duplicate TIN across records.` });
+      // DepEd Email Requirement & Validation
+      const isNonTeaching = p.type === 'non-teaching';
+      const isNationalFund = String(p.fundSource || '').toUpperCase() === 'NATIONAL';
+      const isEmailRequired = !isNonTeaching || isNationalFund;
+
+      if (isEmailRequired) {
+        if (!p.depedEmail || p.depedEmail === 'N/A') {
+          issues.push({
+            id: `${p.id}-deped-email-req`,
+            personId: p.id,
+            type: "error",
+            category: "Contact",
+            message: `${name}: DepEd Email (@deped.gov.ph) is required for ${isNonTeaching ? 'Nationally-Funded Non-Teaching' : 'Teaching & Related'} personnel.`
+          });
+        }
       }
 
-      // Email Validation
-      if (p.depedEmail) {
-        if (!/@deped\.gov\.ph$/i.test(p.depedEmail)) {
-          issues.push({ id: `${p.id}-email-domain`, personId: p.id, type: "warn", category: "Contact", message: `${name}: Email should use official '@deped.gov.ph' domain.` });
+      if (p.depedEmail && p.depedEmail !== 'N/A') {
+        const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName);
+        if (!emailVal.isValid) {
+          issues.push({
+            id: `${p.id}-deped-email-invalid`,
+            personId: p.id,
+            type: "error",
+            category: "Contact",
+            message: `${name}: ${emailVal.error}`
+          });
         }
         if (p.depedEmail.toLowerCase() === "samplehighschool@deped.gov.ph") {
           issues.push({ id: `${p.id}-email-school-match`, personId: p.id, type: "error", category: "Contact", message: `${name}: School's official contact email cannot be used as individual email.` });
@@ -3052,6 +3324,490 @@ export const AppProvider = ({ children }) => {
         message: "No allowances or financial incentives have been checked. You must check at least one allowance/incentive in the Allowances & Incentives Portal before submitting."
       });
     }
+
+    // 5. Official Designations Validation (4 Mandatory Roles)
+    const REQUIRED_DESIGNATIONS_LIST = [
+      { id: 'guidance_designate', name: 'Guidance Designate', keys: ['GUIDANCE DESIGNATE'] },
+      { id: 'learner_information_officer', name: 'Learner Information Officer', keys: ['LEARNER INFORMATION OFFICER', 'LEARNER FORMATION OFFICER'] },
+      { id: 'department_head_designate', name: 'Department Head Designate', keys: ['DEPARTMENT HEAD DESIGNATE', 'DEPARTMENT HEAD'] },
+      { id: 'assistant_school_head_designate', name: 'Assistant School Head Designate', keys: ['ASSISTANT SCHOOL HEAD DESIGNATE', 'ASSISTANT SCHOOL HEAD'] }
+    ];
+
+    REQUIRED_DESIGNATIONS_LIST.forEach(reqDesig => {
+      const isAssigned = (personnel || []).some(p => {
+        if (p.isDraft) return false;
+        const cleanDesig = String(p.designation || '').replace(/::APPROVED_SDS/gi, '').trim().toUpperCase();
+        const desigsList = Array.isArray(p.designations) 
+          ? p.designations.map(d => String(d || '').replace(/::APPROVED_SDS/gi, '').trim().toUpperCase()) 
+          : [];
+        return reqDesig.keys.some(k => cleanDesig === k || cleanDesig.startsWith(`${k} -`) || cleanDesig.startsWith(`${k}:`) || desigsList.some(d => d === k || d.startsWith(`${k} -`)));
+      });
+
+      if (!isAssigned) {
+        issues.push({
+          id: `designation-req-${reqDesig.id}`,
+          type: "error",
+          category: "Official Designations",
+          message: `Required Designation Missing: No personnel is assigned as '${reqDesig.name}'. Please designate a qualified teacher in Node 04 (Designations & Duties).`
+        });
+      }
+    });
+
+    // 6. MATATAG Curriculum Compliance: Grades 1 to 10 Monograde Sections (DO No. 012, s. 2024)
+    const MATATAG_SPECS_BY_GRADE = {
+      'KINDERGARTEN': {
+        gradeLabel: 'Kindergarten',
+        mandatorySubjects: [
+          { key: 'KINDER_BLOCKS', name: 'Kindergarten Blocks of Time', aliases: ['KINDER', 'KINDERGARTEN', 'KINDER BLOCKS OF TIME', 'BLOCKS OF TIME'], minWeekly: 0 }
+        ],
+        disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'ENGLISH', 'FILIPINO', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+      },
+      'GRADE 1': {
+        gradeLabel: 'Grade 1',
+        fixedDailyMins: 40,
+        minDays: 5,
+        mandatorySubjects: [
+          { key: 'LANGUAGE', name: 'Language', aliases: ['LANGUAGE', 'LANG'], minWeekly: 200 },
+          { key: 'READING AND LITERACY', name: 'Reading and Literacy', aliases: ['READING AND LITERACY', 'READING & LITERACY', 'READING'], minWeekly: 200 },
+          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'], minWeekly: 200 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 200 },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'], minWeekly: 200 }
+        ],
+        disallowedSubjects: ['ENGLISH', 'FILIPINO', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+      },
+      'GRADE 2': {
+        gradeLabel: 'Grade 2',
+        fixedDailyMins: 40,
+        minDays: 5,
+        mandatorySubjects: [
+          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 200 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 200 },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'], minWeekly: 200 }
+        ],
+        disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+      },
+      'GRADE 3': {
+        gradeLabel: 'Grade 3',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+      },
+      'GRADE 4': {
+        gradeLabel: 'Grade 4',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'EPP/TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      },
+      'GRADE 5': {
+        gradeLabel: 'Grade 5',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'EPP/TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      },
+      'GRADE 6': {
+        gradeLabel: 'Grade 6',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'EPP/TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      },
+      'GRADE 7': {
+        gradeLabel: 'Grade 7',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      },
+      'GRADE 8': {
+        gradeLabel: 'Grade 8',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      },
+      'GRADE 9': {
+        gradeLabel: 'Grade 9',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      },
+      'GRADE 10': {
+        gradeLabel: 'Grade 10',
+        allowedDailyMins: [45, 50, 55, 60],
+        mandatorySubjects: [
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+        ],
+        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+      }
+    };
+
+    (classSections || []).forEach(sec => {
+      let gLevel = String(sec.gradeLevel || '').trim().toUpperCase();
+      if (gLevel === 'KINDER' || gLevel === 'KINDERGARTEN' || gLevel === 'KINDER - MATATAG') gLevel = 'KINDERGARTEN';
+      if (gLevel === 'GRADE 1 - MATATAG') gLevel = 'GRADE 1';
+      if (gLevel === 'GRADE 2 - MATATAG') gLevel = 'GRADE 2';
+      if (gLevel === 'GRADE 3 - MATATAG') gLevel = 'GRADE 3';
+      if (gLevel === 'GRADE 4 - MATATAG') gLevel = 'GRADE 4';
+      if (gLevel === 'GRADE 5 - MATATAG') gLevel = 'GRADE 5';
+      if (gLevel === 'GRADE 6 - MATATAG') gLevel = 'GRADE 6';
+      if (gLevel === 'GRADE 7 - MATATAG') gLevel = 'GRADE 7';
+      if (gLevel === 'GRADE 8 - MATATAG') gLevel = 'GRADE 8';
+      if (gLevel === 'GRADE 9 - MATATAG') gLevel = 'GRADE 9';
+      if (gLevel === 'GRADE 10 - MATATAG') gLevel = 'GRADE 10';
+
+      const sType = String(sec.sectionType || '').trim().toUpperCase();
+      const isMulti = sType === 'MULTIGRADE' || sType.includes('MULTI') || gLevel.includes(' - ') || String(sec.sectionName || '').toLowerCase().includes('multi');
+      const matatagSpec = MATATAG_SPECS_BY_GRADE[gLevel];
+
+      // Validate only pure monograde sections (exclude multigrade)
+      if (matatagSpec && !isMulti) {
+        const sectionRows = [];
+        (personnel || []).forEach(p => {
+          if (p.isDraft || !Array.isArray(p.workloadRows)) return;
+          p.workloadRows.forEach(r => {
+            const rowSecId = String(r.sectionId || r.section_id || '');
+            const rowSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+            const rowGLevel = String(r.gradeLevel || '').trim().toUpperCase();
+            if (rowSecId === String(sec.id) || (rowSecName === String(sec.sectionName || '').trim().toUpperCase() && (rowGLevel === gLevel || !rowGLevel))) {
+              sectionRows.push({ ...r, teacherName: `${p.firstName || ''} ${p.lastName || ''}`.trim() });
+            }
+          });
+        });
+
+        // 6.1 Check each of the mandatory MATATAG subjects (No Subject Left Behind)
+        matatagSpec.mandatorySubjects.forEach(reqSub => {
+          const matchingRows = sectionRows.filter(r => {
+            const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
+            return reqSub.aliases.some(a => subStr === a || subStr.startsWith(`${a} `) || subStr.startsWith(`${a}-`));
+          });
+
+          if (matchingRows.length === 0) {
+            issues.push({
+              id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-missing-${sec.id}-${reqSub.key}`,
+              type: "error",
+              category: "MATATAG Curriculum Compliance",
+              sectionId: sec.id,
+              personId: sec.advisorId || null,
+              message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): Incomplete Section Schedule - Missing mandatory subject "${reqSub.name}". All core curriculum subjects must be assigned.`
+            });
+          } else {
+            matchingRows.forEach((r, rIdx) => {
+              if (r.startTime && r.endTime) {
+                const [sh, sm] = r.startTime.split(':').map(Number);
+                const [eh, em] = r.endTime.split(':').map(Number);
+                const diffM = (eh * 60 + em) - (sh * 60 + sm);
+                const rDays = Array.isArray(r.days) && r.days.length > 0 ? r.days : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+                const weeklyM = diffM * rDays.length;
+
+                // Grade 1 & 2 Fixed 40-minute rules
+                if (matatagSpec.fixedDailyMins) {
+                  if (diffM !== matatagSpec.fixedDailyMins) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" is scheduled for ${diffM} mins/day (MATATAG Policy requires exactly ${matatagSpec.fixedDailyMins} mins/day under DepEd Order No. 12, s. 2024).`
+                    });
+                  }
+
+                  if (rDays.length < 5) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" is scheduled for only ${rDays.length} day(s) (MATATAG Policy requires 5 days, Monday to Friday).`
+                    });
+                  }
+                }
+
+                // Grade 3 Flexible Time Allotment Rules
+                if (matatagSpec.allowedDailyMins) {
+                  if (!matatagSpec.allowedDailyMins.includes(diffM)) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" duration (${diffM} mins/day) must be 45, 50, 55, or 60 mins/day under DepEd Order No. 12, s. 2024.`
+                    });
+                  }
+
+                  if (weeklyM < reqSub.minWeekly) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-minweekly-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" has only ${weeklyM} mins/week (MATATAG Policy requires at least ${reqSub.minWeekly} mins/week under DepEd Order No. 12, s. 2024).`
+                    });
+                  }
+
+                  if (reqSub.minWeekly === 225 && rDays.length < 5) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" must be scheduled from Monday to Friday (5 days/week).`
+                    });
+                  } else if (reqSub.minWeekly === 200 && diffM === 45 && rDays.length < 5) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" (45 mins/day) must be scheduled from Monday to Friday (5 days/week).`
+                    });
+                  } else if (reqSub.minWeekly === 200 && [50, 55, 60].includes(diffM) && rDays.length < 4) {
+                    issues.push({
+                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
+                      type: "error",
+                      category: "MATATAG Curriculum Compliance",
+                      sectionId: sec.id,
+                      personId: r.personId || sec.advisorId || null,
+                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" (${diffM} mins/day) must be scheduled for at least 4 days/week.`
+                    });
+                  }
+                }
+              }
+            });
+          }
+        });
+
+        // 6.2 Check for disallowed legacy subjects
+        matatagSpec.disallowedSubjects.forEach(disSub => {
+          sectionRows.forEach((r, rIdx) => {
+            const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
+            if (subStr === disSub || subStr.startsWith(`${disSub} `) || subStr.startsWith(`${disSub}-`)) {
+              issues.push({
+                id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-disallowed-${sec.id}-${disSub}-${rIdx}`,
+                type: "error",
+                category: "MATATAG Curriculum Compliance",
+                sectionId: sec.id,
+                personId: r.personId || sec.advisorId || null,
+                message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${subStr}" is not part of the ${matatagSpec.gradeLabel} MATATAG curriculum under DepEd Order No. 12, s. 2024.`
+              });
+            }
+          });
+        });
+      }
+    });
+
+    // 7. Duplicate Subject Assignment in a Single Section (Kinder to Grade 12)
+    const sectionSubjectAssignments = {};
+    (personnel || []).forEach(p => {
+      if (p.isDraft || !Array.isArray(p.workloadRows)) return;
+      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Unknown Teacher';
+
+      p.workloadRows.forEach((r, rIdx) => {
+        const subRaw = String(r.subject || r.subjectName || '').trim();
+        const subNorm = subRaw.toUpperCase();
+        if (!subNorm || subNorm === 'ADVISORY') return;
+
+        const secId = String(r.sectionId || r.section_id || '');
+        const secName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+        const isSHS = r.gradeLevel && (String(r.gradeLevel).includes('11') || String(r.gradeLevel).includes('12'));
+        const term = isSHS ? (r.term || r.semester || '1st') : 'all';
+
+        const secKey = secId ? `id_${secId}_${term}` : (secName ? `name_${secName}_${term}` : null);
+        if (!secKey) return;
+
+        if (!sectionSubjectAssignments[secKey]) {
+          sectionSubjectAssignments[secKey] = {
+            secId,
+            secName: r.sectionName || 'Section',
+            gradeLevel: r.gradeLevel || '',
+            term: isSHS ? term : null,
+            subjects: {}
+          };
+        }
+
+        if (!sectionSubjectAssignments[secKey].subjects[subNorm]) {
+          sectionSubjectAssignments[secKey].subjects[subNorm] = [];
+        }
+
+        sectionSubjectAssignments[secKey].subjects[subNorm].push({
+          personId: p.id,
+          teacherName,
+          subjectOriginal: subRaw,
+          rowIdx: rIdx
+        });
+      });
+    });
+
+    Object.values(sectionSubjectAssignments).forEach(secData => {
+      Object.entries(secData.subjects).forEach(([subNorm, assignments]) => {
+        if (assignments.length > 1) {
+          const teacherNames = Array.from(new Set(assignments.map(a => a.teacherName))).join(', ');
+          const subDisplayName = assignments[0].subjectOriginal || subNorm;
+          const targetSec = (classSections || []).find(s => String(s.id) === String(secData.secId) || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secData.secName));
+          const finalSecName = targetSec?.sectionName || secData.secName;
+          const finalGrade = targetSec?.gradeLevel || secData.gradeLevel || 'Section';
+          const termSuffix = secData.term ? ` (${secData.term} Sem)` : '';
+
+          issues.push({
+            id: `dup-sec-sub-${secData.secId || secData.secName}-${subNorm}-${secData.term || 'all'}`,
+            type: "error",
+            category: "Schedule Conflicts & Duplicate Subjects",
+            sectionId: secData.secId || null,
+            personId: assignments[0].personId || null,
+            message: `Section "${finalSecName}" (${finalGrade}${termSuffix}): Duplicate assignment for subject "${subDisplayName}" across multiple entries (${teacherNames}). Each subject may only be assigned once per section.`
+          });
+        }
+      });
+    });
+
+    // 8. Homeroom Guidance (HGP) 60-Minute Weekly Allotment Audit
+    (personnel || []).forEach(p => {
+      if (p.isDraft || !Array.isArray(p.workloadRows)) return;
+      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Teacher';
+
+      p.workloadRows.forEach((r, rIdx) => {
+        const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
+        if (subStr === 'HGP' || subStr.includes('HOMEROOM GUIDANCE')) {
+          const rowDays = (Array.isArray(r.days) && r.days.length > 0)
+            ? r.days
+            : (r.daySchedule || r.day_schedule)
+              ? String(r.daySchedule || r.day_schedule).split(',').map(s => s.trim())
+              : [];
+          
+          if (!r.startTime || !r.endTime || rowDays.length === 0) {
+            issues.push({
+              id: `hgp-missing-schedule-${p.id}-${rIdx}`,
+              type: "error",
+              category: "Schedule Conflicts & Duplicate Subjects",
+              personId: p.id,
+              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}": Homeroom Guidance (HGP) requires a defined Start Time, End Time, and at least one day (Mon-Fri).`
+            });
+            return;
+          }
+
+          const [sh, sm] = r.startTime.split(':').map(Number);
+          const [eh, em] = r.endTime.split(':').map(Number);
+          const diffM = (eh * 60 + em) - (sh * 60 + sm);
+          const weeklyM = diffM * rowDays.length;
+
+          if (weeklyM !== 60) {
+            issues.push({
+              id: `hgp-weekly-error-${p.id}-${rIdx}`,
+              type: "error",
+              category: "Schedule Conflicts & Duplicate Subjects",
+              personId: p.id,
+              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}": Homeroom Guidance (HGP) must total exactly 60 minutes per week under DepEd policy (Current: ${diffM} mins/day × ${rowDays.length} day${rowDays.length > 1 ? 's' : ''} = ${weeklyM} mins/week).`
+            });
+          }
+        }
+      });
+    });
+
+    // 9. Inactive Special Curricular Program Subject Audit (Warn the user)
+    (classSections || []).forEach(sec => {
+      const grade = sec.gradeLevel || '';
+      (sec.subjects || []).forEach(sub => {
+        if (!isSpecialProgramSubjectAllowed(sub, grade, schoolInfo)) {
+          issues.push({
+            id: `sec-${sec.id}-inactive-special-prog-${sub}`,
+            type: 'warn',
+            category: 'Curricular Offerings',
+            sectionId: sec.id,
+            message: `Section "${sec.sectionName || 'Section'}" (${grade}) is assigned subject "${sub}", but this special curricular program is currently inactive in School Profile.`
+          });
+        }
+      });
+    });
+
+    (personnel || []).forEach(p => {
+      if (p.isDraft || !Array.isArray(p.workloadRows)) return;
+      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.id;
+      p.workloadRows.forEach((r, idx) => {
+        const sub = r.subject || '';
+        const grade = r.gradeLevel || '';
+        if (sub && grade && !isSpecialProgramSubjectAllowed(sub, grade, schoolInfo)) {
+          issues.push({
+            id: `teacher-${p.id}-row-${idx}-inactive-special-prog-${sub}`,
+            personId: p.id,
+            type: 'warn',
+            category: 'Workload Schedule',
+            message: `${teacherName} is assigned special program subject "${sub}" (${grade}), but this program is currently inactive in School Profile.`
+          });
+        }
+      });
+    });
 
     return issues;
   };

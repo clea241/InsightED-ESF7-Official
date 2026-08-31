@@ -27,8 +27,11 @@ export const api = {
   },
 
   // School Profile
-  getSchool: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/school`);
+  getSchool: async (targetSchoolId = null) => {
+    const activeId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const customHeaders = activeId ? { 'x-school-id': String(activeId) } : {};
+    const query = activeId ? `?school_id=${encodeURIComponent(activeId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/school${query}`, { headers: customHeaders });
     return res.json();
   },
   updateSchool: async (data) => {
@@ -168,13 +171,47 @@ export const api = {
     return res.json();
   },
 
-  // Class Sections
+  // Class Sections (3 Tailored Tables)
   getSections: async () => {
     const res = await fetchWithAuth(`${API_BASE}/sections`);
     return res.json();
   },
   addSection: async (data) => {
-    const res = await fetchWithAuth(`${API_BASE}/sections`, {
+    const sectionType = String(data.sectionType || data.section_type || 'MONO GRADE').toUpperCase();
+    let endpoint = `${API_BASE}/sections/regular`;
+    if (sectionType.includes('ARAL')) {
+      endpoint = `${API_BASE}/sections/aral`;
+    } else if (sectionType === 'REMEDIAL' || sectionType === 'ENRICHMENT' || data.interventionType || data.intervention_type) {
+      endpoint = `${API_BASE}/sections/remedial-enrichment`;
+    }
+    const res = await fetchWithAuth(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  createSection: async function(data) {
+    return this.addSection(data);
+  },
+  addRegularSection: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/regular`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  addAralSection: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/aral`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  addRemedialEnrichmentSection: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/remedial-enrichment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -182,11 +219,13 @@ export const api = {
     return res.json();
   },
   updateSectionAdviser: async (id, advisorId, advisory_minutes = 300, hgp_minutes = 60, numberOfLearners = null) => {
-    const res = await fetchWithAuth(`${API_BASE}/sections/${id}`, {
-      method: 'PUT',
+    const res = await fetchWithAuth(`${API_BASE}/sections/regular`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        advisorId,
+        id,
+        adviser_id: advisorId,
+        adviserId: advisorId,
         advisory_minutes,
         hgp_minutes,
         number_of_learners: numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null
@@ -195,7 +234,13 @@ export const api = {
     return res.json();
   },
   deleteSection: async (id) => {
-    const res = await fetchWithAuth(`${API_BASE}/sections/${id}`, {
+    const res = await fetchWithAuth(`${API_BASE}/sections/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    return res.json();
+  },
+  clearAllSections: async (schoolId) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/clear-all?schoolId=${encodeURIComponent(schoolId || '')}`, {
       method: 'DELETE'
     });
     return res.json();
@@ -344,13 +389,56 @@ export const api = {
     return res.json();
   },
 
+  getExtraTasks: async (personnelId = null) => {
+    const query = personnelId ? `?personnelId=${encodeURIComponent(personnelId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/extra-tasks${query}`);
+    if (!res.ok) throw new Error('Failed to fetch extra tasks');
+    return res.json();
+  },
+
+  saveExtraTasks: async (personnelId, tasks = []) => {
+    const res = await fetchWithAuth(`${API_BASE}/extra-tasks/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, tasks })
+    });
+    if (!res.ok) throw new Error('Failed to save extra tasks');
+    return res.json();
+  },
+
   sharePersonnelToClusteredSchools: async (prn, target_school_ids, first_name, last_name) => {
+
     const res = await fetchWithAuth(`${API_BASE}/personnel/share`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prn, target_school_ids, first_name, last_name })
     });
     if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  // Public Faculty Room QR Profiling & Live Review Queue
+  submitRoomProfiling: async (data) => {
+    const res = await fetch(`${API_BASE}/room-profiling/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('Failed to submit room profile');
+    return res.json();
+  },
+  getPendingRoomSubmissions: async (schoolId = '199998') => {
+    const res = await fetch(`${API_BASE}/room-profiling/pending?schoolId=${encodeURIComponent(schoolId)}`);
+    if (!res.ok) throw new Error('Failed to fetch pending room submissions');
+    return res.json();
+  },
+  ackRoomSubmissions: async ({ schoolId, submissionIds = [], personnelIds = [] }) => {
+    const res = await fetch(`${API_BASE}/room-profiling/ack`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolId, submissionIds, personnelIds })
+    });
+    if (!res.ok) throw new Error('Failed to acknowledge room submissions');
     return res.json();
   },
 

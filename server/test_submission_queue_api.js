@@ -19,9 +19,9 @@ async function testSubmissionQueueFlow() {
   console.log('Job ID:', row.id, '| School ID:', row.school_id, '| Certified By:', row.certified_by);
   console.log('Status:', row.status);
 
-  // 2. Query View submission_queue
-  const viewRes = await db.query(`SELECT * FROM submission_queue WHERE id = $1`, [row.id]);
-  console.log('✅ Retrieved from View submission_queue Count:', viewRes.rows.length);
+  // 2. Query Table esf7_submission_queue
+  const viewRes = await db.query(`SELECT * FROM esf7_submission_queue WHERE id = $1`, [row.id]);
+  console.log('✅ Retrieved from esf7_submission_queue Count:', viewRes.rows.length);
 
   // Cleanup
   await db.query(`DELETE FROM esf7_submission_queue WHERE id = $1`, [row.id]);

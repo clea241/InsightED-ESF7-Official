@@ -31,6 +31,9 @@ app.use('/api/submissions', require('./controllers/submissions'));
 app.use('/api/requests', require('./controllers/requests'));
 app.use('/api/reports', require('./controllers/reports'));
 app.use('/api/allowances', require('./controllers/allowances'));
+app.use('/api/extra-tasks', require('./controllers/personnel_extra_tasks'));
+app.use('/api/room-profiling', require('./controllers/room_profiling'));
+
 app.use('/api/overload-reasons', require('./controllers/overload_reasons'));
 app.use('/api/overload-no-work', require('./controllers/overload_no_work'));
 app.use('/api/no-work', require('./controllers/overload_no_work'));
@@ -124,6 +127,14 @@ const startServer = (port) => {
   process.on('SIGTERM', () => {
     queueWorker.stopWorker();
     server.close(() => process.exit(0));
+  });
+
+  process.on('uncaughtException', (err) => {
+    console.error('[Server Uncaught Exception (Handled)]:', err.message);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Server Unhandled Rejection (Handled)]:', reason);
   });
 };
 

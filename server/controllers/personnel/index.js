@@ -133,15 +133,16 @@ function determinePositionCategory(positionStr) {
 
 async function fetchMasterPersonnelFromInsightEd(schoolId) {
   const cleanSchoolId = String(schoolId).replace('SCH-', '');
-  console.log(`[LocalDraft] Reading master personnel records in-memory from insightEd.esf7_database for School ID ${cleanSchoolId}...`);
+  const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
+  console.log(`[LocalDraft] Reading master personnel records in-memory from insightEd.${tableName} for School ID ${cleanSchoolId}...`);
   
   const masterRes = await insightEdPool.query(
-    `SELECT * FROM esf7_database WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1`,
+    `SELECT * FROM ${tableName} WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
     [cleanSchoolId]
   );
 
   if (masterRes.rows.length === 0) {
-    console.log(`[LocalDraft] No master records found in esf7_database for School ID ${cleanSchoolId}.`);
+    console.log(`[LocalDraft] No master records found in ${tableName} for School ID ${cleanSchoolId}.`);
     return [];
   }
 
@@ -180,7 +181,8 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     const postGrad = row.post_graduate__degree || row.post_graduate_degree || 'N/A';
     const elig = row.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS';
 
-    const depedEmail = row.deped_email || (row.employee_no ? `${row.employee_no}@deped.gov.ph` : `prn.${cleanSchoolId}.${seq}@deped.gov.ph`);
+    const cleanEmpNo = (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '';
+    const depedEmail = row.deped_email || '';
 
     const posName = (row.position || 'TEACHER I').toUpperCase();
     const catObj = determinePositionCategory(posName);
@@ -249,8 +251,8 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       ethnic_group: (row.ehtinic_group || row.ethnic_group || 'OTHERS').toUpperCase(),
       birthdate: bDate,
       age: computedAge,
-      employeeNo: row.employee_no || prn,
-      employee_no: row.employee_no || prn,
+      employeeNo: cleanEmpNo,
+      employee_no: cleanEmpNo,
       depedEmail: depedEmail,
       deped_email: depedEmail,
 
@@ -435,8 +437,8 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = []) {
     age: row.age || (row.birthdate ? calculateAge(row.birthdate) : null),
     philsysNo: row.philsys_no || '',
     philsys_no: row.philsys_no || '',
-    employeeNo: row.employee_no || '',
-    employee_no: row.employee_no || '',
+    employeeNo: (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '',
+    employee_no: (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '',
     depedEmail: row.deped_email || '',
     deped_email: row.deped_email || '',
     isSchoolHead: !!row.is_school_head,
@@ -512,7 +514,10 @@ router.get('/', async (req, res) => {
 
     const cleanSchoolId = schoolId.replace('SCH-', '');
 
-    // 1. Auto-fill personnel from insightEd.esf7_database if 0 personnel records exist locally!
+    // 1. Fetch master records from insightEd database
+    const masterList = await fetchMasterPersonnelFromInsightEd(cleanSchoolId);
+
+    // 2. Fetch locally saved records from esf7_personnel_profile
     let result = await db.query(`
       SELECT 
         p.*,
@@ -551,12 +556,7 @@ router.get('/', async (req, res) => {
       ORDER BY p.created_at ASC, p.id ASC
     `, [cleanSchoolId, `SCH-${cleanSchoolId}`]);
 
-    if (result.rows.length === 0) {
-      const draftList = await fetchMasterPersonnelFromInsightEd(cleanSchoolId);
-      return res.json(draftList);
-    }
-
-    const formattedList = [];
+    const dbMap = new Map();
     for (const row of result.rows) {
       const trRes = await db.query(
         `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = $1 ORDER BY created_at ASC`,
@@ -566,10 +566,78 @@ router.get('/', async (req, res) => {
         `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
         [row.id]
       );
-      formattedList.push(formatPersonnelRecord(row, trRes.rows, dsgRes.rows));
+      const formatted = formatPersonnelRecord(row, trRes.rows, dsgRes.rows);
+      if (formatted.id) dbMap.set(String(formatted.id).toUpperCase(), formatted);
+      if (formatted.prn) dbMap.set(String(formatted.prn).toUpperCase(), formatted);
     }
 
-    res.json(formattedList);
+    const mergedList = [];
+    const usedDbKeys = new Set();
+
+    // Overlay master records with DB saved records where available
+    for (const m of masterList) {
+      const idKey = String(m.id || '').toUpperCase();
+      const prnKey = String(m.prn || '').toUpperCase();
+      const dbMatch = (idKey && dbMap.get(idKey)) || (prnKey && dbMap.get(prnKey));
+
+      if (dbMatch) {
+        mergedList.push(dbMatch);
+        if (dbMatch.id) usedDbKeys.add(String(dbMatch.id).toUpperCase());
+        if (dbMatch.prn) usedDbKeys.add(String(dbMatch.prn).toUpperCase());
+      } else {
+        mergedList.push(m);
+      }
+    }
+
+    // Append any DB rows that were not part of the master list (e.g. manually added teachers)
+    for (const [key, dbRec] of dbMap.entries()) {
+      if (!usedDbKeys.has(key)) {
+        mergedList.push(dbRec);
+        if (dbRec.id) usedDbKeys.add(String(dbRec.id).toUpperCase());
+        if (dbRec.prn) usedDbKeys.add(String(dbRec.prn).toUpperCase());
+      }
+    }
+
+    // ALSO check for approved shared / reassigned / borrowed personnel targeting this school!
+    const sharedReqs = await db.query(
+      `SELECT * FROM esf7_requests 
+       WHERE (target_school_id = $1 OR target_school_id = $2)
+         AND status = 'approved'`,
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
+
+    for (const reqRow of sharedReqs.rows) {
+      const targetPrn = reqRow.personnel_id || reqRow.raw_payload?.prn || reqRow.raw_payload?.personnelId;
+      const targetName = reqRow.personnel_name || reqRow.raw_payload?.personnelName || 'SHARED TEACHER';
+      const isClustered = String(reqRow.request_type || '').toLowerCase().includes('cluster');
+      const depStatus = isClustered ? 'CLUSTERED' : 'BORROWED';
+
+      if (!mergedList.some(p => String(p.id).toUpperCase() === String(targetPrn).toUpperCase() || String(p.prn).toUpperCase() === String(targetPrn).toUpperCase())) {
+        const pParts = String(targetName).split(' ');
+        mergedList.push({
+          id: String(targetPrn).replace('PRN-', 'PER-'),
+          prn: String(targetPrn).replace('PER-', 'PRN-'),
+          schoolId: cleanSchoolId,
+          school_id: cleanSchoolId,
+          schoolYear: '2026-2027',
+          type: 'teaching',
+          salutation: 'MR.',
+          firstName: pParts[0] || 'TEACHER',
+          first_name: pParts[0] || 'TEACHER',
+          middleName: '',
+          lastName: pParts.slice(1).join(' ') || 'STAFF',
+          last_name: pParts.slice(1).join(' ') || 'STAFF',
+          position: 'TEACHER I',
+          positionCategory: 'TEACHING',
+          deploymentStatus: depStatus,
+          deployment_status: depStatus,
+          isShared: true,
+          workloadRows: []
+        });
+      }
+    }
+
+    res.json(mergedList);
   } catch (err) {
     console.error('Error fetching personnel profiles:', err);
     res.status(500).json({ error: err.message });
@@ -584,6 +652,46 @@ router.get('/autofill-template', async (req, res) => {
     res.json(list);
   } catch (err) {
     console.error('Error in /autofill-template:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/personnel/share — Share a clustered personnel to target satellite schools
+router.post('/share', async (req, res) => {
+  try {
+    const { prn, target_school_ids, first_name, last_name } = req.body;
+    const sourceSchoolId = getSchoolIdFromRequest(req) || '199998';
+    const cleanSourceId = String(sourceSchoolId).replace('SCH-', '').trim();
+
+    if (!prn || !Array.isArray(target_school_ids) || target_school_ids.length === 0) {
+      return res.status(400).json({ error: 'prn and target_school_ids are required' });
+    }
+
+    // Ensure clustered_personnel table exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS clustered_personnel (
+        id SERIAL PRIMARY KEY,
+        prn VARCHAR(255) NOT NULL,
+        source_school_id VARCHAR(255) NOT NULL,
+        target_school_id VARCHAR(255) NOT NULL,
+        shared_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (prn, source_school_id, target_school_id)
+      );
+    `);
+
+    for (const targetId of target_school_ids) {
+      const cleanTargetId = String(targetId).replace('SCH-', '').trim();
+      await db.query(
+        `INSERT INTO clustered_personnel (prn, source_school_id, target_school_id, shared_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (prn, source_school_id, target_school_id) DO UPDATE SET shared_at = NOW()`,
+        [prn, cleanSourceId, cleanTargetId]
+      );
+    }
+
+    res.json({ success: true, count: target_school_ids.length, message: 'Personnel shared to clustered schools successfully.' });
+  } catch (err) {
+    console.error('Error sharing personnel to clustered schools:', err);
     res.status(500).json({ error: err.message });
   }
 });

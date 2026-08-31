@@ -355,6 +355,12 @@ export default function ValidationCenter() {
         title="Validation Center & Digital Certification"
         description="Review data completeness, run compliance checks, and submit eSF7 with School Head E-Signature."
         onBack={() => setActiveView('dashboard')}
+        showNodeMap={true}
+        onContinue={() => {
+          if (completeNode) completeNode('validation', null);
+          if (showToast) showToast('eSF7 Quality Audit & Validation completed!', 'success');
+        }}
+        continueText="Mark Validation Complete ➔"
       />
       <article className="card">
 
@@ -371,22 +377,28 @@ export default function ValidationCenter() {
                 type="button"
                 onClick={() => setShowPrintModal(true)}
                 style={{
-                  background: 'linear-gradient(180deg, #10b981, #059669)',
-                  color: 'white',
+                  background: errors.length > 0 ? '#F8FAFC' : 'linear-gradient(180deg, #10b981, #059669)',
+                  color: errors.length > 0 ? '#334155' : 'white',
                   fontWeight: '700',
-                  fontSize: '14px',
-                  padding: '10px 22px',
+                  fontSize: '13px',
+                  padding: '10px 20px',
                   borderRadius: '10px',
-                  border: 'none',
+                  border: errors.length > 0 ? '1.5px solid #CBD5E1' : 'none',
                   cursor: 'pointer',
-                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)',
+                  boxShadow: errors.length > 0 ? 'none' : '0 4px 6px -1px rgba(16, 185, 129, 0.3)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
                   transition: 'all 0.2s ease'
                 }}
+                title={errors.length > 0 ? `⚠️ Preview Draft Report (${errors.length} pending validation issues)` : "Print Official Certified eSF7 Report"}
               >
-                🖨️ Print / Save PDF Report
+                <span>{errors.length > 0 ? '📄 Preview Draft eSF7' : '🖨️ Print Official eSF7 Report'}</span>
+                {errors.length > 0 && (
+                  <span style={{ background: '#EF4444', color: 'white', fontSize: '10px', padding: '2px 7px', borderRadius: '10px', fontWeight: '800' }}>
+                    {errors.length} Issues
+                  </span>
+                )}
               </button>
           </div>
 
@@ -519,6 +531,16 @@ export default function ValidationCenter() {
                       style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--blue)', cursor: 'pointer', whiteSpace: 'nowrap' }}
                     >
                       Go to Allowances Portal →
+                    </span>
+                  ) : (issue.category === 'MATATAG Curriculum Compliance' || issue.category === 'Schedule Conflicts & Duplicate Subjects') ? (
+                    <span 
+                      onClick={() => {
+                        if (issue.personId) setActivePersonnelId(issue.personId);
+                        setActiveView('workload');
+                      }}
+                      style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--red, #b91c1c)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      Go to Workload Builder →
                     </span>
                   ) : issue.personId && (
                     <span 
@@ -813,6 +835,52 @@ export default function ValidationCenter() {
       ) : (
         /* ================= VIEW SHEET & TEACHER CLASS PROGRAM PREVIEW ================= */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* NOTE: Teacher Class Programs lock banner commented out for development mode
+          {errors.length > 0 && (
+            <div style={{
+              background: '#FEF2F2',
+              border: '1.5px solid #FCA5A5',
+              borderRadius: '14px',
+              padding: '14px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              boxShadow: '0 2px 4px rgba(239, 68, 68, 0.08)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '24px' }}>🔒</span>
+                <div>
+                  <strong style={{ color: '#991B1B', fontSize: '14px', display: 'block' }}>
+                    Teacher Class Programs Locked from Formal Certification ({errors.length} Blocking Issues)
+                  </strong>
+                  <span style={{ color: '#B91C1C', fontSize: '12px' }}>
+                    Schedules cannot be officially certified or signed by the School Head until all pending validation errors are resolved.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setActiveTab('validation')}
+                style={{
+                  background: '#DC2626',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Resolve Issues →
+              </button>
+            </div>
+          )}
+          */}
+
           {/* Header Metadata Card Matching Official DepEd SF7 Template */}
           <div style={{
             background: 'white',
@@ -1124,7 +1192,7 @@ export default function ValidationCenter() {
                           {(p.firstName || 'T').charAt(0)}{(p.lastName || '').charAt(0)}
                         </div>
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <strong style={{ fontSize: '15px', color: 'var(--navy)' }}>
                               {p.lastName}, {p.firstName} {p.middleName ? `${p.middleName.charAt(0)}.` : ''}
                             </strong>
@@ -1137,6 +1205,17 @@ export default function ValidationCenter() {
                               borderRadius: '6px'
                             }}>
                               {p.position || 'TEACHER I'}
+                            </span>
+                            <span style={{
+                              fontSize: '10.5px',
+                              fontWeight: '800',
+                              background: String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase() === 'NATIONAL' ? '#ECFDF5' : '#FEF3C7',
+                              color: String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase() === 'NATIONAL' ? '#047857' : '#B45309',
+                              border: String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase() === 'NATIONAL' ? '1px solid #A7F3D0' : '1px solid #FCD34D',
+                              padding: '2px 7px',
+                              borderRadius: '6px'
+                            }}>
+                              FUND: {String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase()}
                             </span>
                           </div>
                           <span style={{ fontSize: '12px', color: 'var(--muted)', display: 'block', marginTop: '2px' }}>
@@ -1209,6 +1288,8 @@ export default function ValidationCenter() {
                                   let gradeVal   = String(rawGrade).trim();
                                   if (gradeVal.toUpperCase() === 'NG' || gradeVal.toUpperCase().includes('NON')) {
                                     gradeVal = 'NG';
+                                  } else if (gradeVal.toUpperCase().includes('KINDER') || gradeVal.toUpperCase() === 'K') {
+                                    gradeVal = 'K';
                                   } else {
                                     const m = gradeVal.match(/\d+/);
                                     if (m) gradeVal = m[0];
@@ -1456,75 +1537,10 @@ export default function ValidationCenter() {
         onClose={() => setShowPrintModal(false)}
         schoolInfo={schoolInfo}
         personnel={personnel}
+        signature={signature}
+        isLocked={errors.length > 0}
+        errorsCount={errors.length}
       />
-
-      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
-      <div className="sticky-journey-bar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{
-            background: 'rgba(59, 130, 246, 0.25)',
-            color: '#60A5FA',
-            border: '1px solid rgba(96, 165, 250, 0.4)',
-            padding: '4px 12px',
-            borderRadius: '999px',
-            fontSize: '11px',
-            fontWeight: '900'
-          }}>
-            NODE 08 OF 09
-          </span>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
-              Validation Center & Quality Checks
-            </h4>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
-              Verify records & certify eSF7 document, then proceed to Node 09 (eSF7 Final Submission).
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
-          <button
-            type="button"
-            onClick={() => setActiveView('nodemap')}
-            style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#E2E8F0',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '10px',
-              padding: '8px 16px',
-              fontSize: '12px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            🗺️ Node Map
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (completeNode) completeNode('validation', null);
-              if (showToast) showToast('eSF7 Quality Audit & Validation completed!', 'success');
-            }}
-            style={{
-              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '10px 20px',
-              fontSize: '13px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span>Mark Validation Complete ➔</span>
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

@@ -153,6 +153,9 @@ export default function SchoolProfile() {
         title="School Profile & Registry"
         description="Official administrative details, curricular offerings, and special programs setup."
         onBack={() => setActiveView('dashboard')}
+        showNodeMap={true}
+        onContinue={() => completeNode('school', 'roster')}
+        continueText="Save & Continue to Roster ➔"
       />
       <article className="card" style={{ border: '1px solid #e2e8f0', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.05)' }}>
 
@@ -214,32 +217,32 @@ export default function SchoolProfile() {
             <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>School ID</label>
-                <span style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a', fontFamily: 'monospace' }}>{schoolInfo.schoolId || '999163'}</span>
+                <span style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a', fontFamily: 'monospace' }}>{schoolInfo.schoolId || '—'}</span>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', gridColumn: 'span 2' }}>
                 <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>School Name</label>
-                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{schoolInfo.schoolName || 'Test School'}</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{schoolInfo.schoolName || '—'}</span>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>Region</label>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{schoolInfo.region || 'Region IV-A'}</span>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{schoolInfo.region || '—'}</span>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>Division</label>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{schoolInfo.division || 'Sample Division'}</span>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{schoolInfo.division || '—'}</span>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>District</label>
-                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{schoolInfo.district || 'Sample District'}</span>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{schoolInfo.district || '—'}</span>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#eff6ff', borderRadius: '10px', border: '1px solid #bfdbfe' }}>
                 <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#1d4ed8', fontWeight: '800', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>School Year</label>
-                <span style={{ fontSize: '14px', fontWeight: '900', color: '#1e40af' }}>{schoolInfo.schoolYear || '2026-2027'}</span>
+                <span style={{ fontSize: '14px', fontWeight: '900', color: '#1e40af' }}>{schoolInfo.schoolYear || 'SY 26-27'}</span>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
@@ -607,71 +610,6 @@ export default function SchoolProfile() {
 
         </div>
       </article>
-
-      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
-      <div className="sticky-journey-bar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{
-            background: 'rgba(59, 130, 246, 0.25)',
-            color: '#60A5FA',
-            border: '1px solid rgba(96, 165, 250, 0.4)',
-            padding: '4px 12px',
-            borderRadius: '999px',
-            fontSize: '11px',
-            fontWeight: '900'
-          }}>
-            NODE 01 OF 09
-          </span>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
-              School Profile Configuration
-            </h4>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
-              Save school identity settings and proceed to Node 02 (Personnel Roster).
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
-          <button
-            type="button"
-            onClick={() => setActiveView('nodemap')}
-            style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#E2E8F0',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '10px',
-              padding: '8px 16px',
-              fontSize: '12px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            🗺️ Node Map
-          </button>
-
-          <button
-            type="button"
-            onClick={() => completeNode('school', 'roster')}
-            style={{
-              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '10px 20px',
-              fontSize: '13px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            Save & Continue to Roster ➔
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

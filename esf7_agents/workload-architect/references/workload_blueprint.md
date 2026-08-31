@@ -11,6 +11,9 @@ This document serves as the authoritative blueprint for [Workload.jsx](file:///e
 * **`classSections`** (`Array<Object>`): Global list of organized class sections.
 * **`schoolInfo`** (`Object`): School details including `schoolName` and `schoolYear`.
 * **`customSubjects`** (`Array<Object>`): Custom school subjects defined by the user.
+* **`workImmersionSchedulesMap`** (`Object`): Map of personnel ID to Work Immersion date supervision entries.
+* **`fetchWorkImmersionSchedules(personnelId, schoolYear)`** (`Async Function`): Fetches Work Immersion schedule entries.
+* **`saveWorkImmersionSchedules(personnelId, schedules, schoolYear, schoolId)`** (`Async Function`): Saves batch Work Immersion schedule entries.
 
 ### Workload Row Data Structure (`workloadRows`)
 Each row object inside `workloadRows` contains:
@@ -21,7 +24,7 @@ Each row object inside `workloadRows` contains:
 * `gradeLevel` (`String`): Target grade (e.g. `'Grade 7'`).
 * `sectionName` (`String`): Target class section name.
 * `startTime` / `endTime` (`String`): Slot times formatted as `'HH:MM'` (24-hour format).
-* `days` (`Array<String>`): Days of the week (`['M', 'T', 'W', 'TH', 'F']`).
+* `days` (`Array<String>`): Days of the week (`['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN']`). Supports weekend teaching assignments (`SAT`, `SUN`).
 
 ---
 
@@ -42,7 +45,17 @@ Each row object inside `workloadRows` contains:
 * **Senior High School (Grade 11 & Grade 12)**:
   * Max period duration per subject slot is **6 hours (360 minutes)**.
 
-### C. Offline Workload Delegation Package Generator (`generateWorkloadDelegationHTML`)
+### C. Work Immersion Monthly Calendar & Overload Integration
+* **Purpose**: Tracks daily Work Immersion supervision start/end times for Senior High School (SHS) teachers.
+* **Overload Pay 1-to-1 Integration**:
+  * Immersion supervision hours are summed monthly (`totalMonthHours = (totalMonthMins / 60).toFixed(1)`) and integrated 1-to-1 with regular teaching load for **Overload Pay Authorization**.
+* **Month Schedule Pattern Duplication**:
+  * `handleCopyMonthPattern`: Copies all date supervision slots for a selected source month (e.g., June).
+  * `handlePasteMonthPattern`: Pastes and duplicates the schedule pattern to a target month (e.g., July or August).
+* **Single Date Slot Drawer**:
+  * Modal/drawer allowing set/edit/remove of exact `startTime` and `endTime` for any specific calendar date.
+
+### D. Offline Workload Delegation Package Generator (`generateWorkloadDelegationHTML`)
 * **Purpose**: Generates a self-contained, offline HTML file allowing school heads and section coordinators to encode or view workload delegations offline.
 * **Payload Structure (`INSIGHTED_WORKLOAD_DELEGATION_V1`)**:
   * Contains `schoolName`, `schoolYear`, `gradeSubjects`, `remediationFocusMap`, `sections`, and `teachers` with Base64 encoded payload (`jsonB64`).
@@ -65,8 +78,15 @@ Each row object inside `workloadRows` contains:
 +-----------------------------------------------------------------------------------+
 | WORKLOAD TIMETABLE GRID                                                           |
 |  Category | Grade Level | Section | Subject | Time Slot (Start-End) | Days | Actions|
-|  Row Items with real-time slot conflict indicator badges                          |
+|  Days Buttons: [M] [T] [W] [TH] [F] [SAT] [SUN] (Supports Weekend Teaching)       |
+|  Live Badge: ⏱️ {diffM} mins/day · {weeklyM} mins/wk ({weeklyHours} hrs)           |
 |  [+ Add Subject Slot] -> creates new workload row                                 |
++-----------------------------------------------------------------------------------+
+| 🏢 WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION PANEL                   |
+|  Month/Year Selector | Total Monthly Hours | Overload Integration Badge           |
+|  [📋 Copy {Month} Schedule] -> handleCopyMonthPattern()                           |
+|  [📥 Paste to {Month}]    -> handlePasteMonthPattern()                           |
+|  Interactive Calendar Grid (Click date -> opens Date Editor Drawer)                |
 +-----------------------------------------------------------------------------------+
 | CONFLICT RESOLUTION OVERLAY (Conditional: conflicts.length > 0)                   |
 |  Displays overlapping time slots (excluding valid HGP-within-ADVISORY blocks)     |
@@ -77,5 +97,11 @@ Each row object inside `workloadRows` contains:
 
 ## 4. Versioned Flow History Log
 
+* **Version 1.1 (2026-08-26)**: Added Work Immersion Monthly Calendar & Overload Integration.
+  * Added `workImmersionSchedulesMap`, `fetchWorkImmersionSchedules`, and `saveWorkImmersionSchedules` context integration.
+  * Added Work Immersion interactive month calendar grid with date editor drawer (`editingStartTime`, `editingEndTime`).
+  * Added Month Schedule Pattern Copy/Paste functionality (`handleCopyMonthPattern`, `handlePasteMonthPattern`).
+  * Extended day selection options to include weekend teaching (`SAT`, `SUN`).
+  * Added live daily/weekly minutes and hours badge rendering on workload rows.
 * **Version 1.0 (2026-08-13)**: Initial master flow blueprint established.
   * Baseline features: Workload timetable matrix, HGP subject normalization, HGP nested ADVISORY conflict exclusion, slot duration limits (60m vs 360m), and offline delegation HTML package exporter (`INSIGHTED_WORKLOAD_DELEGATION_V1`).

@@ -24,6 +24,9 @@ import Login from './pages/Login';
 import LoadingScreen from './components/LoadingScreen';
 
 function MainAppContent() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isRoomProfiling = urlParams.get('view') === 'room-profiling';
+
   const { user, loading: authLoading } = useAuth();
   const appState = useApp() || {};
   const { 
@@ -37,7 +40,8 @@ function MainAppContent() {
   } = appState;
 
   React.useEffect(() => {
-    if (activeView !== 'dashboard' && activeView !== 'nodemap' && isNodeUnlocked && !isNodeUnlocked(activeView)) {
+    const standaloneViews = ['dashboard', 'nodemap', 'room-profiling', 'room-qr', 'requests'];
+    if (!standaloneViews.includes(activeView) && isNodeUnlocked && !isNodeUnlocked(activeView)) {
       showToast('This node is locked. Complete the preceding steps on the Node Map first.', 'error');
       setActiveView('nodemap');
     }
@@ -52,12 +56,13 @@ function MainAppContent() {
     }
   }, [toast, setToast]);
 
-  if (authLoading) {
-    return <LoadingScreen />;
+  // Public Faculty Room QR Profiling bypass (No Login Required)
+  if (isRoomProfiling || activeView === 'room-profiling') {
+    return <RoomProfiling />;
   }
 
-  if (activeView === 'room-profiling') {
-    return <RoomProfiling />;
+  if (authLoading) {
+    return <LoadingScreen />;
   }
 
   if (!user) {

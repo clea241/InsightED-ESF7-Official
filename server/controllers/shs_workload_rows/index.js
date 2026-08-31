@@ -148,7 +148,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// DELETE an SHS workload row
+// DELETE all SHS workload rows for a personnel
+router.delete('/personnel/:personnel_id', async (req, res) => {
+  try {
+    const { personnel_id } = req.params;
+    await db.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1`, [personnel_id]);
+    res.json({ success: true, message: `All SHS workload rows for personnel ${personnel_id} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE all SHS workload rows in a school
+router.delete('/school/:school_id', async (req, res) => {
+  try {
+    const { school_id } = req.params;
+    await db.query(`DELETE FROM esf7_shs_workload_rows WHERE school_id = $1`, [school_id]);
+    res.json({ success: true, message: `All SHS workload rows for school ${school_id} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE all SHS workload rows (bulk clear)
+router.delete('/clear-all', async (req, res) => {
+  try {
+    await db.query(`DELETE FROM esf7_shs_workload_rows`);
+    res.json({ success: true, message: 'All SHS workload rows deleted successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE an SHS workload row by ID
 router.delete('/:id', async (req, res) => {
   try {
     await db.query(`DELETE FROM esf7_shs_workload_rows WHERE id = $1`, [req.params.id]);

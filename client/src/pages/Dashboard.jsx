@@ -7,7 +7,7 @@ import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle,
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
-  const { personnel, classSections, schoolInfo, setActiveView, showToast, isNodeUnlocked, isNodeCompleted } = useApp();
+  const { personnel = [], classSections = [], schoolInfo = {}, setActiveView, showToast, isNodeUnlocked, isNodeCompleted } = useApp();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -33,7 +33,9 @@ export default function Dashboard() {
   }, [schoolInfo?.schoolId]);
 
   const schoolName = stats?.school_overview?.school_name || schoolInfo?.schoolName || 'DepEd Integrated School';
-  const totalPersonnel = personnel.length;
+  const safePersonnel = Array.isArray(personnel) ? personnel : [];
+  const safeClassSections = Array.isArray(classSections) ? classSections : [];
+  const totalPersonnel = safePersonnel.length;
 
   const NODES = [
     {
@@ -52,7 +54,7 @@ export default function Dashboard() {
       subtitle: 'Master personnel list & appointment status',
       icon: '☷',
       view: 'roster',
-      summary: `${personnel.length} Registered Personnel`
+      summary: `${safePersonnel.length} Registered Personnel`
     },
     {
       id: 'profile',
@@ -61,7 +63,7 @@ export default function Dashboard() {
       subtitle: 'Educational qualifications, LET & eligibility',
       icon: '✎',
       view: 'profile',
-      summary: `${personnel.filter(p => p.degreeMajor || p.major).length} Profiles Configured`
+      summary: `${safePersonnel.filter(p => p?.degreeMajor || p?.major).length} Profiles Configured`
     },
     {
       id: 'classes',
@@ -70,7 +72,7 @@ export default function Dashboard() {
       subtitle: 'Section setup, advisers & learner counts',
       icon: '▦',
       view: 'classes',
-      summary: `${classSections.length} Class Sections`
+      summary: `${safeClassSections.length} Class Sections`
     },
     {
       id: 'workload',
@@ -79,7 +81,7 @@ export default function Dashboard() {
       subtitle: 'Teaching schedules, period durations & timetable',
       icon: '◷',
       view: 'workload',
-      summary: `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`
+      summary: `${safePersonnel.reduce((acc, p) => acc + (p?.workloadRows?.length || 0), 0)} Workload Slots`
     },
     {
       id: 'validation',
@@ -196,6 +198,10 @@ export default function Dashboard() {
     let dailyMins = 0;
     const rows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
     rows.forEach(wk => {
+      const subUpper = String(wk.subject || wk.subjectName || wk.task || '').toUpperCase().trim();
+      if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
+        return; // HGP is for schedule/day tracking only and is not added to workload minutes
+      }
       let mins = Number(wk.durationMinutes || wk.minutes) || 0;
       if (!mins && wk.startTime && wk.endTime) {
         const [sh, sm] = wk.startTime.split(':').map(Number);
@@ -245,6 +251,73 @@ export default function Dashboard() {
       monoGradeTeacherCount++;
     }
   });
+
+  // -------------------------------------------------------------
+  // SPECIAL CURRICULAR PROGRAMS & SHS MODEL COMPUTATION
+  // -------------------------------------------------------------
+  const curricularConfig = useMemo(() => {
+    try {
+      const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || 'default'}`;
+      const storedStr = localStorage.getItem(draftKey);
+      if (storedStr) return JSON.parse(storedStr);
+    } catch (e) {
+      console.error('Failed to parse curricularConfig from localStorage:', e);
+    }
+    return null;
+  }, [schoolInfo.schoolId]);
+
+  const activeSpecialPrograms = useMemo(() => {
+    const list = [];
+    if (curricularConfig) {
+      if (curricularConfig.hasElemSpecialPrograms && curricularConfig.elemSpecialProgram) {
+        list.push({ label: 'Special Science Elementary School (SSES)', icon: '🧪', type: 'Elementary', color: '#047857', bg: '#ECFDF5', border: '#A7F3D0' });
+      }
+      if (curricularConfig.hasJhsSpecialPrograms && Array.isArray(curricularConfig.jhsSpecialPrograms)) {
+        curricularConfig.jhsSpecialPrograms.forEach(p => {
+          let icon = '⭐';
+          if (p.includes('Arts')) icon = '🎭';
+          else if (p.includes('Journalism')) icon = '📰';
+          else if (p.includes('Sports')) icon = '⚽';
+          else if (p.includes('Foreign Language')) icon = '🌐';
+          else if (p.includes('Science') || p.includes('STE')) icon = '🔬';
+          else if (p.includes('Technical') || p.includes('SPTVE')) icon = '🛠️';
+          list.push({ label: p, icon, type: 'JHS', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' });
+        });
+      }
+      if (curricularConfig.shsCurriculumModel && curricularConfig.shsCurriculumModel !== 'standard') {
+        const modelLabel = curricularConfig.shsCurriculumModel === 'sshs-academic'
+          ? 'SSHS-Academic Curriculum Model'
+          : curricularConfig.shsCurriculumModel === 'sshs-techpro'
+          ? 'SSHS-TechPro Curriculum Model'
+          : curricularConfig.shsCurriculumModel === 'als-shs'
+          ? 'ALS-SHS Curriculum Model'
+          : `${curricularConfig.shsCurriculumModel.toUpperCase()} Curriculum Model`;
+        list.push({ label: modelLabel, icon: '🎓', type: 'SHS', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' });
+      }
+    } else if (schoolInfo.specialPrograms || schoolInfo.shsCurriculumModel) {
+      const progs = Array.isArray(schoolInfo.specialPrograms) ? schoolInfo.specialPrograms : [];
+      progs.forEach(p => {
+        let icon = '⭐';
+        if (p.includes('SCIENCE ELEMENTARY')) icon = '🧪';
+        else if (p.includes('Arts')) icon = '🎭';
+        else if (p.includes('Journalism')) icon = '📰';
+        else if (p.includes('Sports')) icon = '⚽';
+        else if (p.includes('Foreign Language')) icon = '🌐';
+        else if (p.includes('Science') || p.includes('STE')) icon = '🔬';
+        else if (p.includes('Technical') || p.includes('SPTVE')) icon = '🛠️';
+        list.push({ label: p, icon, type: p.includes('ELEMENTARY') ? 'Elementary' : 'JHS', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' });
+      });
+      if (schoolInfo.shsCurriculumModel && schoolInfo.shsCurriculumModel !== 'standard') {
+        list.push({ label: `${schoolInfo.shsCurriculumModel} Model`, icon: '🎓', type: 'SHS', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' });
+      }
+    }
+    return list;
+  }, [curricularConfig, schoolInfo]);
+
+  const isExplicitlyRegular = useMemo(() => {
+    if (!curricularConfig) return false;
+    return curricularConfig.hasElemSpecialPrograms === false && curricularConfig.hasJhsSpecialPrograms === false;
+  }, [curricularConfig]);
 
   // 3. ORGANIZED CLASSES BREAKDOWN BY GRADE LEVEL
   const gradeLevelSectionMap = {};
@@ -609,7 +682,7 @@ export default function Dashboard() {
 
           </div>
 
-          {/* WORKLOAD HOURS & MONO/MULTI GRADE SUMMARY ROW */}
+{/* WORKLOAD HOURS & MONO/MULTI GRADE SUMMARY ROW */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             
             {/* WORKLOAD HOURS DISTRIBUTION CARD */}
@@ -771,23 +844,25 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                   {Object.entries(appointmentCounts).map(([status, count]) => (
-                    <div key={status} style={{ background: '#F8FAFC', padding: '12px', borderRadius: '12px', border: '1px solid var(--line)' }}>
-                      <div style={{ fontSize: '11px', color: '#64748B', fontWeight: '700' }}>{status}</div>
-                      <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy)', marginTop: '2px' }}>{count}</div>
+                    <div key={status} style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--line)', textAlign: 'center' }}>
+                      <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={status}>{status}</div>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: count > 0 ? '#1E293B' : '#94A3B8', marginTop: '3px', lineHeight: 1.1 }}>{count}</div>
                     </div>
                   ))}
                 </div>
 
-                <div style={{ fontSize: '12px', color: '#64748B', background: '#F1F5F9', padding: '10px 12px', borderRadius: '8px' }}>
+                <div style={{ fontSize: '11.5px', color: '#64748B', background: '#F1F5F9', padding: '8px 12px', borderRadius: '8px' }}>
                   📌 Regular Permanent staff constitute <strong>{totalPersonnel > 0 ? Math.round(((appointmentCounts['PERMANENT'] || 0) / totalPersonnel) * 100) : 0}%</strong> of the school's personnel roster.
                 </div>
               </div>
             </div>
 
-            {/* RIGHT COLUMN: JUNIOR HIGH SCHOOL SUBJECTS (UNIFIED CARD WITH STACKED BARS & COMPETENCY MATRIX) */}
-            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            {/* RIGHT COLUMN: JUNIOR HIGH SCHOOL SUBJECTS & SPECIAL CURRICULAR PROGRAMS */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* UNIFIED CARD WITH STACKED BARS & COMPETENCY MATRIX */}
+              <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
               {/* Header & Level Filter Tabs */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
@@ -944,6 +1019,144 @@ export default function Dashboard() {
                   <span>80%</span>
                   <span>100%</span>
                 </div>
+              </div>
+            </div>
+
+              {/* ⭐ SPECIAL CURRICULAR PROGRAMS & SHS CURRICULUM MODEL SHOWCASE CARD */}
+              <div className="card" style={{
+                background: '#FFFFFF',
+                borderRadius: '16px',
+                border: '1.5px solid var(--line)',
+                padding: '20px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '20px' }}>⭐</span>
+                    <div>
+                      <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0 }}>
+                        Special Curricular Programs & SHS Curriculum Model
+                      </h3>
+                      <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+                        Active institutional offerings, special program tracks, and curriculum models for this school.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveView('school')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '7px 14px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--blue)',
+                      background: '#F0F9FF',
+                      color: 'var(--blue)',
+                      fontSize: '12px',
+                      fontWeight: '800',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'var(--blue)';
+                      e.currentTarget.style.color = 'white';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#F0F9FF';
+                      e.currentTarget.style.color = 'var(--blue)';
+                    }}
+                  >
+                    <span>⚙️</span> {activeSpecialPrograms.length > 0 ? 'Edit in School Profile ↗' : 'Configure in School Profile ➔'}
+                  </button>
+                </div>
+
+                {/* Active Program Badges or Callout */}
+                {activeSpecialPrograms.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                    {activeSpecialPrograms.map((prog, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 14px',
+                          borderRadius: '10px',
+                          border: `1.5px solid ${prog.border}`,
+                          background: prog.bg,
+                          color: prog.color,
+                          fontSize: '12px',
+                          fontWeight: '800',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                        }}
+                      >
+                        <span style={{ fontSize: '16px' }}>{prog.icon}</span>
+                        <span>{prog.label}</span>
+                        <span style={{
+                          fontSize: '10px',
+                          background: 'rgba(255,255,255,0.9)',
+                          padding: '2px 6px',
+                          borderRadius: '6px',
+                          border: `1px solid ${prog.border}`,
+                          color: prog.color,
+                          fontWeight: '900',
+                          textTransform: 'uppercase'
+                        }}>
+                          {prog.type}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : isExplicitlyRegular ? (
+                  <div style={{ padding: '14px 18px', borderRadius: '12px', background: '#F0FDF4', border: '1.5px dashed #86EFAC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '18px' }}>✓</span>
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: '800', color: '#15803D' }}>Regular Basic Education Curriculum Active</span>
+                        <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#166534' }}>This school is verified with Standard Basic Education without active special curricular tracks.</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '16px 20px', borderRadius: '12px', background: '#FFFBEB', border: '1.5px dashed #FCD34D', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '22px' }}>⚠️</span>
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: '800', color: '#92400E' }}>Special Curricular Programs Not Yet Configured</span>
+                        <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#B45309' }}>
+                          Specify whether this school implements Special Science (SSES/STE), SPA, SPJ, SPS, SPFL, SPTVE, or customized SHS Curriculum Models.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveView('school')}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, #D97706 0%, #B45309 100%)',
+                        color: 'white',
+                        border: 'none',
+                        fontWeight: '800',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(217, 119, 6, 0.25)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <span>⚙️</span> Configure in School Profile ➔
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

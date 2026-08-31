@@ -1,12 +1,12 @@
 import React from 'react';
 import { useApp, DIVISION_SCHOOL_OPTIONS } from '../context/AppContext';
+import PortalHeader from '../components/PortalHeader';
 
 export default function Deployment() {
   const {
     personnel,
     activePersonnelId,
     setActivePersonnelId,
-    updatePersonnelInfo,
     savePersonnelChanges,
     showToast,
     showAlert,
@@ -67,6 +67,17 @@ export default function Deployment() {
 
   return (
     <section id="deployment" className="view grid">
+      <PortalHeader
+        title="Deployment & Cross-School Transfers"
+        description="Manage deployment statuses, clustered school links, and cross-school personnel visibility."
+        onBack={() => setActiveView('dashboard')}
+        showNodeMap={true}
+        onContinue={() => {
+          if (completeNode) completeNode('deployment', 'designations');
+          setActiveView('designations');
+        }}
+        continueText="Save & Continue to Designations ➔"
+      />
       <article className="card">
         <div className="card-inner">
           <h2>Deployment, Clustered Schools, and Transfers</h2>
@@ -193,74 +204,6 @@ export default function Deployment() {
           </div>
         </div>
       </article>
-
-      {/* STICKY BOTTOM JOURNEY ACTION BAR */}
-      <div className="sticky-journey-bar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{
-            background: 'rgba(59, 130, 246, 0.25)',
-            color: '#60A5FA',
-            border: '1px solid rgba(96, 165, 250, 0.4)',
-            padding: '4px 12px',
-            borderRadius: '999px',
-            fontSize: '11px',
-            fontWeight: '900'
-          }}>
-            NODE 07 OF 09
-          </span>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
-              Deployment & Inter-School Transfers
-            </h4>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
-              Verify deployment status & receiving schools, then proceed to Node 08 (Validation Center).
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
-          <button
-            type="button"
-            onClick={() => setActiveView('nodemap')}
-            style={{
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#E2E8F0',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '10px',
-              padding: '8px 16px',
-              fontSize: '12px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            🗺️ Node Map
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (completeNode) completeNode('deployment', 'validation');
-              setActiveView('validation');
-            }}
-            style={{
-              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '10px',
-              padding: '10px 20px',
-              fontSize: '13px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            Save & Continue to Validation Center ➔
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

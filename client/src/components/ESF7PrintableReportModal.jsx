@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel }) {
+export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount }) {
   if (!isOpen) return null;
 
   const schoolIdStr   = schoolInfo?.schoolId || schoolInfo?.school_id || '108348';
@@ -9,6 +9,31 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
   const divisionStr   = schoolInfo?.division || 'LAGUNA';
   const districtStr   = schoolInfo?.district || 'MAJAYJAY';
   const schoolYearStr = schoolInfo?.schoolYear || schoolInfo?.school_year || 'SY 2026-2027';
+
+  // Dynamic School Head Detection from Personnel Roster
+  const schoolHead = (personnel || []).find(p => 
+    p.isSchoolHead || 
+    p.is_school_head || 
+    (p.position || '').toUpperCase().includes('PRINCIPAL') || 
+    (p.position || '').toUpperCase().includes('SCHOOL HEAD') || 
+    (p.position || '').toUpperCase().includes('HEAD TEACHER') || 
+    (p.position || '').toUpperCase().includes('TIC') || 
+    (p.position || '').toUpperCase().includes('TEACHER-IN-CHARGE')
+  );
+
+  const middleInitial = schoolHead?.middleName && schoolHead.middleName !== 'N/A' && schoolHead.middleName !== 'NONE'
+    ? ` ${schoolHead.middleName.charAt(0)}.`
+    : '';
+
+  const schoolHeadFullName = schoolHead
+    ? `${schoolHead.lastName || ''}, ${schoolHead.firstName || ''}${middleInitial}`.toUpperCase()
+    : (schoolInfo?.certifiedBy || 'SCHOOL HEAD / PRINCIPAL');
+
+  const schoolHeadPosition = schoolHead?.position
+    ? `${schoolHead.position} / School Head`
+    : (schoolInfo?.certifiedTitle || 'School Head Signature & Official Designation');
+
+  const finalSig = signature || schoolHead?.e_signature_url || schoolHead?.signature || schoolInfo?.certifiedSignature;
 
   const teachingList = (personnel || []).filter(p => p.type !== 'non-teaching');
   const nonTeachingList = (personnel || []).filter(p => p.type === 'non-teaching');
@@ -286,23 +311,36 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
         {(() => {
           const teachingMap = {};
           const nonTeachingMap = {};
+          const otherFundingRows = [];
           let totalTeachingCount = 0;
           let totalNonTeachingCount = 0;
 
           (personnel || []).forEach(p => {
-            const pos = (p.position || 'TEACHER I').toUpperCase().trim();
-            if (p.type === 'non-teaching' || pos.includes('ADMINISTRATIVE') || pos.includes('OFFICER') || pos.includes('ASSISTANT') || pos.includes('AIDE') || pos.includes('PROJECT')) {
-              nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
-              totalNonTeachingCount++;
+            const fund = String(p.fundSource || p.fund_source || 'NATIONAL').trim().toUpperCase();
+            const pos = (p.position || p.position_title || 'TEACHER I').toUpperCase().trim();
+            const isNonTeaching = p.type === 'non-teaching' || pos.includes('ADMINISTRATIVE') || pos.includes('OFFICER') || pos.includes('ASSISTANT') || pos.includes('AIDE') || pos.includes('PROJECT') || pos.includes('UTILITY') || pos.includes('SECURITY') || pos.includes('DRIVER') || pos.includes('NURSE') || pos.includes('BOOKKEEPER') || pos.includes('ACCOUNTANT');
+
+            if (fund === 'NATIONAL') {
+              if (isNonTeaching) {
+                nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
+                totalNonTeachingCount++;
+              } else {
+                teachingMap[pos] = (teachingMap[pos] || 0) + 1;
+                totalTeachingCount++;
+              }
             } else {
-              teachingMap[pos] = (teachingMap[pos] || 0) + 1;
-              totalTeachingCount++;
+              // (C) Other Appointments and Funding Source (MOOE, SEF, LGU, PTA, NGO, OTHERS)
+              otherFundingRows.push({
+                title: pos,
+                appointment: (p.natureOfAppointment || p.nature_of_appointment || p.hiringArrangement || 'JOB ORDER / COS').toUpperCase(),
+                fundSource: fund
+              });
             }
           });
 
           const activeTeachingRows = Object.keys(teachingMap).map(t => ({ title: t, count: teachingMap[t] }));
           const activeNonTeachingRows = Object.keys(nonTeachingMap).map(t => ({ title: t, count: nonTeachingMap[t] }));
-          const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, 6);
+          const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, otherFundingRows.length, 6);
 
           return (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '10px', border: '1.5px solid #000' }}>
@@ -332,6 +370,7 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                 {Array.from({ length: maxRows }).map((_, rIdx) => {
                   const tItem = activeTeachingRows[rIdx];
                   const ntItem = activeNonTeachingRows[rIdx];
+                  const otherItem = otherFundingRows[rIdx];
 
                   return (
                     <tr key={rIdx} style={{ textAlign: 'left', height: '18px' }}>
@@ -347,14 +386,14 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                       <td style={{ border: '1px solid #000', padding: '3px 6px', textAlign: 'center', fontWeight: '700' }}>
                         {ntItem ? ntItem.count : ''}
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', color: '#64748B' }}>
-                        {rIdx === 0 ? 'UTILITY WORKER' : ''}
+                      <td style={{ border: '1px solid #000', padding: '3px 6px', fontWeight: '600' }}>
+                        {otherItem ? otherItem.title : ''}
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', color: '#64748B' }}>
-                        {rIdx === 0 ? 'JOB ORDER / COS' : ''}
+                      <td style={{ border: '1px solid #000', padding: '3px 6px', color: otherItem ? '#000' : '#64748B' }}>
+                        {otherItem ? otherItem.appointment : ''}
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', color: '#64748B' }}>
-                        {rIdx === 0 ? 'MOOE' : ''}
+                      <td style={{ border: '1px solid #000', padding: '3px 6px', fontWeight: otherItem ? '700' : 'normal', color: otherItem ? '#000' : '#64748B' }}>
+                        {otherItem ? otherItem.fundSource : ''}
                       </td>
                     </tr>
                   );
@@ -364,7 +403,8 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                   <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{totalTeachingCount}</td>
                   <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>TOTAL</td>
                   <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{totalNonTeachingCount}</td>
-                  <td colSpan="3" style={{ border: '1px solid #000', padding: '4px 6px' }}></td>
+                  <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>TOTAL (OTHER)</td>
+                  <td colSpan="2" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{otherFundingRows.length}</td>
                 </tr>
               </tbody>
             </table>
@@ -383,7 +423,6 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
               <th style={{ border: '1px solid #000', padding: '4px 6px', minWidth: '90px' }}>Appointment</th>
               <th style={{ border: '1px solid #000', padding: '4px 6px', minWidth: '85px' }}>Degree</th>
               <th style={{ border: '1px solid #000', padding: '4px 6px', minWidth: '75px' }}>Major</th>
-              <th style={{ border: '1px solid #000', padding: '4px', whiteSpace: 'nowrap', width: '35px' }}>Minor</th>
               <th style={{ border: '1px solid #000', padding: '4px 6px', minWidth: '130px' }}>Subject / Assignment</th>
               <th style={{ border: '1px solid #000', padding: '4px 6px', whiteSpace: 'nowrap', width: '45px' }}>Grade</th>
               <th style={{ border: '1px solid #000', padding: '4px 6px', minWidth: '70px' }}>Section</th>
@@ -404,8 +443,9 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
               const lastName   = (p.lastName || p.last_name || '').toUpperCase();
               const fullName   = [lastName, firstName, middleName].filter(Boolean).join(', ') || 'TEACHER';
               const idVal      = p.tin || p.philsysNo || p.philsys_no || p.id || 'N/A';
-              const sex        = (p.sexAtBirth || p.sex || p.sex_at_birth || 'FEMALE').toUpperCase();
-              const funding    = (p.fundingSource || p.funding_source || 'NATIONAL').toUpperCase();
+              const rawSex     = (p.sexAtBirth || p.sex || p.sex_at_birth || 'FEMALE').toUpperCase();
+              const sex        = rawSex.startsWith('M') ? 'M' : 'F';
+              const funding    = (p.fundSource || p.fund_source || p.fundingSource || p.funding_source || 'NATIONAL').toUpperCase();
               const pos        = (p.position || p.position_title || 'TEACHER I').toUpperCase();
               const appt       = (p.natureOfAppointment || p.nature_of_appointment || 'REGULAR PERMANENT').toUpperCase();
               const degree     = (p.collegeDegree || p.college_degree || 'BACHELOR DEGREE').toUpperCase();
@@ -460,6 +500,8 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                     let gradeVal = String(rawGrade).trim();
                     if (gradeVal.toUpperCase() === 'NG' || gradeVal.toUpperCase().includes('NON')) {
                       gradeVal = 'NG';
+                    } else if (gradeVal.toUpperCase().includes('KINDER') || gradeVal.toUpperCase() === 'K') {
+                      gradeVal = 'K';
                     } else {
                       const m = gradeVal.match(/\d+/);
                       if (m) gradeVal = m[0];
@@ -478,7 +520,6 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                             <td rowSpan={totalRows} style={{ border: '1px solid #000', padding: '3px 6px', verticalAlign: 'middle' }}>{appt}</td>
                             <td rowSpan={totalRows} style={{ border: '1px solid #000', padding: '3px 6px', verticalAlign: 'middle' }}>{degree}</td>
                             <td rowSpan={totalRows} style={{ border: '1px solid #000', padding: '3px 6px', verticalAlign: 'middle' }}>{major}</td>
-                            <td rowSpan={totalRows} style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{minor}</td>
                           </>
                         )}
                         <td style={{ border: '1px solid #000', padding: '2px 5px', fontWeight: '700' }}>{subjectName}</td>
@@ -511,10 +552,38 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
           <div>
             <span>Generated via <strong>InsightED eSF7 Platform</strong></span><br />
             <span style={{ color: '#64748B' }}>Date Generated: {new Date().toLocaleDateString()}</span>
+            {isLocked && (
+              <div style={{ marginTop: '6px', display: 'inline-block', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#B91C1C', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: '800' }}>
+                ⚠️ DRAFT REPORT — {errorsCount || 'PENDING'} VALIDATION ISSUES REMAINING
+              </div>
+            )}
           </div>
-          <div style={{ textAlign: 'center', minWidth: '220px', borderTop: '1px solid #0F172A', paddingTop: '6px' }}>
-            <strong style={{ display: 'block', fontSize: '12px' }}>{schoolInfo?.certifiedBy || 'SCHOOL HEAD / PRINCIPAL'}</strong>
-            <span style={{ fontSize: '10px', color: '#475569' }}>School Head Signature & Official Designation</span>
+          <div style={{ textAlign: 'center', minWidth: '260px', borderTop: '1.5px solid #0F172A', paddingTop: '6px', position: 'relative' }}>
+            {finalSig ? (
+              <div style={{ marginBottom: '6px' }}>
+                <img 
+                  src={finalSig} 
+                  alt="School Head E-Signature" 
+                  style={{ maxHeight: '48px', maxWidth: '180px', objectFit: 'contain', display: 'block', margin: '0 auto' }} 
+                />
+                <span style={{ fontSize: '9px', fontWeight: '800', color: '#16A34A', display: 'block', letterSpacing: '0.04em' }}>
+                  ✓ CERTIFIED & DIGITALLY SIGNED
+                </span>
+              </div>
+            ) : isLocked ? (
+              <div style={{ marginBottom: '6px', fontSize: '10px', color: '#D97706', fontWeight: '800', fontStyle: 'italic' }}>
+                [ PENDING VALIDATION & SIGNATURE ]
+              </div>
+            ) : null}
+            <strong style={{ display: 'block', fontSize: '12px', color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+              {schoolHeadFullName}
+            </strong>
+            <span style={{ fontSize: '10px', color: '#475569', fontWeight: '600', display: 'block' }}>
+              {schoolHeadPosition}
+            </span>
+            <span style={{ fontSize: '9px', color: '#64748B', display: 'block', marginTop: '2px' }}>
+              School Head Signature & Official Designation
+            </span>
           </div>
         </div>
       </div>

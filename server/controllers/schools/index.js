@@ -23,19 +23,48 @@ const db = require('../../db');
 // GET school info directly from unit1_school_identity
 router.get('/', async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || '199999';
+    const rawSchoolId = getSchoolIdFromRequest(req) || '199999';
+    const cleanSchoolId = String(rawSchoolId).replace('SCH-', '').trim();
 
-    // 1. First check local ESF7 database for local school definitions (e.g. test school 199999)
+    // 1. Check local ESF7 database for saved school profile
+    const localProf = await db.query(
+      'SELECT * FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1',
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
+
+    if (localProf.rows.length > 0) {
+      const pRow = localProf.rows[0];
+      return res.json({
+        schoolId: pRow.school_id || cleanSchoolId,
+        schoolName: pRow.school_name || `School ${cleanSchoolId}`,
+        region: pRow.region || '',
+        division: pRow.division || '',
+        district: pRow.district || '',
+        schoolYear: pRow.school_year || 'SY 26-27',
+        numberOfShifts: String(pRow.number_of_shifts || 1),
+        curricularOffering: Array.isArray(pRow.curricular_offering) && pRow.curricular_offering.length > 0
+          ? pRow.curricular_offering
+          : ['Elementary'],
+        certifiedBy: pRow.certified_by || null,
+        certifiedSignature: pRow.certified_signature || null,
+        certifiedAt: pRow.certified_at || null,
+        subjectsConfig: pRow.subjects_config || null,
+        specialPrograms: pRow.special_programs || [],
+        shsCurriculumModel: pRow.shs_curriculum_model || 'Standard K-12 SHS Curriculum'
+      });
+    }
+
+    // 2. Check local schools table for local test definitions (e.g. test school 199999)
     const localRes = await db.query(
-      'SELECT * FROM schools WHERE school_id = $1 LIMIT 1',
-      [schoolId]
-    );
+      'SELECT * FROM schools WHERE school_id = $1 OR school_id = $2 LIMIT 1',
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
 
     if (localRes.rows.length > 0) {
       const localRow = localRes.rows[0];
       let offerings = [];
 
-      if (String(schoolId) === '199999') {
+      if (String(cleanSchoolId) === '199999') {
         offerings = ['Elementary', 'JHS', 'SHS'];
       } else if (Array.isArray(localRow.curricular_offering)) {
         const rawList = localRow.curricular_offering.map(o => String(o).toLowerCase());
@@ -48,15 +77,15 @@ router.get('/', async (req, res) => {
       }
 
       if (offerings.length === 0) {
-        offerings = ['Elementary', 'JHS', 'SHS'];
+        offerings = ['Elementary'];
       }
 
       return res.json({
-        schoolId: localRow.school_id || '199999',
-        schoolName: localRow.school_name || 'TEST K-12 INTEGRATED SCHOOL',
-        region: localRow.region || 'REGION VIII',
-        division: localRow.division || 'SAMAR (WESTERN SAMAR)',
-        district: localRow.district || 'BASEY I',
+        schoolId: localRow.school_id || cleanSchoolId,
+        schoolName: localRow.school_name || `School ${cleanSchoolId}`,
+        region: localRow.region || '',
+        division: localRow.division || '',
+        district: localRow.district || '',
         schoolYear: localRow.school_year || 'SY 26-27',
         numberOfShifts: String(localRow.number_of_shifts || 1),
         curricularOffering: Array.from(new Set(offerings)),
@@ -67,64 +96,49 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // 2. Query main unit1_school_identity
-    let result = await insightEdPool.query('SELECT * FROM unit1_school_identity WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1', [schoolId]);
+    // 3. Query main unit1_school_identity
+    let result = await insightEdPool.query(
+      'SELECT * FROM unit1_school_identity WHERE CAST(school_id AS TEXT) = $1 OR CAST(school_id AS TEXT) = $2 ORDER BY updated_at DESC LIMIT 1',
+      [cleanSchoolId, rawSchoolId]
+    ).catch(() => ({ rows: [] }));
 
     if (result.rows.length === 0) {
-      // Check esf7_database table for historical school submission identity
+      // Check esf7_database / esf7_database_dummy table for historical school submission identity
+      const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
       const esfMatch = await insightEdPool.query(
-        'SELECT DISTINCT school_name, division, region, muncipality as district FROM esf7_database WHERE school_id = $1 OR schoool_id = $1 LIMIT 1',
-        [schoolId]
+        `SELECT DISTINCT school_name, division, region, muncipality as district FROM ${tableName} WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1 LIMIT 1`,
+        [cleanSchoolId]
       ).catch(() => ({ rows: [] }));
 
       if (esfMatch.rows.length > 0) {
         const esf = esfMatch.rows[0];
-        const esfSchoolName = esf.school_name || `School ${schoolId}`;
-        const esfRegion = esf.region ? (String(esf.region).toUpperCase().startsWith('REGION') ? esf.region : `REGION ${esf.region}`) : 'REGION V';
-        const esfDivision = esf.division || 'DIVISION';
-        const esfDistrict = esf.district || 'DISTRICT';
+        const esfSchoolName = esf.school_name || `School ${cleanSchoolId}`;
+        const esfRegion = esf.region ? (String(esf.region).toUpperCase().startsWith('REGION') ? esf.region : `REGION ${esf.region}`) : '';
+        const esfDivision = esf.division || '';
+        const esfDistrict = esf.district || '';
 
         return res.json({
-          schoolId: schoolId,
+          schoolId: cleanSchoolId,
           schoolName: esfSchoolName,
           region: esfRegion,
           division: esfDivision,
           district: esfDistrict,
           schoolYear: "SY 26-27",
           numberOfShifts: "1",
-          curricularOffering: ['Elementary', 'JHS', 'SHS'],
+          curricularOffering: ['Elementary'],
           certifiedBy: null,
           certifiedSignature: null,
           certifiedAt: null,
           subjectsConfig: null
         });
       }
-
-      result = await insightEdPool.query('SELECT * FROM unit1_school_identity ORDER BY updated_at DESC LIMIT 1');
     }
 
-    if (result.rows.length === 0) {
-      return res.json({
-        schoolId: schoolId || '199999',
-        schoolName: `School ${schoolId}`,
-        region: "REGION V",
-        division: "DIVISION",
-        district: "DISTRICT",
-        schoolYear: "SY 26-27",
-        numberOfShifts: "1",
-        curricularOffering: ['Elementary', 'JHS', 'SHS'],
-        subjectsConfig: null
-      });
-    }
+    if (result.rows.length > 0) {
+      const row = result.rows[0];
+      const dbOffering = String(row.curricular_offering || '').toLowerCase();
+      let offerings = [];
 
-    const row = result.rows[0];
-
-    // Map curricular offering string to ESF7 UI check arrays
-    let offerings = [];
-    if (String(schoolId) === '199999') {
-      offerings = ['Elementary', 'JHS', 'SHS'];
-    } else {
-      const dbOffering = (row.curricular_offering || '').toLowerCase();
       if (dbOffering.includes('elementary') || dbOffering.includes('primary') || dbOffering.includes('purely') || dbOffering.includes('kinder')) {
         offerings.push('Elementary');
       }
@@ -135,22 +149,34 @@ router.get('/', async (req, res) => {
         offerings.push('SHS');
       }
       if (offerings.length === 0) {
-        offerings = ['Elementary', 'JHS', 'SHS'];
+        offerings = ['Elementary'];
       }
+
+      return res.json({
+        schoolId: String(row.school_id || cleanSchoolId),
+        schoolName: String(cleanSchoolId) === '199999' ? 'TEST K-12 INTEGRATED SCHOOL' : (row.school_name || `School ${cleanSchoolId}`),
+        region: row.region || '',
+        division: row.division || '',
+        district: row.district || '',
+        schoolYear: 'SY 26-27',
+        numberOfShifts: "1",
+        curricularOffering: Array.from(new Set(offerings)),
+        certifiedBy: null,
+        certifiedSignature: null,
+        certifiedAt: null,
+        subjectsConfig: null
+      });
     }
 
-    res.json({
-      schoolId: row.school_id || schoolId,
-      schoolName: String(schoolId) === '199999' ? 'TEST K-12 INTEGRATED SCHOOL' : (row.school_name || ''),
-      region: row.region || '',
-      division: row.division || '',
-      district: row.district || '',
-      schoolYear: 'SY 26-27',
+    return res.json({
+      schoolId: cleanSchoolId || '199999',
+      schoolName: `School ${cleanSchoolId}`,
+      region: "",
+      division: "",
+      district: "",
+      schoolYear: "SY 26-27",
       numberOfShifts: "1",
-      curricularOffering: Array.from(new Set(offerings)),
-      certifiedBy: null,
-      certifiedSignature: null,
-      certifiedAt: null,
+      curricularOffering: ['Elementary'],
       subjectsConfig: null
     });
 
