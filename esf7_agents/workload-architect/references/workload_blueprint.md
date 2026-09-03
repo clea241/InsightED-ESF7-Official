@@ -97,6 +97,13 @@ Each row object inside `workloadRows` contains:
 
 ## 4. Versioned Flow History Log
 
+* **Version 1.2 (2026-09-03)**: Added Drag-and-Drop Gantt Weekly Schedule View (`WorkloadGanttScheduleView`).
+  * Replaced default row-based schedule time-entry UI with a drag-and-drop Gantt weekly grid view featuring days as columns and a 15-minute resolution time scale.
+  * Added drag-to-move and top/bottom edge drag-to-resize subject blocks with 15-minute grid snapping.
+  * Reimplemented MATATAG Order No. 12 s. 2024 per-grade duration warnings, HGP 60m weekly rules, duplicate subject rules, and schedule overlap conflicts as live visual indicators (red/amber block borders, conflict badges, policy callouts).
+  * Maintained non-draggable/non-resizable locked treatment for `ADVISORY` blocks (07:30 to 08:30 M-F fixed).
+  * Created Block Inspector panel for focused editing of Section, Subject, Remediation Focus, SHS Category, Days, and Start/End times.
+  * Preserved `Sort Time`, `Cards`, `List`, `Clear This Teacher's Workload`, and `+ Add subject schedule` toolbar actions.
 * **Version 1.1 (2026-08-26)**: Added Work Immersion Monthly Calendar & Overload Integration.
   * Added `workImmersionSchedulesMap`, `fetchWorkImmersionSchedules`, and `saveWorkImmersionSchedules` context integration.
   * Added Work Immersion interactive month calendar grid with date editor drawer (`editingStartTime`, `editingEndTime`).

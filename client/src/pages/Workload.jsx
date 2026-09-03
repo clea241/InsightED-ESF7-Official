@@ -3418,6 +3418,823 @@ const REMEDIATION_FOCUS_BY_CATEGORY = {
   ]
 };
 
+const formatMinutesToTime = (mins) => {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, mins));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+const formatMinutesTo12Hour = (mins) => {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, mins));
+  const h24 = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  const ampm = h24 >= 12 ? 'PM' : 'AM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
+function WorkloadGanttScheduleView({
+  currentPerson,
+  classSections,
+  updateWorkloadRowFields,
+  removeWorkloadRow,
+  addWorkloadRow,
+  handleFieldChange,
+  getSubjectsForGrade,
+  getAssignedGradeLevels,
+  getSubjectAssignmentForSection,
+  getRowDurationError,
+  getMatatagRowWarning,
+  getDuplicateSectionSubjectError,
+  getHgpWeeklyError,
+  isAdvisoryOrHgpPair,
+  isSHSRow,
+  GRADE_LEVELS_BY_CATEGORY,
+  SUBJECT_OPTIONS,
+  REMEDIATION_FOCUS_BY_CATEGORY,
+  GRADE_LEVEL_SUBJECTS,
+  dbPerson,
+  activePersonnelId,
+  selectedBlockIdx,
+  setSelectedBlockIdx,
+  handleSectionChangeForRow
+}) {
+  const [showWeekend, setShowWeekend] = useState(() => {
+    const rows = currentPerson?.workloadRows || [];
+    return rows.some(r => {
+      const days = Array.isArray(r.days) ? r.days : (r.daySchedule ? String(r.daySchedule).split(',').map(s=>s.trim()) : []);
+      return days.includes('SAT') || days.includes('SUN');
+    });
+  });
+
+  const [dragState, setDragState] = useState(null); // { type, rowIdx, day, initialMouseY, initialStartMins, initialEndMins, initialDays, createDay, createStartMins, createCurrentMins }
+
+  const daysList = showWeekend
+    ? [
+        { code: 'M', label: 'Mon', full: 'Monday' },
+        { code: 'T', label: 'Tue', full: 'Tuesday' },
+        { code: 'W', label: 'Wed', full: 'Wednesday' },
+        { code: 'TH', label: 'Thu', full: 'Thursday' },
+        { code: 'F', label: 'Fri', full: 'Friday' },
+        { code: 'SAT', label: 'Sat', full: 'Saturday' },
+        { code: 'SUN', label: 'Sun', full: 'Sunday' }
+      ]
+    : [
+        { code: 'M', label: 'Mon', full: 'Monday' },
+        { code: 'T', label: 'Tue', full: 'Tuesday' },
+        { code: 'W', label: 'Wed', full: 'Wednesday' },
+        { code: 'TH', label: 'Thu', full: 'Thursday' },
+        { code: 'F', label: 'Fri', full: 'Friday' }
+      ];
+
+  const parseMins = (timeStr) => {
+    if (!timeStr || typeof timeStr !== 'string') return 99999;
+    const parts = timeStr.trim().split(':').map(Number);
+    if (parts.length < 2 || isNaN(parts[0])) return 99999;
+    return parts[0] * 60 + (parts[1] || 0);
+  };
+
+  // Dynamically calculate grid time bounds from rows (default 07:00 to 18:00)
+  const gridBounds = useMemo(() => {
+    let minMins = 7 * 60; // 07:00
+    let maxMins = 18 * 60; // 18:00
+    const rows = currentPerson?.workloadRows || [];
+    rows.forEach(r => {
+      if (r.startTime) {
+        const sM = parseMins(r.startTime);
+        if (sM < 99999) minMins = Math.min(minMins, Math.floor(sM / 60) * 60);
+      }
+      if (r.endTime) {
+        const eM = parseMins(r.endTime);
+        if (eM < 99999) maxMins = Math.max(maxMins, Math.ceil(eM / 60) * 60);
+      }
+    });
+    return { startHour: Math.max(5, Math.floor(minMins / 60)), endHour: Math.min(22, Math.ceil(maxMins / 60)) };
+  }, [currentPerson?.workloadRows]);
+
+  const { startHour, endHour } = gridBounds;
+  const gridStartMins = startHour * 60;
+  const totalGridMins = (endHour - startHour) * 60;
+  const pxPerMin = 1.1; // 1 min = 1.1px (60 mins = 66px)
+  const gridHeight = totalGridMins * pxPerMin;
+
+  const hourLabels = [];
+  for (let h = startHour; h <= endHour; h++) {
+    hourLabels.push(h);
+  }
+
+  // Calculate daily workload minutes per day
+  const dailyTotalMins = useMemo(() => {
+    const map = {};
+    daysList.forEach(d => { map[d.code] = 0; });
+    const rows = currentPerson?.workloadRows || [];
+    rows.forEach(r => {
+      if (r.startTime && r.endTime) {
+        const diffM = parseMins(r.endTime) - parseMins(r.startTime);
+        if (diffM > 0) {
+          const rowDays = (Array.isArray(r.days) && r.days.length > 0)
+            ? r.days
+            : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+          rowDays.forEach(dCode => {
+            if (map[dCode] !== undefined) map[dCode] += diffM;
+          });
+        }
+      }
+    });
+    return map;
+  }, [currentPerson?.workloadRows, daysList]);
+
+  const columnRefs = useRef({});
+
+  // Global mouse handlers for Drag-Move, Drag-Resize, Drag-Create
+  useEffect(() => {
+    if (!dragState) return;
+
+    const SNAP_MINS = 5; // 5-minute drag & resize snap
+
+    const handleMouseMove = (e) => {
+      const deltaY = e.clientY - dragState.initialMouseY;
+      const deltaMins = Math.round((deltaY / pxPerMin) / SNAP_MINS) * SNAP_MINS;
+
+      if (dragState.type === 'create') {
+        const newCurrentMins = Math.max(dragState.createStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, dragState.createStartMins + deltaMins));
+        setDragState(prev => prev ? { ...prev, createCurrentMins: newCurrentMins } : null);
+      } else if (dragState.type === 'move') {
+        const duration = dragState.initialEndMins - dragState.initialStartMins;
+        let newStartMins = dragState.initialStartMins + deltaMins;
+        newStartMins = Math.max(gridStartMins, Math.min(gridStartMins + totalGridMins - duration, newStartMins));
+        const newEndMins = newStartMins + duration;
+
+        // Check if mouse X crossed into another day column
+        let targetDay = dragState.day;
+        if (columnRefs.current) {
+          daysList.forEach(d => {
+            const colEl = columnRefs.current[d.code];
+            if (colEl) {
+              const rect = colEl.getBoundingClientRect();
+              if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                targetDay = d.code;
+              }
+            }
+          });
+        }
+
+        let updatedDays = dragState.initialDays;
+        if (targetDay !== dragState.day) {
+          if (dragState.initialDays.length <= 1) {
+            updatedDays = [targetDay];
+          } else {
+            updatedDays = dragState.initialDays.map(d => d === dragState.day ? targetDay : d);
+          }
+        }
+
+        updateWorkloadRowFields(dragState.rowIdx, {
+          startTime: formatMinutesToTime(newStartMins),
+          endTime: formatMinutesToTime(newEndMins),
+          days: Array.from(new Set(updatedDays))
+        });
+      } else if (dragState.type === 'resize-top') {
+        let newStartMins = dragState.initialStartMins + deltaMins;
+        newStartMins = Math.max(gridStartMins, Math.min(dragState.initialEndMins - SNAP_MINS, newStartMins));
+
+        updateWorkloadRowFields(dragState.rowIdx, {
+          startTime: formatMinutesToTime(newStartMins)
+        });
+      } else if (dragState.type === 'resize-bottom') {
+        let newEndMins = dragState.initialEndMins + deltaMins;
+        newEndMins = Math.max(dragState.initialStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, newEndMins));
+
+        updateWorkloadRowFields(dragState.rowIdx, {
+          endTime: formatMinutesToTime(newEndMins)
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (dragState.type === 'create') {
+        const sMins = Math.min(dragState.createStartMins, dragState.createCurrentMins);
+        let eMins = Math.max(dragState.createStartMins, dragState.createCurrentMins);
+        if (eMins - sMins < SNAP_MINS) eMins = sMins + 60;
+
+        const assignedGrades = getAssignedGradeLevels(currentPerson);
+        let initialGrade = 'Grade 1';
+        let initialCategory = 'Elementary';
+        let initialSectionId = '';
+        let initialSectionName = '';
+
+        if (Array.isArray(classSections) && classSections.length > 0) {
+          const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
+          const advisorySec = classSections.find(s => {
+            const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
+            return advId && advId === activePersonIdToMatch;
+          });
+
+          const matchedSec = advisorySec || classSections.find(s => assignedGrades.includes(s.gradeLevel)) || classSections[0];
+          if (matchedSec) {
+            initialSectionId = String(matchedSec.id);
+            initialSectionName = matchedSec.sectionName || matchedSec.section_name || '';
+            initialGrade = matchedSec.gradeLevel || matchedSec.grade_level || 'Grade 1';
+
+            const gUpper = String(initialGrade).toUpperCase();
+            if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS')) {
+              initialCategory = 'SHS-CORE SUBJECTS';
+            } else if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10')) {
+              initialCategory = 'Junior High School';
+            } else {
+              initialCategory = 'Elementary';
+            }
+          }
+        }
+
+        const availableSubjects = getSubjectsForGrade(initialGrade, initialCategory);
+        let chosenSubject = '';
+        for (const sub of availableSubjects) {
+          const normSub = String(sub).toUpperCase().trim();
+          if (normSub === 'ADVISORY' || normSub === 'HGP' || normSub.includes('HOMEROOM GUIDANCE')) continue;
+          const assignment = getSubjectAssignmentForSection(initialSectionId, initialSectionName, sub, null, null);
+          if (!assignment || !assignment.assigned) {
+            chosenSubject = sub;
+            break;
+          }
+        }
+        if (!chosenSubject) {
+          chosenSubject = availableSubjects.find(s => {
+            const u = String(s).toUpperCase().trim();
+            return u !== 'ADVISORY' && u !== 'HGP' && !u.includes('HOMEROOM GUIDANCE');
+          }) || availableSubjects[0] || '';
+        }
+
+        const rows = [...(currentPerson?.workloadRows || [])];
+        const newId = `new-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const newRow = {
+          id: newId,
+          category: initialCategory,
+          subject: chosenSubject,
+          gradeLevel: initialGrade,
+          sectionId: initialSectionId,
+          sectionName: initialSectionName,
+          startTime: formatMinutesToTime(sMins),
+          endTime: formatMinutesToTime(eMins),
+          days: [dragState.createDay]
+        };
+        rows.unshift(newRow);
+        if (typeof handleFieldChange === 'function') {
+          handleFieldChange('workloadRows', rows);
+        }
+        setSelectedBlockIdx(0);
+      }
+      setDragState(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, gridStartMins, totalGridMins, daysList, currentPerson?.workloadRows, pxPerMin]);
+
+  const handleStartDrag = (e, rowIdx, row, dayCode, type) => {
+    e.stopPropagation();
+    const subUpper = String(row.subject || '').toUpperCase().trim();
+    if (subUpper === 'ADVISORY') return; // ADVISORY is locked
+
+    const initialStartMins = parseMins(row.startTime || '07:30');
+    const initialEndMins = parseMins(row.endTime || '08:30');
+    const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+      ? row.days
+      : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+
+    setDragState({
+      type,
+      rowIdx,
+      day: dayCode,
+      initialMouseY: e.clientY,
+      initialStartMins,
+      initialEndMins,
+      initialDays: rowDays
+    });
+    setSelectedBlockIdx(rowIdx);
+  };
+
+  const handleGridMouseDown = (e, dayCode) => {
+    if (e.target.closest('.gantt-block-card')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickY = e.clientY - rect.top;
+    const clickedMins = gridStartMins + Math.floor((clickY / pxPerMin) / 5) * 5;
+    const startMins = Math.max(gridStartMins, Math.min(gridStartMins + totalGridMins - 30, clickedMins));
+
+    setDragState({
+      type: 'create',
+      createDay: dayCode,
+      initialMouseY: e.clientY,
+      createStartMins: startMins,
+      createCurrentMins: startMins + 60
+    });
+  };
+
+  const rawRows = currentPerson?.workloadRows || [];
+  const selectedRow = (selectedBlockIdx !== null && rawRows[selectedBlockIdx]) ? rawRows[selectedBlockIdx] : null;
+
+  return (
+    <div className="gantt-schedule-container" style={{ background: '#F8FAFC', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+      {/* Header Info Toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px', paddingBottom: '14px', borderBottom: '1.5px solid var(--line)' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📊</span> Drag-and-Drop Weekly Schedule Editor
+          </h3>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+            Drag blocks to move time/day slots. Drag top/bottom edges to resize duration (5-min snapping). Click empty slots to add new blocks.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setShowWeekend(!showWeekend)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: '1.5px solid #CBD5E1',
+              background: showWeekend ? '#EFF6FF' : 'white',
+              color: showWeekend ? '#1D4ED8' : '#475569',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>📅</span> {showWeekend ? 'Mon - Fri Only' : 'Show Weekend (Sat/Sun)'}
+          </button>
+        </div>
+      </div>
+
+      {/* Main Split View: Gantt Grid (Left 70-75%) + Block Inspector (Right 25-30%) */}
+      <div style={{ display: 'grid', gridTemplateColumns: selectedRow ? '1fr 340px' : '1fr 280px', gap: '20px', alignItems: 'start' }}>
+        {/* Gantt Timetable Grid */}
+        <div style={{ background: 'white', borderRadius: '14px', border: '1.5px solid var(--line)', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+          {/* Day Headers Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: `75px repeat(${daysList.length}, 1fr)`, borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
+            <div style={{ padding: '12px 8px', fontSize: '11px', fontWeight: '800', color: '#64748b', textAlign: 'center', borderRight: '1.5px solid var(--line)' }}>
+              TIME
+            </div>
+            {daysList.map(d => {
+              const dayMins = dailyTotalMins[d.code] || 0;
+              const dayHours = (dayMins / 60).toFixed(1);
+              return (
+                <div key={d.code} style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid var(--line)', background: '#F8FAFC' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>{d.full} ({d.code})</div>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: dayMins > 360 ? '#b91c1c' : '#0284c7', background: dayMins > 360 ? '#fef2f2' : '#e0f2fe', padding: '2px 6px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}>
+                    ⏱️ {dayHours} hrs ({dayMins}m)
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Grid Scrollable Timeline Body */}
+          <div style={{ position: 'relative', height: `${gridHeight}px`, display: 'grid', gridTemplateColumns: `75px repeat(${daysList.length}, 1fr)` }}>
+            {/* Left Time Axis Labels Column */}
+            <div style={{ position: 'relative', borderRight: '1.5px solid var(--line)', background: '#FAFAFA', userSelect: 'none' }}>
+              {hourLabels.map((h, i) => {
+                const minsFromStart = (h - startHour) * 60;
+                const topPx = minsFromStart * pxPerMin;
+                return (
+                  <div key={h} style={{ position: 'absolute', top: `${topPx}px`, left: 0, right: 0, height: '60px', padding: '4px 6px', fontSize: '10px', fontWeight: '700', color: '#64748b', textAlign: 'right', borderBottom: '1px dashed #E2E8F0', boxSizing: 'border-box' }}>
+                    {formatMinutesTo12Hour(h * 60)}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Day Columns */}
+            {daysList.map(d => (
+              <div
+                key={d.code}
+                ref={el => columnRefs.current[d.code] = el}
+                onMouseDown={(e) => handleGridMouseDown(e, d.code)}
+                style={{
+                  position: 'relative',
+                  height: `${gridHeight}px`,
+                  borderRight: '1px solid var(--line)',
+                  background: 'white',
+                  cursor: 'crosshair',
+                  userSelect: 'none'
+                }}
+              >
+                {/* Horizontal Background Hour/Half-Hour Grid Lines */}
+                {hourLabels.map(h => {
+                  const minsFromStart = (h - startHour) * 60;
+                  const topPx = minsFromStart * pxPerMin;
+                  return (
+                    <React.Fragment key={h}>
+                      {/* Hour Line */}
+                      <div style={{ position: 'absolute', top: `${topPx}px`, left: 0, right: 0, borderTop: '1.5px solid #E2E8F0', pointerEvents: 'none' }} />
+                      {/* 30-min Line */}
+                      <div style={{ position: 'absolute', top: `${topPx + (30 * pxPerMin)}px`, left: 0, right: 0, borderTop: '1px dashed #F1F5F9', pointerEvents: 'none' }} />
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* Drag Create Active Preview Box */}
+                {dragState && dragState.type === 'create' && dragState.createDay === d.code && (() => {
+                  const sM = Math.min(dragState.createStartMins, dragState.createCurrentMins);
+                  const eM = Math.max(dragState.createStartMins, dragState.createCurrentMins);
+                  const top = (sM - gridStartMins) * pxPerMin;
+                  const height = Math.max(20, (eM - sM) * pxPerMin);
+                  return (
+                    <div style={{
+                      position: 'absolute',
+                      top: `${top}px`,
+                      left: '4px',
+                      right: '4px',
+                      height: `${height}px`,
+                      background: 'rgba(2, 132, 199, 0.15)',
+                      border: '2px dashed #0284C7',
+                      borderRadius: '8px',
+                      padding: '4px 8px',
+                      zIndex: 10,
+                      pointerEvents: 'none',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      color: '#0369A1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      ➕ New Slot ({formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)})
+                    </div>
+                  );
+                })()}
+
+                {/* Render Subject Blocks for this Day */}
+                {rawRows.map((row, rowIdx) => {
+                  const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+                    ? row.days
+                    : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+                  if (!rowDays.includes(d.code)) return null;
+
+                  const sMins = parseMins(row.startTime || '07:30');
+                  const eMins = parseMins(row.endTime || '08:30');
+                  if (sMins >= 99999 || eMins >= 99999) return null;
+
+                  const top = (sMins - gridStartMins) * pxPerMin;
+                  const height = Math.max(32, (eMins - sMins) * pxPerMin);
+                  const diffMins = eMins - sMins;
+
+                  const subUpper = String(row.subject || '').toUpperCase().trim();
+                  const isAdv = subUpper === 'ADVISORY';
+                  const isHgp = subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
+                  const isLocked = isAdv;
+
+                  // Validation errors
+                  const hasConflict = rawRows.some((otherRow, otherIdx) => {
+                    if (rowIdx === otherIdx) return false;
+                    if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
+                    const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0) ? otherRow.days : ['M','T','W','TH','F'];
+                    if (!otherDays.includes(d.code)) return false;
+                    const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
+                    const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
+                    if (ns < re && ne > rs) {
+                      if (isAdvisoryOrHgpPair(row, otherRow)) return false;
+                      return true;
+                    }
+                    return false;
+                  });
+
+                  const durationErr = getRowDurationError(row);
+                  const matatagWarn = getMatatagRowWarning(row);
+                  const duplicateSubErr = getDuplicateSectionSubjectError(row, rowIdx);
+                  const hgpWeeklyErr = getHgpWeeklyError(row);
+                  const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
+                  const isSelected = selectedBlockIdx === rowIdx;
+
+                  let blockBg = 'linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%)';
+                  let blockBorder = isSelected ? '2px solid #0284C7' : '1.5px solid #CBD5E1';
+                  let textColor = '#0F172A';
+
+                  if (isAdv) {
+                    blockBg = 'linear-gradient(135deg, #0284c7 0%, #1e40af 100%)';
+                    blockBorder = '1.5px solid #1d4ed8';
+                    textColor = '#FFFFFF';
+                  } else if (isHgp) {
+                    blockBg = 'linear-gradient(135deg, #06b6d4 0%, #0e7490 100%)';
+                    blockBorder = '1.5px solid #0891b2';
+                    textColor = '#FFFFFF';
+                  } else if (cardHasError) {
+                    blockBg = 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)';
+                    blockBorder = '2px solid #EF4444';
+                    textColor = '#991B1B';
+                  } else if (matatagWarn) {
+                    blockBg = 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)';
+                    blockBorder = '2px solid #F59E0B';
+                    textColor = '#92400E';
+                  }
+
+                  const blockKey = `${row.id || rowIdx}-${d.code}`;
+
+                  return (
+                    <div
+                      key={blockKey}
+                      className="gantt-block-card"
+                      onClick={(e) => { e.stopPropagation(); setSelectedBlockIdx(rowIdx); }}
+                      onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'move')}
+                      style={{
+                        position: 'absolute',
+                        top: `${top}px`,
+                        left: '4px',
+                        right: '4px',
+                        height: `${height}px`,
+                        background: blockBg,
+                        border: blockBorder,
+                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        boxSizing: 'border-box',
+                        cursor: isLocked ? 'not-allowed' : 'move',
+                        zIndex: isSelected ? 5 : 2,
+                        boxShadow: isSelected ? '0 0 0 3px rgba(2, 132, 199, 0.3), 0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.04)',
+                        color: textColor,
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        transition: dragState ? 'none' : 'box-shadow 0.15s ease'
+                      }}
+                      title={`${row.subject || 'Subject'} (${row.sectionName || 'Section'}) • ${row.startTime} - ${row.endTime}`}
+                    >
+                      {/* Top Resize Handle */}
+                      {!isLocked && (
+                        <div
+                          onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'resize-top')}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: '6px',
+                            cursor: 'ns-resize',
+                            background: 'rgba(0,0,0,0.05)',
+                            zIndex: 10
+                          }}
+                          title="Drag up/down to adjust start time"
+                        />
+                      )}
+
+                      {/* Block Title & Details */}
+                      <div style={{ pointerEvents: 'none' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {row.subject || 'Select Subject'} {isLocked && '🔒'}
+                          </span>
+                          <span style={{ fontSize: '9px', fontWeight: '700', opacity: 0.85, background: 'rgba(0,0,0,0.08)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                            {diffMins}m
+                          </span>
+                        </div>
+
+                        {height >= 40 && (
+                          <div style={{ fontSize: '10px', fontWeight: '600', opacity: 0.9, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            [{row.sectionName || row.gradeLevel || 'Section'}]
+                          </div>
+                        )}
+
+                        {height >= 55 && (
+                          <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '1px' }}>
+                            {formatMinutesTo12Hour(sMins)} - {formatMinutesTo12Hour(eMins)}
+                          </div>
+                        )}
+
+                        {/* Inline Warning / Conflict Badges */}
+                        {cardHasError && height >= 45 && (
+                          <div style={{ marginTop: '2px', display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
+                            {hasConflict && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 Overlap</span>}
+                            {hgpWeeklyErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 HGP (60m)</span>}
+                            {duplicateSubErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 Duplicate</span>}
+                            {matatagWarn && <span style={{ fontSize: '8px', fontWeight: '800', background: matatagWarn.type === 'error' ? '#EF4444' : '#F59E0B', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>⚠️ MATATAG</span>}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Resize Handle */}
+                      {!isLocked && (
+                        <div
+                          onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'resize-bottom')}
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: '6px',
+                            cursor: 'ns-resize',
+                            background: 'rgba(0,0,0,0.05)',
+                            zIndex: 10
+                          }}
+                          title="Drag up/down to adjust end time"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right Side: Block Inspector & Editor Drawer */}
+        <div style={{ background: 'white', borderRadius: '14px', border: '1.5px solid var(--line)', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {selectedRow ? (() => {
+            const idx = selectedBlockIdx;
+            const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
+            const isLockedSub = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
+
+            const durationErr = getRowDurationError(selectedRow);
+            const matatagWarn = getMatatagRowWarning(selectedRow);
+            const duplicateSubErr = getDuplicateSectionSubjectError(selectedRow, idx);
+            const hgpWeeklyErr = getHgpWeeklyError(selectedRow);
+            const hasConflict = rawRows.some((otherRow, otherIdx) => {
+              if (idx === otherIdx) return false;
+              if (!selectedRow.startTime || !selectedRow.endTime || !otherRow.startTime || !otherRow.endTime) return false;
+              const selDays = (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? selectedRow.days : ['M','T','W','TH','F'];
+              const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0) ? otherRow.days : ['M','T','W','TH','F'];
+              const daysOverlap = selDays.some(d => otherDays.includes(d));
+              if (!daysOverlap) return false;
+              const ns = parseMins(selectedRow.startTime), ne = parseMins(selectedRow.endTime);
+              const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
+              if (ns < re && ne > rs) {
+                if (isAdvisoryOrHgpPair(selectedRow, otherRow)) return false;
+                return true;
+              }
+              return false;
+            });
+
+            return (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--line)', paddingBottom: '10px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
+                      {selectedRow.subject || 'Edit Schedule Slot'} {isLockedSub && '🔒'}
+                    </h4>
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>Block Inspector & Settings</span>
+                  </div>
+                  {!isLockedSub && (
+                    <button
+                      type="button"
+                      onClick={() => { removeWorkloadRow(idx); setSelectedBlockIdx(null); }}
+                      style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FCA5A5', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                      title="Remove Block"
+                    >
+                      🗑️ Delete
+                    </button>
+                  )}
+                </div>
+
+                {/* Validation Warnings Callout */}
+                {(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || !!matatagWarn) && (
+                  <div style={{ background: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FEF2F2' : '#FFFBEB', color: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#991B1B' : '#92400E', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FCA5A5' : '#FCD34D'}`, fontSize: '11px', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {hasConflict && <div>🔴 Schedule Overlap Conflict: Overlaps with another subject or task on selected days.</div>}
+                    {durationErr && <div>🔴 {durationErr}</div>}
+                    {duplicateSubErr && <div>🔴 {duplicateSubErr}</div>}
+                    {hgpWeeklyErr && <div>🔴 {hgpWeeklyErr}</div>}
+                    {matatagWarn && <div>{matatagWarn.type === 'error' ? '🔴' : '⚠️'} {matatagWarn.message}</div>}
+                  </div>
+                )}
+
+                {/* Class Section Select */}
+                <div>
+                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Class Section</label>
+                  {(() => {
+                    const filteredSections = [...(classSections || [])];
+                    const sectionOptions = filteredSections.map(s => ({
+                      value: String(s.id),
+                      label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'})`
+                    }));
+                    return (
+                      <SearchableSelect
+                        disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
+                        value={selectedRow.sectionId}
+                        onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
+                        options={sectionOptions}
+                        placeholder="Select section…"
+                      />
+                    );
+                  })()}
+                </div>
+
+                {/* Subject Select */}
+                <div>
+                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Subject</label>
+                  {(() => {
+                    const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
+                    const currentSub = selectedRow.subject || selectedRow.subject_name || '';
+                    const subjectList = (() => {
+                      if (!currentSecId && !currentSub) return [];
+                      if (selectedRow.gradeLevel) {
+                        return getSubjectsForGrade(selectedRow.gradeLevel, selectedRow.category || 'Elementary');
+                      }
+                      return SUBJECT_OPTIONS;
+                    })();
+
+                    const subjectOptions = [
+                      ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY', disabled: false }] : []),
+                      ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP', disabled: false }] : []),
+                      ...subjectList.map(sub => {
+                        const isSelfCurrent = (sub === currentSub);
+                        const assignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, selectedRow.sectionName, sub, isSHSRow(selectedRow) ? (selectedRow.term || '1st') : null, idx) : null;
+                        if (assignment && assignment.assigned) {
+                          return { value: sub, label: `${sub} 🔒 (${assignment.teacherName})`, disabled: true };
+                        }
+                        return { value: sub, label: sub, disabled: false };
+                      })
+                    ];
+
+                    return (
+                      <SearchableSelect
+                        disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
+                        value={currentSub}
+                        onChange={(e) => updateWorkloadRowFields(idx, { subject: e.target.value })}
+                        options={subjectOptions}
+                        placeholder="Select subject…"
+                      />
+                    );
+                  })()}
+                </div>
+
+                {/* Usual Days Toggles */}
+                <div>
+                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Usual Days</label>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(dayCode => {
+                      const rowDays = (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? selectedRow.days : ['M','T','W','TH','F'];
+                      const isSel = rowDays.includes(dayCode);
+                      return (
+                        <button
+                          key={dayCode}
+                          type="button"
+                          disabled={selectedRow.subject === 'ADVISORY'}
+                          onClick={() => {
+                            if (selectedRow.subject === 'ADVISORY') return;
+                            const newDays = isSel ? rowDays.filter(d => d !== dayCode) : [...rowDays, dayCode];
+                            updateWorkloadRowFields(idx, { days: newDays });
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            borderRadius: '6px',
+                            border: 'none',
+                            background: isSel ? 'var(--navy)' : '#F1F5F9',
+                            color: isSel ? 'white' : '#64748b',
+                            cursor: selectedRow.subject === 'ADVISORY' ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {dayCode}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Time Range Pickers */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
+                    <input
+                      type="time"
+                      disabled={selectedRow.subject === 'ADVISORY'}
+                      value={selectedRow.startTime || '07:30'}
+                      onChange={(e) => updateWorkloadRowFields(idx, { startTime: e.target.value })}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>End Time</label>
+                    <input
+                      type="time"
+                      disabled={selectedRow.subject === 'ADVISORY'}
+                      value={selectedRow.endTime || '08:30'}
+                      onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                    />
+                  </div>
+                </div>
+              </>
+            );
+          })() : (
+            <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
+              <div style={{ fontSize: '28px', marginBottom: '8px' }}>👆</div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>Select a Schedule Block</div>
+              <div style={{ fontSize: '11px', marginTop: '4px' }}>Click any block on the Gantt chart or drag across empty time slots to create and edit.</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Workload() {
   const {
     personnel,
@@ -3856,7 +4673,8 @@ export default function Workload() {
   const [positionFilter, setPositionFilter] = useState('all');
   const [teacherSearch, setTeacherSearch] = useState('');
   const [sidebarPage, setSidebarPage] = useState(1);
-  const [layoutType, setLayoutType] = useState('list'); // 'list' | 'card'
+  const [layoutType, setLayoutType] = useState('gantt'); // 'gantt' | 'card' | 'list'
+  const [selectedBlockIdx, setSelectedBlockIdx] = useState(null);
   const [timeSortOrder, setTimeSortOrder] = useState('desc'); // 'added' | 'asc' | 'desc'
   const [newlyAddedWorkloadId, setNewlyAddedWorkloadId] = useState(null);
   const workloadCardRefs = React.useRef({});
@@ -4655,6 +5473,7 @@ export default function Workload() {
     };
     rows.unshift(newRow);
     setNewlyAddedWorkloadId(newId);
+    setSelectedBlockIdx(0);
     handleFieldChange('workloadRows', rows);
   };
 
@@ -6531,22 +7350,22 @@ export default function Workload() {
                             <div style={{ display: 'flex', border: '1.5px solid var(--line)', borderRadius: '8px', overflow: 'hidden' }}>
                               <button
                                 type="button"
-                                onClick={() => setLayoutType('card')}
+                                onClick={() => setLayoutType('gantt')}
                                 style={{
                                   padding: '8px 12px',
-                                  background: layoutType === 'card' ? '#f1f5f9' : 'white',
+                                  background: layoutType === 'gantt' ? '#f1f5f9' : 'white',
                                   border: 'none',
                                   cursor: 'pointer',
                                   fontSize: '13px',
-                                  fontWeight: layoutType === 'card' ? 'bold' : 'normal',
-                                  color: layoutType === 'card' ? 'var(--blue)' : 'var(--muted)',
+                                  fontWeight: layoutType === 'gantt' ? 'bold' : 'normal',
+                                  color: layoutType === 'gantt' ? 'var(--blue)' : 'var(--muted)',
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '6px'
                                 }}
-                                title="Grid/Cards View"
+                                title="Gantt Weekly Schedule View"
                               >
-                                <span>▦</span> Cards
+                                <span>📊</span> Weekly Gantt
                               </button>
                               <button
                                 type="button"
@@ -6605,7 +7424,35 @@ export default function Workload() {
                           </div>
                         </div>
 
-                        <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>
+                        {layoutType === 'gantt' ? (
+                          <WorkloadGanttScheduleView
+                            currentPerson={currentPerson}
+                            classSections={classSections}
+                            updateWorkloadRowFields={updateWorkloadRowFields}
+                            removeWorkloadRow={removeWorkloadRow}
+                            addWorkloadRow={addWorkloadRow}
+                            handleFieldChange={handleFieldChange}
+                            getSubjectsForGrade={getSubjectsForGrade}
+                            getAssignedGradeLevels={getAssignedGradeLevels}
+                            getSubjectAssignmentForSection={getSubjectAssignmentForSection}
+                            getRowDurationError={getRowDurationError}
+                            getMatatagRowWarning={getMatatagRowWarning}
+                            getDuplicateSectionSubjectError={getDuplicateSectionSubjectError}
+                            getHgpWeeklyError={getHgpWeeklyError}
+                            isAdvisoryOrHgpPair={isAdvisoryOrHgpPair}
+                            isSHSRow={isSHSRow}
+                            GRADE_LEVELS_BY_CATEGORY={GRADE_LEVELS_BY_CATEGORY}
+                            SUBJECT_OPTIONS={SUBJECT_OPTIONS}
+                            REMEDIATION_FOCUS_BY_CATEGORY={REMEDIATION_FOCUS_BY_CATEGORY}
+                            GRADE_LEVEL_SUBJECTS={GRADE_LEVEL_SUBJECTS}
+                            dbPerson={dbPerson}
+                            activePersonnelId={activePersonnelId}
+                            selectedBlockIdx={selectedBlockIdx}
+                            setSelectedBlockIdx={setSelectedBlockIdx}
+                            handleSectionChangeForRow={handleSectionChangeForRow}
+                          />
+                        ) : (
+                          <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>
                           {layoutType === 'list' && (currentPerson.workloadRows || []).length > 0 && (
                             <div style={{
                               display: 'grid',
@@ -7535,6 +8382,7 @@ export default function Workload() {
                             );
                           })()}
                         </div>
+                        )}
                       </div>
                     )}
 
