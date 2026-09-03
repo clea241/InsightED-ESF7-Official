@@ -3434,6 +3434,49 @@ const formatMinutesTo12Hour = (mins) => {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 };
 
+// Helper: Evaluates whether a row has a fixed MATATAG-mandated duration (DepEd Order No. 12, s. 2024)
+const getMatatagMandatedDuration = (row, sectionsList = []) => {
+  if (!row) return null;
+  const gStr = String(row.gradeLevel || '').trim().toUpperCase();
+  const subStr = String(row.subject || row.task || '').trim().toUpperCase();
+  if (!subStr) return null;
+
+  // Match class section
+  const matchedSec = (sectionsList || []).find(s => 
+    (row.sectionId && String(s.id) === String(row.sectionId)) || 
+    (s.sectionName && row.sectionName && s.sectionName === row.sectionName && (s.gradeLevel === row.gradeLevel || !row.gradeLevel))
+  );
+  let secGLevel = String(matchedSec?.gradeLevel || gStr).trim().toUpperCase();
+  if (secGLevel === 'GRADE 1 - MATATAG') secGLevel = 'GRADE 1';
+  if (secGLevel === 'GRADE 2 - MATATAG') secGLevel = 'GRADE 2';
+
+  const isMulti = (matchedSec && (matchedSec.sectionType === 'MULTIGRADE' || String(matchedSec.sectionType).includes('MULTI') || String(matchedSec.gradeLevel).includes(' - '))) ||
+                  gStr.includes(' - ') || gStr.includes('MULTI');
+  if (isMulti) return null;
+
+  // GRADE 1 (MATATAG Monograde)
+  if (secGLevel === 'GRADE 1') {
+    const G1_MATATAG_CORE = [
+      'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'MAKABANSA', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'
+    ];
+    if (G1_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `))) {
+      return 40;
+    }
+  }
+
+  // GRADE 2 (MATATAG Monograde)
+  if (secGLevel === 'GRADE 2') {
+    const G2_MATATAG_CORE = [
+      'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'
+    ];
+    if (G2_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `))) {
+      return 40;
+    }
+  }
+
+  return null;
+};
+
 function WorkloadGanttScheduleView({
   currentPerson,
   classSections,
@@ -3458,7 +3501,11 @@ function WorkloadGanttScheduleView({
   activePersonnelId,
   selectedBlockIdx,
   setSelectedBlockIdx,
-  handleSectionChangeForRow
+  handleSectionChangeForRow,
+  personnel = [],
+  savePersonnelChanges,
+  showToast,
+  showAlert
 }) {
   const [showWeekend, setShowWeekend] = useState(() => {
     const rows = currentPerson?.workloadRows || [];
@@ -3468,7 +3515,17 @@ function WorkloadGanttScheduleView({
     });
   });
 
-  const [dragState, setDragState] = useState(null); // { type, rowIdx, day, initialMouseY, initialStartMins, initialEndMins, initialDays, createDay, createStartMins, createCurrentMins }
+  // Copy Workload Modal State
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [copyStep, setCopyStep] = useState('select'); // 'select' | 'confirm'
+  const [sourceTeacherSearch, setSourceTeacherSearch] = useState('');
+  const [sourceGradeFilter, setSourceGradeFilter] = useState('all');
+  const [sourceCategoryFilter, setSourceCategoryFilter] = useState('all');
+  const [selectedSourceId, setSelectedSourceId] = useState(null);
+  const [copyMode, setCopyMode] = useState('merge'); // 'merge' | 'replace'
+
+  const [dragState, setDragState] = useState(null); // { type, rowIdx, day, initialMouseY, initialStartMins, initialEndMins, initialDays, createDay, createStartMins, createCurrentMins, dragDays, initialMouseX, originDay }
+  const [pendingNewSlot, setPendingNewSlot] = useState(null);
 
   const daysList = showWeekend
     ? [
@@ -3547,19 +3604,311 @@ function WorkloadGanttScheduleView({
 
   const columnRefs = useRef({});
 
-  // Global mouse handlers for Drag-Move, Drag-Resize, Drag-Create
+  // Helper to check collisions for a given day and time slot
+  const checkDayCollision = (dayCode, sMins, eMins, subject) => {
+    const rows = currentPerson?.workloadRows || [];
+    return rows.some(otherRow => {
+      if (!otherRow.startTime || !otherRow.endTime) return false;
+      const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0)
+        ? otherRow.days
+        : (otherRow.daySchedule ? String(otherRow.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+      if (!otherDays.includes(dayCode)) return false;
+      const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
+      if (sMins < re && eMins > rs) {
+        if (isAdvisoryOrHgpPair({ subject: subject || '' }, otherRow)) return false;
+        return true;
+      }
+      return false;
+    });
+  };
+
+  // Helper to confirm pending new slot into workloadRows
+  const handleConfirmPendingSlot = () => {
+    if (!pendingNewSlot || !pendingNewSlot.selectedDays || pendingNewSlot.selectedDays.length === 0) {
+      setPendingNewSlot(null);
+      return;
+    }
+
+    const rows = [...(currentPerson?.workloadRows || [])];
+    const newId = `new-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newRow = {
+      id: newId,
+      category: pendingNewSlot.initialCategory || 'Elementary',
+      subject: pendingNewSlot.chosenSubject || '',
+      gradeLevel: pendingNewSlot.initialGrade || 'Grade 1',
+      sectionId: pendingNewSlot.initialSectionId || '',
+      sectionName: pendingNewSlot.initialSectionName || '',
+      startTime: formatMinutesToTime(pendingNewSlot.startMins),
+      endTime: formatMinutesToTime(pendingNewSlot.endMins),
+      days: [...pendingNewSlot.selectedDays]
+    };
+    rows.unshift(newRow);
+    if (typeof handleFieldChange === 'function') {
+      handleFieldChange('workloadRows', rows);
+    }
+    setPendingNewSlot(null);
+    setSelectedBlockIdx(0);
+  };
+
+  // Helper to retrieve draft or active workload rows for a teacher
+  const getTeacherWorkloadRows = (teacher) => {
+    if (!teacher) return [];
+    try {
+      const draftKey = `draft_workload_${teacher.id}`;
+      const saved = localStorage.getItem(draftKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.workloadRows)) return parsed.workloadRows;
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return Array.isArray(teacher.workloadRows) ? teacher.workloadRows : [];
+  };
+
+  // Filter available source teachers (excluding currentPerson and drafts)
+  const filteredSourceTeachers = useMemo(() => {
+    return (personnel || []).filter(p => {
+      if (p.isDraft) return false;
+      if (String(p.id) === String(currentPerson?.id)) return false;
+
+      // 1. Search query
+      const query = sourceTeacherSearch.toLowerCase().trim();
+      const fullName = `${p.firstName || ''} ${p.lastName || ''}`.toLowerCase();
+      const position = (p.position || '').toLowerCase();
+      if (query && !fullName.includes(query) && !position.includes(query)) return false;
+
+      // 2. Category filter
+      if (sourceCategoryFilter !== 'all' && p.type !== sourceCategoryFilter) return false;
+
+      // 3. Grade Level filter
+      if (sourceGradeFilter !== 'all') {
+        if (p.type === 'non-teaching') return false;
+        const assigned = typeof getAssignedGradeLevels === 'function' ? getAssignedGradeLevels(p) : [];
+        const tRows = getTeacherWorkloadRows(p);
+        const rowGrades = tRows.map(r => r.gradeLevel).filter(Boolean);
+        if (!assigned.includes(sourceGradeFilter) && !rowGrades.includes(sourceGradeFilter)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [personnel, currentPerson?.id, sourceTeacherSearch, sourceGradeFilter, sourceCategoryFilter, getAssignedGradeLevels]);
+
+  const selectedSourceTeacher = useMemo(() => {
+    return (personnel || []).find(p => String(p.id) === String(selectedSourceId)) || null;
+  }, [personnel, selectedSourceId]);
+
+  // Extract teaching schedule blocks from source teacher (excluding official Section Advisory & HGP)
+  const copyableSourceRows = useMemo(() => {
+    if (!selectedSourceTeacher) return [];
+    const rawSourceRows = getTeacherWorkloadRows(selectedSourceTeacher);
+    return rawSourceRows.filter(r => {
+      const subUpper = String(r.subject || '').toUpperCase().trim();
+      return subUpper !== 'ADVISORY' && subUpper !== 'HGP' && !subUpper.includes('HOMEROOM GUIDANCE');
+    });
+  }, [selectedSourceTeacher]);
+
+  // Compute candidate resulting rows based on copyMode ('merge' vs 'replace')
+  const candidateResultRows = useMemo(() => {
+    if (!selectedSourceTeacher) return [];
+    const currentExistingRows = currentPerson?.workloadRows || [];
+
+    const preparedCopiedRows = copyableSourceRows.map((r, i) => ({
+      ...r,
+      id: `workload-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+      sectionId: r.sectionId ? String(r.sectionId) : '',
+      days: (Array.isArray(r.days) && r.days.length > 0)
+        ? [...r.days]
+        : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F'])
+    }));
+
+    if (copyMode === 'replace') {
+      // Preserve target teacher's own official ADVISORY / HGP blocks
+      const preservedAdvisoryRows = currentExistingRows.filter(r => {
+        const subUpper = String(r.subject || '').toUpperCase().trim();
+        return subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
+      });
+      return [...preservedAdvisoryRows, ...preparedCopiedRows];
+    } else {
+      // Merge: retain all current blocks and append copied blocks
+      return [...currentExistingRows, ...preparedCopiedRows];
+    }
+  }, [selectedSourceTeacher, copyMode, currentPerson?.workloadRows, copyableSourceRows]);
+
+  // Pre-flight collision / overlap validation
+  const detectedCollisions = useMemo(() => {
+    const collisions = [];
+    for (let i = 0; i < candidateResultRows.length; i++) {
+      for (let j = i + 1; j < candidateResultRows.length; j++) {
+        const rowA = candidateResultRows[i];
+        const rowB = candidateResultRows[j];
+        if (!rowA.startTime || !rowA.endTime || !rowB.startTime || !rowB.endTime) continue;
+
+        const daysA = (Array.isArray(rowA.days) && rowA.days.length > 0)
+          ? rowA.days
+          : (rowA.daySchedule ? String(rowA.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+        const daysB = (Array.isArray(rowB.days) && rowB.days.length > 0)
+          ? rowB.days
+          : (rowB.daySchedule ? String(rowB.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+
+        const sharedDays = daysA.filter(d => daysB.includes(d));
+        if (sharedDays.length === 0) continue;
+
+        const sA = parseMins(rowA.startTime), eA = parseMins(rowA.endTime);
+        const sB = parseMins(rowB.startTime), eB = parseMins(rowB.endTime);
+
+        if (sA < eB && eA > sB) {
+          if (typeof isAdvisoryOrHgpPair === 'function' && isAdvisoryOrHgpPair(rowA, rowB)) {
+            continue;
+          }
+          collisions.push({
+            subA: rowA.subject || 'Subject A',
+            secA: rowA.sectionName || rowA.gradeLevel || '',
+            subB: rowB.subject || 'Subject B',
+            secB: rowB.sectionName || rowB.gradeLevel || '',
+            timeA: `${rowA.startTime} – ${rowA.endTime}`,
+            timeB: `${rowB.startTime} – ${rowB.endTime}`,
+            days: sharedDays,
+            isBetweenExistingAndCopied: (String(rowA.id).startsWith('workload-') && !String(rowB.id).startsWith('workload-')) ||
+                                        (!String(rowA.id).startsWith('workload-') && String(rowB.id).startsWith('workload-'))
+          });
+        }
+      }
+    }
+    return collisions;
+  }, [candidateResultRows, isAdvisoryOrHgpPair]);
+
+  // Pre-flight MATATAG policy validation
+  const detectedMatatagWarnings = useMemo(() => {
+    const warns = [];
+    candidateResultRows.forEach(r => {
+      if (typeof getMatatagRowWarning === 'function') {
+        const w = getMatatagRowWarning(r);
+        if (w) {
+          warns.push({
+            subject: r.subject || 'Subject',
+            gradeLevel: r.gradeLevel || '',
+            message: w.message || (typeof w === 'string' ? w : 'MATATAG Policy rule'),
+            type: w.type || 'warning'
+          });
+        }
+      }
+    });
+    return warns;
+  }, [candidateResultRows, getMatatagRowWarning]);
+
+  // Pre-flight maximum duration validation
+  const detectedDurationErrors = useMemo(() => {
+    const errs = [];
+    candidateResultRows.forEach(r => {
+      if (typeof getRowDurationError === 'function') {
+        const err = getRowDurationError(r);
+        if (err) {
+          errs.push({
+            subject: r.subject || 'Subject',
+            message: err
+          });
+        }
+      }
+    });
+    return errs;
+  }, [candidateResultRows, getRowDurationError]);
+
+  // Commit copy action to state and persistence pipeline
+  const handleConfirmCopyWorkload = async () => {
+    if (!selectedSourceTeacher || copyableSourceRows.length === 0) return;
+
+    if (typeof handleFieldChange === 'function') {
+      handleFieldChange('workloadRows', candidateResultRows);
+    }
+
+    if (typeof savePersonnelChanges === 'function' && currentPerson?.id) {
+      try {
+        await savePersonnelChanges(currentPerson.id, {
+          ...currentPerson,
+          workloadRows: candidateResultRows
+        });
+      } catch (err) {
+        console.warn('savePersonnelChanges error:', err);
+      }
+    }
+
+    if (typeof showToast === 'function') {
+      showToast(
+        `Successfully copied ${copyableSourceRows.length} schedule block${copyableSourceRows.length !== 1 ? 's' : ''} from ${selectedSourceTeacher.firstName} ${selectedSourceTeacher.lastName}!`,
+        'success'
+      );
+    }
+
+    setShowCopyModal(false);
+    setCopyStep('select');
+    setSelectedSourceId(null);
+    if (typeof setSelectedBlockIdx === 'function') {
+      setSelectedBlockIdx(0);
+    }
+  };
+
+  // Global mouse handlers for Drag-Move, Drag-Resize, Drag-Create, and Pending-Horizontal
   useEffect(() => {
     if (!dragState) return;
 
     const SNAP_MINS = 5; // 5-minute drag & resize snap
 
     const handleMouseMove = (e) => {
-      const deltaY = e.clientY - dragState.initialMouseY;
+      const deltaY = e.clientY - (dragState.initialMouseY || 0);
       const deltaMins = Math.round((deltaY / pxPerMin) / SNAP_MINS) * SNAP_MINS;
 
       if (dragState.type === 'create') {
         const newCurrentMins = Math.max(dragState.createStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, dragState.createStartMins + deltaMins));
-        setDragState(prev => prev ? { ...prev, createCurrentMins: newCurrentMins } : null);
+
+        let currentHoverDay = dragState.createDay;
+        if (columnRefs.current) {
+          daysList.forEach(d => {
+            const colEl = columnRefs.current[d.code];
+            if (colEl) {
+              const rect = colEl.getBoundingClientRect();
+              if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                currentHoverDay = d.code;
+              }
+            }
+          });
+        }
+        const originIdx = daysList.findIndex(d => d.code === dragState.createDay);
+        const targetIdx = daysList.findIndex(d => d.code === currentHoverDay);
+        const minIdx = originIdx !== -1 && targetIdx !== -1 ? Math.min(originIdx, targetIdx) : 0;
+        const maxIdx = originIdx !== -1 && targetIdx !== -1 ? Math.max(originIdx, targetIdx) : 0;
+        const spannedDays = daysList.slice(minIdx, maxIdx + 1).map(d => d.code);
+
+        setDragState(prev => prev ? { ...prev, createCurrentMins: newCurrentMins, dragDays: spannedDays } : null);
+      } else if (dragState.type === 'pending-horizontal') {
+        let currentHoverDay = dragState.originDay;
+        if (columnRefs.current) {
+          daysList.forEach(d => {
+            const colEl = columnRefs.current[d.code];
+            if (colEl) {
+              const rect = colEl.getBoundingClientRect();
+              if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                currentHoverDay = d.code;
+              }
+            }
+          });
+        }
+        const originIdx = daysList.findIndex(d => d.code === dragState.originDay);
+        const targetIdx = daysList.findIndex(d => d.code === currentHoverDay);
+        const minIdx = originIdx !== -1 && targetIdx !== -1 ? Math.min(originIdx, targetIdx) : 0;
+        const maxIdx = originIdx !== -1 && targetIdx !== -1 ? Math.max(originIdx, targetIdx) : 0;
+        const spannedDays = daysList.slice(minIdx, maxIdx + 1).map(d => d.code);
+
+        setPendingNewSlot(prev => prev ? { ...prev, selectedDays: spannedDays } : null);
+      } else if (dragState.type === 'pending-resize-top') {
+        let newStartMins = dragState.initialStartMins + deltaMins;
+        newStartMins = Math.max(gridStartMins, Math.min(dragState.initialEndMins - SNAP_MINS, newStartMins));
+        setPendingNewSlot(prev => prev ? { ...prev, startMins: newStartMins } : null);
+      } else if (dragState.type === 'pending-resize-bottom') {
+        let newEndMins = dragState.initialEndMins + deltaMins;
+        newEndMins = Math.max(dragState.initialStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, newEndMins));
+        setPendingNewSlot(prev => prev ? { ...prev, endMins: newEndMins } : null);
       } else if (dragState.type === 'move') {
         const duration = dragState.initialEndMins - dragState.initialStartMins;
         let newStartMins = dragState.initialStartMins + deltaMins;
@@ -3665,24 +4014,33 @@ function WorkloadGanttScheduleView({
           }) || availableSubjects[0] || '';
         }
 
-        const rows = [...(currentPerson?.workloadRows || [])];
-        const newId = `new-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const newRow = {
-          id: newId,
-          category: initialCategory,
-          subject: chosenSubject,
+        const initialDays = (dragState.dragDays && dragState.dragDays.length > 0)
+          ? dragState.dragDays
+          : [dragState.createDay];
+
+        const initialMandated = getMatatagMandatedDuration({
           gradeLevel: initialGrade,
           sectionId: initialSectionId,
           sectionName: initialSectionName,
-          startTime: formatMinutesToTime(sMins),
-          endTime: formatMinutesToTime(eMins),
-          days: [dragState.createDay]
-        };
-        rows.unshift(newRow);
-        if (typeof handleFieldChange === 'function') {
-          handleFieldChange('workloadRows', rows);
+          subject: chosenSubject
+        }, classSections);
+
+        if (initialMandated !== null) {
+          eMins = sMins + initialMandated;
         }
-        setSelectedBlockIdx(0);
+
+        setPendingNewSlot({
+          startMins: sMins,
+          endMins: eMins,
+          originDay: dragState.createDay,
+          selectedDays: initialDays,
+          initialCategory,
+          chosenSubject,
+          initialGrade,
+          initialSectionId,
+          initialSectionName,
+          mandatedDuration: initialMandated
+        });
       }
       setDragState(null);
     };
@@ -3695,10 +4053,29 @@ function WorkloadGanttScheduleView({
     };
   }, [dragState, gridStartMins, totalGridMins, daysList, currentPerson?.workloadRows, pxPerMin]);
 
+  // Keyboard shortcut listener for Enter (confirm) & Escape (cancel) on pending slot
+  useEffect(() => {
+    if (!pendingNewSlot) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setPendingNewSlot(null);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleConfirmPendingSlot();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingNewSlot, currentPerson?.workloadRows]);
+
   const handleStartDrag = (e, rowIdx, row, dayCode, type) => {
     e.stopPropagation();
     const subUpper = String(row.subject || '').toUpperCase().trim();
     if (subUpper === 'ADVISORY') return; // ADVISORY is locked
+    if ((type === 'resize-top' || type === 'resize-bottom') && getMatatagMandatedDuration(row, classSections) !== null) {
+      return; // Duration is locked by MATATAG policy
+    }
 
     const initialStartMins = parseMins(row.startTime || '07:30');
     const initialEndMins = parseMins(row.endTime || '08:30');
@@ -3706,6 +4083,7 @@ function WorkloadGanttScheduleView({
       ? row.days
       : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
 
+    setPendingNewSlot(null);
     setDragState({
       type,
       rowIdx,
@@ -3718,24 +4096,98 @@ function WorkloadGanttScheduleView({
     setSelectedBlockIdx(rowIdx);
   };
 
+  const handleStartPendingHorizontalDrag = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!pendingNewSlot) return;
+    setDragState({
+      type: 'pending-horizontal',
+      initialMouseX: e.clientX,
+      originDay: pendingNewSlot.originDay
+    });
+  };
+
+  const handleStartPendingResize = (e, resizeType) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!pendingNewSlot) return;
+    if (pendingNewSlot.mandatedDuration) return; // Duration is locked by MATATAG policy
+    setDragState({
+      type: resizeType,
+      initialMouseY: e.clientY,
+      initialStartMins: pendingNewSlot.startMins,
+      initialEndMins: pendingNewSlot.endMins
+    });
+  };
+
   const handleGridMouseDown = (e, dayCode) => {
-    if (e.target.closest('.gantt-block-card')) return;
+    if (e.target.closest('.gantt-block-card') || e.target.closest('.pending-slot-card')) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickY = e.clientY - rect.top;
     const clickedMins = gridStartMins + Math.floor((clickY / pxPerMin) / 5) * 5;
     const startMins = Math.max(gridStartMins, Math.min(gridStartMins + totalGridMins - 30, clickedMins));
 
+    setPendingNewSlot(null);
     setDragState({
       type: 'create',
       createDay: dayCode,
       initialMouseY: e.clientY,
       createStartMins: startMins,
-      createCurrentMins: startMins + 60
+      createCurrentMins: startMins + 60,
+      dragDays: [dayCode]
     });
   };
 
   const rawRows = currentPerson?.workloadRows || [];
   const selectedRow = (selectedBlockIdx !== null && rawRows[selectedBlockIdx]) ? rawRows[selectedBlockIdx] : null;
+
+  const handleDeleteSelectedBlock = () => {
+    if (selectedBlockIdx === null || !selectedRow) return;
+    const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
+    if (subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE')) return;
+    removeWorkloadRow(selectedBlockIdx);
+    setSelectedBlockIdx(null);
+  };
+
+  // Keyboard shortcut listener: Delete or Backspace to remove selected schedule block
+  useEffect(() => {
+    if (selectedBlockIdx === null || !selectedRow) return;
+
+    const handleKeyDown = (e) => {
+      // Cross-OS/laptop support: Delete key or Backspace key
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+
+      // Do NOT trigger if user is typing in an input, textarea, select dropdown, or contenteditable element
+      const activeEl = document.activeElement;
+      const activeTag = activeEl ? (activeEl.tagName || '').toLowerCase() : '';
+      const targetTag = e.target ? (e.target.tagName || '').toLowerCase() : '';
+
+      if (
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        activeTag === 'select' ||
+        (activeEl && activeEl.isContentEditable) ||
+        targetTag === 'input' ||
+        targetTag === 'textarea' ||
+        targetTag === 'select' ||
+        (e.target && e.target.isContentEditable)
+      ) {
+        return;
+      }
+
+      // Do NOT trigger if modal is open or pending slot drag is active
+      if (showCopyModal || pendingNewSlot) return;
+
+      const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
+      if (subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE')) return;
+
+      e.preventDefault();
+      handleDeleteSelectedBlock();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedBlockIdx, selectedRow, showCopyModal, pendingNewSlot, removeWorkloadRow, setSelectedBlockIdx]);
 
   return (
     <div className="gantt-schedule-container" style={{ background: '#F8FAFC', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
@@ -3769,6 +4221,45 @@ function WorkloadGanttScheduleView({
             }}
           >
             <span>📅</span> {showWeekend ? 'Mon - Fri Only' : 'Show Weekend (Sat/Sun)'}
+          </button>
+          <button
+            type="button"
+            id="btn-copy-workload"
+            onClick={() => {
+              setShowCopyModal(true);
+              setCopyStep('select');
+              setSelectedSourceId(null);
+              setSourceTeacherSearch('');
+              setSourceGradeFilter('all');
+              setSourceCategoryFilter('all');
+              setCopyMode('merge');
+            }}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '8px',
+              border: '1.5px solid #CBD5E1',
+              background: 'white',
+              color: 'var(--navy)',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#F8FAFC';
+              e.currentTarget.style.borderColor = '#94A3B8';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'white';
+              e.currentTarget.style.borderColor = '#CBD5E1';
+            }}
+            title="Copy teaching schedule blocks from another teacher"
+          >
+            <span>📋</span> Copy Workload
           </button>
         </div>
       </div>
@@ -3840,12 +4331,14 @@ function WorkloadGanttScheduleView({
                   );
                 })}
 
-                {/* Drag Create Active Preview Box */}
-                {dragState && dragState.type === 'create' && dragState.createDay === d.code && (() => {
+                {/* Drag Create Active Preview Box (during mouse drag) */}
+                {dragState && dragState.type === 'create' && (dragState.dragDays ? dragState.dragDays.includes(d.code) : dragState.createDay === d.code) && (() => {
                   const sM = Math.min(dragState.createStartMins, dragState.createCurrentMins);
                   const eM = Math.max(dragState.createStartMins, dragState.createCurrentMins);
+                  const diffM = Math.max(0, eM - sM);
                   const top = (sM - gridStartMins) * pxPerMin;
-                  const height = Math.max(20, (eM - sM) * pxPerMin);
+                  const height = Math.max(24, diffM * pxPerMin);
+                  const isOrigin = dragState.createDay === d.code;
                   return (
                     <div style={{
                       position: 'absolute',
@@ -3853,22 +4346,342 @@ function WorkloadGanttScheduleView({
                       left: '4px',
                       right: '4px',
                       height: `${height}px`,
-                      background: 'rgba(2, 132, 199, 0.15)',
-                      border: '2px dashed #0284C7',
+                      background: isOrigin ? 'rgba(2, 132, 199, 0.2)' : 'rgba(2, 132, 199, 0.12)',
+                      border: isOrigin ? '2px dashed #0284C7' : '1.5px dashed #38BDF8',
                       borderRadius: '8px',
-                      padding: '4px 8px',
-                      zIndex: 10,
+                      padding: '4px 6px',
+                      boxSizing: 'border-box',
+                      zIndex: 15,
                       pointerEvents: 'none',
-                      fontSize: '11px',
-                      fontWeight: '700',
                       color: '#0369A1',
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
+                      flexDirection: 'column',
+                      justifyContent: height >= 42 ? 'flex-start' : 'center',
+                      overflow: 'hidden',
+                      boxShadow: isOrigin ? '0 2px 8px rgba(2, 132, 199, 0.2)' : 'none'
                     }}>
-                      ➕ New Slot ({formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)})
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px', width: '100%' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          ➕ New Slot
+                        </span>
+                        <span style={{
+                          fontSize: '9px',
+                          fontWeight: '700',
+                          opacity: 0.9,
+                          background: 'rgba(2, 132, 199, 0.15)',
+                          border: '1px solid rgba(2, 132, 199, 0.3)',
+                          color: '#0369A1',
+                          padding: '1px 4px',
+                          borderRadius: '4px',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {diffM}m
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '9px', fontWeight: '600', opacity: 0.85, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)}
+                      </div>
                     </div>
                   );
+                })()}
+
+                {/* Interactive Pending New Slot Block (after drag create, with multi-day selection & preview) */}
+                {pendingNewSlot && pendingNewSlot.selectedDays.includes(d.code) && (() => {
+                  const sM = pendingNewSlot.startMins;
+                  const eM = pendingNewSlot.endMins;
+                  const diffM = eM - sM;
+                  const top = (sM - gridStartMins) * pxPerMin;
+                  const height = Math.max(36, diffM * pxPerMin);
+
+                  // Check collision for this day
+                  const isConflictOnThisDay = checkDayCollision(d.code, sM, eM, pendingNewSlot.chosenSubject);
+
+                  const masterDay = pendingNewSlot.selectedDays.includes(pendingNewSlot.originDay)
+                    ? pendingNewSlot.originDay
+                    : pendingNewSlot.selectedDays[0];
+
+                  const isMasterColumn = (d.code === masterDay);
+
+                  if (isMasterColumn) {
+                    return (
+                      <div
+                        key={`pending-master-${d.code}`}
+                        className="pending-slot-card"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: 'absolute',
+                          top: `${top}px`,
+                          left: '4px',
+                          right: '4px',
+                          minHeight: `${height}px`,
+                          background: isConflictOnThisDay ? 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)' : 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)',
+                          border: isConflictOnThisDay ? '2px solid #EF4444' : '2px solid #0284C7',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          boxSizing: 'border-box',
+                          zIndex: 25,
+                          boxShadow: '0 6px 20px rgba(2, 132, 199, 0.25), 0 0 0 1px rgba(2, 132, 199, 0.1)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          color: isConflictOnThisDay ? '#991B1B' : '#0F172A'
+                        }}
+                      >
+                        {/* Top Resize Handle */}
+                        <div
+                          onMouseDown={(e) => handleStartPendingResize(e, 'pending-resize-top')}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: '6px',
+                            cursor: 'ns-resize',
+                            background: 'rgba(2, 132, 199, 0.15)',
+                            borderTopLeftRadius: '6px',
+                            borderTopRightRadius: '6px'
+                          }}
+                          title="Drag up/down to adjust start time"
+                        />
+
+                        {/* Card Header with Time, Duration, and Close */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '800', color: isConflictOnThisDay ? '#991B1B' : '#0369A1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            ➕ New Slot {isConflictOnThisDay && '🔴'}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '9px', fontWeight: '800', background: isConflictOnThisDay ? '#FCA5A5' : '#BAE6FD', color: isConflictOnThisDay ? '#991B1B' : '#0369A1', padding: '1px 4px', borderRadius: '4px' }}>
+                              {diffM}m
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setPendingNewSlot(null); }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#64748B',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: '800',
+                                padding: '0 2px',
+                                lineHeight: 1
+                              }}
+                              title="Cancel (Esc)"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Subject & Time info */}
+                        <div style={{ fontSize: '9px', fontWeight: '700', opacity: 0.85, marginTop: '2px' }}>
+                          {formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)}
+                        </div>
+
+                        {/* Horizontal Drag Grip Bar */}
+                        <div
+                          onMouseDown={handleStartPendingHorizontalDrag}
+                          style={{
+                            cursor: 'col-resize',
+                            background: 'rgba(2, 132, 199, 0.12)',
+                            border: '1px dashed #0284C7',
+                            borderRadius: '4px',
+                            padding: '3px 4px',
+                            fontSize: '9px',
+                            fontWeight: '700',
+                            color: '#0369A1',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            marginTop: '4px',
+                            userSelect: 'none'
+                          }}
+                          title="Drag horizontally across week grid to select days"
+                        >
+                          <span>↔</span> Drag across week grid
+                        </div>
+
+                        {/* Day-Toggle Control Chips */}
+                        <div style={{ display: 'flex', gap: '3px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+                          {daysList.map(dl => {
+                            const isDaySel = pendingNewSlot.selectedDays.includes(dl.code);
+                            const dayHasConflict = isDaySel && checkDayCollision(dl.code, sM, eM, pendingNewSlot.chosenSubject);
+                            return (
+                              <button
+                                key={dl.code}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingNewSlot(prev => {
+                                    if (!prev) return null;
+                                    const exists = prev.selectedDays.includes(dl.code);
+                                    let nextDays = exists
+                                      ? prev.selectedDays.filter(code => code !== dl.code)
+                                      : [...prev.selectedDays, dl.code];
+                                    if (nextDays.length === 0) nextDays = [dl.code];
+                                    return { ...prev, selectedDays: nextDays };
+                                  });
+                                }}
+                                style={{
+                                  padding: '2px 5px',
+                                  fontSize: '9px',
+                                  fontWeight: '800',
+                                  borderRadius: '4px',
+                                  border: isDaySel ? (dayHasConflict ? '1px solid #EF4444' : '1px solid #0284C7') : '1px solid #CBD5E1',
+                                  background: isDaySel ? (dayHasConflict ? '#EF4444' : '#0284C7') : '#FFFFFF',
+                                  color: isDaySel ? '#FFFFFF' : '#475569',
+                                  cursor: 'pointer',
+                                  lineHeight: '1.2'
+                                }}
+                                title={`Toggle ${dl.full}${dayHasConflict ? ' (Conflict)' : ''}`}
+                              >
+                                {dl.code}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Inline Conflict Notice if Any Day Conflicts */}
+                        {(() => {
+                          const conflictingDays = pendingNewSlot.selectedDays.filter(dayCode =>
+                            checkDayCollision(dayCode, sM, eM, pendingNewSlot.chosenSubject)
+                          );
+                          if (conflictingDays.length === 0) return null;
+                          return (
+                            <div style={{ fontSize: '9px', fontWeight: '800', color: '#B91C1C', marginTop: '3px', background: '#FEF2F2', padding: '2px 4px', borderRadius: '4px', border: '1px solid #FCA5A5' }}>
+                              🔴 Overlap on {conflictingDays.join(', ')}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Confirm Action Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleConfirmPendingSlot(); }}
+                          style={{
+                            marginTop: '5px',
+                            background: '#0284C7',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px 8px',
+                            fontSize: '10px',
+                            fontWeight: '800',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            width: '100%',
+                            boxShadow: '0 2px 4px rgba(2, 132, 199, 0.3)'
+                          }}
+                          title="Confirm slot (Enter)"
+                        >
+                          ✓ Add to Schedule
+                        </button>
+
+                        {/* Bottom Resize Handle */}
+                        <div
+                          onMouseDown={(e) => handleStartPendingResize(e, 'pending-resize-bottom')}
+                          style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            height: '6px',
+                            cursor: 'ns-resize',
+                            background: 'rgba(2, 132, 199, 0.15)',
+                            borderBottomLeftRadius: '6px',
+                            borderBottomRightRadius: '6px'
+                          }}
+                          title="Drag up/down to adjust end time"
+                        />
+                      </div>
+                    );
+                  } else {
+                    {/* Secondary Day Preview Box */}
+                    return (
+                      <div
+                        key={`pending-preview-${d.code}`}
+                        className="pending-slot-card"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={handleStartPendingHorizontalDrag}
+                        style={{
+                          position: 'absolute',
+                          top: `${top}px`,
+                          left: '4px',
+                          right: '4px',
+                          height: `${height}px`,
+                          background: isConflictOnThisDay ? 'rgba(239, 68, 68, 0.15)' : 'rgba(2, 132, 199, 0.15)',
+                          border: isConflictOnThisDay ? '2px dashed #EF4444' : '2px dashed #0284C7',
+                          borderRadius: '8px',
+                          padding: '4px 6px',
+                          zIndex: 20,
+                          cursor: 'col-resize',
+                          fontSize: '10px',
+                          fontWeight: '700',
+                          color: isConflictOnThisDay ? '#991B1B' : '#0369A1',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          textAlign: 'center',
+                          boxSizing: 'border-box'
+                        }}
+                        title={`Preview on ${d.full} (${diffM}m). Drag horizontally to adjust days or click chip on origin day.`}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'space-between', width: '100%' }}>
+                          <span style={{ fontSize: '9px', fontWeight: '800' }}>
+                            {isConflictOnThisDay ? '🔴 Conflict' : '➕ Preview'}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <span style={{
+                              fontSize: '9px',
+                              fontWeight: '700',
+                              opacity: 0.9,
+                              background: isConflictOnThisDay ? '#FCA5A5' : 'rgba(2, 132, 199, 0.15)',
+                              border: isConflictOnThisDay ? '1px solid #F87171' : '1px solid rgba(2, 132, 199, 0.3)',
+                              color: isConflictOnThisDay ? '#991B1B' : '#0369A1',
+                              padding: '1px 3px',
+                              borderRadius: '4px',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {diffM}m
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPendingNewSlot(prev => {
+                                  if (!prev) return null;
+                                  const nextDays = prev.selectedDays.filter(c => c !== d.code);
+                                  if (nextDays.length === 0) return null;
+                                  return { ...prev, selectedDays: nextDays };
+                                });
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: isConflictOnThisDay ? '#EF4444' : '#64748B',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontWeight: '800',
+                                padding: '0 2px',
+                                lineHeight: 1
+                              }}
+                              title={`Remove ${d.full}`}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '9px', marginTop: '2px', opacity: 0.9 }}>
+                          {formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)}
+                        </div>
+                      </div>
+                    );
+                  }
                 })()}
 
                 {/* Render Subject Blocks for this Day */}
@@ -3910,7 +4723,14 @@ function WorkloadGanttScheduleView({
                   const matatagWarn = getMatatagRowWarning(row);
                   const duplicateSubErr = getDuplicateSectionSubjectError(row, rowIdx);
                   const hgpWeeklyErr = getHgpWeeklyError(row);
-                  const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
+
+                  const rowMandated = getMatatagMandatedDuration(row, classSections);
+                  const isRowDurationLocked = isLocked || (rowMandated !== null);
+                  const rowDiffMins = eMins - sMins;
+                  const isRowDurationCompliant = (rowMandated !== null) && (rowDiffMins === rowMandated);
+
+                  const isMatatagCardError = matatagWarn && matatagWarn.type === 'error' && (!rowMandated || !isRowDurationCompliant);
+                  const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || isMatatagCardError;
                   const isSelected = selectedBlockIdx === rowIdx;
 
                   let blockBg = 'linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%)';
@@ -3929,7 +4749,7 @@ function WorkloadGanttScheduleView({
                     blockBg = 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)';
                     blockBorder = '2px solid #EF4444';
                     textColor = '#991B1B';
-                  } else if (matatagWarn) {
+                  } else if (matatagWarn && !isRowDurationCompliant) {
                     blockBg = 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)';
                     blockBorder = '2px solid #F59E0B';
                     textColor = '#92400E';
@@ -3967,7 +4787,7 @@ function WorkloadGanttScheduleView({
                       title={`${row.subject || 'Subject'} (${row.sectionName || 'Section'}) • ${row.startTime} - ${row.endTime}`}
                     >
                       {/* Top Resize Handle */}
-                      {!isLocked && (
+                      {!isRowDurationLocked && (
                         <div
                           onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'resize-top')}
                           style={{
@@ -3991,7 +4811,7 @@ function WorkloadGanttScheduleView({
                             {row.subject || 'Select Subject'} {isLocked && '🔒'}
                           </span>
                           <span style={{ fontSize: '9px', fontWeight: '700', opacity: 0.85, background: 'rgba(0,0,0,0.08)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                            {diffMins}m
+                            {diffMins}m {rowMandated !== null && '🔒'}
                           </span>
                         </div>
 
@@ -4013,13 +4833,13 @@ function WorkloadGanttScheduleView({
                             {hasConflict && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 Overlap</span>}
                             {hgpWeeklyErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 HGP (60m)</span>}
                             {duplicateSubErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 Duplicate</span>}
-                            {matatagWarn && <span style={{ fontSize: '8px', fontWeight: '800', background: matatagWarn.type === 'error' ? '#EF4444' : '#F59E0B', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>⚠️ MATATAG</span>}
+                            {isMatatagCardError && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>⚠️ MATATAG</span>}
                           </div>
                         )}
                       </div>
 
                       {/* Bottom Resize Handle */}
-                      {!isLocked && (
+                      {!isRowDurationLocked && (
                         <div
                           onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'resize-bottom')}
                           style={{
@@ -4050,6 +4870,13 @@ function WorkloadGanttScheduleView({
             const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
             const isLockedSub = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
 
+            const mandatedDuration = getMatatagMandatedDuration(selectedRow, classSections);
+            const isMatatagDurationLocked = (mandatedDuration !== null);
+            const currentDiffMins = (selectedRow.startTime && selectedRow.endTime)
+              ? (parseMins(selectedRow.endTime) - parseMins(selectedRow.startTime))
+              : 0;
+            const isDurationCompliant = isMatatagDurationLocked && (currentDiffMins === mandatedDuration);
+
             const durationErr = getRowDurationError(selectedRow);
             const matatagWarn = getMatatagRowWarning(selectedRow);
             const duplicateSubErr = getDuplicateSectionSubjectError(selectedRow, idx);
@@ -4070,6 +4897,8 @@ function WorkloadGanttScheduleView({
               return false;
             });
 
+            const showMatatagViolation = matatagWarn && (!isMatatagDurationLocked || !isDurationCompliant);
+
             return (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--line)', paddingBottom: '10px' }}>
@@ -4082,9 +4911,9 @@ function WorkloadGanttScheduleView({
                   {!isLockedSub && (
                     <button
                       type="button"
-                      onClick={() => { removeWorkloadRow(idx); setSelectedBlockIdx(null); }}
+                      onClick={handleDeleteSelectedBlock}
                       style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FCA5A5', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
-                      title="Remove Block"
+                      title="Remove Block (Delete or Backspace)"
                     >
                       🗑️ Delete
                     </button>
@@ -4092,13 +4921,48 @@ function WorkloadGanttScheduleView({
                 </div>
 
                 {/* Validation Warnings Callout */}
-                {(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || !!matatagWarn) && (
-                  <div style={{ background: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FEF2F2' : '#FFFBEB', color: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#991B1B' : '#92400E', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FCA5A5' : '#FCD34D'}`, fontSize: '11px', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || showMatatagViolation) && (
+                  <div style={{ background: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (showMatatagViolation && matatagWarn.type === 'error')) ? '#FEF2F2' : '#FFFBEB', color: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (showMatatagViolation && matatagWarn.type === 'error')) ? '#991B1B' : '#92400E', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (showMatatagViolation && matatagWarn.type === 'error')) ? '#FCA5A5' : '#FCD34D'}`, fontSize: '11px', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {hasConflict && <div>🔴 Schedule Overlap Conflict: Overlaps with another subject or task on selected days.</div>}
                     {durationErr && <div>🔴 {durationErr}</div>}
                     {duplicateSubErr && <div>🔴 {duplicateSubErr}</div>}
                     {hgpWeeklyErr && <div>🔴 {hgpWeeklyErr}</div>}
-                    {matatagWarn && <div>{matatagWarn.type === 'error' ? '🔴' : '⚠️'} {matatagWarn.message}</div>}
+                    {showMatatagViolation && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                        <span>{matatagWarn.type === 'error' ? '🔴' : '⚠️'} {matatagWarn.message}</span>
+                        {isMatatagDurationLocked && !isDurationCompliant && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sM = parseMins(selectedRow.startTime || '07:30');
+                              updateWorkloadRowFields(idx, { endTime: formatMinutesToTime(sM + mandatedDuration) });
+                            }}
+                            style={{ background: '#EF4444', color: 'white', border: 'none', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            ⚡ Fix to {mandatedDuration}m
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Neutral Duration Fixed By Policy Indicator for Compliant Blocks */}
+                {isDurationCompliant && (
+                  <div style={{
+                    background: '#F0F9FF',
+                    color: '#0369A1',
+                    border: '1.5px solid #BAE6FD',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span>ℹ️</span>
+                    <span>MATATAG Policy: Duration is fixed at {mandatedDuration} mins/day for {selectedRow.gradeLevel || 'Grade'} {selectedRow.subject} (DepEd Order No. 12, s. 2024).</span>
                   </div>
                 )}
 
@@ -4154,7 +5018,20 @@ function WorkloadGanttScheduleView({
                       <SearchableSelect
                         disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
                         value={currentSub}
-                        onChange={(e) => updateWorkloadRowFields(idx, { subject: e.target.value })}
+                        onChange={(e) => {
+                          const newSub = e.target.value;
+                          const testRow = { ...selectedRow, subject: newSub };
+                          const newMand = getMatatagMandatedDuration(testRow, classSections);
+                          if (newMand !== null && selectedRow.startTime) {
+                            const sM = parseMins(selectedRow.startTime);
+                            updateWorkloadRowFields(idx, {
+                              subject: newSub,
+                              endTime: formatMinutesToTime(sM + newMand)
+                            });
+                          } else {
+                            updateWorkloadRowFields(idx, { subject: newSub });
+                          }
+                        }}
                         options={subjectOptions}
                         placeholder="Select subject…"
                       />
@@ -4205,18 +5082,47 @@ function WorkloadGanttScheduleView({
                       type="time"
                       disabled={selectedRow.subject === 'ADVISORY'}
                       value={selectedRow.startTime || '07:30'}
-                      onChange={(e) => updateWorkloadRowFields(idx, { startTime: e.target.value })}
+                      onChange={(e) => {
+                        const newStart = e.target.value;
+                        if (isMatatagDurationLocked && newStart) {
+                          const sM = parseMins(newStart);
+                          const newEnd = formatMinutesToTime(sM + mandatedDuration);
+                          updateWorkloadRowFields(idx, { startTime: newStart, endTime: newEnd });
+                        } else {
+                          updateWorkloadRowFields(idx, { startTime: newStart });
+                        }
+                      }}
                       style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>End Time</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                      <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', display: 'block' }}>End Time</label>
+                      {isMatatagDurationLocked && (
+                        <span style={{ fontSize: '9px', fontWeight: '800', color: '#0284C7', display: 'flex', alignItems: 'center', gap: '2px' }} title={`Duration is locked to ${mandatedDuration} mins by MATATAG policy`}>
+                          🔒 {mandatedDuration}m Fixed
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="time"
-                      disabled={selectedRow.subject === 'ADVISORY'}
+                      disabled={selectedRow.subject === 'ADVISORY' || isMatatagDurationLocked}
                       value={selectedRow.endTime || '08:30'}
-                      onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                      onChange={(e) => {
+                        if (isMatatagDurationLocked) return;
+                        updateWorkloadRowFields(idx, { endTime: e.target.value });
+                      }}
+                      title={isMatatagDurationLocked ? `End time is automatically calculated (Start Time + ${mandatedDuration}m) per MATATAG policy.` : undefined}
+                      style={{
+                        width: '100%',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        border: '1.5px solid var(--line)',
+                        fontSize: '12px',
+                        background: isMatatagDurationLocked ? '#F8FAFC' : 'white',
+                        cursor: isMatatagDurationLocked ? 'not-allowed' : 'text',
+                        color: isMatatagDurationLocked ? '#475569' : 'inherit'
+                      }}
                     />
                   </div>
                 </div>
@@ -4231,6 +5137,723 @@ function WorkloadGanttScheduleView({
           )}
         </div>
       </div>
+
+      {/* ── COPY WORKLOAD MODAL ── */}
+      {showCopyModal && (
+        <div
+          id="copy-workload-modal-backdrop"
+          onClick={() => setShowCopyModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '20px'
+          }}
+        >
+          <div
+            id="copy-workload-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'white',
+              borderRadius: '16px',
+              border: '1.5px solid var(--line)',
+              width: '100%',
+              maxWidth: '780px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1.5px solid var(--line)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'linear-gradient(180deg, #F8FAFC 0%, white 100%)'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📋</span> Copy Teaching Workload
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748B' }}>
+                  Target: <strong style={{ color: 'var(--navy)' }}>{currentPerson?.firstName || ''} {currentPerson?.lastName || 'Teacher'}</strong> ({currentPerson?.position || 'Teacher'}) · Current SY
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCopyModal(false)}
+                style={{
+                  background: '#F1F5F9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  width: '32px',
+                  height: '32px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#64748B',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0F172A'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#F1F5F9'; e.currentTarget.style.color = '#64748B'; }}
+                title="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Stepper Indicator */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              borderBottom: '1.5px solid var(--line)',
+              background: '#F8FAFC'
+            }}>
+              <div
+                onClick={() => setCopyStep('select')}
+                style={{
+                  padding: '10px 16px',
+                  textAlign: 'center',
+                  fontSize: '12px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  borderBottom: copyStep === 'select' ? '3px solid var(--blue)' : '3px solid transparent',
+                  color: copyStep === 'select' ? 'var(--blue)' : '#64748B',
+                  background: copyStep === 'select' ? 'white' : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>👤</span> 1. Select Source Teacher
+              </div>
+              <div
+                onClick={() => {
+                  if (selectedSourceTeacher && copyableSourceRows.length > 0) {
+                    setCopyStep('confirm');
+                  }
+                }}
+                style={{
+                  padding: '10px 16px',
+                  textAlign: 'center',
+                  fontSize: '12px',
+                  fontWeight: '800',
+                  cursor: (selectedSourceTeacher && copyableSourceRows.length > 0) ? 'pointer' : 'not-allowed',
+                  opacity: (selectedSourceTeacher && copyableSourceRows.length > 0) ? 1 : 0.5,
+                  borderBottom: copyStep === 'confirm' ? '3px solid var(--blue)' : '3px solid transparent',
+                  color: copyStep === 'confirm' ? 'var(--blue)' : '#64748B',
+                  background: copyStep === 'confirm' ? 'white' : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>⚙️</span> 2. Review, Validate & Confirm
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {copyStep === 'select' ? (
+                <>
+                  {/* Search and Filters Row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr', gap: '10px', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>
+                        SEARCH TEACHER
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Search name or position..."
+                        value={sourceTeacherSearch}
+                        onChange={(e) => setSourceTeacherSearch(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          border: '1.5px solid var(--line)',
+                          fontSize: '13px'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>
+                        GRADE LEVEL
+                      </label>
+                      <select
+                        value={sourceGradeFilter}
+                        onChange={(e) => setSourceGradeFilter(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '9px 10px',
+                          borderRadius: '8px',
+                          border: '1.5px solid var(--line)',
+                          fontSize: '12.5px',
+                          background: 'white'
+                        }}
+                      >
+                        <option value="all">All Grades</option>
+                        {['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'MONO-GRADE'].map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>
+                        CATEGORY
+                      </label>
+                      <select
+                        value={sourceCategoryFilter}
+                        onChange={(e) => setSourceCategoryFilter(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '9px 10px',
+                          borderRadius: '8px',
+                          border: '1.5px solid var(--line)',
+                          fontSize: '12.5px',
+                          background: 'white'
+                        }}
+                      >
+                        <option value="all">ALL CATEGORIES</option>
+                        <option value="teaching">TEACHING</option>
+                        <option value="teaching-related">RELATED-TEACHING</option>
+                        <option value="non-teaching">NON-TEACHING</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Teachers Roster List */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#64748B' }}>
+                        Showing {filteredSourceTeachers.length} teacher{filteredSourceTeachers.length !== 1 ? 's' : ''}
+                      </span>
+                      {selectedSourceTeacher && (
+                        <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--blue)' }}>
+                          Selected: {selectedSourceTeacher.firstName} {selectedSourceTeacher.lastName} ({copyableSourceRows.length} copyable blocks)
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      maxHeight: '340px',
+                      overflowY: 'auto',
+                      paddingRight: '4px'
+                    }}>
+                      {filteredSourceTeachers.length === 0 ? (
+                        <div style={{
+                          padding: '40px 20px',
+                          textAlign: 'center',
+                          color: '#94A3B8',
+                          background: '#F8FAFC',
+                          borderRadius: '12px',
+                          border: '1.5px dashed #CBD5E1'
+                        }}>
+                          <p style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: '700', color: '#475569' }}>No teachers match your search</p>
+                          <p style={{ margin: 0, fontSize: '12px' }}>Try adjusting your search query or grade/category filter above.</p>
+                        </div>
+                      ) : (
+                        filteredSourceTeachers.map(p => {
+                          const isSelected = String(p.id) === String(selectedSourceId);
+                          const pRows = getTeacherWorkloadRows(p);
+                          const pCopyable = pRows.filter(r => {
+                            const subUpper = String(r.subject || '').toUpperCase().trim();
+                            return subUpper !== 'ADVISORY' && subUpper !== 'HGP' && !subUpper.includes('HOMEROOM GUIDANCE');
+                          });
+                          const hasBlocks = pCopyable.length > 0;
+
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => setSelectedSourceId(p.id)}
+                              style={{
+                                padding: '12px 16px',
+                                borderRadius: '10px',
+                                border: isSelected ? '2px solid var(--blue)' : '1.5px solid var(--line)',
+                                background: isSelected ? '#EFF6FF' : (hasBlocks ? 'white' : '#F8FAFC'),
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '12px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                  width: '18px',
+                                  height: '18px',
+                                  borderRadius: '50%',
+                                  border: isSelected ? '5px solid var(--blue)' : '2px solid #CBD5E1',
+                                  background: 'white',
+                                  flexShrink: 0
+                                }} />
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontWeight: '800', fontSize: '13.5px', color: isSelected ? 'var(--blue)' : 'var(--navy)' }}>
+                                      {p.firstName} {p.lastName}
+                                    </span>
+                                    <span style={{ fontSize: '11px', color: '#64748B', background: '#F1F5F9', padding: '1px 6px', borderRadius: '4px' }}>
+                                      {p.position || 'Teacher'}
+                                    </span>
+                                  </div>
+
+                                  {/* Subject tags preview */}
+                                  {hasBlocks ? (
+                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                                      {pCopyable.slice(0, 4).map((r, i) => (
+                                        <span key={i} style={{
+                                          fontSize: '10.5px',
+                                          fontWeight: '600',
+                                          background: isSelected ? '#DBEAFE' : '#F1F5F9',
+                                          color: isSelected ? '#1E40AF' : '#334155',
+                                          padding: '2px 7px',
+                                          borderRadius: '6px'
+                                        }}>
+                                          {r.subject} {r.sectionName ? `(${r.sectionName})` : (r.gradeLevel ? `(${r.gradeLevel})` : '')}
+                                        </span>
+                                      ))}
+                                      {pCopyable.length > 4 && (
+                                        <span style={{ fontSize: '10px', color: '#64748B', alignSelf: 'center' }}>
+                                          +{pCopyable.length - 4} more
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#94A3B8', fontStyle: 'italic' }}>
+                                      No teaching schedule blocks available to copy
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  padding: '4px 10px',
+                                  borderRadius: '20px',
+                                  display: 'inline-block',
+                                  background: hasBlocks ? '#ECFDF5' : '#F1F5F9',
+                                  color: hasBlocks ? '#065F46' : '#64748B',
+                                  border: hasBlocks ? '1px solid #A7F3D0' : '1px solid #CBD5E1'
+                                }}>
+                                  {hasBlocks ? `✓ ${pCopyable.length} Block${pCopyable.length !== 1 ? 's' : ''}` : '0 Blocks'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Step 2: Confirm & Validate */}
+                  {/* Source & Target Comparison Card */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto 1fr',
+                    gap: '12px',
+                    alignItems: 'center',
+                    background: '#F8FAFC',
+                    border: '1.5px solid var(--line)',
+                    borderRadius: '12px',
+                    padding: '14px 18px'
+                  }}>
+                    <div>
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase' }}>SOURCE TEACHER</span>
+                      <h4 style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: '800', color: 'var(--navy)' }}>
+                        {selectedSourceTeacher?.firstName} {selectedSourceTeacher?.lastName}
+                      </h4>
+                      <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#0284C7', fontWeight: '700' }}>
+                        📋 {copyableSourceRows.length} subject block{copyableSourceRows.length !== 1 ? 's' : ''} to copy
+                      </p>
+                    </div>
+
+                    <div style={{ fontSize: '20px', color: '#94A3B8', fontWeight: 'bold' }}>➔</div>
+
+                    <div>
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase' }}>TARGET TEACHER</span>
+                      <h4 style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: '800', color: 'var(--navy)' }}>
+                        {currentPerson?.firstName} {currentPerson?.lastName}
+                      </h4>
+                      <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#475569' }}>
+                        Currently has {(currentPerson?.workloadRows || []).length} schedule block{(currentPerson?.workloadRows || []).length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Mode Selector: Merge vs Replace */}
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '8px' }}>
+                      SELECT WORKLOAD INTEGRATION MODE
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      {/* Merge Mode */}
+                      <div
+                        onClick={() => setCopyMode('merge')}
+                        style={{
+                          padding: '14px 16px',
+                          borderRadius: '10px',
+                          border: copyMode === 'merge' ? '2px solid var(--blue)' : '1.5px solid var(--line)',
+                          background: copyMode === 'merge' ? '#EFF6FF' : 'white',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            border: copyMode === 'merge' ? '5px solid var(--blue)' : '2px solid #CBD5E1',
+                            background: 'white',
+                            flexShrink: 0
+                          }} />
+                          <span style={{ fontWeight: '800', fontSize: '13px', color: copyMode === 'merge' ? 'var(--blue)' : 'var(--navy)' }}>
+                            Merge with Existing Workload
+                          </span>
+                          <span style={{ fontSize: '9.5px', fontWeight: '800', background: '#DBEAFE', color: '#1E40AF', padding: '1px 6px', borderRadius: '4px' }}>
+                            Default
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '11.5px', color: '#475569', paddingLeft: '24px' }}>
+                          Appends the {copyableSourceRows.length} copied blocks alongside {currentPerson?.firstName}'s existing workload.
+                        </p>
+                      </div>
+
+                      {/* Replace Mode */}
+                      <div
+                        onClick={() => setCopyMode('replace')}
+                        style={{
+                          padding: '14px 16px',
+                          borderRadius: '10px',
+                          border: copyMode === 'replace' ? '2px solid var(--blue)' : '1.5px solid var(--line)',
+                          background: copyMode === 'replace' ? '#EFF6FF' : 'white',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            border: copyMode === 'replace' ? '5px solid var(--blue)' : '2px solid #CBD5E1',
+                            background: 'white',
+                            flexShrink: 0
+                          }} />
+                          <span style={{ fontWeight: '800', fontSize: '13px', color: copyMode === 'replace' ? 'var(--blue)' : 'var(--navy)' }}>
+                            Replace Existing Workload
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '11.5px', color: '#475569', paddingLeft: '24px' }}>
+                          Replaces current teaching blocks with the copied schedule. Official Section Advisory & HGP are strictly preserved.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pre-flight Conflict & Policy Surfacing Engine */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {/* Collisions Alert */}
+                    {detectedCollisions.length > 0 && (
+                      <div style={{
+                        background: '#FEF2F2',
+                        border: '1.5px solid #F87171',
+                        borderRadius: '10px',
+                        padding: '12px 16px',
+                        color: '#991B1B'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '16px' }}>🔴</span>
+                          <strong style={{ fontSize: '13px' }}>
+                            Schedule Overlap Conflict Detected ({detectedCollisions.length})
+                          </strong>
+                        </div>
+                        <ul style={{ margin: '0 0 6px 20px', padding: 0, fontSize: '12px', lineHeight: '1.5' }}>
+                          {detectedCollisions.map((c, i) => (
+                            <li key={i}>
+                              <strong>{c.subA}</strong> ({c.timeA}) overlaps with <strong>{c.subB}</strong> ({c.timeB}) on <strong>[{c.days.join(', ')}]</strong>
+                            </li>
+                          ))}
+                        </ul>
+                        {copyMode === 'merge' && detectedCollisions.some(c => c.isBetweenExistingAndCopied) && (
+                          <div style={{
+                            fontSize: '11.5px',
+                            background: '#FEE2E2',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            marginTop: '6px'
+                          }}>
+                            💡 <strong>Recommendation:</strong> Some overlaps are caused by existing schedule blocks. Switching to <strong>"Replace Existing Workload"</strong> above will clear existing blocks and resolve these collisions.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* MATATAG Policy Warnings */}
+                    {detectedMatatagWarnings.length > 0 && (
+                      <div style={{
+                        background: '#FFFBEB',
+                        border: '1.5px solid #FCD34D',
+                        borderRadius: '10px',
+                        padding: '12px 16px',
+                        color: '#92400E'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '16px' }}>⚠️</span>
+                          <strong style={{ fontSize: '13px' }}>
+                            MATATAG Policy Notice (DepEd Order No. 12, s. 2024) ({detectedMatatagWarnings.length})
+                          </strong>
+                        </div>
+                        <ul style={{ margin: '0 0 0 20px', padding: 0, fontSize: '12px', lineHeight: '1.5' }}>
+                          {detectedMatatagWarnings.map((w, i) => (
+                            <li key={i}>{w.message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Duration Bound Errors */}
+                    {detectedDurationErrors.length > 0 && (
+                      <div style={{
+                        background: '#FEF2F2',
+                        border: '1.5px solid #F87171',
+                        borderRadius: '10px',
+                        padding: '12px 16px',
+                        color: '#991B1B'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <span style={{ fontSize: '16px' }}>⛔</span>
+                          <strong style={{ fontSize: '13px' }}>
+                            Duration Bound Errors ({detectedDurationErrors.length})
+                          </strong>
+                        </div>
+                        <ul style={{ margin: '0 0 0 20px', padding: 0, fontSize: '12px', lineHeight: '1.5' }}>
+                          {detectedDurationErrors.map((e, i) => (
+                            <li key={i}><strong>{e.subject}:</strong> {e.message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Clean State Notice */}
+                    {detectedCollisions.length === 0 && detectedMatatagWarnings.length === 0 && detectedDurationErrors.length === 0 && (
+                      <div style={{
+                        background: '#F0FDF4',
+                        border: '1.5px solid #86EFAC',
+                        borderRadius: '10px',
+                        padding: '12px 16px',
+                        color: '#166534',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                      }}>
+                        <span style={{ fontSize: '18px' }}>✅</span>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '12.5px', fontWeight: '700' }}>
+                            Validation Passed: No schedule collisions or MATATAG violations detected.
+                          </p>
+                          <p style={{ margin: '2px 0 0', fontSize: '11.5px', opacity: 0.9 }}>
+                            The {copyableSourceRows.length} schedule blocks can be safely added to {currentPerson?.firstName}'s workload.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Summary of Blocks to be Copied */}
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>
+                      SCHEDULE BLOCKS TO BE COPIED ({copyableSourceRows.length})
+                    </label>
+                    <div style={{
+                      border: '1.5px solid var(--line)',
+                      borderRadius: '10px',
+                      overflow: 'hidden',
+                      maxHeight: '180px',
+                      overflowY: 'auto'
+                    }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: '#F8FAFC', borderBottom: '1px solid var(--line)', textAlign: 'left', color: '#64748B', fontSize: '11px' }}>
+                            <th style={{ padding: '8px 12px' }}>SUBJECT</th>
+                            <th style={{ padding: '8px 12px' }}>SECTION / GRADE</th>
+                            <th style={{ padding: '8px 12px' }}>DAYS</th>
+                            <th style={{ padding: '8px 12px' }}>TIME SLOT</th>
+                            <th style={{ padding: '8px 12px', textAlign: 'right' }}>DURATION</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {copyableSourceRows.map((r, i) => {
+                            const diffM = (r.startTime && r.endTime) ? (parseMins(r.endTime) - parseMins(r.startTime)) : 0;
+                            const daysArr = (Array.isArray(r.days) && r.days.length > 0)
+                              ? r.days
+                              : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                <td style={{ padding: '8px 12px', fontWeight: '700', color: 'var(--navy)' }}>{r.subject}</td>
+                                <td style={{ padding: '8px 12px', color: '#475569' }}>{r.sectionName || r.gradeLevel || '—'}</td>
+                                <td style={{ padding: '8px 12px' }}>
+                                  <div style={{ display: 'flex', gap: '3px' }}>
+                                    {daysArr.map(d => (
+                                      <span key={d} style={{ fontSize: '9.5px', fontWeight: '700', background: '#DBEAFE', color: '#1E40AF', padding: '1px 5px', borderRadius: '3px' }}>
+                                        {d}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#334155' }}>
+                                  {r.startTime} – {r.endTime}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '700', color: '#0284C7' }}>
+                                  {diffM}m
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '14px 24px',
+              borderTop: '1.5px solid var(--line)',
+              background: '#F8FAFC',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              {copyStep === 'select' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowCopyModal(false)}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      background: 'white',
+                      color: '#475569',
+                      fontSize: '12.5px',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedSourceTeacher || copyableSourceRows.length === 0}
+                    onClick={() => setCopyStep('confirm')}
+                    style={{
+                      padding: '8px 20px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: (!selectedSourceTeacher || copyableSourceRows.length === 0)
+                        ? '#CBD5E1'
+                        : 'linear-gradient(135deg, var(--blue) 0%, var(--navy) 100%)',
+                      color: 'white',
+                      fontSize: '12.5px',
+                      fontWeight: '700',
+                      cursor: (!selectedSourceTeacher || copyableSourceRows.length === 0) ? 'not-allowed' : 'pointer',
+                      boxShadow: (!selectedSourceTeacher || copyableSourceRows.length === 0) ? 'none' : '0 2px 6px rgba(2, 132, 199, 0.3)'
+                    }}
+                  >
+                    Continue to Confirmation ➔
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setCopyStep('select')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      background: 'white',
+                      color: '#475569',
+                      fontSize: '12.5px',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ← Back to Teacher Selection
+                  </button>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowCopyModal(false)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #CBD5E1',
+                        background: 'white',
+                        color: '#475569',
+                        fontSize: '12.5px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCopyWorkload}
+                      style={{
+                        padding: '8px 22px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
+                        color: 'white',
+                        fontSize: '12.5px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                      }}
+                    >
+                      <span>✓</span> Confirm & Copy Workload
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5512,6 +7135,13 @@ export default function Workload() {
     return (eh * 60 + em) - (sh * 60 + sm);
   };
 
+  const parseTimeToMins = (t) => {
+    if (!t || typeof t !== 'string' || !t.includes(':')) return null;
+    const [h, m] = String(t).split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
   const getRowDurationError = (row) => {
     if (!row || !row.startTime || !row.endTime) return null;
     const diffMins = getTimeDiffMins(row.startTime, row.endTime);
@@ -5697,17 +7327,20 @@ export default function Workload() {
   };
 
   // Helper: Find who is currently assigned to a subject in a specific section across all personnel & this workload
-  const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowIdx = null) => {
+  // Helper: Find who is currently assigned to a subject in a specific section across all personnel & this workload
+  const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowIdx = null, evaluatingPersonParam = null) => {
     if ((!sectionId && !sectionName) || !subjectName) return null;
     const normSub = String(subjectName).trim().toUpperCase();
     if (normSub === 'ADVISORY') return null;
 
     const secIdStr = String(sectionId || '');
     const secNameStr = String(sectionName || '').trim().toUpperCase();
+    const evalPerson = evaluatingPersonParam || currentPerson;
+    const evalPersonId = evalPerson ? String(evalPerson.id || '') : '';
 
     // 1. Scan other personnel in the school
     for (const p of (personnel || [])) {
-      if (String(p.id) === String(currentPerson?.id)) continue;
+      if (evalPersonId && String(p.id) === evalPersonId) continue;
       if (p.isDraft || !Array.isArray(p.workloadRows)) continue;
 
       for (const r of p.workloadRows) {
@@ -5736,8 +7369,8 @@ export default function Workload() {
       }
     }
 
-    // 2. Scan current person's other workload rows
-    const myRows = currentPerson?.workloadRows || [];
+    // 2. Scan evaluating person's other workload rows
+    const myRows = evalPerson?.workloadRows || [];
     for (let rIdx = 0; rIdx < myRows.length; rIdx++) {
       if (currentRowIdx !== null && rIdx === currentRowIdx) continue;
       const r = myRows[rIdx];
@@ -5759,7 +7392,7 @@ export default function Workload() {
           assigned: true,
           teacherName: 'This Workload (Another Slot)',
           isOtherTeacher: false,
-          teacherId: currentPerson?.id
+          teacherId: evalPerson?.id
         };
       }
     }
@@ -5767,7 +7400,7 @@ export default function Workload() {
     return null;
   };
 
-  const getDuplicateSectionSubjectError = (row, rowIdx) => {
+  const getDuplicateSectionSubjectError = (row, rowIdx, targetPersonParam = null) => {
     if (!row || !row.subject) return null;
     const normSub = String(row.subject).trim().toUpperCase();
     if (normSub === 'ADVISORY') return null;
@@ -5777,7 +7410,7 @@ export default function Workload() {
     if (!secId && !secName) return null;
 
     const term = isSHSRow(row) ? (row.term || row.semester || '1st') : null;
-    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowIdx);
+    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowIdx, targetPersonParam || currentPerson);
 
     if (assignment && assignment.assigned) {
       const targetSec = (classSections || []).find(s => String(s.id) === secId || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secName));
@@ -5812,6 +7445,63 @@ export default function Workload() {
     }
 
     return null;
+  };
+
+  const getPersonnelWorkloadErrorCount = (person) => {
+    if (!person) return 0;
+    const isSelf = currentPerson && person.id === currentPerson.id;
+    const targetPerson = isSelf ? currentPerson : person;
+    const rows = targetPerson?.workloadRows || [];
+    if (!Array.isArray(rows) || rows.length === 0) return 0;
+
+    let errorCount = 0;
+    for (let idx = 0; idx < rows.length; idx++) {
+      const row = rows[idx];
+      if (!row) continue;
+
+      const sMins = parseTimeToMins(row.startTime);
+      const eMins = parseTimeToMins(row.endTime);
+
+      const hasConflict = rows.some((otherRow, oIdx) => {
+        if (oIdx === idx) return false;
+        const osMins = parseTimeToMins(otherRow.startTime);
+        const oeMins = parseTimeToMins(otherRow.endTime);
+        if (sMins === null || eMins === null || osMins === null || oeMins === null) return false;
+
+        const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+          ? row.days
+          : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : []);
+
+        const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0)
+          ? otherRow.days
+          : (otherRow.daySchedule ? String(otherRow.daySchedule).split(',').map(s => s.trim()) : []);
+
+        const dayOverlap = rowDays.some(d => otherDays.includes(d));
+        if (!dayOverlap) return false;
+
+        if (sMins < oeMins && eMins > osMins) {
+          if (isAdvisoryOrHgpPair(row, otherRow)) return false;
+          return true;
+        }
+        return false;
+      });
+
+      const durationErr = getRowDurationError(row);
+      const matatagWarn = getMatatagRowWarning(row);
+      const duplicateSubErr = getDuplicateSectionSubjectError(row, idx, targetPerson);
+      const hgpWeeklyErr = getHgpWeeklyError(row);
+
+      const rowMandated = getMatatagMandatedDuration(row, classSections);
+      const rowDiffMins = (sMins !== null && eMins !== null) ? (eMins - sMins) : 0;
+      const isRowDurationCompliant = (rowMandated !== null) && (rowDiffMins === rowMandated);
+      const isMatatagCardError = matatagWarn && matatagWarn.type === 'error' && (!rowMandated || !isRowDurationCompliant);
+
+      const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || isMatatagCardError;
+      if (cardHasError) {
+        errorCount++;
+      }
+    }
+    return errorCount;
   };
 
   const updateWorkloadRow = async (index, field, value) => {
@@ -5946,6 +7636,11 @@ export default function Workload() {
         subject: isCurrentValid ? rows[index].subject : '',
         remediationSubject: isCurrentValid ? rows[index].remediationSubject : ''
       };
+
+      const mand = getMatatagMandatedDuration(rows[index], classSections);
+      if (mand !== null && rows[index].startTime) {
+        rows[index].endTime = formatMinutesToTime(parseMins(rows[index].startTime) + mand);
+      }
     } else {
       rows[index] = {
         ...rows[index],
@@ -6957,32 +8652,59 @@ export default function Workload() {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--muted)' }}>
                                 <span>{p.position}</span>
                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                  {p.workloadVerified === false && (
-                                    <span style={{
-                                      background: '#FEF3C7',
-                                      color: '#D97706',
-                                      border: '1px solid #FCD34D',
-                                      padding: '1px 5px',
-                                      borderRadius: '4px',
-                                      fontSize: '8.5px',
-                                      fontWeight: '700'
-                                    }}>
-                                      ⚠️ Time Review
-                                    </span>
-                                  )}
-                                  {p.workloadVerified === true && (
-                                    <span style={{
-                                      background: '#DCFCE7',
-                                      color: '#15803D',
-                                      border: '1px solid #86EFAC',
-                                      padding: '1px 5px',
-                                      borderRadius: '4px',
-                                      fontSize: '8.5px',
-                                      fontWeight: '700'
-                                    }}>
-                                      ✓ Confirmed & Saved
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const targetP = isActive ? currentPerson : p;
+                                    const errCount = getPersonnelWorkloadErrorCount(p);
+                                    if (errCount > 0) {
+                                      return (
+                                        <span
+                                          title={`${errCount} unresolved workload issue${errCount > 1 ? 's' : ''}`}
+                                          style={{
+                                            background: '#FEF2F2',
+                                            color: '#DC2626',
+                                            border: '1px solid #FCA5A5',
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            fontSize: '8.5px',
+                                            fontWeight: '700'
+                                          }}
+                                        >
+                                          ⚠️ Workload Issues
+                                        </span>
+                                      );
+                                    }
+                                    if (targetP.workloadVerified === true) {
+                                      return (
+                                        <span style={{
+                                          background: '#DCFCE7',
+                                          color: '#15803D',
+                                          border: '1px solid #86EFAC',
+                                          padding: '1px 5px',
+                                          borderRadius: '4px',
+                                          fontSize: '8.5px',
+                                          fontWeight: '700'
+                                        }}>
+                                          ✓ Confirmed & Saved
+                                        </span>
+                                      );
+                                    }
+                                    if (targetP.workloadVerified === false) {
+                                      return (
+                                        <span style={{
+                                          background: '#FEF3C7',
+                                          color: '#D97706',
+                                          border: '1px solid #FCD34D',
+                                          padding: '1px 5px',
+                                          borderRadius: '4px',
+                                          fontSize: '8.5px',
+                                          fontWeight: '700'
+                                        }}>
+                                          ⚠️ Time Review
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                   <span style={{
                                     background: p.type === 'teaching' ? '#e0f2fe' : p.type === 'teaching-related' ? '#fae8ff' : '#f1f5f9',
                                     color: p.type === 'teaching' ? '#0369a1' : p.type === 'teaching-related' ? '#a21caf' : '#475569',
@@ -7450,6 +9172,10 @@ export default function Workload() {
                             selectedBlockIdx={selectedBlockIdx}
                             setSelectedBlockIdx={setSelectedBlockIdx}
                             handleSectionChangeForRow={handleSectionChangeForRow}
+                            personnel={personnel}
+                            savePersonnelChanges={savePersonnelChanges}
+                            showToast={showToast}
+                            showAlert={showAlert}
                           />
                         ) : (
                           <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>

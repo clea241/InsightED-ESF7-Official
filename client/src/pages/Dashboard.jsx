@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
+import { useApp, detectPersonnelTypeFromPosition, checkPersonnelWorkloadErrors } from '../context/AppContext';
 import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import PortalHeader from '../components/PortalHeader';
@@ -81,7 +81,7 @@ export default function Dashboard() {
       subtitle: 'Teaching schedules, period durations & timetable',
       icon: '◷',
       view: 'workload',
-      summary: `${safePersonnel.reduce((acc, p) => acc + (p?.workloadRows?.length || 0), 0)} Workload Slots`
+      summary: `${safePersonnel.reduce((acc, p) => acc + (p?.workloadRows?.length || 0), 0)} Workload Slots${safePersonnel.some(p => checkPersonnelWorkloadErrors(p, safePersonnel, safeClassSections)) ? ' (Conflicts Found)' : ''}`
     },
     {
       id: 'validation',

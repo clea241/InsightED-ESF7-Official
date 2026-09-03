@@ -409,7 +409,147 @@ export default function OrganizedClasses() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMultigrade, setIsMultigrade] = useState(false);
   const [selectedGrades, setSelectedGrades] = useState([]);
-  const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'list'
+  const [viewMode, setViewMode] = useState('list'); // 'cards' or 'list' (default to 'list')
+  const [isInlineAdding, setIsInlineAdding] = useState(false);
+  const [inlineRowData, setInlineRowData] = useState({
+    gradeLevel: 'Grade 7',
+    selectedGrades: [],
+    sectionName: '',
+    maleLearners: '',
+    femaleLearners: '',
+    advisorId: '',
+    sectionType: 'MONO GRADE'
+  });
+  const [isInlineAddingAral, setIsInlineAddingAral] = useState(false);
+  const [inlineAralData, setInlineAralData] = useState({
+    aralBasis: 'grade',
+    aralGrade: 'Grade 3',
+    aralToolKey: 'crla',
+    aralProfileLevel: 'Emerging',
+    sectionName: '',
+    aralLearners: '15',
+    tutorId: ''
+  });
+
+  const [isInlineAddingRemedial, setIsInlineAddingRemedial] = useState(false);
+  const [inlineRemedialData, setInlineRemedialData] = useState({
+    sectionType: 'REMEDIAL',
+    gradeLevel: 'Grade 3',
+    sectionName: '',
+    maleLearners: '',
+    femaleLearners: '',
+    advisorId: ''
+  });
+
+  const handleSaveInlineAralSection = async () => {
+    if (!inlineAralData.sectionName.trim()) {
+      if (showAlert) await showAlert('Validation Error', 'Please enter a section name for the ARAL section.');
+      return;
+    }
+
+    let finalGradeLevel = inlineAralData.aralGrade;
+    let finalSectionType = 'ARAL - GRADE LEVEL';
+
+    if (inlineAralData.aralBasis === 'assessment') {
+      const toolNames = { crla: 'CRLA', philIri: 'Phil-IRI', rma: 'RMA' };
+      const toolName = toolNames[inlineAralData.aralToolKey] || 'CRLA';
+      finalGradeLevel = `${toolName} - ${inlineAralData.aralProfileLevel}`;
+      finalSectionType = `ARAL - ${toolName.toUpperCase()}`;
+    }
+
+    const isDuplicate = classSections.some(s => 
+      s.gradeLevel === finalGradeLevel && 
+      s.sectionName.toUpperCase().trim() === inlineAralData.sectionName.toUpperCase().trim()
+    );
+
+    if (isDuplicate) {
+      if (showAlert) await showAlert('Duplicate Section', `An ARAL section named "${inlineAralData.sectionName.toUpperCase().trim()}" already exists for ${finalGradeLevel}.`);
+      return;
+    }
+
+    const totalLearners = Number(inlineAralData.aralLearners) || 15;
+
+    const toolNames = { crla: 'CRLA', philIri: 'Phil-IRI', rma: 'RMA' };
+    const toolName = toolNames[inlineAralData.aralToolKey] || 'CRLA';
+
+    await addClassSection({
+      gradeLevel: finalGradeLevel,
+      sectionName: inlineAralData.sectionName.toUpperCase().trim(),
+      advisorId: inlineAralData.tutorId,
+      adviserId: inlineAralData.tutorId,
+      tutorId: inlineAralData.tutorId,
+      sectionType: finalSectionType,
+      aralBasis: inlineAralData.aralBasis,
+      aralGrade: inlineAralData.aralGrade,
+      aralToolKey: inlineAralData.aralToolKey,
+      aralTool: toolName,
+      aralProfileLevel: inlineAralData.aralProfileLevel,
+      aralLearners: totalLearners,
+      numberOfLearners: totalLearners,
+      maleLearners: null,
+      femaleLearners: null
+    });
+
+    if (showToast) showToast(`✓ ARAL Section "${inlineAralData.sectionName.toUpperCase().trim()}" added successfully.`);
+
+    setInlineAralData({
+      aralBasis: 'grade',
+      aralGrade: 'Grade 3',
+      aralToolKey: 'crla',
+      aralProfileLevel: 'Emerging',
+      sectionName: '',
+      aralLearners: '15',
+      tutorId: ''
+    });
+    setIsInlineAddingAral(false);
+  };
+
+  const handleSaveInlineRemedialSection = async () => {
+    if (!inlineRemedialData.sectionName.trim()) {
+      if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
+      return;
+    }
+
+    const isDuplicate = classSections.some(s => 
+      s.gradeLevel === inlineRemedialData.gradeLevel && 
+      s.sectionName.toUpperCase().trim() === inlineRemedialData.sectionName.toUpperCase().trim()
+    );
+
+    if (isDuplicate) {
+      if (showAlert) await showAlert('Duplicate Section', `A section named "${inlineRemedialData.sectionName.toUpperCase().trim()}" already exists for ${inlineRemedialData.gradeLevel}.`);
+      return;
+    }
+
+    const calcMale = inlineRemedialData.maleLearners !== '' && inlineRemedialData.maleLearners !== null ? Number(inlineRemedialData.maleLearners) : null;
+    const calcFemale = inlineRemedialData.femaleLearners !== '' && inlineRemedialData.femaleLearners !== null ? Number(inlineRemedialData.femaleLearners) : null;
+    const total = (calcMale || 0) + (calcFemale || 0);
+
+    await addClassSection({
+      gradeLevel: inlineRemedialData.gradeLevel || 'Grade 3',
+      sectionName: inlineRemedialData.sectionName.toUpperCase().trim(),
+      advisorId: inlineRemedialData.advisorId,
+      adviserId: inlineRemedialData.advisorId,
+      sectionType: inlineRemedialData.sectionType || 'REMEDIAL',
+      advisoryMinutes: 300,
+      hgpMinutes: 60,
+      numberOfLearners: total,
+      maleLearners: calcMale,
+      femaleLearners: calcFemale
+    });
+
+    if (showToast) showToast(`✓ ${inlineRemedialData.sectionType === 'REMEDIAL' ? 'Remedial' : 'Enrichment'} Section "${inlineRemedialData.sectionName.toUpperCase().trim()}" added successfully.`);
+
+    setInlineRemedialData({
+      sectionType: 'REMEDIAL',
+      gradeLevel: 'Grade 3',
+      sectionName: '',
+      maleLearners: '',
+      femaleLearners: '',
+      advisorId: ''
+    });
+    setIsInlineAddingRemedial(false);
+  };
+
   const [isAralModalOpen, setIsAralModalOpen] = useState(false);
   const [aralBasis, setAralBasis] = useState('grade');
   const [aralGrade, setAralGrade] = useState('Grade 3');
@@ -451,20 +591,31 @@ export default function OrganizedClasses() {
       domain: 'Reading',
       tool: 'CRLA',
       toolFull: 'Comprehensive Rapid Literacy Assessment (Grades 1-3)',
+      domainDesc: 'Reading (Gr 1-3)',
       levels: ['Emerging', 'Developing', 'Transitioning', 'Reading at Grade Level']
     },
     philIri: {
       domain: 'Reading',
       tool: 'Phil-IRI',
       toolFull: 'Philippine Informal Reading Inventory (Grades 4-10)',
+      domainDesc: 'Reading (Gr 4-10)',
       levels: ['Frustration', 'Instructional', 'Independent']
     },
     rma: {
       domain: 'Mathematics',
       tool: 'RMA',
       toolFull: 'Rapid Math Assessment (Grades 1-10)',
+      domainDesc: 'Math (Gr 1-10)',
       levels: ['Not Proficient', 'Low Proficient', 'Nearly Proficient', 'Proficient', 'Highly Proficient']
     }
+  };
+
+  const normalizeAralToolKey = (val) => {
+    if (!val) return 'crla';
+    const str = String(val).toLowerCase();
+    if (str.includes('phil')) return 'philIri';
+    if (str.includes('rma')) return 'rma';
+    return 'crla';
   };
 
   const activePersonnel = (Array.isArray(personnel) ? personnel : []).filter(p => !p.isDraft);
@@ -478,22 +629,36 @@ export default function OrganizedClasses() {
     let sectionType = 'ARAL_GRADE';
     let sectionName = `ARAL (Grade-Level) - ${aralGrade}`;
     let resGrade = aralGrade;
+    let toolKey = null;
+    let toolName = null;
+    let levelName = null;
 
     if (aralBasis === 'assessment') {
-      const toolObj = ARAL_TOOLS[aralToolKey] || ARAL_TOOLS.crla;
+      toolKey = normalizeAralToolKey(aralToolKey);
+      const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
       const selectedLevel = toolObj.levels.includes(aralProfileLevel) ? aralProfileLevel : toolObj.levels[0];
       sectionType = `ARAL_${toolObj.tool}_${selectedLevel.toUpperCase().replace(/ /g, '_')}`;
       sectionName = `ARAL (${toolObj.tool} - ${selectedLevel})`;
       resGrade = 'ARAL';
+      toolName = toolObj.tool;
+      levelName = selectedLevel;
     }
 
     addClassSection({
       gradeLevel: resGrade,
       sectionName,
+      advisorId: aralTutorId,
       adviserId: aralTutorId,
+      tutorId: aralTutorId,
       sectionType,
-      numberOfLearners: Number(aralLearners) || 0
+      numberOfLearners: Number(aralLearners) || 0,
+      aralBasis,
+      aralGrade: aralBasis === 'grade' ? aralGrade : null,
+      aralToolKey: toolKey,
+      aralTool: toolName,
+      aralProfileLevel: levelName
     });
+    setIsModalOpen(false);
     setIsAralModalOpen(false);
     setAralTutorId('');
   };
@@ -543,6 +708,7 @@ export default function OrganizedClasses() {
   };
 
   // Subjects Taught Card state
+  const [isManageSubjectsModalOpen, setIsManageSubjectsModalOpen] = useState(false);
   const [disabledSubjectsMap, setDisabledSubjectsMap] = useState(() => {
     try {
       const saved = schoolInfo?.subjectsConfig?.disabledMap || (localStorage.getItem('school_disabled_subjects') ? JSON.parse(localStorage.getItem('school_disabled_subjects')) : {});
@@ -561,41 +727,135 @@ export default function OrganizedClasses() {
     }
   });
 
-  // Edit Section Modal state
-  const [editModalSection, setEditModalSection] = useState(null);
-  const [editMale, setEditMale] = useState('');
-  const [editFemale, setEditFemale] = useState('');
-  const [editAdvisorId, setEditAdvisorId] = useState('');
-  const [editSectionName, setEditSectionName] = useState('');
-  const [editGradeLevel, setEditGradeLevel] = useState('');
+  // Inline Edit Row state for in-place table & card editing
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [editingRowData, setEditingRowData] = useState(null);
 
-  const openEditModal = (sec) => {
-    setEditModalSection(sec);
-    setEditSectionName(sec.sectionName || '');
-    setEditGradeLevel(sec.gradeLevel || '');
-    setEditMale(sec.maleLearners !== undefined && sec.maleLearners !== null ? String(sec.maleLearners) : '');
-    setEditFemale(sec.femaleLearners !== undefined && sec.femaleLearners !== null ? String(sec.femaleLearners) : '');
-    setEditAdvisorId(sec.advisorId || '');
+  const startEditingRow = (sec) => {
+    const isAral = String(sec.sectionType || '').startsWith('ARAL') || sec.sectionType === 'ARAL';
+    const aralInfo = isAral ? getAralCardDetails(sec) : null;
+    const type = sec.sectionType || (String(sec.gradeLevel || '').includes(' - ') ? 'MULTIGRADE' : 'MONO GRADE');
+
+    const cleanGrades = (type === 'MULTIGRADE' || String(sec.gradeLevel || '').includes(' - ')) 
+      ? String(sec.gradeLevel || '').split(' - ').map(s => s.trim()).filter(g => Boolean(g) && g !== 'Kinder' && g.toLowerCase() !== 'kinder')
+      : [];
+
+    setEditingRowId(sec.id);
+    const toolKey = aralInfo ? aralInfo.toolKey : normalizeAralToolKey(sec.aralToolKey || sec.aralTool);
+    const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+    const validLevel = (aralInfo && aralInfo.profileLevel && toolObj.levels.includes(aralInfo.profileLevel))
+      ? aralInfo.profileLevel
+      : (sec.aralProfileLevel && toolObj.levels.includes(sec.aralProfileLevel) ? sec.aralProfileLevel : toolObj.levels[0]);
+
+    setEditingRowId(sec.id);
+    setEditingRowData({
+      id: sec.id,
+      sectionType: type,
+      gradeLevel: sec.gradeLevel || availableGrades[0] || 'Grade 7',
+      selectedGrades: cleanGrades.length >= 2 ? cleanGrades : [multigradeGrades[0] || 'Grade 1', multigradeGrades[1] || 'Grade 2'],
+      sectionName: sec.sectionName || '',
+      maleLearners: sec.maleLearners !== undefined && sec.maleLearners !== null ? String(sec.maleLearners) : '',
+      femaleLearners: sec.femaleLearners !== undefined && sec.femaleLearners !== null ? String(sec.femaleLearners) : '',
+      numberOfLearners: sec.numberOfLearners !== undefined && sec.numberOfLearners !== null ? String(sec.numberOfLearners) : '',
+      advisorId: sec.advisorId || sec.adviserId || sec.tutorId || '',
+      // ARAL specifics
+      aralBasis: aralInfo ? (aralInfo.isAssessment ? 'assessment' : 'grade') : (sec.aralBasis || 'grade'),
+      aralGrade: sec.aralGrade || (sec.gradeLevel && sec.gradeLevel !== 'ARAL' && !String(sec.gradeLevel).includes(' - ') ? sec.gradeLevel : 'Grade 3'),
+      aralToolKey: toolKey,
+      aralProfileLevel: validLevel,
+      aralLearners: sec.aralLearners || sec.numberOfLearners || 15,
+      tutorId: sec.tutorId || sec.advisorId || sec.adviserId || ''
+    });
   };
 
-  const handleSaveEditSection = (e) => {
-    if (e) e.preventDefault();
-    if (!editModalSection) return;
-    const rawM = editMale.slice(0, 2);
-    const rawF = editFemale.slice(0, 2);
+  const handleSaveInlineEdit = async (sec) => {
+    if (!editingRowData) return;
+
+    if (!editingRowData.sectionName.trim()) {
+      if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
+      return;
+    }
+
+    const isAral = String(sec.sectionType || '').startsWith('ARAL') || sec.sectionType === 'ARAL';
+    const isRemedialOrEnrichment = sec.sectionType === 'REMEDIAL' || sec.sectionType === 'ENRICHMENT';
+
+    let finalGradeLevel = editingRowData.gradeLevel;
+    let finalSectionType = editingRowData.sectionType;
+    let toolKey = null;
+    let toolObj = null;
+    let levelToSave = null;
+
+    if (isAral) {
+      if (editingRowData.aralBasis === 'grade') {
+        finalGradeLevel = editingRowData.aralGrade;
+        finalSectionType = 'ARAL - GRADE LEVEL';
+      } else {
+        toolKey = normalizeAralToolKey(editingRowData.aralToolKey);
+        toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+        levelToSave = toolObj.levels.includes(editingRowData.aralProfileLevel)
+          ? editingRowData.aralProfileLevel
+          : toolObj.levels[0];
+        finalGradeLevel = `${toolObj.tool} - ${levelToSave}`;
+        finalSectionType = `ARAL - ${toolObj.tool.toUpperCase()}`;
+      }
+    } else if (!isRemedialOrEnrichment && finalSectionType === 'MULTIGRADE') {
+      const selected = editingRowData.selectedGrades || [];
+      if (selected.length < 2 || selected.length > 6) {
+        if (showAlert) await showAlert('Validation Error', 'Please select between 2 and 6 grade levels for a multigrade section.');
+        return;
+      }
+      const sortedGrades = [...selected].sort((a, b) => availableGrades.indexOf(a) - availableGrades.indexOf(b));
+      finalGradeLevel = sortedGrades.join(' - ');
+    }
+
+    // Check duplicate section name within same grade level
+    const isDuplicate = classSections.some(s => 
+      s.id !== sec.id && 
+      s.gradeLevel === finalGradeLevel && 
+      s.sectionName.toUpperCase().trim() === editingRowData.sectionName.toUpperCase().trim()
+    );
+
+    if (isDuplicate) {
+      if (showAlert) await showAlert('Duplicate Section', `A section named "${editingRowData.sectionName.toUpperCase().trim()}" already exists for ${finalGradeLevel}.`);
+      return;
+    }
+
+    const rawM = String(editingRowData.maleLearners || '').slice(0, 2);
+    const rawF = String(editingRowData.femaleLearners || '').slice(0, 2);
     const mVal = rawM === '' ? null : Math.min(99, Math.max(0, Number(rawM)));
     const fVal = rawF === '' ? null : Math.min(99, Math.max(0, Number(rawF)));
-    const total = (mVal || 0) + (fVal || 0);
+    const total = isAral ? Number(editingRowData.aralLearners) : ((mVal || 0) + (fVal || 0));
 
-    updateSectionDetails(editModalSection.id, {
-      sectionName: editSectionName,
-      gradeLevel: editGradeLevel,
+    const updatedToolKey = isAral ? (toolKey || normalizeAralToolKey(editingRowData.aralToolKey)) : undefined;
+    const updatedToolObj = isAral ? (ARAL_TOOLS[updatedToolKey] || ARAL_TOOLS.crla) : undefined;
+    const updatedLevel = isAral ? (levelToSave || (updatedToolObj.levels.includes(editingRowData.aralProfileLevel) ? editingRowData.aralProfileLevel : updatedToolObj.levels[0])) : undefined;
+
+    await updateSectionDetails(sec.id, {
+      sectionName: editingRowData.sectionName.toUpperCase().trim(),
+      gradeLevel: finalGradeLevel,
+      sectionType: finalSectionType,
       maleLearners: mVal,
       femaleLearners: fVal,
       numberOfLearners: total,
-      advisorId: editAdvisorId
+      aralLearners: isAral ? total : undefined,
+      aralBasis: editingRowData.aralBasis,
+      aralGrade: editingRowData.aralGrade,
+      aralToolKey: updatedToolKey,
+      aralTool: isAral ? updatedToolObj.tool : undefined,
+      aralProfileLevel: updatedLevel,
+      advisorId: editingRowData.advisorId || editingRowData.tutorId,
+      adviserId: editingRowData.advisorId || editingRowData.tutorId,
+      tutorId: editingRowData.tutorId || editingRowData.advisorId
     });
-    setEditModalSection(null);
+
+    if (showToast) showToast(`✓ Section "${editingRowData.sectionName.toUpperCase().trim()}" updated successfully.`);
+    setEditingRowId(null);
+    setEditingRowData(null);
+  };
+
+  const handleCancelInlineEdit = () => {
+    setEditingRowId(null);
+    setEditingRowData(null);
   };
 
   React.useEffect(() => {
@@ -677,6 +937,59 @@ export default function OrganizedClasses() {
       ...s,
       enabled: disabledSubjectsMap[s.name] !== true
     }));
+  };
+
+  const getSubjectGradeBadge = (sub, band, gradeLevel) => {
+    if (sub.gradeLevel && sub.gradeLevel !== 'All') {
+      return sub.gradeLevel === 'Kinder' ? 'Kinder' : sub.gradeLevel.replace('Grade ', 'Gr ');
+    }
+    if (band === 'Elementary') {
+      if (gradeLevel !== 'All') {
+        return gradeLevel === 'Kinder' ? 'Kinder' : gradeLevel.replace('Grade ', 'Gr ');
+      }
+      const matching = [];
+      if (MASTER_SUBJECTS_CATALOG.Elementary) {
+        Object.entries(MASTER_SUBJECTS_CATALOG.Elementary).forEach(([g, list]) => {
+          if (Array.isArray(list) && list.includes(sub.name)) {
+            matching.push(g);
+          }
+        });
+      }
+      if (matching.length === 0) return 'Elem';
+      if (matching.length === 1) return matching[0] === 'Kinder' ? 'Kinder' : matching[0].replace('Grade ', 'Gr ');
+
+      const nums = matching
+        .map(g => (g === 'Kinder' ? 0 : parseInt(g.replace('Grade ', ''), 10)))
+        .filter(n => !isNaN(n))
+        .sort((a, b) => a - b);
+
+      if (nums.length > 0) {
+        const min = nums[0] === 0 ? 'K' : `Gr ${nums[0]}`;
+        const max = nums[nums.length - 1];
+        if (nums[0] === 0 && max === 6) return 'K–6';
+        if (nums[0] === 1 && max === 6) return 'Gr 1–6';
+        if (nums[0] === 4 && max === 6) return 'Gr 4–6';
+        if (nums[0] === 1 && max === 3) return 'Gr 1–3';
+        if (nums[0] === 2 && max === 6) return 'Gr 2–6';
+        if (nums[0] === 3 && max === 6) return 'Gr 3–6';
+        return `${min}–${max}`;
+      }
+      return 'Elem';
+    }
+
+    if (band === 'Junior High School') {
+      if (gradeLevel !== 'All') return gradeLevel.replace('Grade ', 'Gr ');
+      return 'Gr 7–10';
+    }
+
+    if (band === 'Senior High School') {
+      if (sub.shsCategory) {
+        return sub.shsCategory.replace('SHS-', '').replace(' SUBJECTS', '');
+      }
+      return 'Gr 11–12';
+    }
+
+    return '';
   };
 
   const toggleSubject = (subjectName) => {
@@ -794,6 +1107,39 @@ export default function OrganizedClasses() {
     }
   }, [availableBands.join(',')]);
 
+  const multigradeGrades = availableGrades.filter(g => 
+    g !== 'Kinder' && 
+    g.toLowerCase() !== 'kinder' && 
+    g !== 'NON-GRADED' && 
+    g !== 'NON GRADED'
+  );
+
+  // Auto-cleanup effect for existing saved Multigrade sections that incorrectly contain Kinder
+  React.useEffect(() => {
+    if (!Array.isArray(classSections) || classSections.length === 0) return;
+
+    let needsUpdate = false;
+    const cleanedSections = classSections.map(sec => {
+      const isMulti = sec.sectionType === 'MULTIGRADE' || String(sec.gradeLevel || '').includes(' - ');
+      if (isMulti && String(sec.gradeLevel || '').includes('Kinder')) {
+        const parts = String(sec.gradeLevel).split(' - ').map(p => p.trim()).filter(g => Boolean(g) && g !== 'Kinder' && g.toLowerCase() !== 'kinder');
+        const fallbackDefault = multigradeGrades.length >= 2 ? `${multigradeGrades[0]} - ${multigradeGrades[1]}` : 'Grade 1 - Grade 2';
+        const newGradeLevel = parts.length >= 2 ? parts.join(' - ') : (parts.length === 1 ? parts[0] : fallbackDefault);
+        needsUpdate = true;
+        return {
+          ...sec,
+          gradeLevel: newGradeLevel,
+          sectionType: parts.length === 1 ? 'MONO GRADE' : 'MULTIGRADE'
+        };
+      }
+      return sec;
+    });
+
+    if (needsUpdate) {
+      setClassSections(cleanedSections);
+    }
+  }, [classSections, multigradeGrades.join(',')]);
+
   // Auto-clean legacy default 35 values from cached classSections if male/female are unset
   React.useEffect(() => {
     let hasLegacy = false;
@@ -813,6 +1159,30 @@ export default function OrganizedClasses() {
           }
         }
       });
+    }
+  }, [classSections]);
+
+  // Auto-clean legacy/mismatched ARAL tool & profile level data in stored classSections
+  React.useEffect(() => {
+    let needsUpdate = false;
+    classSections.forEach(sec => {
+      const isAral = sec.aralBasis === 'assessment' || String(sec.sectionType || '').startsWith('ARAL');
+      if (isAral) {
+        const toolKey = normalizeAralToolKey(sec.aralToolKey || sec.aralTool || sec.sectionType || sec.gradeLevel || sec.sectionName);
+        const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+        if (sec.aralTool !== toolObj.tool || sec.aralToolKey !== toolKey) {
+          sec.aralTool = toolObj.tool;
+          sec.aralToolKey = toolKey;
+          needsUpdate = true;
+        }
+        if (sec.aralBasis === 'assessment' && (!sec.aralProfileLevel || !toolObj.levels.includes(sec.aralProfileLevel))) {
+          sec.aralProfileLevel = toolObj.levels[0];
+          needsUpdate = true;
+        }
+      }
+    });
+    if (needsUpdate && typeof setClassSections === 'function') {
+      setClassSections([...classSections]);
     }
   }, [classSections]);
 
@@ -927,6 +1297,146 @@ export default function OrganizedClasses() {
     setIsModalOpen(false);
   };
 
+  const handleSaveInlineSection = async () => {
+    if (!inlineRowData.sectionName.trim()) {
+      if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
+      return;
+    }
+    if (!inlineRowData.advisorId) {
+      if (showAlert) await showAlert('Advisory Teacher Required', 'Please select an Advisory Teacher for the section.');
+      return;
+    }
+
+    let finalGradeLevel = inlineRowData.gradeLevel;
+    let finalSectionType = inlineRowData.sectionType || 'MONO GRADE';
+
+    if (finalSectionType === 'MULTIGRADE') {
+      const selected = (inlineRowData.selectedGrades || []).filter(g => g !== 'Kinder' && g.toLowerCase() !== 'kinder');
+      if (selected.length < 2 || selected.length > 6) {
+        if (showAlert) await showAlert('Validation Error', 'Please select between 2 and 6 grade levels (excluding Kinder) for a multigrade section.');
+        return;
+      }
+      const sortedGrades = [...selected].sort((a, b) => availableGrades.indexOf(a) - availableGrades.indexOf(b));
+      finalGradeLevel = sortedGrades.join(' - ');
+    }
+
+    const isDuplicate = classSections.some(s => 
+      s.gradeLevel === finalGradeLevel && 
+      s.sectionName.toUpperCase().trim() === inlineRowData.sectionName.toUpperCase().trim()
+    );
+
+    if (isDuplicate) {
+      if (showAlert) await showAlert('Duplicate Section', `A section named "${inlineRowData.sectionName.toUpperCase().trim()}" already exists for ${finalGradeLevel}.`);
+      return;
+    }
+
+    const calcMale = inlineRowData.maleLearners !== '' && inlineRowData.maleLearners !== null && inlineRowData.maleLearners !== undefined ? Number(inlineRowData.maleLearners) : null;
+    const calcFemale = inlineRowData.femaleLearners !== '' && inlineRowData.femaleLearners !== null && inlineRowData.femaleLearners !== undefined ? Number(inlineRowData.femaleLearners) : null;
+    const total = (calcMale || 0) + (calcFemale || 0);
+
+    await addClassSection({
+      gradeLevel: finalGradeLevel,
+      sectionName: inlineRowData.sectionName.toUpperCase().trim(),
+      advisorId: inlineRowData.advisorId,
+      sectionType: finalSectionType,
+      advisoryMinutes: 300,
+      hgpMinutes: 60,
+      numberOfLearners: total,
+      maleLearners: calcMale,
+      femaleLearners: calcFemale
+    });
+
+    if (showToast) showToast(`✓ Section "${inlineRowData.sectionName.toUpperCase().trim()}" added successfully.`);
+
+    // Reset inline inputs and prepare next row
+    setInlineRowData(prev => ({
+      gradeLevel: prev.gradeLevel || availableGrades[0] || 'Grade 7',
+      selectedGrades: [],
+      sectionName: '',
+      maleLearners: '',
+      femaleLearners: '',
+      advisorId: '',
+      sectionType: 'MONO GRADE'
+    }));
+    setIsInlineAdding(false);
+  };
+
+  const getAralCardDetails = (sec) => {
+    const isAssessment = sec.aralBasis === 'assessment' || 
+      String(sec.sectionType || '').toLowerCase().includes('crla') || 
+      String(sec.sectionType || '').toLowerCase().includes('phil') || 
+      String(sec.sectionType || '').toLowerCase().includes('rma') || 
+      String(sec.gradeLevel || '').toLowerCase().includes('crla') ||
+      String(sec.gradeLevel || '').toLowerCase().includes('phil') ||
+      String(sec.gradeLevel || '').toLowerCase().includes('rma') ||
+      sec.gradeLevel === 'ARAL';
+
+    const basisLabel = isAssessment ? 'Assessment Profile' : 'Grade Level';
+    let targetGrade = sec.aralGrade || (sec.gradeLevel && sec.gradeLevel !== 'ARAL' && !String(sec.gradeLevel).includes(' - ') ? sec.gradeLevel : null);
+    
+    let toolKey = sec.aralToolKey;
+    if (!toolKey) {
+      if (sec.aralTool) {
+        const lower = String(sec.aralTool).toLowerCase();
+        if (lower.includes('phil')) toolKey = 'philIri';
+        else if (lower.includes('rma')) toolKey = 'rma';
+        else toolKey = 'crla';
+      } else {
+        const text = `${sec.sectionType || ''} ${sec.sectionName || ''} ${sec.gradeLevel || ''}`.toLowerCase();
+        if (text.includes('phil')) toolKey = 'philIri';
+        else if (text.includes('rma')) toolKey = 'rma';
+        else toolKey = 'crla';
+      }
+    }
+
+    const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+    let toolName = sec.aralTool || toolObj.tool;
+    let domainDesc = toolObj.domainDesc;
+    let profileLevel = sec.aralProfileLevel;
+
+    if (isAssessment && !profileLevel) {
+      if (String(sec.gradeLevel || '').includes(' - ')) {
+        profileLevel = String(sec.gradeLevel).split(' - ')[1].trim();
+      } else {
+        const match = String(sec.sectionName || '').match(/-\s*([^)]+)\)/);
+        if (match) {
+          profileLevel = match[1].trim();
+        } else {
+          const parts = String(sec.sectionType || '').split('_');
+          if (parts.length >= 3) {
+            profileLevel = parts.slice(2).join(' ');
+          } else {
+            profileLevel = toolObj.levels[0];
+          }
+        }
+      }
+    }
+
+    const badgeText = isAssessment
+      ? `${toolName} (${domainDesc}) — ${profileLevel || toolObj.levels[0]}`
+      : (targetGrade || sec.gradeLevel || '—');
+
+    const learnerCount = (sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '')
+      ? Number(sec.numberOfLearners)
+      : (Number(sec.aralLearners) || 0);
+
+    const tutorId = sec.advisorId || sec.adviserId || sec.tutorId;
+    const tutor = personnel.find(p => String(p.id) === String(tutorId));
+
+    return {
+      isAssessment,
+      basisLabel,
+      targetGrade: targetGrade || sec.gradeLevel || '—',
+      toolKey,
+      toolName,
+      domainDesc,
+      profileLevel: profileLevel || toolObj.levels[0],
+      badgeText: badgeText || '—',
+      learnerCount,
+      tutor
+    };
+  };
+
   const alreadyTakenGrades = [];
   classSections.forEach(sec => {
     if (sec.sectionType === 'MULTIGRADE' || String(sec.gradeLevel || '').includes(' - ')) {
@@ -939,10 +1449,45 @@ export default function OrganizedClasses() {
     }
   });
 
-  const filteredSections = classSections.filter(sec => {
-    const advisor = personnel.find(p => p.id === sec.advisorId);
+  // 1. Regular Sections (Mono Grade, Multigrade, Non-graded)
+  const regularSections = classSections.filter(sec => 
+    sec.sectionType !== 'REMEDIAL' && 
+    sec.sectionType !== 'ENRICHMENT' && 
+    !String(sec.sectionType || '').startsWith('ARAL') &&
+    sec.sectionType !== 'ARAL'
+  );
+
+  // 2. ARAL Sections
+  const aralSections = classSections.filter(sec => 
+    String(sec.sectionType || '').startsWith('ARAL') || sec.sectionType === 'ARAL'
+  );
+
+  // 3. Remedial / Enrichment Sections
+  const remedialSections = classSections.filter(sec => 
+    sec.sectionType === 'REMEDIAL' || sec.sectionType === 'ENRICHMENT'
+  );
+
+  // Filter regular sections by searchQuery
+  const filteredRegularSections = regularSections.filter(sec => {
+    const advisor = personnel.find(p => String(p.id) === String(sec.advisorId || sec.adviserId));
     const advisorName = advisor ? `${advisor.firstName} ${advisor.lastName}` : '';
-    const hay = `${sec.gradeLevel} ${sec.sectionName} ${advisorName}`.toLowerCase();
+    const hay = `${sec.gradeLevel} ${sec.sectionName} ${sec.sectionType || ''} ${advisorName}`.toLowerCase();
+    return hay.includes(searchQuery.toLowerCase());
+  });
+
+  // Filter ARAL sections by searchQuery
+  const filteredAralSections = aralSections.filter(sec => {
+    const tutor = personnel.find(p => String(p.id) === String(sec.advisorId || sec.adviserId || sec.tutorId));
+    const tutorName = tutor ? `${tutor.firstName} ${tutor.lastName}` : '';
+    const hay = `${sec.gradeLevel} ${sec.sectionName} ${sec.aralBasis || ''} ${sec.aralTool || ''} ${sec.aralProfileLevel || ''} ${tutorName}`.toLowerCase();
+    return hay.includes(searchQuery.toLowerCase());
+  });
+
+  // Filter Remedial/Enrichment sections by searchQuery
+  const filteredRemedialSections = remedialSections.filter(sec => {
+    const teacher = personnel.find(p => String(p.id) === String(sec.advisorId || sec.adviserId));
+    const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : '';
+    const hay = `${sec.gradeLevel} ${sec.sectionName} ${sec.sectionType || ''} ${teacherName}`.toLowerCase();
     return hay.includes(searchQuery.toLowerCase());
   });
 
@@ -956,16 +1501,16 @@ export default function OrganizedClasses() {
         onContinue={() => completeNode('classes', 'workload')}
         continueText="Save & Continue to Workload ➔"
       />
-      <section id="classes" className="view grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '24px', alignItems: 'start' }}>
+      <section id="classes" className="view" style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
 
-      <article className="card">
+      <article className="card" style={{ width: '100%' }}>
         <div className="card-inner">
           <div className="roster-card-header">
             <div>
               <h2>Organized Classes Setup</h2>
               <p className="subtext">Configure curriculum-level sections and assign class advisers for the current school year.</p>
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <button 
                 type="button"
                 className="btn secondary" 
@@ -999,14 +1544,36 @@ export default function OrganizedClasses() {
                 🗑️ Clear Organized Classes
               </button>
               <button 
-                className="btn" 
-                onClick={() => {
-                  setModalCategory('REGULAR');
-                  setIsModalOpen(true);
+                type="button"
+                className="btn secondary" 
+                onClick={() => setIsManageSubjectsModalOpen(true)}
+                style={{
+                  background: '#F8FAFC',
+                  color: '#1E293B',
+                  border: '1.5px solid #CBD5E1',
+                  fontWeight: '800',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderRadius: '8px',
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
                 }}
-                style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#EFF6FF';
+                  e.currentTarget.style.color = '#1D4ED8';
+                  e.currentTarget.style.borderColor = '#93C5FD';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#F8FAFC';
+                  e.currentTarget.style.color = '#1E293B';
+                  e.currentTarget.style.borderColor = '#CBD5E1';
+                }}
+                title="Configure active subjects offered by grade band in your school"
               >
-                <span>+</span> Add Section
+                📚 Manage Subjects Taught
               </button>
             </div>
           </div>
@@ -1049,39 +1616,22 @@ export default function OrganizedClasses() {
             });
 
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '16px 0 20px 0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL ENROLLED</span>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e40af' }}>{totalSchool} <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>Learners</span></div>
-                  </div>
-                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MALE LEARNERS</span>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#166534' }}>{totalMale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Males</span></div>
-                  </div>
-                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #fdf2f8, #fce7f3)', borderRadius: '12px', border: '1px solid #fbcfe8' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FEMALE LEARNERS</span>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#9d174d' }}>{totalFemale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#ec4899' }}>Females</span></div>
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', margin: '16px 0 20px 0' }}>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL ENROLLED</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e40af' }}>{totalSchool} <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>Learners</span></div>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-                  <div style={{ padding: '10px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748B' }}>TOTAL SECTIONS</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#1E293B' }}>{classSections.length}</span>
-                  </div>
-                  <div style={{ padding: '10px 14px', background: '#DCFCE7', borderRadius: '10px', border: '1.5px solid #6EE7B7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>🟢 WITHIN STANDARD</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#047857' }}>{withinCount}</span>
-                  </div>
-                  <div style={{ padding: '10px 14px', background: '#FEF3C7', borderRadius: '10px', border: '1.5px solid #FCD34D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#D97706' }}>🟡 BELOW STANDARD</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#D97706' }}>{belowCount}</span>
-                  </div>
-                  <div style={{ padding: '10px 14px', background: '#FEE2E2', borderRadius: '10px', border: '1.5px solid #FCA5A5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#B91C1C' }}>🔴 ABOVE STANDARD</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#B91C1C' }}>{aboveCount}</span>
-                  </div>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MALE LEARNERS</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#166534' }}>{totalMale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Males</span></div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #fdf2f8, #fce7f3)', borderRadius: '12px', border: '1px solid #fbcfe8' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FEMALE LEARNERS</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#9d174d' }}>{totalFemale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#ec4899' }}>Females</span></div>
+                </div>
+                <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL SECTIONS</span>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e293b' }}>{classSections.length} <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Sections</span></div>
                 </div>
               </div>
             );
@@ -1140,93 +1690,874 @@ export default function OrganizedClasses() {
           </div>
 
           {viewMode === 'list' ? (
-            <div style={{ overflowX: 'auto', border: '1.5px solid var(--line)', borderRadius: '16px' }}>
-              <table className="table">
+            <div className="table-wrap" style={{ border: '1.5px solid var(--line)', borderRadius: '16px', overflowX: 'auto', background: 'white', marginTop: '16px' }}>
+              <table style={{ width: '100%', minWidth: '980px', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                 <thead>
-                  <tr>
-                    <th>Grade Level</th>
-                    <th>Section Name</th>
-                    <th style={{ width: '130px', textAlign: 'center' }}>Total Learners</th>
-                    <th>Section Size Standard</th>
-                    <th>Class Adviser</th>
-                    <th>Position</th>
-                    <th style={{ width: '80px' }}>Action</th>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid var(--line)' }}>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Class Type</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Grade Level</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Section Name</th>
+                    <th style={{ padding: '12px 10px', fontSize: '11px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '75px' }}>Male (♂)</th>
+                    <th style={{ padding: '12px 10px', fontSize: '11px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '75px' }}>Female (♀)</th>
+                    <th style={{ padding: '12px 12px', fontSize: '11px', fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '90px' }}>Total</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Class Adviser</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '130px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSections.map((sec) => {
+                  {filteredRegularSections.map((sec) => {
+                    const isEditingThisRow = editingRowId === sec.id;
+
+                    if (isEditingThisRow && editingRowData) {
+                      const m = editingRowData.maleLearners !== '' && editingRowData.maleLearners !== null ? Number(editingRowData.maleLearners) : 0;
+                      const f = editingRowData.femaleLearners !== '' && editingRowData.femaleLearners !== null ? Number(editingRowData.femaleLearners) : 0;
+                      const tot = m + f;
+                      const statusObj = getSectionSizeStatus(editingRowData.gradeLevel, tot);
+
+                      return (
+                        <tr key={sec.id} style={{ background: '#F0F7FF', borderTop: '2px solid #3B82F6', borderBottom: '2px solid #3B82F6' }}>
+                          {/* 1. Class Type Select */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                            <select
+                              value={editingRowData.sectionType || 'MONO GRADE'}
+                              onChange={(e) => {
+                                const newType = e.target.value;
+                                setEditingRowData(prev => ({
+                                  ...prev,
+                                  sectionType: newType,
+                                  selectedGrades: newType === 'MULTIGRADE' ? ((prev.selectedGrades || []).length > 0 ? prev.selectedGrades : ['Grade 1', 'Grade 2']) : (prev.selectedGrades || [])
+                                }));
+                              }}
+                              style={{
+                                padding: '6px 8px',
+                                borderRadius: '6px',
+                                border: '1.5px solid #3B82F6',
+                                fontSize: '11px',
+                                fontWeight: '800',
+                                background: 'white',
+                                color: editingRowData.sectionType === 'MULTIGRADE' ? '#B45309' : '#1E293B'
+                              }}
+                              autoFocus
+                            >
+                              <option value="MONO GRADE">Mono Grade</option>
+                              <option value="MULTIGRADE">Multi Grade</option>
+                            </select>
+                          </td>
+
+                          {/* 2. Grade Level Field */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                            {editingRowData.sectionType === 'MULTIGRADE' ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', background: '#FFFBEB', padding: '6px 8px', borderRadius: '6px', border: '1px solid #FDE68A', minWidth: '160px' }}>
+                                <span style={{ fontSize: '10px', fontWeight: '800', color: '#B45309' }}>Select Grades (2-6):</span>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 6px' }}>
+                                  {multigradeGrades.map(g => {
+                                    const isChecked = (editingRowData.selectedGrades || []).includes(g);
+                                    return (
+                                      <label key={g} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#78350F', cursor: 'pointer', margin: 0 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => {
+                                            let current = (editingRowData.selectedGrades || []).filter(x => x !== 'Kinder' && x.toLowerCase() !== 'kinder');
+                                            if (isChecked) {
+                                              current = current.filter(x => x !== g);
+                                            } else {
+                                              if (current.length >= 6) return;
+                                              current = [...current, g];
+                                            }
+                                            setEditingRowData(prev => ({ ...prev, selectedGrades: current }));
+                                          }}
+                                          style={{ width: '13px', height: '13px', accentColor: '#B45309' }}
+                                        />
+                                        {g.replace('Grade ', 'G')}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
+                              <select
+                                value={editingRowData.gradeLevel}
+                                onChange={(e) => setEditingRowData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                                style={{
+                                  width: '100%',
+                                  minWidth: '95px',
+                                  padding: '6px 8px',
+                                  borderRadius: '6px',
+                                  border: '1.5px solid #3B82F6',
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  background: 'white'
+                                }}
+                              >
+                                {availableGrades.map(g => (
+                                  <option key={g} value={g}>{g}</option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
+
+                          {/* 3. Section Name Input */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                            <input
+                              type="text"
+                              value={editingRowData.sectionName}
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveInlineEdit(sec);
+                                if (e.key === 'Escape') handleCancelInlineEdit();
+                              }}
+                              style={{
+                                width: '100%',
+                                minWidth: '130px',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: '1.5px solid #3B82F6',
+                                fontSize: '12px',
+                                fontWeight: '800',
+                                textTransform: 'uppercase',
+                                boxSizing: 'border-box',
+                                background: 'white'
+                              }}
+                            />
+                          </td>
+
+                          {/* 4. Male Learners */}
+                          <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max="99"
+                              placeholder="0"
+                              value={editingRowData.maleLearners}
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, maleLearners: e.target.value.slice(0, 2) }))}
+                              style={{
+                                width: '60px',
+                                padding: '6px',
+                                borderRadius: '6px',
+                                border: '1.5px solid #3B82F6',
+                                fontSize: '12px',
+                                fontWeight: '800',
+                                color: '#1D4ED8',
+                                textAlign: 'center',
+                                background: 'white'
+                              }}
+                            />
+                          </td>
+
+                          {/* 5. Female Learners */}
+                          <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max="99"
+                              placeholder="0"
+                              value={editingRowData.femaleLearners}
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, femaleLearners: e.target.value.slice(0, 2) }))}
+                              style={{
+                                width: '60px',
+                                padding: '6px',
+                                borderRadius: '6px',
+                                border: '1.5px solid #3B82F6',
+                                fontSize: '12px',
+                                fontWeight: '800',
+                                color: '#BE185D',
+                                textAlign: 'center',
+                                background: 'white'
+                              }}
+                            />
+                          </td>
+
+                          {/* 6. Total Badge */}
+                          <td style={{ padding: '10px 10px', verticalAlign: 'middle', textAlign: 'center' }}>
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: '900',
+                              color: '#047857',
+                              background: '#DCFCE7',
+                              border: '1px solid #BBF7D0',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              display: 'inline-block'
+                            }}>
+                              {tot}
+                            </span>
+                          </td>
+
+                          {/* 7. Class Adviser Select */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                            <select
+                              value={editingRowData.advisorId}
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, advisorId: e.target.value }))}
+                              style={{
+                                width: '100%',
+                                minWidth: '150px',
+                                padding: '6px 8px',
+                                borderRadius: '6px',
+                                border: '1.5px solid #3B82F6',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                background: 'white'
+                              }}
+                            >
+                              <option value="">-- Select Adviser --</option>
+                              {personnel.map(p => {
+                                const assignedCount = classSections.filter(s => s.id !== sec.id && String(s.advisorId || s.adviserId) === String(p.id)).length;
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    {p.firstName} {p.lastName} {assignedCount > 0 ? `(${assignedCount} Sec)` : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </td>
+
+                          {/* 8. Actions (Save & Cancel) */}
+                          <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveInlineEdit(sec)}
+                                style={{
+                                  background: 'linear-gradient(180deg, #16A34A, #15803D)',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  padding: '5px 10px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ✓ Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelInlineEdit}
+                                style={{
+                                  background: '#FEF2F2',
+                                  color: '#EF4444',
+                                  border: '1px solid #FECACA',
+                                  borderRadius: '6px',
+                                  padding: '5px 8px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    // Read-only Row
                     const advisor = personnel.find(p => p.id === sec.advisorId);
                     const hasGender = (sec.maleLearners !== undefined && sec.maleLearners !== null && sec.maleLearners !== '') ||
                                       (sec.femaleLearners !== undefined && sec.femaleLearners !== null && sec.femaleLearners !== '');
                     const mVal = Number(sec.maleLearners) || 0;
                     const fVal = Number(sec.femaleLearners) || 0;
-                    const totalLearnersCount = hasGender ? (mVal + fVal) : (sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '' && Number(sec.numberOfLearners) !== 35 ? Number(sec.numberOfLearners) : 0);
-                    const statusObj = getSectionSizeStatus(sec.gradeLevel, totalLearnersCount);
+                    const totVal = hasGender ? (mVal + fVal) : (sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '' && Number(sec.numberOfLearners) !== 35 ? Number(sec.numberOfLearners) : 0);
+                    const hasEnrollment = (mVal > 0 || fVal > 0) || (totVal > 0);
+                    const statusObj = getSectionSizeStatus(sec.gradeLevel, totVal);
+
+                    // Grade Badge Color
+                    let badgeBg = '#f0f9ff';
+                    let badgeColor = '#0369a1';
+                    if (String(sec.gradeLevel).toLowerCase().includes('kinder')) {
+                      badgeBg = '#fdf2f8';
+                      badgeColor = '#be185d';
+                    } else if (String(sec.gradeLevel).toLowerCase().includes('grade 11') || String(sec.gradeLevel).toLowerCase().includes('grade 12')) {
+                      badgeBg = '#faf5ff';
+                      badgeColor = '#6b21a8';
+                    }
+
+                    // Class Type / Mono Grade Tag
+                    let typeBadgeBg = '#f1f5f9';
+                    let typeBadgeColor = '#475569';
+                    let typeBadgeBorder = '#cbd5e1';
+                    let typeLabel = 'MONO GRADE';
+
+                    if (sec.sectionType === 'MULTIGRADE' || String(sec.gradeLevel || '').includes(' - ')) {
+                      typeBadgeBg = '#fffbeb';
+                      typeBadgeColor = '#b45309';
+                      typeBadgeBorder = '#fde68a';
+                      typeLabel = 'MULTIGRADE';
+                    } else if (sec.sectionType === 'REMEDIAL') {
+                      typeBadgeBg = '#faf5ff';
+                      typeBadgeColor = '#7e22ce';
+                      typeBadgeBorder = '#e9d5ff';
+                      typeLabel = '📘 REMEDIAL';
+                    } else if (sec.sectionType === 'ENRICHMENT') {
+                      typeBadgeBg = '#eff6ff';
+                      typeBadgeColor = '#1d4ed8';
+                      typeBadgeBorder = '#bfdbfe';
+                      typeLabel = '📙 ENRICHMENT';
+                    } else if (String(sec.sectionType || '').startsWith('ARAL')) {
+                      typeBadgeBg = '#f0fdf4';
+                      typeBadgeColor = '#15803d';
+                      typeBadgeBorder = '#bbf7d0';
+                      typeLabel = '🎯 ARAL';
+                    }
+
+                    const isRowIncomplete = !hasEnrollment || !advisor;
 
                     return (
-                      <tr key={sec.id}>
-                        <td>{sec.gradeLevel}</td>
-                        <td>{sec.sectionName}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: totalLearnersCount > 0 ? '#047857' : '#64748B', background: totalLearnersCount > 0 ? '#DCFCE7' : '#F1F5F9', padding: '3px 8px', borderRadius: '6px' }}>
-                            {totalLearnersCount}
-                          </span>
-                        </td>
-                        <td>
+                      <tr 
+                        key={sec.id}
+                        style={{
+                          borderBottom: '1px solid #E2E8F0',
+                          background: isRowIncomplete ? '#FFFDFD' : 'white',
+                          transition: 'background 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = isRowIncomplete ? '#FEF2F2' : '#F8FAFC';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = isRowIncomplete ? '#FFFDFD' : 'white';
+                        }}
+                      >
+                        {/* 1. Class Type */}
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                           <span style={{
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            background: statusObj.bg,
-                            color: statusObj.color,
-                            border: `1px solid ${statusObj.border}`,
-                            fontSize: '11px',
+                            background: typeBadgeBg,
+                            color: typeBadgeColor,
+                            border: `1px solid ${typeBadgeBorder}`,
+                            padding: '4px 10px',
+                            borderRadius: '20px',
+                            fontSize: '10px',
                             fontWeight: '800',
-                            textTransform: 'uppercase'
+                            letterSpacing: '0.02em',
+                            display: 'inline-block',
+                            whiteSpace: 'nowrap'
                           }}>
-                            ● {statusObj.status}
+                            {typeLabel}
                           </span>
                         </td>
-                        <td>
-                          {advisor ? (
-                            <span style={{ fontWeight: '700', color: 'var(--navy)' }}>{advisor.firstName} {advisor.lastName}</span>
+
+                        {/* 2. Grade Level */}
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                          {String(sec.gradeLevel || '').includes(' - ') ? (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              {String(sec.gradeLevel).split(' - ').map(g => (
+                                <span key={g} style={{
+                                  background: '#fffbeb',
+                                  color: '#b45309',
+                                  border: '1px solid #fde68a',
+                                  padding: '3px 8px',
+                                  borderRadius: '16px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {g}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
-                            <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600' }}>ⓘ Unassigned Adviser</span>
+                            <span style={{
+                              background: badgeBg,
+                              color: badgeColor,
+                              padding: '4px 10px',
+                              borderRadius: '20px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              letterSpacing: '0.02em',
+                              display: 'inline-block',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {sec.gradeLevel}
+                            </span>
                           )}
                         </td>
-                        <td>{advisor ? advisor.position : '—'}</td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
+
+                        {/* 3. Section Name */}
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                          <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--navy)' }}>
+                            {sec.sectionName}
+                          </div>
+                          {(sec.sectionType === 'REMEDIAL' || sec.sectionType === 'ENRICHMENT' || String(sec.sectionType || '').startsWith('ARAL')) && (
+                            <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600', fontStyle: 'italic', marginTop: '2px' }}>
+                              ⓘ Intervention Class
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Male Learners */}
+                        <td style={{ padding: '12px 10px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#1d4ed8' }}>
+                            {hasGender ? mVal : '—'}
+                          </span>
+                        </td>
+
+                        {/* Female Learners */}
+                        <td style={{ padding: '12px 10px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#be185d' }}>
+                            {hasGender ? fVal : '—'}
+                          </span>
+                        </td>
+
+                        {/* Total Learners */}
+                        <td style={{ padding: '12px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          {hasEnrollment ? (
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: '900',
+                              color: '#047857',
+                              background: '#DCFCE7',
+                              border: '1px solid #BBF7D0',
+                              padding: '3px 9px',
+                              borderRadius: '8px',
+                              display: 'inline-block',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {totVal}
+                            </span>
+                          ) : (
+                            <span style={{
+                              fontSize: '10px',
+                              fontWeight: '800',
+                              color: '#B91C1C',
+                              background: '#FEE2E2',
+                              border: '1px solid #FCA5A5',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              display: 'inline-block',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              ⚠ Unset
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Class Adviser */}
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                          {advisor ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{
+                                width: '28px',
+                                height: '28px',
+                                minWidth: '28px',
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, var(--blue), var(--navy))',
+                                color: 'white',
+                                display: 'grid',
+                                placeItems: 'center',
+                                fontSize: '11px',
+                                fontWeight: 'bold'
+                              }}>
+                                {advisor.firstName.charAt(0)}{advisor.lastName.charAt(0)}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--navy)', whiteSpace: 'nowrap' }}>
+                                  {advisor.firstName} {advisor.lastName}
+                                </div>
+                                <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: '600' }}>
+                                  {advisor.position || 'Teacher'}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{
+                              fontSize: '11px',
+                              color: '#EF4444',
+                              fontStyle: 'italic',
+                              fontWeight: '700',
+                              background: '#FEF2F2',
+                              border: '1px solid #FCA5A5',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              ⓘ Unassigned Adviser
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
                             <button
                               type="button"
-                              className="btn secondary"
-                              style={{ minHeight: '28px', padding: '4px 8px', fontSize: '11px' }}
-                              onClick={() => openEditModal(sec)}
+                              onClick={() => startEditingRow(sec)}
+                              disabled={editingRowId !== null && editingRowId !== sec.id}
+                              style={{
+                                background: '#EFF6FF',
+                                color: '#1D4ED8',
+                                border: '1px solid #BFDBFE',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                                opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.5 : 1,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title="Edit Section Details"
                             >
                               ✎ Edit
                             </button>
                             <button
-                              className="btn danger"
-                              style={{ minHeight: '28px', padding: '4px 8px', fontSize: '11px' }}
+                              type="button"
                               onClick={async () => {
                                 const confirmed = await showConfirm(
                                   'Remove Section',
-                                  `Remove section ${sec.gradeLevel} - ${sec.sectionName}?`
+                                  `Are you sure you want to remove section "${sec.sectionName}"?`
                                 );
                                 if (confirmed) {
                                   removeClassSection(sec.id);
                                 }
                               }}
+                              disabled={editingRowId !== null && editingRowId !== sec.id}
+                              style={{
+                                background: '#FEF2F2',
+                                color: '#EF4444',
+                                border: '1px solid #FECACA',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                                opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.5 : 1
+                              }}
+                              title="Remove Section"
                             >
-                              Remove
+                              ✕
                             </button>
                           </div>
                         </td>
                       </tr>
                     );
                   })}
-                  {filteredSections.length === 0 && (
+                  {filteredRegularSections.length === 0 && (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '15px' }}>No sections found.</td>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--muted)', fontSize: '13px' }}>
+                        No regular sections found matching your search.
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Inline Add Section Row */}
+                  {!isInlineAdding ? (
+                    <tr 
+                      onClick={() => {
+                        setInlineRowData({
+                          gradeLevel: availableGrades[0] || 'Grade 7',
+                          selectedGrades: [],
+                          sectionName: '',
+                          maleLearners: '',
+                          femaleLearners: '',
+                          advisorId: '',
+                          sectionType: 'MONO GRADE'
+                        });
+                        setIsInlineAdding(true);
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: '#FAFCFF',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#EFF6FF';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#FAFCFF';
+                      }}
+                      title="Click to add a Regular Section inline"
+                    >
+                      <td colSpan="8" style={{
+                        padding: '14px 18px',
+                        textAlign: 'center',
+                        borderTop: '1.5px dashed #93C5FD',
+                        borderBottom: '1.5px dashed #93C5FD',
+                        color: '#1D4ED8',
+                        fontWeight: '800',
+                        fontSize: '13px'
+                      }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            background: '#DBEAFE',
+                            color: '#1D4ED8',
+                            fontSize: '14px',
+                            fontWeight: 'bold'
+                          }}>+</span>
+                          <span>+ Add Section</span>
+                          <span style={{ fontSize: '11px', color: '#64748B', fontWeight: '500', fontStyle: 'italic', marginLeft: '6px' }}>
+                            (Click to create a Regular Section inline)
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr style={{ background: '#F0F7FF', borderTop: '2px solid #3B82F6', borderBottom: '2px solid #3B82F6' }}>
+                      {/* 1. Class Type Select (Column 1) */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        <select
+                          value={inlineRowData.sectionType || 'MONO GRADE'}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            setInlineRowData(prev => ({
+                              ...prev,
+                              sectionType: newType,
+                              selectedGrades: newType === 'MULTIGRADE' ? ((prev.selectedGrades || []).length > 0 ? prev.selectedGrades : ['Grade 1', 'Grade 2']) : (prev.selectedGrades || [])
+                            }));
+                          }}
+                          style={{
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: '1.5px solid #3B82F6',
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            background: 'white',
+                            color: inlineRowData.sectionType === 'MULTIGRADE' ? '#B45309' : '#1E293B'
+                          }}
+                          autoFocus
+                        >
+                          <option value="MONO GRADE">Mono Grade</option>
+                          <option value="MULTIGRADE">Multi Grade</option>
+                        </select>
+                      </td>
+
+                      {/* 2. Grade Level Field (Column 2: Single select for Mono Grade, Multi-select checkboxes for Multi Grade) */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        {inlineRowData.sectionType === 'MULTIGRADE' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', background: '#FFFBEB', padding: '6px 8px', borderRadius: '6px', border: '1px solid #FDE68A', minWidth: '160px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: '800', color: '#B45309' }}>Select Grades (2-6):</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 6px' }}>
+                              {multigradeGrades.map(g => {
+                                const isChecked = (inlineRowData.selectedGrades || []).includes(g);
+                                return (
+                                  <label key={g} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#78350F', cursor: 'pointer', margin: 0 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        let current = (inlineRowData.selectedGrades || []).filter(x => x !== 'Kinder' && x.toLowerCase() !== 'kinder');
+                                        if (isChecked) {
+                                          current = current.filter(x => x !== g);
+                                        } else {
+                                          if (current.length >= 6) return;
+                                          current = [...current, g];
+                                        }
+                                        setInlineRowData(prev => ({ ...prev, selectedGrades: current }));
+                                      }}
+                                      style={{ width: '13px', height: '13px', accentColor: '#B45309' }}
+                                    />
+                                    {g.replace('Grade ', 'G')}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <select
+                            value={inlineRowData.gradeLevel}
+                            onChange={(e) => setInlineRowData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                            style={{
+                              width: '100%',
+                              minWidth: '95px',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              border: '1.5px solid #3B82F6',
+                              fontSize: '12px',
+                              fontWeight: '700',
+                              background: 'white'
+                            }}
+                          >
+                            {availableGrades.map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+
+                      {/* 3. Section Name input */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        <input
+                          type="text"
+                          placeholder="SECTION NAME *"
+                          value={inlineRowData.sectionName}
+                          onChange={(e) => setInlineRowData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveInlineSection();
+                            if (e.key === 'Escape') setIsInlineAdding(false);
+                          }}
+                          style={{
+                            width: '100%',
+                            minWidth: '130px',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            border: '1.5px solid #3B82F6',
+                            fontSize: '12px',
+                            fontWeight: '800',
+                            textTransform: 'uppercase',
+                            boxSizing: 'border-box',
+                            background: 'white'
+                          }}
+                        />
+                      </td>
+
+                      {/* Male Learners */}
+                      <td style={{ padding: '10px 8px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={inlineRowData.maleLearners}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? '' : Math.max(0, Number(e.target.value));
+                            setInlineRowData(prev => ({ ...prev, maleLearners: val }));
+                          }}
+                          style={{
+                            width: '56px',
+                            padding: '6px 4px',
+                            textAlign: 'center',
+                            borderRadius: '6px',
+                            border: '1.5px solid #93C5FD',
+                            fontSize: '12px',
+                            fontWeight: '800',
+                            color: '#1D4ED8',
+                            background: 'white'
+                          }}
+                        />
+                      </td>
+
+                      {/* Female Learners */}
+                      <td style={{ padding: '10px 8px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={inlineRowData.femaleLearners}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? '' : Math.max(0, Number(e.target.value));
+                            setInlineRowData(prev => ({ ...prev, femaleLearners: val }));
+                          }}
+                          style={{
+                            width: '56px',
+                            padding: '6px 4px',
+                            textAlign: 'center',
+                            borderRadius: '6px',
+                            border: '1.5px solid #FBCFE8',
+                            fontSize: '12px',
+                            fontWeight: '800',
+                            color: '#BE185D',
+                            background: 'white'
+                          }}
+                        />
+                      </td>
+
+                      {/* Total */}
+                      <td style={{ padding: '10px 8px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        {(() => {
+                          const m = inlineRowData.maleLearners !== '' ? Number(inlineRowData.maleLearners) : 0;
+                          const f = inlineRowData.femaleLearners !== '' ? Number(inlineRowData.femaleLearners) : 0;
+                          const tot = m + f;
+                          return (
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: '900',
+                              color: '#047857',
+                              background: '#DCFCE7',
+                              border: '1px solid #BBF7D0',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              display: 'inline-block',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {tot}
+                            </span>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Adviser select */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        <select
+                          value={inlineRowData.advisorId}
+                          onChange={(e) => setInlineRowData(prev => ({ ...prev, advisorId: e.target.value }))}
+                          style={{
+                            width: '100%',
+                            minWidth: '160px',
+                            maxWidth: '220px',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            border: '1.5px solid #3B82F6',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            background: 'white'
+                          }}
+                        >
+                          <option value="">Select Adviser *</option>
+                          {teachingPersonnel.map(p => {
+                            const assignedSecs = classSections.filter(s => s.advisorId && String(s.advisorId) === String(p.id));
+                            const secInfo = assignedSecs.length > 0 ? ` (${assignedSecs.length} assigned)` : '';
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.firstName} {p.lastName} · {p.position || 'Teacher'}{secInfo}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </td>
+
+                      {/* Actions: Save & Cancel */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={handleSaveInlineSection}
+                            style={{
+                              background: '#16A34A',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '6px 10px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              boxShadow: '0 1px 3px rgba(22, 163, 74, 0.3)'
+                            }}
+                            title="Save Section"
+                          >
+                            ✓ Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsInlineAdding(false)}
+                            style={{
+                              background: '#F1F5F9',
+                              color: '#64748B',
+                              border: '1px solid #CBD5E1',
+                              borderRadius: '6px',
+                              padding: '6px 8px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              cursor: 'pointer'
+                            }}
+                            title="Cancel"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -1240,7 +2571,161 @@ export default function OrganizedClasses() {
                 gap: '20px',
                 marginTop: '20px'
               }}>
-                {filteredSections.map((sec) => {
+                {filteredRegularSections.map((sec) => {
+                  const isEditingThisCard = editingRowId === sec.id;
+
+                  if (isEditingThisCard && editingRowData) {
+                    const m = editingRowData.maleLearners !== '' && editingRowData.maleLearners !== null ? Number(editingRowData.maleLearners) : 0;
+                    const f = editingRowData.femaleLearners !== '' && editingRowData.femaleLearners !== null ? Number(editingRowData.femaleLearners) : 0;
+                    const tot = m + f;
+
+                    return (
+                      <div key={sec.id} style={{
+                        background: '#F0F7FF',
+                        borderRadius: '16px',
+                        border: '2px solid #3B82F6',
+                        padding: '20px',
+                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#1D4ED8' }}>
+                            ✎ Edit Regular Section Setup
+                          </span>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveInlineEdit(sec)}
+                              style={{ background: 'linear-gradient(180deg, #16A34A, #15803D)', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              ✓ Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelInlineEdit}
+                              style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: '#1E293B', textTransform: 'uppercase' }}>Class Type</label>
+                          <select
+                            value={editingRowData.sectionType || 'MONO GRADE'}
+                            onChange={(e) => {
+                              const newType = e.target.value;
+                              setEditingRowData(prev => ({
+                                ...prev,
+                                sectionType: newType,
+                                selectedGrades: newType === 'MULTIGRADE' ? ((prev.selectedGrades || []).length > 0 ? prev.selectedGrades : ['Grade 1', 'Grade 2']) : (prev.selectedGrades || [])
+                              }));
+                            }}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #3B82F6', fontSize: '12px', fontWeight: '700', background: 'white' }}
+                          >
+                            <option value="MONO GRADE">Mono Grade</option>
+                            <option value="MULTIGRADE">Multi Grade</option>
+                          </select>
+
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: '#1E293B', textTransform: 'uppercase' }}>Grade Level</label>
+                          {editingRowData.sectionType === 'MULTIGRADE' ? (
+                            <div style={{ background: '#FFFBEB', padding: '8px', borderRadius: '6px', border: '1px solid #FDE68A' }}>
+                              <span style={{ fontSize: '10px', fontWeight: '800', color: '#B45309' }}>Select Grades (2-6):</span>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginTop: '4px' }}>
+                                {multigradeGrades.map(g => {
+                                  const isChecked = (editingRowData.selectedGrades || []).includes(g);
+                                  return (
+                                    <label key={g} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#78350F', cursor: 'pointer' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {
+                                          let current = (editingRowData.selectedGrades || []).filter(x => x !== 'Kinder' && x.toLowerCase() !== 'kinder');
+                                          if (isChecked) {
+                                            current = current.filter(x => x !== g);
+                                          } else {
+                                            if (current.length >= 6) return;
+                                            current = [...current, g];
+                                          }
+                                          setEditingRowData(prev => ({ ...prev, selectedGrades: current }));
+                                        }}
+                                        style={{ width: '13px', height: '13px', accentColor: '#B45309' }}
+                                      />
+                                      {g}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <select
+                              value={editingRowData.gradeLevel}
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #3B82F6', fontSize: '12px', fontWeight: '700', background: 'white' }}
+                            >
+                              {availableGrades.map(g => (
+                                <option key={g} value={g}>{g}</option>
+                              ))}
+                            </select>
+                          )}
+
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: '#1E293B', textTransform: 'uppercase' }}>Section Name</label>
+                          <input
+                            type="text"
+                            value={editingRowData.sectionName}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #3B82F6', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', background: 'white' }}
+                          />
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                              <label style={{ fontSize: '10px', fontWeight: '800', color: '#1D4ED8', textTransform: 'uppercase' }}>Male (♂)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="99"
+                                value={editingRowData.maleLearners}
+                                onChange={(e) => setEditingRowData(prev => ({ ...prev, maleLearners: e.target.value.slice(0, 2) }))}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #BFDBFE', fontSize: '12px', fontWeight: '800', background: 'white' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '10px', fontWeight: '800', color: '#BE185D', textTransform: 'uppercase' }}>Female (♀)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="99"
+                                value={editingRowData.femaleLearners}
+                                onChange={(e) => setEditingRowData(prev => ({ ...prev, femaleLearners: e.target.value.slice(0, 2) }))}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #FBCFE8', fontSize: '12px', fontWeight: '800', background: 'white' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#DCFCE7', padding: '6px 10px', borderRadius: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>Total Learners:</span>
+                            <span style={{ fontSize: '12px', fontWeight: '900', color: '#047857' }}>{tot}</span>
+                          </div>
+
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: '#1E293B', textTransform: 'uppercase' }}>Class Adviser</label>
+                          <select
+                            value={editingRowData.advisorId}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, advisorId: e.target.value }))}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #3B82F6', fontSize: '12px', fontWeight: '700', background: 'white' }}
+                          >
+                            <option value="">-- Select Adviser --</option>
+                            {personnel.map(p => (
+                              <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const advisor = personnel.find(p => p.id === sec.advisorId);
                   
                   // Get grade level badge color style
@@ -1280,8 +2765,19 @@ export default function OrganizedClasses() {
                       <div style={{ position: 'absolute', top: '14px', right: '14px', display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <button
                           type="button"
-                          onClick={() => openEditModal(sec)}
-                          style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                          onClick={() => startEditingRow(sec)}
+                          disabled={editingRowId !== null && editingRowId !== sec.id}
+                          style={{
+                            background: '#EFF6FF',
+                            color: '#1D4ED8',
+                            border: '1px solid #BFDBFE',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                            opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.5 : 1
+                          }}
                         >
                           ✎ Edit Section
                         </button>
@@ -1440,9 +2936,9 @@ export default function OrganizedClasses() {
                   );
                 })}
               </div>
-              {filteredSections.length === 0 && (
+              {filteredRegularSections.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '40px 20px', border: '1.5px dashed var(--line)', borderRadius: '16px', color: 'var(--muted)', marginTop: '20px' }}>
-                  No sections found matching your search.
+                  No regular sections found matching your search.
                 </div>
               )}
             </>
@@ -1450,238 +2946,1008 @@ export default function OrganizedClasses() {
         </div>
       </article>
 
-      {/* Subjects Taught Card (Adjacent to Organized Classes Setup) */}
-      <article className="card">
+      {/* Dedicated ARAL Sections Article */}
+      <article className="card" style={{ width: '100%' }}>
         <div className="card-inner">
-          <div className="roster-card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="roster-card-header">
             <div>
-              <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--navy)' }}>Subjects Taught</h2>
-              <p className="subtext">Configure active subjects offered by grade band in your school.</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>🎯</span>
+                <h2 style={{ margin: 0 }}>ARAL Sections</h2>
+                <span style={{
+                  background: '#DCFCE7',
+                  color: '#15803D',
+                  border: '1px solid #BBF7D0',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  padding: '2px 8px',
+                  borderRadius: '12px'
+                }}>
+                  {filteredAralSections.length} {filteredAralSections.length === 1 ? 'Section' : 'Sections'}
+                </span>
+              </div>
+              <p className="subtext" style={{ marginTop: '4px' }}>
+                Accelerated learning recovery classes under the Academic Recovery and Accessible Learning (ARAL) Program (RA 12028).
+              </p>
             </div>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setNewSubjectInput('');
-                setIsSubjectModalOpen(true);
-              }}
-              style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', minHeight: '36px', padding: '0 14px', borderRadius: '8px' }}
-            >
-              + Add Subject
-            </button>
           </div>
 
-          {/* Grade Band Selector Tabs & Grade Level Filter */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-            <div style={{ flex: 1, minWidth: '220px', display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
-              {availableBands.map(band => (
-                <button
-                  key={band}
-                  type="button"
-                  onClick={() => {
-                    setSelectedBand(band);
-                    setSelectedGradeLevel('All');
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '6px 8px',
-                    fontSize: '11px',
-                    fontWeight: selectedBand === band ? 'bold' : 'normal',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: selectedBand === band ? 'white' : 'transparent',
-                    color: selectedBand === band ? 'var(--blue)' : 'var(--muted)',
-                    cursor: 'pointer',
-                    boxShadow: selectedBand === band ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  {band === 'Junior High School' ? 'JHS' : band === 'Senior High School' ? 'SHS' : band}
-                </button>
-              ))}
-            </div>
+          <div style={{ overflowX: 'auto', marginTop: '16px' }}>
+            <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid #E2E8F0', textAlign: 'left' }}>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '145px' }}>1. ARAL Basis</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '195px' }}>2. Target / Assessment Profile</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '140px' }}>3. Profile Level</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>4. Section Name</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '110px' }}>5. Learners</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '190px' }}>6. Section Tutor</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '130px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAralSections.map((sec) => {
+                  const isEditingThisRow = editingRowId === sec.id;
+                  const aralInfo = getAralCardDetails(sec);
+                  const tutor = personnel.find(p => String(p.id) === String(sec.advisorId || sec.adviserId || sec.tutorId));
 
-            {/* Search & Filter Controls */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '10px' }}>
-              {/* Subject Search Bar */}
-              <div style={{ flex: 1, minWidth: '160px' }}>
-                <input
-                  type="text"
-                  placeholder="🔍 Search subject..."
-                  value={subjectSearchQuery}
-                  onChange={(e) => setSubjectSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    height: '35px',
-                    padding: '0 10px',
-                    borderRadius: '8px',
-                    border: '1.5px solid var(--line)',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    color: 'var(--navy)',
-                    background: 'white'
-                  }}
-                />
-              </div>
+                  if (isEditingThisRow && editingRowData) {
+                    return (
+                      <tr key={sec.id} style={{ background: '#F0FDF4', borderTop: '2px solid #16A34A', borderBottom: '2px solid #16A34A' }}>
+                        {/* 1. ARAL Basis */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <select
+                            value={editingRowData.aralBasis}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, aralBasis: e.target.value }))}
+                            style={{ padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '800', background: 'white', color: '#15803D' }}
+                            autoFocus
+                          >
+                            <option value="grade">Grade Level Basis</option>
+                            <option value="assessment">Assessment Profile Basis</option>
+                          </select>
+                        </td>
 
-              {/* Grade Level Dropdown Filter */}
-              <div style={{ minWidth: '120px' }}>
-                <select
-                  value={selectedGradeLevel}
-                  onChange={(e) => setSelectedGradeLevel(e.target.value)}
-                  style={{ width: '100%', height: '35px', padding: '0 8px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', background: 'white' }}
-                >
-                  <option value="All">All {selectedBand === 'Junior High School' ? 'JHS' : selectedBand === 'Senior High School' ? 'SHS' : 'Elem'} Grades</option>
-                  {selectedBand === 'Elementary' && (
-                    <>
-                      <option value="Kinder">Kinder</option>
-                      <option value="Grade 1">Grade 1</option>
-                      <option value="Grade 2">Grade 2</option>
-                      <option value="Grade 3">Grade 3</option>
-                      <option value="Grade 4">Grade 4</option>
-                      <option value="Grade 5">Grade 5</option>
-                      <option value="Grade 6">Grade 6</option>
-                      <option value="NON-GRADED">NON-GRADED</option>
-                    </>
-                  )}
-                  {selectedBand === 'Junior High School' && (
-                    <>
-                      <option value="Grade 7">Grade 7</option>
-                      <option value="Grade 8">Grade 8</option>
-                      <option value="Grade 9">Grade 9</option>
-                      <option value="Grade 10">Grade 10</option>
-                      <option value="NON-GRADED">NON-GRADED</option>
-                    </>
-                  )}
-                  {selectedBand === 'Senior High School' && (
-                    <>
-                      <option value="Grade 11">Grade 11</option>
-                      <option value="Grade 12">Grade 12</option>
-                    </>
-                  )}
-                </select>
-              </div>
+                        {/* 2. Grade Level or Tool Select */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          {editingRowData.aralBasis === 'grade' ? (
+                            <select
+                              value={editingRowData.aralGrade}
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, aralGrade: e.target.value }))}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                            >
+                              {['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'].map(g => (
+                                <option key={g} value={g}>{g}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <select
+                              value={editingRowData.aralToolKey || 'crla'}
+                              onChange={(e) => {
+                                const toolKey = e.target.value;
+                                const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+                                setEditingRowData(prev => ({
+                                  ...prev,
+                                  aralToolKey: toolKey,
+                                  aralProfileLevel: toolObj.levels[0]
+                                }));
+                              }}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                            >
+                              <option value="crla">CRLA — Reading (Gr 1-3)</option>
+                              <option value="philIri">Phil-IRI — Reading (Gr 4-10)</option>
+                              <option value="rma">RMA — Math (Gr 1-10)</option>
+                            </select>
+                          )}
+                        </td>
 
-              {/* SHS Category Dropdown Filter */}
-              {selectedBand === 'Senior High School' && (
-                <div style={{ minWidth: '140px' }}>
-                  <select
-                    value={selectedShsFilterCategory}
-                    onChange={(e) => setSelectedShsFilterCategory(e.target.value)}
-                    style={{ width: '100%', height: '35px', padding: '0 8px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', background: 'white' }}
+                        {/* 3. Profile Level Select (or Dash for Grade Basis) */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          {editingRowData.aralBasis === 'grade' ? (
+                            <span style={{ color: '#94A3B8', fontSize: '12px', fontWeight: '700', paddingLeft: '4px' }}>—</span>
+                          ) : (
+                            <select
+                              value={
+                                (ARAL_TOOLS[editingRowData.aralToolKey || 'crla'] || ARAL_TOOLS.crla).levels.includes(editingRowData.aralProfileLevel)
+                                  ? editingRowData.aralProfileLevel
+                                  : (ARAL_TOOLS[editingRowData.aralToolKey || 'crla'] || ARAL_TOOLS.crla).levels[0]
+                              }
+                              onChange={(e) => setEditingRowData(prev => ({ ...prev, aralProfileLevel: e.target.value }))}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                            >
+                              {(ARAL_TOOLS[editingRowData.aralToolKey || 'crla'] || ARAL_TOOLS.crla).levels.map(lvl => (
+                                <option key={lvl} value={lvl}>{lvl}</option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+
+                        {/* 4. Section Name */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <input
+                            type="text"
+                            value={editingRowData.sectionName}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(sec); }}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' }}
+                          />
+                        </td>
+
+                        {/* 5. Learners */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={editingRowData.aralLearners}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, aralLearners: e.target.value.slice(0, 2) }))}
+                            style={{ width: '60px', padding: '6px 6px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '12px', fontWeight: '800', textAlign: 'center' }}
+                          />
+                        </td>
+
+                        {/* 6. Tutor */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <select
+                            value={editingRowData.tutorId}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, tutorId: e.target.value }))}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                          >
+                            <option value="">-- Select Tutor --</option>
+                            {personnel.map(p => (
+                              <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Actions */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveInlineEdit(sec)}
+                              style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              ✓ Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelInlineEdit}
+                              style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={sec.id} style={{ borderBottom: '1px solid #E2E8F0', background: 'white' }}>
+                      {/* 1. ARAL Basis */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        <span style={{
+                          background: '#F0FDF4',
+                          color: '#15803D',
+                          border: '1px solid #BBF7D0',
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          letterSpacing: '0.02em',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {aralInfo.isAssessment ? '📊 Assessment Profile' : '🎯 Grade Level'}
+                        </span>
+                      </td>
+
+                      {/* 2. Target / Assessment Profile */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        {aralInfo.isAssessment ? (
+                          <span style={{
+                            background: '#F0F9FF',
+                            color: '#0369A1',
+                            border: '1px solid #BAE6FD',
+                            padding: '3px 9px',
+                            borderRadius: '12px',
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-block'
+                          }}>
+                            ☷ {aralInfo.toolName} — {aralInfo.domainDesc}
+                          </span>
+                        ) : (
+                          <span style={{
+                            background: '#F8FAFC',
+                            color: '#334155',
+                            border: '1px solid #CBD5E1',
+                            padding: '3px 10px',
+                            borderRadius: '16px',
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-block'
+                          }}>
+                            📚 {aralInfo.targetGrade || sec.gradeLevel || '—'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 3. Profile Level */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        {aralInfo.isAssessment ? (
+                          <span style={{
+                            background: '#FEF3C7',
+                            color: '#92400E',
+                            border: '1px solid #FDE68A',
+                            padding: '3px 9px',
+                            borderRadius: '12px',
+                            fontSize: '10px',
+                            fontWeight: '800',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-block'
+                          }}>
+                            📍 {aralInfo.profileLevel}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#94A3B8', fontSize: '12px', fontWeight: '700', paddingLeft: '4px' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* 4. Section Name */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '800', color: 'var(--navy)' }}>
+                        {sec.sectionName}
+                      </td>
+
+                      {/* 5. Learners */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <span style={{
+                          background: '#DCFCE7',
+                          color: '#15803D',
+                          padding: '3px 8px',
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: '800'
+                        }}>
+                          👥 {sec.aralLearners || sec.numberOfLearners || 15} Learners
+                        </span>
+                      </td>
+
+                      {/* 6. Tutor */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        {tutor ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              background: '#16A34A',
+                              color: 'white',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: '10px',
+                              fontWeight: 'bold'
+                            }}>
+                              {tutor.firstName.charAt(0)}{tutor.lastName.charAt(0)}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--navy)' }}>
+                                {tutor.firstName} {tutor.lastName}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>{tutor.position || 'Tutor'}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: '#DC2626', fontWeight: '700' }}>ⓘ Unassigned Tutor</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => startEditingRow(sec)}
+                            disabled={editingRowId !== null && editingRowId !== sec.id}
+                            style={{
+                              background: '#EFF6FF',
+                              color: '#1D4ED8',
+                              border: '1px solid #BFDBFE',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                              opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.4 : 1
+                            }}
+                          >
+                            ✎ Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteSection(sec.id)}
+                            disabled={editingRowId !== null && editingRowId !== sec.id}
+                            style={{
+                              background: '#FEF2F2',
+                              color: '#DC2626',
+                              border: '1px solid #FECACA',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                              opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.4 : 1
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {/* Dashed Inline "+ Add ARAL Section" Row */}
+                {isInlineAddingAral ? (
+                  <tr style={{ background: '#F0FDF4', borderTop: '2px dashed #16A34A', borderBottom: '2px dashed #16A34A' }}>
+                    {/* 1. ARAL Basis */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <select
+                        value={inlineAralData.aralBasis}
+                        onChange={(e) => setInlineAralData(prev => ({ ...prev, aralBasis: e.target.value }))}
+                        style={{ padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '800', background: 'white', color: '#15803D' }}
+                        autoFocus
+                      >
+                        <option value="grade">Grade Level Basis</option>
+                        <option value="assessment">Assessment Profile Basis</option>
+                      </select>
+                    </td>
+
+                    {/* 2. Target / Assessment Profile */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      {inlineAralData.aralBasis === 'grade' ? (
+                        <select
+                          value={inlineAralData.aralGrade}
+                          onChange={(e) => setInlineAralData(prev => ({ ...prev, aralGrade: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                        >
+                          {['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'].map(g => (
+                            <option key={g} value={g}>{g}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select
+                          value={inlineAralData.aralToolKey || 'crla'}
+                          onChange={(e) => {
+                            const toolKey = e.target.value;
+                            const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+                            setInlineAralData(prev => ({
+                              ...prev,
+                              aralToolKey: toolKey,
+                              aralProfileLevel: toolObj.levels[0]
+                            }));
+                          }}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                        >
+                          <option value="crla">CRLA — Reading (Gr 1-3)</option>
+                          <option value="philIri">Phil-IRI — Reading (Gr 4-10)</option>
+                          <option value="rma">RMA — Math (Gr 1-10)</option>
+                        </select>
+                      )}
+                    </td>
+
+                    {/* 3. Profile Level */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      {inlineAralData.aralBasis === 'grade' ? (
+                        <span style={{ color: '#94A3B8', fontSize: '12px', fontWeight: '700', paddingLeft: '4px' }}>—</span>
+                      ) : (
+                        <select
+                          value={inlineAralData.aralProfileLevel}
+                          onChange={(e) => setInlineAralData(prev => ({ ...prev, aralProfileLevel: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                        >
+                          {(ARAL_TOOLS[inlineAralData.aralToolKey || 'crla'] || ARAL_TOOLS.crla).levels.map(lvl => (
+                            <option key={lvl} value={lvl}>{lvl}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+
+                    {/* 4. Section Name */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <input
+                        type="text"
+                        placeholder="e.g. ARAL MATH-1"
+                        value={inlineAralData.sectionName}
+                        onChange={(e) => setInlineAralData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineAralSection(); }}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' }}
+                      />
+                    </td>
+
+                    {/* 5. Learners */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        placeholder="15"
+                        value={inlineAralData.aralLearners}
+                        onChange={(e) => setInlineAralData(prev => ({ ...prev, aralLearners: e.target.value.slice(0, 2) }))}
+                        style={{ width: '60px', padding: '6px 6px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '12px', fontWeight: '800', textAlign: 'center' }}
+                      />
+                    </td>
+
+                    {/* 6. Tutor */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <select
+                        value={inlineAralData.tutorId}
+                        onChange={(e) => setInlineAralData(prev => ({ ...prev, tutorId: e.target.value }))}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #16A34A', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                      >
+                        <option value="">-- Select Tutor --</option>
+                        {personnel.map(p => (
+                          <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {/* Actions */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={handleSaveInlineAralSection}
+                          style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                        >
+                          ✓ Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsInlineAddingAral(false)}
+                          style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr
+                    onClick={() => {
+                      if (editingRowId !== null) return;
+                      setIsInlineAddingAral(true);
+                      setInlineAralData({
+                        aralBasis: 'grade',
+                        aralGrade: 'Grade 3',
+                        aralToolKey: 'crla',
+                        aralProfileLevel: 'Emerging',
+                        sectionName: '',
+                        aralLearners: '15',
+                        tutorId: ''
+                      });
+                    }}
+                    style={{
+                      border: '2px dashed #BBF7D0',
+                      background: '#F0FDF4',
+                      cursor: editingRowId !== null ? 'not-allowed' : 'pointer',
+                      opacity: editingRowId !== null ? 0.5 : 1,
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (editingRowId === null) e.currentTarget.style.background = '#DCFCE7';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (editingRowId === null) e.currentTarget.style.background = '#F0FDF4';
+                    }}
                   >
-                    <option value="All">All SHS Categories</option>
-                    <option value="SHS">SHS (General)</option>
-                    <option value="SHS-CORE SUBJECTS">SHS - Core Subjects</option>
-                    <option value="SHS-APPLIED SUBJECTS">SHS - Applied Subjects</option>
-                    <option value="SHS-SPECIALIZED SUBJECTS">SHS - Specialized Subjects</option>
-                    <option value="SSHS-CORE">SSHS - Core</option>
-                    <option value="SSHS-ACADEMIC">SSHS - Academic</option>
-                    <option value="SSHS-TECHPRO">SSHS - TechPro</option>
-                  </select>
-                </div>
-              )}
-            </div>
+                    <td colSpan="7" style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#15803D', fontWeight: '800', fontSize: '13px' }}>
+                        <span style={{ fontSize: '16px' }}>+</span> Add ARAL Section
+                        <span style={{ fontSize: '11px', color: '#166534', fontWeight: '600' }}>(Click to create an ARAL Section inline)</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
-          {/* Bulk Check/Uncheck Action Toolbar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 8px 0', padding: '0 2px' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--navy)' }}>
-              {getSubjectsForView().length} Subjects Available
-            </span>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={handleCheckAll}
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  color: '#15803d',
-                  background: '#dcfce7',
-                  border: '1.5px solid #bbf7d0',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s'
-                }}
-              >
-                ✓ Check All
-              </button>
-              <button
-                type="button"
-                onClick={handleUncheckAll}
-                style={{
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  color: '#b91c1c',
-                  background: '#fee2e2',
-                  border: '1.5px solid #fecaca',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s'
-                }}
-              >
-                ✕ Uncheck All
-              </button>
-            </div>
-          </div>
-
-          {/* Subjects List with On/Off Toggles */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
-            {getSubjectsForView().map((sub, index) => (
-              <div
-                key={sub.name || index}
-                onClick={() => toggleSubject(sub.name)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: sub.enabled ? '1.5px solid #bbf7d0' : '1.5px solid var(--line)',
-                  background: sub.enabled ? '#ffffff' : '#f8fafc',
-                  opacity: sub.enabled ? 1 : 0.65,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  transition: 'all 0.15s'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: sub.enabled ? 'var(--navy)' : 'var(--muted)' }}>
-                    {sub.name}
-                  </span>
-                  {selectedBand === 'Senior High School' && sub.shsCategory && (
-                    <span style={{
-                      fontSize: '9px',
-                      fontWeight: '800',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      background: sub.shsCategory.includes('CORE') ? '#e0f2fe' : sub.shsCategory.includes('APPLIED') ? '#fef3c7' : '#f3e8ff',
-                      color: sub.shsCategory.includes('CORE') ? '#0369a1' : sub.shsCategory.includes('APPLIED') ? '#b45309' : '#6b21a8'
-                    }}>
-                      {sub.shsCategory.replace('SHS-', '').replace(' SUBJECTS', '')}
-                    </span>
-                  )}
-                </div>
-
-                {/* Right-aligned Checkbox & Status */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px' }} onClick={(e) => e.stopPropagation()}>
-                  <span style={{ fontSize: '10px', fontWeight: '800', color: sub.enabled ? '#15803d' : '#94a3b8' }}>
-                    {sub.enabled ? 'TAUGHT' : 'OFF'}
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={sub.enabled}
-                    onChange={() => toggleSubject(sub.name)}
-                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#15803d' }}
-                  />
-                </div>
+          {filteredAralSections.length === 0 && !isInlineAddingAral && (
+            <div style={{
+              textAlign: 'center',
+              padding: '24px 16px',
+              border: '1.5px dashed #CBD5E1',
+              borderRadius: '12px',
+              color: 'var(--muted)',
+              marginTop: '16px',
+              background: '#F8FAFC'
+            }}>
+              <div style={{ fontSize: '24px', marginBottom: '4px' }}>🎯</div>
+              <div style={{ fontWeight: '800', color: 'var(--navy)', fontSize: '14px', marginBottom: '2px' }}>
+                No ARAL Sections Configured
               </div>
-            ))}
-          </div>
+              <p style={{ fontSize: '11px', margin: 0, color: 'var(--muted)' }}>
+                Organize reading and mathematics catch-up classes using either Grade Level or Assessment Profile standards. Click "+ Add ARAL Section" in the table row below.
+              </p>
+            </div>
+          )}
         </div>
       </article>
+
+      {/* Dedicated Remedial / Enrichment Sections Article */}
+      <article className="card" style={{ width: '100%' }}>
+        <div className="card-inner">
+          <div className="roster-card-header">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>📘</span>
+                <h2 style={{ margin: 0 }}>Remedial / Enrichment Sections</h2>
+                <span style={{
+                  background: '#F3E8FF',
+                  color: '#7E22CE',
+                  border: '1px solid #E9D5FF',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  padding: '2px 8px',
+                  borderRadius: '12px'
+                }}>
+                  {filteredRemedialSections.length} {filteredRemedialSections.length === 1 ? 'Section' : 'Sections'}
+                </span>
+              </div>
+              <p className="subtext" style={{ marginTop: '4px' }}>
+                Targeted intervention and advanced enhancement classes outside standard curriculum hours.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px' }}>
+                <div style={{ fontSize: '11px', color: '#64748B', fontWeight: '700', fontStyle: 'italic' }}>
+                  ⓘ Note: Remedial/Enrichment learners are recorded for intervention and are NOT added to base school enrollment.
+                </div>
+                <div style={{ fontSize: '11px', color: '#7E22CE', fontWeight: '700', fontStyle: 'italic' }}>
+                  ⚡ Assigning a teacher automatically adds a REMEDIATION / ENRICHMENT teaching load row into their Workload timetable.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto', marginTop: '16px' }}>
+            <table className="roster-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid #E2E8F0', textAlign: 'left' }}>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '195px' }}>1. Intervention Category</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '145px' }}>2. Target Grade</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>3. Section Name</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '80px' }}>4. Male</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '80px' }}>5. Female</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '80px' }}>6. Total</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', width: '200px' }}>7. Assigned Teacher</th>
+                  <th style={{ padding: '12px 14px', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'center', width: '130px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRemedialSections.map((sec) => {
+                  const isEditingThisRow = editingRowId === sec.id;
+                  const isRemedial = sec.sectionType === 'REMEDIAL';
+                  const teacher = personnel.find(p => String(p.id) === String(sec.advisorId || sec.adviserId));
+                  const mVal = Number(sec.maleLearners) || 0;
+                  const fVal = Number(sec.femaleLearners) || 0;
+                  const totVal = (sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '')
+                    ? Number(sec.numberOfLearners)
+                    : (mVal + fVal);
+
+                  if (isEditingThisRow && editingRowData) {
+                    const editM = Number(editingRowData.maleLearners) || 0;
+                    const editF = Number(editingRowData.femaleLearners) || 0;
+                    const editTot = editM + editF;
+
+                    return (
+                      <tr key={sec.id} style={{ background: '#FAF5FF', borderTop: '2px solid #9333EA', borderBottom: '2px solid #9333EA' }}>
+                        {/* 1. Category */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <select
+                            value={editingRowData.sectionType || 'REMEDIAL'}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, sectionType: e.target.value }))}
+                            style={{ padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '11px', fontWeight: '800', background: 'white', color: '#7E22CE' }}
+                            autoFocus
+                          >
+                            <option value="REMEDIAL">📘 Remedial Class</option>
+                            <option value="ENRICHMENT">📙 Enrichment Class</option>
+                          </select>
+                        </td>
+
+                        {/* 2. Target Grade */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <select
+                            value={editingRowData.gradeLevel}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                          >
+                            {availableGrades.map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* 3. Section Name */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <input
+                            type="text"
+                            value={editingRowData.sectionName}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(sec); }}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' }}
+                          />
+                        </td>
+
+                        {/* 4. Male */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="99"
+                            value={editingRowData.maleLearners}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, maleLearners: e.target.value.slice(0, 2) }))}
+                            style={{ width: '50px', padding: '6px 4px', borderRadius: '6px', border: '1.5px solid #BFDBFE', fontSize: '12px', fontWeight: '800', textAlign: 'center' }}
+                          />
+                        </td>
+
+                        {/* 5. Female */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max="99"
+                            value={editingRowData.femaleLearners}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, femaleLearners: e.target.value.slice(0, 2) }))}
+                            style={{ width: '50px', padding: '6px 4px', borderRadius: '6px', border: '1.5px solid #FBCFE8', fontSize: '12px', fontWeight: '800', textAlign: 'center' }}
+                          />
+                        </td>
+
+                        {/* 6. Total */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <span style={{ background: '#DCFCE7', color: '#15803D', padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '800' }}>
+                            {editTot}
+                          </span>
+                        </td>
+
+                        {/* 7. Assigned Teacher */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                          <select
+                            value={editingRowData.advisorId}
+                            onChange={(e) => setEditingRowData(prev => ({ ...prev, advisorId: e.target.value }))}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                          >
+                            <option value="">-- Select Teacher --</option>
+                            {personnel.map(p => (
+                              <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* 8. Actions */}
+                        <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveInlineEdit(sec)}
+                              style={{ background: '#9333EA', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              ✓ Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelInlineEdit}
+                              style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={sec.id} style={{ borderBottom: '1px solid #E2E8F0', background: 'white' }}>
+                      {/* 1. Intervention Category */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        <span style={{
+                          background: isRemedial ? '#FAF5FF' : '#EFF6FF',
+                          color: isRemedial ? '#7E22CE' : '#1D4ED8',
+                          border: `1px solid ${isRemedial ? '#E9D5FF' : '#BFDBFE'}`,
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          letterSpacing: '0.02em',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {isRemedial ? '📘 REMEDIAL CLASS' : '📙 ENRICHMENT CLASS'}
+                        </span>
+                      </td>
+
+                      {/* 2. Target Grade */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        <span style={{
+                          background: '#F8FAFC',
+                          color: '#475569',
+                          border: '1px solid #CBD5E1',
+                          padding: '3px 8px',
+                          borderRadius: '16px',
+                          fontSize: '11px',
+                          fontWeight: '800',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          Target: {sec.gradeLevel}
+                        </span>
+                      </td>
+
+                      {/* 3. Section Name */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '800', color: 'var(--navy)' }}>
+                        {sec.sectionName}
+                      </td>
+
+                      {/* 4. Male */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center', color: '#1D4ED8', fontWeight: '800' }}>
+                        {mVal > 0 ? `♂ ${mVal}` : '—'}
+                      </td>
+
+                      {/* 5. Female */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center', color: '#BE185D', fontWeight: '800' }}>
+                        {fVal > 0 ? `♀ ${fVal}` : '—'}
+                      </td>
+
+                      {/* 6. Total */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <span style={{ background: '#DCFCE7', color: '#15803D', padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '800' }}>
+                          {totVal}
+                        </span>
+                      </td>
+
+                      {/* 7. Assigned Teacher */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                        {teacher ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              width: '24px',
+                              height: '24px',
+                              borderRadius: '50%',
+                              background: isRemedial ? '#7E22CE' : '#1D4ED8',
+                              color: 'white',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: '10px',
+                              fontWeight: 'bold'
+                            }}>
+                              {teacher.firstName.charAt(0)}{teacher.lastName.charAt(0)}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--navy)' }}>
+                                {teacher.firstName} {teacher.lastName}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--muted)' }}>{teacher.position || 'Teacher'}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: '#DC2626', fontWeight: '700' }}>ⓘ Unassigned Teacher</span>
+                        )}
+                      </td>
+
+                      {/* 8. Actions */}
+                      <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => startEditingRow(sec)}
+                            disabled={editingRowId !== null && editingRowId !== sec.id}
+                            style={{
+                              background: '#EFF6FF',
+                              color: '#1D4ED8',
+                              border: '1px solid #BFDBFE',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                              opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.4 : 1
+                            }}
+                          >
+                            ✎ Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteSection(sec.id)}
+                            disabled={editingRowId !== null && editingRowId !== sec.id}
+                            style={{
+                              background: '#FEF2F2',
+                              color: '#DC2626',
+                              border: '1px solid #FECACA',
+                              borderRadius: '6px',
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              cursor: (editingRowId !== null && editingRowId !== sec.id) ? 'not-allowed' : 'pointer',
+                              opacity: (editingRowId !== null && editingRowId !== sec.id) ? 0.4 : 1
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {/* Dashed Inline "+ Add Remedial / Enrichment Section" Row */}
+                {isInlineAddingRemedial ? (
+                  <tr style={{ background: '#FAF5FF', borderTop: '2px dashed #9333EA', borderBottom: '2px dashed #9333EA' }}>
+                    {/* 1. Category */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <select
+                        value={inlineRemedialData.sectionType}
+                        onChange={(e) => setInlineRemedialData(prev => ({ ...prev, sectionType: e.target.value }))}
+                        style={{ padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '11px', fontWeight: '800', background: 'white', color: '#7E22CE' }}
+                        autoFocus
+                      >
+                        <option value="REMEDIAL">📘 Remedial Class</option>
+                        <option value="ENRICHMENT">📙 Enrichment Class</option>
+                      </select>
+                    </td>
+
+                    {/* 2. Target Grade */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <select
+                        value={inlineRemedialData.gradeLevel}
+                        onChange={(e) => setInlineRemedialData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                      >
+                        {availableGrades.map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {/* 3. Section Name */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <input
+                        type="text"
+                        placeholder="e.g. REMEDIAL MATH-3"
+                        value={inlineRemedialData.sectionName}
+                        onChange={(e) => setInlineRemedialData(prev => ({ ...prev, sectionName: e.target.value.toUpperCase() }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineRemedialSection(); }}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' }}
+                      />
+                    </td>
+
+                    {/* 4. Male */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        max="99"
+                        placeholder="0"
+                        value={inlineRemedialData.maleLearners}
+                        onChange={(e) => setInlineRemedialData(prev => ({ ...prev, maleLearners: e.target.value.slice(0, 2) }))}
+                        style={{ width: '50px', padding: '6px 4px', borderRadius: '6px', border: '1.5px solid #BFDBFE', fontSize: '12px', fontWeight: '800', textAlign: 'center' }}
+                      />
+                    </td>
+
+                    {/* 5. Female */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        max="99"
+                        placeholder="0"
+                        value={inlineRemedialData.femaleLearners}
+                        onChange={(e) => setInlineRemedialData(prev => ({ ...prev, femaleLearners: e.target.value.slice(0, 2) }))}
+                        style={{ width: '50px', padding: '6px 4px', borderRadius: '6px', border: '1.5px solid #FBCFE8', fontSize: '12px', fontWeight: '800', textAlign: 'center' }}
+                      />
+                    </td>
+
+                    {/* 6. Total */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <span style={{ background: '#DCFCE7', color: '#15803D', padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '800' }}>
+                        {(Number(inlineRemedialData.maleLearners) || 0) + (Number(inlineRemedialData.femaleLearners) || 0)}
+                      </span>
+                    </td>
+
+                    {/* 7. Assigned Teacher */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <select
+                        value={inlineRemedialData.advisorId}
+                        onChange={(e) => setInlineRemedialData(prev => ({ ...prev, advisorId: e.target.value }))}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #9333EA', fontSize: '11px', fontWeight: '700', background: 'white' }}
+                      >
+                        <option value="">-- Select Teacher --</option>
+                        {personnel.map(p => (
+                          <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {/* 8. Actions */}
+                    <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={handleSaveInlineRemedialSection}
+                          style={{ background: '#9333EA', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                        >
+                          ✓ Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsInlineAddingRemedial(false)}
+                          style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FECACA', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr
+                    onClick={() => {
+                      if (editingRowId !== null) return;
+                      setIsInlineAddingRemedial(true);
+                      setInlineRemedialData({
+                        sectionType: 'REMEDIAL',
+                        gradeLevel: availableGrades[0] || 'Grade 3',
+                        sectionName: '',
+                        maleLearners: '',
+                        femaleLearners: '',
+                        advisorId: ''
+                      });
+                    }}
+                    style={{
+                      border: '2px dashed #E9D5FF',
+                      background: '#FAF5FF',
+                      cursor: editingRowId !== null ? 'not-allowed' : 'pointer',
+                      opacity: editingRowId !== null ? 0.5 : 1,
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (editingRowId === null) e.currentTarget.style.background = '#F3E8FF';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (editingRowId === null) e.currentTarget.style.background = '#FAF5FF';
+                    }}
+                  >
+                    <td colSpan="8" style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#7E22CE', fontWeight: '800', fontSize: '13px' }}>
+                        <span style={{ fontSize: '16px' }}>+</span> Add Remedial / Enrichment Section
+                        <span style={{ fontSize: '11px', color: '#6B21A8', fontWeight: '600' }}>(Click to create a Remedial/Enrichment Section inline)</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredRemedialSections.length === 0 && !isInlineAddingRemedial && (
+            <div style={{
+              textAlign: 'center',
+              padding: '24px 16px',
+              border: '1.5px dashed #CBD5E1',
+              borderRadius: '12px',
+              color: 'var(--muted)',
+              marginTop: '16px',
+              background: '#F8FAFC'
+            }}>
+              <div style={{ fontSize: '24px', marginBottom: '4px' }}>📘</div>
+              <div style={{ fontWeight: '800', color: 'var(--navy)', fontSize: '14px', marginBottom: '2px' }}>
+                No Remedial or Enrichment Sections Configured
+              </div>
+              <p style={{ fontSize: '11px', margin: 0, color: 'var(--muted)' }}>
+                Targeted intervention and advanced enhancement classes outside standard curriculum hours. Click "+ Add Remedial / Enrichment Section" in the table row below.
+              </p>
+            </div>
+          )}
+        </div>
+      </article>
+
+
 
       {/* Unified Add Section Modal Popup */}
       {isModalOpen && (
@@ -2293,9 +4559,317 @@ export default function OrganizedClasses() {
         </div>
       )}
 
+      {/* Manage Subjects Taught Modal Popup */}
+      {isManageSubjectsModalOpen && (
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(5px)', zIndex: 1000, position: 'fixed', inset: 0, padding: '16px' }}>
+          <div className="modal-card" style={{ width: '680px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '24px 28px', background: 'white', borderRadius: '24px', border: '2.5px solid var(--outline)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'scaleUp 0.2s forwards', overflow: 'hidden' }}>
+            {/* Modal Header */}
+            <div className="modal-head" style={{ border: 0, padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexShrink: 0 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '22px' }}>📚</span>
+                  <h2 style={{ fontSize: '22px', margin: 0, color: 'var(--navy)', fontWeight: 800 }}>Subjects Taught</h2>
+                </div>
+                <p className="subtext" style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>
+                  Configure active subjects offered by grade band in your school. Toggled subjects instantly update in local drafts.
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setNewSubjectInput('');
+                    setIsSubjectModalOpen(true);
+                  }}
+                  style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', minHeight: '34px', padding: '0 12px', borderRadius: '8px', fontWeight: '800' }}
+                >
+                  + Add Subject
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setIsManageSubjectsModalOpen(false)}
+                  style={{ borderRadius: '50%', width: '34px', height: '34px', minWidth: '34px', padding: 0, display: 'grid', placeItems: 'center', fontSize: '18px' }}
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+
+            {/* Grade Band Selector Tabs */}
+            <div style={{ flexShrink: 0, marginBottom: '14px' }}>
+              <div style={{ display: 'flex', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '12px', marginBottom: '12px' }}>
+                {availableBands.map(band => (
+                  <button
+                    key={band}
+                    type="button"
+                    onClick={() => {
+                      setSelectedBand(band);
+                      setSelectedGradeLevel('All');
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      fontWeight: selectedBand === band ? '800' : '600',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: selectedBand === band ? 'white' : 'transparent',
+                      color: selectedBand === band ? 'var(--blue)' : 'var(--muted)',
+                      cursor: 'pointer',
+                      boxShadow: selectedBand === band ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {band === 'Junior High School' ? 'JHS' : band === 'Senior High School' ? 'SHS' : band}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search & Filter Controls */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* Subject Search Bar */}
+                <div style={{ flex: 1, minWidth: '180px' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search subject..."
+                    value={subjectSearchQuery}
+                    onChange={(e) => setSubjectSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '36px',
+                      padding: '0 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: 'var(--navy)',
+                      background: 'white'
+                    }}
+                  />
+                </div>
+
+                {/* Grade Level Dropdown Filter */}
+                <div style={{ minWidth: '130px' }}>
+                  <select
+                    value={selectedGradeLevel}
+                    onChange={(e) => setSelectedGradeLevel(e.target.value)}
+                    style={{ width: '100%', height: '36px', padding: '0 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', background: 'white' }}
+                  >
+                    <option value="All">All {selectedBand === 'Junior High School' ? 'JHS' : selectedBand === 'Senior High School' ? 'SHS' : 'Elem'} Grades</option>
+                    {selectedBand === 'Elementary' && (
+                      <>
+                        <option value="Kinder">Kinder</option>
+                        <option value="Grade 1">Grade 1</option>
+                        <option value="Grade 2">Grade 2</option>
+                        <option value="Grade 3">Grade 3</option>
+                        <option value="Grade 4">Grade 4</option>
+                        <option value="Grade 5">Grade 5</option>
+                        <option value="Grade 6">Grade 6</option>
+                        <option value="NON-GRADED">NON-GRADED</option>
+                      </>
+                    )}
+                    {selectedBand === 'Junior High School' && (
+                      <>
+                        <option value="Grade 7">Grade 7</option>
+                        <option value="Grade 8">Grade 8</option>
+                        <option value="Grade 9">Grade 9</option>
+                        <option value="Grade 10">Grade 10</option>
+                        <option value="NON-GRADED">NON-GRADED</option>
+                      </>
+                    )}
+                    {selectedBand === 'Senior High School' && (
+                      <>
+                        <option value="Grade 11">Grade 11</option>
+                        <option value="Grade 12">Grade 12</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {/* SHS Category Dropdown Filter */}
+                {selectedBand === 'Senior High School' && (
+                  <div style={{ minWidth: '150px' }}>
+                    <select
+                      value={selectedShsFilterCategory}
+                      onChange={(e) => setSelectedShsFilterCategory(e.target.value)}
+                      style={{ width: '100%', height: '36px', padding: '0 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', background: 'white' }}
+                    >
+                      <option value="All">All SHS Categories</option>
+                      <option value="SHS">SHS (General)</option>
+                      <option value="SHS-CORE SUBJECTS">SHS - Core Subjects</option>
+                      <option value="SHS-APPLIED SUBJECTS">SHS - Applied Subjects</option>
+                      <option value="SHS-SPECIALIZED SUBJECTS">SHS - Specialized Subjects</option>
+                      <option value="SSHS-CORE">SSHS - Core</option>
+                      <option value="SSHS-ACADEMIC">SSHS - Academic</option>
+                      <option value="SSHS-TECHPRO">SSHS - TechPro</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bulk Check/Uncheck Action Toolbar */}
+            {(() => {
+              const displayedSubs = getSubjectsForView();
+              const activeCount = displayedSubs.filter(s => s.enabled).length;
+              return (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 10px 0', padding: '4px 2px', flexShrink: 0, borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--navy)' }}>
+                      {displayedSubs.length} Subjects
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#15803D', background: '#DCFCE7', padding: '2px 8px', borderRadius: '12px' }}>
+                      {activeCount} Active
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleCheckAll}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        color: '#15803d',
+                        background: '#dcfce7',
+                        border: '1.5px solid #bbf7d0',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      ✓ Check All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUncheckAll}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        color: '#b91c1c',
+                        background: '#fee2e2',
+                        border: '1.5px solid #fecaca',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      ✕ Uncheck All
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Compact 2-Column Grid of Subjects with Checkboxes & Grade Badges */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '6px 10px',
+              overflowY: 'auto',
+              flex: 1,
+              paddingRight: '4px',
+              minHeight: '200px',
+              alignContent: 'start'
+            }}>
+              {getSubjectsForView().map((sub, index) => {
+                const badgeText = getSubjectGradeBadge(sub, selectedBand, selectedGradeLevel);
+                return (
+                  <div
+                    key={sub.name || index}
+                    onClick={() => toggleSubject(sub.name)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '6px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: sub.enabled ? '1.5px solid #BBF7D0' : '1px solid #E2E8F0',
+                      background: sub.enabled ? '#ffffff' : '#FAFAFA',
+                      opacity: sub.enabled ? 1 : 0.65,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      transition: 'all 0.15s ease',
+                      minHeight: '34px',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    {/* Left: Checkbox & Subject Name */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                      <input
+                        type="checkbox"
+                        checked={sub.enabled}
+                        onChange={() => toggleSubject(sub.name)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: '15px',
+                          height: '15px',
+                          minWidth: '15px',
+                          cursor: 'pointer',
+                          accentColor: '#16A34A',
+                          margin: 0
+                        }}
+                      />
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        color: sub.enabled ? 'var(--navy)' : '#64748B',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }} title={sub.name}>
+                        {sub.name}
+                      </span>
+                    </div>
+
+                    {/* Right: Grade-level tag / badge */}
+                    {badgeText && (
+                      <span style={{
+                        fontSize: '9px',
+                        fontWeight: '800',
+                        padding: '1.5px 6px',
+                        borderRadius: '4px',
+                        background: sub.enabled ? '#DCFCE7' : '#F1F5F9',
+                        color: sub.enabled ? '#15803D' : '#64748B',
+                        border: `1px solid ${sub.enabled ? '#86EFAC' : '#CBD5E1'}`,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0
+                      }}>
+                        {badgeText}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+              {getSubjectsForView().length === 0 && (
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '30px', color: 'var(--muted)', fontSize: '12px', border: '1.5px dashed var(--line)', borderRadius: '12px' }}>
+                  No subjects found matching your filter criteria.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '16px', marginTop: '12px', borderTop: '1.5px solid var(--line)', flexShrink: 0 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setIsManageSubjectsModalOpen(false)}
+                style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontWeight: '800', minHeight: '38px', padding: '0 24px', borderRadius: '10px', fontSize: '13px' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Subject Modal Popup */}
       {isSubjectModalOpen && (
-        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', zIndex: 1050 }}>
           <div className="modal-card" style={{ width: '480px', padding: '28px 24px', background: 'white', borderRadius: '24px', border: '2.5px solid var(--outline)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'scaleUp 0.2s forwards' }}>
             <div className="modal-head" style={{ border: 0, padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
@@ -2400,168 +4974,7 @@ export default function OrganizedClasses() {
       )}
 
 
-      {/* ── EDIT SECTION MODAL ── */}
-      {editModalSection && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(15, 23, 42, 0.65)',
-          backdropFilter: 'blur(4px)',
-          display: 'grid',
-          placeItems: 'center',
-          zIndex: 9999,
-          padding: '16px'
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '20px',
-            padding: '24px',
-            width: '100%',
-            maxWidth: '460px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            animation: 'modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1.5px solid var(--line)', paddingBottom: '12px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
-                  ✎ Edit Section Setup
-                </h3>
-                <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '600' }}>
-                  {editModalSection.gradeLevel} — {editModalSection.sectionName}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditModalSection(null)}
-                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#94a3b8', fontWeight: 'bold' }}
-              >
-                ✕
-              </button>
-            </div>
 
-            <form onSubmit={handleSaveEditSection} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Grade Level & Section Name Inputs */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    Grade Level
-                  </label>
-                  <select
-                    value={editGradeLevel}
-                    onChange={(e) => setEditGradeLevel(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
-                  >
-                    {availableGrades.map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    Section Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editSectionName}
-                    onChange={(e) => setEditSectionName(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
-                  />
-                </div>
-              </div>
-              {/* Gender Learners Input */}
-              <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid var(--line)' }}>
-                <label style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                  Class Learners Enrollment
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#1d4ed8', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Male Learners</label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={editMale}
-                      onChange={(e) => setEditMale(e.target.value)}
-                      style={{ width: '100%', border: '1.5px solid #bfdbfe', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: 'bold', color: '#be185d', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Female Learners</label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={editFemale}
-                      onChange={(e) => setEditFemale(e.target.value)}
-                      style={{ width: '100%', border: '1.5px solid #fbcfe8', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', fontWeight: 'bold', background: 'white' }}
-                    />
-                  </div>
-                </div>
-
-                {(() => {
-                  const totalLearnersCount = (Number(editMale) || 0) + (Number(editFemale) || 0);
-                  const statusObj = getSectionSizeStatus(editGradeLevel, totalLearnersCount);
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed var(--line)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>Calculated Total Learners:</span>
-                        <span style={{ fontSize: '14px', fontWeight: '900', color: '#047857', background: '#dcfce7', padding: '2px 10px', borderRadius: '10px' }}>
-                          {totalLearnersCount} Learners
-                        </span>
-                      </div>
-                      <div style={{
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        background: statusObj.bg,
-                        color: statusObj.color,
-                        border: `1.5px solid ${statusObj.border}`,
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <span>DepEd Section Size Standard: <strong>{statusObj.status}</strong></span>
-                        <span style={{ fontSize: '11px', fontWeight: '700' }}>{statusObj.label}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Class Adviser Selection */}
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  Assign Class Adviser
-                </label>
-                <select
-                  value={editAdvisorId}
-                  onChange={(e) => setEditAdvisorId(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
-                >
-                  <option value="">-- Select Adviser --</option>
-                  {teachingPersonnel.map(p => (
-                    <option key={p.id} value={p.id}>{p.firstName} {p.lastName} ({p.position || 'Teacher'})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-                <button type="button" onClick={() => setEditModalSection(null)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #CBD5E1', background: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-                  Cancel
-                </button>
-                <button type="submit" style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: 'var(--blue)', color: 'white', fontWeight: '800', cursor: 'pointer', fontSize: '13px' }}>
-                  Save Section Setup
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </section>
     </div>
   );

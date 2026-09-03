@@ -3,7 +3,17 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const envPaths = [
+  path.join(__dirname, '.env'),
+  path.join(__dirname, '../.env'),
+  path.join(process.cwd(), '.env'),
+  path.join(process.cwd(), 'server/.env')
+];
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    require('dotenv').config({ path: envPath });
+  }
+}
 const db = require('./db');
 
 const app = express();

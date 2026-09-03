@@ -26,6 +26,145 @@ export const DEFAULT_PH_HOLIDAYS = [
   { id: 'ph-hol-18', date: '2027-05-01', type: 'National Holiday', description: 'Labor Day' }
 ];
 
+export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections = []) {
+  if (!p) return false;
+  const rows = p.workloadRows || [];
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+
+  const timeToMins = (t) => {
+    if (!t || typeof t !== 'string' || !t.includes(':')) return null;
+    const [h, m] = t.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  const isAdvisoryOrHgpPair = (r1, r2) => {
+    const s1 = String(r1?.subject || r1?.subjectName || '').trim().toUpperCase();
+    const s2 = String(r2?.subject || r2?.subjectName || '').trim().toUpperCase();
+    const isAdv1 = s1 === 'ADVISORY' || s1.includes('HOMEROOM ADVISORY');
+    const isAdv2 = s2 === 'ADVISORY' || s2.includes('HOMEROOM ADVISORY');
+    const isHgp1 = s1 === 'HGP' || s1.includes('HOMEROOM GUIDANCE');
+    const isHgp2 = s2 === 'HGP' || s2.includes('HOMEROOM GUIDANCE');
+    return (isAdv1 && isHgp2) || (isHgp1 && isAdv2);
+  };
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    if (!row) continue;
+
+    const sMins = timeToMins(row.startTime);
+    const eMins = timeToMins(row.endTime);
+
+    // 1. Time Slot Duration Limits (>60 mins elem/JHS or >360 mins SHS)
+    if (sMins !== null && eMins !== null && eMins > sMins) {
+      const diffMins = eMins - sMins;
+      const gStr = String(row.gradeLevel || '').toUpperCase();
+      const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
+      const maxMins = isSHS ? 360 : 60;
+      if (diffMins > maxMins) return true;
+    }
+
+    // 2. Schedule Conflict (Overlap on same day for same person)
+    const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+      ? row.days
+      : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : []);
+
+    if (sMins !== null && eMins !== null && rowDays.length > 0) {
+      const hasOverlap = rows.some((otherRow, oIdx) => {
+        if (oIdx === idx) return false;
+        const osMins = timeToMins(otherRow.startTime);
+        const oeMins = timeToMins(otherRow.endTime);
+        if (osMins === null || oeMins === null) return false;
+
+        const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0)
+          ? otherRow.days
+          : (otherRow.daySchedule ? String(otherRow.daySchedule).split(',').map(s => s.trim()) : []);
+
+        const dayOverlap = rowDays.some(d => otherDays.includes(d));
+        if (!dayOverlap) return false;
+
+        if (sMins < oeMins && eMins > osMins) {
+          if (isAdvisoryOrHgpPair(row, otherRow)) return false;
+          return true;
+        }
+        return false;
+      });
+
+      if (hasOverlap) return true;
+    }
+
+    // 3. Duplicate Subject Assignment in Section
+    if (row.subject) {
+      const normSub = String(row.subject).trim().toUpperCase();
+      if (normSub !== 'ADVISORY') {
+        const secId = String(row.sectionId || row.section_id || '');
+        const secName = String(row.sectionName || row.section_name || '').trim().toUpperCase();
+        if (secId || secName) {
+          const gStr = String(row.gradeLevel || '').toUpperCase();
+          const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
+          const term = isSHS ? (row.term || row.semester || '1st') : null;
+
+          // Scan other personnel in school
+          for (const otherP of (allPersonnel || [])) {
+            if (String(otherP.id) === String(p.id)) continue;
+            if (otherP.isDraft || !Array.isArray(otherP.workloadRows)) continue;
+
+            for (const r of otherP.workloadRows) {
+              const rSecId = String(r.sectionId || r.section_id || '');
+              const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+              const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+
+              const matchSec = (secId && rSecId && secId === rSecId) || (secName && rSecName && secName === rSecName);
+              if (!matchSec) continue;
+
+              const rGradeStr = String(r.gradeLevel || '').toUpperCase();
+              const rIsSHS = rGradeStr.includes('GRADE 11') || rGradeStr.includes('GRADE 12') || rGradeStr.includes('SHS');
+              if (term && rIsSHS) {
+                const rTerm = r.term || r.semester || '1st';
+                if (rTerm !== term) continue;
+              }
+
+              if (rSub === normSub) return true;
+            }
+          }
+
+          // Scan this person's other rows
+          for (let oIdx = 0; oIdx < rows.length; oIdx++) {
+            if (oIdx === idx) continue;
+            const r = rows[oIdx];
+            const rSecId = String(r.sectionId || r.section_id || '');
+            const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+            const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+
+            const matchSec = (secId && rSecId && secId === rSecId) || (secName && rSecName && secName === rSecName);
+            if (!matchSec) continue;
+
+            const rGradeStr = String(r.gradeLevel || '').toUpperCase();
+            const rIsSHS = rGradeStr.includes('GRADE 11') || rGradeStr.includes('GRADE 12') || rGradeStr.includes('SHS');
+            if (term && rIsSHS) {
+              const rTerm = r.term || r.semester || '1st';
+              if (rTerm !== term) continue;
+            }
+
+            if (rSub === normSub) return true;
+          }
+        }
+      }
+    }
+
+    // 4. HGP Weekly Duration Rule
+    const subStr = String(row.subject || row.subjectName || '').trim().toUpperCase();
+    if (subStr === 'HGP' || subStr.includes('HOMEROOM GUIDANCE')) {
+      if (!row.startTime || !row.endTime) return true;
+      if (sMins !== null && eMins !== null && eMins > sMins && rowDays.length > 0) {
+        if ((eMins - sMins) * rowDays.length !== 60) return true;
+      }
+    }
+  }
+
+  return false;
+};
+
 export const NEAP_TRAINING_OPTIONS = [
   "HIGHER ORDER THINKING SKILLS PROFESSIONAL LEARNING PACKAGES FOR MATHEMATICS, SCIENCE, AND ENGLISH TEACHERS",
   "INSTRUCTIONAL LEADERSHIP TRAINING (ILT): STRENGTHENING LEARNING CONDITIONS FOR EARLY LITERACY",
@@ -1573,6 +1712,12 @@ export const AppProvider = ({ children }) => {
   };
 
   const isNodeCompleted = (nodeId) => {
+    if (nodeId === 'workload') {
+      const totalSlots = (personnel || []).reduce((acc, p) => acc + (p?.workloadRows?.length || 0), 0);
+      if (totalSlots === 0) return false;
+      const hasIssues = (personnel || []).some(p => checkPersonnelWorkloadErrors(p, personnel, classSections));
+      if (hasIssues) return false;
+    }
     return (journeyState?.completedNodes || []).includes(nodeId);
   };
 
@@ -2589,10 +2734,12 @@ export const AppProvider = ({ children }) => {
     const localSecId = `sec-draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     const newSec = {
+      ...(typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null ? gradeLevelOrObj : {}),
       id: localSecId,
       gradeLevel: finalGradeLevel,
       sectionName: finalSectionName,
       advisorId: finalAdvisorId ? String(finalAdvisorId) : null,
+      adviserId: finalAdvisorId ? String(finalAdvisorId) : null,
       sectionType: finalSectionType || 'MONO GRADE',
       advisoryMinutes: Number(finalAdvisoryMins) || 300,
       hgpMinutes: Number(finalHgpMins) || 60,
@@ -2720,6 +2867,7 @@ export const AppProvider = ({ children }) => {
       if (String(s.id) === String(sectionId)) {
         targetSec = {
           ...s,
+          ...updates,
           sectionName: sectionName || s.sectionName,
           gradeLevel: gradeLevel || s.gradeLevel,
           sectionType: sectionType || s.sectionType,

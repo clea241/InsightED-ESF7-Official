@@ -90,6 +90,23 @@ export default function Roster() {
     setActiveView('profile');
   };
 
+  // Reactive Category Counts
+  const categoryCounts = React.useMemo(() => {
+    const counts = {
+      all: personnel.length,
+      teaching: 0,
+      'teaching-related': 0,
+      'non-teaching': 0
+    };
+    personnel.forEach(p => {
+      const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+      if (counts[pType] !== undefined) {
+        counts[pType]++;
+      }
+    });
+    return counts;
+  }, [personnel]);
+
   // Filter & Search Logic
   const filteredPersonnel = personnel
     .filter(p => {
@@ -180,17 +197,94 @@ export default function Roster() {
             );
           })()}
           
-          <div className="tabs" style={{ margin: '12px 0' }}>
-            {['all', 'teaching', 'teaching-related', 'non-teaching'].map((type) => (
-              <button
-                key={type}
-                className={`tab ${typeFilter === type ? 'active' : ''}`}
-                onClick={() => setTypeFilter(type)}
-                type="button"
-              >
-                {type.charAt(0).toUpperCase() + type.slice(1)}
-              </button>
-            ))}
+          {/* Category Filter KPI Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '12px',
+            margin: '16px 0 20px 0'
+          }}>
+            {[
+              { type: 'all', label: 'All Personnel', color: '#1e293b', border: '#cbd5e1', bg: '#f8fafc', activeBg: '#1e293b', activeColor: '#ffffff', icon: '👤' },
+              { type: 'teaching', label: 'Teaching', color: '#0369a1', border: '#bae6fd', bg: '#f0f9ff', activeBg: '#0284c7', activeColor: '#ffffff', icon: '📚' },
+              { type: 'teaching-related', label: 'Teaching-Related', color: '#6d28d9', border: '#ddd6fe', bg: '#f5f3ff', activeBg: '#7c3aed', activeColor: '#ffffff', icon: '⚜️' },
+              { type: 'non-teaching', label: 'Non-Teaching', color: '#065f46', border: '#a7f3d0', bg: '#ecfdf5', activeBg: '#059669', activeColor: '#ffffff', icon: '💼' }
+            ].map((cat) => {
+              const isSelected = typeFilter === cat.type;
+              const count = categoryCounts[cat.type] || 0;
+
+              return (
+                <div
+                  key={cat.type}
+                  onClick={() => setTypeFilter(cat.type)}
+                  style={{
+                    background: isSelected ? cat.activeBg : 'white',
+                    color: isSelected ? cat.activeColor : 'var(--navy)',
+                    border: isSelected ? `2px solid ${cat.activeBg}` : `1.5px solid ${cat.border}`,
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease-in-out',
+                    boxShadow: isSelected ? '0 4px 12px rgba(0, 0, 0, 0.12)' : '0 1px 3px rgba(0,0,0,0.04)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    userSelect: 'none'
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 10px rgba(0,0,0,0.08)';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected) {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: '800',
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      color: isSelected ? 'rgba(255,255,255,0.9)' : cat.color
+                    }}>
+                      {cat.label}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                      borderRadius: '999px',
+                      background: isSelected ? 'rgba(255,255,255,0.2)' : cat.bg,
+                      color: isSelected ? '#ffffff' : cat.color,
+                      fontWeight: '800'
+                    }}>
+                      {cat.icon}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                    <span style={{
+                      fontSize: '24px',
+                      fontWeight: '900',
+                      lineHeight: 1,
+                      color: isSelected ? '#ffffff' : 'var(--navy)'
+                    }}>
+                      {count}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: isSelected ? 'rgba(255,255,255,0.75)' : '#64748b'
+                    }}>
+                      {count === 1 ? 'person' : 'personnel'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="roster-search-row">

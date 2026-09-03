@@ -1,7 +1,19 @@
 const pg = require('pg');
 const { Pool } = pg;
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const fs = require('fs');
+
+const envPaths = [
+  path.join(__dirname, '../.env'),
+  path.join(__dirname, '../../.env'),
+  path.join(process.cwd(), '.env'),
+  path.join(process.cwd(), 'server/.env')
+];
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    require('dotenv').config({ path: envPath });
+  }
+}
 
 // Prevent timezone-shifting of DATE columns by returning raw strings
 pg.types.setTypeParser(1082, (val) => val);

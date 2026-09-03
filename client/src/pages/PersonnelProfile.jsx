@@ -571,6 +571,141 @@ function MultiSelectDropdown({ options = [], value = [], onChange, placeholder =
   );
 }
 
+export const getPersonnelTabCompletion = (p) => {
+  if (!p) {
+    return { tabs: {}, totalPercent: 0, completedTabsCount: 0, totalApplicableTabs: 0 };
+  }
+
+  const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+  const isNonTeaching = pType === 'non-teaching';
+
+  // 1. Identity & Personal (Merged)
+  const hasFirstName = Boolean(p.firstName?.trim());
+  const hasLastName = Boolean(p.lastName?.trim());
+  const hasTin = Boolean(p.noTin || p.tin?.trim());
+  const hasSex = Boolean(p.sexAtBirth);
+  const hasCivilStatus = Boolean(p.civilStatus);
+  const hasReligion = Boolean(p.religion);
+  const hasEthnic = Boolean(p.ethnicGroup);
+  const hasBirthdate = Boolean(p.birthdate);
+  const hasPhilsys = Boolean(p.philsysNo?.trim() || p.noPhilsys);
+  const identityComplete = hasFirstName && hasLastName && hasTin && hasSex && hasCivilStatus && hasReligion && hasEthnic && hasBirthdate && hasPhilsys;
+
+  // 2. Employment
+  const hasPosition = Boolean(p.position?.trim());
+  const hasFundSource = Boolean(p.fundSource);
+  const hasNature = Boolean(p.natureOfAppointment);
+  const hasHiring = Boolean(p.hiringArrangement);
+  const hasDeployment = Boolean(p.deploymentStatus);
+
+  const depStatus = String(p.deploymentStatus || '').toUpperCase();
+  const requiresOtherSchool = ['CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(depStatus);
+  const hasOtherSchool = !requiresOtherSchool || Boolean(p.clusteredSchools || (Array.isArray(p.assignedSchools) && p.assignedSchools.length > 0));
+
+  const isNationalFund = String(p.fundSource || '').trim().toUpperCase() === 'NATIONAL';
+  const isNonNationalNonTeaching = isNonTeaching && !isNationalFund;
+  const isEmailNA = isNonNationalNonTeaching && p.depedEmail === 'N/A';
+  const hasEmail = isEmailNA || Boolean(p.depedEmail?.trim() && (isNonNationalNonTeaching || validateDepEdEmail(p.depedEmail, p.firstName, p.lastName).isValid));
+
+  const hasFirstService = Boolean(p.firstServiceDate);
+  const hasLastPromotion = Boolean(p.lastPromotionDate);
+  const hasLastLateral = Boolean(p.lastLateralMovementDate);
+  const hasNewStation = Boolean(p.newStationDate);
+
+  const employmentComplete = hasPosition && hasFundSource && hasNature && hasHiring && hasDeployment && hasOtherSchool && hasEmail && hasFirstService && hasLastPromotion && hasLastLateral && hasNewStation;
+
+  // 3. Education
+  const hasDegree = Boolean(p.collegeDegree);
+  const degreeUpper = String(p.collegeDegree || '').toUpperCase();
+  const isEduDegree = hasDegree && p.collegeDegree !== 'NONE' && p.collegeDegree !== 'N/A' && (
+    degreeUpper.includes('EDUCATION') || degreeUpper.includes('SPECIAL ED') || degreeUpper.includes('KINDERGARTEN') || degreeUpper.includes('EARLY CHILDHOOD')
+  );
+  const hasMajor = !isEduDegree || Boolean(p.major);
+  const hasEligibility = Boolean(p.eligibility);
+
+  const elStr = (Array.isArray(p.eligibility) ? p.eligibility.join(',') : String(p.eligibility || '')).toUpperCase();
+  const isLetPbet = elStr.includes('LICENSURE EXAMINATION FOR TEACHERS') || elStr.includes('PROFESSIONAL BOARD EXAMINATION FOR TEACHERS') || elStr.includes('LET') || elStr.includes('PBET');
+  const hasPrcSpec = !isLetPbet || Boolean(p.prcSpecialization?.trim());
+
+  const educationComplete = hasDegree && hasMajor && hasEligibility && hasPrcSpec;
+
+  // 4. Development (L&D)
+  const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
+  const developmentComplete = allTrainings.length > 0 && allTrainings.every(tr => Boolean(tr.title?.trim()) && Number(tr.totalHours) > 0);
+
+  // 5. Teaching
+  const teachingComplete = isNonTeaching ? true : Boolean(Array.isArray(p.assignedGradeLevels) && p.assignedGradeLevels.length > 0);
+
+  // 6. Learning Area
+  const lAreaMap = p.learningAreaMap || p.matrix_data || {};
+  const learningAreaComplete = isNonTeaching ? true : Boolean(
+    Object.values(lAreaMap).some(item => item && (item.checked || item.years > 0)) ||
+    (Array.isArray(p.learningAreas) && p.learningAreas.length > 0) ||
+    (Array.isArray(p.taughtSubjects) && p.taughtSubjects.length > 0)
+  );
+
+  const tabStatusMap = {
+    identity: identityComplete,
+    employment: employmentComplete,
+    education: educationComplete,
+    development: developmentComplete,
+    ...(isNonTeaching ? {} : {
+      teaching: teachingComplete,
+      'learning-area': learningAreaComplete
+    })
+  };
+
+  const applicableTabKeys = Object.keys(tabStatusMap);
+  const totalApplicableTabs = applicableTabKeys.length;
+  const completedTabsCount = applicableTabKeys.filter(k => tabStatusMap[k]).length;
+  const totalPercent = totalApplicableTabs > 0 ? Math.round((completedTabsCount / totalApplicableTabs) * 100) : 0;
+
+  return {
+    tabs: tabStatusMap,
+    totalPercent,
+    completedTabsCount,
+    totalApplicableTabs
+  };
+};
+
+const getPersonnelCompletionForRecord = (p) => {
+  if (!p) {
+    return { tabs: {}, totalPercent: 0, completedTabsCount: 0, totalApplicableTabs: 0 };
+  }
+
+  let personRecord = { ...p };
+  const personId = p.id;
+
+  if (personId) {
+    // 1. Read main personnel draft if available
+    const draftPersonnelStr = localStorage.getItem(`draft_personnel_${personId}`);
+    if (draftPersonnelStr) {
+      try {
+        const parsedPersonnelDraft = JSON.parse(draftPersonnelStr);
+        if (parsedPersonnelDraft && typeof parsedPersonnelDraft === 'object') {
+          personRecord = { ...personRecord, ...parsedPersonnelDraft };
+        }
+      } catch (e) {}
+    }
+
+    // 2. Read learning areas draft if available
+    let laMap = personRecord.learningAreaMap || personRecord.matrix_data || {};
+    const draftLaStr = localStorage.getItem(`draft_learning_areas_${personId}`);
+    if (draftLaStr) {
+      try {
+        const parsedLaDraft = JSON.parse(draftLaStr);
+        if (parsedLaDraft && typeof parsedLaDraft === 'object' && Object.keys(parsedLaDraft).length > 0) {
+          laMap = parsedLaDraft;
+        }
+      } catch (e) {}
+    }
+
+    personRecord.learningAreaMap = laMap;
+  }
+
+  return getPersonnelTabCompletion(personRecord);
+};
+
 export default function PersonnelProfile() {
   const {
     personnel,
@@ -639,6 +774,14 @@ export default function PersonnelProfile() {
 
   const currentPerson = editPerson || dbPerson;
 
+  const currentPersonCompletion = React.useMemo(() => {
+    if (!currentPerson) return { tabs: {}, totalPercent: 0 };
+    return getPersonnelTabCompletion({
+      ...currentPerson,
+      learningAreaMap: learningAreaMap
+    });
+  }, [currentPerson, learningAreaMap]);
+
   // Fetch Learning Areas for active personnel
   useEffect(() => {
     if (!currentPerson?.id) {
@@ -659,6 +802,7 @@ export default function PersonnelProfile() {
     setLearningAreaMap(initialMap);
 
     api.getLearningAreas(currentPerson.id)
+      // api.saveLearningArea(currentPerson.id, learningAreaMap)
       .then(res => {
         if (!isMounted) return;
         let incomingMap = res?.learningAreaMap || res?.matrix_data || {};
@@ -753,7 +897,6 @@ export default function PersonnelProfile() {
       return updated;
     });
 
-    if (setHasUnsavedChanges) setHasUnsavedChanges(true);
     showToast(`Learning area ${newChecked ? 'added' : 'removed'} in draft`, 'success');
   };
 
@@ -778,7 +921,7 @@ export default function PersonnelProfile() {
       return updated;
     });
 
-    if (setHasUnsavedChanges) setHasUnsavedChanges(true);
+    // Draft saved automatically
   };
 
   useEffect(() => {
@@ -1241,16 +1384,15 @@ export default function PersonnelProfile() {
   });
 
   const categoryLabels = {
-    teaching: { label: 'Teaching', color: '#0ea5e9', bg: '#e0f2fe' },
-    'teaching-related': { label: 'Related', color: '#7c3aed', bg: '#ede9fe' },
-    'non-teaching': { label: 'Non-Teaching', color: '#059669', bg: '#d1fae5' },
+    teaching: { label: 'Teaching', color: '#0369a1', bg: '#e0f2fe' },
+    'teaching-related': { label: 'Related', color: '#6d28d9', bg: '#ede9fe' },
+    'non-teaching': { label: 'Non-Teaching', color: '#065f46', bg: '#d1fae5' },
   };
 
   const tabs = currentPerson && currentPerson.isShared ? [
-    { tab: 'identity', label: 'Identity', icon: '🪪' }
+    { tab: 'identity', label: 'Identity & Personal', icon: '🪪' }
   ] : [
-    { tab: 'identity', label: 'Identity', icon: '🪪' },
-    { tab: 'personal', label: 'Personal', icon: '👤' },
+    { tab: 'identity', label: 'Identity & Personal', icon: '🪪' },
     { tab: 'employment', label: 'Employment', icon: '💼' },
     { tab: 'education', label: 'Education', icon: '🎓' },
     { tab: 'development', label: 'L&D', icon: '📋' },
@@ -1334,24 +1476,44 @@ export default function PersonnelProfile() {
               </div>
               {/* Category Pills */}
               <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }}>
-                {[['all', 'All', '#64748b', '#f1f5f9'], ['teaching', 'Teaching', '#0369a1', '#e0f2fe'], ['teaching-related', 'Related', '#6d28d9', '#ede9fe'], ['non-teaching', 'Non-Teaching', '#065f46', '#d1fae5']].map(([val, label, color, bg]) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setCategoryFilter(val)}
-                    style={{
-                      padding: '3px 10px',
-                      borderRadius: '999px',
-                      border: `1.5px solid ${categoryFilter === val ? color : 'transparent'}`,
-                      background: categoryFilter === val ? bg : 'transparent',
-                      color: categoryFilter === val ? color : '#94a3b8',
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s'
-                    }}
-                  >{label}</button>
-                ))}
+                {[
+                  { val: 'all', label: 'All', color: '#475569', activeBg: '#e2e8f0', activeBorder: '#64748b', inactiveBg: '#f8fafc', inactiveBorder: '#cbd5e1', shadow: 'rgba(100, 116, 139, 0.2)' },
+                  { val: 'teaching', label: 'Teaching', color: '#0369a1', activeBg: '#e0f2fe', activeBorder: '#0284c7', inactiveBg: '#f0f9ff', inactiveBorder: '#bae6fd', shadow: 'rgba(2, 132, 199, 0.25)' },
+                  { val: 'teaching-related', label: 'Related', color: '#6d28d9', activeBg: '#ede9fe', activeBorder: '#7c3aed', inactiveBg: '#f5f3ff', inactiveBorder: '#ddd6fe', shadow: 'rgba(124, 58, 237, 0.25)' },
+                  { val: 'non-teaching', label: 'Non-Teaching', color: '#065f46', activeBg: '#d1fae5', activeBorder: '#059669', inactiveBg: '#ecfdf5', inactiveBorder: '#a7f3d0', shadow: 'rgba(5, 150, 105, 0.25)' }
+                ].map(({ val, label, color, activeBg, activeBorder, inactiveBg, inactiveBorder, shadow }) => {
+                  const isSelected = categoryFilter === val;
+                  return (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setCategoryFilter(val)}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '999px',
+                        border: `1.5px solid ${isSelected ? activeBorder : inactiveBorder}`,
+                        background: isSelected ? activeBg : inactiveBg,
+                        color: color,
+                        fontSize: '11px',
+                        fontWeight: isSelected ? '800' : '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease-in-out',
+                        boxShadow: isSelected ? `0 2px 4px ${shadow}` : 'none',
+                        opacity: isSelected ? 1 : 0.85
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.opacity = '1';
+                        if (!isSelected) e.currentTarget.style.borderColor = activeBorder;
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.opacity = isSelected ? '1' : '0.85';
+                        if (!isSelected) e.currentTarget.style.borderColor = inactiveBorder;
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1371,10 +1533,13 @@ export default function PersonnelProfile() {
                       )}
                       {paginatedPeople.map(p => {
                         const isActive = p.id === currentPerson.id;
-                        const hasDraft = !!localStorage.getItem(`draft_personnel_${p.id}`);
+                        const hasDraft = Boolean(localStorage.getItem(`draft_personnel_${p.id}`) || localStorage.getItem(`draft_learning_areas_${p.id}`));
                         const pType = getPersonCategoryType(p);
                         const catInfo = categoryLabels[pType] || { label: pType, color: '#64748b', bg: '#f1f5f9' };
                         const initials = `${(p.firstName || '')[0] || ''}${(p.lastName || '')[0] || ''}`.toUpperCase();
+
+                        const { totalPercent } = getPersonnelCompletionForRecord(p);
+
                         return (
                           <div
                             key={p.id}
@@ -1412,21 +1577,48 @@ export default function PersonnelProfile() {
                                 }} title="Has unsaved changes" />
                               )}
                             </div>
-                            {/* Name & Position */}
+                            {/* Name, Position & Progress Bar */}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <p style={{ margin: 0, fontSize: '13px', fontWeight: isActive ? '700' : '600', color: isActive ? 'var(--navy)' : '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {p.salutation} {p.firstName} {p.lastName}{p.nameExtension ? ` ${p.nameExtension}` : ''}
                               </p>
-                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {p.position || 'No position set'}
-                              </p>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginTop: '2px' }}>
+                                <p style={{ margin: 0, fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                                  {p.position || 'No position set'}
+                                </p>
+                                <span style={{
+                                  padding: '1px 5px', borderRadius: '5px',
+                                  background: catInfo.bg, color: catInfo.color,
+                                  fontSize: '9.5px', fontWeight: '700', flexShrink: 0
+                                }}>{catInfo.label}</span>
+                              </div>
+                              {/* Progress bar */}
+                              <div style={{ marginTop: '5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ flex: 1, height: '4px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
+                                  <div
+                                    style={{
+                                      width: `${totalPercent}%`,
+                                      height: '100%',
+                                      background: totalPercent === 100
+                                        ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)'
+                                        : totalPercent >= 50
+                                        ? 'linear-gradient(90deg, #0284c7 0%, #0369a1 100%)'
+                                        : 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)',
+                                      borderRadius: '999px',
+                                      transition: 'width 0.3s ease'
+                                    }}
+                                  />
+                                </div>
+                                <span style={{
+                                  fontSize: '10px',
+                                  fontWeight: '800',
+                                  color: totalPercent === 100 ? '#059669' : totalPercent >= 50 ? '#0369a1' : '#d97706',
+                                  lineHeight: 1
+                                }}>
+                                  {totalPercent}%
+                                </span>
+                              </div>
                             </div>
-                            {/* Category badge */}
-                            <span style={{
-                              padding: '2px 6px', borderRadius: '6px',
-                              background: catInfo.bg, color: catInfo.color,
-                              fontSize: '10px', fontWeight: '700', flexShrink: 0
-                            }}>{catInfo.label}</span>
                           </div>
                         );
                       })}
@@ -1556,30 +1748,76 @@ export default function PersonnelProfile() {
               background: '#f8fafc',
               padding: '0 24px'
             }}>
-              {tabs.map(({ tab, label, icon }) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    padding: '12px 18px',
-                    fontSize: '13px',
-                    fontWeight: activeTab === tab ? '700' : '600',
-                    color: activeTab === tab ? 'var(--blue)' : '#64748b',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: activeTab === tab ? '3px solid var(--blue)' : '3px solid transparent',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <span>{icon}</span>
-                  <span>{label}</span>
-                </button>
-              ))}
+              {tabs.map(({ tab, label, icon }) => {
+                const isTabComplete = !!currentPersonCompletion?.tabs?.[tab];
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    style={{
+                      padding: '12px 18px',
+                      fontSize: '13px',
+                      fontWeight: activeTab === tab ? '700' : '600',
+                      color: activeTab === tab ? 'var(--blue)' : '#64748b',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: activeTab === tab ? '3px solid var(--blue)' : '3px solid transparent',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <span>{icon}</span>
+                    <span>{label}</span>
+                    {isTabComplete ? (
+                      <span
+                        style={{
+                          marginLeft: '2px',
+                          background: '#d1fae5',
+                          color: '#059669',
+                          border: '1px solid #a7f3d0',
+                          borderRadius: '50%',
+                          width: '16px',
+                          height: '16px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '10px',
+                          fontWeight: '900',
+                          lineHeight: 1
+                        }}
+                        title="Section Complete"
+                      >
+                        ✓
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          marginLeft: '2px',
+                          background: '#fef3c7',
+                          color: '#d97706',
+                          border: '1px solid #fcd34d',
+                          borderRadius: '50%',
+                          width: '16px',
+                          height: '16px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '9px',
+                          fontWeight: '800',
+                          lineHeight: 1
+                        }}
+                        title="Section Incomplete"
+                      >
+                        !
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* ── Form Content ── */}
@@ -1623,8 +1861,7 @@ export default function PersonnelProfile() {
                   {/* Editing Form fields dynamically */}
                   <div>
                     <p className="profile-section-note">
-                      {activeTab === 'identity' && "🪪 Editing identity and minimum record creation fields."}
-                      {activeTab === 'personal' && "👤 Editing demographic, civil status, birthdate, PhilSys, religion, and ethnicity fields."}
+                      {activeTab === 'identity' && "🪪 Editing identity, legal name, demographic profile, PhilSys, and birthdate fields."}
                       {activeTab === 'employment' && "💼 Editing position, designation, fund source, appointment, hiring arrangement, email, deployment, and service dates."}
                       {activeTab === 'education' && "🎓 Editing degree, major/minor, post-graduate degree, discipline, eligibility, and PRC specialization."}
                       {activeTab === 'development' && "📋 Editing NEAP trainings, TESDA NCs, certifications, and other professional development records."}
@@ -1632,11 +1869,27 @@ export default function PersonnelProfile() {
                       {activeTab === 'learning-area' && "📖 Record taught learning areas per school year."}
                     </p>
 
-                    <div className="form-grid profile-form-grid">
-
+                    <div className={`form-grid profile-form-grid ${['identity', 'education'].includes(activeTab) ? 'profile-3col-grid' : ''}`}>
                       {activeTab === 'identity' && (
                         <>
-                          <div style={{ gridColumn: '1 / -1' }}>
+                          <div className="profile-subsection">Legal Name & Tax Identification</div>
+                          <div>
+                            <label>First Name <span style={{ color: '#EF4444' }}>*</span></label>
+                            <input className={!currentPerson.firstName ? 'empty-field' : ''} value={currentPerson.firstName || ''} onChange={(e) => handleFieldChange('firstName', e.target.value.toUpperCase())} />
+                          </div>
+                          <div>
+                            <label>Middle Name</label>
+                            <input value={currentPerson.middleName || ''} onChange={(e) => handleFieldChange('middleName', e.target.value.toUpperCase())} />
+                          </div>
+                          <div>
+                            <label>Last Name <span style={{ color: '#EF4444' }}>*</span></label>
+                            <input className={!currentPerson.lastName ? 'empty-field' : ''} value={currentPerson.lastName || ''} onChange={(e) => handleFieldChange('lastName', e.target.value.toUpperCase())} />
+                          </div>
+                          <div>
+                            <label>Extension Name (Optional)</label>
+                            <input value={currentPerson.nameExtension || ''} onChange={(e) => handleFieldChange('nameExtension', e.target.value.toUpperCase())} placeholder="e.g. JR., SR., III, IV" />
+                          </div>
+                          <div style={{ gridColumn: 'span 2' }}>
                             <label>TIN</label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1685,28 +1938,7 @@ export default function PersonnelProfile() {
                             </div>
                             <p className="field-help" style={{ marginTop: '6px' }}>PRN is used as the professional system ID, so no temporary ID is needed.</p>
                           </div>
-                          <div className="profile-subsection">Legal Name</div>
-                          <div>
-                            <label>First Name</label>
-                            <input className={!currentPerson.firstName ? 'empty-field' : ''} value={currentPerson.firstName || ''} onChange={(e) => handleFieldChange('firstName', e.target.value.toUpperCase())} />
-                          </div>
-                          <div>
-                            <label>Middle Name</label>
-                            <input value={currentPerson.middleName || ''} onChange={(e) => handleFieldChange('middleName', e.target.value.toUpperCase())} />
-                          </div>
-                          <div>
-                            <label>Last Name</label>
-                            <input className={!currentPerson.lastName ? 'empty-field' : ''} value={currentPerson.lastName || ''} onChange={(e) => handleFieldChange('lastName', e.target.value.toUpperCase())} />
-                          </div>
-                          <div>
-                            <label>Extension Name (Optional)</label>
-                            <input value={currentPerson.nameExtension || ''} onChange={(e) => handleFieldChange('nameExtension', e.target.value.toUpperCase())} placeholder="e.g. JR., SR., III, IV" />
-                          </div>
-                        </>
-                      )}
 
-                      {activeTab === 'personal' && (
-                        <>
                           <div className="profile-subsection">Demographic Profile</div>
                           <div>
                             <label>Sex at Birth</label>
@@ -1757,6 +1989,7 @@ export default function PersonnelProfile() {
                               required
                             />
                           </div>
+
                           <div className="profile-subsection">Government ID and Birthdate</div>
                           <div>
                             <label>PhilSys No. / National ID</label>
@@ -1780,12 +2013,9 @@ export default function PersonnelProfile() {
                             />
                           </div>
                           <div>
-                            <label>Computed Age</label>
-                            <input value={age === null ? '—' : age} disabled style={{ background: '#f1f5f9', color: '#64748b' }} />
-                          </div>
-                          <div>
-                            <label>Age Validation</label>
-                            <div style={{ marginTop: '8px' }}>
+                            <label>Computed Age & Validation</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <input value={age === null ? '—' : age} disabled style={{ background: '#f1f5f9', color: '#64748b', width: '80px', textAlign: 'center', fontWeight: 'bold' }} />
                               <span className={ageStatusClass} style={{ padding: '6px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold' }}>
                                 {ageStatusText}
                               </span>
@@ -2353,18 +2583,30 @@ export default function PersonnelProfile() {
                                           )}
                                         </div>
 
-                                        <SearchableDropdown
-                                          options={schoolOptionsList}
-                                          value=""
-                                          onChange={(val) => {
-                                            if (!val) return;
-                                            const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
-                                            if (!currentList.includes(val)) {
-                                              handleFieldChange('assignedSchools', [...currentList, val]);
-                                            }
-                                          }}
-                                          placeholder="+ ADD CLUSTERED SCHOOL (SAME DISTRICT)..."
-                                        />
+                                        {(() => {
+                                           const currentList = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : [];
+                                           const schoolCount = currentList.length;
+                                           const isAnswered = schoolCount > 0;
+                                           const placeholderText = isAnswered
+                                             ? `✓ ${schoolCount} CLUSTERED ${schoolCount === 1 ? 'SCHOOL' : 'SCHOOLS'} ASSIGNED (+ ADD MORE...)`
+                                             : '+ ADD CLUSTERED SCHOOL (SAME DISTRICT)...';
+
+                                           return (
+                                             <div className={isAnswered ? 'answered-dropdown' : ''}>
+                                               <SearchableDropdown
+                                                 options={schoolOptionsList}
+                                                 value=""
+                                                 onChange={(val) => {
+                                                   if (!val) return;
+                                                   if (!currentList.includes(val)) {
+                                                     handleFieldChange('assignedSchools', [...currentList, val]);
+                                                   }
+                                                 }}
+                                                 placeholder={placeholderText}
+                                               />
+                                             </div>
+                                           );
+                                         })()}
 
                                         {(() => {
                                           const prnToShare = currentPerson.prn || currentPerson.profilingCode || (currentPerson.id && String(currentPerson.id).startsWith('PRN') ? currentPerson.id : (currentPerson.id ? 'PRN-' + String(currentPerson.id).replace('PER-', '') : null));
@@ -2633,98 +2875,110 @@ export default function PersonnelProfile() {
                               })()}
                             </div>
                           )}
-                          <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+                          {/* PRC Specialization (Conditional on LET / PBET eligibility) */}
+                          {(() => {
+                            const elStr = (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.join(',') : String(currentPerson.eligibility || '')).toUpperCase();
+                            const isLetPbet = elStr.includes('LICENSURE EXAMINATION FOR TEACHERS') || elStr.includes('PROFESSIONAL BOARD EXAMINATION FOR TEACHERS') || elStr.includes('LET') || elStr.includes('PBET');
+                            if (!isLetPbet) return null;
+                            return (
+                              <div>
+                                <label>PRC Specialization <span style={{ color: '#EF4444' }}>*</span></label>
+                                <SearchableDropdown
+                                  options={PRC_SPECIALIZATION_OPTIONS}
+                                  value={currentPerson.prcSpecialization || ''}
+                                  onChange={(val) => handleFieldChange('prcSpecialization', val)}
+                                  placeholder="Select specialization..."
+                                  required={true}
+                                />
+                              </div>
+                            );
+                          })()}
+
+                          <div style={{ gridColumn: '1 / -1', marginTop: '6px' }}>
                             <label>Eligibilities</label>
+
+                            {/* Dropdown to add a new eligibility */}
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                              {(() => {
+                                const currentList = Array.isArray(currentPerson.eligibility)
+                                  ? currentPerson.eligibility
+                                  : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean);
+                                const elCount = currentList.length;
+                                const isAnswered = elCount > 0;
+                                const defaultLabel = isAnswered
+                                  ? `✓ ${elCount} ${elCount === 1 ? 'Eligibility' : 'Eligibilities'} Added (+ Add more...)`
+                                  : '+ Add Eligibility...';
+
+                                return (
+                                  <select
+                                    value=""
+                                    onChange={async (e) => {
+                                      const selectedVal = e.target.value;
+                                      if (!selectedVal) return;
+
+                                      const isDup = currentList.includes(selectedVal) || currentList.some(el => el.startsWith(selectedVal) && selectedVal.startsWith('RA 1080'));
+                                      if (isDup) {
+                                        await showAlert("Duplicate Entry", "This eligibility category has already been added.");
+                                        return;
+                                      }
+
+                                      if (selectedVal === 'RA 1080 (OTHERS, PLEASE SPECIFY)') {
+                                        setRa1080InputText('');
+                                        setShowRa1080Modal(true);
+                                      } else {
+                                        handleFieldChange('eligibility', [...currentList, selectedVal].join(', '));
+                                      }
+                                    }}
+                                    className={!isAnswered ? 'empty-field' : 'answered-field'}
+                                    style={{ maxWidth: '360px' }}
+                                  >
+                                    <option value="">{defaultLabel}</option>
+                                    <option value="LICENSURE EXAMINATION FOR TEACHERS">LICENSURE EXAMINATION FOR TEACHERS</option>
+                                    <option value="PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)">PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)</option>
+                                    <option value="PROVISIONAL TEACHERS">PROVISIONAL TEACHERS</option>
+                                    <option value="PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES">PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES</option>
+                                    <option value="REGISTERED GUIDANCE COUNSELOR">REGISTERED GUIDANCE COUNSELOR</option>
+                                    <option value="REGISTERED LIBRARIAN">REGISTERED LIBRARIAN</option>
+                                    <option value="REGISTERED NURSE">REGISTERED NURSE</option>
+                                    {(currentPerson.type === 'non-teaching' || currentPerson.type === 'teaching-related') && (
+                                      <>
+                                        <option value="CS - 1ST LEVEL (SUB-PROFESSIONAL)">CS - 1ST LEVEL (SUB-PROFESSIONAL)</option>
+                                        <option value="CS - 2ND LEVEL (PROFESSIONAL)">CS - 2ND LEVEL (PROFESSIONAL)</option>
+                                      </>
+                                    )}
+                                    <option value="RA 1080 (OTHERS, PLEASE SPECIFY)">RA 1080 (OTHERS, PLEASE SPECIFY)</option>
+                                    {currentPerson.type === 'non-teaching' && <option value="N/A">N/A</option>}
+                                  </select>
+                                );
+                              })()}
+                            </div>
 
                             {/* List of currently selected eligibilities */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-                              {(Array.isArray(currentPerson.eligibility)
-                                ? currentPerson.eligibility
-                                : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean)
-                              ).map((el, index) => (
-                                <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
-                                  <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{el}</span>
-                                  <button
-                                    type="button"
-                                    style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
-                                    onClick={() => {
-                                      const currentList = Array.isArray(currentPerson.eligibility)
-                                        ? currentPerson.eligibility
-                                        : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean);
-                                      const newList = currentList.filter((_, idx) => idx !== index);
-                                      handleFieldChange('eligibility', newList.join(', '));
-                                    }}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
+                              {(() => {
+                                const currentList = Array.isArray(currentPerson.eligibility)
+                                  ? currentPerson.eligibility
+                                  : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean);
+                                if (currentList.length === 0) {
+                                  return <span style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic' }}>No eligibilities recorded yet.</span>;
+                                }
+                                return currentList.map((el, index) => (
+                                  <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{el}</span>
+                                    <button
+                                      type="button"
+                                      style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
+                                      onClick={() => {
+                                        const newList = currentList.filter((_, idx) => idx !== index);
+                                        handleFieldChange('eligibility', newList.join(', '));
+                                      }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ));
+                              })()}
                             </div>
-
-                            {/* Dropdown to add a new eligibility */}
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                              <select
-                                value=""
-                                onChange={async (e) => {
-                                  const selectedVal = e.target.value;
-                                  if (!selectedVal) return;
-
-                                  const currentList = Array.isArray(currentPerson.eligibility)
-                                    ? currentPerson.eligibility
-                                    : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean);
-
-                                  const isDup = currentList.includes(selectedVal) || currentList.some(el => el.startsWith(selectedVal) && selectedVal.startsWith('RA 1080'));
-                                  if (isDup) {
-                                    await showAlert("Duplicate Entry", "This eligibility category has already been added.");
-                                    return;
-                                  }
-
-                                  if (selectedVal === 'RA 1080 (OTHERS, PLEASE SPECIFY)') {
-                                    setRa1080InputText('');
-                                    setShowRa1080Modal(true);
-                                  } else {
-                                    handleFieldChange('eligibility', [...currentList, selectedVal].join(', '));
-                                  }
-                                }}
-                                className={!currentPerson.eligibility ? 'empty-field' : ''}
-                                style={{ maxWidth: '400px' }}
-                              >
-                                <option value="">+ Add Eligibility...</option>
-                                <option value="LICENSURE EXAMINATION FOR TEACHERS">LICENSURE EXAMINATION FOR TEACHERS</option>
-                                <option value="PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)">PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)</option>
-                                <option value="PROVISIONAL TEACHERS">PROVISIONAL TEACHERS</option>
-                                <option value="PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES">PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES</option>
-                                <option value="REGISTERED GUIDANCE COUNSELOR">REGISTERED GUIDANCE COUNSELOR</option>
-                                <option value="REGISTERED LIBRARIAN">REGISTERED LIBRARIAN</option>
-                                <option value="REGISTERED NURSE">REGISTERED NURSE</option>
-                                {(currentPerson.type === 'non-teaching' || currentPerson.type === 'teaching-related') && (
-                                  <>
-                                    <option value="CS - 1ST LEVEL (SUB-PROFESSIONAL)">CS - 1ST LEVEL (SUB-PROFESSIONAL)</option>
-                                    <option value="CS - 2ND LEVEL (PROFESSIONAL)">CS - 2ND LEVEL (PROFESSIONAL)</option>
-                                  </>
-                                )}
-                                <option value="RA 1080 (OTHERS, PLEASE SPECIFY)">RA 1080 (OTHERS, PLEASE SPECIFY)</option>
-                                {currentPerson.type === 'non-teaching' && <option value="N/A">N/A</option>}
-                              </select>
-                            </div>
-
-                            {/* PRC Specialization (Conditional on LET / PBET eligibility) */}
-                            {(() => {
-                              const elStr = (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.join(',') : String(currentPerson.eligibility || '')).toUpperCase();
-                              const isLetPbet = elStr.includes('LICENSURE EXAMINATION FOR TEACHERS') || elStr.includes('PROFESSIONAL BOARD EXAMINATION FOR TEACHERS') || elStr.includes('LET') || elStr.includes('PBET');
-                              if (!isLetPbet) return null;
-                              return (
-                                <div style={{ marginTop: '16px' }}>
-                                  <label>PRC Specialization</label>
-                                  <SearchableDropdown
-                                    options={PRC_SPECIALIZATION_OPTIONS}
-                                    value={currentPerson.prcSpecialization || ''}
-                                    onChange={(val) => handleFieldChange('prcSpecialization', val)}
-                                    placeholder="Select specialization..."
-                                  />
-                                </div>
-                              );
-                            })()}
                           </div>
                         </>
                       )}
@@ -2951,6 +3205,71 @@ export default function PersonnelProfile() {
                             <label style={{ fontWeight: 'bold' }}>Assigned Grade Levels (Teaching / Teaching-Related)</label>
                             <p className="field-help" style={{ marginBottom: '12px' }}>Select the grade levels this personnel is assigned to teach or manage.</p>
 
+                            {/* Dropdown to add a new grade level */}
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
+                              {(() => {
+                                const currentList = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
+                                const gradeCount = currentList.length;
+                                const isAnswered = gradeCount > 0;
+                                const defaultLabel = isAnswered
+                                  ? `✓ ${gradeCount} Grade ${gradeCount === 1 ? 'Level' : 'Levels'} Assigned (+ Add more...)`
+                                  : '+ Add Grade Level...';
+
+                                return (
+                                  <select
+                                    value=""
+                                    onChange={async (e) => {
+                                      const selectedVal = e.target.value;
+                                      if (!selectedVal) return;
+
+                                      if (currentList.includes(selectedVal)) {
+                                        await showAlert("Duplicate Entry", "This grade level has already been assigned.");
+                                        return;
+                                      }
+
+                                      handleFieldChange('assignedGradeLevels', [...currentList, selectedVal]);
+                                    }}
+                                    className={isAnswered ? 'answered-field' : ''}
+                                    style={{ maxWidth: '400px' }}
+                                  >
+                                    <option value="">{defaultLabel}</option>
+                                    {(() => {
+                                      const offerings = (schoolInfo?.curricularOffering || []).map(o => o.toUpperCase());
+                                      const showElem = offerings.includes('ELEMENTARY');
+                                      const showJHS = offerings.includes('JHS');
+                                      const showSHS = offerings.includes('SHS');
+
+                                      const list = [];
+                                      if (showElem) {
+                                        list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED');
+                                      }
+                                      if (showJHS) {
+                                        list.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10');
+                                      }
+                                      if (showSHS) {
+                                        list.push('Grade 11', 'Grade 12');
+                                      }
+                                      if (list.length === 0) {
+                                        list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
+                                      }
+
+                                      if (Array.isArray(classSections)) {
+                                        classSections.forEach(s => {
+                                          if (s.gradeLevel && s.gradeLevel.includes(' - ') && !list.includes(s.gradeLevel)) {
+                                            list.push(s.gradeLevel);
+                                          }
+                                        });
+                                      }
+
+                                      return list.filter(item => !currentList.includes(item)).map(g => (
+                                        <option key={g} value={g}>{g}</option>
+                                      ));
+                                    })()}
+                                  </select>
+                                );
+                              })()}
+                            </div>
+
                             {/* List of currently selected grade levels as tags */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                               {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).map((grade, index) => (
@@ -2972,61 +3291,6 @@ export default function PersonnelProfile() {
                               {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).length === 0 && (
                                 <span style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic' }}>No grade levels assigned yet.</span>
                               )}
-                            </div>
-
-                            {/* Dropdown to add a new grade level */}
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                              <select
-                                value=""
-                                onChange={async (e) => {
-                                  const selectedVal = e.target.value;
-                                  if (!selectedVal) return;
-
-                                  const currentList = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
-                                  if (currentList.includes(selectedVal)) {
-                                    await showAlert("Duplicate Entry", "This grade level has already been assigned.");
-                                    return;
-                                  }
-
-                                  handleFieldChange('assignedGradeLevels', [...currentList, selectedVal]);
-                                }}
-                                style={{ maxWidth: '400px' }}
-                              >
-                                <option value="">+ Add Grade Level...</option>
-                                {(() => {
-                                  const offerings = (schoolInfo?.curricularOffering || []).map(o => o.toUpperCase());
-                                  const showElem = offerings.includes('ELEMENTARY');
-                                  const showJHS = offerings.includes('JHS');
-                                  const showSHS = offerings.includes('SHS');
-
-                                  const list = [];
-                                  if (showElem) {
-                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED');
-                                  }
-                                  if (showJHS) {
-                                    list.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10');
-                                  }
-                                  if (showSHS) {
-                                    list.push('Grade 11', 'Grade 12');
-                                  }
-                                  if (list.length === 0) {
-                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
-                                  }
-
-                                  if (Array.isArray(classSections)) {
-                                    classSections.forEach(s => {
-                                      if (s.gradeLevel && s.gradeLevel.includes(' - ') && !list.includes(s.gradeLevel)) {
-                                        list.push(s.gradeLevel);
-                                      }
-                                    });
-                                  }
-
-                                  const selected = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
-                                  return list.filter(item => !selected.includes(item)).map(g => (
-                                    <option key={g} value={g}>{g}</option>
-                                  ));
-                                })()}
-                              </select>
                             </div>
 
                             {/* Dedicated SHS Teacher Toggle - Only shown if school offers Senior High School */}

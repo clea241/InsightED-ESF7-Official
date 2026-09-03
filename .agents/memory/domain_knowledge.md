@@ -127,3 +127,22 @@
     4. `esf7_regular_sections`, `esf7_aral_sections`, `esf7_remedial_enrichment_sections`
     5. `esf7_workload_rows`, `esf7_shs_workload_rows`, `esf7_workload_transfer`
   - **Input Sanitization & Upserts**: Worker sanitizes numbers (`parseInt(val) || 1`), dates, and uses `ON CONFLICT` upserts.
+
+### Added 2026-09-04
+- **Organized Classes Setup & Section Partitioning Flow**:
+  - **Default View Mode**: Table / List view (`'list'`) loads first by default on page load, with toggle back to Cards view.
+  - **Inline Table Section Creation**:
+    - Full-width dashed-border placeholder row at bottom of table body (`+ Add Section`).
+    - Clicking activates inline editable cells directly in the table: Column 1 **Class Type** (`Mono Grade` vs `Multi Grade`), Column 2 **Grade Level** (single dropdown for Mono Grade, or multi-select checkbox grid for Multi Grade), Section Name, dynamic DepEd size standard badge, Male/Female learner counts, auto-calculated Total badge, and Adviser dropdown.
+    - Save executes identical validation as modal flow (duplicate check, required fields) and immediately reopens a fresh dashed placeholder row. Multigrade sections save combined grade levels e.g. `Grade 1 - Grade 2` and render as multi-badges in table view.
+  - **In-Place Inline Table & Card Editing**:
+    - **No Popup Modal on Edit**: Clicking `✎ Edit` on any table row or section card unlocks that item in place.
+    - **Inline Fields**: Regular rows unlock Class Type dropdown, Grade Level select/checkbox grid, Section Name uppercase input, Male/Female learner inputs, and Adviser select. ARAL cards unlock ARAL Basis, Grade/Assessment Tool inputs, Section Name, Learner count, and Tutor select. Remedial/Enrichment cards unlock Category select, Grade select, Section Name, Male/Female inputs, and Teacher select.
+    - **Action Buttons**: `✎ Edit` and `✕` are replaced by `✓ Save` and `✕ Cancel` buttons while unlocked. Save validates required fields and duplicates before committing, Cancel reverts changes.
+    - **Single Edit Lock**: Disables `✎ Edit` and `✕` buttons on all other rows/cards while one row/card is currently unlocked.
+  - **ARAL & Remedial/Enrichment Card-to-Table Restructure**:
+    - **ARAL Table Columns**: 1) ARAL Basis (`Grade Level` vs `Assessment Profile`), 2) Target / Assessment Profile (`Grade 1–6` or `CRLA/Phil-IRI/RMA` tool & level), 3) Section Name, 4) Enrolled Learners, 5) Section Tutor, 6) Actions (`✎ Edit` / `✕`).
+    - **Remedial/Enrichment Table Columns**: 1) Intervention Category (`REMEDIAL` vs `ENRICHMENT`), 2) Target Grade, 3) Section Name, 4) Male (♂), 5) Female (♀), 6) Total, 7) Assigned Teacher, 8) Actions (`✎ Edit` / `✕`).
+    - **Inline Dashed Creation Rows**: Both tables feature a dashed-border bottom placeholder row (`+ Add ARAL Section` and `+ Add Remedial / Enrichment Section`) for creating new sections directly in the table without opening modals.
+    - **Preserved Headers & Captions**: Preserved top-right modal buttons, section count badges, empty state placeholders, and captions ("Not counted in base school enrollment" & "Workload remediation row creation").
+    - **ARAL Assessment Profile Level Validation & Casing**: Tool keys are normalized via `normalizeAralToolKey` (`crla`, `philIri`, `rma`), and tool display names are strictly cased (`CRLA`, `Phil-IRI`, `RMA`). Assessment Profile Levels are validated against each tool's specific option list (`CRLA` ➔ `Emerging...`, `Phil-IRI` ➔ `Frustration...`, `RMA` ➔ `Not Proficient...`), preventing cross-tool level leaks (e.g. `Emerging` on RMA sections). Includes automatic draft healing `useEffect`.

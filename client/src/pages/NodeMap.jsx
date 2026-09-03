@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, checkPersonnelWorkloadErrors } from '../context/AppContext';
 import PortalHeader from '../components/PortalHeader';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import { FiCheckCircle, FiLock, FiPlay, FiMap, FiUploadCloud } from 'react-icons/fi';
@@ -336,6 +336,9 @@ export default function NodeMap() {
               let badgeBorder = '1px solid #CBD5E1';
               let badgeText = '🔒 Locked';
 
+              const isWorkloadNode = node.id === 'workload';
+              const workloadHasIssues = isWorkloadNode && (personnel || []).some(p => checkPersonnelWorkloadErrors(p, personnel, classSections));
+
               if (isCompleted) {
                 cardBg = 'linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(209, 250, 229, 0.85) 100%)';
                 borderColor = '#10B981';
@@ -353,6 +356,23 @@ export default function NodeMap() {
                 badgeColor = '#FFFFFF';
                 badgeBorder = 'none';
                 badgeText = '✓ Completed';
+              } else if (isWorkloadNode && workloadHasIssues) {
+                cardBg = 'linear-gradient(135deg, rgba(254, 242, 242, 0.95) 0%, rgba(254, 226, 226, 0.85) 100%)';
+                borderColor = '#EF4444';
+                boxShadow = '0 14px 30px -6px rgba(239, 68, 68, 0.25), 0 4px 10px rgba(0, 0, 0, 0.03)';
+                nodeNumColor = '#B91C1C';
+                titleColor = '#7F1D1D';
+                subtitleColor = '#991B1B';
+                iconBg = '#FEE2E2';
+                iconColor = '#DC2626';
+                iconBorder = '1px solid #FCA5A5';
+                summaryBg = 'rgba(255, 255, 255, 0.9)';
+                summaryColor = '#991B1B';
+                summaryBorder = '1px solid #FCA5A5';
+                badgeBg = '#DC2626';
+                badgeColor = '#FFFFFF';
+                badgeBorder = 'none';
+                badgeText = '⚠️ Issues Found';
               } else if (isActive) {
                 cardBg = 'linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(219, 234, 254, 0.85) 100%)';
                 borderColor = '#2563EB';

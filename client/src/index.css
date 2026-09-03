@@ -456,6 +456,14 @@
             background-color: #FEF2F2 !important;
         }
 
+        select.answered-field,
+        .answered-dropdown .searchable-dropdown-trigger {
+            border-color: #16A34A !important;
+            background-color: #F0FDF4 !important;
+            color: #14532D !important;
+            font-weight: 700 !important;
+        }
+
         textarea {
             min-height: 78px;
             resize: vertical;
@@ -1184,6 +1192,26 @@
         .profile-form-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 16px 20px;
+        }
+
+        .profile-form-grid.profile-3col-grid,
+        .profile-form-grid.profile-education-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px 20px;
+        }
+
+        @media (max-width: 900px) {
+            .profile-form-grid.profile-3col-grid,
+            .profile-form-grid.profile-education-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 640px) {
+            .profile-form-grid.profile-3col-grid,
+            .profile-form-grid.profile-education-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .profile-form-grid>.section-heading {
