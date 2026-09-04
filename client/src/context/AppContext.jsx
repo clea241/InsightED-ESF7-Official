@@ -456,13 +456,6 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "TEACHER VII",
     "TEACHER VII - SNED",
     "EXTERNAL TUTOR",
-    "SPED TEACHER I",
-    "SPED TEACHER II",
-    "SPED TEACHER III",
-    "SPED TEACHER IV",
-    "SPED TEACHER V",
-    "SPED TEACHER VI",
-    "SPED TEACHER VII",
     "SPECIAL SCIENCE TEACHER I",
     "SPECIAL SCIENCE TEACHER II",
     "SPECIAL SCIENCE TEACHER III",
@@ -472,115 +465,7 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "MASTER TEACHER II",
     "MASTER TEACHER III",
     "MASTER TEACHER IV",
-    "ALS TR - TEACHER I",
-    "ALS TR - TEACHER II",
-    "ALS TR - TEACHER III",
-    "ALS TR - TEACHER IV",
-    "ALS TR - TEACHER V",
-    "ALS TR - TEACHER VI",
-    "ALS TR - TEACHER VII",
-    "ALS TR - SPED TEACHER I",
-    "ALS TR - SPED TEACHER II",
-    "ALS TR - SPED TEACHER III",
-    "ALS TR - SPED TEACHER IV",
-    "ALS TR - SPECIAL SCIENCE TEACHER I",
-    "ALS TR - SPECIAL SCIENCE TEACHER II",
-    "ALS TR - SPECIAL SCIENCE TEACHER III",
-    "ALS TR - SPECIAL SCIENCE TEACHER IV",
-    "ALS TR - SPECIAL SCIENCE TEACHER V",
-    "ALS TR - MASTER TEACHER I",
-    "ALS TR - MASTER TEACHER II",
-    "ALS TR - MASTER TEACHER III",
-    "ALS TR - MASTER TEACHER IV",
-    "IP TR - TEACHER I",
-    "IP TR - TEACHER II",
-    "IP TR - TEACHER III",
-    "IP TR - TEACHER IV",
-    "IP TR - TEACHER V",
-    "IP TR - TEACHER VI",
-    "IP TR - TEACHER VII",
-    "IP TR - SPED TEACHER I",
-    "IP TR - SPED TEACHER II",
-    "IP TR - SPED TEACHER III",
-    "IP TR - SPED TEACHER IV",
-    "IP TR - SPECIAL SCIENCE TEACHER I",
-    "IP TR - SPECIAL SCIENCE TEACHER II",
-    "IP TR - SPECIAL SCIENCE TEACHER III",
-    "IP TR - SPECIAL SCIENCE TEACHER IV",
-    "IP TR - SPECIAL SCIENCE TEACHER V",
-    "IP TR - MASTER TEACHER I",
-    "IP TR - MASTER TEACHER II",
-    "IP TR - MASTER TEACHER III",
-    "IP TR - MASTER TEACHER IV",
-    "MADRASAH TR - TEACHER I",
-    "MADRASAH TR - TEACHER II",
-    "MADRASAH TR - TEACHER III",
-    "MADRASAH TR - TEACHER IV",
-    "MADRASAH TR - TEACHER V",
-    "MADRASAH TR - TEACHER VI",
-    "MADRASAH TR - TEACHER VII",
-    "MADRASAH TR - SPED TEACHER I",
-    "MADRASAH TR - SPED TEACHER II",
-    "MADRASAH TR - SPED TEACHER III",
-    "MADRASAH TR - SPED TEACHER IV",
-    "MADRASAH TR - SPECIAL SCIENCE TEACHER I",
-    "MADRASAH TR - SPECIAL SCIENCE TEACHER II",
-    "MADRASAH TR - SPECIAL SCIENCE TEACHER III",
-    "MADRASAH TR - SPECIAL SCIENCE TEACHER IV",
-    "MADRASAH TR - SPECIAL SCIENCE TEACHER V",
-    "MADRASAH TR - MASTER TEACHER I",
-    "MADRASAH TR - MASTER TEACHER II",
-    "MADRASAH TR - MASTER TEACHER III",
-    "MADRASAH TR - MASTER TEACHER IV",
-    "ALIVE TEACHER",
-    "TIC - TEACHER I",
-    "TIC - TEACHER II",
-    "TIC - TEACHER III",
-    "TIC - SPED TEACHER I",
-    "TIC - SPED TEACHER II",
-    "TIC - SPED TEACHER III",
-    "TIC - SPED TEACHER IV",
-    "TIC - SPECIAL SCIENCE TEACHER I",
-    "TIC - SPECIAL SCIENCE TEACHER II",
-    "TIC - SPECIAL SCIENCE TEACHER III",
-    "TIC - SPECIAL SCIENCE TEACHER IV",
-    "TIC - SPECIAL SCIENCE TEACHER V",
-    "TIC - MASTER TEACHER I",
-    "TIC - MASTER TEACHER II",
-    "TIC - MASTER TEACHER III",
-    "TIC - MASTER TEACHER IV",
-    "GUIDANCE DESIGNATE - TEACHER I",
-    "GUIDANCE DESIGNATE - TEACHER II",
-    "GUIDANCE DESIGNATE - TEACHER III",
-    "GUIDANCE DESIGNATE - SPED TEACHER I",
-    "GUIDANCE DESIGNATE - SPED TEACHER II",
-    "GUIDANCE DESIGNATE - SPED TEACHER III",
-    "GUIDANCE DESIGNATE - SPED TEACHER IV",
-    "GUIDANCE DESIGNATE - SPECIAL SCIENCE TEACHER I",
-    "GUIDANCE DESIGNATE - SPECIAL SCIENCE TEACHER II",
-    "GUIDANCE DESIGNATE - SPECIAL SCIENCE TEACHER III",
-    "GUIDANCE DESIGNATE - SPECIAL SCIENCE TEACHER IV",
-    "GUIDANCE DESIGNATE - SPECIAL SCIENCE TEACHER V",
-    "GUIDANCE DESIGNATE - MASTER TEACHER I",
-    "GUIDANCE DESIGNATE - MASTER TEACHER II",
-    "GUIDANCE DESIGNATE - MASTER TEACHER III",
-    "GUIDANCE DESIGNATE - MASTER TEACHER IV",
-    "CLINIC - TEACHER I",
-    "CLINIC - TEACHER II",
-    "CLINIC - TEACHER III",
-    "CLINIC - SPED TEACHER I",
-    "CLINIC - SPED TEACHER II",
-    "CLINIC - SPED TEACHER III",
-    "CLINIC - SPED TEACHER IV",
-    "CLINIC - SPECIAL SCIENCE TEACHER I",
-    "CLINIC - SPECIAL SCIENCE TEACHER II",
-    "CLINIC - SPECIAL SCIENCE TEACHER III",
-    "CLINIC - SPECIAL SCIENCE TEACHER IV",
-    "CLINIC - SPECIAL SCIENCE TEACHER V",
-    "CLINIC - MASTER TEACHER I",
-    "CLINIC - MASTER TEACHER II",
-    "CLINIC - MASTER TEACHER III",
-    "CLINIC - MASTER TEACHER IV"
+    "ALIVE TEACHER"
   ],
   "teaching-related": [
     "TIC - HEAD TEACHER I",
@@ -764,7 +649,6 @@ export const ETHNIC_GROUP_OPTIONS = [
 export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const DISCIPLINE_OPTIONS = [
-  "OTHERS",
   "BUSINESS ADMINISTRATION AND RELATED",
   "EDUCATION SCIENCE AND TEACHER TRAINING",
   "AGRICULTURE, FORESTRY, FISHERIES",
@@ -791,6 +675,1056 @@ export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND
 
 export const NATURE_OF_APPOINTMENT_OPTIONS = ["REGULAR PERMANENT", "PROVISIONAL", "CONTRACTUAL", "SUBSTITUTE", "CASUAL/EMERGENCY", "JOB ORDER/CONTRACT OF SERVICE", "VOLUNTEER"];
 export const HIRING_ARRANGEMENT_OPTIONS = ["OTHERS", "N/A", "REGULAR", "SPIMS", "DOST", "4PS"];
+export const HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS = [
+  "COLLEGE UNDERGRADUATE",
+  "COLLEGE GRADUATE / BACCALAUREATE",
+  "MASTER'S DEGREE (GRADUATED)",
+  "DOCTORATE DEGREE (GRADUATED)"
+];
+
+export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
+  "N/A",
+  "ELEMENTARY GRADUATE",
+  "HIGH SCHOOL GRADUATE",
+  "SENIOR HIGH SCHOOL GRADUATE",
+  "VOCATIONAL / TECH-VOC COURSE",
+  "COLLEGE UNDERGRADUATE",
+  "COLLEGE GRADUATE / BACCALAUREATE",
+  "MASTER'S DEGREE (GRADUATED)",
+  "DOCTORATE DEGREE (GRADUATED)"
+];
+
+export const HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS = HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
+
+export const SHS_TRACK_OPTIONS = [
+  "ACADEMIC TRACK",
+  "TECHNICAL-VOCATIONAL-LIVELIHOOD (TVL / TECH-PRO) TRACK",
+  "SPORTS TRACK",
+  "ARTS AND DESIGN TRACK"
+];
+
+export const TESDA_COURSE_TO_LEVELS_MAP = {
+  "AGRICULTURAL CROPS PRODUCTION": [
+    "NC I",
+    "NC II",
+    "NC III"
+  ],
+  "AGROENTREPRENEURSHIP": [
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "AQUACULTURE (GROW-OUT OPERATION)": [
+    "NC II"
+  ],
+  "ANIMAL HEALTH CARE AND MANAGEMENT": [
+    "NC III"
+  ],
+  "AQUACULTURE (HATCHERY OPERATION)": [
+    "NC II"
+  ],
+  "ARTIFICIAL INSEMINATION (LARGE RUMINANTS)": [
+    "NC II"
+  ],
+  "ARTIFICIAL INSEMINATION (SWINE)": [
+    "NC II"
+  ],
+  "AGRICULTURAL MACHINERY OPERATION": [
+    "NC II"
+  ],
+  "AGRICULTURAL MACHINERY SERVICING (4-WHEEL TRACTOR)": [
+    "NC III"
+  ],
+  "ANIMAL PRODUCTION": [
+    "NC II (SUPERSEDED)"
+  ],
+  "ANIMAL PRODUCTION (POULTRY-CHICKEN)": [
+    "NC II"
+  ],
+  "ANIMAL PRODUCTION (RUMINANTS)": [
+    "NC II"
+  ],
+  "ANIMAL PRODUCTION (SWINE)": [
+    "NC II"
+  ],
+  "AQUACULTURE": [
+    "NC II (SUPERSEDED)"
+  ],
+  "AQUACULTURE (TILAPIA CULTURE)": [
+    "NC II"
+  ],
+  "BEEKEEPING": [
+    "NC II"
+  ],
+  "BAMBOO PROCESSING (ENGINEERED BAMBOO)": [
+    "NC II"
+  ],
+  "BIOGAS PLANT INSTALLATION": [
+    "NC III"
+  ],
+  "BAMBOO PRODUCTION": [
+    "NC II"
+  ],
+  "DRYING AND MILLING PLANT SERVICING": [
+    "NC III"
+  ],
+  "FISHING GEAR REPAIR AND MAINTENANCE": [
+    "NC III"
+  ],
+  "FISH CAPTURE": [
+    "NC I",
+    "NC II"
+  ],
+  "FISHPORT/WHARF OPERATION": [
+    "NC I"
+  ],
+  "GRAINS PRODUCTION": [
+    "NC II"
+  ],
+  "HORTICULTURE": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "LANDSCAPE INSTALLATION AND MAINTENANCE (SOFTSCAPE)": [
+    "NC II (SUPERSEDED)"
+  ],
+  "LANDSCAPE INSTALLATION AND MAINTENANCE": [
+    "NC II"
+  ],
+  "MILKING OPERATION": [
+    "NC II"
+  ],
+  "ORGANIC AGRICULTURE PRODUCTION": [
+    "NC II"
+  ],
+  "PRESSURIZED IRRIGATION SYSTEM INSTALLATION AND MAINTENANCE": [
+    "NC II"
+  ],
+  "PEST MANAGEMENT (VEGETABLES)": [
+    "NC II"
+  ],
+  "RICE MACHINERY OPERATIONS": [
+    "NC II"
+  ],
+  "RUBBER PROCESSING": [
+    "NC II"
+  ],
+  "RUBBER PRODUCTION": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "SUGARCANE PRODUCTION": [
+    "NC II"
+  ],
+  "SEAWEED PRODUCTION": [
+    "NC II"
+  ],
+  "AUTOMOTIVE BODY PAINTING/FINISHING": [
+    "NC I",
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)"
+  ],
+  "AUTOMOTIVE BODY REPAIRING": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "AUTOMOTIVE DIAGNOSIS (CHASSIS)": [
+    "NC III"
+  ],
+  "AUTOMOTIVE DIAGNOSIS (ELECTRICAL)": [
+    "NC III"
+  ],
+  "AUTOMOTIVE DIAGNOSIS (ENGINE)": [
+    "NC III"
+  ],
+  "AUTOMOTIVE ELECTRICAL ASSEMBLY": [
+    "NC II",
+    "NC III"
+  ],
+  "AUTO ENGINE REBUILDING": [
+    "NC II"
+  ],
+  "AUTOMOTIVE MECHANICAL ASSEMBLY": [
+    "NC II",
+    "NC III"
+  ],
+  "AUTOMOTIVE SERVICING (CHASSIS REPAIR)": [
+    "NC II"
+  ],
+  "AUTOMOTIVE SERVICING (ELECTRICAL REPAIR)": [
+    "NC II"
+  ],
+  "AUTOMOTIVE SERVICING (ENGINE REPAIR)": [
+    "NC II"
+  ],
+  "AUTOMOTIVE PAINTING": [
+    "NC II"
+  ],
+  "AUTOMOTIVE SERVICING": [
+    "NC I (SUPERSEDED)",
+    "NC I",
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)",
+    "NC IV"
+  ],
+  "COMPLEX PAINT REFINISHING": [
+    "NC III"
+  ],
+  "DRIVING (ARTICULATED VEHICLE)": [
+    "NC III"
+  ],
+  "DRIVING (PASSENGER BUS/STRAIGHT TRUCK)": [
+    "NC III"
+  ],
+  "DRIVING": [
+    "NC II",
+    "NC III (SUPERSEDED)"
+  ],
+  "FOUNDRY MELTING/CASTING": [
+    "NC II",
+    "NC III"
+  ],
+  "FOUNDRY MOLDING": [
+    "NC II",
+    "NC III"
+  ],
+  "FOUNDRY PATTERN MAKING": [
+    "NC III",
+    "NC II"
+  ],
+  "FORGING": [
+    "NC II",
+    "NC III"
+  ],
+  "HEAT TREATMENT": [
+    "NC II"
+  ],
+  "LABORATORY AND METROLOGY/CALIBRATION SERVICES": [
+    "NC II",
+    "NC III"
+  ],
+  "MOLDMAKING": [
+    "NC II"
+  ],
+  "MOTORCYCLE/SMALL ENGINE SERVICING": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "METAL STAMPING": [
+    "NC II"
+  ],
+  "NON-STRUCTURAL ANALYSIS AND DAMAGE REPAIR": [
+    "NC III"
+  ],
+  "PLASTIC MACHINE OPERATION": [
+    "NC II",
+    "NC III"
+  ],
+  "PAINTING MACHINE OPERATION": [
+    "NC II"
+  ],
+  "PROCESS INSPECTION": [
+    "NC II",
+    "NC III"
+  ],
+  "SPEED LIMITATION DEVICE SERVICING": [
+    "NC II"
+  ],
+  "TINSMITHING (AUTOMOTIVE MANUFACTURING)": [
+    "NC II"
+  ],
+  "AUTOMOTIVE WIRING HARNESS ASSEMBLY": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (ARTICULATED OFF-HIGHWAY DUMP TRUCK)": [
+    "NC II"
+  ],
+  "BASIC 3D BUILDING INFORMATION MODELLING": [
+    "NC III"
+  ],
+  "HEAVY EQUIPMENT OPERATION (BACKHOE LOADER)": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (BULLDOZER)": [
+    "NC II"
+  ],
+  "CARPENTRY": [
+    "NC II",
+    "NC III",
+    "NC III (SUPERSEDED)",
+    "NC II (SUPERSEDED)"
+  ],
+  "HEAVY EQUIPMENT OPERATION (CRAWLER CRANE)": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "CONSTRUCTION PAINTING": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III"
+  ],
+  "HEAVY EQUIPMENT OPERATION (CONCRETE PUMP)": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (CONTAINER STACKER)": [
+    "NC II"
+  ],
+  "ELECTRICAL INSTALLATION AND MAINTENANCE": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "HEAVY EQUIPMENT OPERATION (FORKLIFT)": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (GANTRY CRANE)": [
+    "NC II (SUPERSEDED)"
+  ],
+  "HEAVY EQUIPMENT SERVICING (MECHANICAL)": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (HYDRAULIC EXCAVATOR)": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "CONSTRUCTION LIFT PASSENGER/MATERIAL ELEVATOR OPERATION": [
+    "NC II"
+  ],
+  "MASONRY": [
+    "NC I (SUPERSEDED)",
+    "NC I",
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "HEAVY EQUIPMENT OPERATION (MOTOR GRADER)": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (OVERHEAD AND GANTRY CRANE)": [
+    "NC III"
+  ],
+  "HEAVY EQUIPMENT OPERATION (PAVER)": [
+    "NC II"
+  ],
+  "PIPEFITTING": [
+    "NC II (SUPERSEDED)"
+  ],
+  "PIPEFITTING (METALLIC)": [
+    "NC II"
+  ],
+  "PLUMBING": [
+    "NC I (SUPERSEDED)",
+    "NC I",
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "PV SYSTEM DESIGN": [
+    "NC III"
+  ],
+  "PV SYSTEMS INSTALLATION": [
+    "NC II"
+  ],
+  "PV SYSTEMS SERVICING": [
+    "NC III"
+  ],
+  "RIGGING": [
+    "NC I"
+  ],
+  "HEAVY EQUIPMENT OPERATION (RIGID OFF-HIGHWAY DUMP TRUCK)": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (RIGID ON-HIGHWAY DUMP TRUCK)": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (ROAD ROLLER)": [
+    "NC II"
+  ],
+  "REINFORCING STEEL WORKS": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (ROUGH TERRAIN CRANE)": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "SCAFFOLD ERECTION": [
+    "NC II (SUPERSEDED)"
+  ],
+  "SCAFFOLDING WORKS": [
+    "NC II (SUPPORTED TYPE SCAFFOLD)"
+  ],
+  "HEAVY EQUIPMENT OPERATION (SCREED)": [
+    "NC I"
+  ],
+  "SYSTEM FORMWORKS INSTALLATION": [
+    "NC II"
+  ],
+  "STRUCTURAL ERECTION": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (TOWER CRANE)": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "TECHNICAL DRAFTING": [
+    "NC II"
+  ],
+  "TILE SETTING": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (TRUCK MOUNTED CRANE)": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "HEAVY EQUIPMENT OPERATION (TRANSIT MIXER)": [
+    "NC II"
+  ],
+  "HEAVY EQUIPMENT OPERATION (WHEEL LOADER)": [
+    "NC II"
+  ],
+  "PRODUCTION DESIGN (SETS AND PROPS)": [
+    "NC II"
+  ],
+  "AUDIO PRODUCTION SERVICES": [
+    "NC I"
+  ],
+  "BEADWORK ACCESSORIES AND DIVERSIFIED BEADWORK PRODUCTS MAKING": [
+    "NC II"
+  ],
+  "BASKET WEAVING": [
+    "NC II"
+  ],
+  "FILM AND VIDEO POSTPRODUCTION": [
+    "NC III"
+  ],
+  "HAND EMBROIDERY": [
+    "NC II"
+  ],
+  "HANDLOOM WEAVING (BACKSTRAP)": [
+    "NC II"
+  ],
+  "HANDLOOM WEAVING (UPRIGHT)": [
+    "NC II"
+  ],
+  "LIGHTING FOR LIVE PERFORMANCES": [
+    "NC II"
+  ],
+  "MAT WEAVING AND DIVERSIFIED MAT PRODUCTS MAKING": [
+    "NC II"
+  ],
+  "PAPER MACHE MAKING": [
+    "NC II"
+  ],
+  "WOOD CARVING": [
+    "NC II"
+  ],
+  "BIOMEDICAL EQUIPMENT SERVICING": [
+    "NC II",
+    "NC II (SUPERSEDED)"
+  ],
+  "CONSUMER ELECTRONICS SERVICING": [
+    "NC III",
+    "NC IV"
+  ],
+  "CONSUMER ELECTRONICS": [
+    "NC II (SUPERSEDED)"
+  ],
+  "COMPUTER SYSTEMS SERVICING": [
+    "NC II"
+  ],
+  "ELECTRONICS BACK-END OPERATION": [
+    "NC II"
+  ],
+  "ELECTRONICS FRONT-OF-LINE OPERATION": [
+    "NC II"
+  ],
+  "ELECTRONIC PRODUCTS ASSEMBLY AND SERVICING": [
+    "NC II"
+  ],
+  "ELECTRONICS/SEMICONDUCTOR PRODUCTION LINE MACHINE SERVICING": [
+    "NC III"
+  ],
+  "HARD DISK DRIVE (HDD) FRONT-OF-LINE (FOL) OPERATIONS": [
+    "NC II"
+  ],
+  "INSTRUMENTATION AND CONTROL SERVICING": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III",
+    "NC IV (SUPERSEDED)",
+    "NC IV"
+  ],
+  "MECHATRONICS SERVICING": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III",
+    "NC IV (SUPERSEDED)",
+    "NC IV"
+  ],
+  "MOBILE PHONES AND HANDHELD GADGETS SERVICING": [
+    "NC III"
+  ],
+  "SEMICONDUCTOR BACK-END OPERATION": [
+    "NC II"
+  ],
+  "SEMICONDUCTOR FRONT-OF-LINE OPERATION": [
+    "NC II"
+  ],
+  "FOOTWEAR MAKING": [
+    "NC II (SUPERSEDED)"
+  ],
+  "SHOEMAKING": [
+    "NC I",
+    "NC II"
+  ],
+  "FURNITURE MAKING (FINISHING)": [
+    "NC II"
+  ],
+  "DRESSMAKING": [
+    "NC II (SUPERSEDED)"
+  ],
+  "FASHION DESIGN (APPAREL)": [
+    "NC III"
+  ],
+  "GARMENT PRODUCTION": [
+    "NC II"
+  ],
+  "TAILORING": [
+    "NC II (SUPERSEDED)"
+  ],
+  "AIR DUCT SERVICING": [
+    "NC II"
+  ],
+  "COMMERCIAL AIR-CONDITIONING INSTALLATION AND SERVICING": [
+    "NC III"
+  ],
+  "COMMERCIAL REFRIGERATION INSTALLATION AND SERVICING": [
+    "NC III"
+  ],
+  "RAC SERVICING (DOMRAC)": [
+    "NC II",
+    "NC II (SUPERSEDED)"
+  ],
+  "ICE PLANT REFRIGERATION SERVICING": [
+    "NC III"
+  ],
+  "LAND-BASED TRANSPORT MOBILE AIR-CONDITIONING (MAC) SERVICING": [
+    "NC II"
+  ],
+  "RAC SERVICING (PACU-CRE)": [
+    "NC III (SUPERSEDED)"
+  ],
+  "TRANSPORT RAC SERVICING": [
+    "NC II (SUPERSEDED)"
+  ],
+  "LAND-BASED TRANSPORT REFRIGERATION SERVICING": [
+    "NC II"
+  ],
+  "RAC SERVICING": [
+    "NC I (WINDOW-TYPE AIR-CONDITIONING/DOMESTIC REFRIGERATION)  (SUPERSEDED)"
+  ],
+  "EMERGENCY MEDICAL SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III"
+  ],
+  "HAIRDRESSING": [
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)",
+    "NC II",
+    "NC III"
+  ],
+  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (ORTHOTICS)": [
+    "NC II"
+  ],
+  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (PROSTHETICS)": [
+    "NC II"
+  ],
+  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (WHEELCHAIR)": [
+    "NC II"
+  ],
+  "BARANGAY HEALTH SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "CAREGIVING (CLIENTS WITH SPECIAL NEEDS)": [
+    "NC II"
+  ],
+  "CAREGIVING (ELDERLY)": [
+    "NC II"
+  ],
+  "CAREGIVING (GRADE SCHOOLER TO ADOLESCENT)": [
+    "NC II"
+  ],
+  "CAREGIVING (NEWBORN TO PRE-SCHOOLER)": [
+    "NC II"
+  ],
+  "CAREGIVING": [
+    "NC II"
+  ],
+  "COMMUNITY NUTRITION SERVICES": [
+    "NC II"
+  ],
+  "DENTAL HYGIENE": [
+    "LEVEL IV (SUPERSEDED)",
+    "LEVEL IV"
+  ],
+  "DENTAL LABORATORY TECHNOLOGY SERVICES": [
+    "NC I"
+  ],
+  "DENTAL LABORATORY TECHNOLOGY SERVICES (FIXED DENTURES/RESTORATIONS)": [
+    "NC II"
+  ],
+  "DENTAL LABORATORY TECHNOLOGY SERVICES (REMOVABLE DENTURES/APPLIANCES)": [
+    "NC II"
+  ],
+  "DENTAL TECHNOLOGY": [
+    "NC IV"
+  ],
+  "HEALTH CARE SERVICES": [
+    "NC II"
+  ],
+  "HILOT (WELLNESS MASSAGE)": [
+    "NC II"
+  ],
+  "MASSAGE THERAPY": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "OPHTHALMIC LENS SERVICES": [
+    "NC II"
+  ],
+  "PHARMACY SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "CONTACT TRACING": [
+    "NC II"
+  ],
+  "2D ANIMATION": [
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "2D GAME ART DEVELOPMENT": [
+    "NC III"
+  ],
+  "3D ANIMATION": [
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "3D GAME ART DEVELOPMENT": [
+    "NC III"
+  ],
+  "ANIMATION": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "BROADBAND INSTALLATION (FIXED WIRELESS SYSTEMS)": [
+    "NC II"
+  ],
+  "CONTACT CENTER SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "COMPUTER HARDWARE SERVICING": [
+    "NC II (SUPERSEDED)"
+  ],
+  "CYBER THREAT MONITORING": [
+    "NC I"
+  ],
+  "CYBER THREAT MITIGATION": [
+    "NC II"
+  ],
+  "CABLE TV INSTALLATION": [
+    "NC II"
+  ],
+  "CABLE TV OPERATION AND MAINTENANCE": [
+    "NC III"
+  ],
+  "GAME PROGRAMMING": [
+    "NC III"
+  ],
+  "MEDICAL CODING AND CLAIMS PROCESSING": [
+    "NC III"
+  ],
+  "MEDICAL TRANSCRIPTION": [
+    "NC II"
+  ],
+  "PROGRAMMING": [
+    "NC IV (SUPERSEDED)"
+  ],
+  "PROGRAMMING (JAVA)": [
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "PROGRAMMING (.NET TECHNOLOGY)": [
+    "NC III"
+  ],
+  "PROGRAMMING (ORACLE DATABASE)": [
+    "NC III"
+  ],
+  "TELECOM OSP AND SUBSCRIBER LINE INSTALLATION (COPPER CABLE/POTS AND DSL)": [
+    "NC II"
+  ],
+  "TELECOM OSP INSTALLATION (FIBER OPTIC CABLE)": [
+    "NC II"
+  ],
+  "VISUAL GRAPHIC DESIGN": [
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "WEB DEVELOPMENT": [
+    "NC III (SUPERSEDED)"
+  ],
+  "WEB DESIGN": [
+    "NC III"
+  ],
+  "WEB DEVELOPMENT (BACK-END)": [
+    "NC III"
+  ],
+  "WEB DEVELOPMENT (FRONT-END)": [
+    "NC III"
+  ],
+  "MULTIMODAL TRANSPORT OPERATIONS AND LOGISTICS (SEAFREIGHT IMPORT) SERVICES": [
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "WAREHOUSING SERVICES": [
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "MARINE ELECTRICITY": [
+    "NC II"
+  ],
+  "SHIPS' CATERING": [
+    "NC III (SHIPS' COOKS)"
+  ],
+  "SHIP'S CATERING SERVICES": [
+    "NC I"
+  ],
+  "5-AXIS CNC MACHINE OPERATION": [
+    "NC III"
+  ],
+  "CAD/CAM OPERATION": [
+    "NC III"
+  ],
+  "CNC LATHE MACHINE OPERATION": [
+    "NC II",
+    "NC III"
+  ],
+  "CNC MILLING MACHINE OPERATION": [
+    "NC II",
+    "NC III"
+  ],
+  "MECHANICAL DRAFTING": [
+    "NC I"
+  ],
+  "DIE DESIGNING": [
+    "NC IV"
+  ],
+  "SHIELDED METAL ARC WELDING (SMAW)": [
+    "NC I (SUPERSEDED)",
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)",
+    "NC IV (SUPERSEDED)"
+  ],
+  "ELECTRIC DISCHARGE MACHINE (EDM) SINKING OPERATION": [
+    "NC II"
+  ],
+  "CNC ELECTRIC DISCHARGE MACHINE (EDM) WIRE CUT OPERATION": [
+    "NC III"
+  ],
+  "FLUX-CORED ARC WELDING (FCAW)": [
+    "NC I",
+    "NC II",
+    "NC III"
+  ],
+  "GAS WELDING": [
+    "NC I",
+    "NC II"
+  ],
+  "MANUAL METAL ARC WELDING (MMAW)": [
+    "NC I",
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "MACHINING": [
+    "NC I (SUPERSEDED)",
+    "NC I",
+    "NC II",
+    "NC III"
+  ],
+  "GAS METAL ARC WELDING (GMAW)": [
+    "NC I",
+    "NC II",
+    "NC III"
+  ],
+  "MOLD DESIGNING": [
+    "NC IV"
+  ],
+  "MOLD MAKING": [
+    "NC III"
+  ],
+  "PLANT MAINTENANCE": [
+    "NC I"
+  ],
+  "PRESS MACHINE OPERATION": [
+    "NC I"
+  ],
+  "SUBMERGED ARC WELDING (SAW)": [
+    "NC I",
+    "NC II"
+  ],
+  "TOOL AND DIE MAKING": [
+    "NC II"
+  ],
+  "GAS TUNGSTEN ARC WELDING (GTAW)": [
+    "NC II",
+    "NC IV"
+  ],
+  "FOOD PROCESSING": [
+    "NC I (SUPERSEDED)",
+    "NC I",
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "FISH PRODUCTS PACKAGING": [
+    "NC II"
+  ],
+  "SLAUGHTERING OPERATIONS (LARGE ANIMAL)": [
+    "NC II"
+  ],
+  "SLAUGHTERING OPERATIONS": [
+    "NC II (SUPERSEDED)"
+  ],
+  "SLAUGHTERING OPERATIONS (SWINE)": [
+    "NC II"
+  ],
+  "SEAWEED FOOD PROCESSING": [
+    "NC II"
+  ],
+  "BEAUTY CARE SERVICES (NAIL CARE)": [
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)"
+  ],
+  "BEAUTY CARE (NAIL CARE) SERVICES": [
+    "NC II"
+  ],
+  "BEAUTY CARE (NAIL ENHANCEMENT TECHNOLOGY) SERVICES": [
+    "NC III"
+  ],
+  "BEAUTY CARE": [
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)"
+  ],
+  "BEAUTY CARE (SKIN CARE) SERVICES": [
+    "NC II"
+  ],
+  "BOOKKEEPING": [
+    "NC III"
+  ],
+  "BARBERING": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "PERFORMING ARTS (BALLROOM DANCING)": [
+    "NC II"
+  ],
+  "BOOKKEEPING FOR SANGGUNIANG KABATAAN FINANCIAL TRANSACTIONS": [
+    "NC II"
+  ],
+  "DATA COLLECTION": [
+    "NC II"
+  ],
+  "DOMESTIC WORK": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "EARLY CHILDHOOD CARE AND DEVELOPMENT": [
+    "NC III"
+  ],
+  "LIFEGUARD SERVICES": [
+    "NC II",
+    "NC III"
+  ],
+  "MICROFINANCE TECHNOLOGY": [
+    "NC II",
+    "NC IV"
+  ],
+  "MICROINSURANCE SERVICES (MUTUAL BENEFIT)": [
+    "NC II"
+  ],
+  "PERFORMING ARTS (DANCE)": [
+    "NC II"
+  ],
+  "PERFORMING ARTS (SONG)": [
+    "NC II"
+  ],
+  "PUBLIC EMPLOYMENT SERVICES": [
+    "NC IV"
+  ],
+  "PERFORMING ARTS (MAGICIAN)": [
+    "NC II"
+  ],
+  "PRINTING SERVICES (PREPRESS TECHNICAL OPERATIONS)": [
+    "NC I",
+    "NC II"
+  ],
+  "REAL ESTATE SERVICES": [
+    "NC II"
+  ],
+  "SECURITY SERVICES": [
+    "NC I",
+    "NC II"
+  ],
+  "ATTRACTIONS AND THEME PARKS OPERATIONS": [
+    "NC II"
+  ],
+  "BARTENDING": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "BREAD AND PASTRY PRODUCTION": [
+    "NC II (SUPERSEDED)"
+  ],
+  "BARISTA": [
+    "NC II"
+  ],
+  "COMMERCIAL COOKING": [
+    "NC II (SUPERSEDED)",
+    "NC III (SUPERSEDED)",
+    "NC IV (SUPERSEDED)"
+  ],
+  "COOKERY": [
+    "NC II (SUPERSEDED)"
+  ],
+  "EVENTS MANAGEMENT SERVICES": [
+    "NC III (SUPERSEDED)",
+    "NC III"
+  ],
+  "FOOD PRODUCTION (BREAD AND PATISSERIE)": [
+    "NC II"
+  ],
+  "FOOD AND BEVERAGE SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III",
+    "NC IV (SUPERSEDED)",
+    "NC IV"
+  ],
+  "FRONT OFFICE SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III",
+    "NC IV"
+  ],
+  "FOOD PRODUCTION (PROFESSIONAL COOKERY)": [
+    "NC III",
+    "NC IV",
+    "NC II"
+  ],
+  "HOUSEKEEPING": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III",
+    "NC IV (SUPERSEDED)",
+    "NC IV"
+  ],
+  "LOCAL GUIDING SERVICES": [
+    "NC II"
+  ],
+  "TOUR GUIDING SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC III"
+  ],
+  "TOUR PACKAGING (FIT AD HOC DOMESTIC) SERVICES": [
+    "NC II"
+  ],
+  "TOURISM PROMOTION SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "TRAVEL SERVICES": [
+    "NC II (SUPERSEDED)",
+    "NC II"
+  ],
+  "TRAINERS METHODOLOGY": [
+    "LEVEL I (IN-COMPANY TRAINER)",
+    "LEVEL I (TRAINER/ASSESSOR)",
+    "LEVEL II (TRAINING DESIGNER/DEVELOPER)",
+    "(TM) LEVEL III",
+    "(TM) LEVEL IV"
+  ],
+  "LINE CONSTRUCTION (ELECTRIC POWER DISTRIBUTION)": [
+    "NC II (SUPERSEDED)"
+  ],
+  "DIESEL POWER PLANT MAINTENANCE": [
+    "NC III"
+  ],
+  "DIESEL POWER PLANT OPERATION AND MAINTENANCE": [
+    "NC II",
+    "NC III"
+  ],
+  "ELECTRIC POWER DISTRIBUTION LINE CONSTRUCTION": [
+    "NC II"
+  ],
+  "ELECTRIC POWER DISTRIBUTION OPERATION AND MAINTENANCE": [
+    "NC III",
+    "NC IV"
+  ],
+  "GARBAGE COLLECTION": [
+    "NC I"
+  ],
+  "SANITARY LANDFILL OPERATIONS": [
+    "NC II",
+    "NC III"
+  ],
+  "TRANSMISSION LINE INSTALLATION AND MAINTENANCE": [
+    "NC II (SUPERSEDED)",
+    "NC II",
+    "NC III (SUPERSEDED)",
+    "NC III",
+    "NC IV"
+  ],
+  "ILLUSTRATION": [
+    "NC II"
+  ],
+  "PHOTOGRAPHY": [
+    "NC II"
+  ],
+  "CUSTOMER SERVICES": [
+    "NC II"
+  ]
+};
+
+export const TESDA_COURSES = Object.keys(TESDA_COURSE_TO_LEVELS_MAP);
+
+export const TESDA_NC_LEVEL_OPTIONS = [
+  "NC I",
+  "NC II",
+  "NC III",
+  "NC IV",
+  "TMC I",
+  "TMC II",
+  "NTTC",
+  "CERTIFICATE OF COMPETENCY (COC)"
+];
+
 export const POST_GRADUATE_DEGREE_OPTIONS = ["OTHERS", "N/A", "MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE"];
 
 export const DESIGNATION_GRADE_LEVELS = [
@@ -800,11 +1734,51 @@ export const DESIGNATION_GRADE_LEVELS = [
 
 export const SHS_TRACKS = ["ACADEMIC", "TECHPRO"];
 
+export const getRegularSectionsEnrollment = (classSections) => {
+  if (!Array.isArray(classSections)) return 0;
+  const baseSections = classSections.filter(sec => 
+    sec &&
+    sec.sectionType !== 'ARAL' && 
+    !String(sec.sectionType || '').startsWith('ARAL') &&
+    sec.sectionType !== 'REMEDIAL' && 
+    sec.sectionType !== 'ENRICHMENT' &&
+    !sec.interventionType &&
+    !sec.intervention_type
+  );
+  return baseSections.reduce((acc, sec) => {
+    const hasGender = (sec.maleLearners !== undefined && sec.maleLearners !== null && sec.maleLearners !== '') ||
+                      (sec.femaleLearners !== undefined && sec.femaleLearners !== null && sec.femaleLearners !== '');
+    if (hasGender) {
+      return acc + (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0);
+    }
+    const hasCustom = sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '' && Number(sec.numberOfLearners) !== 35;
+    return acc + (hasCustom ? Number(sec.numberOfLearners) : 0);
+  }, 0);
+};
+
+export const ESF7_TERMS = [
+  { id: '1st', name: '1st Term', number: 1, label: '1st Term' },
+  { id: '2nd', name: '2nd Term', number: 2, label: '2nd Term' },
+  { id: '3rd', name: '3rd Term', number: 3, label: '3rd Term' }
+];
+
+export const PRIMARY_LEARNING_AREAS = [
+  'Kinder',
+  'Filipino',
+  'English',
+  'Mathematics',
+  'Science',
+  'Araling Panlipunan (AP)',
+  'Edukasyon sa Pagpapakatao (EsP)',
+  'Technology and Livelihood Education (TLE)',
+  'MAPEH'
+];
+
 export const OFFICIAL_DESIGNATIONS = [
   { id: 'guidance_designate', name: 'GUIDANCE DESIGNATE', isRequired: true, description: 'Handles student guidance, counseling, and student welfare support.' },
   { id: 'learner_information_officer', name: 'LEARNER INFORMATION OFFICER', isRequired: true, description: 'Oversees learner information, student records, LIS management, and learner support services.' },
   { id: 'department_head_designate', name: 'DEPARTMENT HEAD DESIGNATE', isRequired: true, description: 'Serves as designated Department Head leading subject area faculty management and curriculum implementation.' },
-  { id: 'assistant_school_head_designate', name: 'ASSISTANT SCHOOL HEAD DESIGNATE', isRequired: true, description: 'Assists the School Head in administrative management, school operations, and instructional supervision.' },
+  { id: 'assistant_school_head_designate', name: 'ASSISTANT SCHOOL HEAD DESIGNATE', isRequired: false, isEnrollmentBound: true, description: 'Assists the School Head in administrative management, school operations, and instructional supervision (Mandatory for schools with regular enrollment of 1,001 or more).' },
   { id: 'reading_literacy_numeracy', name: 'READING / LITERACY AND NUMERACY SCHOOL COORDINATOR', isRequired: false, description: 'Leads reading and numeracy interventions, literacy assessments, and learning remediation.' },
   { id: 'research_coordinator', name: 'RESEARCH SCHOOL COORDINATOR', isRequired: false, description: 'Coordinates school-level action research, innovation projects, and research capability building.' },
   { id: 'sned_coordinator', name: 'SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR', isRequired: false, description: 'Manages SNED programs, individualized education plans, and inclusive learning needs.' },
@@ -815,7 +1789,7 @@ export const OFFICIAL_DESIGNATIONS = [
   { id: 'sports_development_adviser', name: 'SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER', isRequired: false, description: 'Manages school sports programs, athletic training, and sports competition delegations.' },
   { id: 'selg_sslg_adviser', name: 'SELG / SSLG TRAINER/ADVISER', isRequired: false, description: 'Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).' },
   { id: 'grade_level_chairperson', name: 'GRADE LEVEL CHAIRPERSON', isRequired: false, description: 'Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.', parameterized: 'grade' },
-  { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', isRequired: false, description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments.', parameterized: 'grade' },
+  { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', isRequired: false, description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments across the primary learning areas.', parameterized: 'learningArea' },
   { id: 'department_head_ecp', name: 'DEPARTMENT HEAD (Based on ECP)', isRequired: false, description: 'Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.', parameterized: 'ecp' }
 ];
 
@@ -943,12 +1917,6 @@ export const validateDepEdEmail = (email, firstName = '', lastName = '') => {
 };
 
 export const COLLEGE_DEGREE_OPTIONS = [
-  "ELEMENTARY GRADUATE",
-  "HIGH SCHOOL GRADUATE",
-  "SENIOR HIGH SCHOOL GRADUATE",
-  "VOCATIONAL / TECHNICAL COURSE GRADUATE (TESDA)",
-  "ASSOCIATE DEGREE / DIPLOMA COURSE",
-  "COLLEGE UNDERGRADUATE",
   "BACHELOR OF ELEMENTARY EDUCATION",
   "BACHELOR OF SECONDARY EDUCATION",
   "BACHELOR/BS/BA EDUCATION",
@@ -1517,7 +2485,7 @@ export const computeWeeklyAdministrativeMinutesFromWorkload = (rows) => {
 export const AppProvider = ({ children }) => {
   const [activeView, setActiveView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('view') || "dashboard";
+    return params.get('view') || "landing";
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -1558,6 +2526,54 @@ export const AppProvider = ({ children }) => {
   const [localNonWorkingDays, setLocalNonWorkingDays] = useState([]);
   const [salaryMatrix, setSalaryMatrix] = useState([]);
   const [allowancesMap, setAllowancesMap] = useState({});
+
+  // Term Management State (1st, 2nd, 3rd Terms)
+  const [activeTerm, setActiveTerm] = useState('1st');
+  const [termStatuses, setTermStatuses] = useState({
+    '1st': 'OPEN',
+    '2nd': 'LOCKED',
+    '3rd': 'LOCKED'
+  });
+
+  const isTermLocked = (termId) => {
+    return termStatuses[termId || activeTerm] === 'LOCKED';
+  };
+
+  const unlockTerm = (termId) => {
+    setTermStatuses(prev => ({
+      ...prev,
+      [termId]: 'OPEN'
+    }));
+    if (showToast) showToast(`✓ ${termId} Term is now OPEN for encoding.`);
+  };
+
+  const lockTerm = (termId) => {
+    setTermStatuses(prev => ({
+      ...prev,
+      [termId]: 'LOCKED'
+    }));
+    if (showToast) showToast(`🔒 ${termId} Term has been locked.`);
+  };
+
+  const copyTermData = async (fromTerm, toTerm) => {
+    try {
+      setPersonnel(prev => prev.map(p => {
+        const rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
+        return {
+          ...p,
+          workloadRows: rows.map(r => ({
+            ...r,
+            term: toTerm
+          }))
+        };
+      }));
+      if (showToast) showToast(`✓ Copied timetable setup from ${fromTerm} Term to ${toTerm} Term.`);
+    } catch (e) {
+      console.error('Error copying term data:', e);
+      if (showAlert) showAlert('Copy Failed', 'Unable to duplicate term data: ' + e.message);
+    }
+  };
+
   const [journeyState, setJourneyState] = useState({
     unlockedNodes: ['school', 'requests'],
     completedNodes: [],
@@ -3325,13 +4341,23 @@ export const AppProvider = ({ children }) => {
       });
     }
 
-    // 5. Official Designations Validation (4 Mandatory Roles)
+    // 5. Official Designations Validation (Conditional on Regular Enrollment)
+    const regularEnrollment = getRegularSectionsEnrollment(classSections);
+    const isAshRequired = regularEnrollment >= 1001;
+
     const REQUIRED_DESIGNATIONS_LIST = [
       { id: 'guidance_designate', name: 'Guidance Designate', keys: ['GUIDANCE DESIGNATE'] },
       { id: 'learner_information_officer', name: 'Learner Information Officer', keys: ['LEARNER INFORMATION OFFICER', 'LEARNER FORMATION OFFICER'] },
-      { id: 'department_head_designate', name: 'Department Head Designate', keys: ['DEPARTMENT HEAD DESIGNATE', 'DEPARTMENT HEAD'] },
-      { id: 'assistant_school_head_designate', name: 'Assistant School Head Designate', keys: ['ASSISTANT SCHOOL HEAD DESIGNATE', 'ASSISTANT SCHOOL HEAD'] }
+      { id: 'department_head_designate', name: 'Department Head Designate', keys: ['DEPARTMENT HEAD DESIGNATE', 'DEPARTMENT HEAD'] }
     ];
+
+    if (isAshRequired) {
+      REQUIRED_DESIGNATIONS_LIST.push({
+        id: 'assistant_school_head_designate',
+        name: 'Assistant School Head Designate',
+        keys: ['ASSISTANT SCHOOL HEAD DESIGNATE', 'ASSISTANT SCHOOL HEAD']
+      });
+    }
 
     REQUIRED_DESIGNATIONS_LIST.forEach(reqDesig => {
       const isAssigned = (personnel || []).some(p => {
@@ -3348,7 +4374,9 @@ export const AppProvider = ({ children }) => {
           id: `designation-req-${reqDesig.id}`,
           type: "error",
           category: "Official Designations",
-          message: `Required Designation Missing: No personnel is assigned as '${reqDesig.name}'. Please designate a qualified teacher in Node 04 (Designations & Duties).`
+          message: reqDesig.id === 'assistant_school_head_designate'
+            ? `Required Designation Missing: Regular school enrollment is ${regularEnrollment} (1,001+ learners). An 'Assistant School Head Designate' must be assigned in Node 04 (Designations & Duties).`
+            : `Required Designation Missing: No personnel is assigned as '${reqDesig.name}'. Please designate a qualified teacher in Node 04 (Designations & Duties).`
         });
       }
     });
@@ -3901,6 +4929,13 @@ export const AppProvider = ({ children }) => {
       workImmersionSchedulesMap,
       fetchWorkImmersionSchedules,
       saveWorkImmersionSchedules,
+      activeTerm,
+      setActiveTerm,
+      termStatuses,
+      isTermLocked,
+      unlockTerm,
+      lockTerm,
+      copyTermData,
       journeyState,
       setJourneyState,
       completeNode,
@@ -3919,7 +4954,7 @@ export const useApp = () => {
 
   if (!context) {
     return {
-      activeView: 'dashboard',
+      activeView: 'landing',
       setActiveView: () => {},
       toast: null,
       setToast: () => {},

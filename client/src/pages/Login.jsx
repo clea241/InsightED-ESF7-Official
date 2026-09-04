@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import BlueprintBackground from '../components/BlueprintBackground';
 import PinLogin from '../components/PinLogin';
 import PageTransition from '../components/PageTransition';
+import { FiAlertCircle, FiMail, FiLock, FiKey } from 'react-icons/fi';
 
 export default function Login() {
   const { login } = useAuth();
@@ -56,11 +57,12 @@ export default function Login() {
         }
 
         const API_BASE = import.meta.env.VITE_API_URL || '/api';
-        const response = await fetch(`${API_BASE}/auth/pin-login`, {
+        const response = await fetch(`${API_BASE}/auth/passcode-login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             school_id: schoolId.trim(),
+            passcode: finalPin,
             pin: finalPin
           })
         });
@@ -70,7 +72,7 @@ export default function Login() {
         if (response.ok && data.success && data.user && data.token) {
           login(data.user, data.token);
         } else {
-          setError(data.error || 'Incorrect PIN.');
+          setError(data.error || 'Incorrect passcode.');
         }
       } else {
         if (!password.trim()) {
@@ -271,15 +273,40 @@ export default function Login() {
 
                   {error && (
                     <div style={{
-                      background: '#fef2f2',
-                      border: '1.5px solid #fecaca',
-                      padding: '12px 16px',
+                      background: '#FEF2F2',
+                      border: '1.5px solid #FECACA',
+                      padding: '14px 16px',
                       borderRadius: '12px',
-                      color: '#ef4444',
+                      color: '#991B1B',
                       fontSize: '13px',
-                      fontWeight: '600'
+                      lineHeight: '1.5',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.08)'
                     }}>
-                      ⚠️ {error}
+                      <div style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '8px',
+                        background: '#FEE2E2',
+                        color: '#DC2626',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        marginTop: '1px'
+                      }}>
+                        <FiAlertCircle size={16} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#B91C1C', marginBottom: '2px' }}>
+                          Authentication Notice
+                        </div>
+                        <div style={{ fontWeight: '600' }}>
+                          {error}
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -295,7 +322,7 @@ export default function Login() {
                       borderRadius: '12px',
                       padding: '0 16px'
                     }}>
-                      <span style={{ color: '#94a3b8', fontSize: '18px', marginRight: '10px' }}>✉️</span>
+                      <FiMail style={{ color: '#94a3b8', fontSize: '18px', marginRight: '10px' }} />
                       <input
                         type="text"
                         value={schoolId}
@@ -362,7 +389,7 @@ export default function Login() {
                         borderRadius: '12px',
                         padding: '0 16px'
                       }}>
-                        <span style={{ color: '#94a3b8', fontSize: '18px', marginRight: '10px' }}>🔒</span>
+                        <FiLock style={{ color: '#94a3b8', fontSize: '18px', marginRight: '10px' }} />
                         <input
                           type="password"
                           value={password}
@@ -385,8 +412,8 @@ export default function Login() {
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                    <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em' }}>
-                      {loginMode === 'passcode' ? '🔑 PASSCODE MODE' : '🔒 PASSWORD MODE'}
+                    <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '800', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      {loginMode === 'passcode' ? <><FiKey size={12} /> PASSCODE MODE</> : <><FiLock size={12} /> PASSWORD MODE</>}
                     </span>
                     <button
                       type="button"

@@ -3,6 +3,29 @@ import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import PortalHeader from '../components/PortalHeader';
 import { api } from '../services/api';
+import { 
+  FiCreditCard, 
+  FiUser, 
+  FiBriefcase, 
+  FiAward, 
+  FiFileText, 
+  FiLayers, 
+  FiBook, 
+  FiTrash2, 
+  FiLink, 
+  FiCheck, 
+  FiInfo, 
+  FiAlertCircle, 
+  FiSearch, 
+  FiZap, 
+  FiChevronLeft, 
+  FiChevronRight,
+  FiCalendar,
+  FiSave,
+  FiCheckCircle,
+  FiCopy,
+  FiLock
+} from 'react-icons/fi';
 
 import {
   useApp,
@@ -17,6 +40,13 @@ import {
   DIVISION_SCHOOL_OPTIONS,
   NATURE_OF_APPOINTMENT_OPTIONS,
   HIRING_ARRANGEMENT_OPTIONS,
+  HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS,
+  HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS,
+  HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS,
+  SHS_TRACK_OPTIONS,
+  TESDA_NC_LEVEL_OPTIONS,
+  TESDA_COURSE_TO_LEVELS_MAP,
+  TESDA_COURSES,
   POST_GRADUATE_DEGREE_OPTIONS,
   COLLEGE_DEGREE_OPTIONS,
   TESDA_CERTIFICATION_OPTIONS,
@@ -43,10 +73,45 @@ const PRIMARY_SUBJECTS = [
   'MAPEH'
 ];
 
+const computeStepIncrement = (firstServiceDate, lastPromotionDate) => {
+  const effectiveDateStr = (lastPromotionDate && lastPromotionDate !== 'N/A' && String(lastPromotionDate).trim() !== '')
+    ? lastPromotionDate
+    : firstServiceDate;
+
+  if (!effectiveDateStr || effectiveDateStr === 'N/A') {
+    return { step: 1, years: 0, basedOn: 'Initial Appointment' };
+  }
+
+  const cleanDate = typeof effectiveDateStr === 'string' ? effectiveDateStr.substring(0, 10) : '';
+  const baseDate = new Date(cleanDate + 'T00:00:00');
+  if (isNaN(baseDate.getTime())) {
+    return { step: 1, years: 0, basedOn: 'Initial Appointment' };
+  }
+
+  const now = new Date();
+  let years = now.getFullYear() - baseDate.getFullYear();
+  const mDiff = now.getMonth() - baseDate.getMonth();
+  if (mDiff < 0 || (mDiff === 0 && now.getDate() < baseDate.getDate())) {
+    years--;
+  }
+  years = Math.max(0, years);
+
+  // DepEd 3-Year Rule: 1 + Math.floor(years / 3), capped at 8
+  const computedStep = Math.min(8, Math.max(1, 1 + Math.floor(years / 3)));
+  const basedOn = (lastPromotionDate && lastPromotionDate !== 'N/A' && String(lastPromotionDate).trim() !== '')
+    ? 'Last Promotion Date'
+    : 'First Day of Service';
+
+  return { step: computedStep, years, basedOn };
+};
+
 function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false }) {
   const [showCalendar, setShowCalendar] = React.useState(false);
   const [viewDate, setViewDate] = React.useState(new Date());
   const containerRef = React.useRef(null);
+
+  const parsedMaxDate = maxDate ? (maxDate instanceof Date ? maxDate : new Date(maxDate)) : null;
+  const parsedMinDate = minDate ? (minDate instanceof Date ? minDate : new Date(minDate)) : null;
 
   const formatDate = (date) => {
     if (!date) return '';
@@ -66,13 +131,12 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
       if (!isNaN(d.getTime())) {
         setViewDate(d);
       }
-    } else if (minDate) {
-      const d = minDate instanceof Date ? minDate : new Date(minDate);
-      if (!isNaN(d.getTime())) {
-        setViewDate(d);
-      }
+    } else if (parsedMaxDate && new Date() > parsedMaxDate) {
+      setViewDate(parsedMaxDate);
+    } else if (parsedMinDate && new Date() < parsedMinDate) {
+      setViewDate(parsedMinDate);
     }
-  }, [cleanValue, minDate]);
+  }, [cleanValue, maxDate, minDate]);
 
   React.useEffect(() => {
     function handleClickOutside(event) {
@@ -100,13 +164,21 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  const currentMaxYear = parsedMaxDate ? parsedMaxDate.getFullYear() : new Date().getFullYear();
+  const currentMinYear = parsedMinDate ? parsedMinDate.getFullYear() : (currentMaxYear - 80);
+
+  const isPrevDisabled = parsedMinDate && new Date(year, month, 0) < parsedMinDate;
+  const isNextDisabled = parsedMaxDate && new Date(year, month + 1, 1) > parsedMaxDate;
+
   const handlePrevMonth = (e) => {
     e.stopPropagation();
+    if (isPrevDisabled) return;
     setViewDate(new Date(year, month - 1, 1));
   };
 
   const handleNextMonth = (e) => {
     e.stopPropagation();
+    if (isNextDisabled) return;
     setViewDate(new Date(year, month + 1, 1));
   };
 
@@ -152,8 +224,8 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
     if (disabled) return;
 
     // Check min/max bounds
-    if (maxDate && cellDate > maxDate) return;
-    if (minDate && cellDate < minDate) return;
+    if (parsedMaxDate && cellDate > parsedMaxDate) return;
+    if (parsedMinDate && cellDate < parsedMinDate) return;
 
     onChange(formatDate(cellDate));
     setShowCalendar(false);
@@ -164,8 +236,8 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const isDisabled = (cellDate) => {
-    if (maxDate && cellDate > maxDate) return true;
-    if (minDate && cellDate < minDate) return true;
+    if (parsedMaxDate && cellDate > parsedMaxDate) return true;
+    if (parsedMinDate && cellDate < parsedMinDate) return true;
     return false;
   };
 
@@ -174,6 +246,11 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const isRed = required && !cleanValue;
+
+  const yearOptions = [];
+  for (let y = currentMaxYear; y >= currentMinYear; y--) {
+    yearOptions.push(y);
+  }
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
@@ -271,13 +348,29 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
                   fontFamily: 'inherit'
                 }}
               >
-                {monthNames.map((mName, idx) => (
-                  <option key={idx} value={idx}>{mName.toUpperCase()}</option>
-                ))}
+                {monthNames.map((mName, idx) => {
+                  const isMonthDisabled = (parsedMaxDate && year === currentMaxYear && idx > parsedMaxDate.getMonth()) ||
+                                          (parsedMinDate && year === currentMinYear && idx < parsedMinDate.getMonth());
+                  return (
+                    <option key={idx} value={idx} disabled={isMonthDisabled}>
+                      {mName.toUpperCase()}
+                    </option>
+                  );
+                })}
               </select>
               <select
                 value={year}
-                onChange={(e) => setViewDate(new Date(Number(e.target.value), month, 1))}
+                onChange={(e) => {
+                  const newYear = Number(e.target.value);
+                  let newMonth = month;
+                  if (parsedMaxDate && newYear === currentMaxYear && newMonth > parsedMaxDate.getMonth()) {
+                    newMonth = parsedMaxDate.getMonth();
+                  }
+                  if (parsedMinDate && newYear === currentMinYear && newMonth < parsedMinDate.getMonth()) {
+                    newMonth = parsedMinDate.getMonth();
+                  }
+                  setViewDate(new Date(newYear, newMonth, 1));
+                }}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -289,7 +382,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
                   fontFamily: 'inherit'
                 }}
               >
-                {Array.from({ length: 80 }, (_, i) => new Date().getFullYear() - i).map((yVal) => (
+                {yearOptions.map((yVal) => (
                   <option key={yVal} value={yVal}>{yVal}</option>
                 ))}
               </select>
@@ -300,38 +393,42 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
               <button
                 type="button"
                 onClick={handlePrevMonth}
+                disabled={isPrevDisabled}
                 style={{
+                  background: isPrevDisabled ? '#F1F5F9' : '#F8FAFC',
+                  border: '1px solid var(--line)',
+                  borderRadius: '8px',
                   width: '28px',
                   height: '28px',
-                  borderRadius: '50%',
-                  border: 'none',
-                  background: '#F1F5F9',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer',
-                  color: 'var(--navy)'
+                  cursor: isPrevDisabled ? 'not-allowed' : 'pointer',
+                  color: isPrevDisabled ? '#CBD5E1' : 'var(--navy)',
+                  padding: 0
                 }}
               >
-                ←
+                ‹
               </button>
               <button
                 type="button"
                 onClick={handleNextMonth}
+                disabled={isNextDisabled}
                 style={{
+                  background: isNextDisabled ? '#F1F5F9' : '#F8FAFC',
+                  border: '1px solid var(--line)',
+                  borderRadius: '8px',
                   width: '28px',
                   height: '28px',
-                  borderRadius: '50%',
-                  border: 'none',
-                  background: '#F1F5F9',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer',
-                  color: 'var(--navy)'
+                  cursor: isNextDisabled ? 'not-allowed' : 'pointer',
+                  color: isNextDisabled ? '#CBD5E1' : 'var(--navy)',
+                  padding: 0
                 }}
               >
-                →
+                ›
               </button>
             </div>
           </div>
@@ -586,6 +683,7 @@ export default function PersonnelProfile() {
     showAlert,
     showConfirm,
     hasUnsavedChanges,
+    setHasUnsavedChanges,
     districtSchools,
     completeNode,
     setActiveView
@@ -705,6 +803,16 @@ export default function PersonnelProfile() {
     return Math.min(70, Math.max(1, years));
   };
 
+  const getTotalAssignedLearningYears = (map) => {
+    let sum = 0;
+    Object.keys(map || {}).forEach(k => {
+      if (map[k]?.checked) {
+        sum += Number(map[k]?.years || 0);
+      }
+    });
+    return sum;
+  };
+
   const getCellMaxYears = (eraKey, subjectKey, person, currentMap) => {
     const totalMaxService = getMaxAllowedServiceYears(person);
     const d = person?.firstServiceDate || person?.first_service_date || '';
@@ -719,16 +827,12 @@ export default function PersonnelProfile() {
       eraMax = Math.max(1, end - start + 1);
     }
 
-    let otherErasSum = 0;
-    Object.keys(currentMap || {}).forEach(k => {
-      const [eKey, sKey] = k.split('||');
-      if (sKey === subjectKey && eKey !== eraKey && currentMap[k]?.checked) {
-        otherErasSum += Number(currentMap[k]?.years || 0);
-      }
-    });
+    const currentCellKey = `${eraKey}||${subjectKey}`;
+    const currentCellYears = currentMap?.[currentCellKey]?.checked ? Number(currentMap[currentCellKey]?.years || 0) : 0;
+    const otherCellsSum = getTotalAssignedLearningYears(currentMap) - currentCellYears;
 
-    const subjectRemaining = Math.max(0, totalMaxService - otherErasSum);
-    return Math.min(totalMaxService, eraMax, subjectRemaining);
+    const remainingGlobal = Math.max(0, totalMaxService - otherCellsSum);
+    return Math.min(totalMaxService, eraMax, remainingGlobal);
   };
 
   const handleToggleLearningAreaCell = async (eraKey, subjectKey) => {
@@ -739,9 +843,15 @@ export default function PersonnelProfile() {
     
     let newYears = 0;
     if (newChecked) {
+      const totalMax = getMaxAllowedServiceYears(currentPerson);
+      const currentTotal = getTotalAssignedLearningYears(learningAreaMap);
+      if (currentTotal >= totalMax) {
+        showToast(`⚠️ Maximum teaching experience limit (${totalMax} yrs) has already been reached. Cannot add more subjects.`, 'warning');
+        return;
+      }
       const cellMax = getCellMaxYears(eraKey, subjectKey, currentPerson, learningAreaMap);
       if (cellMax <= 0) {
-        showToast(`⚠️ Cannot add ${subjectKey} in this era. Total service limit (${getMaxAllowedServiceYears(currentPerson)} yrs) reached.`, 'warning');
+        showToast(`⚠️ Cannot add ${subjectKey}. Total service limit (${totalMax} yrs) reached.`, 'warning');
         return;
       }
       newYears = Math.min(cellMax, Math.max(1, existing?.years || 1));
@@ -752,6 +862,16 @@ export default function PersonnelProfile() {
       localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(updated));
       return updated;
     });
+
+    if (!String(currentPerson.id).startsWith('draft-')) {
+      api.saveLearningArea({
+        personnelId: currentPerson.id,
+        schoolYear: eraKey,
+        learningArea: subjectKey,
+        checked: newChecked,
+        yearsTaught: newYears
+      }).catch(err => console.warn('Background sync learning area:', err.message));
+    }
 
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
     showToast(`Learning area ${newChecked ? 'added' : 'removed'} in draft`, 'success');
@@ -769,7 +889,7 @@ export default function PersonnelProfile() {
     const parsedYears = Math.min(cellMax, Math.max(1, inputVal));
 
     if (inputVal > cellMax && cellMax > 0) {
-      showToast(`⚠️ Capped at ${cellMax} yrs (${subjectKey} total cannot exceed total ${getMaxAllowedServiceYears(currentPerson)} yrs of service)`, 'warning');
+      showToast(`⚠️ Capped at ${cellMax} yr(s) (Combined service cannot exceed ${getMaxAllowedServiceYears(currentPerson)} yrs)`, 'warning');
     }
 
     setLearningAreaMap(prev => {
@@ -777,6 +897,16 @@ export default function PersonnelProfile() {
       localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(updated));
       return updated;
     });
+
+    if (!String(currentPerson.id).startsWith('draft-')) {
+      api.saveLearningArea({
+        personnelId: currentPerson.id,
+        schoolYear: eraKey,
+        learningArea: subjectKey,
+        checked: true,
+        yearsTaught: parsedYears
+      }).catch(err => console.warn('Background sync learning area:', err.message));
+    }
 
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
   };
@@ -843,6 +973,15 @@ export default function PersonnelProfile() {
       }
     }
 
+    if (key === 'firstServiceDate' || key === 'lastPromotionDate') {
+      const effFirst = key === 'firstServiceDate' ? value : updated.firstServiceDate;
+      const effProm = key === 'lastPromotionDate' ? value : updated.lastPromotionDate;
+      const computed = computeStepIncrement(effFirst, effProm);
+      if (computed && computed.step) {
+        updated.stepIncrement = computed.step;
+      }
+    }
+
     setEditPerson(updated);
     localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
   };
@@ -855,6 +994,12 @@ export default function PersonnelProfile() {
   };
 
   // Age calculation
+  const maxBirthdate = React.useMemo(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 15);
+    return d;
+  }, []);
+
   const getAge = (dobString) => {
     if (!dobString) return null;
     const cleanDob = typeof dobString === 'string' ? dobString.substring(0, 10) : '';
@@ -872,8 +1017,11 @@ export default function PersonnelProfile() {
   let ageStatusText = 'No birthdate';
   let ageStatusClass = 'badge info';
   if (age !== null) {
-    if (age < 18 || age > 80) {
-      ageStatusText = 'Questionable age';
+    if (age < 15) {
+      ageStatusText = 'Underage (<15 yrs)';
+      ageStatusClass = 'badge warn';
+    } else if (age > 80) {
+      ageStatusText = 'Questionable age (>80 yrs)';
       ageStatusClass = 'badge warn';
     } else {
       ageStatusText = 'Age valid';
@@ -967,7 +1115,14 @@ export default function PersonnelProfile() {
     if (!p.civilStatus) errors.push("CIVIL STATUS");
     if (!p.religion) errors.push("RELIGION");
     if (!p.ethnicGroup) errors.push("ETHNIC GROUP");
-    if (!p.birthdate) errors.push("BIRTHDATE");
+    if (!p.birthdate) {
+      errors.push("BIRTHDATE");
+    } else {
+      const ageVal = getAge(p.birthdate);
+      if (ageVal !== null && ageVal < 15) {
+        errors.push("VALID BIRTHDATE (PERSONNEL MUST BE AT LEAST 15 YEARS OLD)");
+      }
+    }
     if (!p.philsysNo?.trim()) errors.push("PHILSYS NO.");
     if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
     if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
@@ -987,8 +1142,41 @@ export default function PersonnelProfile() {
     if (!p.newStationDate) errors.push("DATE OF FIRST DAY IN CURRENT STATION");
 
     // Education / Qualifications
-    if (!p.collegeDegree) errors.push("COLLEGE DEGREE");
-    if (!p.eligibility) errors.push("ELIGIBILITY");
+    const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+    const attainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isNonTeaching ? 'N/A' : ''));
+    if (!attainment && !p.collegeDegree && !p.vocationalCourse && !isNonTeaching) {
+      errors.push("HIGHEST EDUCATIONAL ATTAINMENT");
+    }
+    const isSHS = attainment === 'SENIOR HIGH SCHOOL GRADUATE';
+    const isVocational = attainment === 'VOCATIONAL / TECH-VOC COURSE';
+    const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment) || (!attainment && p.collegeDegree);
+    const isPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
+
+    if (isSHS && !p.shsTrack) {
+      errors.push("SENIOR HIGH SCHOOL TRACK");
+    }
+    if (isVocational) {
+      if (!p.vocationalCourse?.trim()) errors.push("VOCATIONAL / TESDA COURSE");
+      if (!p.vocationalLevel?.trim()) errors.push("NC LEVEL / QUALIFICATION LEVEL");
+    }
+    if (isCollegeOrPostGrad && !p.collegeDegree) {
+      errors.push("COLLEGE DEGREE / BACCALAUREATE");
+    }
+    const isEdu = p.collegeDegree && String(p.collegeDegree).toUpperCase().includes('EDUCATION');
+    if (isCollegeOrPostGrad && isEdu && !p.major) {
+      errors.push("MAJOR IN EDUCATION");
+    }
+    if (isPostGrad) {
+      if (!p.postGraduateDegree) {
+        p.postGraduateDegree = attainment === "DOCTORATE DEGREE (GRADUATED)" ? 'DOCTORATE DEGREE' : 'MASTERS DEGREE';
+      }
+      if (!p.postGraduateDiscipline?.trim()) {
+        errors.push("POST-GRADUATE DISCIPLINE");
+      }
+    }
+    if (!p.eligibility || (Array.isArray(p.eligibility) && p.eligibility.length === 0)) {
+      errors.push("ELIGIBILITY");
+    }
     if (['let', 'pbet'].includes(String(p.eligibility || '').toLowerCase()) && !p.prcSpecialization?.trim()) {
       errors.push("PRC SPECIALIZATION");
     }
@@ -1039,7 +1227,14 @@ export default function PersonnelProfile() {
       if (!p.civilStatus) errors.push("CIVIL STATUS");
       if (!p.religion) errors.push("RELIGION");
       if (!p.ethnicGroup) errors.push("ETHNIC GROUP");
-      if (!p.birthdate) errors.push("BIRTHDATE");
+      if (!p.birthdate) {
+        errors.push("BIRTHDATE");
+      } else {
+        const ageVal = getAge(p.birthdate);
+        if (ageVal !== null && ageVal < 15) {
+          errors.push("VALID BIRTHDATE (PERSONNEL MUST BE AT LEAST 15 YEARS OLD)");
+        }
+      }
       if (!p.philsysNo?.trim()) errors.push("PHILSYS NO.");
       if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
       if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
@@ -1055,8 +1250,43 @@ export default function PersonnelProfile() {
       if (!p.lastPromotionDate) errors.push("DATE OF LAST PROMOTION");
       if (!p.lastLateralMovementDate) errors.push("DATE OF LAST LATERAL MOVEMENT");
       if (!p.newStationDate) errors.push("DATE OF FIRST DAY IN CURRENT STATION");
-      if (!p.collegeDegree) errors.push("COLLEGE DEGREE");
-      if (!p.eligibility) errors.push("ELIGIBILITY");
+
+      // Education / Qualifications
+      const isDraftNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+      const draftAttainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isDraftNonTeaching ? 'N/A' : ''));
+      if (!draftAttainment && !p.collegeDegree && !p.vocationalCourse && !isDraftNonTeaching) {
+        errors.push("HIGHEST EDUCATIONAL ATTAINMENT");
+      }
+      const isDraftSHS = draftAttainment === 'SENIOR HIGH SCHOOL GRADUATE';
+      const isDraftVocational = draftAttainment === 'VOCATIONAL / TECH-VOC COURSE';
+      const isDraftCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(draftAttainment) || (!draftAttainment && p.collegeDegree);
+      const isDraftPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(draftAttainment);
+
+      if (isDraftSHS && !p.shsTrack) {
+        errors.push("SENIOR HIGH SCHOOL TRACK");
+      }
+      if (isDraftVocational) {
+        if (!p.vocationalCourse?.trim()) errors.push("VOCATIONAL / TESDA COURSE");
+        if (!p.vocationalLevel?.trim()) errors.push("NC LEVEL / QUALIFICATION LEVEL");
+      }
+      if (isDraftCollegeOrPostGrad && !p.collegeDegree) {
+        errors.push("COLLEGE DEGREE / BACCALAUREATE");
+      }
+      const isDraftEdu = p.collegeDegree && String(p.collegeDegree).toUpperCase().includes('EDUCATION');
+      if (isDraftCollegeOrPostGrad && isDraftEdu && !p.major) {
+        errors.push("MAJOR IN EDUCATION");
+      }
+      if (isDraftPostGrad) {
+        if (!p.postGraduateDegree) {
+          p.postGraduateDegree = draftAttainment === "DOCTORATE DEGREE (GRADUATED)" ? 'DOCTORATE DEGREE' : 'MASTERS DEGREE';
+        }
+        if (!p.postGraduateDiscipline?.trim()) {
+          errors.push("POST-GRADUATE DISCIPLINE");
+        }
+      }
+      if (!p.eligibility || (Array.isArray(p.eligibility) && p.eligibility.length === 0)) {
+        errors.push("ELIGIBILITY");
+      }
       if (['let', 'pbet'].includes(String(p.eligibility || '').toLowerCase()) && !p.prcSpecialization?.trim()) {
         errors.push("PRC SPECIALIZATION");
       }
@@ -1247,16 +1477,16 @@ export default function PersonnelProfile() {
   };
 
   const tabs = currentPerson && currentPerson.isShared ? [
-    { tab: 'identity', label: 'Identity', icon: '🪪' }
+    { tab: 'identity', label: 'Identity', Icon: FiCreditCard }
   ] : [
-    { tab: 'identity', label: 'Identity', icon: '🪪' },
-    { tab: 'personal', label: 'Personal', icon: '👤' },
-    { tab: 'employment', label: 'Employment', icon: '💼' },
-    { tab: 'education', label: 'Education', icon: '🎓' },
-    { tab: 'development', label: 'L&D', icon: '📋' },
+    { tab: 'identity', label: 'Identity', Icon: FiCreditCard },
+    { tab: 'personal', label: 'Personal', Icon: FiUser },
+    { tab: 'employment', label: 'Employment', Icon: FiBriefcase },
+    { tab: 'education', label: 'Education', Icon: FiAward },
+    { tab: 'development', label: 'L&D', Icon: FiFileText },
     ...(currentPerson && getPersonCategoryType(currentPerson) !== 'non-teaching' ? [
-      { tab: 'teaching', label: 'Teaching', icon: '📚' },
-      { tab: 'learning-area', label: 'Learning Area', icon: '📖' }
+      { tab: 'teaching', label: 'Teaching', Icon: FiLayers },
+      { tab: 'learning-area', label: 'Learning Area', Icon: FiBook }
     ] : [])
   ];
 
@@ -1305,13 +1535,16 @@ export default function PersonnelProfile() {
                   }}
                   title="Auto-fill missing profile details & classifications for all personnel"
                 >
-                  ✨ Auto-Populate
+                  <FiZap size={12} />
+                  <span>Auto-Populate</span>
                 </button>
               </div>
               <p style={{ margin: '0 0 12px', fontSize: '12px', color: 'var(--muted)' }}>{nonDraftPersonnel.length} personnel record{nonDraftPersonnel.length !== 1 ? 's' : ''}</p>
               {/* Search */}
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8' }}>🔍</span>
+                <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                  <FiSearch size={14} />
+                </span>
                 <input
                   type="text"
                   placeholder="Search name or position..."
@@ -1447,10 +1680,14 @@ export default function PersonnelProfile() {
                             color: sidebarPage === 1 ? '#cbd5e1' : 'var(--navy)',
                             fontSize: '11px',
                             fontWeight: 'bold',
-                            cursor: sidebarPage === 1 ? 'not-allowed' : 'pointer'
+                            cursor: sidebarPage === 1 ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
                           }}
                         >
-                          ◀ Prev
+                          <FiChevronLeft size={12} />
+                          <span>Prev</span>
                         </button>
                         <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700' }}>
                           Page {sidebarPage} of {totalPages}
@@ -1467,10 +1704,14 @@ export default function PersonnelProfile() {
                             color: sidebarPage >= totalPages ? '#cbd5e1' : 'var(--navy)',
                             fontSize: '11px',
                             fontWeight: 'bold',
-                            cursor: sidebarPage >= totalPages ? 'not-allowed' : 'pointer'
+                            cursor: sidebarPage >= totalPages ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
                           }}
                         >
-                          Next ▶
+                          <span>Next</span>
+                          <FiChevronRight size={12} />
                         </button>
                       </div>
                     )}
@@ -1527,10 +1768,14 @@ export default function PersonnelProfile() {
                     </span>
                   )}
                   {currentPerson.isShared && (
-                    <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#e0e7ff', color: '#3730a3', fontSize: '11px', fontWeight: '700' }}>🔗 Shared from {DIVISION_SCHOOL_OPTIONS.find(s => s.schoolId === currentPerson.sourceSchoolId)?.name?.toUpperCase() || 'Mother School'}</span>
+                    <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#e0e7ff', color: '#3730a3', fontSize: '11px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <FiLink size={11} /> Shared from {DIVISION_SCHOOL_OPTIONS.find(s => s.schoolId === currentPerson.sourceSchoolId)?.name?.toUpperCase() || 'Mother School'}
+                    </span>
                   )}
                   {currentPerson.personalVerified && (
-                    <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#d1fae5', color: '#065f46', fontSize: '11px', fontWeight: '700' }}>✓ Verified</span>
+                    <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#d1fae5', color: '#065f46', fontSize: '11px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <FiCheck size={11} /> Verified
+                    </span>
                   )}
                   {dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`) && !currentPerson.isShared && (
                     <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#fef3c7', color: '#92400e', fontSize: '11px', fontWeight: '700' }}>● Unsaved Draft</span>
@@ -1556,7 +1801,7 @@ export default function PersonnelProfile() {
               background: '#f8fafc',
               padding: '0 24px'
             }}>
-              {tabs.map(({ tab, label, icon }) => (
+              {tabs.map(({ tab, label, Icon }) => (
                 <button
                   key={tab}
                   type="button"
@@ -1576,7 +1821,7 @@ export default function PersonnelProfile() {
                     transition: 'all 0.15s'
                   }}
                 >
-                  <span>{icon}</span>
+                  <Icon size={14} />
                   <span>{label}</span>
                 </button>
               ))}
@@ -1594,7 +1839,10 @@ export default function PersonnelProfile() {
                 {currentPerson.isShared && (
                   <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1.5px solid var(--line)', marginBottom: '20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>ℹ️ Reassigned / Borrowed Personnel Profile</strong>
+                      <strong style={{ fontSize: '14px', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FiInfo size={16} />
+                        <span>Reassigned / Borrowed Personnel Profile</span>
+                      </strong>
                       <span style={{
                         padding: '4px 10px',
                         borderRadius: '20px',
@@ -1622,14 +1870,14 @@ export default function PersonnelProfile() {
 
                   {/* Editing Form fields dynamically */}
                   <div>
-                    <p className="profile-section-note">
-                      {activeTab === 'identity' && "🪪 Editing identity and minimum record creation fields."}
-                      {activeTab === 'personal' && "👤 Editing demographic, civil status, birthdate, PhilSys, religion, and ethnicity fields."}
-                      {activeTab === 'employment' && "💼 Editing position, designation, fund source, appointment, hiring arrangement, email, deployment, and service dates."}
-                      {activeTab === 'education' && "🎓 Editing degree, major/minor, post-graduate degree, discipline, eligibility, and PRC specialization."}
-                      {activeTab === 'development' && "📋 Editing NEAP trainings, TESDA NCs, certifications, and other professional development records."}
-                      {activeTab === 'teaching' && "📚 Editing teaching grade level assignments."}
-                      {activeTab === 'learning-area' && "📖 Record taught learning areas per school year."}
+                    <p className="profile-section-note" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {activeTab === 'identity' && <><FiCreditCard size={14} /> <span>Editing identity and minimum record creation fields.</span></>}
+                      {activeTab === 'personal' && <><FiUser size={14} /> <span>Editing demographic, civil status, birthdate, PhilSys, religion, and ethnicity fields.</span></>}
+                      {activeTab === 'employment' && <><FiBriefcase size={14} /> <span>Editing position, designation, fund source, appointment, hiring arrangement, email, deployment, and service dates.</span></>}
+                      {activeTab === 'education' && <><FiAward size={14} /> <span>Editing degree, major/minor, post-graduate degree, discipline, eligibility, and PRC specialization.</span></>}
+                      {activeTab === 'development' && <><FiFileText size={14} /> <span>Editing NEAP trainings, TESDA NCs, certifications, and other professional development records.</span></>}
+                      {activeTab === 'teaching' && <><FiLayers size={14} /> <span>Editing teaching grade level assignments.</span></>}
+                      {activeTab === 'learning-area' && <><FiBook size={14} /> <span>Record taught learning areas per school year.</span></>}
                     </p>
 
                     <div className="form-grid profile-form-grid">
@@ -1700,7 +1948,12 @@ export default function PersonnelProfile() {
                           </div>
                           <div>
                             <label>Extension Name (Optional)</label>
-                            <input value={currentPerson.nameExtension || ''} onChange={(e) => handleFieldChange('nameExtension', e.target.value.toUpperCase())} placeholder="e.g. JR., SR., III, IV" />
+                            <input
+                              maxLength={5}
+                              value={currentPerson.nameExtension || ''}
+                              onChange={(e) => handleFieldChange('nameExtension', e.target.value.toUpperCase().slice(0, 5))}
+                              placeholder="e.g. JR., SR., III, IV"
+                            />
                           </div>
                         </>
                       )}
@@ -1775,7 +2028,7 @@ export default function PersonnelProfile() {
                             <DatePickerDropdowns
                               value={currentPerson.birthdate || ''}
                               onChange={(val) => handleFieldChange('birthdate', val)}
-                              maxDate={new Date()}
+                              maxDate={maxBirthdate}
                               required
                             />
                           </div>
@@ -1886,51 +2139,6 @@ export default function PersonnelProfile() {
                                 </div>
                               </div>
                             )}
-                          </div>
-                          <div style={{ gridColumn: '1 / -1' }}>
-                            <label>Salary Step Increment</label>
-                            <div style={{
-                              display: 'flex',
-                              gap: '0',
-                              border: '1.5px solid var(--line)',
-                              borderRadius: '12px',
-                              overflow: 'hidden',
-                              marginTop: '4px'
-                            }}>
-                              {[1, 2, 3, 4, 5, 6, 7, 8].map((step, idx) => {
-                                const isActive = (currentPerson.stepIncrement || 1) === step;
-                                return (
-                                  <button
-                                    key={step}
-                                    type="button"
-                                    onClick={() => handleFieldChange('stepIncrement', step)}
-                                    style={{
-                                      flex: 1,
-                                      padding: '10px 6px',
-                                      border: 'none',
-                                      borderLeft: idx > 0 ? '1.5px solid var(--line)' : 'none',
-                                      background: isActive ? 'var(--blue, #0284c7)' : 'white',
-                                      color: isActive ? 'white' : 'var(--navy)',
-                                      fontWeight: isActive ? '800' : '600',
-                                      fontSize: '13px',
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s ease',
-                                      lineHeight: 1.3,
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: 'center',
-                                      gap: '2px'
-                                    }}
-                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f0f9ff'; }}
-                                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'white'; }}
-                                  >
-                                    <span style={{ fontSize: '15px', fontWeight: '800' }}>{step}</span>
-                                    <span style={{ fontSize: '9px', opacity: isActive ? 0.85 : 0.5, fontWeight: '700', letterSpacing: '0.03em' }}>STEP</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <p className="field-help">Current: Step {currentPerson.stepIncrement || 1} — Click any step to change.</p>
                           </div>
                           <div>
                             <label>Fund Source</label>
@@ -2082,7 +2290,7 @@ export default function PersonnelProfile() {
                                   {/* Red error alert inline if invalid */}
                                   {hasError && (
                                     <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#DC2626', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <span>⚠️</span> {emailVal.error}
+                                      <FiAlertCircle size={14} color="#DC2626" /> {emailVal.error}
                                     </p>
                                   )}
 
@@ -2119,7 +2327,7 @@ export default function PersonnelProfile() {
                           </div>
 
                           <div className="profile-subsection">Deployment and Service Dates</div>
-                          <div>
+                          <div style={{ gridColumn: '1 / -1' }}>
                             <label>Status of Deployment</label>
                             <SearchableDropdown
                               options={['OWN STATION', 'CLUSTERED', 'REASSIGNED']}
@@ -2440,17 +2648,15 @@ export default function PersonnelProfile() {
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <label style={{ margin: 0 }}>Date of Last Promotion</label>
-                              {String(currentPerson.fundSource || '').toUpperCase() !== 'NATIONAL' && (
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
-                                  <input
-                                    type="checkbox"
-                                    style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                    checked={currentPerson.lastPromotionDate === 'N/A'}
-                                    onChange={(e) => handleFieldChange('lastPromotionDate', e.target.checked ? 'N/A' : '')}
-                                  />
-                                  N/A
-                                </label>
-                              )}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
+                                <input
+                                  type="checkbox"
+                                  style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
+                                  checked={currentPerson.lastPromotionDate === 'N/A'}
+                                  onChange={(e) => handleFieldChange('lastPromotionDate', e.target.checked ? 'N/A' : '')}
+                                />
+                                N/A
+                              </label>
                             </div>
                             <DatePickerDropdowns
                               value={currentPerson.lastPromotionDate === 'N/A' ? '' : (currentPerson.lastPromotionDate || '')}
@@ -2462,41 +2668,16 @@ export default function PersonnelProfile() {
                           </div>
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <label style={{ margin: 0 }}>Date of Last Lateral Movement</label>
-                              {String(currentPerson.fundSource || '').toUpperCase() !== 'NATIONAL' && (
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
-                                  <input
-                                    type="checkbox"
-                                    style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                    checked={currentPerson.lastLateralMovementDate === 'N/A'}
-                                    onChange={(e) => handleFieldChange('lastLateralMovementDate', e.target.checked ? 'N/A' : '')}
-                                  />
-                                  N/A
-                                </label>
-                              )}
-                            </div>
-                            <DatePickerDropdowns
-                              value={currentPerson.lastLateralMovementDate === 'N/A' ? '' : (currentPerson.lastLateralMovementDate || '')}
-                              onChange={(val) => handleFieldChange('lastLateralMovementDate', val)}
-                              maxDate={new Date()}
-                              minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
-                              disabled={currentPerson.lastLateralMovementDate === 'N/A'}
-                            />
-                          </div>
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <label style={{ margin: 0 }}>Date of First Day in Current Station</label>
-                              {String(currentPerson.fundSource || '').toUpperCase() !== 'NATIONAL' && (
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
-                                  <input
-                                    type="checkbox"
-                                    style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                    checked={currentPerson.newStationDate === 'N/A'}
-                                    onChange={(e) => handleFieldChange('newStationDate', e.target.checked ? 'N/A' : '')}
-                                  />
-                                  N/A
-                                </label>
-                              )}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
+                                <input
+                                  type="checkbox"
+                                  style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
+                                  checked={currentPerson.newStationDate === 'N/A'}
+                                  onChange={(e) => handleFieldChange('newStationDate', e.target.checked ? 'N/A' : '')}
+                                />
+                                N/A
+                              </label>
                             </div>
                             <DatePickerDropdowns
                               value={currentPerson.newStationDate === 'N/A' ? '' : (currentPerson.newStationDate || '')}
@@ -2506,133 +2687,338 @@ export default function PersonnelProfile() {
                               disabled={currentPerson.newStationDate === 'N/A'}
                             />
                           </div>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <label style={{ margin: 0 }}>Date of Last Lateral Movement</label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', margin: 0, fontWeight: 'normal' }}>
+                                <input
+                                  type="checkbox"
+                                  style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
+                                  checked={currentPerson.lastLateralMovementDate === 'N/A'}
+                                  onChange={(e) => handleFieldChange('lastLateralMovementDate', e.target.checked ? 'N/A' : '')}
+                                />
+                                N/A
+                              </label>
+                            </div>
+                            <DatePickerDropdowns
+                              value={currentPerson.lastLateralMovementDate === 'N/A' ? '' : (currentPerson.lastLateralMovementDate || '')}
+                              onChange={(val) => handleFieldChange('lastLateralMovementDate', val)}
+                              maxDate={new Date()}
+                              minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
+                              disabled={currentPerson.lastLateralMovementDate === 'N/A'}
+                            />
+                          </div>
+
+                          <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+                            {(() => {
+                              const computed = computeStepIncrement(currentPerson.firstServiceDate, currentPerson.lastPromotionDate);
+                              const currentStep = currentPerson.stepIncrement || computed.step || 1;
+
+                              return (
+                                <>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                    <label style={{ margin: 0 }}>Salary Step Increment</label>
+                                    {currentStep !== computed.step && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleFieldChange('stepIncrement', computed.step)}
+                                        style={{
+                                          background: '#E0F2FE',
+                                          color: '#0284C7',
+                                          border: '1px solid #BAE6FD',
+                                          borderRadius: '6px',
+                                          padding: '2px 8px',
+                                          fontSize: '11px',
+                                          fontWeight: '700',
+                                          cursor: 'pointer'
+                                        }}
+                                        title="Restore auto-calculated step based on dates"
+                                      >
+                                        ↺ Reset to Auto (Step {computed.step})
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div style={{
+                                    display: 'flex',
+                                    gap: '0',
+                                    border: '1.5px solid var(--line)',
+                                    borderRadius: '12px',
+                                    overflow: 'hidden',
+                                    marginTop: '4px'
+                                  }}>
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map((step, idx) => {
+                                      const isActive = currentStep === step;
+
+                                      return (
+                                        <button
+                                          key={step}
+                                          type="button"
+                                          onClick={() => handleFieldChange('stepIncrement', step)}
+                                          style={{
+                                            flex: 1,
+                                            padding: '10px 6px',
+                                            border: 'none',
+                                            borderLeft: idx > 0 ? '1.5px solid var(--line)' : 'none',
+                                            background: isActive ? 'var(--blue, #0284c7)' : 'white',
+                                            color: isActive ? 'white' : 'var(--navy)',
+                                            fontWeight: isActive ? '800' : '600',
+                                            fontSize: '13px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease',
+                                            lineHeight: 1.3,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: '2px'
+                                          }}
+                                          onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f0f9ff'; }}
+                                          onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'white'; }}
+                                        >
+                                          <span style={{ fontSize: '15px', fontWeight: '800' }}>{step}</span>
+                                          <span style={{ fontSize: '9px', opacity: isActive ? 0.85 : 0.5, fontWeight: '700', letterSpacing: '0.03em' }}>
+                                            STEP
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  <p className="field-help">Current: Step {currentStep} — Click any step to change.</p>
+                                </>
+                              );
+                            })()}
+                          </div>
                         </>
                       )}
 
                       {activeTab === 'education' && (
                         <>
-                          <div className="profile-subsection">Degree Information</div>
-                          <div>
-                            <label>College Degree / Baccalaureate</label>
-                            <SearchableDropdown
-                              options={COLLEGE_DEGREE_OPTIONS}
-                              value={currentPerson.collegeDegree || ''}
-                              onChange={(val) => {
-                                const d = (val || '').toUpperCase();
-                                const isEdu = val && val !== 'NONE' && val !== 'N/A' && (
-                                  d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
-                                );
-                                if (!isEdu) {
-                                  handleMultipleFieldsChange({ collegeDegree: val, major: '', minor: '' });
-                                } else {
-                                  handleFieldChange('collegeDegree', val);
-                                }
-                              }}
-                              placeholder="Select college degree..."
-                              required
-                            />
+                          <div className="profile-subsection">Educational Attainment</div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label>Highest Educational Attainment <span style={{ color: '#EF4444' }}>*</span></label>
+                            {(() => {
+                              const isTeachingOrRelated = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(currentPerson.type) || ['TEACHING', 'TEACHING-RELATED'].includes(currentPerson.positionCategory);
+                              const options = isTeachingOrRelated 
+                                ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS 
+                                : HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
+
+                              return (
+                                <SearchableDropdown
+                                  options={options}
+                                  value={
+                                    currentPerson.highestEducationalAttainment ||
+                                    (() => {
+                                      if (currentPerson.postGraduateDegree && !['NONE', 'N/A', ''].includes(currentPerson.postGraduateDegree)) {
+                                        return String(currentPerson.postGraduateDegree).toUpperCase().includes('DOCTOR')
+                                          ? 'DOCTORATE DEGREE (GRADUATED)'
+                                          : "MASTER'S DEGREE (GRADUATED)";
+                                      }
+                                      const deg = String(currentPerson.collegeDegree || '').toUpperCase();
+                                      if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
+                                      if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
+                                      if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
+                                      if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
+                                      if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
+                                      if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
+                                      return isTeachingOrRelated ? 'COLLEGE GRADUATE / BACCALAUREATE' : 'N/A';
+                                    })()
+                                  }
+                                  onChange={(val) => {
+                                    const updates = { highestEducationalAttainment: val };
+                                    const isElemOrHSOrNA = ['ELEMENTARY GRADUATE', 'HIGH SCHOOL GRADUATE', 'N/A'].includes(val);
+                                    const isSeniorHS = val === 'SENIOR HIGH SCHOOL GRADUATE';
+                                    const isVocational = val === 'VOCATIONAL / TECH-VOC COURSE';
+                                    const isCollegeOnly = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE'].includes(val);
+
+                                    if (isElemOrHSOrNA) {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.collegeDegree = '';
+                                      updates.major = '';
+                                      updates.minor = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (isSeniorHS) {
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.collegeDegree = '';
+                                      updates.major = '';
+                                      updates.minor = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (isVocational) {
+                                      updates.shsTrack = '';
+                                      updates.collegeDegree = '';
+                                      updates.major = '';
+                                      updates.minor = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (isCollegeOnly) {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (val === "MASTER'S DEGREE (GRADUATED)") {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.postGraduateDegree = 'MASTERS DEGREE';
+                                    } else if (val === "DOCTORATE DEGREE (GRADUATED)") {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.postGraduateDegree = 'DOCTORATE DEGREE';
+                                    } else {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                    }
+                                    handleMultipleFieldsChange(updates);
+                                  }}
+                                  placeholder="SELECT HIGHEST EDUCATIONAL ATTAINMENT..."
+                                  required
+                                />
+                              );
+                            })()}
                           </div>
 
-                          {(() => {
-                            const d = (currentPerson.collegeDegree || '').toUpperCase();
-                            const isEdu = currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree !== 'N/A' && (
-                              d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
-                            );
-                            if (!isEdu) return null;
-                            return (
-                              <>
-                                <div>
-                                  <label>Major <span style={{ color: '#EF4444' }}>*</span></label>
-                                  <SearchableDropdown
-                                    options={MAJOR_OPTIONS}
-                                    value={currentPerson.major || ''}
-                                    onChange={(val) => handleFieldChange('major', val)}
-                                    placeholder="Select major..."
-                                    required
-                                  />
-                                </div>
-                                <div>
-                                  <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
-                                  <SearchableDropdown
-                                    options={MINOR_OPTIONS}
-                                    value={currentPerson.minor || ''}
-                                    onChange={(val) => handleFieldChange('minor', val)}
-                                    placeholder="Select minor subject (optional)..."
-                                  />
-                                </div>
-                              </>
-                            );
-                          })()}
-
-                          <div className="profile-subsection">Post-Graduate and Eligibility</div>
-                          <div>
-                            <label>Post-Graduate Degree</label>
-                            <SearchableDropdown
-                              options={POST_GRADUATE_DEGREE_OPTIONS}
-                              value={currentPerson.postGraduateDegree || ''}
-                              onChange={(val) => {
-                                handleFieldChange('postGraduateDegree', val);
-                                if (val === 'N/A' || val === 'NONE') {
-                                  handleFieldChange('postGraduateDiscipline', '');
-                                }
-                              }}
-                              placeholder="Select post-graduate degree..."
-                            />
-                          </div>
-                          {currentPerson.postGraduateDegree && currentPerson.postGraduateDegree !== 'NONE' && currentPerson.postGraduateDegree !== 'N/A' && (
-                            <div>
-                              <label>Post-Graduate Discipline</label>
-                              {(() => {
-                                const currentVal = currentPerson.postGraduateDiscipline || '';
-                                const presetOptions = DISCIPLINE_OPTIONS.filter(opt => opt !== 'OTHERS' && opt !== 'Others');
-                                const matchedPreset = presetOptions.find(opt => opt.toUpperCase() === currentVal.toUpperCase());
-                                const selectedDropdownValue = matchedPreset ? matchedPreset : (currentVal ? 'OTHERS' : '');
-                                const isCustomMode = selectedDropdownValue === 'OTHERS' || selectedDropdownValue === 'Others';
-
-                                return (
-                                  <div>
-                                    <SearchableDropdown
-                                      options={DISCIPLINE_OPTIONS}
-                                      value={selectedDropdownValue}
-                                      onChange={(val) => {
-                                        if (val === 'OTHERS' || val === 'Others') {
-                                          if (matchedPreset || !currentVal) {
-                                            handleFieldChange('postGraduateDiscipline', 'OTHERS');
-                                          }
-                                        } else {
-                                          handleFieldChange('postGraduateDiscipline', val);
-                                        }
-                                      }}
-                                      placeholder="SELECT POST-GRADUATE DISCIPLINE..."
-                                    />
-                                    {isCustomMode && (
-                                      <input
-                                        type="text"
-                                        placeholder="Type custom post-graduate discipline *"
-                                        value={['OTHERS', 'OTHER'].includes(currentVal.toUpperCase()) ? '' : currentVal}
-                                        onChange={(e) => handleFieldChange('postGraduateDiscipline', e.target.value.toUpperCase())}
-                                        style={{
-                                          marginTop: '6px',
-                                          fontSize: '13px',
-                                          background: '#FFFBEB',
-                                          borderColor: '#F59E0B',
-                                          width: '100%',
-                                          boxSizing: 'border-box',
-                                          padding: '10px 14px',
-                                          borderRadius: '12px',
-                                          border: '1.5px solid #F59E0B',
-                                          color: 'var(--navy)',
-                                          fontFamily: 'inherit',
-                                          minHeight: '44px'
-                                        }}
-                                        required
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })()}
+                          {/* SHS Track if Senior High School */}
+                          {currentPerson.highestEducationalAttainment === 'SENIOR HIGH SCHOOL GRADUATE' && (
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <label>Senior High School Track <span style={{ color: '#EF4444' }}>*</span></label>
+                              <SearchableDropdown
+                                options={SHS_TRACK_OPTIONS}
+                                value={currentPerson.shsTrack || ''}
+                                onChange={(val) => handleFieldChange('shsTrack', val)}
+                                placeholder="SELECT SHS TRACK..."
+                                required
+                              />
                             </div>
                           )}
+
+                          {/* Vocational / Tech-Voc Course & NC Level */}
+                          {currentPerson.highestEducationalAttainment === 'VOCATIONAL / TECH-VOC COURSE' && (
+                            <>
+                              <div>
+                                <label>Vocational / TESDA Course <span style={{ color: '#EF4444' }}>*</span></label>
+                                <SearchableDropdown
+                                  options={TESDA_COURSES || Object.keys(TESDA_COURSE_TO_LEVELS_MAP)}
+                                  value={currentPerson.vocationalCourse || ''}
+                                  onChange={(val) => {
+                                    const availableLevels = TESDA_COURSE_TO_LEVELS_MAP[val] || [];
+                                    const nextLevel = availableLevels.length === 1 ? availableLevels[0] : (availableLevels.includes(currentPerson.vocationalLevel) ? currentPerson.vocationalLevel : '');
+                                    handleMultipleFieldsChange({
+                                      vocationalCourse: val,
+                                      vocationalLevel: nextLevel
+                                    });
+                                  }}
+                                  placeholder="SELECT TESDA / VOCATIONAL COURSE..."
+                                  required
+                                />
+                              </div>
+
+                              <div>
+                                <label>NC Level / Qualification Level <span style={{ color: '#EF4444' }}>*</span></label>
+                                <SearchableDropdown
+                                  options={
+                                    currentPerson.vocationalCourse && TESDA_COURSE_TO_LEVELS_MAP[currentPerson.vocationalCourse]
+                                      ? TESDA_COURSE_TO_LEVELS_MAP[currentPerson.vocationalCourse]
+                                      : TESDA_NC_LEVEL_OPTIONS
+                                  }
+                                  value={currentPerson.vocationalLevel || ''}
+                                  onChange={(val) => handleFieldChange('vocationalLevel', val)}
+                                  placeholder={
+                                    currentPerson.vocationalCourse
+                                      ? "SELECT NC LEVEL..."
+                                      : "Select Vocational Course first..."
+                                  }
+                                  required
+                                />
+                              </div>
+                            </>
+                          )}
+
+                          {/* College Degree if College, Master's, or Doctorate */}
+                          {['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(
+                            currentPerson.highestEducationalAttainment || (currentPerson.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : '')
+                          ) && (
+                            <>
+                              <div>
+                                <label>College Degree / Baccalaureate <span style={{ color: '#EF4444' }}>*</span></label>
+                                <SearchableDropdown
+                                  options={COLLEGE_DEGREE_OPTIONS}
+                                  value={currentPerson.collegeDegree || ''}
+                                  onChange={(val) => {
+                                    const d = (val || '').toUpperCase();
+                                    const isEdu = val && val !== 'NONE' && val !== 'N/A' && (
+                                      d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                                    );
+                                    if (!isEdu) {
+                                      handleMultipleFieldsChange({ collegeDegree: val, major: '', minor: '' });
+                                    } else {
+                                      handleFieldChange('collegeDegree', val);
+                                    }
+                                  }}
+                                  placeholder="Select college degree..."
+                                  required
+                                />
+                              </div>
+
+                              {(() => {
+                                const d = (currentPerson.collegeDegree || '').toUpperCase();
+                                const isEdu = currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree !== 'N/A' && (
+                                  d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                                );
+                                if (!isEdu) return null;
+                                return (
+                                  <>
+                                    <div>
+                                      <label>Major in Education <span style={{ color: '#EF4444' }}>*</span></label>
+                                      <SearchableDropdown
+                                        options={MAJOR_OPTIONS}
+                                        value={currentPerson.major || ''}
+                                        onChange={(val) => handleFieldChange('major', val)}
+                                        placeholder="Select major..."
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
+                                      <SearchableDropdown
+                                        options={MINOR_OPTIONS}
+                                        value={currentPerson.minor || ''}
+                                        onChange={(val) => handleFieldChange('minor', val)}
+                                        placeholder="Select minor subject (optional)..."
+                                      />
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </>
+                          )}
+
+                          {/* Post-Graduate Discipline ONLY if Master's or Doctorate */}
+                          {["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(currentPerson.highestEducationalAttainment) && (
+                            <>
+                              <div className="profile-subsection">
+                                Post-Graduate Information ({currentPerson.highestEducationalAttainment === "DOCTORATE DEGREE (GRADUATED)" ? "Doctorate Degree" : "Master's Degree"})
+                              </div>
+                              <div style={{ gridColumn: '1 / -1' }}>
+                                <label>Post-Graduate Discipline <span style={{ color: '#EF4444' }}>*</span></label>
+                                <SearchableDropdown
+                                  options={DISCIPLINE_OPTIONS}
+                                  value={currentPerson.postGraduateDiscipline || ''}
+                                  onChange={(val) => handleFieldChange('postGraduateDiscipline', val)}
+                                  placeholder="SELECT POST-GRADUATE DISCIPLINE..."
+                                  required
+                                />
+                              </div>
+                            </>
+                          )}
+
+                          <div className="profile-subsection">Civil Service and Professional Eligibilities</div>
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
                             <label>Eligibilities</label>
 
@@ -3034,7 +3420,7 @@ export default function PersonnelProfile() {
                               <div style={{ marginTop: '20px', padding: '12px 16px', background: '#F0F9FF', border: '1.5px solid #0284C7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <div>
                                   <label style={{ fontWeight: 'bold', color: '#0369A1', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span>📗</span> Teaches Senior High School (Grade 11 / Grade 12)
+                                    <FiBook size={14} /> Teaches Senior High School (Grade 11 / Grade 12)
                                   </label>
                                   <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
                                     Enabling this unlocks the <strong>SHS Term Workload Card</strong> (1st, 2nd, 3rd Term) in the Workload module.
@@ -3056,8 +3442,8 @@ export default function PersonnelProfile() {
                         <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                             <div>
-                              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--navy)' }}>
-                                📖 Learning Area Matrix
+                              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <FiBook size={16} /> Learning Area Matrix
                               </h3>
                               <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
                                 Record taught primary learning areas across DepEd curriculum eras. Check a subject to enter total years taught.
@@ -3069,6 +3455,8 @@ export default function PersonnelProfile() {
                                 className="btn secondary"
                                 style={{ fontSize: '11px', padding: '6px 12px' }}
                                 onClick={() => {
+                                  const totalMax = getMaxAllowedServiceYears(currentPerson);
+                                  let budget = totalMax;
                                   const newMap = {};
                                   const firstServiceYear = (() => {
                                     const d = currentPerson?.firstServiceDate || currentPerson?.first_service_date || '';
@@ -3076,15 +3464,22 @@ export default function PersonnelProfile() {
                                     const y = parseInt(d.substring(0, 4), 10);
                                     return isNaN(y) ? null : y;
                                   })();
-                                  CURRICULUM_ERAS.forEach(era => {
+                                  // Allocate budget starting from newest curriculum era
+                                  const activeEras = [...CURRICULUM_ERAS].reverse();
+                                  for (const era of activeEras) {
                                     const isDisabled = firstServiceYear !== null && firstServiceYear > era.endYear;
-                                    if (!isDisabled) {
-                                      PRIMARY_SUBJECTS.forEach(sub => {
-                                        newMap[`${era.key}||${sub}`] = { checked: true, years: 1 };
-                                      });
+                                    if (!isDisabled && budget > 0) {
+                                      for (const sub of PRIMARY_SUBJECTS) {
+                                        if (budget > 0) {
+                                          newMap[`${era.key}||${sub}`] = { checked: true, years: 1 };
+                                          budget -= 1;
+                                        }
+                                      }
                                     }
-                                  });
+                                  }
                                   setLearningAreaMap(newMap);
+                                  localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(newMap));
+                                  if (setHasUnsavedChanges) setHasUnsavedChanges(true);
                                 }}
                               >
                                 Select All Active
@@ -3093,7 +3488,11 @@ export default function PersonnelProfile() {
                                 type="button"
                                 className="btn secondary"
                                 style={{ fontSize: '11px', padding: '6px 12px' }}
-                                onClick={() => setLearningAreaMap({})}
+                                onClick={() => {
+                                  setLearningAreaMap({});
+                                  localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify({}));
+                                  if (setHasUnsavedChanges) setHasUnsavedChanges(true);
+                                }}
                               >
                                 Clear All
                               </button>
@@ -3102,15 +3501,47 @@ export default function PersonnelProfile() {
 
                           {(() => {
                             const maxYears = getMaxAllowedServiceYears(currentPerson);
+                            const totalAssigned = getTotalAssignedLearningYears(learningAreaMap);
+                            const isAtCapacity = totalAssigned >= maxYears;
                             const serviceStartYear = currentPerson?.firstServiceDate || currentPerson?.first_service_date;
+
                             return (
-                              <div style={{ background: '#EFF6FF', border: '1px solid #93C5FD', padding: '10px 16px', borderRadius: '12px', fontSize: '12px', color: '#1E40AF', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span>ℹ️</span>
-                                <span>
-                                  {serviceStartYear
-                                    ? `Max allowed teaching experience: ${maxYears} ${maxYears === 1 ? 'Year' : 'Years'} (calculated from 1st Service Date: ${serviceStartYear.substring(0, 10)})`
-                                    : 'Max allowed experience: 70 Years (specify Date of First Day of Service in Employment tab to enable dynamic service validation)'}
-                                </span>
+                              <div style={{
+                                background: isAtCapacity ? '#FEF3C7' : '#EFF6FF',
+                                border: `1.5px solid ${isAtCapacity ? '#F59E0B' : '#93C5FD'}`,
+                                padding: '12px 18px',
+                                borderRadius: '14px',
+                                fontSize: '12.5px',
+                                color: isAtCapacity ? '#92400E' : '#1E40AF',
+                                fontWeight: '600',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '12px',
+                                flexWrap: 'wrap'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <FiInfo size={18} style={{ color: isAtCapacity ? '#D97706' : '#2563EB', flexShrink: 0 }} />
+                                  <span>
+                                    {serviceStartYear
+                                      ? `Max allowed teaching experience: ${maxYears} ${maxYears === 1 ? 'Year' : 'Years'} (calculated from 1st Service Date: ${serviceStartYear.substring(0, 10)})`
+                                      : 'Max allowed experience: 70 Years (specify Date of First Day of Service in Employment tab to enable dynamic service validation)'}
+                                  </span>
+                                </div>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  background: isAtCapacity ? '#FDE68A' : '#DBEAFE',
+                                  padding: '4px 12px',
+                                  borderRadius: '20px',
+                                  fontSize: '11.5px',
+                                  fontWeight: '700',
+                                  color: isAtCapacity ? '#78350F' : '#1D4ED8'
+                                }}>
+                                  <span>Assigned: {totalAssigned} / {maxYears} yrs</span>
+                                  {isAtCapacity && <span style={{ color: '#B45309' }}>(Max Reached - Unchecked Locked)</span>}
+                                </div>
                               </div>
                             );
                           })()}
@@ -3142,6 +3573,9 @@ export default function PersonnelProfile() {
                                       const y = parseInt(d.substring(0, 4), 10);
                                       return isNaN(y) ? null : y;
                                     })();
+                                    const totalMax = getMaxAllowedServiceYears(currentPerson);
+                                    const currentTotal = getTotalAssignedLearningYears(learningAreaMap);
+                                    const isCapacityFull = currentTotal >= totalMax;
 
                                     return CURRICULUM_ERAS.map(era => {
                                       const isDisabledEra = firstServiceYear !== null && firstServiceYear > era.endYear;
@@ -3160,8 +3594,8 @@ export default function PersonnelProfile() {
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                               <span>{era.label}</span>
                                               {isDisabledEra && (
-                                                <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
-                                                  🔒 Prior to Service Start ({firstServiceYear})
+                                                <span style={{ fontSize: '9px', fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                                  <FiLock size={9} /> Prior to Service Start ({firstServiceYear})
                                                 </span>
                                               )}
                                             </div>
@@ -3172,6 +3606,7 @@ export default function PersonnelProfile() {
                                             const cellKey = `${era.key}||${sub}`;
                                             const cellData = learningAreaMap[cellKey];
                                             const isChecked = !!cellData?.checked;
+                                            const isCheckboxDisabled = currentPerson.isShared || isDisabledEra || (!isChecked && isCapacityFull);
 
                                             return (
                                               <td key={sub} style={{ textAlign: 'center', padding: '10px 8px', borderRight: '1px solid var(--line)', background: isChecked && !isDisabledEra ? '#EFF6FF' : 'transparent' }}>
@@ -3180,8 +3615,9 @@ export default function PersonnelProfile() {
                                                     type="checkbox"
                                                     checked={isChecked}
                                                     onChange={() => handleToggleLearningAreaCell(era.key, sub)}
-                                                    disabled={currentPerson.isShared || isDisabledEra}
-                                                    style={{ cursor: isDisabledEra || currentPerson.isShared ? 'not-allowed' : 'pointer', width: '18px', height: '18px', accentColor: '#0284C7' }}
+                                                    disabled={isCheckboxDisabled}
+                                                    title={!isChecked && isCapacityFull ? `Max allowed service years (${totalMax} yrs) reached. Cannot add more subjects.` : undefined}
+                                                    style={{ cursor: isCheckboxDisabled ? 'not-allowed' : 'pointer', width: '18px', height: '18px', accentColor: '#0284C7', opacity: !isChecked && isCapacityFull ? 0.35 : 1 }}
                                                   />
                                                   {isChecked && !isDisabledEra && (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginTop: '2px' }}>
@@ -3229,18 +3665,18 @@ export default function PersonnelProfile() {
 
                     {!currentPerson.isShared && (
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '20px', borderTop: '1.5px solid var(--line)', paddingTop: '15px', alignItems: 'center' }}>
-                        <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white' }}>
-                          💾 Save Changes
+                        <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <FiSave size={14} /> <span>Save Changes</span>
                         </button>
-                        <button className="btn secondary" type="button" onClick={handleSaveValidate} style={{ borderColor: 'var(--blue)', color: 'var(--blue)' }}>
-                          ✓ Save & Validate
+                        <button className="btn secondary" type="button" onClick={handleSaveValidate} style={{ borderColor: 'var(--blue)', color: 'var(--blue)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <FiCheckCircle size={14} /> <span>Save & Validate</span>
                         </button>
-                        <button className="btn secondary" type="button" onClick={handleDuplicate}>
-                          ⧉ Duplicate
+                        <button className="btn secondary" type="button" onClick={handleDuplicate} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <FiCopy size={14} /> <span>Duplicate</span>
                         </button>
                         <div style={{ marginLeft: 'auto' }}>
-                          <button className="btn danger" type="button" onClick={handleDelete}>
-                            🗑 Delete
+                          <button className="btn danger" type="button" onClick={handleDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <FiTrash2 size={14} /> <span>Delete</span>
                           </button>
                         </div>
                       </div>

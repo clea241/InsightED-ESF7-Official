@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
+import ForceLogoutNoticeModal from '../components/ForceLogoutNoticeModal';
 import PortalHeader from '../components/PortalHeader';
-import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight } from 'react-icons/fi';
+import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight, FiMap, FiSettings, FiAward, FiBarChart2, FiStar, FiBookOpen, FiUploadCloud } from 'react-icons/fi';
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
   const { personnel = [], classSections = [], schoolInfo = {}, setActiveView, showToast, isNodeUnlocked, isNodeCompleted } = useApp();
+  const { logout } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [pendingSchool, setPendingSchool] = useState(null);
+  const [requiresForceUpload, setRequiresForceUpload] = useState(false);
+  const [isLogoutNoticeModalOpen, setIsLogoutNoticeModalOpen] = useState(false);
 
   useEffect(() => {
     let isCancelled = false;
@@ -37,13 +43,72 @@ export default function Dashboard() {
   const safeClassSections = Array.isArray(classSections) ? classSections : [];
   const totalPersonnel = safePersonnel.length;
 
+  // Check pending_schools table & auto-open SY 2025-2026 upload modal when no personnel records exist
+  useEffect(() => {
+    let isCancelled = false;
+    const checkUploadRequirement = async () => {
+      if (loading || safePersonnel.length > 0) return;
+      const rawSchoolId = schoolInfo?.schoolId ? String(schoolInfo.schoolId).replace(/^SCH-/i, '').trim() : '';
+      if (!rawSchoolId) return;
+
+      try {
+        const res = await fetch(`/api/esf7-upload/check/${rawSchoolId}`);
+        const data = await res.json();
+        if (isCancelled) return;
+
+        if (data.pendingSchool) {
+          setPendingSchool(data.pendingSchool);
+        }
+
+        if (data.requiresForceUpload) {
+          setRequiresForceUpload(true);
+          setIsUploadModalOpen(true);
+        } else if (data.isExempted) {
+          setRequiresForceUpload(false);
+          const storageKey = `esf7_prompted_exempted_${rawSchoolId}`;
+          if (!sessionStorage.getItem(storageKey)) {
+            setIsUploadModalOpen(true);
+            sessionStorage.setItem(storageKey, 'true');
+          }
+        } else if (!data.hasData) {
+          setRequiresForceUpload(true);
+          setIsUploadModalOpen(true);
+        }
+      } catch (err) {
+        console.warn('eSF7 check error:', err.message);
+        if (!isCancelled) {
+          setRequiresForceUpload(true);
+          setIsUploadModalOpen(true);
+        }
+      }
+    };
+
+    checkUploadRequirement();
+    return () => { isCancelled = true; };
+  }, [loading, safePersonnel.length, schoolInfo?.schoolId]);
+
+  const handleForceLogout = () => {
+    setIsLogoutNoticeModalOpen(true);
+  };
+
+  const confirmForceLogout = () => {
+    setIsLogoutNoticeModalOpen(false);
+    setIsUploadModalOpen(false);
+    if (showToast) showToast('Logged out: eSF7 upload required for station initialization.', 'info');
+    logout();
+  };
+
+  const cancelForceLogout = () => {
+    setIsLogoutNoticeModalOpen(false);
+  };
+
   const NODES = [
     {
       id: 'school',
       nodeNumber: '01',
       title: 'School Profile',
       subtitle: 'School identity, shift configuration & offerings',
-      icon: '🏛',
+      icon: 'school',
       view: 'school',
       summary: schoolInfo?.schoolId ? `School ID: ${schoolInfo.schoolId}` : 'Configure school identity'
     },
@@ -52,7 +117,7 @@ export default function Dashboard() {
       nodeNumber: '02',
       title: 'Personnel Roster',
       subtitle: 'Master personnel list & appointment status',
-      icon: '☷',
+      icon: 'roster',
       view: 'roster',
       summary: `${safePersonnel.length} Registered Personnel`
     },
@@ -61,7 +126,7 @@ export default function Dashboard() {
       nodeNumber: '03',
       title: 'Personnel Profiling',
       subtitle: 'Educational qualifications, LET & eligibility',
-      icon: '✎',
+      icon: 'profile',
       view: 'profile',
       summary: `${safePersonnel.filter(p => p?.degreeMajor || p?.major).length} Profiles Configured`
     },
@@ -70,7 +135,7 @@ export default function Dashboard() {
       nodeNumber: '04',
       title: 'Organized Classes',
       subtitle: 'Section setup, advisers & learner counts',
-      icon: '▦',
+      icon: 'classes',
       view: 'classes',
       summary: `${safeClassSections.length} Class Sections`
     },
@@ -79,7 +144,7 @@ export default function Dashboard() {
       nodeNumber: '05',
       title: 'Workload & Timetable',
       subtitle: 'Teaching schedules, period durations & timetable',
-      icon: '◷',
+      icon: 'workload',
       view: 'workload',
       summary: `${safePersonnel.reduce((acc, p) => acc + (p?.workloadRows?.length || 0), 0)} Workload Slots`
     },
@@ -88,7 +153,7 @@ export default function Dashboard() {
       nodeNumber: '06',
       title: 'Submission & Certification',
       subtitle: 'Validation rules, eSF7 preview & certification',
-      icon: '⛨',
+      icon: 'validation',
       view: 'validation',
       summary: 'Final review & digital school head certification'
     }
@@ -270,18 +335,11 @@ export default function Dashboard() {
     const list = [];
     if (curricularConfig) {
       if (curricularConfig.hasElemSpecialPrograms && curricularConfig.elemSpecialProgram) {
-        list.push({ label: 'Special Science Elementary School (SSES)', icon: '🧪', type: 'Elementary', color: '#047857', bg: '#ECFDF5', border: '#A7F3D0' });
+        list.push({ label: 'Special Science Elementary School (SSES)', type: 'Elementary', color: '#047857', bg: '#ECFDF5', border: '#A7F3D0' });
       }
       if (curricularConfig.hasJhsSpecialPrograms && Array.isArray(curricularConfig.jhsSpecialPrograms)) {
         curricularConfig.jhsSpecialPrograms.forEach(p => {
-          let icon = '⭐';
-          if (p.includes('Arts')) icon = '🎭';
-          else if (p.includes('Journalism')) icon = '📰';
-          else if (p.includes('Sports')) icon = '⚽';
-          else if (p.includes('Foreign Language')) icon = '🌐';
-          else if (p.includes('Science') || p.includes('STE')) icon = '🔬';
-          else if (p.includes('Technical') || p.includes('SPTVE')) icon = '🛠️';
-          list.push({ label: p, icon, type: 'JHS', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' });
+          list.push({ label: p, type: 'JHS', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' });
         });
       }
       if (curricularConfig.shsCurriculumModel && curricularConfig.shsCurriculumModel !== 'standard') {
@@ -292,23 +350,15 @@ export default function Dashboard() {
           : curricularConfig.shsCurriculumModel === 'als-shs'
           ? 'ALS-SHS Curriculum Model'
           : `${curricularConfig.shsCurriculumModel.toUpperCase()} Curriculum Model`;
-        list.push({ label: modelLabel, icon: '🎓', type: 'SHS', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' });
+        list.push({ label: modelLabel, type: 'SHS', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' });
       }
     } else if (schoolInfo.specialPrograms || schoolInfo.shsCurriculumModel) {
       const progs = Array.isArray(schoolInfo.specialPrograms) ? schoolInfo.specialPrograms : [];
       progs.forEach(p => {
-        let icon = '⭐';
-        if (p.includes('SCIENCE ELEMENTARY')) icon = '🧪';
-        else if (p.includes('Arts')) icon = '🎭';
-        else if (p.includes('Journalism')) icon = '📰';
-        else if (p.includes('Sports')) icon = '⚽';
-        else if (p.includes('Foreign Language')) icon = '🌐';
-        else if (p.includes('Science') || p.includes('STE')) icon = '🔬';
-        else if (p.includes('Technical') || p.includes('SPTVE')) icon = '🛠️';
-        list.push({ label: p, icon, type: p.includes('ELEMENTARY') ? 'Elementary' : 'JHS', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' });
+        list.push({ label: p, type: p.includes('ELEMENTARY') ? 'Elementary' : 'JHS', color: '#1D4ED8', bg: '#EFF6FF', border: '#BFDBFE' });
       });
       if (schoolInfo.shsCurriculumModel && schoolInfo.shsCurriculumModel !== 'standard') {
-        list.push({ label: `${schoolInfo.shsCurriculumModel} Model`, icon: '🎓', type: 'SHS', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' });
+        list.push({ label: `${schoolInfo.shsCurriculumModel} Model`, type: 'SHS', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' });
       }
     }
     return list;
@@ -545,11 +595,78 @@ export default function Dashboard() {
                 e.currentTarget.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.35)';
               }}
             >
-              <span>🗺️ Open Node Map</span>
+              <FiMap size={14} />
+              <span>Open Node Map</span>
               <FiArrowRight style={{ fontSize: '15px' }} />
             </button>
         }
       />
+
+      {/* SY 2025-2026 INITIALIZATION BANNER */}
+      {!loading && safePersonnel.length === 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+          border: '1.5px solid #93C5FD',
+          borderRadius: '16px',
+          padding: '18px 24px',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '20px',
+          flexWrap: 'wrap',
+          boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, minWidth: '280px' }}>
+            <div style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              backgroundColor: '#2563EB',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)'
+            }}>
+              <FiUploadCloud size={24} />
+            </div>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '2px 8px', background: '#DBEAFE', border: '1px solid #BFDBFE', borderRadius: '6px', fontSize: '11px', color: '#1E40AF', fontWeight: '800', textTransform: 'uppercase', marginBottom: '4px' }}>
+                Action Required • SY 2025–2026 Data Initialization
+              </div>
+              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1E3A8A' }}>
+                You need to submit your eSF7 file for SY 2025–2026
+              </h4>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#3B82F6' }}>
+                No historical personnel records were detected in the master database. Upload your school's official eSF7 spreadsheet (.xlsb) to automatically populate all faculty profiles, item numbers, and teaching workloads.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setIsUploadModalOpen(true)}
+              style={{
+                padding: '10px 20px',
+                fontSize: '13px',
+                fontWeight: '700',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#2563EB',
+                color: '#FFFFFF',
+                border: 'none',
+                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)'
+              }}
+            >
+              <FiUploadCloud size={16} /> Submit SY 2025–2026 eSF7 Now ➔
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* CONTENT GRID */}
       {loading ? (
@@ -564,7 +681,12 @@ export default function Dashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
             
             {/* CARD 1: SCHOOL OVERVIEW */}
-            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            <div 
+              className="card" 
+              onClick={() => setActiveView('roster')} 
+              style={{ cursor: 'pointer', background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
+              title="Click to open Personnel Roster"
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <FiUsers style={{ color: '#2563EB' }} /> School Personnel Roster
@@ -599,21 +721,26 @@ export default function Dashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
                 <div style={{ background: '#F0F9FF', padding: '8px 6px', borderRadius: '8px', border: '1px solid #BAE6FD', textAlign: 'center' }}>
                   <div style={{ fontSize: '9px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: '0.02em' }}>TEACHING</div>
-                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#0284C7', marginTop: '2px' }}>{teachingCount}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '900', color: '#0284C7' }}>{teachingCount}</div>
                 </div>
-                <div style={{ background: '#F5F3FF', padding: '8px 6px', borderRadius: '8px', border: '1px solid #DDD6FE', textAlign: 'center' }}>
-                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#6D28D9', textTransform: 'uppercase', letterSpacing: '0.02em' }}>RELATED</div>
-                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#7C3AED', marginTop: '2px' }}>{relatedTeachingCount}</div>
+                <div style={{ background: '#FAF5FF', padding: '8px 6px', borderRadius: '8px', border: '1px solid #E9D5FF', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#7E22CE', textTransform: 'uppercase', letterSpacing: '0.02em' }}>RELATED</div>
+                  <div style={{ fontSize: '14px', fontWeight: '900', color: '#9333EA' }}>{relatedTeachingCount}</div>
                 </div>
-                <div style={{ background: '#ECFDF5', padding: '8px 6px', borderRadius: '8px', border: '1px solid #A7F3D0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: '0.02em' }}>NON-TEACHING</div>
-                  <div style={{ fontSize: '15px', fontWeight: '900', color: '#059669', marginTop: '2px' }}>{nonTeachingCount}</div>
+                <div style={{ background: '#F0FDF4', padding: '8px 6px', borderRadius: '8px', border: '1px solid #BBF7D0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '9px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.02em' }}>NON-TEACHING</div>
+                  <div style={{ fontSize: '14px', fontWeight: '900', color: '#16A34A' }}>{nonTeachingCount}</div>
                 </div>
               </div>
             </div>
 
             {/* CARD 2: ORGANIZED CLASSES SUMMARY */}
-            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            <div 
+              className="card" 
+              onClick={() => setActiveView('organized_classes')} 
+              style={{ cursor: 'pointer', background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
+              title="Click to open Organized Classes"
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <FiLayers style={{ color: '#10B981' }} /> Organized Classes
@@ -647,7 +774,12 @@ export default function Dashboard() {
             </div>
 
             {/* CARD 3: MAJOR ALIGNMENT & OUT-OF-FIELD KPI */}
-            <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+            <div 
+              className="card" 
+              onClick={() => setActiveView('validation')} 
+              style={{ cursor: 'pointer', background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
+              title="Click to open Validation Center"
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <FiTarget style={{ color: '#6366F1' }} /> Major Alignment KPI
@@ -669,7 +801,7 @@ export default function Dashboard() {
               </div>
 
               <div style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '14px' }}>🎯</span>
+                <FiTarget size={14} style={{ color: '#4338CA' }} />
                 <span>
                   {totalEvaluated > 0 ? (
                     <><strong>{Math.round((inFieldCount / totalEvaluated) * 100)}%</strong> of evaluated teachers teach their major discipline.</>
@@ -829,7 +961,7 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ fontSize: '12px', color: '#64748B', background: '#F8FAFC', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-                  📊 Total Staff: <strong>{totalPersonnel}</strong> personnel (<strong>{teachingCount}</strong> Teaching, <strong>{relatedTeachingCount}</strong> Related Teaching, <strong>{nonTeachingCount}</strong> Non-Teaching).
+                  Total Staff: <strong>{totalPersonnel}</strong> personnel (<strong>{teachingCount}</strong> Teaching, <strong>{relatedTeachingCount}</strong> Related Teaching, <strong>{nonTeachingCount}</strong> Non-Teaching).
                 </div>
               </div>
 
@@ -854,7 +986,7 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ fontSize: '11.5px', color: '#64748B', background: '#F1F5F9', padding: '8px 12px', borderRadius: '8px' }}>
-                  📌 Regular Permanent staff constitute <strong>{totalPersonnel > 0 ? Math.round(((appointmentCounts['PERMANENT'] || 0) / totalPersonnel) * 100) : 0}%</strong> of the school's personnel roster.
+                  Regular Permanent staff constitute <strong>{totalPersonnel > 0 ? Math.round(((appointmentCounts['PERMANENT'] || 0) / totalPersonnel) * 100) : 0}%</strong> of the school's personnel roster.
                 </div>
               </div>
             </div>
@@ -1022,7 +1154,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-              {/* ⭐ SPECIAL CURRICULAR PROGRAMS & SHS CURRICULUM MODEL SHOWCASE CARD */}
+              {/* SPECIAL CURRICULAR PROGRAMS & SHS CURRICULUM MODEL SHOWCASE CARD */}
               <div className="card" style={{
                 background: '#FFFFFF',
                 borderRadius: '16px',
@@ -1035,7 +1167,7 @@ export default function Dashboard() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '20px' }}>⭐</span>
+                    <FiStar size={18} color="#D97706" />
                     <div>
                       <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0 }}>
                         Special Curricular Programs & SHS Curriculum Model
@@ -1072,7 +1204,7 @@ export default function Dashboard() {
                       e.currentTarget.style.color = 'var(--blue)';
                     }}
                   >
-                    <span>⚙️</span> {activeSpecialPrograms.length > 0 ? 'Edit in School Profile ↗' : 'Configure in School Profile ➔'}
+                    <FiSettings size={13} /> {activeSpecialPrograms.length > 0 ? 'Edit in School Profile ↗' : 'Configure in School Profile ➔'}
                   </button>
                 </div>
 
@@ -1096,7 +1228,7 @@ export default function Dashboard() {
                           boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
                         }}
                       >
-                        <span style={{ fontSize: '16px' }}>{prog.icon}</span>
+                        <FiAward size={15} />
                         <span>{prog.label}</span>
                         <span style={{
                           fontSize: '10px',
@@ -1116,7 +1248,7 @@ export default function Dashboard() {
                 ) : isExplicitlyRegular ? (
                   <div style={{ padding: '14px 18px', borderRadius: '12px', background: '#F0FDF4', border: '1.5px dashed #86EFAC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '18px' }}>✓</span>
+                      <FiCheckCircle size={18} color="#15803D" />
                       <div>
                         <span style={{ fontSize: '13px', fontWeight: '800', color: '#15803D' }}>Regular Basic Education Curriculum Active</span>
                         <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#166534' }}>This school is verified with Standard Basic Education without active special curricular tracks.</p>
@@ -1126,7 +1258,7 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ padding: '16px 20px', borderRadius: '12px', background: '#FFFBEB', border: '1.5px dashed #FCD34D', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '22px' }}>⚠️</span>
+                      <FiAlertCircle size={22} color="#92400E" />
                       <div>
                         <span style={{ fontSize: '13px', fontWeight: '800', color: '#92400E' }}>Special Curricular Programs Not Yet Configured</span>
                         <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#B45309' }}>
@@ -1153,7 +1285,7 @@ export default function Dashboard() {
                         gap: '6px'
                       }}
                     >
-                      <span>⚙️</span> Configure in School Profile ➔
+                      <FiSettings size={13} /> Configure in School Profile ➔
                     </button>
                   </div>
                 )}
@@ -1166,8 +1298,8 @@ export default function Dashboard() {
           <div className="card" style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--navy)', margin: 0 }}>
-                  ⚖️ Teacher Excess & Shortage Summary by Grade Level
+                <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiBarChart2 size={18} /> Teacher Excess & Shortage Summary by Grade Level
                 </h3>
                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
                   Analysis comparing organized class section demand against assigned teacher staffing levels per grade.
@@ -1230,8 +1362,24 @@ export default function Dashboard() {
 
       {/* UPLOAD MODAL */}
       {isUploadModalOpen && (
-        <ESF7UploadModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} />
+        <ESF7UploadModal 
+          isOpen={isUploadModalOpen} 
+          onClose={() => setIsUploadModalOpen(false)}
+          isForceUpload={requiresForceUpload}
+          pendingSchool={pendingSchool}
+          onLogout={handleForceLogout}
+          onImportSuccess={() => {
+            if (showToast) showToast('Faculty profiles auto-populated successfully!', 'success');
+          }}
+        />
       )}
+
+      {/* FORCE LOGOUT CONFIRMATION MODAL */}
+      <ForceLogoutNoticeModal 
+        isOpen={isLogoutNoticeModalOpen}
+        onConfirmLogout={confirmForceLogout}
+        onCancelStay={cancelForceLogout}
+      />
 
     </section>
   );

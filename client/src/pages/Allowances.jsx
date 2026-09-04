@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import PageTransition from '../components/PageTransition';
 import PortalHeader from '../components/PortalHeader';
+import { FiCheck, FiMap, FiArrowRight } from 'react-icons/fi';
 
 export default function Allowances() {
   const { personnel, showToast, allowancesMap, toggleAllowance, schoolInfo, setActiveView } = useApp();
@@ -210,10 +211,19 @@ export default function Allowances() {
                                 borderRadius: '6px',
                                 background: isChecked ? '#dcfce7' : '#f1f5f9',
                                 color: isChecked ? '#15803d' : '#94a3b8',
-                                border: isChecked ? '1px solid #bbf7d0' : '1px solid #e2e8f0'
+                                border: isChecked ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
                               }}
                             >
-                              {isChecked ? '✓ GRANTED' : 'OFF'}
+                              {isChecked ? (
+                                <>
+                                  <FiCheck size={11} /> GRANTED
+                                </>
+                              ) : (
+                                'OFF'
+                              )}
                             </span>
                           </div>
                         );
@@ -265,7 +275,8 @@ export default function Allowances() {
                 gap: '8px'
               }}
             >
-              <span>🗺️ Return to Node Map</span>
+              <FiMap size={14} />
+              <span>Return to Node Map</span>
             </button>
             <button
               type="button"

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FiChevronDown, FiEdit3 } from 'react-icons/fi';
 
 export default function SearchableDropdown({ options = [], value = '', onChange, placeholder = 'Select...', disabled = false, required = false, allowCustom = false }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -48,15 +49,15 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
   return (
     <div ref={wrapperRef} className="searchable-dropdown-container" style={{ position: 'relative', width: '100%' }}>
       <div
-        className="searchable-dropdown-trigger"
+        className={`searchable-dropdown-toggle ${isOpen ? 'active' : ''}`}
         onClick={() => !disabled && setIsOpen(!isOpen)}
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '10px 11px',
-          background: disabled ? '#f1f5f9' : (isRed ? '#FEF2F2' : 'white'),
-          border: disabled ? '1.5px solid #e2e8f0' : (isOpen ? '1.5px solid var(--blue-600, #0284c7)' : (isRed ? '1.5px solid #EF4444' : '1.5px solid var(--line, #BAE6FD)')),
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: disabled ? '#f1f5f9' : 'white',
+          border: isRed ? '1.5px solid var(--red, #EF4444)' : (isOpen ? '1.5px solid var(--blue, #0284C7)' : '1.5px solid var(--line, #BAE6FD)'),
           borderRadius: '12px',
           color: disabled ? '#94a3b8' : (displayValue ? 'var(--text, #0F172A)' : 'var(--muted, #64748B)'),
           cursor: disabled ? 'not-allowed' : 'pointer',
@@ -68,7 +69,9 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
         }}
       >
         <span>{displayValue || placeholder}</span>
-        <span style={{ fontSize: '10px', color: disabled ? '#94a3b8' : 'var(--blue, #075985)', marginLeft: '8px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', color: disabled ? '#94a3b8' : 'var(--blue, #075985)', marginLeft: '8px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
+          <FiChevronDown size={14} />
+        </span>
       </div>
 
       {isOpen && (
@@ -131,7 +134,7 @@ export default function SearchableDropdown({ options = [], value = '', onChange,
                   gap: '6px'
                 }}
               >
-                ✍️ Use Custom: "{search.trim().toUpperCase()}"
+                <FiEdit3 size={13} style={{ flexShrink: 0 }} /> Use Custom: "{search.trim().toUpperCase()}"
               </div>
             )}
             {filteredOptions.length > 0 ? (

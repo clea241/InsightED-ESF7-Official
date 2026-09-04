@@ -3,6 +3,22 @@ import { useApp, DEFAULT_PH_HOLIDAYS, detectPersonnelTypeFromPosition } from '..
 import SearchableDropdown from '../components/SearchableDropdown';
 import PortalHeader from '../components/PortalHeader';
 import { api } from '../services/api';
+import { 
+  FiCalendar, 
+  FiClock, 
+  FiRepeat, 
+  FiBriefcase, 
+  FiTrendingUp, 
+  FiUserX, 
+  FiAlertCircle, 
+  FiCheck, 
+  FiPrinter, 
+  FiRefreshCw, 
+  FiClipboard, 
+  FiX, 
+  FiCheckCircle,
+  FiTrash2 
+} from 'react-icons/fi';
 
 
 // Helper to convert "HH:MM" or "HH:MM AM/PM" time to minutes
@@ -1179,7 +1195,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 2</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🏖️ Absences</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiUserX size={14} /> Absences</div>
         </button>
 
         <button 
@@ -1198,7 +1214,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 3</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>⏰ Tardiness Log</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiClock size={14} /> Tardiness Log</div>
         </button>
 
         <button 
@@ -1217,7 +1233,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 4</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>🔄 Workload Transfers</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiRepeat size={14} /> Workload Transfers</div>
         </button>
 
         <button 
@@ -1236,7 +1252,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 5</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>💼 Work Immersion (for SHS)</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiBriefcase size={14} /> Work Immersion (for SHS)</div>
         </button>
 
         <button 
@@ -1255,7 +1271,7 @@ export default function Overload() {
           }}
         >
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 6</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📈 Teaching Overload</div>
+          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiTrendingUp size={14} /> Teaching Overload</div>
         </button>
       </div>
 
@@ -1266,7 +1282,7 @@ export default function Overload() {
           <article className="card" style={{ height: 'fit-content' }}>
             <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>📅 Interactive School Calendar Picker</h2>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}><FiCalendar size={16} /> Interactive School Calendar Picker</h2>
               </div>
               <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Select a month and click any weekday below to select dates for holidays or class suspensions.</p>
 
@@ -1289,16 +1305,16 @@ export default function Overload() {
               {/* Legend */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#1e40af', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#dbeafe', border: '1px solid #60a5fa' }}></span> 🇵🇭 Nat'l Holiday
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#dbeafe', border: '1px solid #60a5fa' }}></span> Nat'l Holiday
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> 🌴 Local Holiday
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> Local Holiday
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⚠️ Suspension
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> Suspension
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#475569', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#f1f5f9', border: '1px solid #cbd5e1' }}></span> 🛑 Non-Instructional
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#f1f5f9', border: '1px solid #cbd5e1' }}></span> Non-Instructional
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Workday
@@ -1553,10 +1569,10 @@ export default function Overload() {
               {/* Legend */}
               <div style={{ display: 'flex', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⏰ Tardy / Late
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> Tardy / Late
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef3c7', border: '1px solid #fde68a' }}></span> 🏖️ Leave
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef3c7', border: '1px solid #fde68a' }}></span> Leave
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Regular
@@ -1566,7 +1582,7 @@ export default function Overload() {
               {/* Interactive Calendar Grid */}
               {!tardinessTeacherId ? (
                 <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
-                  👈 Please select a teacher above to enable the interactive calendar picker.
+                  Please select a teacher above to enable the interactive calendar picker.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1607,12 +1623,12 @@ export default function Overload() {
                           bg = '#fee2e2';
                           border = '1.5px solid #fca5a5';
                           color = '#991b1b';
-                          badgeText = '⏰ LATE';
+                          badgeText = 'LATE';
                         } else if (isLeave) {
                           bg = '#fee2e2';
                           border = '2px solid #ef4444';
                           color = '#991b1b';
-                          badgeText = '🔒 ABSENT';
+                          badgeText = 'ABSENT';
                         }
 
                         return (
@@ -1726,9 +1742,9 @@ export default function Overload() {
                                   await removePersonnelAbsence(abs.id);
                                 }
                               }}
-                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                              style={{ padding: '4px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
-                              ✕ Remove
+                              <FiTrash2 size={12} /> Remove
                             </button>
                           </td>
                         </tr>
@@ -1754,7 +1770,7 @@ export default function Overload() {
           <article className="card" style={{ height: 'fit-content' }}>
             <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>🏖️ Interactive Leave Range Picker</h2>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}><FiCalendar size={16} /> Interactive Leave Range Picker</h2>
               </div>
               <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Select teacher and leave type, then click a **Start Date** and **End Date** on the calendar to select a range.</p>
 
@@ -1819,10 +1835,10 @@ export default function Overload() {
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> Selected Range
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#1e40af', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#dbeafe', border: '1px solid #60a5fa' }}></span> 🏢 OB / Training
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#dbeafe', border: '1px solid #60a5fa' }}></span> OB / Training
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> ⏰ Tardy
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> Tardy
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Available
@@ -1832,7 +1848,7 @@ export default function Overload() {
               {/* Interactive Calendar Range Grid */}
               {!absentTeacherId ? (
                 <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
-                  👈 Please select a teacher above to enable the interactive calendar range picker.
+                  Please select a teacher above to enable the interactive calendar range picker.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1887,18 +1903,18 @@ export default function Overload() {
                             bg = '#dbeafe';
                             border = '1.5px solid #60a5fa';
                             color = '#1e40af';
-                            badgeText = '🏢 OB / TRN';
+                            badgeText = 'OB / TRN';
                           } else {
                             bg = '#fef3c7';
                             border = '1.5px solid #fde68a';
                             color = '#92400e';
-                            badgeText = '🏖️ ' + (lType.split(' ')[0].toUpperCase());
+                            badgeText = (lType.split(' ')[0].toUpperCase());
                           }
                         } else if (isTardy) {
                           bg = '#fee2e2';
                           border = '1.5px solid #fca5a5';
                           color = '#991b1b';
-                          badgeText = '⏰ LATE';
+                          badgeText = 'LATE';
                         }
 
                         return (
@@ -2089,9 +2105,9 @@ export default function Overload() {
                                     await removePersonnelAbsence(abs.id);
                                   }
                                 }}
-                                style={{ padding: '4px 10px', fontSize: '11px' }}
+                                style={{ padding: '4px 10px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               >
-                                ✕ Remove
+                                <FiTrash2 size={12} /> Remove
                               </button>
                             </td>
                           </tr>
@@ -2117,8 +2133,8 @@ export default function Overload() {
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>ABSENT TEACHER (WITH RECORDED ABSENCES)</label>
                   {personnelWithAbsences.length === 0 ? (
-                    <div style={{ padding: '10px 12px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '8px', color: '#B45309', fontSize: '12px', fontWeight: 'bold' }}>
-                      ⚠️ No teachers with recorded absences found. Please log an absence in Step 2 first.
+                    <div style={{ padding: '10px 12px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '8px', color: '#B45309', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FiAlertCircle size={14} /> No teachers with recorded absences found. Please log an absence in Step 2 first.
                     </div>
                   ) : (
                     <SearchableDropdown 
@@ -2168,8 +2184,8 @@ export default function Overload() {
                                       style={{ color: conflictInfo.hasConflict ? '#b91c1c' : '#15803d' }}
                                     >
                                       {conflictInfo.hasConflict 
-                                        ? `⚠️ WITH CONFLICT: ${p.lastName}, ${p.firstName} (${p.position}) — ${conflictInfo.conflictingSubject} (${conflictInfo.conflictingTime})`
-                                        : `✓ AVAILABLE: ${p.lastName}, ${p.firstName} (${p.position})`
+                                        ? `[CONFLICT] ${p.lastName}, ${p.firstName} (${p.position}) — ${conflictInfo.conflictingSubject} (${conflictInfo.conflictingTime})`
+                                        : `[AVAILABLE] ${p.lastName}, ${p.firstName} (${p.position})`
                                       }
                                     </option>
                                   );
@@ -2187,7 +2203,8 @@ export default function Overload() {
                 <div style={{ marginTop: '4px', background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1.5px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span>📅 Select Logged Absence Period to Transfer</span>
+                      <FiCalendar size={13} />
+                      <span>Select Logged Absence Period to Transfer</span>
                       <span style={{ color: '#EF4444' }}>*</span>
                     </label>
                     {transferAbsentTeacherId && (
@@ -2199,15 +2216,15 @@ export default function Overload() {
 
                   {!transferAbsentTeacherId ? (
                     <div style={{ padding: '16px', background: '#FFFFFF', borderRadius: '10px', border: '1.5px dashed #CBD5E1', textAlign: 'center', fontSize: '12px', color: '#64748B' }}>
-                      👈 Please select an absent teacher above to view their recorded absence periods.
+                      Please select an absent teacher above to view their recorded absence periods.
                     </div>
                   ) : (() => {
                     const teacherAbsenceRecords = absences.filter(a => String(a.personnelId || a.personnel_id) === String(transferAbsentTeacherId));
 
                     if (teacherAbsenceRecords.length === 0) {
                       return (
-                        <div style={{ padding: '14px', background: '#FEF2F2', borderRadius: '10px', border: '1.5px solid #FCA5A5', color: '#991B1B', fontSize: '12px', textAlign: 'center' }}>
-                          ⚠️ No recorded absences found for this teacher. Please log their leave or absence dates in <strong>Step 2: Absences & Leave</strong> first before delegating workloads.
+                        <div style={{ padding: '14px', background: '#FEF2F2', borderRadius: '10px', border: '1.5px solid #FCA5A5', color: '#991B1B', fontSize: '12px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          <FiAlertCircle size={14} /> No recorded absences found for this teacher. Please log their leave or absence dates in <strong>Step 2: Absences & Leave</strong> first before delegating workloads.
                         </div>
                       );
                     }
@@ -2270,15 +2287,15 @@ export default function Overload() {
                                       {dayCount} {dayCount === 1 ? 'Day' : 'Days'}
                                     </span>
                                   </div>
-                                  <div style={{ fontSize: '12px', fontWeight: '700', color: isSelected ? '#0284C7' : '#334155', marginTop: '2px' }}>
-                                    📅 {sStr} {eStr && eStr !== sStr ? `➔ ${eStr}` : ''}
+                                  <div style={{ fontSize: '12px', fontWeight: '700', color: isSelected ? '#0284C7' : '#334155', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <FiCalendar size={12} /> {sStr} {eStr && eStr !== sStr ? `➔ ${eStr}` : ''}
                                   </div>
                                 </div>
                               </div>
 
                               {isSelected && (
-                                <span style={{ fontSize: '11px', fontWeight: '800', color: '#0284C7', background: '#DBEAFE', padding: '3px 8px', borderRadius: '6px' }}>
-                                  ✓ Selected
+                                <span style={{ fontSize: '11px', fontWeight: '800', color: '#0284C7', background: '#DBEAFE', padding: '3px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <FiCheck size={11} /> Selected
                                 </span>
                               )}
                             </div>
@@ -2291,7 +2308,7 @@ export default function Overload() {
                   {/* Range Status Confirmation Preview */}
                   {transferStartDate && (
                     <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', background: '#EFF6FF', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #BAE6FD', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                      <span>✓ Active Coverage Delegation: <strong>{transferStartDate}</strong> {transferEndDate && transferEndDate !== transferStartDate ? `to ${transferEndDate}` : ''}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheckCircle size={13} /> Active Coverage Delegation: <strong>{transferStartDate}</strong> {transferEndDate && transferEndDate !== transferStartDate ? `to ${transferEndDate}` : ''}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -2300,9 +2317,9 @@ export default function Overload() {
                           setTransferStartDate('');
                           setTransferEndDate('');
                         }}
-                        style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontWeight: '800', fontSize: '11px' }}
+                        style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontWeight: '800', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                       >
-                        ✕ Clear
+                        <FiX size={11} /> Clear
                       </button>
                     </div>
                   )}
@@ -2475,7 +2492,7 @@ export default function Overload() {
 
               {!workImmersionTeacherId ? (
                 <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '13px' }}>
-                  👈 Please select a teacher on the left to record work immersion minutes.
+                  Please select a teacher on the left to record work immersion minutes.
                 </div>
               ) : workImmersionLoading ? (
                 <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '13px' }}>
@@ -2598,17 +2615,17 @@ export default function Overload() {
                   title="Re-fetch workload data from database"
                   style={{ padding: '8px 12px', background: freshLoading ? '#e2e8f0' : '#f0fdf4', color: freshLoading ? '#94a3b8' : '#15803d', border: '1.5px solid #86efac', borderRadius: '8px', fontWeight: 'bold', cursor: freshLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
-                  {freshLoading ? '⏳' : '🔄'} Refresh
+                  <FiRefreshCw size={13} style={{ display: 'inline', marginRight: '4px' }} /> Refresh
                 </button>
-                <button className="btn" onClick={handleGeneratePDF} style={{ padding: '8px 16px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  🖨️ Generate Report (PDF)
+                <button className="btn" onClick={handleGeneratePDF} style={{ padding: '8px 16px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <FiPrinter size={14} /> Generate Report (PDF)
                 </button>
               </div>
             </div>
 
             {freshLoading && (
               <div style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '20px', animation: 'spin 1s linear infinite' }}>⏳</span>
+                <FiRefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
                 <span style={{ fontSize: '14px', fontWeight: '600' }}>Loading teacher workload data from database...</span>
               </div>
             )}
@@ -2718,18 +2735,20 @@ export default function Overload() {
                                           fontWeight: 'bold',
                                           fontSize: '12px',
                                           lineHeight: 1,
-                                          padding: 0
+                                          padding: 0,
+                                          display: 'flex',
+                                          alignItems: 'center'
                                         }}
                                         title="Remove Reason"
                                       >
-                                        ✕
+                                        <FiX size={12} />
                                       </button>
                                     </div>
                                   ))}
 
                                   {isInvalid && (
-                                    <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 'bold' }}>
-                                      ⚠️ At least 1 reason required
+                                    <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <FiAlertCircle size={12} /> At least 1 reason required
                                     </div>
                                   )}
                                 </div>
@@ -2771,9 +2790,9 @@ export default function Overload() {
                     <tr>
                       <td colSpan="8" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '24px' }}>📋</span>
+                          <FiClipboard size={24} color="#64748B" />
                           <span style={{ fontWeight: '600', color: 'var(--navy)' }}>No overload-eligible teachers found.</span>
-                          <span style={{ fontSize: '12px' }}>Make sure teachers have their workload saved in the Workload section, then click <strong>🔄 Refresh</strong> above.</span>
+                          <span style={{ fontSize: '12px' }}>Make sure teachers have their workload saved in the Workload section, then click <strong>Refresh</strong> above.</span>
                           <span style={{ fontSize: '11px', color: '#94a3b8' }}>Total personnel loaded: {effectivePersonnel.length} | Eligible: {overloadEligiblePersonnel.length}</span>
                         </div>
                       </td>

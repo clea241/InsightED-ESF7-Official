@@ -4,10 +4,13 @@ import {
   OFFICIAL_DESIGNATIONS,
   DESIGNATION_GRADE_LEVELS,
   SHS_TRACKS,
-  SUBJECT_OPTIONS
+  SUBJECT_OPTIONS,
+  PRIMARY_LEARNING_AREAS,
+  getRegularSectionsEnrollment
 } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import PortalHeader from '../components/PortalHeader';
+import { FiCheckCircle, FiAlertCircle, FiCheck, FiShield, FiFileText, FiFolder, FiUsers, FiUser, FiSearch, FiTag, FiBook, FiGrid, FiList, FiTrash2, FiX } from 'react-icons/fi';
 
 function SdsToggle({ checked, onChange }) {
   return (
@@ -39,21 +42,28 @@ function SdsToggle({ checked, onChange }) {
         }}
       />
       <span style={{ fontSize: '10px', fontWeight: '800', color: checked ? '#15803D' : '#64748B', letterSpacing: '0.3px' }}>
-        {checked ? '✓ APPROVED BY SDS' : 'APPROVE BY SDS'}
+        {checked ? 'APPROVED BY SDS' : 'APPROVE BY SDS'}
       </span>
     </button>
   );
 }
 
 export default function Designations() {
-  const { personnel, setPersonnel, savePersonnelChanges, schoolEdited, schoolInfo, showToast, completeNode, setActiveView } = useApp();
+  const { personnel, setPersonnel, savePersonnelChanges, schoolEdited, schoolInfo, classSections, showToast, completeNode, setActiveView } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'matrix'
+
+  // Dynamic enrollment calculation from regular sections
+  const regularEnrollment = useMemo(() => {
+    return getRegularSectionsEnrollment(classSections);
+  }, [classSections]);
+
+  const isAshRequired = regularEnrollment >= 1001;
 
   // Local state for parameterized choices per card
   const [cardParams, setCardParams] = useState({
     grade_level_chairperson: { grade: 'Grade 1' },
-    learning_area_chairperson: { grade: 'Grade 1' },
+    learning_area_chairperson: { learningArea: 'Filipino' },
     department_head_ecp: { grade: 'Grade 1', learningArea: 'English', track: 'ACADEMIC' }
   });
 
@@ -100,24 +110,24 @@ export default function Designations() {
     if (hasSHS) {
       grades.push('Grade 11', 'Grade 12');
     }
-    return Array.from(new Set(grades));
-  }, [schoolInfo?.curricularOffering]);
+    return grades.length > 0 ? grades : DESIGNATION_GRADE_LEVELS;
+  }, [schoolInfo]);
 
-  // Helper to get selected params for a card
+  // Helper to read current active parameters for a card
   const getParams = (desigId) => {
-    const defaultGrade = offeredGradeLevels[0] || 'Grade 1';
-    return cardParams[desigId] || { grade: defaultGrade, learningArea: activeSubjects[0] || 'English', track: 'ACADEMIC' };
+    return cardParams[desigId] || {};
   };
 
-  // Helper to update params for a card
-  const handleParamChange = (desigId, field, value) => {
+  // Helper to update card parameters
+  const handleParamChange = (desigId, paramKey, value) => {
     setCardParams(prev => ({
       ...prev,
       [desigId]: {
-        ...getParams(desigId),
-        [field]: value
+        ...(prev[desigId] || {}),
+        [paramKey]: value
       }
     }));
+    // Clear any previous constraint error for this card
     setConstraintErrors(prev => ({ ...prev, [desigId]: null }));
   };
 
@@ -128,7 +138,7 @@ export default function Designations() {
       return `GRADE LEVEL CHAIRPERSON - ${params.grade}`;
     }
     if (desig.id === 'learning_area_chairperson') {
-      return `LEARNING AREA CHAIRPERSON - ${params.grade}`;
+      return `LEARNING AREA CHAIRPERSON - ${params.learningArea || 'Filipino'}`;
     }
     if (desig.id === 'department_head_ecp') {
       const grade = params.grade;
@@ -260,15 +270,15 @@ export default function Designations() {
           if (completeNode) completeNode('designation', 'validation');
           setActiveView('validation');
         }}
-        continueText="Save & Continue to Validation ➔"
+        continueText="Save & Continue to Validation"
       />
       <article className="card">
         <div style={{ padding: '24px' }}>
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: 'var(--navy)' }}>
-                ⚜ School Designation Management
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiTag size={20} /> School Designation Management
               </h2>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--muted)' }}>
                 Assign official school designations, SDS approval status, and manage required DepEd school roles.
@@ -288,10 +298,13 @@ export default function Designations() {
                     color: viewMode === 'card' ? 'white' : '#475569',
                     fontSize: '12px',
                     fontWeight: '800',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
                   }}
                 >
-                  ▦ Card View
+                  <FiGrid size={13} /> Card View
                 </button>
                 <button
                   type="button"
@@ -303,10 +316,13 @@ export default function Designations() {
                     color: viewMode === 'matrix' ? 'white' : '#475569',
                     fontSize: '12px',
                     fontWeight: '800',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
                   }}
                 >
-                  ▤ Matrix View
+                  <FiList size={13} /> Matrix View
                 </button>
               </div>
 
@@ -327,19 +343,36 @@ export default function Designations() {
                     boxSizing: 'border-box'
                   }}
                 />
-                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', fontSize: '14px' }}>🔍</span>
+                <FiSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', fontSize: '14px' }} />
               </div>
             </div>
           </div>
 
-          {/* 4 MANDATORY DESIGNATIONS STATUS BANNER */}
+          {/* MANDATORY DESIGNATIONS STATUS BANNER */}
           {(() => {
             const reqList = [
-              { id: 'guidance_designate', name: 'Guidance Designate', key: 'GUIDANCE DESIGNATE', icon: '🛡️' },
-              { id: 'learner_information_officer', name: 'Learner Information Officer', key: 'LEARNER INFORMATION OFFICER', altKey: 'LEARNER FORMATION OFFICER', icon: '📊' },
-              { id: 'department_head_designate', name: 'Department Head Designate', key: 'DEPARTMENT HEAD DESIGNATE', icon: '📑' },
-              { id: 'assistant_school_head_designate', name: 'Assistant School Head Designate', key: 'ASSISTANT SCHOOL HEAD DESIGNATE', icon: '🏫' }
+              { id: 'guidance_designate', name: 'Guidance Designate', key: 'GUIDANCE DESIGNATE', icon: <FiShield size={14} />, isRequired: true },
+              { id: 'learner_information_officer', name: 'Learner Information Officer', key: 'LEARNER INFORMATION OFFICER', altKey: 'LEARNER FORMATION OFFICER', icon: <FiFileText size={14} />, isRequired: true },
+              { id: 'department_head_designate', name: 'Department Head Designate', key: 'DEPARTMENT HEAD DESIGNATE', icon: <FiFolder size={14} />, isRequired: true }
             ];
+
+            if (isAshRequired) {
+              reqList.push({
+                id: 'assistant_school_head_designate',
+                name: 'Assistant School Head Designate',
+                key: 'ASSISTANT SCHOOL HEAD DESIGNATE',
+                icon: <FiUsers size={14} />,
+                isRequired: true
+              });
+            } else {
+              reqList.push({
+                id: 'assistant_school_head_designate',
+                name: 'Assistant School Head Designate',
+                key: 'ASSISTANT SCHOOL HEAD DESIGNATE',
+                icon: <FiUsers size={14} />,
+                isRequired: false
+              });
+            }
 
             const statusList = reqList.map(r => {
               const assigned = activePersonnel.filter(p => {
@@ -349,8 +382,10 @@ export default function Designations() {
               return { ...r, assigned, count: assigned.length };
             });
 
-            const allAssigned = statusList.every(s => s.count > 0);
-            const assignedCount = statusList.filter(s => s.count > 0).length;
+            const requiredRoles = statusList.filter(s => s.isRequired);
+            const allAssigned = requiredRoles.every(s => s.count > 0);
+            const assignedCount = requiredRoles.filter(s => s.count > 0).length;
+            const totalRequiredCount = requiredRoles.length;
 
             return (
               <div style={{
@@ -362,15 +397,19 @@ export default function Designations() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>{allAssigned ? '✅' : '⚠️'}</span>
+                    {allAssigned ? <FiCheckCircle size={20} color="#15803D" /> : <FiAlertCircle size={20} color="#991B1B" />}
                     <div>
                       <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: allAssigned ? '#15803D' : '#991B1B' }}>
-                        Mandatory DepEd Designations ({assignedCount}/4 Assigned)
+                        Mandatory DepEd Designations ({assignedCount}/{totalRequiredCount} Assigned)
                       </h4>
                       <p style={{ margin: '2px 0 0', fontSize: '12px', color: allAssigned ? '#166534' : '#B91C1C' }}>
-                        {allAssigned 
-                          ? 'All 4 required school designations are assigned and ready for eSF7 validation.' 
-                          : '4 official school roles are mandatory for validation: Guidance Designate, Learner Information Officer, Department Head Designate, and Assistant School Head Designate.'}
+                        {isAshRequired
+                          ? (allAssigned 
+                              ? `All 4 mandatory designations assigned (School regular enrollment: ${regularEnrollment} learners).`
+                              : `4 official roles are mandatory for schools with 1,001+ regular learners (Current enrollment: ${regularEnrollment}).`)
+                          : (allAssigned
+                              ? `All 3 mandatory designations assigned. Assistant School Head is optional (School regular enrollment: ${regularEnrollment} <= 1,000).`
+                              : `3 official roles are mandatory for validation (Guidance, LIO, Department Head). Assistant School Head is optional (School regular enrollment: ${regularEnrollment} <= 1,000).`)}
                       </p>
                     </div>
                   </div>
@@ -382,7 +421,7 @@ export default function Designations() {
                     fontWeight: '800',
                     fontSize: '11px'
                   }}>
-                    {allAssigned ? '✓ FULLY COMPLIANT' : 'ACTION REQUIRED'}
+                    {allAssigned ? 'FULLY COMPLIANT' : 'ACTION REQUIRED'}
                   </span>
                 </div>
 
@@ -390,7 +429,7 @@ export default function Designations() {
                   {statusList.map(s => (
                     <div key={s.id} style={{
                       background: '#FFFFFF',
-                      border: s.count > 0 ? '1px solid #BBF7D0' : '1px solid #FECACA',
+                      border: s.count > 0 ? '1px solid #BBF7D0' : (s.isRequired ? '1px solid #FECACA' : '1px solid #E2E8F0'),
                       borderRadius: '10px',
                       padding: '10px 12px',
                       display: 'flex',
@@ -403,10 +442,10 @@ export default function Designations() {
                           <span>{s.icon}</span>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
                         </div>
-                        <div style={{ fontSize: '11px', color: s.count > 0 ? '#15803D' : '#DC2626', fontWeight: '600', marginTop: '2px' }}>
+                        <div style={{ fontSize: '11px', color: s.count > 0 ? '#15803D' : (s.isRequired ? '#DC2626' : '#64748B'), fontWeight: '600', marginTop: '2px' }}>
                           {s.count > 0 
-                            ? `✓ ${s.assigned[0].firstName} ${s.assigned[0].lastName}`
-                            : '⚠️ Vacant (Required)'}
+                            ? `${s.assigned[0].firstName} ${s.assigned[0].lastName}`
+                            : (s.isRequired ? 'Vacant (Required)' : 'Vacant (Optional)')}
                         </div>
                       </div>
                     </div>
@@ -431,7 +470,7 @@ export default function Designations() {
                 const isSHS = isDepartmentHead && ['Grade 11', 'Grade 12'].includes(params.grade);
 
                 const constraintError = constraintErrors[desig.id];
-                const isRequired = Boolean(desig.isRequired);
+                const isRequired = desig.id === 'assistant_school_head_designate' ? isAshRequired : Boolean(desig.isRequired);
 
                 // Total assignments count across all offered grades for parameterized designations
                 const totalAssignedForDesig = activePersonnel.filter(p => {
@@ -504,7 +543,7 @@ export default function Designations() {
                       {desig.id === 'grade_level_chairperson' ? (
                         <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
                           <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>📋 Quick-Assign per Offered Grade Level ({offeredGradeLevels.length} Grades in School)</span>
+                            <span>Quick-Assign per Offered Grade Level ({offeredGradeLevels.length} Grades in School)</span>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '10px' }}>
                             {offeredGradeLevels.map(grade => {
@@ -516,12 +555,12 @@ export default function Designations() {
                                 <div key={grade} style={{ background: '#FFFFFF', border: assignedToGrade.length > 0 ? '1.5px solid #BAE6FD' : '1px dashed #CBD5E1', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: '800', fontSize: '12px', color: '#0F172A', background: '#F1F5F9', padding: '3px 8px', borderRadius: '6px' }}>
-                                      🏷️ {grade}
+                                      {grade}
                                     </span>
                                     {assignedToGrade.length > 0 ? (
-                                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#16A34A' }}>✓ ASSIGNED</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#16A34A', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><FiCheck size={11} /> ASSIGNED</span>
                                     ) : (
-                                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8' }}>⚪ Vacant</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8' }}>Vacant</span>
                                     )}
                                   </div>
 
@@ -529,8 +568,8 @@ export default function Designations() {
                                     {assignedToGrade.length > 0 ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: '#EFF6FF', padding: '8px', borderRadius: '8px', border: '1px solid #BFDBFE' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <div style={{ fontSize: '12px', fontWeight: '800', color: '#0369A1' }}>
-                                            👤 {assignedToGrade[0].firstName} {assignedToGrade[0].lastName}
+                                          <div style={{ fontSize: '12px', fontWeight: '800', color: '#0369A1', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <FiUser size={12} /> {assignedToGrade[0].firstName} {assignedToGrade[0].lastName}
                                           </div>
                                           <button
                                             type="button"
@@ -568,48 +607,26 @@ export default function Designations() {
                       ) : desig.id === 'learning_area_chairperson' ? (
                         /* SPECIAL VIEW 2: LEARNING AREA CHAIRPERSON QUICK-ASSIGN */
                         <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
-                          <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', marginBottom: '8px' }}>
-                            🏷️ Select Offered Grade Level to Assign Subject Leaders:
-                          </div>
-                          {/* Grade Selector Tabs */}
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                            {offeredGradeLevels.map(g => (
-                              <button
-                                key={g}
-                                type="button"
-                                onClick={() => handleParamChange(desig.id, 'grade', g)}
-                                style={{
-                                  padding: '6px 12px',
-                                  borderRadius: '8px',
-                                  border: params.grade === g ? '1.5px solid #0284C7' : '1px solid #CBD5E1',
-                                  background: params.grade === g ? '#0284C7' : '#FFFFFF',
-                                  color: params.grade === g ? '#FFFFFF' : '#475569',
-                                  fontSize: '11px',
-                                  fontWeight: '800',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                {g}
-                              </button>
-                            ))}
+                          <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Primary Learning Area Subject Leaders ({PRIMARY_LEARNING_AREAS.length} Primary Learning Areas)</span>
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '10px' }}>
-                            {activeSubjects.map(sub => {
-                              const subKey = `LEARNING AREA CHAIRPERSON - ${params.grade} - ${sub}`;
-                              const assignedForSub = activePersonnel.filter(p => isAssignedToKey(p.designation, subKey) || isAssignedToKey(p.designation, `LEARNING AREA CHAIRPERSON - ${params.grade}`));
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '10px' }}>
+                            {PRIMARY_LEARNING_AREAS.map(sub => {
+                              const subKey = `LEARNING AREA CHAIRPERSON - ${sub}`;
+                              const assignedForSub = activePersonnel.filter(p => isAssignedToKey(p.designation, subKey));
                               const availableForSub = activePersonnel.filter(p => !isAssignedToKey(p.designation, subKey));
 
                               return (
                                 <div key={sub} style={{ background: '#FFFFFF', border: assignedForSub.length > 0 ? '1.5px solid #BAE6FD' : '1px dashed #CBD5E1', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: '800', fontSize: '12px', color: '#0F172A' }}>
-                                      📚 {sub}
+                                      {sub}
                                     </span>
                                     {assignedForSub.length > 0 ? (
-                                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#16A34A' }}>✓ ASSIGNED</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '800', color: '#16A34A', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><FiCheck size={11} /> ASSIGNED</span>
                                     ) : (
-                                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8' }}>⚪ Vacant</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8' }}>Vacant</span>
                                     )}
                                   </div>
 
@@ -617,8 +634,8 @@ export default function Designations() {
                                     {assignedForSub.length > 0 ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: '#EFF6FF', padding: '6px 8px', borderRadius: '8px', border: '1px solid #BFDBFE' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <div style={{ fontSize: '12px', fontWeight: '800', color: '#0369A1' }}>
-                                            👤 {assignedForSub[0].firstName} {assignedForSub[0].lastName}
+                                          <div style={{ fontSize: '12px', fontWeight: '800', color: '#0369A1', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <FiUser size={12} /> {assignedForSub[0].firstName} {assignedForSub[0].lastName}
                                           </div>
                                           <button
                                             type="button"
@@ -641,7 +658,7 @@ export default function Designations() {
                                           const person = availableForSub.find(p => `${p.firstName} ${p.lastName} (${p.position || 'Teacher'})` === val);
                                           if (person) handleAssignDirectKey(subKey, person.id, false);
                                         }}
-                                        placeholder={`Assign ${sub} Chair...`}
+                                        placeholder={`Assign ${sub} Chairperson...`}
                                       />
                                     )}
                                   </div>
@@ -654,7 +671,7 @@ export default function Designations() {
                         /* SPECIAL VIEW 3: DEPARTMENT HEAD (BASED ON ECP) */
                         <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
                           <div style={{ fontSize: '11px', fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', marginBottom: '8px' }}>
-                            🏷️ Select Department Cluster ({offeredGradeLevels.length} Offered Grades in School):
+                            Select Department Cluster ({offeredGradeLevels.length} Offered Grades in School):
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
                             {offeredGradeLevels.map(g => (
@@ -685,8 +702,8 @@ export default function Designations() {
                             </div>
 
                             {constraintError && (
-                              <div style={{ padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '8px', color: '#991B1B', fontSize: '11px', fontWeight: '700' }}>
-                                ⚠️ {constraintError}
+                              <div style={{ padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '8px', color: '#991B1B', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <FiAlertCircle size={14} /> {constraintError}
                               </div>
                             )}
 
@@ -694,8 +711,8 @@ export default function Designations() {
                               {assignedPersonnel.length > 0 ? (
                                 <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '10px 12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <div>
-                                    <div style={{ fontSize: '13px', fontWeight: '800', color: '#0369A1' }}>
-                                      👤 {assignedPersonnel[0].firstName} {assignedPersonnel[0].lastName}
+                                    <div style={{ fontSize: '13px', fontWeight: '800', color: '#0369A1', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <FiUser size={13} /> {assignedPersonnel[0].firstName} {assignedPersonnel[0].lastName}
                                     </div>
                                     <div style={{ fontSize: '11px', color: '#64748B' }}>{assignedPersonnel[0].position || 'Teacher'}</div>
                                     <div style={{ marginTop: '4px' }}>
@@ -840,11 +857,11 @@ export default function Designations() {
                           {assignedPersonnel.length === 0 ? (
                             desig.isRequired ? (
                               <span style={{ padding: '3px 8px', borderRadius: '999px', background: '#FEF2F2', color: '#DC2626', fontSize: '11px', fontWeight: '800', border: '1px solid #FCA5A5' }}>
-                                ⚠️ Vacant (Required)
+                                Vacant (Required)
                               </span>
                             ) : (
                               <span style={{ padding: '3px 8px', borderRadius: '999px', background: '#F8FAFC', color: '#94A3B8', fontSize: '11px', fontWeight: '700', border: '1px solid #CBD5E1' }}>
-                                ⚪ Vacant
+                                Vacant
                               </span>
                             )
                           ) : (
@@ -855,8 +872,8 @@ export default function Designations() {
                                 return (
                                   <div key={person.id} style={{ background: '#EFF6FF', border: '1px solid #BAE6FD', padding: '8px', borderRadius: '8px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <span style={{ fontWeight: '800', color: '#0369A1', fontSize: '12px' }}>
-                                        👤 {person.firstName} {person.lastName}
+                                      <span style={{ fontWeight: '800', color: '#0369A1', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <FiUser size={12} /> {person.firstName} {person.lastName}
                                       </span>
                                       <button type="button" onClick={() => handleRemovePersonnel(person.id, targetKey)} style={{ background: '#FEE2E2', color: '#EF4444', border: 'none', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }}>
                                         ✕

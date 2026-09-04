@@ -29,11 +29,12 @@ const PinLogin = ({ rememberedUser, onSwitchAccount, onUsePassword }) => {
     const identifier = rememberedUser?.school_id || rememberedUser?.schoolId || rememberedUser?.email;
 
     try {
-      const response = await fetch('/api/auth/pin-login', {
+      const response = await fetch('/api/auth/passcode-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           school_id: identifier,
+          passcode: completedPin,
           pin: completedPin
         })
       });
@@ -43,7 +44,7 @@ const PinLogin = ({ rememberedUser, onSwitchAccount, onUsePassword }) => {
       if (response.ok && data.success && data.user && data.token) {
         login(data.user, data.token);
       } else {
-        setError(data.error || 'Incorrect PIN');
+        setError(data.error || 'Incorrect Passcode');
         setPin(''); 
       }
     } catch (err) {
@@ -80,7 +81,7 @@ const PinLogin = ({ rememberedUser, onSwitchAccount, onUsePassword }) => {
         Welcome, {rememberedUser?.school_id || 'School Head'}!
       </h2>
       <p style={{ color: '#64748b', marginBottom: '24px', fontSize: '14px' }}>
-        Enter your 6-digit PIN to continue
+        Enter your 6-digit Passcode to continue
       </p>
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '32px' }}>

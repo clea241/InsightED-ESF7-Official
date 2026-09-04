@@ -27,7 +27,11 @@ async function createEducationTable() {
           id VARCHAR(50) PRIMARY KEY,
           personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
           
-          college_degree TEXT NOT NULL,
+          highest_educational_attainment TEXT NOT NULL DEFAULT 'COLLEGE GRADUATE / BACCALAUREATE',
+          shs_track TEXT,
+          vocational_course TEXT,
+          vocational_level TEXT,
+          college_degree TEXT,
           major TEXT,
           minor TEXT,
           post_graduate_degree TEXT DEFAULT 'N/A',
@@ -41,6 +45,13 @@ async function createEducationTable() {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      -- Safe Alterations for existing databases
+      ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS highest_educational_attainment TEXT NOT NULL DEFAULT 'COLLEGE GRADUATE / BACCALAUREATE';
+      ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS shs_track TEXT;
+      ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS vocational_course TEXT;
+      ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS vocational_level TEXT;
+      ALTER TABLE esf7_perssonel_educ ALTER COLUMN college_degree DROP NOT NULL;
 
       CREATE INDEX IF NOT EXISTS idx_esf7_perssonel_educ_personnel ON esf7_perssonel_educ (personnel_id);
     `);

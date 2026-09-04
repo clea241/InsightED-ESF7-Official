@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
 import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
 import PortalHeader from '../components/PortalHeader';
+import { FiFileText, FiPrinter, FiShield, FiCheckCircle, FiCheck, FiRepeat, FiEdit3, FiUploadCloud } from 'react-icons/fi';
 
 
 export default function ValidationCenter() {
@@ -391,9 +392,19 @@ export default function ValidationCenter() {
                   gap: '8px',
                   transition: 'all 0.2s ease'
                 }}
-                title={errors.length > 0 ? `⚠️ Preview Draft Report (${errors.length} pending validation issues)` : "Print Official Certified eSF7 Report"}
+                title={errors.length > 0 ? `Preview Draft Report (${errors.length} pending validation issues)` : "Print Official Certified eSF7 Report"}
               >
-                <span>{errors.length > 0 ? '📄 Preview Draft eSF7' : '🖨️ Print Official eSF7 Report'}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  {errors.length > 0 ? (
+                    <>
+                      <FiFileText size={15} /> <span>Preview Draft eSF7</span>
+                    </>
+                  ) : (
+                    <>
+                      <FiPrinter size={15} /> <span>Print Official eSF7 Report</span>
+                    </>
+                  )}
+                </span>
                 {errors.length > 0 && (
                   <span style={{ background: '#EF4444', color: 'white', fontSize: '10px', padding: '2px 7px', borderRadius: '10px', fontWeight: '800' }}>
                     {errors.length} Issues
@@ -428,7 +439,7 @@ export default function ValidationCenter() {
                 gap: '8px'
               }}
             >
-              🛡️ Validation Issues & Submission
+              <FiShield size={16} /> Validation Issues & Submission
               {errors.length > 0 && (
                 <span style={{
                   background: '#EF4444',
@@ -460,7 +471,7 @@ export default function ValidationCenter() {
                 gap: '8px'
               }}
             >
-              📊 Teacher Class Programs (VIEW Sheet Preview)
+              <FiFileText size={16} /> Teacher Class Programs (VIEW Sheet Preview)
               <span style={{
                 background: '#3B82F6',
                 color: 'white',
@@ -498,8 +509,8 @@ export default function ValidationCenter() {
 
           <div id="validationList" className="issue-list" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {issues.length === 0 ? (
-              <div className="issue" style={{ borderLeftColor: 'var(--green)', background: '#F0FDF4', color: '#166534' }}>
-                ✓ All personnel records are fully validated and ready for submission!
+              <div className="issue" style={{ borderLeftColor: 'var(--green)', background: '#F0FDF4', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FiCheck size={16} /> All personnel records are fully validated and ready for submission!
               </div>
             ) : (
               issues.map(issue => (
@@ -584,7 +595,7 @@ export default function ValidationCenter() {
                   gap: '12px'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>✅</span>
+                    <FiCheckCircle size={18} color="#166534" />
                     <strong style={{ color: '#166534', fontSize: '14px' }}>
                       eSF7 Document Certified & Submitted
                     </strong>
@@ -620,7 +631,7 @@ export default function ValidationCenter() {
                           e.currentTarget.style.background = '#EFF6FF';
                         }}
                       >
-                        🔄 Did you make changes and want to submit again?
+                        <FiRepeat size={14} /> Did you make changes and want to submit again?
                       </button>
                     </div>
                   )}
@@ -759,7 +770,7 @@ export default function ValidationCenter() {
                               <img src={signature} alt="School Head E-Signature" style={{ maxHeight: '50px', maxWidth: '160px', objectFit: 'contain' }} />
                             </div>
                             <div>
-                              <span style={{ fontSize: '12px', color: '#059669', fontWeight: '700', display: 'block' }}>✓ E-Signature Attached & Verified</span>
+                              <span style={{ fontSize: '12px', color: '#059669', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}><FiCheckCircle size={14} /> E-Signature Attached & Verified</span>
                               <span style={{ fontSize: '11px', color: '#64748B' }}>Click "Re-sign" to draw or upload a new signature image.</span>
                             </div>
                           </div>
@@ -767,9 +778,9 @@ export default function ValidationCenter() {
                             <button
                               type="button"
                               onClick={() => setShowSignatureModal(true)}
-                              style={{ padding: '6px 14px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: '1.5px solid var(--blue, #2563EB)', background: '#EFF6FF', color: 'var(--blue, #2563EB)', cursor: 'pointer' }}
+                              style={{ padding: '6px 14px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: '1.5px solid var(--blue, #2563EB)', background: '#EFF6FF', color: 'var(--blue, #2563EB)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
-                              ✍️ Re-sign
+                              <FiEdit3 size={13} /> Re-sign
                             </button>
                             <button
                               type="button"
@@ -801,7 +812,7 @@ export default function ValidationCenter() {
                             e.currentTarget.style.background = 'linear-gradient(135deg, #F0F9FF, #F8FAFC)';
                           }}
                         >
-                          <div style={{ fontSize: '28px', marginBottom: '6px' }}>✍️</div>
+                          <div style={{ marginBottom: '6px', display: 'flex', justifyContent: 'center' }}><FiEdit3 size={28} color="var(--blue, #2563EB)" /></div>
                           <strong style={{ color: 'var(--blue, #2563EB)', fontSize: '15px', display: 'block' }}>
                             Click here to add E-Signature
                           </strong>
@@ -822,10 +833,13 @@ export default function ValidationCenter() {
                       marginTop: '12px',
                       padding: '10px 24px',
                       fontWeight: '600',
-                      boxShadow: '0 4px 6px -1px rgba(2, 132, 199, 0.2)'
+                      boxShadow: '0 4px 6px -1px rgba(2, 132, 199, 0.2)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px'
                     }}
                   >
-                    🚀 Submit Certified eSF7 to Queue
+                    <FiUploadCloud size={16} /> Submit Certified eSF7 to Queue
                   </button>
                 </form>
               )}
@@ -1441,10 +1455,13 @@ export default function ValidationCenter() {
                   border: 'none',
                   background: sigMode === 'draw' ? 'var(--blue, #2563EB)' : '#F1F5F9',
                   color: sigMode === 'draw' ? 'white' : '#64748B',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
                 }}
               >
-                ✍️ Draw Signature
+                <FiEdit3 size={14} /> Draw Signature
               </button>
               <button
                 type="button"
@@ -1457,10 +1474,13 @@ export default function ValidationCenter() {
                   border: 'none',
                   background: sigMode === 'upload' ? 'var(--blue, #2563EB)' : '#F1F5F9',
                   color: sigMode === 'upload' ? 'white' : '#64748B',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
                 }}
               >
-                📁 Upload Image
+                <FiUploadCloud size={14} /> Upload Image
               </button>
             </div>
 
@@ -1522,9 +1542,9 @@ export default function ValidationCenter() {
                   if (sigMode === 'draw') saveCanvasData();
                   setShowSignatureModal(false);
                 }}
-                style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: 'linear-gradient(180deg, #0284c7, #0369a1)', color: 'white', fontWeight: '700', cursor: 'pointer' }}
+                style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: 'linear-gradient(180deg, #0284c7, #0369a1)', color: 'white', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                ✓ Apply Signature
+                <FiCheck size={16} /> Apply Signature
               </button>
             </div>
           </div>

@@ -21,7 +21,9 @@ import Submission from './pages/Submission';
 import SchoolHeadChatWidget from './components/SchoolHeadChatWidget';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
+import Landing from './pages/Landing';
 import LoadingScreen from './components/LoadingScreen';
+import { FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
 
 function MainAppContent() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -30,7 +32,7 @@ function MainAppContent() {
   const { user, loading: authLoading } = useAuth();
   const appState = useApp() || {};
   const { 
-    activeView = 'dashboard', 
+    activeView = 'landing', 
     setActiveView = () => {}, 
     isNodeUnlocked = () => true, 
     showToast = () => {}, 
@@ -40,7 +42,7 @@ function MainAppContent() {
   } = appState;
 
   React.useEffect(() => {
-    const standaloneViews = ['dashboard', 'nodemap', 'room-profiling', 'room-qr', 'requests'];
+    const standaloneViews = ['landing', 'dashboard', 'nodemap', 'room-profiling', 'room-qr', 'requests'];
     if (!standaloneViews.includes(activeView) && isNodeUnlocked && !isNodeUnlocked(activeView)) {
       showToast('This node is locked. Complete the preceding steps on the Node Map first.', 'error');
       setActiveView('nodemap');
@@ -65,8 +67,14 @@ function MainAppContent() {
     return <LoadingScreen />;
   }
 
+  // Enforce Login first: Users see Login BEFORE entering the app
   if (!user) {
     return <Login />;
+  }
+
+  // After login: show Landing Page when activeView === 'landing'
+  if (activeView === 'landing') {
+    return <Landing onGetStarted={() => setActiveView('dashboard')} />;
   }
 
   return (
@@ -126,7 +134,7 @@ function MainAppContent() {
           minWidth: '320px',
           justifyContent: 'center'
         }}>
-          {toast.type === 'error' ? '⚠️' : '✅'} {toast.message}
+          {toast.type === 'error' ? <FiAlertTriangle size={18} /> : <FiCheckCircle size={18} />} <span>{toast.message}</span>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import OverloadPayModal from '../components/OverloadPayModal';
 import PortalHeader from '../components/PortalHeader';
+import { FiAlertCircle, FiCheckCircle, FiTrendingUp, FiCalendar } from 'react-icons/fi';
 
 export default function Submission() {
   const { getValidationIssues, setActiveView, school, completeNode } = useApp();
@@ -16,7 +17,7 @@ export default function Submission() {
       alert("Submission blocked. Please resolve all critical validation errors first.");
       return;
     }
-    alert("🎉 eSF7 submitted successfully! Official records updated in command center.");
+    alert("eSF7 submitted successfully! Official records updated in command center.");
   };
 
   return (
@@ -30,7 +31,7 @@ export default function Submission() {
           if (completeNode) completeNode('submission', null);
           setActiveView('nodemap');
         }}
-        continueText="Finish & Return to Node Map 🎉"
+        continueText="Finish & Return to Node Map"
       />
       <article className="card">
         <div className="card-inner">
@@ -40,14 +41,18 @@ export default function Submission() {
           <div id="submissionChecklist" className="issue-list" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {hasErrors ? (
               <div className="issue error" style={{ padding: '16px', borderLeft: '5px solid var(--red)', background: '#FEF2F2', color: 'var(--red)', borderRadius: '8px' }}>
-                <strong>⚠️ Submission Blocked</strong>
+                <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiAlertCircle size={16} /> Submission Blocked
+                </strong>
                 <p style={{ margin: '8px 0 0', fontSize: '13px' }}>
                   You have {errors.length} unresolved critical error(s) in your personnel registry or workload assignments.
                 </p>
               </div>
             ) : (
               <div className="issue" style={{ padding: '16px', borderLeft: '5px solid var(--green)', background: '#F0FDF4', color: '#166534', borderRadius: '8px' }}>
-                <strong>✓ Ready to Submit</strong>
+                <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiCheckCircle size={16} /> Ready to Submit
+                </strong>
                 <p style={{ margin: '8px 0 0', fontSize: '13px' }}>
                   All quality validations passed! The registry matches division specifications.
                 </p>
@@ -87,8 +92,8 @@ export default function Submission() {
         <div className="card-inner">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#0f172a' }}>
-                📊 Overload Pay Report Engine
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FiTrendingUp size={16} /> Overload Pay Report Engine
               </h3>
               <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#64748b' }}>
                 Generate monthly overload pay calculations incorporating the DepEd 3-Term School Calendar (SY 2026-2027) with automatic non-teaching and vacation period exclusions.
@@ -106,10 +111,13 @@ export default function Submission() {
                 padding: '10px 20px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(2, 132, 199, 0.2)'
+                boxShadow: '0 2px 4px rgba(2, 132, 199, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
-              🗓️ Generate Overload Pay Report
+              <FiCalendar size={14} /> Generate Overload Pay Report
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FiKey } from 'react-icons/fi';
 
 // Helper to resolve School Head backend server URL dynamically
 const getChatApiUrl = (path) => {
@@ -403,7 +404,7 @@ const SchoolHeadChatWidget = () => {
           {!storedToken ? (
             /* DEV TOKEN MISSING SCREEN (Only shown on local development when token is not populated in localStorage) */
             <div style={{ flex: 1, padding: '24px', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
-              <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔑</div>
+              <div style={{ fontSize: '32px', marginBottom: '12px', color: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FiKey size={32} /></div>
               <h4 style={{ margin: '0 0 8px', fontSize: '15px', color: '#1e293b', fontWeight: '700' }}>Local Dev Authorization</h4>
               <p style={{ margin: '0 0 16px', fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
                 Since this portal runs on a separate port (5173) than the main School Head app, you need to copy and paste your token from the main portal's localStorage here to test the chat feature locally.

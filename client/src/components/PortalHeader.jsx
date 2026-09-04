@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiArrowLeft, FiLogOut, FiRotateCcw } from 'react-icons/fi';
+import { FiArrowLeft, FiLogOut, FiRotateCcw, FiMap } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import LogoutPasscodeModal from './LogoutPasscodeModal';
@@ -286,7 +286,8 @@ export default function PortalHeader({
                   }}
                   title="Return to Journey Node Map"
                 >
-                  <span>🗺️ Node Map</span>
+                  <FiMap style={{ fontSize: '13px' }} />
+                  <span>Node Map</span>
                 </button>
               )}
 

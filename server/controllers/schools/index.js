@@ -96,19 +96,93 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // 3. Query main unit1_school_identity
+    // 3. Query schools_IERN or 2025-2026_SchoolID in insightEd
+    let iernMatch = await insightEdPool.query(
+      `SELECT "SchoolID", "School_Name", "Region", "Division", "District", "Curricular_Offering" 
+       FROM "schools_IERN" WHERE "SchoolID" = $1 LIMIT 1`,
+      [cleanSchoolId]
+    ).catch(() => ({ rows: [] }));
+
+    let mcocVal = null;
+    let masterSchoolRow = null;
+
+    if (iernMatch.rows.length > 0) {
+      masterSchoolRow = iernMatch.rows[0];
+    } else {
+      const schIdMatch = await insightEdPool.query(
+        `SELECT "schoool_id", "school_name", "region", "division", "district", "mcoc" 
+         FROM "2025-2026_SchoolID" WHERE "schoool_id" = $1 LIMIT 1`,
+        [parseInt(cleanSchoolId, 10) || -1]
+      ).catch(() => ({ rows: [] }));
+      if (schIdMatch.rows.length > 0) {
+        masterSchoolRow = schIdMatch.rows[0];
+        mcocVal = masterSchoolRow.mcoc;
+      }
+    }
+
+    if (masterSchoolRow) {
+      const schName = masterSchoolRow.School_Name || masterSchoolRow.school_name || `School ${cleanSchoolId}`;
+      const reg = masterSchoolRow.Region || masterSchoolRow.region || '';
+      const div = masterSchoolRow.Division || masterSchoolRow.division || '';
+      const dist = masterSchoolRow.District || masterSchoolRow.district || '';
+      const rawOff = String(mcocVal || masterSchoolRow.Curricular_Offering || '').toUpperCase();
+
+      let offerings = [];
+      if (rawOff.includes('PURELY ES') || rawOff === 'PURELY ES') {
+        offerings = ['Elementary'];
+      } else if (rawOff.includes('PURELY JHS') || rawOff === 'PURELY JHS') {
+        offerings = ['JHS'];
+      } else if (rawOff.includes('PURELY SHS') || rawOff === 'PURELY SHS') {
+        offerings = ['SHS'];
+      } else if (rawOff.includes('ES AND JHS') || rawOff.includes('K TO 10') || rawOff.includes('K-10')) {
+        offerings = ['Elementary', 'JHS'];
+      } else if (rawOff.includes('JHS WITH SHS') || rawOff.includes('JHS AND SHS') || rawOff.includes('7 TO 12') || rawOff.includes('7-12')) {
+        offerings = ['JHS', 'SHS'];
+      } else if (rawOff.includes('ALL OFFERING') || rawOff.includes('K TO 12') || rawOff.includes('K-12')) {
+        offerings = ['Elementary', 'JHS', 'SHS'];
+      } else {
+        if (rawOff.includes('ELEM') || rawOff.includes('ES')) offerings.push('Elementary');
+        if (rawOff.includes('JHS') || rawOff.includes('JUNIOR')) offerings.push('JHS');
+        if (rawOff.includes('SHS') || rawOff.includes('SENIOR')) offerings.push('SHS');
+      }
+
+      if (offerings.length === 0) offerings = ['Elementary'];
+
+      return res.json({
+        schoolId: cleanSchoolId,
+        schoolName: schName,
+        region: reg,
+        division: div,
+        district: dist,
+        schoolYear: 'SY 26-27',
+        numberOfShifts: "1",
+        curricularOffering: Array.from(new Set(offerings)),
+        certifiedBy: null,
+        certifiedSignature: null,
+        certifiedAt: null,
+        subjectsConfig: null
+      });
+    }
+
+    // 4. Query unit1_school_identity
     let result = await insightEdPool.query(
       'SELECT * FROM unit1_school_identity WHERE CAST(school_id AS TEXT) = $1 OR CAST(school_id AS TEXT) = $2 ORDER BY updated_at DESC LIMIT 1',
       [cleanSchoolId, rawSchoolId]
     ).catch(() => ({ rows: [] }));
 
     if (result.rows.length === 0) {
-      // Check esf7_database / esf7_database_dummy table for historical school submission identity
-      const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-      const esfMatch = await insightEdPool.query(
-        `SELECT DISTINCT school_name, division, region, muncipality as district FROM ${tableName} WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1 LIMIT 1`,
+      // 5. Check esf7_database first, then esf7_database_dummy
+      let esfMatch = await insightEdPool.query(
+        `SELECT DISTINCT school_name, division, region, muncipality as district FROM esf7_database WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1 LIMIT 1`,
         [cleanSchoolId]
       ).catch(() => ({ rows: [] }));
+
+      if (esfMatch.rows.length === 0) {
+        esfMatch = await insightEdPool.query(
+          `SELECT DISTINCT school_name, division, region, muncipality as district FROM esf7_database_dummy WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1 LIMIT 1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+      }
 
       if (esfMatch.rows.length > 0) {
         const esf = esfMatch.rows[0];

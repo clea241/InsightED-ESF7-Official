@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { FiBarChart2, FiCalendar, FiEdit3, FiTrendingUp, FiAlertTriangle, FiCheckCircle, FiDownload, FiX } from 'react-icons/fi';
 
 const ALL_MONTHS = [
   { id: '2026-06', label: 'June 2026' },
@@ -160,8 +161,8 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
           background: 'linear-gradient(to right, #f8fafc, #ffffff)'
         }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>
-              📊 Overload Pay Report Engine (SY 2026-2027)
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FiBarChart2 style={{ color: '#2563EB' }} /> Overload Pay Report Engine (SY 2026-2027)
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
               DepEd 3-Term School Calendar Schedule & Effective Teaching Ratio Adjustment
@@ -177,10 +178,13 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
               height: '32px',
               cursor: 'pointer',
               fontWeight: 'bold',
-              color: '#64748b'
+              color: '#64748b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
-            ✕
+            <FiX size={16} />
           </button>
         </div>
 
@@ -196,8 +200,8 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
               {/* Term Schedule Cards */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#334155' }}>
-                    🗓️ SY 2026-2027 Calendar Term Schedule Breakdown
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FiCalendar /> SY 2026-2027 Calendar Term Schedule Breakdown
                   </h4>
                   <button
                     onClick={() => setEditingTerms(!editingTerms)}
@@ -209,10 +213,13 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
                       padding: '4px 12px',
                       fontSize: '12px',
                       fontWeight: '600',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
                     }}
                   >
-                    {editingTerms ? 'Cancel Editing' : '✏️ Customize Term Boundaries'}
+                    {editingTerms ? 'Cancel Editing' : <><FiEdit3 size={12} /> Customize Term Boundaries</>}
                   </button>
                 </div>
 
@@ -264,8 +271,8 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
                             />
                           </div>
                         ) : (
-                          <p style={{ margin: 0, color: '#475569' }}>
-                            📅 {t.start_date} to {t.end_date}
+                          <p style={{ margin: 0, color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <FiCalendar size={12} /> {t.start_date} to {t.end_date}
                           </p>
                         )}
                       </div>
@@ -297,8 +304,8 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
               {/* Month Selection & Ratio Breakdown Table */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#334155' }}>
-                    📈 Monthly Instructional Ratio & Month Toggles
+                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FiTrendingUp /> Monthly Instructional Ratio & Month Toggles
                   </h4>
                   <button
                     onClick={handleSelectAll}
@@ -398,9 +405,12 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
                   border: '1px solid #fca5a5',
                   borderRadius: '8px',
                   color: '#dc2626',
-                  fontSize: '13px'
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
                 }}>
-                  ⚠️ {error}
+                  <FiAlertTriangle size={14} /> {error}
                 </div>
               )}
 
@@ -414,7 +424,7 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
                   textAlign: 'center'
                 }}>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: '#1d4ed8', marginBottom: '8px' }}>
-                    ⏳ Computing Overload Pay Ratios & Generating Excel Workbook...
+                    Computing Overload Pay Ratios & Generating Excel Workbook...
                   </div>
                   <div style={{ width: '100%', height: '6px', background: '#dbeafe', borderRadius: '3px', overflow: 'hidden' }}>
                     <div style={{ width: '100%', height: '100%', background: '#2563eb', animation: 'progressPulse 1.5s infinite' }} />
@@ -429,11 +439,13 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
                   border: '1px solid #bbf7d0',
                   borderRadius: '10px',
                   display: 'flex',
-                  justify: 'space-between',
+                  justifyContent: 'space-between',
                   alignItems: 'center'
                 }}>
                   <div>
-                    <strong style={{ color: '#166534', fontSize: '14px' }}>🎉 Overload Pay Report Ready!</strong>
+                    <strong style={{ color: '#166534', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FiCheckCircle /> Overload Pay Report Ready!
+                    </strong>
                     <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#15803d' }}>
                       Generated {downloadResult.summary?.length || 0} personnel overload pay schedules.
                     </p>
@@ -449,10 +461,13 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
                       borderRadius: '8px',
                       fontWeight: '700',
                       fontSize: '13px',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}
                   >
-                    📥 Download Excel (.xlsx)
+                    <FiDownload /> Download Excel (.xlsx)
                   </a>
                 </div>
               )}
@@ -465,7 +480,7 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
           padding: '16px 24px',
           borderTop: '1px solid #f1f5f9',
           display: 'flex',
-          justify: 'flex-end',
+          justifyContent: 'flex-end',
           gap: '10px',
           background: '#f8fafc',
           borderRadius: '0 0 16px 16px'
@@ -499,10 +514,13 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
               fontWeight: '700',
               color: '#ffffff',
               cursor: generating ? 'not-allowed' : 'pointer',
-              boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
+              boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px'
             }}
           >
-            {generating ? 'Processing Report...' : '📊 Generate Overload Pay Report'}
+            {generating ? 'Processing Report...' : <><FiBarChart2 /> Generate Overload Pay Report</>}
           </button>
         </div>
       </div>

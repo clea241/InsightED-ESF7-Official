@@ -4,6 +4,23 @@ import { useAuth } from '../context/AuthContext';
 import { get10MinPasscode } from '../utils/passcode';
 import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
+import { 
+  FiBell, 
+  FiCheck, 
+  FiCheckCircle, 
+  FiInbox, 
+  FiKey, 
+  FiClock, 
+  FiEye, 
+  FiEyeOff, 
+  FiRefreshCw, 
+  FiSmartphone, 
+  FiFileText, 
+  FiUserCheck, 
+  FiAward,
+  FiPrinter,
+  FiDownload
+} from 'react-icons/fi';
 
 export default function RoomQR() {
   const { scannedRoom, setScannedRoom, personnel: appPersonnel, setPersonnel, updatePersonnelInfo, savePersonnelChanges, schoolInfo, setActiveView } = useApp() || {};
@@ -69,6 +86,10 @@ export default function RoomQR() {
       '502624';
 
     return `${origin}${path}?view=room-profiling&room=${encodeURIComponent(roomName)}&schoolId=${encodeURIComponent(activeId)}`;
+  };
+
+  const getQrApiUrl = (roomName) => {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getPortalUrl(roomName))}`;
   };
 
   const handleCopyLink = () => {
@@ -634,7 +655,7 @@ export default function RoomQR() {
           gap: '12px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <span style={{ fontSize: '28px' }}>🔔</span>
+            <FiBell size={26} color="white" />
             <div>
               <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>
                 {pendingTeachers.length} Teacher Profiling Submission{pendingTeachers.length > 1 ? 's' : ''} Ready for Review!
@@ -651,9 +672,10 @@ export default function RoomQR() {
           <button
             className="btn"
             onClick={handleCommitAllSubmissions}
-            style={{ background: 'white', color: '#065F46', fontWeight: 800, padding: '8px 18px', border: 0, borderRadius: '10px', fontSize: '12px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)' }}
+            style={{ background: 'white', color: '#065F46', fontWeight: 800, padding: '8px 18px', border: 0, borderRadius: '10px', fontSize: '12px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            ✓ 1-Click Approve & Merge All ({pendingTeachers.length})
+            <FiCheck size={14} />
+            <span>1-Click Approve & Merge All ({pendingTeachers.length})</span>
           </button>
         </div>
       )}
@@ -661,7 +683,7 @@ export default function RoomQR() {
       {/* Status Messages */}
       {ingestionSuccess && (
         <div style={{ padding: '16px', background: '#D4EDDA', color: '#155724', border: '1.5px solid #C3E6CB', borderRadius: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span>💚</span> {ingestionSuccess}
+          <FiCheck size={16} /> <span>{ingestionSuccess}</span>
         </div>
       )}
 
@@ -698,33 +720,48 @@ export default function RoomQR() {
                 display: 'flex', 
                 flexDirection: 'column', 
                 alignItems: 'center', 
-                gap: '8px', 
-                width: '100%', 
-                boxShadow: '0 8px 16px rgba(8, 49, 95, 0.05)', 
-                boxSizing: 'border-box' 
+                gap: '12px',
+                maxWidth: '260px',
+                textAlign: 'center',
+                boxShadow: '0 4px 12px rgba(8, 49, 95, 0.05)'
               }}>
-                <img 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getPortalUrl(selectedRoom))}`}
-                  alt="Room QR Code"
-                  style={{ width: '150px', height: '150px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
-                />
-                <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--navy)' }}>
-                  ROOM QR POSTER
-                </span>
+                <div style={{ 
+                  background: 'white', 
+                  padding: '8px', 
+                  borderRadius: '8px', 
+                  border: '1px solid var(--line)'
+                }}>
+                  <img 
+                    src={getQrApiUrl(selectedRoom)} 
+                    alt={`QR Code for ${selectedRoom}`} 
+                    style={{ width: '180px', height: '180px', display: 'block' }}
+                  />
+                </div>
                 
-                {/* Clickable Link directly under QR */}
+                <div style={{ width: '100%' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--blue)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    FACULTY ROOM POSTER
+                  </span>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--navy)' }}>
+                    {selectedRoom}
+                  </div>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'var(--muted)', lineHeight: '1.3' }}>
+                    Single Scan for all Teachers assigned to this room.
+                  </p>
+                </div>
+
                 <a 
                   href={getPortalUrl(selectedRoom)} 
                   target="_blank" 
-                  rel="noreferrer"
+                  rel="noreferrer" 
                   style={{ 
-                    fontSize: '11px', 
-                    color: 'var(--blue)', 
+                    fontSize: '10px', 
+                    color: 'var(--muted)', 
                     fontWeight: 700, 
                     textDecoration: 'underline', 
                     marginTop: '4px', 
                     wordBreak: 'break-all', 
-                    textAlign: 'center',
+                    textAlign: 'center', 
                     maxWidth: '100%'
                   }}
                 >
@@ -733,11 +770,12 @@ export default function RoomQR() {
               </div>
 
               <div style={{ display: 'grid', gap: '10px', gridTemplateColumns: '1fr 1fr' }}>
-                <button className="btn" onClick={handleSimulateScanLink}>
-                  🔗 Simulate Scan
+                <button className="btn" onClick={handleSimulateScanLink} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <FiSmartphone size={14} />
+                  <span>Simulate Scan</span>
                 </button>
-                <button className="btn secondary" onClick={handleCopyLink}>
-                  {copied ? '✓ Copied' : '📋 Copy Link'}
+                <button className="btn secondary" onClick={handleCopyLink} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  {copied ? <><FiCheck size={14} /> Copied</> : <><FiFileText size={14} /> Copy Link</>}
                 </button>
               </div>
             </div>
@@ -754,7 +792,10 @@ export default function RoomQR() {
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: '17px' }}>📥 Teacher Submissions & Ingestion Queue</h2>
+                  <h2 style={{ margin: 0, fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiInbox size={18} />
+                    <span>Teacher Submissions & Ingestion Queue</span>
+                  </h2>
                   <p className="subtext" style={{ margin: '2px 0 0 0', fontSize: '12px' }}>
                     Review and approve verified profile updates submitted by teachers on mobile.
                   </p>
@@ -763,9 +804,10 @@ export default function RoomQR() {
                   <button
                     className="btn"
                     onClick={handleCommitAllSubmissions}
-                    style={{ background: '#059669', color: 'white', border: 0, padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', borderRadius: '8px' }}
+                    style={{ background: '#059669', color: 'white', border: 0, padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                   >
-                    ✓ Approve All ({pendingTeachers.length})
+                    <FiCheck size={12} />
+                    <span>Approve All ({pendingTeachers.length})</span>
                   </button>
                 )}
               </div>
@@ -789,7 +831,8 @@ export default function RoomQR() {
                     gap: '6px'
                   }}
                 >
-                  📥 In Queue
+                  <FiInbox size={13} />
+                  <span>In Queue</span>
                   <span style={{
                     background: activeQueueTab === 'pending' ? '#10B981' : '#CBD5E1',
                     color: activeQueueTab === 'pending' ? '#FFFFFF' : '#1E293B',
@@ -819,7 +862,8 @@ export default function RoomQR() {
                     gap: '6px'
                   }}
                 >
-                  ✓ Verified Profiles
+                  <FiCheckCircle size={13} />
+                  <span>Verified Profiles</span>
                   <span style={{
                     background: activeQueueTab === 'verified' ? '#3B82F6' : '#CBD5E1',
                     color: activeQueueTab === 'verified' ? '#FFFFFF' : '#1E293B',
@@ -838,7 +882,7 @@ export default function RoomQR() {
                 <div style={{ display: 'grid', gap: '8px' }}>
                   {pendingTeachers.length === 0 ? (
                     <div style={{ padding: '24px 16px', textAlign: 'center', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid var(--line)' }}>
-                      <span style={{ fontSize: '24px', display: 'block', marginBottom: '4px' }}>🎉</span>
+                      <FiCheckCircle size={28} color="#10B981" style={{ marginBottom: '6px' }} />
                       <h4 style={{ margin: 0, color: 'var(--navy)', fontSize: '14px' }}>No Pending Submissions</h4>
                       <p style={{ margin: '3px 0 0 0', color: 'var(--muted)', fontSize: '12px' }}>
                         When teachers submit their profiles via mobile, they will appear here for your review and approval.
@@ -874,12 +918,12 @@ export default function RoomQR() {
                                 <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--navy)' }}>
                                   {displayName}
                                 </span>
-                                <span style={{ background: '#DCFCE7', color: '#16A34A', border: '1px solid #86EFAC', padding: '1px 5px', borderRadius: '6px', fontSize: '9px', fontWeight: 800 }}>
-                                  🟢 SUBMITTED
+                                <span style={{ background: '#DCFCE7', color: '#16A34A', border: '1px solid #86EFAC', padding: '1px 6px', borderRadius: '6px', fontSize: '9px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <FiCheck size={10} /> SUBMITTED
                                 </span>
                               </div>
-                              <span style={{ fontSize: '11px', color: '#64748B', display: 'block', marginTop: '1px' }}>
-                                {teacher.position || raw.position || 'Teacher'} · 📱 {roomTag} · ID: {teacher.id}
+                              <span style={{ fontSize: '11px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
+                                {teacher.position || raw.position || 'Teacher'} · <FiSmartphone size={11} /> {roomTag} · ID: {teacher.id}
                               </span>
                             </div>
 
@@ -896,9 +940,10 @@ export default function RoomQR() {
                                 className="btn"
                                 type="button"
                                 onClick={() => handleCommitSingle(submission)}
-                                style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px' }}
+                                style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               >
-                                ✓ Approve & Merge
+                                <FiCheck size={12} />
+                                <span>Approve & Merge</span>
                               </button>
                             </div>
                           </div>
@@ -914,7 +959,7 @@ export default function RoomQR() {
                 <div style={{ display: 'grid', gap: '8px' }}>
                   {verifiedTeachers.length === 0 ? (
                     <div style={{ padding: '24px 16px', textAlign: 'center', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid var(--line)' }}>
-                      <span style={{ fontSize: '24px', display: 'block', marginBottom: '4px' }}>📝</span>
+                      <FiFileText size={28} color="#94A3B8" style={{ marginBottom: '6px' }} />
                       <p style={{ margin: 0, color: 'var(--muted)', fontSize: '12px' }}>
                         No profiles marked as verified yet. When you approve submissions, they will be listed here.
                       </p>
@@ -940,8 +985,8 @@ export default function RoomQR() {
                                 <td style={{ padding: '6px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{displayName}</td>
                                 <td style={{ padding: '6px 10px', color: '#64748B' }}>{p.position || 'Teacher'}</td>
                                 <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                  <span style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800 }}>
-                                    ✓ Verified & Merged
+                                  <span style={{ background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <FiCheckCircle size={10} /> Verified & Merged
                                   </span>
                                 </td>
                               </tr>
@@ -963,13 +1008,16 @@ export default function RoomQR() {
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: '17px' }}>🔑 Teacher Passcodes</h2>
+                  <h2 style={{ margin: 0, fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiKey size={18} />
+                    <span>Teacher Passcodes</span>
+                  </h2>
                   <p className="subtext" style={{ margin: '2px 0 0 0', fontSize: '12px' }}>
                     Teachers must enter their unique 6-digit passcode to unlock their profiling forms.
                   </p>
                 </div>
                 <span style={{ background: '#F0F9FF', color: '#0369A1', border: '1px solid #BAE6FD', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  ⏱️ Rotates in {formatCountdown(timeLeftSeconds)}
+                  <FiClock size={12} /> Rotates in {formatCountdown(timeLeftSeconds)}
                 </span>
               </div>
 
@@ -984,15 +1032,15 @@ export default function RoomQR() {
                 <button
                   type="button"
                   className="btn secondary"
-                  style={{ minHeight: '34px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  style={{ minHeight: '34px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                   onClick={() => setAllRevealed(prev => !prev)}
                 >
-                  {allRevealed ? '🙈 Hide All' : '👁 Reveal All'}
+                  {allRevealed ? <><FiEyeOff size={13} /> Hide All</> : <><FiEye size={13} /> Reveal All</>}
                 </button>
                 <button
                   type="button"
                   className="btn secondary"
-                  style={{ minHeight: '34px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                  style={{ minHeight: '34px', fontSize: '11px', padding: '4px 10px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                   onClick={() => {
                     (effectivePersonnel || []).forEach(p => {
                       const dynamic = get10MinPasscode(p.id, 0);
@@ -1000,7 +1048,8 @@ export default function RoomQR() {
                     });
                   }}
                 >
-                  ⚡ Refresh
+                  <FiRefreshCw size={13} />
+                  <span>Refresh</span>
                 </button>
               </div>
 
@@ -1055,10 +1104,10 @@ export default function RoomQR() {
                                       prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
                                     );
                                   }}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', padding: 0, display: 'flex', alignItems: 'center' }}
                                   title={isRevealed ? "Hide Passcode" : "Reveal Passcode"}
                                 >
-                                  {isRevealed ? '🙈' : '👁'}
+                                  {isRevealed ? <FiEyeOff size={14} color="#64748B" /> : <FiEye size={14} color="#64748B" />}
                                 </button>
                                 <span style={{ color: '#CBD5E1' }}>|</span>
                                 <button
@@ -1076,10 +1125,13 @@ export default function RoomQR() {
                                     color: copiedCodeId === p.id ? 'var(--emerald, #059669)' : 'var(--blue)',
                                     fontSize: '11px',
                                     fontWeight: 800,
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px'
                                   }}
                                 >
-                                  {copiedCodeId === p.id ? '✓ Copied' : 'Copy'}
+                                  {copiedCodeId === p.id ? <><FiCheck size={12} /> Copied</> : 'Copy'}
                                 </button>
                               </div>
                             </td>
@@ -1103,7 +1155,10 @@ export default function RoomQR() {
         <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', zIndex: 1000 }}>
           <div className="modal-card" style={{ width: '680px', padding: '24px', background: 'white', borderRadius: '16px', border: '2.5px solid var(--outline)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-head" style={{ borderBottom: '1.5px solid var(--line)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '20px', margin: 0, color: 'var(--navy)' }}>🧐 Review Teacher Submission</h2>
+              <h2 style={{ fontSize: '20px', margin: 0, color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FiUserCheck size={20} />
+                <span>Review Teacher Submission</span>
+              </h2>
               <span className="badge info">{pendingReviewData.id}</span>
             </div>
             
@@ -1142,8 +1197,9 @@ export default function RoomQR() {
               </div>
 
               {!hasChangesDetected && (
-                <div style={{ marginTop: '12px', padding: '10px', background: '#F8FAFC', color: 'var(--muted)', borderRadius: '8px', textAlign: 'center', fontSize: '12px', border: '1px solid var(--line)' }}>
-                  ✓ Checked: No changes detected. Submitted profile is identical to the current central record.
+                <div style={{ marginTop: '12px', padding: '10px', background: '#F8FAFC', color: 'var(--muted)', borderRadius: '8px', textAlign: 'center', fontSize: '12px', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <FiCheckCircle size={14} color="#10B981" />
+                  <span>Checked: No changes detected. Submitted profile is identical to the current central record.</span>
                 </div>
               )}
 
@@ -1151,11 +1207,14 @@ export default function RoomQR() {
                 (pendingReviewData.certificationRows && pendingReviewData.certificationRows.length > 0) ||
                 (pendingReviewData.otherTrainingRows && pendingReviewData.otherTrainingRows.length > 0)) && (
                 <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🏅 Submitted Trainings ({
-                    (pendingReviewData.neapTrainingRows?.length || 0) + 
-                    (pendingReviewData.certificationRows?.length || 0) + 
-                    (pendingReviewData.otherTrainingRows?.length || 0)
-                  } records)</span>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FiAward size={15} />
+                    <span>Submitted Trainings ({
+                      (pendingReviewData.neapTrainingRows?.length || 0) + 
+                      (pendingReviewData.certificationRows?.length || 0) + 
+                      (pendingReviewData.otherTrainingRows?.length || 0)
+                    } records)</span>
+                  </span>
                   <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '10px', background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {pendingReviewData.neapTrainingRows && pendingReviewData.neapTrainingRows.length > 0 && (
                       <div>

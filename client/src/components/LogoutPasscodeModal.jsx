@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { FiKey, FiAlertTriangle, FiArrowRight } from 'react-icons/fi';
 
 export default function LogoutPasscodeModal({ isOpen, onClose }) {
   const { user, logout } = useAuth();
@@ -151,7 +152,7 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
           fontSize: '24px',
           marginBottom: '16px'
         }}>
-          🔑
+          <FiKey />
         </div>
 
         <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
@@ -172,9 +173,13 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
             color: '#DC2626',
             fontSize: '12.5px',
             fontWeight: '700',
-            marginBottom: '16px'
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px'
           }}>
-            ⚠️ {error}
+            <FiAlertTriangle size={14} /> {error}
           </div>
         )}
 
@@ -244,10 +249,14 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
                 fontWeight: '800',
                 cursor: 'pointer',
                 boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
               }}
             >
-              {loading ? 'Verifying...' : 'Confirm & Logout ➔'}
+              {loading ? 'Verifying...' : <>Confirm & Logout <FiArrowRight /></>}
             </button>
           </div>
         </form>

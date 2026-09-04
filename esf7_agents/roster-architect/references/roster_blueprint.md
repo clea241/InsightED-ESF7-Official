@@ -96,3 +96,8 @@ This document serves as the authoritative blueprint for [Roster.jsx](file:///e:/
 
 * **Version 1.0 (2026-08-12)**: Initial master flow blueprint established.
   * Baseline features: Roster table, Category tabs, Search & Sort, School Head single-principal enforcement, Draft commitment banner, DepEd Email policy modal, Add Personnel modal with searchable position dropdown.
+* **Version 1.1 (2026-09-03)**: Modal layout enhancement & email restriction sync.
+  * Removed redundant `DESIGNATION` (MR./MRS./MS.) dropdown from Add Personnel modal.
+  * Expanded `DepEd Email` container to span 2 grid columns for easier input.
+  * Placed `Position Category` and `Position` side-by-side in a responsive 2-column sub-grid (`1fr 1fr`).
+  * Enforced real-time `validateDepEdEmail` restriction in Add Personnel modal (prevents typing `@`, highlights invalid domains or mismatching first/last names in red, displays inline error prompt, and restricts modal submission).

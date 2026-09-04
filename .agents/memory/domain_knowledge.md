@@ -127,3 +127,30 @@
     4. `esf7_regular_sections`, `esf7_aral_sections`, `esf7_remedial_enrichment_sections`
     5. `esf7_workload_rows`, `esf7_shs_workload_rows`, `esf7_workload_transfer`
   - **Input Sanitization & Upserts**: Worker sanitizes numbers (`parseInt(val) || 1`), dates, and uses `ON CONFLICT` upserts.
+
+### Added 2026-09-03
+- **Historical eSF7 Master Database & SY 2025-2026 Mandate**:
+  - The national table `esf7_database` stores historical faculty records for **School Year 2025-2026**.
+  - When a School Head logs in and has **0 records** in `esf7_database` and `esf7_database_dummy`:
+    - The Executive Dashboard automatically prompts: *"You need to submit your eSF7 file for SY 2025-2026. Please upload your official .xlsb (or .xlsx) spreadsheet to auto-populate your faculty roster."*
+    - The upload modal is presented automatically on initial landing with a persistent notification banner on the dashboard if dismissed.
+  - **Test Sandbox Isolation**:
+    - School IDs between **`800000` and `800100`** (and `199900`–`199999`) are designated test/sandbox accounts.
+    - When their spreadsheets are ingested by the VM harvester daemon (`esf7_harvester.js`), they are routed exclusively to **`esf7_database_dummy`**, keeping production `esf7_database` (SY 2025-2026) 100% clean and audit-proof.
+  - **Forced Logout & Confirmation Modal**:
+    - If an established school attempts to dismiss the SY 2025–2026 upload modal, `ForceLogoutNoticeModal.jsx` is displayed:
+      *"Notice: Established DepEd schools must submit their official SY 2025–2026 eSF7 file to initialize their station. Do you want to cancel and log out?"*
+    - Actions: `[ Stay & Upload File ]` (keeps user on upload modal) or `[ Cancel & Log Out ]` (logs out via `useAuth.logout()`).
+  - **Enhanced Authentication & School ID Error Prompts**:
+    - Raw database errors mentioning internal tables (e.g. `user_schoolhead`) are strictly prohibited in user-facing error prompts.
+    - Whenever a School ID is not found in `user_schoolhead`, the system must return:
+      *"School ID [ID] is not yet registered in the DepEd InsightED portal. Please verify your 6-digit School ID, register first, or contact your Division Office to register your station."*
+  - **Personnel Roster - Add Personnel Modal**:
+    - The redundant `DESIGNATION` (MR./MRS./MS. salutation) dropdown has been removed from the Add Personnel modal in `Roster.jsx`. Personnel entry begins directly with First Name, Middle Name, Last Name, and Position.
+    - DepEd email field spans 2 columns with `validateDepEdEmail` restriction matching `PersonnelProfile.jsx`: prevents typing `@`, validates that the email contains the personnel's first and last name, shows inline error messages, and disables submission until valid.
+  - **Organized Classes Workspace Architecture (Option 1 Focused Tabs)**:
+    - Replaced side-by-side 50/50 split with a top segmented workspace switcher:
+      `[ 🏫 Class Sections & Advisers ]` vs `[ 📚 Curriculum & Subjects Taught ]`.
+    - Consolidated the previous 7 scattered KPI boxes into a single horizontal executive summary ribbon with total enrollment (Male / Female pills), total sections, and class size health distribution (Within / Below / Above Standard).
+    - Added Grade Level Filter pills (`All`, `Kinder`, `Grade 1`...) for quick jumping across grade levels.
+    - Subjects Taught now renders as a full-width responsive grid (`repeat(auto-fill, minmax(320px, 1fr))`) instead of a narrow vertical scroll.

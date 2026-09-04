@@ -83,12 +83,16 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_employment (
 
 CREATE INDEX IF NOT EXISTS idx_esf7_personnel_employment_personnel ON esf7_personnel_employment (personnel_id);
 
--- 4. Personnel Education Table (Degree, Postgraduate, Discipline & Eligibility JSONB)
+-- 4. Personnel Education Table (Attainment, Track, Vocational, Degree, Postgraduate, Discipline & Eligibility JSONB)
 CREATE TABLE IF NOT EXISTS esf7_perssonel_educ (
     id VARCHAR(50) PRIMARY KEY,
     personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
     
-    college_degree TEXT NOT NULL,
+    highest_educational_attainment TEXT NOT NULL DEFAULT 'COLLEGE GRADUATE / BACCALAUREATE',
+    shs_track TEXT,
+    vocational_course TEXT,
+    vocational_level TEXT,
+    college_degree TEXT,
     major TEXT,
     minor TEXT,
     post_graduate_degree TEXT DEFAULT 'N/A',

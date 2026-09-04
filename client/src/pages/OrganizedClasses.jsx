@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp, isSpecialProgramSubjectAllowed } from '../context/AppContext';
 import PortalHeader from '../components/PortalHeader';
+import { FiGrid, FiTarget, FiBookOpen, FiBook, FiUsers, FiFileText, FiClock, FiInfo, FiEdit2, FiTrash2, FiCheck, FiX, FiPlus } from 'react-icons/fi';
 
 
 const MASTER_SUBJECTS_CATALOG = {
@@ -561,6 +562,10 @@ export default function OrganizedClasses() {
     }
   });
 
+  // Top Workspace Switcher ('sections' | 'subjects') & Grade Level Filter
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('sections');
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState('All');
+
   // Edit Section Modal state
   const [editModalSection, setEditModalSection] = useState(null);
   const [editMale, setEditMale] = useState('');
@@ -578,9 +583,25 @@ export default function OrganizedClasses() {
     setEditAdvisorId(sec.advisorId || '');
   };
 
-  const handleSaveEditSection = (e) => {
+  const handleSaveEditSection = async (e) => {
     if (e) e.preventDefault();
     if (!editModalSection) return;
+
+    if (editAdvisorId) {
+      const existingSectionWithAdvisor = classSections.find(s => s.id !== editModalSection.id && s.advisorId && String(s.advisorId) === String(editAdvisorId));
+      if (existingSectionWithAdvisor) {
+        const advPerson = personnel.find(p => String(p.id) === String(editAdvisorId));
+        const advName = advPerson ? `${advPerson.firstName} ${advPerson.lastName}` : 'This teacher';
+        if (showAlert) {
+          await showAlert(
+            'Advisory Conflict',
+            `${advName} is already assigned as Class Adviser for ${existingSectionWithAdvisor.gradeLevel} - ${existingSectionWithAdvisor.sectionName}. A teacher can only advise 1 regular class section.`
+          );
+        }
+        return;
+      }
+    }
+
     const rawM = editMale.slice(0, 2);
     const rawF = editFemale.slice(0, 2);
     const mVal = rawM === '' ? null : Math.min(99, Math.max(0, Number(rawM)));
@@ -835,7 +856,32 @@ export default function OrganizedClasses() {
     }
   }, [isModalOpen]);
 
-  const teachingPersonnel = personnel.filter(p => p.type === 'teaching');
+  const teachingPersonnel = (Array.isArray(personnel) ? personnel : []).filter(p => p.type === 'teaching' && !p.isDraft);
+
+  // Set of personnel IDs currently assigned as an adviser across all regular sections
+  const assignedRegularAdvisorIds = useMemo(() => {
+    const set = new Set();
+    (classSections || []).forEach(sec => {
+      if (sec?.advisorId) {
+        set.add(String(sec.advisorId));
+      }
+    });
+    return set;
+  }, [classSections]);
+
+  // Available teachers for NEW section creation (1 SECTION : 1 ADVISORY TEACHER)
+  const availableTeachingPersonnelForNew = useMemo(() => {
+    return teachingPersonnel.filter(p => !assignedRegularAdvisorIds.has(String(p.id)));
+  }, [teachingPersonnel, assignedRegularAdvisorIds]);
+
+  // Available teachers for EDITING section (includes current section's adviser, excludes other sections' advisers)
+  const availableTeachingPersonnelForEdit = useMemo(() => {
+    const currentAdvisorId = String(editModalSection?.advisorId || '');
+    return teachingPersonnel.filter(p => {
+      const pId = String(p.id);
+      return pId === currentAdvisorId || !assignedRegularAdvisorIds.has(pId);
+    });
+  }, [teachingPersonnel, assignedRegularAdvisorIds, editModalSection]);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
@@ -845,6 +891,18 @@ export default function OrganizedClasses() {
     }
     if (!newSection.advisorId) {
       await showAlert('Advisory Teacher Required', 'Please select an Advisory Teacher for the section.');
+      return;
+    }
+
+    // Enforce 1 Section : 1 Advisory Teacher constraint
+    const existingSectionWithAdvisor = classSections.find(s => s.advisorId && String(s.advisorId) === String(newSection.advisorId));
+    if (existingSectionWithAdvisor) {
+      const advPerson = personnel.find(p => String(p.id) === String(newSection.advisorId));
+      const advName = advPerson ? `${advPerson.firstName} ${advPerson.lastName}` : 'This teacher';
+      await showAlert(
+        'Advisory Conflict',
+        `${advName} is already assigned as Class Adviser for ${existingSectionWithAdvisor.gradeLevel} - ${existingSectionWithAdvisor.sectionName}. A teacher can only advise 1 regular class section.`
+      );
       return;
     }
 
@@ -940,6 +998,10 @@ export default function OrganizedClasses() {
   });
 
   const filteredSections = classSections.filter(sec => {
+    if (selectedGradeFilter !== 'All') {
+      const g = String(sec.gradeLevel || '').trim();
+      if (!g.includes(selectedGradeFilter)) return false;
+    }
     const advisor = personnel.find(p => p.id === sec.advisorId);
     const advisorName = advisor ? `${advisor.firstName} ${advisor.lastName}` : '';
     const hay = `${sec.gradeLevel} ${sec.sectionName} ${advisorName}`.toLowerCase();
@@ -956,60 +1018,150 @@ export default function OrganizedClasses() {
         onContinue={() => completeNode('classes', 'workload')}
         continueText="Save & Continue to Workload ➔"
       />
-      <section id="classes" className="view grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '24px', alignItems: 'start' }}>
+      {/* Top Workspace Tab Switcher */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        margin: '16px 0 20px 0',
+        flexWrap: 'wrap'
+      }}>
+        <div style={{
+          display: 'inline-flex',
+          background: '#F1F5F9',
+          padding: '4px',
+          borderRadius: '12px',
+          border: '1px solid #E2E8F0',
+          gap: '4px'
+        }}>
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('sections')}
+            style={{
+              padding: '9px 20px',
+              borderRadius: '9px',
+              border: 'none',
+              background: activeWorkspaceTab === 'sections' ? '#FFFFFF' : 'transparent',
+              color: activeWorkspaceTab === 'sections' ? '#0F172A' : '#64748B',
+              fontWeight: '800',
+              fontSize: '13px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              boxShadow: activeWorkspaceTab === 'sections' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FiGrid size={16} style={{ color: activeWorkspaceTab === 'sections' ? '#2563EB' : '#94A3B8' }} />
+            Class Sections & Advisers
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontSize: '11px',
+              fontWeight: '900',
+              background: activeWorkspaceTab === 'sections' ? '#EFF6FF' : '#E2E8F0',
+              color: activeWorkspaceTab === 'sections' ? '#2563EB' : '#64748B'
+            }}>
+              {classSections.length}
+            </span>
+          </button>
 
-      <article className="card">
-        <div className="card-inner">
-          <div className="roster-card-header">
-            <div>
-              <h2>Organized Classes Setup</h2>
-              <p className="subtext">Configure curriculum-level sections and assign class advisers for the current school year.</p>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button 
-                type="button"
-                className="btn secondary" 
-                onClick={handleClearOrganizedClasses}
-                style={{
-                  background: '#F8FAFC',
-                  color: '#334155',
-                  border: '1.5px solid #CBD5E1',
-                  fontWeight: '800',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  borderRadius: '8px',
-                  padding: '8px 14px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#F1F5F9';
-                  e.currentTarget.style.color = '#0F172A';
-                  e.currentTarget.style.borderColor = '#94A3B8';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#F8FAFC';
-                  e.currentTarget.style.color = '#334155';
-                  e.currentTarget.style.borderColor = '#CBD5E1';
-                }}
-                title="Clear all organized class sections in local draft to set up sections manually"
-              >
-                🗑️ Clear Organized Classes
-              </button>
-              <button 
-                className="btn" 
-                onClick={() => {
-                  setModalCategory('REGULAR');
-                  setIsModalOpen(true);
-                }}
-                style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <span>+</span> Add Section
-              </button>
-            </div>
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('subjects')}
+            style={{
+              padding: '9px 20px',
+              borderRadius: '9px',
+              border: 'none',
+              background: activeWorkspaceTab === 'subjects' ? '#FFFFFF' : 'transparent',
+              color: activeWorkspaceTab === 'subjects' ? '#0F172A' : '#64748B',
+              fontWeight: '800',
+              fontSize: '13px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              boxShadow: activeWorkspaceTab === 'subjects' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FiBookOpen size={16} style={{ color: activeWorkspaceTab === 'subjects' ? '#2563EB' : '#94A3B8' }} />
+            Curriculum & Subjects Taught
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontSize: '11px',
+              fontWeight: '900',
+              background: activeWorkspaceTab === 'subjects' ? '#EFF6FF' : '#E2E8F0',
+              color: activeWorkspaceTab === 'subjects' ? '#2563EB' : '#64748B'
+            }}>
+              {getSubjectsForView().length}
+            </span>
+          </button>
+        </div>
+
+        {/* Action button corresponding to active workspace */}
+        {activeWorkspaceTab === 'sections' ? (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button 
+              type="button"
+              className="btn secondary" 
+              onClick={handleClearOrganizedClasses}
+              style={{
+                background: '#F8FAFC',
+                color: '#334155',
+                border: '1.5px solid #CBD5E1',
+                fontWeight: '800',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+              title="Clear all organized class sections in local draft to set up sections manually"
+            >
+              <FiTrash2 size={13} /> Clear Organized Classes
+            </button>
+            <button 
+              className="btn" 
+              onClick={() => {
+                setModalCategory('REGULAR');
+                setIsModalOpen(true);
+              }}
+              style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px', minHeight: '38px', padding: '0 16px', borderRadius: '8px' }}
+            >
+              <span>+</span> Add Section
+            </button>
           </div>
+        ) : (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setNewSubjectInput('');
+              setIsSubjectModalOpen(true);
+            }}
+            style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '13px', minHeight: '38px', padding: '0 16px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '800' }}
+          >
+            + Add Subject
+          </button>
+        )}
+      </div>
+
+      <section id="classes" className="view" style={{ width: '100%' }}>
+        {activeWorkspaceTab === 'sections' && (
+        <article className="card" style={{ width: '100%', marginBottom: '24px' }}>
+          <div className="card-inner">
+            <div className="roster-card-header">
+              <div>
+                <h2>Organized Classes Setup</h2>
+                <p className="subtext">Configure curriculum-level sections and assign class advisers for the current school year.</p>
+              </div>
+            </div>
 
           {/* Total Enrollment Header Cards */}
           {(() => {
@@ -1049,41 +1201,143 @@ export default function OrganizedClasses() {
             });
 
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '16px 0 20px 0' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TOTAL ENROLLED</span>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#1e40af' }}>{totalSchool} <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6' }}>Learners</span></div>
+              <>
+                {/* Unified Executive Summary Ribbon */}
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  alignItems: 'stretch',
+                  margin: '16px 0 16px 0',
+                  background: '#F8FAFC',
+                  border: '1.5px solid #E2E8F0',
+                  borderRadius: '16px',
+                  padding: '12px 16px'
+                }}>
+                  {/* Total Enrolled Metric */}
+                  <div style={{
+                    flex: '1 1 280px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    background: 'linear-gradient(135deg, #EFF6FF, #DBEAFE)',
+                    padding: '10px 16px',
+                    borderRadius: '12px',
+                    border: '1px solid #BFDBFE'
+                  }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#2563EB', color: 'white', display: 'grid', placeItems: 'center', fontWeight: '900' }}>
+                      <FiUsers size={20} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#1D4ED8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        TOTAL ENROLLED
+                      </div>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#1E3A8A', display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                        {totalSchool} <span style={{ fontSize: '12px', fontWeight: '700', color: '#3B82F6' }}>Learners</span>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#166534', background: '#DCFCE7', padding: '1px 7px', borderRadius: '10px' }}>
+                          {totalMale} M
+                        </span>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#9D174D', background: '#FCE7F3', padding: '1px 7px', borderRadius: '10px' }}>
+                          {totalFemale} F
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MALE LEARNERS</span>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#166534' }}>{totalMale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#22c55e' }}>Males</span></div>
+
+                  {/* Total Sections Metric */}
+                  <div style={{
+                    flex: '0 1 150px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: 'white',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    border: '1px solid #E2E8F0'
+                  }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#F1F5F9', color: '#0F172A', display: 'grid', placeItems: 'center' }}>
+                      <FiGrid size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase' }}>SECTIONS</div>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#0F172A' }}>{classSections.length}</div>
+                    </div>
                   </div>
-                  <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg, #fdf2f8, #fce7f3)', borderRadius: '12px', border: '1px solid #fbcfe8' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: '#be185d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FEMALE LEARNERS</span>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: '#9d174d' }}>{totalFemale} <span style={{ fontSize: '12px', fontWeight: '600', color: '#ec4899' }}>Females</span></div>
+
+                  {/* Class Size Standards Distribution */}
+                  <div style={{
+                    flex: '2 1 320px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    background: 'white',
+                    padding: '8px 12px',
+                    borderRadius: '12px',
+                    border: '1px solid #E2E8F0'
+                  }}>
+                    <div style={{ flex: 1, textAlign: 'center', padding: '6px 8px', background: '#F0FDF4', borderRadius: '8px', border: '1px solid #BBF7D0' }}>
+                      <div style={{ fontSize: '9px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase' }}>🟢 WITHIN STANDARD</div>
+                      <div style={{ fontSize: '16px', fontWeight: '900', color: '#166534' }}>{withinCount}</div>
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'center', padding: '6px 8px', background: '#FFFBEB', borderRadius: '8px', border: '1px solid #FDE68A' }}>
+                      <div style={{ fontSize: '9px', fontWeight: '800', color: '#B45309', textTransform: 'uppercase' }}>🟡 BELOW STANDARD</div>
+                      <div style={{ fontSize: '16px', fontWeight: '900', color: '#B45309' }}>{belowCount}</div>
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'center', padding: '6px 8px', background: '#FEF2F2', borderRadius: '8px', border: '1px solid #FECACA' }}>
+                      <div style={{ fontSize: '9px', fontWeight: '800', color: '#B91C1C', textTransform: 'uppercase' }}>🔴 ABOVE STANDARD</div>
+                      <div style={{ fontSize: '16px', fontWeight: '900', color: '#991B1B' }}>{aboveCount}</div>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-                  <div style={{ padding: '10px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1.5px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748B' }}>TOTAL SECTIONS</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#1E293B' }}>{classSections.length}</span>
-                  </div>
-                  <div style={{ padding: '10px 14px', background: '#DCFCE7', borderRadius: '10px', border: '1.5px solid #6EE7B7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#047857' }}>🟢 WITHIN STANDARD</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#047857' }}>{withinCount}</span>
-                  </div>
-                  <div style={{ padding: '10px 14px', background: '#FEF3C7', borderRadius: '10px', border: '1.5px solid #FCD34D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#D97706' }}>🟡 BELOW STANDARD</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#D97706' }}>{belowCount}</span>
-                  </div>
-                  <div style={{ padding: '10px 14px', background: '#FEE2E2', borderRadius: '10px', border: '1.5px solid #FCA5A5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#B91C1C' }}>🔴 ABOVE STANDARD</span>
-                    <span style={{ fontSize: '15px', fontWeight: '900', color: '#B91C1C' }}>{aboveCount}</span>
-                  </div>
+                {/* Grade Level Filter Bar */}
+                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px', margin: '14px 0 10px 0', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', marginRight: '4px', whiteSpace: 'nowrap' }}>
+                    Grade Filter:
+                  </span>
+                  {['All', ...availableGrades].map(grade => {
+                    const count = grade === 'All'
+                      ? classSections.length
+                      : classSections.filter(s => String(s.gradeLevel || '').includes(grade)).length;
+                    const isActive = selectedGradeFilter === grade;
+                    return (
+                      <button
+                        key={grade}
+                        type="button"
+                        onClick={() => setSelectedGradeFilter(grade)}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: '20px',
+                          fontSize: '11.5px',
+                          fontWeight: '800',
+                          border: isActive ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
+                          background: isActive ? '#EFF6FF' : '#FFFFFF',
+                          color: isActive ? '#1D4ED8' : '#475569',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span>{grade}</span>
+                        <span style={{
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          fontSize: '10px',
+                          background: isActive ? '#DBEAFE' : '#F1F5F9',
+                          color: isActive ? '#1E40AF' : '#64748B',
+                          fontWeight: '900'
+                        }}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
+              </>
             );
           })()}
 
@@ -1449,9 +1703,11 @@ export default function OrganizedClasses() {
           )}
         </div>
       </article>
+      )}
 
-      {/* Subjects Taught Card (Adjacent to Organized Classes Setup) */}
-      <article className="card">
+      {/* Workspace 2: Subjects Taught Full-Width Card */}
+      {activeWorkspaceTab === 'subjects' && (
+      <article className="card" style={{ width: '100%', marginBottom: '24px' }}>
         <div className="card-inner">
           <div className="roster-card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -1602,10 +1858,13 @@ export default function OrganizedClasses() {
                   padding: '4px 10px',
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  transition: 'all 0.15s'
+                  transition: 'all 0.15s',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
                 }}
               >
-                ✓ Check All
+                <FiCheck size={12} /> Check All
               </button>
               <button
                 type="button"
@@ -1619,16 +1878,19 @@ export default function OrganizedClasses() {
                   padding: '4px 10px',
                   borderRadius: '6px',
                   cursor: 'pointer',
-                  transition: 'all 0.15s'
+                  transition: 'all 0.15s',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
                 }}
               >
-                ✕ Uncheck All
+                <FiX size={12} /> Uncheck All
               </button>
             </div>
           </div>
 
-          {/* Subjects List with On/Off Toggles */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
+          {/* Subjects List with On/Off Toggles (Responsive Multi-Column Grid) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '10px', maxHeight: '600px', overflowY: 'auto', padding: '4px' }}>
             {getSubjectsForView().map((sub, index) => (
               <div
                 key={sub.name || index}
@@ -1682,6 +1944,7 @@ export default function OrganizedClasses() {
           </div>
         </div>
       </article>
+      )}
 
       {/* Unified Add Section Modal Popup */}
       {isModalOpen && (
@@ -1711,10 +1974,14 @@ export default function OrganizedClasses() {
                   fontSize: '12px',
                   cursor: 'pointer',
                   boxShadow: modalCategory === 'REGULAR' ? '0 2px 5px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.15s'
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
                 }}
               >
-                🏫 Regular Section
+                <FiGrid size={13} /> Regular Section
               </button>
               <button
                 type="button"
@@ -1730,10 +1997,14 @@ export default function OrganizedClasses() {
                   fontSize: '12px',
                   cursor: 'pointer',
                   boxShadow: modalCategory === 'ARAL' ? '0 2px 5px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.15s'
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
                 }}
               >
-                🎯 ARAL Section
+                <FiTarget size={13} /> ARAL Section
               </button>
               <button
                 type="button"
@@ -1749,10 +2020,14 @@ export default function OrganizedClasses() {
                   fontSize: '12px',
                   cursor: 'pointer',
                   boxShadow: modalCategory === 'REMEDIAL_ENRICHMENT' ? '0 2px 5px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.15s'
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
                 }}
               >
-                📘 Remedial / Enrichment
+                <FiBookOpen size={13} /> Remedial / Enrichment
               </button>
             </div>
 
@@ -1832,8 +2107,8 @@ export default function OrganizedClasses() {
                   </div>
                   <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ fontSize: '14px' }}>♂</span> Male Learners
+                      <label style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', display: 'block', marginBottom: '4px' }}>
+                        Male Learners
                       </label>
                       <input
                         type="number"
@@ -1856,8 +2131,8 @@ export default function OrganizedClasses() {
                     </div>
 
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', fontWeight: '800', color: '#9d174d', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ fontSize: '14px' }}>♀</span> Female Learners
+                      <label style={{ fontSize: '11px', fontWeight: '800', color: '#9d174d', display: 'block', marginBottom: '4px' }}>
+                        Female Learners
                       </label>
                       <input
                         type="number"
@@ -1880,8 +2155,8 @@ export default function OrganizedClasses() {
                     </div>
 
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        👥 Total Learners
+                      <label style={{ fontSize: '11px', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                        <FiUsers size={12} /> Total Learners
                       </label>
                       <input
                         type="number"
@@ -1895,6 +2170,7 @@ export default function OrganizedClasses() {
                     {(() => {
                       const targetGrade = isMultigrade ? (selectedGrades[0] || 'Grade 1') : newSection.gradeLevel;
                       const statusObj = getSectionSizeStatus(targetGrade, newSection.numberOfLearners);
+                      if (!statusObj || statusObj.status === 'NO ENROLLMENT' || statusObj.status === 'BELOW STANDARD') return null;
                       return (
                         <div style={{
                           gridColumn: '1 / -1',
@@ -1922,18 +2198,12 @@ export default function OrganizedClasses() {
                       value={newSection.advisorId}
                       onChange={(e) => setNewSection({ ...newSection, advisorId: e.target.value })}
                     >
-                      <option value="">No advisor assigned yet</option>
-                      {teachingPersonnel.map((p) => {
-                        const assignedSecs = classSections.filter(s => s.advisorId && String(s.advisorId) === String(p.id));
-                        const secInfo = assignedSecs.length > 0
-                          ? ` — (${assignedSecs.map(s => `${s.gradeLevel} ${s.sectionName}`).join(', ')})`
-                          : '';
-                        return (
-                          <option key={p.id} value={p.id}>
-                            {p.firstName} {p.lastName} · {p.position}{secInfo}
-                          </option>
-                        );
-                      })}
+                      <option value="">{availableTeachingPersonnelForNew.length === 0 ? 'No available teachers (All have advisories)' : '-- Select Available Adviser --'}</option>
+                      {availableTeachingPersonnelForNew.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.firstName} {p.lastName} · {p.position}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -2034,7 +2304,7 @@ export default function OrganizedClasses() {
                               textAlign: 'center'
                             }}
                           >
-                            <div style={{ fontSize: '14px', marginBottom: '2px', fontWeight: 'bold', color: isSel ? '#0369A1' : '#64748B' }}>☷</div>
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px', color: isSel ? '#0369A1' : '#64748B' }}><FiFileText size={15} /></div>
                             <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>CRLA</div>
                             <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Reading (Gr 1-3)</div>
                           </div>
@@ -2060,7 +2330,7 @@ export default function OrganizedClasses() {
                               textAlign: 'center'
                             }}
                           >
-                            <div style={{ fontSize: '14px', marginBottom: '2px', fontWeight: 'bold', color: isSel ? '#0369A1' : '#64748B' }}>☷</div>
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px', color: isSel ? '#0369A1' : '#64748B' }}><FiFileText size={15} /></div>
                             <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>Phil-IRI</div>
                             <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Reading (Gr 4-10)</div>
                           </div>
@@ -2086,7 +2356,7 @@ export default function OrganizedClasses() {
                               textAlign: 'center'
                             }}
                           >
-                            <div style={{ fontSize: '14px', marginBottom: '2px', fontWeight: 'bold', color: isSel ? '#0369A1' : '#64748B' }}>◷</div>
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px', color: isSel ? '#0369A1' : '#64748B' }}><FiClock size={15} /></div>
                             <div style={{ fontSize: '12px', fontWeight: '800', color: isSel ? '#0369A1' : '#334155' }}>RMA</div>
                             <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>Math (Gr 1-10)</div>
                           </div>
@@ -2100,8 +2370,8 @@ export default function OrganizedClasses() {
                       const levels = toolObj.levels;
                       return (
                         <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                          <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: '#0369A1', marginBottom: '4px' }}>
-                            ⓘ {toolObj.tool} Assessment Profile Level:
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '800', color: '#0369A1', marginBottom: '4px' }}>
+                            <FiInfo size={12} /> {toolObj.tool} Assessment Profile Level:
                           </label>
                           <select
                             value={levels.includes(aralProfileLevel) ? aralProfileLevel : levels[0]}
@@ -2161,10 +2431,14 @@ export default function OrganizedClasses() {
                         fontSize: '12px',
                         cursor: 'pointer',
                         boxShadow: remedialType === 'REMEDIAL' ? '0 2px 6px rgba(147, 51, 234, 0.25)' : 'none',
-                        transition: 'all 0.15s ease'
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
                       }}
                     >
-                      📘 Remedial Class (Catch-Up / Intervention)
+                      <FiBookOpen size={13} /> Remedial Class (Catch-Up / Intervention)
                     </button>
                     <button
                       type="button"
@@ -2180,10 +2454,14 @@ export default function OrganizedClasses() {
                         fontSize: '12px',
                         cursor: 'pointer',
                         boxShadow: remedialType === 'ENRICHMENT' ? '0 2px 6px rgba(37, 99, 235, 0.25)' : 'none',
-                        transition: 'all 0.15s ease'
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px'
                       }}
                     >
-                      📙 Enrichment Class (Advanced / Enhancement)
+                      <FiBook size={13} /> Enrichment Class (Advanced / Enhancement)
                     </button>
                   </div>
                 </div>
@@ -2215,8 +2493,8 @@ export default function OrganizedClasses() {
                 {/* Male and Female Learners */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#F8FAFC', padding: '12px 14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '14px' }}>♂</span> Male Learners
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#1e40af', display: 'block', marginBottom: '4px' }}>
+                      Male Learners
                     </label>
                     <input
                       type="number"
@@ -2228,9 +2506,9 @@ export default function OrganizedClasses() {
                     />
                   </div>
 
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#9d174d', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontSize: '14px' }}>♀</span> Female Learners
+                    <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#9d174d', display: 'block', marginBottom: '4px' }}>
+                      Female Learners
                     </label>
                     <input
                       type="number"
@@ -2243,8 +2521,8 @@ export default function OrganizedClasses() {
                   </div>
 
                   <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      👥 Total Learners
+                    <label style={{ fontSize: '11px', fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                      <FiUsers size={12} /> Total Learners
                     </label>
                     <input
                       type="number"
@@ -2256,7 +2534,7 @@ export default function OrganizedClasses() {
                   </div>
 
                   <div style={{ gridColumn: '1 / -1', fontSize: '10px', color: '#64748B', fontWeight: '600', fontStyle: 'italic', textAlign: 'center' }}>
-                    ⓘ Note: Remedial/Enrichment learners are recorded for intervention and are <strong>NOT added</strong> to base school enrollment.
+                    Note: Remedial/Enrichment learners are recorded for intervention and are <strong>NOT added</strong> to base school enrollment.
                   </div>
                 </div>
 
@@ -2277,7 +2555,7 @@ export default function OrganizedClasses() {
                     })}
                   </select>
                   <span style={{ fontSize: '10px', color: '#7E22CE', fontWeight: '700', marginTop: '4px', display: 'block' }}>
-                    ⚡ Assigning a teacher automatically adds a {remedialType === 'REMEDIAL' ? 'REMEDIATION' : 'ENRICHMENT'} teaching load row into their Workload timetable.
+                    Assigning a teacher automatically adds a {remedialType === 'REMEDIAL' ? 'REMEDIATION' : 'ENRICHMENT'} teaching load row into their Workload timetable.
                   </span>
                 </div>
 
@@ -2426,8 +2704,8 @@ export default function OrganizedClasses() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1.5px solid var(--line)', paddingBottom: '12px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
-                  ✎ Edit Section Setup
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiEdit2 size={16} /> Edit Section Setup
                 </h3>
                 <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '600' }}>
                   {editModalSection.gradeLevel} — {editModalSection.sectionName}
@@ -2513,21 +2791,23 @@ export default function OrganizedClasses() {
                           {totalLearnersCount} Learners
                         </span>
                       </div>
-                      <div style={{
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        background: statusObj.bg,
-                        color: statusObj.color,
-                        border: `1.5px solid ${statusObj.border}`,
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <span>DepEd Section Size Standard: <strong>{statusObj.status}</strong></span>
-                        <span style={{ fontSize: '11px', fontWeight: '700' }}>{statusObj.label}</span>
-                      </div>
+                      {statusObj && statusObj.status !== 'NO ENROLLMENT' && statusObj.status !== 'BELOW STANDARD' && (
+                        <div style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          background: statusObj.bg,
+                          color: statusObj.color,
+                          border: `1.5px solid ${statusObj.border}`,
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}>
+                          <span>DepEd Section Size Standard: <strong>{statusObj.status}</strong></span>
+                          <span style={{ fontSize: '11px', fontWeight: '700' }}>{statusObj.label}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -2543,8 +2823,8 @@ export default function OrganizedClasses() {
                   onChange={(e) => setEditAdvisorId(e.target.value)}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px', fontWeight: '600', color: 'var(--navy)' }}
                 >
-                  <option value="">-- Select Adviser --</option>
-                  {teachingPersonnel.map(p => (
+                  <option value="">-- Select Available Adviser --</option>
+                  {availableTeachingPersonnelForEdit.map(p => (
                     <option key={p.id} value={p.id}>{p.firstName} {p.lastName} ({p.position || 'Teacher'})</option>
                   ))}
                 </select>

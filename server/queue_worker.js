@@ -300,12 +300,22 @@ async function processNextJob() {
 
         // 4C. Insert/Update esf7_perssonel_educ
         const educId = p.educationId || p.educ_id || `EDU-${pId.replace('PER-', '')}`;
+        const highestAttainment = p.highestEducationalAttainment || p.highest_educational_attainment || (p.collegeDegree || p.college_degree ? 'COLLEGE GRADUATE / BACCALAUREATE' : 'COLLEGE GRADUATE / BACCALAUREATE');
+        const shsTrack = p.shsTrack || p.shs_track || null;
+        const vocCourse = p.vocationalCourse || p.vocational_course || null;
+        const vocLevel = p.vocationalLevel || p.vocational_level || null;
+
         await client.query(
           `INSERT INTO esf7_perssonel_educ (
-             id, personnel_id, college_degree, major, minor, post_graduate_degree, post_graduate_discipline,
+             id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
+             college_degree, major, minor, post_graduate_degree, post_graduate_discipline,
              eligibility, prc_specialization, raw_payload, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
            ON CONFLICT (personnel_id) DO UPDATE SET
+             highest_educational_attainment = EXCLUDED.highest_educational_attainment,
+             shs_track = EXCLUDED.shs_track,
+             vocational_course = EXCLUDED.vocational_course,
+             vocational_level = EXCLUDED.vocational_level,
              college_degree = EXCLUDED.college_degree,
              major = EXCLUDED.major,
              minor = EXCLUDED.minor,
@@ -318,13 +328,17 @@ async function processNextJob() {
           [
             educId,
             pId,
-            p.collegeDegree || p.college_degree || 'BACHELOR OF SECONDARY EDUCATION',
-            p.major || 'GENERAL EDUCATION',
-            p.minor || 'N/A',
+            highestAttainment,
+            shsTrack,
+            vocCourse,
+            vocLevel,
+            p.collegeDegree || p.college_degree || null,
+            p.major || null,
+            p.minor || null,
             p.postGraduateDegree || p.post_graduate_degree || 'N/A',
-            p.postGraduateDiscipline || p.post_graduate_discipline || 'N/A',
+            p.postGraduateDiscipline || p.post_graduate_discipline || null,
             JSON.stringify(Array.isArray(p.eligibility) ? p.eligibility : [p.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS']),
-            p.prcSpecialization || p.prc_specialization || 'N/A',
+            p.prcSpecialization || p.prc_specialization || null,
             JSON.stringify(p.educ_raw_payload || {})
           ]
         );

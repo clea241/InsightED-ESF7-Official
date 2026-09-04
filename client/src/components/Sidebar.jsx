@@ -1,7 +1,22 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
 import LogoutPasscodeModal from './LogoutPasscodeModal';
+import { 
+  FiHome, 
+  FiBookOpen, 
+  FiUsers, 
+  FiUserCheck, 
+  FiBookmark, 
+  FiGrid, 
+  FiClock, 
+  FiMaximize, 
+  FiMail, 
+  FiRepeat, 
+  FiDollarSign, 
+  FiShield, 
+  FiLogOut,
+  FiChevronDown
+} from 'react-icons/fi';
 
 export default function Sidebar() {
   const { activeView, setActiveView, incomingRequests } = useApp();
@@ -24,42 +39,43 @@ export default function Sidebar() {
       key: 'esf7',
       title: 'ESF7 Core Registry',
       items: [
-        { view: 'dashboard', label: 'Dashboard', icon: '⌂' },
-        { view: 'school', label: 'School Profile', icon: '🏛' },
-        { view: 'roster', label: 'Personnel Roster', icon: '☷' },
-        { view: 'profile', label: 'Personnel Profiling', icon: '✎' },
-        { view: 'designation', label: 'Designations', icon: '⚜' },
-        { view: 'classes', label: 'Organized Classes', icon: '▦' },
-        { view: 'workload', label: 'Workload', icon: '◷' }
+        { view: 'landing', label: 'Welcome Page', Icon: FiHome },
+        { view: 'dashboard', label: 'Dashboard', Icon: FiGrid },
+        { view: 'school', label: 'School Profile', Icon: FiBookOpen },
+        { view: 'roster', label: 'Personnel Roster', Icon: FiUsers },
+        { view: 'profile', label: 'Personnel Profiling', Icon: FiUserCheck },
+        { view: 'designation', label: 'Designations', Icon: FiBookmark },
+        { view: 'classes', label: 'Organized Classes', Icon: FiGrid },
+        { view: 'workload', label: 'Workload', Icon: FiClock }
       ]
     },
     {
       key: 'portals',
       title: 'Portals & Utilities',
       items: [
-        { view: 'room-qr', label: 'Room QR Portal', icon: '⛶' },
-        { view: 'requests', label: 'Requests', icon: '✉', badge: incomingRequests.length > 0 ? incomingRequests.length : null }
+        { view: 'room-qr', label: 'Room QR Portal', Icon: FiMaximize },
+        { view: 'requests', label: 'Requests', Icon: FiMail, badge: incomingRequests.length > 0 ? incomingRequests.length : null }
       ]
     },
     {
       key: 'overload',
       title: 'Teaching Overload',
       items: [
-        { view: 'overload', label: 'Overload', icon: '⇄' }
+        { view: 'overload', label: 'Overload', Icon: FiRepeat }
       ]
     },
     {
       key: 'others',
       title: 'Others',
       items: [
-        { view: 'allowances', label: 'Allowances & Incentives', icon: '₱' }
+        { view: 'allowances', label: 'Allowances & Incentives', Icon: FiDollarSign }
       ]
     },
     {
       key: 'validation',
       title: 'Quality Audit & Certification',
       items: [
-        { view: 'validation', label: 'Validation Center', icon: '⛨' }
+        { view: 'validation', label: 'Validation Center', Icon: FiShield }
       ]
     }
   ];
@@ -103,31 +119,35 @@ export default function Sidebar() {
                 <span className="sidebar-section-title">{sec.title}</span>
                 <span 
                   className="sidebar-chevron" 
-                  style={{ transform: openSections[sec.key] ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                  style={{ transform: openSections[sec.key] ? 'rotate(0deg)' : 'rotate(-90deg)', display: 'inline-flex', alignItems: 'center' }}
                 >
-                  ▼
+                  <FiChevronDown size={14} />
                 </span>
               </button>
 
               {/* Section Items */}
               {openSections[sec.key] && (
                 <div className="section-items">
-                  {sec.items.map((item) => (
-                    <button
-                      key={item.view}
-                      className={activeView === item.view ? 'active' : ''}
-                      data-icon={item.icon}
-                      onClick={() => setActiveView(item.view)}
-                      type="button"
-                    >
-                      <span>{item.label}</span>
-                      {item.badge && (
-                        <span className="nav-badge">
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                  {sec.items.map((item) => {
+                    const IconComponent = item.Icon;
+                    return (
+                      <button
+                        key={item.view}
+                        className={activeView === item.view ? 'active' : ''}
+                        onClick={() => setActiveView(item.view)}
+                        type="button"
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+                      >
+                        {IconComponent && <IconComponent size={16} style={{ flexShrink: 0 }} />}
+                        <span>{item.label}</span>
+                        {item.badge && (
+                          <span className="nav-badge">
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -138,20 +158,22 @@ export default function Sidebar() {
             {/* Validation Center Button - Quality Assurance */}
             <button
               className={activeView === 'validation' ? 'active' : ''}
-              data-icon="⛨"
               onClick={() => setActiveView('validation')}
               type="button"
+              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
             >
+              <FiShield size={16} style={{ flexShrink: 0 }} />
               <span>Validation Center</span>
             </button>
 
             {/* Sign Out Button */}
             <button
               className="signout-btn"
-              data-icon="⎋"
               onClick={() => setIsLogoutModalOpen(true)}
               type="button"
+              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
             >
+              <FiLogOut size={16} style={{ flexShrink: 0 }} />
               <span>Sign Out</span>
             </button>
           </div>

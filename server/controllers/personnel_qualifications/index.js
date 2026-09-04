@@ -12,8 +12,16 @@ function formatEducRecord(row) {
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
-    collegeDegree: row.college_degree,
-    college_degree: row.college_degree,
+    highestEducationalAttainment: row.highest_educational_attainment || (row.college_degree ? 'COLLEGE GRADUATE / BACCALAUREATE' : ''),
+    highest_educational_attainment: row.highest_educational_attainment || (row.college_degree ? 'COLLEGE GRADUATE / BACCALAUREATE' : ''),
+    shsTrack: row.shs_track || '',
+    shs_track: row.shs_track || '',
+    vocationalCourse: row.vocational_course || '',
+    vocational_course: row.vocational_course || '',
+    vocationalLevel: row.vocational_level || '',
+    vocational_level: row.vocational_level || '',
+    collegeDegree: row.college_degree || '',
+    college_degree: row.college_degree || '',
     major: row.major || '',
     minor: row.minor || '',
     postGraduateDegree: row.post_graduate_degree || 'N/A',
@@ -49,6 +57,10 @@ router.post('/:personnel_id', async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const {
+      highest_educational_attainment, highestEducationalAttainment,
+      shs_track, shsTrack,
+      vocational_course, vocationalCourse,
+      vocational_level, vocationalLevel,
       college_degree, collegeDegree, major, minor,
       post_graduate_degree, postGraduateDegree,
       post_graduate_discipline, postGraduateDiscipline, postGraduateDisciplineCustom,
@@ -65,7 +77,14 @@ router.post('/:personnel_id', async (req, res) => {
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
     const eduId = `EDU-${schoolId.replace('SCH-', '')}-${seq}`;
 
-    const degree = (college_degree || collegeDegree || 'BACHELOR OF SECONDARY EDUCATION').toUpperCase();
+    const eduHighestAttainment = (
+      highest_educational_attainment || highestEducationalAttainment ||
+      (college_degree || collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : 'COLLEGE GRADUATE / BACCALAUREATE')
+    ).toUpperCase();
+    const eduShsTrack = (shs_track || shsTrack || '').toUpperCase() || null;
+    const eduVocationalCourse = (vocational_course || vocationalCourse || '').toUpperCase() || null;
+    const eduVocationalLevel = (vocational_level || vocationalLevel || '').toUpperCase() || null;
+    const degree = (college_degree || collegeDegree || '').toUpperCase() || null;
     const maj = (major || '').toUpperCase();
     const min = (minor || '').toUpperCase();
     const postDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
@@ -83,11 +102,16 @@ router.post('/:personnel_id', async (req, res) => {
 
     const query = `
       INSERT INTO esf7_perssonel_educ (
-        id, personnel_id, college_degree, major, minor, post_graduate_degree,
+        id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
+        college_degree, major, minor, post_graduate_degree,
         post_graduate_discipline, eligibility, prc_specialization, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb)
       ON CONFLICT (personnel_id) DO UPDATE SET
+        highest_educational_attainment = EXCLUDED.highest_educational_attainment,
+        shs_track = EXCLUDED.shs_track,
+        vocational_course = EXCLUDED.vocational_course,
+        vocational_level = EXCLUDED.vocational_level,
         college_degree = EXCLUDED.college_degree,
         major = EXCLUDED.major,
         minor = EXCLUDED.minor,
@@ -103,6 +127,10 @@ router.post('/:personnel_id', async (req, res) => {
     const values = [
       eduId,
       personnel_id,
+      eduHighestAttainment,
+      eduShsTrack,
+      eduVocationalCourse,
+      eduVocationalLevel,
       degree,
       maj || null,
       min || null,

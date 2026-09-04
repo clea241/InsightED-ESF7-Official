@@ -1,4 +1,5 @@
 import React from 'react';
+import { FiPrinter, FiX, FiAlertTriangle, FiCheck } from 'react-icons/fi';
 
 export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount }) {
   if (!isOpen) return null;
@@ -174,7 +175,7 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
       {/* Top Action Bar (Hidden during printing) */}
       <div className="esf7-print-toolbar no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '22px' }}>🖨️</span>
+          <FiPrinter size={22} style={{ color: 'var(--navy)' }} />
           <div>
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800' }}>
               eSF7 Printable Report & Class Program Preview
@@ -204,7 +205,7 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
               gap: '8px'
             }}
           >
-            🖨️ Print / Save as PDF
+            <FiPrinter size={15} /> Print / Save as PDF
           </button>
           <button
             type="button"
@@ -217,10 +218,13 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
               padding: '10px 18px',
               borderRadius: '10px',
               border: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
             }}
           >
-            ✕ Close Preview
+            <FiX size={15} /> Close Preview
           </button>
         </div>
       </div>
@@ -553,8 +557,8 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
             <span>Generated via <strong>InsightED eSF7 Platform</strong></span><br />
             <span style={{ color: '#64748B' }}>Date Generated: {new Date().toLocaleDateString()}</span>
             {isLocked && (
-              <div style={{ marginTop: '6px', display: 'inline-block', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#B91C1C', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: '800' }}>
-                ⚠️ DRAFT REPORT — {errorsCount || 'PENDING'} VALIDATION ISSUES REMAINING
+              <div style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#B91C1C', padding: '2px 8px', borderRadius: '4px', fontSize: '9.5px', fontWeight: '800' }}>
+                <FiAlertTriangle size={10} /> DRAFT REPORT — {errorsCount || 'PENDING'} VALIDATION ISSUES REMAINING
               </div>
             )}
           </div>
@@ -566,8 +570,8 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                   alt="School Head E-Signature" 
                   style={{ maxHeight: '48px', maxWidth: '180px', objectFit: 'contain', display: 'block', margin: '0 auto' }} 
                 />
-                <span style={{ fontSize: '9px', fontWeight: '800', color: '#16A34A', display: 'block', letterSpacing: '0.04em' }}>
-                  ✓ CERTIFIED & DIGITALLY SIGNED
+                <span style={{ fontSize: '9px', fontWeight: '800', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', letterSpacing: '0.04em' }}>
+                  <FiCheck size={10} /> CERTIFIED & DIGITALLY SIGNED
                 </span>
               </div>
             ) : isLocked ? (

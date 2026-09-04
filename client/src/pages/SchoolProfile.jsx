@@ -3,22 +3,22 @@ import { useApp } from '../context/AppContext';
 import { getLocalDraft, setLocalDraft } from '../services/db';
 import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
-
+import { FiShield, FiMapPin, FiTarget, FiStar, FiSave, FiInfo, FiBookOpen, FiAward, FiBook } from 'react-icons/fi';
 
 const OFFERING_METADATA = {
-  'Elementary': { title: 'Elementary', subtitle: 'Kinder to Grade 6', icon: '🏫', color: '#10b981', bg: '#ecfdf5', border: '#a7f3d0' },
-  'JHS': { title: 'Junior High School', subtitle: 'Grade 7 to Grade 10', icon: '📖', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
-  'SHS': { title: 'Senior High School', subtitle: 'Grade 11 to Grade 12', icon: '🎓', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe' }
+  'Elementary': { title: 'Elementary', subtitle: 'Kinder to Grade 6', color: '#10b981', bg: '#ecfdf5', border: '#a7f3d0' },
+  'JHS': { title: 'Junior High School', subtitle: 'Grade 7 to Grade 10', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
+  'SHS': { title: 'Senior High School', subtitle: 'Grade 11 to Grade 12', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe' }
 };
 
 const JHS_PROGRAM_OPTIONS = [
-  { code: 'SPA', label: 'SPECIAL PROGRAM IN THE ARTS (SPA)', icon: '🎨' },
-  { code: 'SPFL', label: 'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)', icon: '🌐' },
-  { code: 'SPJ', label: 'SPECIAL PROGRAM IN JOURNALISM (SPJ)', icon: '📰' },
-  { code: 'SPS', label: 'SPECIAL PROGRAM IN SPORTS (SPS)', icon: '🏆' },
-  { code: 'STE', label: 'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM', icon: '🔬' },
-  { code: 'SPTVE', label: 'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)', icon: '⚙️' },
-  { code: 'SCIENCE', label: 'SPECIAL PROGRAM IN SCIENCE', icon: '🧪' }
+  { code: 'SPA', label: 'SPECIAL PROGRAM IN THE ARTS (SPA)' },
+  { code: 'SPFL', label: 'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)' },
+  { code: 'SPJ', label: 'SPECIAL PROGRAM IN JOURNALISM (SPJ)' },
+  { code: 'SPS', label: 'SPECIAL PROGRAM IN SPORTS (SPS)' },
+  { code: 'STE', label: 'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM' },
+  { code: 'SPTVE', label: 'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)' },
+  { code: 'SCIENCE', label: 'SPECIAL PROGRAM IN SCIENCE' }
 ];
 
 export default function SchoolProfile() {
@@ -133,7 +133,7 @@ export default function SchoolProfile() {
         console.warn('Backend database sync deferred (saved locally):', backendErr.message);
       }
 
-      setSaveStatus('✅ Saved to Local DB!');
+      setSaveStatus('Saved to Local DB!');
       if (showConfirm) {
         showConfirm('Configuration Saved!', 'Your Special Curricular Programs & Curriculum Model have been saved to your local database.');
       } else if (showAlert) {
@@ -141,7 +141,7 @@ export default function SchoolProfile() {
       }
     } catch (err) {
       console.error('Failed to save configuration:', err);
-      setSaveStatus('❌ Failed to save configuration');
+      setSaveStatus('Failed to save configuration');
     } finally {
       setIsSaving(false);
     }
@@ -175,7 +175,7 @@ export default function SchoolProfile() {
         }}>
           <div style={{ zIndex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-              <span style={{ fontSize: '24px' }}>🏫</span>
+              <FiBookOpen size={24} color="#f8fafc" />
               <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', letterSpacing: '-0.025em', color: '#f8fafc' }}>
                 School Profile & Registry
               </h2>
@@ -199,7 +199,7 @@ export default function SchoolProfile() {
             gap: '6px',
             zIndex: 1
           }}>
-            <span>🛡️</span> Official Registry Match
+            <FiShield size={13} style={{ marginRight: '4px' }} /> Official Registry Match
           </div>
         </div>
 
@@ -208,7 +208,7 @@ export default function SchoolProfile() {
           {/* Identity Grid Section */}
           <div style={{ marginBottom: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '14px', color: '#3b82f6' }}>📌</span>
+              <FiMapPin size={14} style={{ color: '#3b82f6' }} />
               <h3 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Basic School Information
               </h3>
@@ -256,7 +256,7 @@ export default function SchoolProfile() {
           <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '24px', marginBottom: '28px' }}>
             <div style={{ marginBottom: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                <span style={{ fontSize: '15px', color: '#10b981' }}>🎯</span>
+                <FiTarget size={15} style={{ color: '#10b981' }} />
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
                   Curricular Offerings Portfolio
                 </h3>
@@ -284,7 +284,9 @@ export default function SchoolProfile() {
                       gap: '12px'
                     }}
                   >
-                    <div style={{ fontSize: '22px' }}>{meta.icon}</div>
+                    <div style={{ fontSize: '22px', display: 'flex', alignItems: 'center' }}>
+                      {key === 'Elementary' ? <FiBookOpen size={22} color={meta.color} /> : key === 'JHS' ? <FiBook size={22} color={meta.color} /> : <FiAward size={22} color={meta.color} />}
+                    </div>
                     
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -306,7 +308,7 @@ export default function SchoolProfile() {
             <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                  <span style={{ fontSize: '18px' }}>⭐</span>
+                  <FiStar size={18} />
                   <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '900', color: '#0f172a' }}>
                     Special Curricular Programs & SHS Curriculum Model
                   </h3>
@@ -318,7 +320,7 @@ export default function SchoolProfile() {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 {saveStatus && (
-                  <span style={{ fontSize: '11px', fontWeight: '800', color: saveStatus.includes('✅') ? '#059669' : '#dc2626', background: saveStatus.includes('✅') ? '#ecfdf5' : '#fef2f2', padding: '4px 10px', borderRadius: '6px', border: `1px solid ${saveStatus.includes('✅') ? '#a7f3d0' : '#fecaca'}` }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: saveStatus.includes('Saved') ? '#059669' : '#dc2626', background: saveStatus.includes('Saved') ? '#ecfdf5' : '#fef2f2', padding: '4px 10px', borderRadius: '6px', border: `1px solid ${saveStatus.includes('Saved') ? '#a7f3d0' : '#fecaca'}` }}>
                     {saveStatus}
                   </span>
                 )}
@@ -341,7 +343,7 @@ export default function SchoolProfile() {
                     gap: '6px'
                   }}
                 >
-                  <span>💾</span> {isSaving ? 'Saving...' : 'Save Config'}
+                  <FiSave size={13} /> {isSaving ? 'Saving...' : 'Save Config'}
                 </button>
               </div>
             </div>
@@ -354,7 +356,7 @@ export default function SchoolProfile() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: hasElemSpecialPrograms === 'yes' ? '12px' : '0' }}>
                     <div>
                       <span style={{ fontSize: '10px', fontWeight: '900', color: '#059669', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>
-                        🏫 Elementary Offering Active
+                        Elementary Offering Active
                       </span>
                       <label style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                         1. Does your Elementary School offer Special Curricular Programs?
@@ -424,14 +426,14 @@ export default function SchoolProfile() {
                           onChange={(e) => setElemSpecialProgram(e.target.checked)}
                           style={{ width: '15px', height: '15px', accentColor: '#10b981' }}
                         />
-                        <span>🧪</span> SPECIAL SCIENCE ELEMENTARY SCHOOL
+                        <FiAward size={14} /> SPECIAL SCIENCE ELEMENTARY SCHOOL
                       </label>
                     </div>
                   )}
                 </div>
               ) : (
-                <div style={{ padding: '12px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic' }}>
-                  ℹ️ Elementary Special Programs section is hidden because Elementary offering is inactive.
+                <div style={{ padding: '12px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiInfo size={14} /> Elementary Special Programs section is hidden because Elementary offering is inactive.
                 </div>
               )}
 
@@ -441,7 +443,7 @@ export default function SchoolProfile() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: hasJhsSpecialPrograms === 'yes' ? '14px' : '0' }}>
                     <div>
                       <span style={{ fontSize: '10px', fontWeight: '900', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>
-                        📖 Junior High School (JHS) Offering Active
+                        Junior High School (JHS) Offering Active
                       </span>
                       <label style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                         2. Does your Junior High School offer Special Curricular Programs?
@@ -520,7 +522,7 @@ export default function SchoolProfile() {
                                 onChange={() => handleToggleJhsProgram(item.label)}
                                 style={{ width: '15px', height: '15px', accentColor: '#2563eb' }}
                               />
-                              <span style={{ fontSize: '14px' }}>{item.icon}</span>
+                              <FiAward size={14} />
                               <span style={{ flex: 1, lineHeight: '1.3' }}>{item.label}</span>
                             </label>
                           );
@@ -530,8 +532,8 @@ export default function SchoolProfile() {
                   )}
                 </div>
               ) : (
-                <div style={{ padding: '12px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic' }}>
-                  ℹ️ JHS Special Programs section is hidden because Junior High School offering is inactive.
+                <div style={{ padding: '12px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiInfo size={14} /> JHS Special Programs section is hidden because Junior High School offering is inactive.
                 </div>
               )}
 
@@ -540,7 +542,7 @@ export default function SchoolProfile() {
                 <div style={{ padding: '16px 20px', borderRadius: '14px', background: '#f5f3ff', border: '1.5px solid #ddd6fe' }}>
                   <div style={{ marginBottom: '12px' }}>
                     <span style={{ fontSize: '10px', fontWeight: '900', color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '2px' }}>
-                      🎓 Senior High School (SHS) Offering Active
+                      Senior High School (SHS) Offering Active
                     </span>
                     <label style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', display: 'block', marginBottom: '2px' }}>
                       3. Which Senior High School Curriculum model does your school offer for Grade 12?
@@ -570,7 +572,7 @@ export default function SchoolProfile() {
                         onChange={(e) => setShsCurriculumModel(e.target.value)}
                         style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
                       />
-                      <span>📜</span> Standard K-12 SHS Curriculum
+                      <FiBook size={14} /> Standard K-12 SHS Curriculum
                     </label>
 
                     <label style={{
@@ -595,13 +597,13 @@ export default function SchoolProfile() {
                         onChange={(e) => setShsCurriculumModel(e.target.value)}
                         style={{ width: '16px', height: '16px', accentColor: '#8b5cf6' }}
                       />
-                      <span>🚀</span> Strengthened SHS Curriculum (Grade 12)
+                      <FiAward size={14} /> Strengthened SHS Curriculum (Grade 12)
                     </label>
                   </div>
                 </div>
               ) : (
-                <div style={{ padding: '12px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic' }}>
-                  ℹ️ Senior High School (Grade 12) Curriculum Model section is hidden because Senior High School offering is inactive.
+                <div style={{ padding: '12px 16px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiInfo size={14} /> Senior High School (Grade 12) Curriculum Model section is hidden because Senior High School offering is inactive.
                 </div>
               )}
 

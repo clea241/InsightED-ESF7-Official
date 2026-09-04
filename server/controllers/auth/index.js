@@ -18,7 +18,21 @@ const PILOT_SCHOOLS = [
 ];
 const PILOT_PASSWORD = 'Pilot2026!';
 
-// Create a connection pool to the main 'insightEd' database containing the users table
+// Create connection pool to 'users_database' containing user_schoolhead
+const usersDbPoolString = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL.replace('insighted_esf7', 'users_database')
+  : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/users_database`;
+
+const usersDatabasePool = new Pool({
+  connectionString: usersDbPoolString,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+});
+
+usersDatabasePool.on('error', (err) => {
+  console.error('[users_database Pool Error]:', err.message);
+});
+
+// Fallback connection pool to 'insightEd'
 const poolString = process.env.DATABASE_URL
   ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
   : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
@@ -33,6 +47,12 @@ insightEdPool.on('error', (err) => {
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'STRIDE_INSIGHTED_SECRET_2026_KEY_PROD';
+
+// Standard official DepEd error prompt when a school ID is not found in user_schoolhead
+function getUnregisteredSchoolError(inputSchoolId, isEmail) {
+  const cleanId = isEmail ? inputSchoolId : String(inputSchoolId || '').replace(/^SCH-/i, '').trim();
+  return `School ID ${cleanId} is not yet registered in the DepEd InsightED portal. Please verify your 6-digit School ID, register first, or contact your Division Office to register your station.`;
+}
 
 // GET /api/auth/me
 router.get('/me', async (req, res) => {
@@ -58,14 +78,28 @@ router.get('/me', async (req, res) => {
       });
     }
 
-    const query = 'SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM users WHERE uid = $1';
-    const result = await insightEdPool.query(query, [decoded.uid]);
+    // 1. Check user_schoolhead in users_database
+    let user = null;
+    try {
+      const shRes = await usersDatabasePool.query(
+        'SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM user_schoolhead WHERE uid = $1',
+        [decoded.uid]
+      );
+      if (shRes.rows.length > 0) user = shRes.rows[0];
+    } catch (e) {}
+
+    // 2. Fallback to users table in insightEd
+    if (!user) {
+      const uRes = await insightEdPool.query(
+        'SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM users WHERE uid = $1',
+        [decoded.uid]
+      ).catch(() => ({ rows: [] }));
+      if (uRes.rows.length > 0) user = uRes.rows[0];
+    }
     
-    if (result.rows.length === 0) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-
-    const user = result.rows[0];
 
     res.json({
       uid: user.uid,
@@ -83,20 +117,20 @@ router.get('/me', async (req, res) => {
   }
 });
 
-// POST /api/auth/migrate-login and /api/auth/master-login
-const handleLogin = async (req, res) => {
+// ── POST /api/auth/migrate-login and /api/auth/master-login (Password Sign-In) ──
+const handlePasswordLogin = async (req, res) => {
   const { identifier, password, school_id } = req.body;
-  const inputId = (school_id || identifier || '').trim();
+  const inputSchoolId = (school_id || identifier || '').replace(/^SCH-/i, '').trim();
 
-  if (!inputId || !password) {
+  if (!inputSchoolId || !password) {
     return res.status(400).json({ error: 'School ID and password are required' });
   }
 
-  // ── Pilot school shortcut login (includes 199901-199999 sandbox range) ────
-  const isPilotSeries = PILOT_SCHOOLS.includes(inputId) || /^199\d{3}$/.test(inputId);
-  if (isPilotSeries && (password === PILOT_PASSWORD || password === inputId || password === 'deped123' || password === 'Pilot2026')) {
+  // Pilot shortcut
+  const isPilotSeries = PILOT_SCHOOLS.includes(inputSchoolId) || /^199\d{3}$/.test(inputSchoolId);
+  if (isPilotSeries && (password === PILOT_PASSWORD || password === inputSchoolId || password === 'deped123' || password === 'Pilot2026')) {
     const token = jwt.sign(
-      { uid: `pilot-${inputId}`, email: `pilot-${inputId}@esf7.pilot`, role: 'school', school_id: inputId },
+      { uid: `pilot-${inputSchoolId}`, email: `pilot-${inputSchoolId}@esf7.pilot`, role: 'school', school_id: inputSchoolId },
       JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -104,45 +138,68 @@ const handleLogin = async (req, res) => {
       success: true,
       token,
       user: {
-        uid: `pilot-${inputId}`,
-        email: `pilot-${inputId}@esf7.pilot`,
+        uid: `pilot-${inputSchoolId}`,
+        email: `pilot-${inputSchoolId}@esf7.pilot`,
         role: 'school',
         account_category: 'school',
         region: 'PILOT',
         division: 'PILOT DIVISION',
         first_name: 'Pilot',
-        last_name: `School ${inputId}`,
-        school_id: inputId
+        last_name: `School ${inputSchoolId}`,
+        school_id: inputSchoolId
       }
     });
   }
 
   try {
-    const isEmail = inputId.includes('@');
-    const isSchoolId = !isEmail && /^\d{6,}$/.test(inputId);
+    const isEmail = inputSchoolId.includes('@');
 
-    const query = isSchoolId
-      ? `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id FROM users WHERE school_id = $1 AND disabled = false`
-      : `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id FROM users WHERE LOWER(email) = $1 AND disabled = false`;
-
-    const result = await insightEdPool.query(query, [isSchoolId ? inputId : inputId.toLowerCase()]);
-    
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Username does not exist. Kindly register first.' });
+    // 1. Query user_schoolhead in users_database by school_id column
+    let user = null;
+    try {
+      const shQuery = isEmail
+        ? `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM user_schoolhead WHERE LOWER(email) = $1 AND (disabled = false OR disabled IS NULL)`
+        : `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM user_schoolhead WHERE school_id = $1 AND (disabled = false OR disabled IS NULL)`;
+      
+      const shRes = await usersDatabasePool.query(shQuery, [isEmail ? inputSchoolId.toLowerCase() : inputSchoolId]);
+      if (shRes.rows.length > 0) user = shRes.rows[0];
+    } catch (e) {
+      console.warn('[user_schoolhead query warning]:', e.message);
     }
 
-    const user = result.rows[0];
-    
-    // Validate password using bcrypt
-    let isValid = false;
+    // 2. Secondary fallback: users table in insightEd
+    if (!user) {
+      const uQuery = isEmail
+        ? `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM users WHERE LOWER(email) = $1 AND (disabled = false OR disabled IS NULL)`
+        : `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM users WHERE school_id = $1 AND (disabled = false OR disabled IS NULL)`;
+      
+      const uRes = await insightEdPool.query(uQuery, [isEmail ? inputSchoolId.toLowerCase() : inputSchoolId]).catch(() => ({ rows: [] }));
+      if (uRes.rows.length > 0) user = uRes.rows[0];
+    }
+
+    if (!user) {
+      const enhancedError = await getUnregisteredSchoolError(inputSchoolId, isEmail);
+      return res.status(401).json({ error: enhancedError });
+    }
+
+    if (!user.password_hash) {
+      return res.status(401).json({ error: 'No password configured for this account. Please sign in with your passcode.' });
+    }
+
+    // Match password against password_hash column
+    let isPasswordValid = false;
     if (user.hash_version === 'bcrypt' || user.password_hash.startsWith('$2b$') || user.password_hash.startsWith('$2a$')) {
-      isValid = await bcrypt.compare(password, user.password_hash);
+      isPasswordValid = await bcrypt.compare(password, user.password_hash);
     } else {
-      isValid = (password === user.password_hash);
+      isPasswordValid = (password === user.password_hash);
     }
 
-    if (!isValid) {
-      return res.status(401).json({ error: 'The username exists but does not match the password you provided.' });
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Incorrect password.' });
     }
 
     const token = jwt.sign(
@@ -171,68 +228,93 @@ const handleLogin = async (req, res) => {
   }
 };
 
-router.post('/migrate-login', handleLogin);
-router.post('/master-login', handleLogin);
+// ── POST /api/auth/passcode-login and /api/auth/pin-login (Passcode Sign-In) ──
+const handlePasscodeLogin = async (req, res) => {
+  const { passcode, pin, school_id, email, identifier } = req.body;
+  const inputSchoolId = (school_id || identifier || email || '').replace(/^SCH-/i, '').trim();
+  const inputPasscode = String(passcode || pin || '').trim();
 
-// POST /api/auth/pin-login
-router.post('/pin-login', async (req, res) => {
-  const { pin, school_id, email } = req.body;
-  const inputId = (school_id || email || '').trim();
+  if (!inputSchoolId || !inputPasscode) {
+    return res.status(400).json({ error: 'School ID and passcode are required' });
+  }
 
-  if (!inputId || !pin) {
-    return res.status(400).json({ error: 'Identifier and PIN are required' });
+  // Pilot shortcut
+  const isPilotSeries = PILOT_SCHOOLS.includes(inputSchoolId) || /^1999\d{2}$/.test(inputSchoolId);
+  if (isPilotSeries && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === inputSchoolId || inputPasscode === PILOT_PASSWORD)) {
+    const token = jwt.sign(
+      { uid: `pilot-${inputSchoolId}`, email: `pilot-${inputSchoolId}@esf7.pilot`, role: 'school', school_id: inputSchoolId },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    return res.json({
+      success: true,
+      token,
+      user: {
+        uid: `pilot-${inputSchoolId}`,
+        email: `pilot-${inputSchoolId}@esf7.pilot`,
+        role: 'school',
+        account_category: 'school',
+        region: 'PILOT',
+        division: 'PILOT DIVISION',
+        first_name: 'Pilot',
+        last_name: `School ${inputSchoolId}`,
+        school_id: inputSchoolId
+      }
+    });
   }
 
   try {
-    const isPilotSeries = PILOT_SCHOOLS.includes(inputId) || /^1999\d{2}$/.test(inputId);
-    if (isPilotSeries && (pin === '123456' || pin === '654321' || pin === '000000')) {
-      const token = jwt.sign(
-        { uid: `pilot-${inputId}`, email: `pilot-${inputId}@esf7.pilot`, role: 'school', school_id: inputId },
-        JWT_SECRET,
-        { expiresIn: '30d' }
-      );
-      return res.json({
-        success: true,
-        token,
-        user: {
-          uid: `pilot-${inputId}`,
-          email: `pilot-${inputId}@esf7.pilot`,
-          role: 'school',
-          account_category: 'school',
-          region: 'PILOT',
-          division: 'PILOT DIVISION',
-          first_name: 'Pilot',
-          last_name: `School ${inputId}`,
-          school_id: inputId
-        }
-      });
+    const isEmail = inputSchoolId.includes('@');
+
+    // 1. Query user_schoolhead in users_database by school_id column
+    let user = null;
+    try {
+      const shQuery = isEmail
+        ? `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM user_schoolhead WHERE LOWER(email) = $1 AND (disabled = false OR disabled IS NULL)`
+        : `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM user_schoolhead WHERE school_id = $1 AND (disabled = false OR disabled IS NULL)`;
+      
+      const shRes = await usersDatabasePool.query(shQuery, [isEmail ? inputSchoolId.toLowerCase() : inputSchoolId]);
+      if (shRes.rows.length > 0) user = shRes.rows[0];
+    } catch (e) {
+      console.warn('[user_schoolhead passcode query warning]:', e.message);
     }
 
-    const isEmail = inputId.includes('@');
-    const isSchoolId = !isEmail && /^\d{6,}$/.test(inputId);
-
-    const query = isSchoolId
-      ? `SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM users WHERE school_id = $1 AND disabled = false`
-      : `SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM users WHERE LOWER(email) = $1 AND disabled = false`;
-
-    const result = await insightEdPool.query(query, [isSchoolId ? inputId : inputId.toLowerCase()]);
-    
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Username does not exist. Kindly register first.' });
+    // 2. Secondary fallback: users table in insightEd
+    if (!user) {
+      const uQuery = isEmail
+        ? `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM users WHERE LOWER(email) = $1 AND (disabled = false OR disabled IS NULL)`
+        : `SELECT uid, email, role, region, division, office, account_category, passcode, password_hash, hash_version, first_name, last_name, school_id 
+           FROM users WHERE school_id = $1 AND (disabled = false OR disabled IS NULL)`;
+      
+      const uRes = await insightEdPool.query(uQuery, [isEmail ? inputSchoolId.toLowerCase() : inputSchoolId]).catch(() => ({ rows: [] }));
+      if (uRes.rows.length > 0) user = uRes.rows[0];
     }
 
-    const user = result.rows[0];
+    if (!user) {
+      const enhancedError = await getUnregisteredSchoolError(inputSchoolId, isEmail);
+      return res.status(401).json({ error: enhancedError });
+    }
+
     if (!user.passcode) {
-      return res.status(401).json({ error: 'No PIN setup for this account.' });
+      return res.status(401).json({ error: 'No passcode configured for this account. Please sign in with your password.' });
     }
 
-    const isBcryptHash = user.passcode.startsWith('$2b$') || user.passcode.startsWith('$2a$');
-    const isValidPin = isBcryptHash
-      ? await bcrypt.compare(pin, user.passcode)
-      : (pin === user.passcode);
+    // Match inputPasscode against passcode column directly
+    let isPasscodeValid = false;
+    const isBcrypt = user.passcode.startsWith('$2b$') || user.passcode.startsWith('$2a$');
+    if (isBcrypt) {
+      try {
+        isPasscodeValid = await bcrypt.compare(inputPasscode, user.passcode);
+      } catch (e) {}
+    } else {
+      isPasscodeValid = (inputPasscode === String(user.passcode).trim());
+    }
 
-    if (!isValidPin) {
-      return res.status(401).json({ error: 'The username exists but does not match the PIN you provided.' });
+    if (!isPasscodeValid) {
+      return res.status(401).json({ error: 'Incorrect passcode.' });
     }
 
     const token = jwt.sign(
@@ -259,7 +341,15 @@ router.post('/pin-login', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+// Route mappings
+router.post('/migrate-login', handlePasswordLogin);
+router.post('/master-login', handlePasswordLogin);
+router.post('/password-login', handlePasswordLogin);
+
+router.post('/passcode-login', handlePasscodeLogin);
+router.post('/pin-login', handlePasscodeLogin);
 
 // POST /api/auth/verify-passcode
 router.post('/verify-passcode', (req, res) => {

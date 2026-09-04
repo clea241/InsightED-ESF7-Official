@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import PortalHeader from '../components/PortalHeader';
+import { FiUser, FiGrid, FiTrash2, FiCheck, FiFileText, FiCalendar, FiAlertCircle, FiAlertTriangle, FiBriefcase, FiList, FiLock, FiBookOpen, FiBook, FiClock, FiPlus, FiX, FiBarChart2 } from 'react-icons/fi';
 
 
 export const normalizeSubjectName = (sub) => {
@@ -195,10 +196,10 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
 <body>
   <header>
     <div>
-      <h1>📋 Workload Delegation Package</h1>
+      <h1>Workload Delegation Package</h1>
       <p>${payloadData.schoolName} | ${payloadData.schoolYear}</p>
     </div>
-    <button class="export-btn" onclick="exportReturnPayload()">📥 Save & Download Return File (.json)</button>
+    <button class="export-btn" onclick="exportReturnPayload()">Save & Download Return File (.json)</button>
   </header>
 
   <div class="container">
@@ -254,7 +255,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
       data = JSON.parse(rawJsonStr);
     } catch(e) {
       console.error("Payload decode error:", e);
-      document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:red"><h2>⚠️ Payload Parsing Error</h2><pre>' + e.message + '</pre></div>';
+      document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:red"><h2>Payload Parsing Error</h2><pre>' + e.message + '</pre></div>';
     }
     let activeTeacherId = null;
 
@@ -1444,7 +1445,7 @@ function MultiDatePickerDropdown({ value = [], onChange, disabled = false }) {
                 fontWeight: 'bold'
               }}
             >
-              📅 {formatDisplayDate(dateStr)}
+              <FiCalendar size={11} /> {formatDisplayDate(dateStr)}
               <button
                 type="button"
                 onClick={(e) => handleRemoveDate(dateStr, e)}
@@ -1487,7 +1488,7 @@ function MultiDatePickerDropdown({ value = [], onChange, disabled = false }) {
             transition: 'all 0.15s ease'
           }}
         >
-          {showCalendar ? 'Close ✕' : '+ Add Date 📅'}
+          <FiCalendar size={12} /> {showCalendar ? 'Close' : 'Add Date'}
         </button>
       </div>
 
@@ -4254,10 +4255,20 @@ export default function Workload() {
     workImmersionSchedulesMap,
     fetchWorkImmersionSchedules,
     saveWorkImmersionSchedules,
+    activeTerm,
+    setActiveTerm,
+    termStatuses,
+    isTermLocked,
+    unlockTerm,
+    lockTerm,
+    copyTermData,
     setHasUnsavedChanges,
     completeNode,
     setActiveView
   } = useApp();
+
+  // Term Unlock / Copy Modal state
+  const [showUnlockTermModal, setShowUnlockTermModal] = useState(null);
 
   // SHS Term Workload state
   const [selectedShsTerm, setSelectedShsTerm] = useState('1st');
@@ -6456,23 +6467,73 @@ export default function Workload() {
       <article className="card">
         <div className="card-inner">
 
-          {/* ── View Mode Toggle & Delegation Actions ── */}
+          {/* ── View Mode Toggle, Term Selector & Actions ── */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', gap: '6px', background: 'var(--blue-50)', padding: '5px', borderRadius: '12px', width: 'fit-content', border: '1.5px solid var(--line)' }}>
-              <button type="button" onClick={() => setWorkloadView('by-personnel')}
-                style={{
-                  padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
-                  background: workloadView === 'by-personnel' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
-                  color: workloadView === 'by-personnel' ? 'white' : 'var(--navy)'
-                }}
-              >👤 By Personnel</button>
-              <button type="button" onClick={() => setWorkloadView('by-section')}
-                style={{
-                  padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
-                  background: workloadView === 'by-section' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
-                  color: workloadView === 'by-section' ? 'white' : 'var(--navy)'
-                }}
-              >🏫 By Section</button>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '6px', background: 'var(--blue-50)', padding: '5px', borderRadius: '12px', width: 'fit-content', border: '1.5px solid var(--line)' }}>
+                <button type="button" onClick={() => setWorkloadView('by-personnel')}
+                  style={{
+                    padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
+                    background: workloadView === 'by-personnel' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
+                    color: workloadView === 'by-personnel' ? 'white' : 'var(--navy)',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px'
+                  }}
+                ><FiUser size={13} /> By Personnel</button>
+                <button type="button" onClick={() => setWorkloadView('by-section')}
+                  style={{
+                    padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
+                    background: workloadView === 'by-section' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
+                    color: workloadView === 'by-section' ? 'white' : 'var(--navy)',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px'
+                  }}
+                ><FiGrid size={13} /> By Section</button>
+              </div>
+
+              {/* Term Selector (1st, 2nd, 3rd Terms) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F8FAFC', padding: '5px 10px', borderRadius: '12px', border: '1.5px solid #E2E8F0' }}>
+                <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: '4px' }}>
+                  Term:
+                </span>
+                {[
+                  { id: '1st', name: '1st Term' },
+                  { id: '2nd', name: '2nd Term' },
+                  { id: '3rd', name: '3rd Term' }
+                ].map(t => {
+                  const isLocked = termStatuses[t.id] === 'LOCKED';
+                  const isActive = activeTerm === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        if (isLocked) {
+                          setShowUnlockTermModal(t.id);
+                        } else {
+                          setActiveTerm(t.id);
+                        }
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        border: isActive ? '1.5px solid #0284C7' : '1px solid #CBD5E1',
+                        background: isActive ? '#0284C7' : (isLocked ? '#F1F5F9' : '#FFFFFF'),
+                        color: isActive ? '#FFFFFF' : (isLocked ? '#94A3B8' : '#334155'),
+                        fontSize: '12px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {isLocked ? <FiLock size={12} /> : (isActive ? <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ADE80' }}></span> : null)}
+                      {t.name}
+                      {isLocked && <span style={{ fontSize: '10px', fontWeight: '700', background: '#E2E8F0', color: '#64748B', padding: '1px 5px', borderRadius: '4px' }}>Locked</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -6506,7 +6567,7 @@ export default function Workload() {
                 }}
                 title="Clear all workload schedules across all teachers in the school"
               >
-                🗑️ Clear All Teachers' Workload
+                <FiTrash2 size={13} /> Clear All Teachers' Workload
               </button>
               <button
                 type="button"
@@ -6527,7 +6588,7 @@ export default function Workload() {
                 }}
                 title="Confirm and save timetable schedules for all personnel"
               >
-                ✓ Confirm All & Save
+                <FiCheck size={14} /> Confirm All & Save
               </button>
               {/* Temporarily hidden: Delegation Package (HTML) & Import Batch (.json) */}
               <input
@@ -6539,6 +6600,53 @@ export default function Workload() {
               />
             </div>
           </div>
+
+          {/* ── Locked Term Status Banner ── */}
+          {isTermLocked(activeTerm) && (
+            <div style={{
+              background: '#FEF3C7',
+              border: '1.5px solid #FCD34D',
+              borderRadius: '12px',
+              padding: '12px 18px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FiLock size={18} color="#B45309" />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#92400E' }}>
+                    {activeTerm} Term is currently LOCKED (Read-Only Archive)
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#B45309', marginTop: '2px' }}>
+                    Timetable modifications and schedule changes for this term are restricted.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUnlockTermModal(activeTerm)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#D97706',
+                  color: '#FFFFFF',
+                  fontWeight: '800',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>Unlock {activeTerm} Term</span>
+              </button>
+            </div>
+          )}
 
           {/* ── BY SECTION VIEW ── */}
           {workloadView === 'by-section' && (
@@ -6579,7 +6687,7 @@ export default function Workload() {
 
               {!selectedSectionId && (
                 <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--muted)', border: '1.5px solid var(--line)', borderRadius: '16px' }}>
-                  <p style={{ fontSize: '32px', margin: '0 0 8px' }}>🏫</p>
+                  <FiGrid size={32} style={{ margin: '0 auto 8px', color: 'var(--muted)', display: 'block' }} />
                   <p style={{ fontWeight: '700', fontSize: '15px', color: 'var(--navy)', margin: '0 0 6px' }}>Select a Section to Begin</p>
                   <p style={{ fontSize: '13px', maxWidth: '380px', margin: '0 auto' }}>Choose a class section above to view its schedule and assign teachers.</p>
                 </div>
@@ -6597,7 +6705,7 @@ export default function Workload() {
                   </div>
                   {sectionSlots.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)', border: '1.5px solid var(--line)', borderRadius: '12px' }}>
-                      <p style={{ fontSize: '24px', margin: '0 0 6px' }}>📋</p>
+                      <FiFileText size={24} style={{ margin: '0 auto 6px', color: 'var(--muted)', display: 'block' }} />
                       <p style={{ fontWeight: '600', fontSize: '13px', color: 'var(--navy)', margin: '0 0 4px' }}>No schedule slots yet</p>
                       <p style={{ fontSize: '12px' }}>Use the form below to add subjects and assign teachers to this section.</p>
                     </div>
@@ -6681,7 +6789,9 @@ export default function Workload() {
                         ];
                         return (
                           <div style={{ marginTop: '8px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                            <strong style={{ color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>📅 Teacher's Weekly Busy Schedule:</strong>
+                            <strong style={{ color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                              <FiCalendar size={13} /> Teacher's Weekly Busy Schedule:
+                            </strong>
                             {teacherScheduleRows.length === 0 ? (
                               <span style={{ color: 'var(--muted)' }}>No assigned classes or tasks yet.</span>
                             ) : (
@@ -6831,7 +6941,7 @@ export default function Workload() {
                     </div>
                     {slotConflict && (
                       <div style={{ gridColumn: '1 / -1', background: '#fef2f2', border: '1.5px solid #fca5a5', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                        <span style={{ fontSize: '20px', flexShrink: 0 }}>⚠️</span>
+                        <FiAlertCircle size={20} color="#b91c1c" style={{ flexShrink: 0 }} />
                         <div>
                           <p style={{ margin: '0 0 4px', fontWeight: '700', color: '#b91c1c', fontSize: '13px' }}>
                             {slotConflict.type === 'section' ? 'Section Schedule Conflict Detected' : 'Teacher Schedule Conflict Detected'}
@@ -6857,7 +6967,7 @@ export default function Workload() {
                           cursor: slotConflict ? 'not-allowed' : 'pointer'
                         }}
                       >
-                        {slotConflict ? '⚠️ Fix Conflict to Add' : '+ Add Slot to Section'}
+                        {slotConflict ? 'Fix Conflict to Add' : '+ Add Slot to Section'}
                       </button>
                     </div>
                   </div>
@@ -7365,7 +7475,27 @@ export default function Workload() {
                                 }}
                                 title="Gantt Weekly Schedule View"
                               >
-                                <span>📊</span> Weekly Gantt
+                                <FiBarChart2 size={13} /> Weekly Gantt
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setLayoutType('card')}
+                                style={{
+                                  padding: '8px 12px',
+                                  background: layoutType === 'card' ? '#f1f5f9' : 'white',
+                                  border: 'none',
+                                  borderLeft: '1.5px solid var(--line)',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  fontWeight: layoutType === 'card' ? 'bold' : 'normal',
+                                  color: layoutType === 'card' ? 'var(--blue)' : 'var(--muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}
+                                title="Grid/Cards View"
+                              >
+                                <FiGrid size={13} /> Cards
                               </button>
                               <button
                                 type="button"
@@ -7385,7 +7515,7 @@ export default function Workload() {
                                 }}
                                 title="List View"
                               >
-                                <span>≡</span> List
+                                <FiList size={13} /> List
                               </button>
                             </div>
                             <button
@@ -7418,7 +7548,7 @@ export default function Workload() {
                               }}
                               title={`Clear all workload rows for ${currentPerson?.firstName || 'this'} ${currentPerson?.lastName || 'teacher'}`}
                             >
-                              🗑️ Clear This Teacher's Workload
+                              <FiTrash2 size={13} /> Clear This Teacher's Workload
                             </button>
                             <button className="btn secondary" type="button" onClick={addWorkloadRow}>+ Add subject schedule</button>
                           </div>
@@ -8138,7 +8268,7 @@ export default function Workload() {
                                 <div>
                                   {(shsRows.length > 0 || isShsTeacher) && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: '#EFF6FF', borderLeft: '4px solid #0284C7', borderRadius: '6px', marginBottom: '12px' }}>
-                                      <span style={{ fontSize: '14px' }}>📘</span>
+                                      <FiBookOpen size={14} color="#0284C7" />
                                       <strong style={{ fontSize: '13px', color: '#0369A1' }}>Elementary & Junior High School (Grades K – 10)</strong>
                                       <span style={{ fontSize: '11px', color: '#64748B', marginLeft: 'auto' }}>{elemJhsRows.length} subject period(s)</span>
                                     </div>
@@ -8161,7 +8291,7 @@ export default function Workload() {
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '8px 14px', background: '#F0FDF4', borderLeft: '4px solid #16A34A', borderRadius: '8px', marginBottom: '14px' }}>
                                       <div>
                                         <strong style={{ fontSize: '14px', color: '#15803D', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                          <span>📗</span> Senior High School (Grade 11 & Grade 12) Term Workload
+                                          <FiBook size={14} color="#16A34A" /> Senior High School (Grade 11 & Grade 12) Term Workload
                                         </strong>
                                         <span style={{ fontSize: '11px', color: '#166534' }}>
                                           Term-based workload for SHS. Selecting a Grade 11 or 12 section automatically routes the row here.
@@ -8171,9 +8301,9 @@ export default function Workload() {
                                       {/* Term Switcher Tabs */}
                                       <div style={{ display: 'flex', gap: '6px' }}>
                                         {[
-                                          { key: '1st', label: '📘 1st Term' },
-                                          { key: '2nd', label: '📙 2nd Term' },
-                                          { key: '3rd', label: '📕 3rd Term' }
+                                          { key: '1st', label: '1st Term' },
+                                          { key: '2nd', label: '2nd Term' },
+                                          { key: '3rd', label: '3rd Term' }
                                         ].map(t => (
                                           <button
                                             key={t.key}
@@ -8440,7 +8570,7 @@ export default function Workload() {
 
                           {currentPerson.designation && currentPerson.designation.includes('::APPROVED_SDS') && (
                             <div style={{ background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: '10px', padding: '10px 14px', margin: '10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span style={{ fontSize: '18px' }}>🔒</span>
+                              <FiLock size={18} color="#15803D" style={{ flexShrink: 0 }} />
                               <div>
                                 <div style={{ fontSize: '12px', fontWeight: '800', color: '#15803D' }}>
                                   Auto-Synced SDS Designation: {currentPerson.designation.replace('::APPROVED_SDS', '')}
@@ -8590,8 +8720,8 @@ export default function Workload() {
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-              <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
-                🏫
+              <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7' }}>
+                <FiGrid size={22} />
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
@@ -8654,7 +8784,7 @@ export default function Workload() {
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
           }}>
             <h3 style={{ margin: '0 0 6px', fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
-              📤 Export Workload Delegation Package (HTML)
+              Export Workload Delegation Package (HTML)
             </h3>
             <p style={{ margin: '0 0 16px', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
               Select the teachers you want Person A (or Department Head) to encode. This exports a standalone HTML file that works offline on any computer.
@@ -8817,7 +8947,7 @@ export default function Workload() {
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
           }}>
             <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: '800', color: 'var(--navy)' }}>
-              📥 Batch Workload Import Preview
+              Batch Workload Import Preview
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748b' }}>
               From: <strong>{importedBatchData.schoolName}</strong> ({importedBatchData.schoolYear})
@@ -8881,9 +9011,9 @@ export default function Workload() {
               <div style={{
                 background: '#FEF3C7', color: '#D97706', borderRadius: '50%',
                 width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '26px', flexShrink: 0, boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)'
+                flexShrink: 0, boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)'
               }}>
-                ⚠️
+                <FiAlertCircle size={24} color="#D97706" />
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', color: '#78350F', fontWeight: '800' }}>
@@ -8942,7 +9072,7 @@ export default function Workload() {
                   boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)'
                 }}
               >
-                ✓ Confirm All & Save
+                Confirm All & Save
               </button>
             </div>
           </div>
@@ -9049,7 +9179,7 @@ export default function Workload() {
                 style={{ fontSize: '11px', padding: '4px 10px', minHeight: 'auto', flex: 1 }}
                 onClick={handleSelectAllWeekdaysInMonth}
               >
-                ✓ Select All Weekdays (M-F)
+                Select All Weekdays (M-F)
               </button>
               <button
                 type="button"
@@ -9103,7 +9233,7 @@ export default function Workload() {
                     }}
                     title={`Click to select or unselect all ${label.replace('All ', '')}s in this month`}
                   >
-                    {isFullySelected ? `✓ ${label}` : label}
+                    {label}
                   </button>
                 );
               })}
@@ -9156,7 +9286,7 @@ export default function Workload() {
                         boxShadow: isSelected ? '0 2px 4px rgba(2, 132, 199, 0.3)' : 'none'
                       }}
                     >
-                      {isSelected ? `✓ ${day}` : day}
+                      {day}
                     </button>
                   );
                 }
@@ -9314,7 +9444,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
       <div className="workload-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ color: '#0369A1', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-            <span>🏢</span> Work Immersion Monthly Calendar & Overload Integration
+            <FiClock size={18} color="#0284C7" /> Work Immersion Monthly Calendar & Overload Integration
           </h3>
           <p className="subtext" style={{ margin: '4px 0 0', color: '#0369A1' }}>
             Track daily Work Immersion supervision start/end times. Immersion hours are added 1-to-1 to regular teaching load for <strong>Overload Pay Authorization</strong>.
@@ -9329,7 +9459,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
             style={{ fontSize: '12px', padding: '6px 12px', background: 'white', borderColor: '#0284C7', color: '#0284C7', fontWeight: 'bold' }}
             onClick={handleCopyMonthPattern}
           >
-            📋 Copy {monthNames[selectedMonth]} Schedule
+            Copy {monthNames[selectedMonth]} Schedule
           </button>
           <button
             type="button"
@@ -9339,7 +9469,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
             disabled={!copiedPattern}
             title={copiedPattern ? `Paste pattern from ${copiedPattern.sourceMonthName} to ${monthNames[selectedMonth]} ${selectedYear}` : "Copy a month schedule first"}
           >
-            📥 Paste to {monthNames[selectedMonth]}
+            Paste to {monthNames[selectedMonth]}
           </button>
         </div>
       </div>
@@ -9347,7 +9477,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
       {/* Copied Banner indicator */}
       {copiedPattern && (
         <div style={{ background: '#E0F2FE', border: '1px solid #7DD3FC', color: '#0369A1', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', fontWeight: 'bold', marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>📋 Copied schedule pattern from <strong>{copiedPattern.sourceMonthName}</strong>. Select another month and click "Paste to [Month]" to duplicate.</span>
+          <span>Copied schedule pattern from <strong>{copiedPattern.sourceMonthName}</strong>. Select another month and click "Paste to [Month]" to duplicate.</span>
           <button type="button" onClick={() => setCopiedPattern(null)} style={{ background: 'none', border: 'none', color: '#0369A1', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
         </div>
       )}
@@ -9488,7 +9618,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
                 onClick={handleSaveSingleDate}
                 style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', color: 'white', fontWeight: 'bold', fontSize: '12px', padding: '7px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
               >
-                ✓ Save Date Slot
+                Save Date Slot
               </button>
               {dateMap[editingDate] && (
                 <button
@@ -9505,6 +9635,117 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
                 className="btn secondary"
                 onClick={() => setEditingDate(null)}
                 style={{ fontSize: '12px', padding: '7px 14px', borderRadius: '8px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Unlock / Initialize Term Modal ── */}
+      {showUnlockTermModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            maxWidth: '480px',
+            width: '100%',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            border: '1px solid #E2E8F0'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ background: '#FEF3C7', padding: '10px', borderRadius: '12px' }}>
+                <FiLock size={22} color="#D97706" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>
+                  Unlock {showUnlockTermModal} Term
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
+                  {showUnlockTermModal} Term is currently locked for encoding.
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#334155', lineHeight: '1.6', marginBottom: '20px' }}>
+              Unlocking will open <strong>{showUnlockTermModal} Term</strong> for timetable scheduling. You can choose to copy existing class schedules from <strong>1st Term</strong> as a baseline or start with a blank timetable.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  unlockTerm(showUnlockTermModal);
+                  copyTermData('1st', showUnlockTermModal);
+                  setActiveTerm(showUnlockTermModal);
+                  setShowUnlockTermModal(null);
+                }}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                  color: '#FFFFFF',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>📋 Unlock & Duplicate from 1st Term</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  unlockTerm(showUnlockTermModal);
+                  setActiveTerm(showUnlockTermModal);
+                  setShowUnlockTermModal(null);
+                }}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#334155',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                Unlock with Blank Timetable
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowUnlockTermModal(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#64748B',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
               >
                 Cancel
               </button>

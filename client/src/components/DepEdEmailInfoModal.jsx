@@ -1,4 +1,5 @@
 import React from 'react';
+import { FiAlertTriangle, FiAlertCircle, FiInfo } from 'react-icons/fi';
 
 export default function DepEdEmailInfoModal({ isOpen, onClose }) {
   if (!isOpen) return null;
@@ -52,10 +53,10 @@ export default function DepEdEmailInfoModal({ isOpen, onClose }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '20px',
+            fontSize: '18px',
             color: '#F87171'
           }}>
-            ⚠️
+            <FiAlertTriangle />
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', letterSpacing: '-0.2px' }}>
@@ -79,7 +80,7 @@ export default function DepEdEmailInfoModal({ isOpen, onClose }) {
             gap: '10px',
             alignItems: 'flex-start'
           }}>
-            <span style={{ fontSize: '18px' }}>🚫</span>
+            <FiAlertCircle size={18} style={{ color: '#DC2626', flexShrink: 0, marginTop: '2px' }} />
             <div style={{ fontSize: '13px', color: '#991B1B', fontWeight: '600' }}>
               Submitting duplicate DepEd emails across different schools will result in an <strong>INVALID eSF7 Submission</strong>.
             </div>
@@ -110,9 +111,12 @@ export default function DepEdEmailInfoModal({ isOpen, onClose }) {
             borderRadius: '8px',
             padding: '10px 14px',
             fontSize: '12px',
-            color: '#64748B'
+            color: '#64748B',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
-            ℹ️ Correct email addresses ensure smooth personnel tracking and avoid submission errors during district/division consolidation.
+            <FiInfo size={14} style={{ flexShrink: 0 }} /> Correct email addresses ensure smooth personnel tracking and avoid submission errors during district/division consolidation.
           </div>
         </div>
 

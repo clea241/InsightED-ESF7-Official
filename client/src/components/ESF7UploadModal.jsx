@@ -2,18 +2,32 @@ import React, { useState } from 'react';
 import { parseESF7File } from '../utils/esf7Harvester';
 import { api } from '../services/api';
 import { useApp } from '../context/AppContext';
-import { FiUploadCloud, FiCheckCircle, FiAlertCircle, FiX, FiFileText, FiUsers, FiCalendar } from 'react-icons/fi';
+import { FiUploadCloud, FiCheckCircle, FiAlertCircle, FiX, FiFileText, FiUsers, FiCalendar, FiHome } from 'react-icons/fi';
 
-export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
+export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isForceUpload = false, pendingSchool = null, onLogout }) {
   const { personnel, setPersonnel, classSections, setClassSections, schoolInfo, setSchoolInfo, setHasUnsavedChanges, showToast } = useApp();
   const [isParsing, setIsParsing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [parsedData, setParsedData] = useState(null);
+  const [rawFile, setRawFile] = useState(null);
   const [selectedPersonnel, setSelectedPersonnel] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [dragActive, setDragActive] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleCancelOrLogout = () => {
+    if (isForceUpload) {
+      if (onLogout) {
+        onLogout();
+      } else {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  };
 
   const handleFileSelect = (file) => {
     if (!file) return;
@@ -23,6 +37,7 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
     }
 
     setErrorMsg('');
+    setRawFile(file);
     setIsParsing(true);
 
     const reader = new FileReader();
@@ -397,8 +412,31 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
 
       setHasUnsavedChanges(true);
 
+      // Submit raw spreadsheet binary to national queue (esf7_link -> VM harvester)
+      if (rawFile) {
+        try {
+          const formData = new FormData();
+          formData.append('file', rawFile);
+          const targetSchoolId = (schoolInfo?.schoolId || parsedData.schoolId || 'UNKNOWN').replace(/^SCH-/i, '').trim();
+          formData.append('school_id', targetSchoolId);
+
+          fetch('/api/esf7-upload', {
+            method: 'POST',
+            body: formData
+          }).then(res => res.json()).then(data => {
+            if (data.success) {
+              console.log('✅ [eSF7 Queue] File registered in national harvester queue:', data);
+            }
+          }).catch(uploadErr => {
+            console.warn('⚠️ [eSF7 Queue Warning]:', uploadErr.message);
+          });
+        } catch (e) {
+          console.warn('Background queue dispatch error:', e);
+        }
+      }
+
       if (showToast) {
-        showToast(`⚡ Harvested ${listToImport.length} Personnel into Local Draft!`);
+        showToast(`Harvested ${listToImport.length} Personnel into Local Draft!`, 'success');
       }
 
       if (onImportSuccess) onImportSuccess({ success: true, count: listToImport.length });
@@ -444,20 +482,82 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
           color: '#FFFFFF'
         }}>
           <div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 8px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', fontSize: '11px', color: '#38BDF8', fontWeight: '700', textTransform: 'uppercase', marginBottom: '6px' }}>
+              DepEd Official • School Year 2025–2026
+            </div>
             <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FiFileText style={{ color: '#38BDF8' }} /> Auto-Populate eSF7 Personnel & Workload
+              <FiFileText style={{ color: '#38BDF8' }} /> Submit eSF7 File for SY 2025–2026
             </h2>
             <p style={{ fontSize: '12px', color: '#94A3B8', margin: '4px 0 0 0' }}>
-              Upload your official DepEd eSF7 file (.xlsb) to automatically harvest personnel profiles and workload schedules.
+              You need to submit your eSF7 file for SY 2025–2026. Please upload your official .xlsb (or .xlsx) file to automatically populate your faculty roster, plantillas, and workloads.
             </p>
           </div>
           <button 
-            onClick={onClose}
+            onClick={handleCancelOrLogout}
+            title={isForceUpload ? 'Cancel & Log Out' : 'Close'}
             style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: '20px' }}
           >
             <FiX />
           </button>
         </div>
+
+        {/* Exemption & Conversion Banners */}
+        {pendingSchool?.registrationType === 'newly-established' && (
+          <div style={{ padding: '12px 24px', background: '#F0FDF4', borderBottom: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: '8px', color: '#15803D', fontSize: '12px', fontWeight: '700' }}>
+            <FiCheckCircle size={16} /> Newly Established School (DepEd Verified) — Historical eSF7 upload is optional. You may encode your faculty manually.
+          </div>
+        )}
+
+        {pendingSchool?.registrationType === 'conversion' && (
+          <div style={{ padding: '12px 24px', background: '#EFF6FF', borderBottom: '1px solid #BFDBFE', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', color: '#1D4ED8', fontSize: '12px', fontWeight: '700', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FiAlertCircle size={16} /> Converted Station (Previous School ID: {pendingSchool.oldSchoolId})
+            </div>
+            {pendingSchool.oldSchoolDataCount > 0 && (
+              <button
+                type="button"
+                disabled={isCloning}
+                onClick={async () => {
+                  setIsCloning(true);
+                  try {
+                    const res = await fetch('/api/esf7-upload/import-converted', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        school_id: schoolInfo?.schoolId,
+                        old_school_id: pendingSchool.oldSchoolId
+                      })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                      if (showToast) showToast(`Imported ${data.importedCount} faculty from previous Station ${pendingSchool.oldSchoolId}!`, 'success');
+                      if (onImportSuccess) onImportSuccess({ success: true, count: data.importedCount });
+                      onClose();
+                    } else {
+                      setErrorMsg(data.error || 'Failed to import from converted station.');
+                    }
+                  } catch (err) {
+                    setErrorMsg(err.message);
+                  } finally {
+                    setIsCloning(false);
+                  }
+                }}
+                style={{
+                  background: '#10B981',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '6px 14px',
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  cursor: isCloning ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isCloning ? 'Importing...' : `Import ${pendingSchool.oldSchoolDataCount} Faculty from Previous School ID (${pendingSchool.oldSchoolId}) ➔`}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Modal Body */}
         <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
@@ -511,7 +611,7 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
 
               {isParsing && (
                 <div style={{ marginTop: '16px', fontSize: '13px', color: '#2563EB', fontWeight: '500' }}>
-                  ⏳ Extracting Personnel & Workload records in browser...
+                  Extracting Personnel & Workload records in browser...
                 </div>
               )}
             </div>
@@ -530,8 +630,8 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
                 marginBottom: '20px'
               }}>
                 <div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>
-                    🏫 {parsedData.schoolName || 'School Profile'}
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FiHome style={{ color: 'var(--navy)' }} /> {parsedData.schoolName || 'School Profile'}
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B' }}>
                     School ID: <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{parsedData.schoolId || 'N/A'}</span>
@@ -671,22 +771,41 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess }) {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {pendingSchool?.registrationType === 'newly-established' && (
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  background: '#F0FDF4',
+                  border: '1.5px solid #86EFAC',
+                  borderRadius: '8px',
+                  padding: '8px 18px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  color: '#15803D',
+                  cursor: 'pointer'
+                }}
+              >
+                Encode Roster Manually
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCancelOrLogout}
               style={{
-                background: '#E2E8F0',
-                border: 'none',
+                background: isForceUpload ? '#FEF2F2' : '#E2E8F0',
+                border: isForceUpload ? '1px solid #FECACA' : 'none',
                 borderRadius: '8px',
                 padding: '8px 18px',
                 fontSize: '13px',
-                fontWeight: '600',
-                color: '#475569',
+                fontWeight: '700',
+                color: isForceUpload ? '#DC2626' : '#475569',
                 cursor: 'pointer'
               }}
             >
-              Cancel
+              {isForceUpload ? 'Cancel & Log Out' : 'Cancel'}
             </button>
 
             {parsedData && (

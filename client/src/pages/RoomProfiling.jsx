@@ -8,11 +8,26 @@ import {
 } from '../context/AppContext';
 import { get10MinPasscode } from '../utils/passcode';
 import { api } from '../services/api';
+import { 
+  FiLock, 
+  FiUser, 
+  FiFileText, 
+  FiTrash2, 
+  FiCheck, 
+  FiAlertCircle, 
+  FiInfo,
+  FiCalendar,
+  FiChevronLeft,
+  FiChevronRight
+} from 'react-icons/fi';
 
 function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false }) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
   const containerRef = useRef(null);
+
+  const parsedMaxDate = maxDate ? (maxDate instanceof Date ? maxDate : new Date(maxDate)) : null;
+  const parsedMinDate = minDate ? (minDate instanceof Date ? minDate : new Date(minDate)) : null;
 
   const formatDate = (date) => {
     if (!date) return '';
@@ -32,13 +47,12 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
       if (!isNaN(d.getTime())) {
         setViewDate(d);
       }
-    } else if (minDate) {
-      const d = minDate instanceof Date ? minDate : new Date(minDate);
-      if (!isNaN(d.getTime())) {
-        setViewDate(d);
-      }
+    } else if (parsedMaxDate && new Date() > parsedMaxDate) {
+      setViewDate(parsedMaxDate);
+    } else if (parsedMinDate && new Date() < parsedMinDate) {
+      setViewDate(parsedMinDate);
     }
-  }, [cleanValue, minDate]);
+  }, [cleanValue, maxDate, minDate]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -65,13 +79,21 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  const currentMaxYear = parsedMaxDate ? parsedMaxDate.getFullYear() : new Date().getFullYear();
+  const currentMinYear = parsedMinDate ? parsedMinDate.getFullYear() : (currentMaxYear - 80);
+
+  const isPrevDisabled = parsedMinDate && new Date(year, month, 0) < parsedMinDate;
+  const isNextDisabled = parsedMaxDate && new Date(year, month + 1, 1) > parsedMaxDate;
+
   const handlePrevMonth = (e) => {
     e.stopPropagation();
+    if (isPrevDisabled) return;
     setViewDate(new Date(year, month - 1, 1));
   };
 
   const handleNextMonth = (e) => {
     e.stopPropagation();
+    if (isNextDisabled) return;
     setViewDate(new Date(year, month + 1, 1));
   };
 
@@ -111,8 +133,8 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
     e.stopPropagation();
     if (disabled) return;
 
-    if (maxDate && cellDate > maxDate) return;
-    if (minDate && cellDate < minDate) return;
+    if (parsedMaxDate && cellDate > parsedMaxDate) return;
+    if (parsedMinDate && cellDate < parsedMinDate) return;
 
     onChange(formatDate(cellDate));
     setShowCalendar(false);
@@ -123,8 +145,8 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const isDisabled = (cellDate) => {
-    if (maxDate && cellDate > maxDate) return true;
-    if (minDate && cellDate < minDate) return true;
+    if (parsedMaxDate && cellDate > parsedMaxDate) return true;
+    if (parsedMinDate && cellDate < parsedMinDate) return true;
     return false;
   };
 
@@ -133,6 +155,11 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const isRed = required && !cleanValue;
+
+  const yearOptions = [];
+  for (let y = currentMaxYear; y >= currentMinYear; y--) {
+    yearOptions.push(y);
+  }
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
@@ -157,22 +184,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
         }}
       >
         <span style={{ fontWeight: cleanValue ? '600' : 'normal' }}>{getDisplayDate()}</span>
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ color: 'var(--blue)', opacity: disabled ? 0.5 : 1 }}
-        >
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-          <line x1="16" y1="2" x2="16" y2="6"></line>
-          <line x1="8" y1="2" x2="8" y2="6"></line>
-          <line x1="3" y1="10" x2="21" y2="10"></line>
-        </svg>
+        <FiCalendar size={16} style={{ color: 'var(--blue)', opacity: disabled ? 0.5 : 1 }} />
       </div>
 
       {showCalendar && (
@@ -221,13 +233,29 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
                   fontFamily: 'inherit'
                 }}
               >
-                {monthNames.map((mName, idx) => (
-                  <option key={idx} value={idx}>{mName.toUpperCase()}</option>
-                ))}
+                {monthNames.map((mName, idx) => {
+                  const isMonthDisabled = (parsedMaxDate && year === currentMaxYear && idx > parsedMaxDate.getMonth()) ||
+                                          (parsedMinDate && year === currentMinYear && idx < parsedMinDate.getMonth());
+                  return (
+                    <option key={idx} value={idx} disabled={isMonthDisabled}>
+                      {mName.toUpperCase()}
+                    </option>
+                  );
+                })}
               </select>
               <select
                 value={year}
-                onChange={(e) => setViewDate(new Date(Number(e.target.value), month, 1))}
+                onChange={(e) => {
+                  const newYear = Number(e.target.value);
+                  let newMonth = month;
+                  if (parsedMaxDate && newYear === currentMaxYear && newMonth > parsedMaxDate.getMonth()) {
+                    newMonth = parsedMaxDate.getMonth();
+                  }
+                  if (parsedMinDate && newYear === currentMinYear && newMonth < parsedMinDate.getMonth()) {
+                    newMonth = parsedMinDate.getMonth();
+                  }
+                  setViewDate(new Date(newYear, newMonth, 1));
+                }}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -239,7 +267,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
                   fontFamily: 'inherit'
                 }}
               >
-                {Array.from({ length: 80 }, (_, i) => new Date().getFullYear() - i).map((yVal) => (
+                {yearOptions.map((yVal) => (
                   <option key={yVal} value={yVal}>{yVal}</option>
                 ))}
               </select>
@@ -249,36 +277,38 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
               <button
                 type="button"
                 onClick={handlePrevMonth}
+                disabled={isPrevDisabled}
                 style={{
-                  background: '#F8FAFC',
+                  background: isPrevDisabled ? '#F1F5F9' : '#F8FAFC',
                   border: '1px solid var(--line)',
                   borderRadius: '8px',
                   width: '28px',
                   height: '28px',
                   display: 'grid',
                   placeItems: 'center',
-                  cursor: 'pointer',
-                  color: 'var(--navy)'
+                  cursor: isPrevDisabled ? 'not-allowed' : 'pointer',
+                  color: isPrevDisabled ? '#CBD5E1' : 'var(--navy)'
                 }}
               >
-                ‹
+                <FiChevronLeft size={14} />
               </button>
               <button
                 type="button"
                 onClick={handleNextMonth}
+                disabled={isNextDisabled}
                 style={{
-                  background: '#F8FAFC',
+                  background: isNextDisabled ? '#F1F5F9' : '#F8FAFC',
                   border: '1px solid var(--line)',
                   borderRadius: '8px',
                   width: '28px',
                   height: '28px',
                   display: 'grid',
                   placeItems: 'center',
-                  cursor: 'pointer',
-                  color: 'var(--navy)'
+                  cursor: isNextDisabled ? 'not-allowed' : 'pointer',
+                  color: isNextDisabled ? '#CBD5E1' : 'var(--navy)'
                 }}
               >
-                ›
+                <FiChevronRight size={14} />
               </button>
             </div>
           </div>
@@ -585,6 +615,28 @@ export default function RoomProfiling() {
   };
 
   // VALIDATION LOGIC:
+  const maxBirthdate = useMemo(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 15);
+    return d;
+  }, []);
+
+  const getAge = (dobString) => {
+    if (!dobString) return null;
+    const cleanDob = typeof dobString === 'string' ? dobString.substring(0, 10) : '';
+    if (!cleanDob) return null;
+    const birth = new Date(cleanDob + "T00:00:00");
+    if (isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+    return age;
+  };
+
+  const currentAge = getAge(formData?.birthdate);
+  const isAgeValid = currentAge !== null && currentAge >= 15;
+
   const rawEmail = formData ? formData.depedEmail || '' : '';
   const emailVal = validateDepEdEmail(rawEmail);
   const isEmailNA = rawEmail === 'N/A';
@@ -595,7 +647,7 @@ export default function RoomProfiling() {
   const isPhilsysValid = cleanPhilsys.length === 16;
   const isFirstNameValid = !!formData?.firstName?.trim();
   const isLastNameValid = !!formData?.lastName?.trim();
-  const isBirthdateValid = !!formData?.birthdate;
+  const isBirthdateValid = !!formData?.birthdate && isAgeValid;
 
   const allTrainings = [
     ...(formData?.neapTrainingRows || []),
@@ -649,26 +701,13 @@ export default function RoomProfiling() {
     }
   };
 
-  const getAge = (dobString) => {
-    if (!dobString) return null;
-    const birth = new Date(dobString + "T00:00:00");
-    if (isNaN(birth.getTime())) return null;
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
-    return age;
-  };
-
-  const currentAge = formData ? getAge(formData.birthdate) : null;
-
   if (isSubmitted) {
     return (
       <div style={{ maxWidth: '600px', margin: '40px auto', padding: '16px' }}>
         <article className="card" style={{ border: '2.5px solid var(--outline)', borderRadius: '24px', textAlign: 'center', background: '#FFFFFF', boxShadow: '0 12px 32px rgba(8, 49, 95, 0.08)' }}>
           <div className="card-inner" style={{ padding: '48px 24px', display: 'grid', gap: '20px', justifyItems: 'center' }}>
-            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#DCFCE7', color: '#16A34A', display: 'grid', placeItems: 'center', fontSize: '40px' }}>
-              ✓
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#DCFCE7', color: '#16A34A', display: 'grid', placeItems: 'center', fontSize: '36px' }}>
+              <FiCheck size={40} />
             </div>
             
             <div>
@@ -684,8 +723,11 @@ export default function RoomProfiling() {
               Thank you, <strong>{formData.firstName} {formData.lastName}</strong>! Your updated identity and L&D training details have been transmitted directly to your <strong>School Head</strong> for review.
             </p>
 
-            <div style={{ marginTop: '8px', fontSize: '13px', padding: '14px 18px', background: '#F8FAFC', borderRadius: '16px', border: '1.5px solid var(--line)', color: 'var(--navy)', lineHeight: '1.5', width: '100%', maxWidth: '440px' }}>
-              ℹ️ <strong>No further action required.</strong> Your School Head will merge your verified details directly into the official eSF7 roster.
+            <div style={{ marginTop: '8px', fontSize: '13px', padding: '14px 18px', background: '#F8FAFC', borderRadius: '16px', border: '1.5px solid var(--line)', color: 'var(--navy)', lineHeight: '1.5', width: '100%', maxWidth: '440px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <FiInfo size={18} style={{ color: 'var(--blue)', flexShrink: 0 }} />
+              <div>
+                <strong>No further action required.</strong> Your School Head will merge your verified details directly into the official eSF7 roster.
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '12px', width: '100%', maxWidth: '360px' }}>
@@ -760,8 +802,8 @@ export default function RoomProfiling() {
       {formData && !isUnlocked && (
         <article className="card" style={{ border: '2.5px solid var(--outline)', borderRadius: '22px', background: '#FFFFFF', overflow: 'hidden' }}>
           <div className="card-inner" style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center', textAlign: 'center' }}>
-            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--blue-50)', display: 'grid', placeItems: 'center', fontSize: '32px', marginBottom: '8px' }}>
-              🔐
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--blue-50)', display: 'grid', placeItems: 'center', marginBottom: '8px' }}>
+              <FiLock size={28} style={{ color: 'var(--blue)' }} />
             </div>
             
             <div>
@@ -802,8 +844,9 @@ export default function RoomProfiling() {
               </div>
 
               {errorMessage && (
-                <div style={{ color: 'var(--red)', fontSize: '12px', fontWeight: 700, padding: '8px 12px', background: '#FEF2F2', borderRadius: '8px', border: '1px solid #FCA5A5' }}>
-                  ⚠️ {errorMessage}
+                <div style={{ color: 'var(--red)', fontSize: '12px', fontWeight: 700, padding: '8px 12px', background: '#FEF2F2', borderRadius: '8px', border: '1px solid #FCA5A5', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiAlertCircle size={14} style={{ flexShrink: 0 }} />
+                  <span>{errorMessage}</span>
                 </div>
               )}
 
@@ -835,7 +878,9 @@ export default function RoomProfiling() {
                 gap: '8px'
               }}
             >
-              👤 Personnel Profile {!isPhilsysValid && <span style={{ color: '#EF4444' }}>●</span>}
+              <FiUser size={15} />
+              <span>Personnel Profile</span>
+              {!isPhilsysValid && <span style={{ color: '#EF4444' }}>●</span>}
             </button>
             <button
               type="button"
@@ -851,11 +896,15 @@ export default function RoomProfiling() {
                 gap: '8px'
               }}
             >
-              📋 L&D Training ({
-                (formData.neapTrainingRows?.length || 0) + 
-                (formData.certificationRows?.length || 0) + 
-                (formData.otherTrainingRows?.length || 0)
-              }) {!areTrainingsValid && <span style={{ color: '#EF4444' }}>●</span>}
+              <FiFileText size={15} />
+              <span>
+                L&D Training ({
+                  (formData.neapTrainingRows?.length || 0) + 
+                  (formData.certificationRows?.length || 0) + 
+                  (formData.otherTrainingRows?.length || 0)
+                })
+              </span>
+              {!areTrainingsValid && <span style={{ color: '#EF4444' }}>●</span>}
             </button>
           </div>
 
@@ -906,8 +955,9 @@ export default function RoomProfiling() {
                     <label>Extension Name (Optional)</label>
                     <input 
                       type="text" 
+                      maxLength={5}
                       value={formData.nameExtension || ''} 
-                      onChange={(e) => handleFieldChange('nameExtension', e.target.value.toUpperCase())}
+                      onChange={(e) => handleFieldChange('nameExtension', e.target.value.toUpperCase().slice(0, 5))}
                       placeholder="e.g. JR., SR., III, IV"
                     />
                   </div>
@@ -966,7 +1016,8 @@ export default function RoomProfiling() {
 
                     {hasEmailError && (
                       <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#DC2626', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>⚠️</span> {emailVal.error}
+                        <FiAlertCircle size={12} />
+                        <span>{emailVal.error}</span>
                       </p>
                     )}
                   </div>
@@ -1000,14 +1051,14 @@ export default function RoomProfiling() {
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gap: '4px' }}>
-                    <label>Birthdate *</label>
-                    <DatePickerDropdowns
-                      value={formData.birthdate || ''}
-                      onChange={(val) => handleFieldChange('birthdate', val)}
-                      maxDate={new Date()}
-                      required
-                    />
+                    <div style={{ display: 'grid', gap: '4px' }}>
+                      <label>Birthdate * (15+ yrs old)</label>
+                      <DatePickerDropdowns
+                        value={formData.birthdate || ''}
+                        onChange={(val) => handleFieldChange('birthdate', val)}
+                        maxDate={maxBirthdate}
+                        required
+                      />
                     {currentAge !== null && (
                       <span style={{ fontSize: '11px', color: 'var(--navy)', fontWeight: '700', marginTop: '2px' }}>
                         Age: {currentAge} years old
@@ -1097,8 +1148,9 @@ export default function RoomProfiling() {
                               />
                             </div>
                             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                              <button className="btn danger" type="button" onClick={() => removeTrainingRow('neapTrainingRows', index)} style={{ width: '100%', minHeight: '44px' }}>
-                                🗑️ Delete Row
+                              <button className="btn danger" type="button" onClick={() => removeTrainingRow('neapTrainingRows', index)} style={{ width: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                <FiTrash2 size={14} />
+                                <span>Delete Row</span>
                               </button>
                             </div>
                           </div>
@@ -1175,8 +1227,9 @@ export default function RoomProfiling() {
                               />
                             </div>
                             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                              <button className="btn danger" type="button" onClick={() => removeTrainingRow('certificationRows', index)} style={{ width: '100%', minHeight: '44px' }}>
-                                🗑️ Delete Row
+                              <button className="btn danger" type="button" onClick={() => removeTrainingRow('certificationRows', index)} style={{ width: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                <FiTrash2 size={14} />
+                                <span>Delete Row</span>
                               </button>
                             </div>
                           </div>
@@ -1282,8 +1335,9 @@ export default function RoomProfiling() {
                               />
                             </div>
                             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                              <button className="btn danger" type="button" onClick={() => removeTrainingRow('otherTrainingRows', index)} style={{ width: '100%', minHeight: '44px' }}>
-                                🗑️ Delete Row
+                              <button className="btn danger" type="button" onClick={() => removeTrainingRow('otherTrainingRows', index)} style={{ width: '100%', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                <FiTrash2 size={14} />
+                                <span>Delete Row</span>
                               </button>
                             </div>
                           </div>
@@ -1304,7 +1358,10 @@ export default function RoomProfiling() {
           {/* Validation Checklist / Guidance */}
           {!isFormValid && (
             <div style={{ padding: '12px 18px', background: '#FEF2F2', border: '1.5px solid #FCA5A5', borderRadius: '12px', fontSize: '12px', color: '#B91C1C' }}>
-              <strong>⚠️ To submit, please complete the following required fields:</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800 }}>
+                <FiAlertCircle size={15} />
+                <span>To submit, please complete the following required fields:</span>
+              </div>
               <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
                 {!isFirstNameValid && <li>First Name is required.</li>}
                 {!isLastNameValid && <li>Last Name is required.</li>}
@@ -1344,10 +1401,14 @@ export default function RoomProfiling() {
                 background: isFormValid ? 'var(--navy)' : '#94A3B8', 
                 color: 'white',
                 cursor: isFormValid ? 'pointer' : 'not-allowed',
-                opacity: isFormValid ? 1 : 0.6
+                opacity: isFormValid ? 1 : 0.6,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px'
               }}
             >
-              {isSubmitting ? 'Submitting to School Head...' : '✓ Submit Verified Profile & L&D'}
+              <FiCheck size={16} />
+              <span>{isSubmitting ? 'Submitting to School Head...' : 'Submit Verified Profile & L&D'}</span>
             </button>
           </div>
         </form>

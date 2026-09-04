@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp, DIVISION_SCHOOL_OPTIONS } from '../context/AppContext';
 import PortalHeader from '../components/PortalHeader';
+import { FiAlertCircle } from 'react-icons/fi';
 
 export default function Deployment() {
   const {
@@ -85,7 +86,9 @@ export default function Deployment() {
           
           {localStorage.getItem(`draft_deployment_${dbPerson?.id}`) && (
             <div style={{ padding: '12px 16px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '12px', color: '#B45309', fontSize: '13px', marginBottom: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>⚠️ You have unsaved deployment changes (draft stored locally).</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <FiAlertCircle size={16} /> You have unsaved deployment changes (draft stored locally).
+              </span>
               <button className="btn secondary" style={{ minHeight: '28px', padding: '0 10px', fontSize: '12px', background: 'white', color: '#B45309', borderColor: '#FCD34D' }} type="button" onClick={async () => {
                 if (await showConfirm("Discard Draft?", "Are you sure you want to discard your unsaved changes and revert to the server data?")) {
                   localStorage.removeItem(`draft_deployment_${dbPerson.id}`);

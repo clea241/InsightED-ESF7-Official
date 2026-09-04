@@ -33,6 +33,7 @@ app.use('/api/reports', require('./controllers/reports'));
 app.use('/api/allowances', require('./controllers/allowances'));
 app.use('/api/extra-tasks', require('./controllers/personnel_extra_tasks'));
 app.use('/api/room-profiling', require('./controllers/room_profiling'));
+app.use('/api/esf7-upload', require('./controllers/esf7_upload'));
 
 app.use('/api/overload-reasons', require('./controllers/overload_reasons'));
 app.use('/api/overload-no-work', require('./controllers/overload_no_work'));
