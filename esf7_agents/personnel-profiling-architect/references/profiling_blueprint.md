@@ -50,6 +50,7 @@ This document serves as the authoritative blueprint for [PersonnelProfile.jsx](f
   * `COLLEGE_DEGREE_OPTIONS` (Bachelor of Elementary Education, Bachelor of Secondary Education, etc.)
   * `POST_GRADUATE_DEGREE_OPTIONS` (Master of Arts in Education, Doctor of Education, etc.)
 * **Specializations & Majors**: `MAJOR_OPTIONS`, `MINOR_OPTIONS`, `DISCIPLINE_OPTIONS`, `PRC_SPECIALIZATION_OPTIONS`.
+  * **N/A Removal & OTHERS Policy**: `"OTHERS"` is strictly excluded from `MAJOR_OPTIONS`, `MINOR_OPTIONS`, and `PRC_SPECIALIZATION_OPTIONS`. `"N/A"` is strictly excluded from `MAJOR_OPTIONS` and `PRC_SPECIALIZATION_OPTIONS`, but is explicitly included in `MINOR_OPTIONS` (as having no minor is common/optional). Unselected fields remain empty (`""`), never defaulting to `"OTHERS"`. Custom entries are supported via `allowCustom={true}`.
 * **Eligibility Options**:
   * Standard options: LET, PBET, Civil Service Professional/Sub-Professional.
   * Custom RA 1080 Board Exam modal (`showRa1080Modal`): Allows typing specific board exam title (e.g. `'RA 1080 (REGISTERED SOCIAL WORKER)'`).
@@ -96,3 +97,23 @@ This document serves as the authoritative blueprint for [PersonnelProfile.jsx](f
 
 * **Version 1.0 (2026-08-13)**: Initial master flow blueprint established.
   * Baseline features: Full Personnel Profiling form tabs, Learning Area Taught Matrix with era capping math, RA 1080 modal input, local draft real-time auto-saving (`draft_personnel_${id}`), and DepEd Email policy modal.
+* **Version 1.1 (2026-09-07)**: High-Clarity Personnel Validation Modal & "VALIDATE" Flow.
+  * Renamed bottom action button from `Save & Validate` to `VALIDATE`.
+  * Implemented structured `getPersonnelValidationErrors` helper mapping missing fields to human-readable labels, categories, and target tabs.
+  * Replaced unformatted alert text with a high-clarity `Validation Checklist Needed` modal showing the personnel name, plantilla position, department, missing field count pill, and interactive field tiles that jump directly to their respective tabs.
+  * Added mandatory completion gate to `handleContinueToClasses()` on `PortalHeader` ("Save & Continue to Organized Classes ➔") that scans **ALL registered school personnel**; if any faculty member has incomplete fields, navigation is blocked and an all-personnel restriction modal (`allPersonnelValidationModal`) lists every incomplete teacher with quick-action links to fix their profile.
+* **Version 1.2 (2026-09-07)**: Teaching Licensure Examination for Teachers (LET/PBET) Restriction.
+  * Enforced that all faculty under `teaching` (or `positionCategory === 'TEACHING'`) and related-teaching leadership positions (Principals, Head Teachers) must possess Licensure Examination for Teachers (LET) or Professional Board Examination for Teachers (PBET).
+  * In `PersonnelProfile.jsx`, `getPersonnelValidationErrors` returns an Education category error `Licensure Examination for Teachers (LET/PBET)` if LET/PBET is missing.
+  * UI renders an inline warning banner with `<FiAlertCircle />` and applies `.empty-field` with red border to the eligibility selector when teaching staff lacks LET.
+  * In `AppContext.jsx`, real-time audit tracker flags error `${name}: Teaching personnel must possess Licensure Examination for Teachers (LET/PBET) eligibility.`
+  * Non-teaching staff are strictly exempt.
+* **Version 1.3 (2026-09-07)**: Enrollment-Driven Sequence (Profiling ➔ Organized Classes ➔ Designations) & L&D 3-Digit Hours.
+  * Preserved `Personnel Profiling` ➔ `Organized Classes` (`Save & Continue to Organized Classes ➔`) so that school enrollment numbers are established first.
+  * In `OrganizedClasses.jsx`, onContinue transitions to `designation` (`Save & Continue to Designations ➔`), allowing accurate assessment of Assistant School Head Designate requirements based on total learner counts.
+  * In `Designations.jsx`, onContinue transitions to `workload` (`Save & Continue to Workload ➔`).
+  * Aligned `Sidebar.jsx` and `NodeMap.jsx` items (03: Profiling, 04: Organized Classes, 05: Designations, 06: Workload).
+  * Restricted Total Hours in Professional Development / L&D across NEAP Trainings, TESDA Certifications, and Other Trainings to a strict 3-digit limit (1 - 999 hours) with input clipping, handler validation, and inline validation alerts across both desktop and mobile QR profiling.
+
+
+

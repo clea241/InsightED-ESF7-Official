@@ -41,7 +41,7 @@ function formatShsWorkloadRecord(row) {
 }
 
 // GET all SHS workload rows for a personnel (optionally filter by term)
-router.get('/personnel/:personnel_id', async (req, res) => {
+const getPersonnelShsWorkloads = async (req, res) => {
   try {
     const { personnel_id } = req.params;
     const { term } = req.query;
@@ -56,11 +56,15 @@ router.get('/personnel/:personnel_id', async (req, res) => {
 
     query += ` ORDER BY term ASC, created_at ASC`;
     const result = await db.query(query, values);
-    res.json(result.rows.map(formatShsWorkloadRecord));
+    const data = result.rows.map(formatShsWorkloadRecord);
+    res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message, data: [] });
   }
-});
+};
+
+router.get('/personnel/:personnel_id', getPersonnelShsWorkloads);
+router.get('/:personnel_id', getPersonnelShsWorkloads);
 
 // GET all SHS workload rows in school
 router.get('/', async (req, res) => {

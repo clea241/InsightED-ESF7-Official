@@ -259,9 +259,9 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       civilStatus: (row.civil_status || 'SINGLE').toUpperCase(),
       civil_status: (row.civil_status || 'SINGLE').toUpperCase(),
       soloParent: row.solo_parent ? 'YES' : 'NO',
-      religion: (row.religion || 'CHRISTIANITY').toUpperCase(),
-      ethnicGroup: (row.ehtinic_group || row.ethnic_group || 'OTHERS').toUpperCase(),
-      ethnic_group: (row.ehtinic_group || row.ethnic_group || 'OTHERS').toUpperCase(),
+      religion: ((row.religion === 'OTHERS' ? '' : row.religion) || 'CHRISTIANITY').toUpperCase(),
+      ethnicGroup: ((row.ehtinic_group === 'OTHERS' || row.ethnic_group === 'OTHERS' ? '' : (row.ehtinic_group || row.ethnic_group)) || '').toUpperCase(),
+      ethnic_group: ((row.ehtinic_group === 'OTHERS' || row.ethnic_group === 'OTHERS' ? '' : (row.ehtinic_group || row.ethnic_group)) || '').toUpperCase(),
       birthdate: bDate,
       age: computedAge,
       employeeNo: cleanEmpNo,
@@ -386,8 +386,40 @@ function formatDesignationRecord(row) {
   };
 }
 
+function formatWorkloadRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    gradeLevel: row.grade_level || '',
+    grade_level: row.grade_level || '',
+    sectionId: row.section_id || null,
+    section_id: row.section_id || null,
+    sectionName: row.section_name || '',
+    section_name: row.section_name || '',
+    subject: row.subject,
+    subjectId: row.subject_id || null,
+    subject_id: row.subject_id || null,
+    remediationSubject: row.remediation_subject || '',
+    remediation_subject: row.remediation_subject || '',
+    startTime: row.start_time ? String(row.start_time).substring(0, 5) : null,
+    start_time: row.start_time ? String(row.start_time).substring(0, 5) : null,
+    endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
+    end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
+    days: row.days || ['M', 'T', 'W', 'TH', 'F'],
+    rawPayload: raw
+  };
+}
+
 // Formatter to standardize database rows into frontend-compatible objects
-function formatPersonnelRecord(row, trainingsList = [], designationsList = []) {
+function formatPersonnelRecord(row, trainingsList = [], designationsList = [], workloadList = []) {
   if (!row) return null;
   const rawProfile = row.raw_payload || {};
   const rawEmp = row.employment_raw_payload || {};
@@ -450,6 +482,8 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = []) {
     age: row.age || (row.birthdate ? calculateAge(row.birthdate) : null),
     philsysNo: row.philsys_no || '',
     philsys_no: row.philsys_no || '',
+    noPhilsys: !!row.no_philsys,
+    no_philsys: !!row.no_philsys,
     employeeNo: (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '',
     employee_no: (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '',
     depedEmail: row.deped_email || '',
@@ -521,6 +555,11 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = []) {
     designation: primaryDesignation,
     designations: formattedDesignations,
 
+    // Workload Rows (from esf7_workload_rows or raw_payload fallback)
+    workloadRows: (Array.isArray(workloadList) && workloadList.length > 0)
+      ? workloadList
+      : (Array.isArray(rawProfile.workloadRows) ? rawProfile.workloadRows : []),
+
     rawPayload: { ...rawProfile, ...rawEmp, ...rawEduc, ...rawLA }
   };
 }
@@ -581,6 +620,19 @@ router.get('/', async (req, res) => {
       ORDER BY p.created_at ASC, p.id ASC
     `, [cleanSchoolId, `SCH-${cleanSchoolId}`]);
 
+    // 3. Fetch all workload rows for this school from esf7_workload_rows
+    const wklRes = await db.query(
+      `SELECT * FROM esf7_workload_rows WHERE school_id = $1 OR school_id = $2 ORDER BY created_at ASC`,
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
+
+    const workloadMap = new Map();
+    for (const wRow of wklRes.rows) {
+      const pKey = String(wRow.personnel_id).toUpperCase();
+      if (!workloadMap.has(pKey)) workloadMap.set(pKey, []);
+      workloadMap.get(pKey).push(formatWorkloadRecord(wRow));
+    }
+
     const dbMap = new Map();
     for (const row of result.rows) {
       const trRes = await db.query(
@@ -591,7 +643,8 @@ router.get('/', async (req, res) => {
         `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
         [row.id]
       );
-      const formatted = formatPersonnelRecord(row, trRes.rows, dsgRes.rows);
+      const wklList = workloadMap.get(String(row.id).toUpperCase()) || (row.prn ? workloadMap.get(String(row.prn).toUpperCase()) : []) || [];
+      const formatted = formatPersonnelRecord(row, trRes.rows, dsgRes.rows, wklList);
       if (formatted.id) dbMap.set(String(formatted.id).toUpperCase(), formatted);
       if (formatted.prn) dbMap.set(String(formatted.prn).toUpperCase(), formatted);
     }
@@ -610,6 +663,10 @@ router.get('/', async (req, res) => {
         if (dbMatch.id) usedDbKeys.add(String(dbMatch.id).toUpperCase());
         if (dbMatch.prn) usedDbKeys.add(String(dbMatch.prn).toUpperCase());
       } else {
+        const mWkl = workloadMap.get(idKey) || (prnKey ? workloadMap.get(prnKey) : null);
+        if (mWkl && mWkl.length > 0) {
+          m.workloadRows = mWkl;
+        }
         mergedList.push(m);
       }
     }
@@ -780,8 +837,13 @@ router.get('/:id', async (req, res) => {
       `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
       [row.id]
     );
+    const wklRes = await db.query(
+      `SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      [row.id]
+    );
+    const wklList = wklRes.rows.map(formatWorkloadRecord);
 
-    res.json(formatPersonnelRecord(row, trRes.rows, dsgRes.rows));
+    res.json(formatPersonnelRecord(row, trRes.rows, dsgRes.rows, wklList));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -893,7 +955,7 @@ router.post('/', async (req, res) => {
       last_name, lastName, name_extension, nameExtension,
       sex_at_birth, sexAtBirth, civil_status, civilStatus,
       solo_parent, soloParent, religion, ethnic_group, ethnicGroup,
-      birthdate, age, philsys_no, philsysNo, tin, no_tin, noTin,
+      birthdate, age, philsys_no, philsysNo, no_philsys, noPhilsys, tin, no_tin, noTin,
       employee_no, employeeNo, deped_email, depedEmail, is_school_head, isSchoolHead,
       prn: inputPrn,
       // Employment fields
@@ -939,9 +1001,9 @@ router.post('/', async (req, res) => {
       INSERT INTO esf7_personnel_profile (
         id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
         tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-        philsys_no, employee_no, deped_email, is_school_head, raw_payload
+        philsys_no, no_philsys, employee_no, deped_email, is_school_head, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
       RETURNING *;
     `;
 
@@ -966,6 +1028,7 @@ router.post('/', async (req, res) => {
       birthdate || null,
       computedAge,
       philsys_no || philsysNo || null,
+      no_philsys === true || noPhilsys === true,
       employee_no || employeeNo || null,
       deped_email || depedEmail || '',
       is_school_head === true || isSchoolHead === true,
@@ -1195,6 +1258,7 @@ router.put('/:id', async (req, res) => {
       birthdate,
       age,
       philsys_no, philsysNo,
+      no_philsys, noPhilsys,
       employee_no, employeeNo,
       deped_email, depedEmail,
       is_school_head, isSchoolHead,
@@ -1281,10 +1345,12 @@ router.put('/:id', async (req, res) => {
     const finalCivil = (civil_status !== undefined ? civil_status : civilStatus !== undefined ? civilStatus : current.civil_status || 'SINGLE').toUpperCase();
     const finalSolo = (solo_parent !== undefined ? (solo_parent === 'YES' || solo_parent === true) : soloParent !== undefined ? (soloParent === 'YES' || soloParent === true) : current.solo_parent);
     const finalRel = (religion !== undefined ? religion : current.religion || 'CHRISTIANITY').toUpperCase();
-    const finalEth = (ethnic_group !== undefined ? ethnic_group : ethnicGroup !== undefined ? ethnicGroup : current.ethnic_group || 'OTHERS').toUpperCase();
+    const rawEth = (ethnic_group !== undefined ? ethnic_group : ethnicGroup !== undefined ? ethnicGroup : current.ethnic_group || '');
+    const finalEth = (rawEth === 'OTHERS' ? '' : rawEth).toUpperCase();
     const finalBDate = birthdate !== undefined ? birthdate : current.birthdate;
     const finalAge = age !== undefined ? age : sanitizeAge(current.age, finalBDate);
     const finalPhilSys = (philsys_no !== undefined ? philsys_no : philsysNo !== undefined ? philsysNo : current.philsys_no || '').trim();
+    const finalNoPhilSys = (no_philsys !== undefined ? (no_philsys === true || no_philsys === 'true') : noPhilsys !== undefined ? (noPhilsys === true || noPhilsys === 'true') : current.no_philsys);
     const finalEmpNo = (employee_no !== undefined ? employee_no : employeeNo !== undefined ? employeeNo : current.employee_no || '').trim();
     const finalEmail = (deped_email !== undefined ? deped_email : depedEmail !== undefined ? depedEmail : current.deped_email || '').trim();
     const finalSalutation = (salutation !== undefined ? salutation : current.salutation || 'MR.').toUpperCase();
@@ -1309,12 +1375,13 @@ router.put('/:id', async (req, res) => {
         birthdate = $15,
         age = $16,
         philsys_no = $17,
-        employee_no = $18,
-        deped_email = $19,
-        is_school_head = $20,
-        raw_payload = $21::jsonb,
+        no_philsys = $18,
+        employee_no = $19,
+        deped_email = $20,
+        is_school_head = $21,
+        raw_payload = $22::jsonb,
         updated_at = NOW()
-      WHERE id = $22
+      WHERE id = $23
       RETURNING *;
     `;
 
@@ -1336,6 +1403,7 @@ router.put('/:id', async (req, res) => {
       finalBDate,
       finalAge,
       finalPhilSys,
+      finalNoPhilSys,
       finalEmpNo,
       finalEmail,
       isTargetHead,

@@ -44,8 +44,8 @@ export default function Sidebar() {
         { view: 'school', label: 'School Profile', Icon: FiBookOpen },
         { view: 'roster', label: 'Personnel Roster', Icon: FiUsers },
         { view: 'profile', label: 'Personnel Profiling', Icon: FiUserCheck },
-        { view: 'designation', label: 'Designations', Icon: FiBookmark },
         { view: 'classes', label: 'Organized Classes', Icon: FiGrid },
+        { view: 'designation', label: 'Designations', Icon: FiBookmark },
         { view: 'workload', label: 'Workload', Icon: FiClock }
       ]
     },

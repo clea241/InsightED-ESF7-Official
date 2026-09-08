@@ -124,16 +124,21 @@ async function processNextJob() {
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
     const schoolInfo = payload.schoolInfo || {};
 
-    // 3. Ingest esf7_school_profile (UPSERT)
-    const schoolDbId = `SCH-PROF-${cleanSchoolId}`;
+    // 3. Ingest esf7_school_profile (UPSERT matching uq_school_sy_profile constraint)
+    const existingProfRes = await client.query(
+      'SELECT id FROM esf7_school_profile WHERE school_id = $1 AND school_year = $2 LIMIT 1',
+      [cleanSchoolId, cleanSchoolYear]
+    );
+    const schoolDbId = existingProfRes.rows.length > 0 
+      ? existingProfRes.rows[0].id 
+      : `SCH-PROFILE-${cleanSchoolId}`;
+
     await client.query(
       `INSERT INTO esf7_school_profile (
          id, school_id, school_year, has_elem_special_programs, has_jhs_special_programs, 
          jhs_special_programs, shs_curriculum_model, raw_payload, created_at, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-       ON CONFLICT (id) DO UPDATE SET
-         school_id = EXCLUDED.school_id,
-         school_year = EXCLUDED.school_year,
+       ON CONFLICT (school_id, school_year) DO UPDATE SET
          has_elem_special_programs = EXCLUDED.has_elem_special_programs,
          has_jhs_special_programs = EXCLUDED.has_jhs_special_programs,
          jhs_special_programs = EXCLUDED.jhs_special_programs,
@@ -199,8 +204,8 @@ async function processNextJob() {
           `INSERT INTO esf7_personnel_profile (
              id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
              tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-             philsys_no, employee_no, deped_email, is_school_head, raw_payload, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
+             philsys_no, no_philsys, employee_no, deped_email, is_school_head, raw_payload, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW(), NOW())
            ON CONFLICT (id) DO UPDATE SET
              prn = EXCLUDED.prn,
              school_id = EXCLUDED.school_id,
@@ -221,6 +226,7 @@ async function processNextJob() {
              birthdate = EXCLUDED.birthdate,
              age = EXCLUDED.age,
              philsys_no = EXCLUDED.philsys_no,
+             no_philsys = EXCLUDED.no_philsys,
              employee_no = EXCLUDED.employee_no,
              deped_email = EXCLUDED.deped_email,
              is_school_head = EXCLUDED.is_school_head,
@@ -242,11 +248,12 @@ async function processNextJob() {
             p.sexAtBirth || p.sex_at_birth || p.sex || 'FEMALE',
             p.civilStatus || p.civil_status || 'SINGLE',
             p.soloParent === true || p.soloParent === 'YES' || p.solo_parent === true,
-            p.religion || 'CHRISTIANITY',
-            p.ethnicGroup || p.ethnic_group || 'OTHERS',
+            p.religion === 'OTHERS' ? null : (p.religion || 'CHRISTIANITY'),
+            (p.ethnicGroup === 'OTHERS' || p.ethnic_group === 'OTHERS') ? null : (p.ethnicGroup || p.ethnic_group || null),
             bDate,
             age,
             p.philsysNo || p.philsys_no || null,
+            p.noPhilsys === true || p.no_philsys === true,
             p.employeeNo || p.employee_no || null,
             p.depedEmail || p.deped_email || null,
             isHead,
@@ -513,19 +520,39 @@ async function processNextJob() {
         const allowId = `alw-${pId}-${cleanSchoolId}`;
         await client.query(
           `INSERT INTO esf7_personnel_allowances (
-             id, personnel_id, school_id, school_year, special_hardship_allowance, hazard_pay,
-             mobile_data_allowance, chalk_instructional_allowance, hardship_category, raw_payload, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+             id, personnel_id, school_id, school_year, has_pera, pera_amount,
+             has_uniform, uniform_amount, has_supplies, supplies_amount,
+             has_medical, medical_amount, has_hardship, hardship_amount,
+             raw_payload, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+           ON CONFLICT (personnel_id, school_year) DO UPDATE SET
+             has_pera = EXCLUDED.has_pera,
+             pera_amount = EXCLUDED.pera_amount,
+             has_uniform = EXCLUDED.has_uniform,
+             uniform_amount = EXCLUDED.uniform_amount,
+             has_supplies = EXCLUDED.has_supplies,
+             supplies_amount = EXCLUDED.supplies_amount,
+             has_medical = EXCLUDED.has_medical,
+             medical_amount = EXCLUDED.medical_amount,
+             has_hardship = EXCLUDED.has_hardship,
+             hardship_amount = EXCLUDED.hardship_amount,
+             raw_payload = EXCLUDED.raw_payload,
+             updated_at = NOW()`,
           [
             allowId,
             pId,
             cleanSchoolId,
             cleanSchoolYear,
-            !!allowObj.specialHardshipAllowance,
-            !!allowObj.hazardPay,
-            !!allowObj.mobileDataAllowance,
-            !!allowObj.chalkInstructionalAllowance,
-            allowObj.hardshipCategory || 'NONE',
+            allowObj.hasPera !== false && allowObj.has_pera !== false,
+            parseFloat(allowObj.peraAmount || allowObj.pera_amount || 2000.00) || 2000.00,
+            allowObj.hasUniform !== false && allowObj.has_uniform !== false,
+            parseFloat(allowObj.uniformAmount || allowObj.uniform_amount || 7000.00) || 7000.00,
+            allowObj.hasSupplies !== false && allowObj.has_supplies !== false,
+            parseFloat(allowObj.suppliesAmount || allowObj.supplies_amount || 10000.00) || 10000.00,
+            allowObj.hasMedical !== false && allowObj.has_medical !== false,
+            parseFloat(allowObj.medicalAmount || allowObj.medical_amount || 7000.00) || 7000.00,
+            !!(allowObj.hasHardship || allowObj.has_hardship),
+            parseFloat(allowObj.hardshipAmount || allowObj.hardship_amount || 0.00) || 0.00,
             JSON.stringify(allowObj)
           ]
         );
@@ -537,21 +564,29 @@ async function processNextJob() {
     for (const tfr of (payload.workloadTransfers || [])) {
       if (!tfr) continue;
       const tfrId = tfr.id && !String(tfr.id).startsWith('local-tfr-') ? tfr.id : generateTransferId();
+      const absentId = tfr.absentPersonnelId || tfr.absent_personnel_id || tfr.absentTeacherId || tfr.absent_teacher_id;
+      const relievingId = tfr.relievingPersonnelId || tfr.relieving_personnel_id || tfr.substituteTeacherId || tfr.substitute_personnel_id;
+      if (!absentId || !relievingId) continue;
+
       await client.query(
         `INSERT INTO esf7_workload_transfer (
-           id, school_id, school_year, absent_teacher_id, substitute_teacher_id,
-           start_date, end_date, reason, status, raw_payload, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+           id, school_id, school_year, absent_personnel_id, relieving_personnel_id,
+           absence_id, workload_id, workload_type, subject, start_date, end_date,
+           relieving_hours, raw_payload, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())`,
         [
           tfrId,
           cleanSchoolId,
           cleanSchoolYear,
-          tfr.absentTeacherId || tfr.absent_personnel_id,
-          tfr.substituteTeacherId || tfr.substitute_personnel_id,
-          parseDate(tfr.startDate || tfr.start_date),
-          parseDate(tfr.endDate || tfr.end_date),
-          tfr.reason || 'Leave of Absence',
-          tfr.status || 'active',
+          absentId,
+          relievingId,
+          tfr.absenceId || tfr.absence_id || null,
+          tfr.workloadId || tfr.workload_id || 'WK-DEFAULT',
+          tfr.workloadType || tfr.workload_type || 'ELEM_JHS',
+          tfr.subject || 'N/A',
+          parseDate(tfr.startDate || tfr.start_date) || new Date().toISOString().split('T')[0],
+          parseDate(tfr.endDate || tfr.end_date) || new Date().toISOString().split('T')[0],
+          parseFloat(tfr.relievingHours || tfr.relieving_hours || 1.0) || 1.0,
           JSON.stringify(tfr)
         ]
       );

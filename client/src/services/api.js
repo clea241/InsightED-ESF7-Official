@@ -586,8 +586,20 @@ export const api = {
 
   // SHS Workloads
   getShsWorkloads: async (personnelId) => {
-    const res = await fetchWithAuth(`${API_BASE}/shs-workloads/${personnelId}`);
-    return res.json();
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/shs-workloads/${personnelId}`);
+      if (!res.ok) {
+        return { success: false, data: [] };
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return { success: true, data };
+      }
+      return data;
+    } catch (err) {
+      console.warn('Notice: Could not fetch SHS workloads:', err);
+      return { success: false, data: [] };
+    }
   },
   saveShsWorkloads: async (personnelId, shsWorkloadRows) => {
     const res = await fetchWithAuth(`${API_BASE}/shs-workloads/personnel/${personnelId}`, {

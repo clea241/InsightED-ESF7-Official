@@ -24,7 +24,9 @@ import {
   FiSave,
   FiCheckCircle,
   FiCopy,
-  FiLock
+  FiLock,
+  FiX,
+  FiMapPin
 } from 'react-icons/fi';
 
 import {
@@ -53,6 +55,150 @@ import {
   NEAP_TRAINING_OPTIONS,
   validateDepEdEmail
 } from '../context/AppContext';
+
+export const getAge = (dobString) => {
+  if (!dobString) return null;
+  const cleanDob = typeof dobString === 'string' ? dobString.substring(0, 10) : '';
+  if (!cleanDob) return null;
+  const birth = new Date(cleanDob + "T00:00:00");
+  if (isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+};
+
+export const getPersonnelValidationChecklist = (p) => {
+  if (!p) return { total: 0, completed: 0, percentage: 0, errors: [] };
+  const errors = [];
+  const required = [];
+
+  const check = (id, label, isPassed, category, tab) => {
+    required.push(id);
+    if (!isPassed) {
+      errors.push({ id, label, category, tab });
+    }
+  };
+
+  // 1. Names
+  check('firstName', "First Name", !!p.firstName?.trim(), "Identity", "identity");
+  check('middleName', "Middle Name", !!p.middleName?.trim(), "Identity", "identity");
+  check('lastName', "Last Name", !!p.lastName?.trim(), "Identity", "identity");
+
+  // 2. Demographics & IDs
+  check('sexAtBirth', "Sex at Birth", !!(p.sexAtBirth || p.sex), "Personal", "personal");
+  check('civilStatus', "Civil Status", !!p.civilStatus, "Personal", "personal");
+  check('religion', "Religion", !!p.religion, "Personal", "personal");
+  check('ethnicGroup', "Ethnic Group", !!p.ethnicGroup, "Personal", "personal");
+
+  const hasBirthdate = !!(p.birthdate || p.birthDate);
+  const bdateStr = p.birthdate || p.birthDate;
+  const ageVal = hasBirthdate ? getAge(bdateStr) : null;
+  const validAge = hasBirthdate && ageVal !== null && ageVal >= 15;
+  check('birthdate', "Valid Birthdate (Must be at least 15 yrs old)", validAge, "Personal", "personal");
+
+  // PhilSys No. is optional (not required) per DepEd guidelines
+  check('depedEmail', "DepEd Official Email", !!(p.depedEmail?.trim() || p.email?.trim()), "Employment", "employment");
+  check('tin', "TIN Number", !!(p.noTin || p.tin?.trim()), "Personal", "personal");
+
+  // 3. Employment
+  check('position', "Plantilla Position", !!(p.position?.trim() || p.plantilla_position?.trim() || p.position_title?.trim()), "Employment", "employment");
+  check('fundSource', "Fund Source", !!p.fundSource, "Employment", "employment");
+  check('natureOfAppointment', "Nature of Appointment", !!p.natureOfAppointment, "Employment", "employment");
+  check('hiringArrangement', "Hiring Arrangement", !!p.hiringArrangement, "Employment", "employment");
+  check('deploymentStatus', "Status of Deployment", !!p.deploymentStatus, "Employment", "employment");
+
+  if (['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(p.deploymentStatus)) {
+    const hasOtherSchool = !!(p.clusteredSchools || (Array.isArray(p.assignedSchools) && p.assignedSchools.length > 0));
+    check('assignedSchools', "Other School Assignment", hasOtherSchool, "Employment", "employment");
+  }
+
+  check('firstServiceDate', "Date of First Day of Service", !!p.firstServiceDate, "Employment", "employment");
+  check('lastPromotionDate', "Date of Last Promotion", !!p.lastPromotionDate, "Employment", "employment");
+  check('lastLateralMovementDate', "Date of Last Lateral Movement", !!p.lastLateralMovementDate, "Employment", "employment");
+  check('newStationDate', "Date of First Day in Current Station", !!p.newStationDate, "Employment", "employment");
+
+  // 4. Education / Qualifications
+  const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+  const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+  const attainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isNonTeaching ? 'N/A' : ''));
+
+  if (!isNonTeaching) {
+    check('highestEducationalAttainment', "Highest Educational Attainment", !!(attainment || p.collegeDegree || p.vocationalCourse), "Education", "education");
+  }
+
+  const isSHS = attainment === 'SENIOR HIGH SCHOOL GRADUATE';
+  const isVocational = attainment === 'VOCATIONAL / TECH-VOC COURSE';
+  const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment) || (!attainment && p.collegeDegree);
+  const isPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
+
+  if (isSHS) {
+    check('shsTrack', "Senior High School Track", !!p.shsTrack, "Education", "education");
+  }
+  if (isVocational) {
+    check('vocationalCourse', "Vocational / TESDA Course", !!p.vocationalCourse?.trim(), "Education", "education");
+    check('vocationalLevel', "NC Level / Qualification Level", !!p.vocationalLevel?.trim(), "Education", "education");
+  }
+  if (isCollegeOrPostGrad) {
+    check('collegeDegree', "College Degree / Baccalaureate", !!p.collegeDegree, "Education", "education");
+  }
+  const isEdu = p.collegeDegree && String(p.collegeDegree).toUpperCase().includes('EDUCATION');
+  if (isCollegeOrPostGrad && isEdu) {
+    check('major', "Major in Education", !!p.major, "Education", "education");
+  }
+  if (isPostGrad) {
+    if (!p.postGraduateDegree) {
+      p.postGraduateDegree = attainment === "DOCTORATE DEGREE (GRADUATED)" ? 'DOCTORATE DEGREE' : 'MASTERS DEGREE';
+    }
+    check('postGraduateDiscipline', "Post-Graduate Discipline", !!p.postGraduateDiscipline?.trim(), "Education", "education");
+  }
+
+  check('eligibility', "Civil Service / PRC Eligibility", !!(p.eligibility && (!Array.isArray(p.eligibility) || p.eligibility.length > 0)), "Education", "education");
+  if (['let', 'pbet'].includes(String(p.eligibility || '').toLowerCase())) {
+    check('prcSpecialization', "PRC Specialization", !!p.prcSpecialization?.trim(), "Education", "education");
+  }
+
+  // 5. Professional Development / Trainings (for teaching & teaching-related)
+  if (!isNonTeaching) {
+    const totalTrainingsCount = (p.neapTrainingRows || []).length + (p.certificationRows || []).length + (p.otherTrainingRows || []).length;
+    check('hasTrainings', "At least one Professional Development / Training record", totalTrainingsCount > 0, "L&D", "development");
+
+    const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
+    if (allTrainings.length > 0) {
+      const validHours = allTrainings.every(tr => tr.totalHours && Number(tr.totalHours) > 0);
+      if (!validHours) {
+        check('trainingHours', "Total Hours for all L&D / Training records", false, "L&D", "development");
+      }
+    }
+  }
+
+  const total = required.length;
+  const completed = total - errors.length;
+  const percentage = total > 0 ? Math.max(0, Math.min(100, Math.round((completed / total) * 100))) : 0;
+
+  return { total, completed, percentage, errors };
+};
+
+export function calculatePersonCompletionPercentage(p, activePerson) {
+  if (!p) return 0;
+  let data = p;
+  if (activePerson && (String(activePerson.id) === String(p.id))) {
+    data = activePerson;
+  } else if (p.id) {
+    const savedDraft = localStorage.getItem(`draft_personnel_${p.id}`);
+    if (savedDraft) {
+      try {
+        data = { ...p, ...JSON.parse(savedDraft) };
+      } catch (e) {}
+    }
+  }
+
+  const result = getPersonnelValidationChecklist(data);
+  return result.percentage;
+}
+
+
 
 const CURRICULUM_ERAS = [
   { key: '1973-2002', label: '1973–2002 (NSEC / NEP)', startYear: 1973, endYear: 2002 },
@@ -557,7 +703,8 @@ function MultiSelectDropdown({ options = [], value = [], onChange, placeholder =
     onChange(updated);
   };
 
-  const displayText = value.length > 0 ? value.join(', ') : placeholder;
+  const isAnswered = value.length > 0;
+  const displayText = isAnswered ? `${value.length} selected: ${value.join(', ')}` : placeholder;
 
   return (
     <div ref={wrapperRef} className="searchable-dropdown-container" style={{ position: 'relative', width: '100%' }}>
@@ -569,22 +716,30 @@ function MultiSelectDropdown({ options = [], value = [], onChange, placeholder =
           justifyContent: 'space-between',
           alignItems: 'center',
           padding: '10px 11px',
-          background: options.length === 0 ? '#f1f5f9' : 'white',
-          border: options.length === 0 ? '1.5px solid #e2e8f0' : (isOpen ? '1.5px solid var(--blue-600, #0284c7)' : '1.5px solid var(--line, #BAE6FD)'),
+          background: options.length === 0 ? '#f1f5f9' : (isAnswered ? '#f0f9ff' : 'white'),
+          border: options.length === 0 ? '1.5px solid #e2e8f0' : (isAnswered ? '1.5px solid #0284c7' : (isOpen ? '1.5px solid var(--blue-600, #0284c7)' : '1.5px solid var(--line, #BAE6FD)')),
           borderRadius: '12px',
-          color: options.length === 0 ? '#94a3b8' : (value.length > 0 ? 'var(--text, #0F172A)' : 'var(--muted, #64748B)'),
+          color: options.length === 0 ? '#94a3b8' : (isAnswered ? '#0369a1' : 'var(--muted, #64748B)'),
           cursor: options.length === 0 ? 'not-allowed' : 'pointer',
           minHeight: '42px',
           fontSize: '14px',
+          fontWeight: isAnswered ? '600' : 'normal',
           boxSizing: 'border-box',
           boxShadow: (!isOpen || options.length === 0) ? 'none' : '0 0 0 3px rgba(125, 211, 252, .32)',
           transition: 'all 0.15s ease'
         }}
       >
-        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '80%' }}>
           {displayText}
         </span>
-        <span style={{ fontSize: '10px', color: options.length === 0 ? '#94a3b8' : 'var(--blue, #075985)', marginLeft: '8px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {isAnswered && (
+            <span style={{ background: '#0284c7', color: 'white', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '10px', flexShrink: 0 }}>
+              <FiCheck size={11} style={{ marginRight: '3px' }} />{value.length} Selected
+            </span>
+          )}
+          <span style={{ fontSize: '10px', color: options.length === 0 ? '#94a3b8' : 'var(--blue, #075985)', marginLeft: '4px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+        </div>
       </div>
 
       {isOpen && options.length > 0 && (
@@ -694,6 +849,23 @@ export default function PersonnelProfile() {
   const [activeTab, setActiveTab] = useState('identity');
   const [showRa1080Modal, setShowRa1080Modal] = useState(false);
   const [ra1080InputText, setRa1080InputText] = useState('');
+
+  // High-Clarity Personnel Validation Modal State
+  const [validationModal, setValidationModal] = useState({
+    isOpen: false,
+    personName: '',
+    position: '',
+    department: '',
+    errors: []
+  });
+
+  // All-Personnel Progression Restriction Modal State
+  const [allPersonnelValidationModal, setAllPersonnelValidationModal] = useState({
+    isOpen: false,
+    incompleteList: [],
+    totalPersonnel: 0
+  });
+
 
   // Feature A: Learning Area Matrix State
   const [learningAreaMap, setLearningAreaMap] = useState({}); // key: `${eraKey}||${subjectKey}` -> { checked: boolean, years: number }
@@ -937,18 +1109,72 @@ export default function PersonnelProfile() {
       if (updated.depedEmail === 'N/A') updated.depedEmail = '';
     }
 
+    if (key === 'natureOfAppointment') {
+      const pType = detectPersonnelTypeFromPosition(updated.position) || updated.type || 'teaching';
+      const isNT = pType === 'non-teaching';
+      const nature = String(value || '').toUpperCase();
+
+      if (nature === 'REGULAR PERMANENT') {
+        updated.natureOfAppointment = 'REGULAR PERMANENT';
+        updated.fundSource = 'NATIONAL';
+        const allowedHiring = isNT ? ['REGULAR'] : ['REGULAR', 'SPIMS', '4PS', 'DOST'];
+        if (!allowedHiring.includes(String(updated.hiringArrangement || '').toUpperCase())) {
+          updated.hiringArrangement = 'REGULAR';
+        }
+        if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
+        if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
+        if (updated.newStationDate === 'N/A') updated.newStationDate = '';
+        if (updated.depedEmail === 'N/A') updated.depedEmail = '';
+      } else if (nature === 'PROVISIONAL') {
+        updated.natureOfAppointment = 'PROVISIONAL';
+        updated.fundSource = 'NATIONAL';
+        updated.hiringArrangement = 'DOST';
+        if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
+        if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
+        if (updated.newStationDate === 'N/A') updated.newStationDate = '';
+        if (updated.depedEmail === 'N/A') updated.depedEmail = '';
+      } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(nature)) {
+        updated.natureOfAppointment = nature;
+        updated.hiringArrangement = 'N/A';
+        if (String(updated.fundSource || '').toUpperCase() === 'NATIONAL') {
+          updated.fundSource = '';
+        }
+      }
+    }
+
     if (key === 'position' && value) {
       const autoType = detectPersonnelTypeFromPosition(value);
       if (autoType && autoType !== updated.type) {
         updated.type = autoType;
+      }
+      if (autoType === 'non-teaching') {
+        const nat = String(updated.natureOfAppointment || '').toUpperCase();
+        if (nat === 'PROVISIONAL' || nat === 'SUBSTITUTE') {
+          updated.natureOfAppointment = 'REGULAR PERMANENT';
+          updated.fundSource = 'NATIONAL';
+          updated.hiringArrangement = 'REGULAR';
+        } else if (nat === 'REGULAR PERMANENT') {
+          updated.hiringArrangement = 'REGULAR';
+        }
       }
       if (autoType !== 'non-teaching' && updated.depedEmail === 'N/A') {
         updated.depedEmail = '';
       }
     }
 
-    if (key === 'type' && value !== 'non-teaching' && updated.depedEmail === 'N/A') {
-      updated.depedEmail = '';
+    if (key === 'type') {
+      if (value === 'non-teaching') {
+        const nat = String(updated.natureOfAppointment || '').toUpperCase();
+        if (nat === 'PROVISIONAL' || nat === 'SUBSTITUTE') {
+          updated.natureOfAppointment = 'REGULAR PERMANENT';
+          updated.fundSource = 'NATIONAL';
+          updated.hiringArrangement = 'REGULAR';
+        } else if (nat === 'REGULAR PERMANENT') {
+          updated.hiringArrangement = 'REGULAR';
+        }
+      } else if (updated.depedEmail === 'N/A') {
+        updated.depedEmail = '';
+      }
     }
 
     if (key === 'firstServiceDate' && value && typeof value === 'string' && value.length >= 10) {
@@ -1000,18 +1226,7 @@ export default function PersonnelProfile() {
     return d;
   }, []);
 
-  const getAge = (dobString) => {
-    if (!dobString) return null;
-    const cleanDob = typeof dobString === 'string' ? dobString.substring(0, 10) : '';
-    if (!cleanDob) return null;
-    const birth = new Date(cleanDob + "T00:00:00");
-    if (isNaN(birth.getTime())) return null;
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
-    return age;
-  };
+  // getAge is exported at module level
 
   const age = getAge(currentPerson.birthdate);
   let ageStatusText = 'No birthdate';
@@ -1093,7 +1308,12 @@ export default function PersonnelProfile() {
     return null;
   };
 
-  const handleSaveValidate = async () => {
+  const getPersonnelValidationErrors = (p) => {
+    if (!p) return [];
+    return getPersonnelValidationChecklist(p).errors;
+  };
+
+  const handleValidateOnly = async () => {
     if (!currentPerson) return;
     const p = currentPerson;
 
@@ -1103,96 +1323,21 @@ export default function PersonnelProfile() {
       return;
     }
 
-    const errors = [];
-
-    // Names
-    if (!p.firstName?.trim()) errors.push("FIRST NAME");
-    if (!p.middleName?.trim()) errors.push("MIDDLE NAME");
-    if (!p.lastName?.trim()) errors.push("LAST NAME");
-
-    // Demographics & IDs
-    if (!p.sexAtBirth) errors.push("SEX AT BIRTH");
-    if (!p.civilStatus) errors.push("CIVIL STATUS");
-    if (!p.religion) errors.push("RELIGION");
-    if (!p.ethnicGroup) errors.push("ETHNIC GROUP");
-    if (!p.birthdate) {
-      errors.push("BIRTHDATE");
-    } else {
-      const ageVal = getAge(p.birthdate);
-      if (ageVal !== null && ageVal < 15) {
-        errors.push("VALID BIRTHDATE (PERSONNEL MUST BE AT LEAST 15 YEARS OLD)");
-      }
-    }
-    if (!p.philsysNo?.trim()) errors.push("PHILSYS NO.");
-    if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
-    if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
-
-    // Employment
-    if (!p.position) errors.push("PLANTILLA POSITION");
-    if (!p.fundSource) errors.push("FUND SOURCE");
-    if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
-    if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
-    if (!p.deploymentStatus) errors.push("STATUS OF DEPLOYMENT");
-    if (['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(p.deploymentStatus) && !p.clusteredSchools && (!Array.isArray(p.assignedSchools) || p.assignedSchools.length === 0)) {
-      errors.push("OTHER SCHOOL ASSIGNMENT");
-    }
-    if (!p.firstServiceDate) errors.push("DATE OF FIRST DAY OF SERVICE");
-    if (!p.lastPromotionDate) errors.push("DATE OF LAST PROMOTION");
-    if (!p.lastLateralMovementDate) errors.push("DATE OF LAST LATERAL MOVEMENT");
-    if (!p.newStationDate) errors.push("DATE OF FIRST DAY IN CURRENT STATION");
-
-    // Education / Qualifications
-    const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
-    const attainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isNonTeaching ? 'N/A' : ''));
-    if (!attainment && !p.collegeDegree && !p.vocationalCourse && !isNonTeaching) {
-      errors.push("HIGHEST EDUCATIONAL ATTAINMENT");
-    }
-    const isSHS = attainment === 'SENIOR HIGH SCHOOL GRADUATE';
-    const isVocational = attainment === 'VOCATIONAL / TECH-VOC COURSE';
-    const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment) || (!attainment && p.collegeDegree);
-    const isPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
-
-    if (isSHS && !p.shsTrack) {
-      errors.push("SENIOR HIGH SCHOOL TRACK");
-    }
-    if (isVocational) {
-      if (!p.vocationalCourse?.trim()) errors.push("VOCATIONAL / TESDA COURSE");
-      if (!p.vocationalLevel?.trim()) errors.push("NC LEVEL / QUALIFICATION LEVEL");
-    }
-    if (isCollegeOrPostGrad && !p.collegeDegree) {
-      errors.push("COLLEGE DEGREE / BACCALAUREATE");
-    }
-    const isEdu = p.collegeDegree && String(p.collegeDegree).toUpperCase().includes('EDUCATION');
-    if (isCollegeOrPostGrad && isEdu && !p.major) {
-      errors.push("MAJOR IN EDUCATION");
-    }
-    if (isPostGrad) {
-      if (!p.postGraduateDegree) {
-        p.postGraduateDegree = attainment === "DOCTORATE DEGREE (GRADUATED)" ? 'DOCTORATE DEGREE' : 'MASTERS DEGREE';
-      }
-      if (!p.postGraduateDiscipline?.trim()) {
-        errors.push("POST-GRADUATE DISCIPLINE");
-      }
-    }
-    if (!p.eligibility || (Array.isArray(p.eligibility) && p.eligibility.length === 0)) {
-      errors.push("ELIGIBILITY");
-    }
-    if (['let', 'pbet'].includes(String(p.eligibility || '').toLowerCase()) && !p.prcSpecialization?.trim()) {
-      errors.push("PRC SPECIALIZATION");
-    }
-
-    // Trainings / Prof. Development
-    const totalTrainingsCount = (p.neapTrainingRows || []).length + (p.certificationRows || []).length + (p.otherTrainingRows || []).length;
-    if (totalTrainingsCount === 0) {
-      errors.push("AT LEAST ONE PROFESSIONAL DEVELOPMENT / TRAINING RECORD");
-    }
-    const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
-    if (allTrainings.some(tr => !tr.totalHours || Number(tr.totalHours) <= 0)) {
-      errors.push("TOTAL HOURS FOR ALL L&D / TRAINING RECORDS (REQUIRED)");
-    }
+    const errors = getPersonnelValidationErrors(p);
 
     if (errors.length > 0) {
-      await showAlert("Validation Checklist Needed", `Cannot save record. The following fields are empty:\n\n• ${errors.join('\n• ')}`);
+      const personName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Selected Personnel';
+      const pos = p.position || p.plantilla_position || p.position_title || 'Unassigned Position';
+      const pType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+      const dept = pType === 'teaching' ? 'Teaching Faculty' : pType === 'teaching-related' ? 'Related Teaching' : 'Non-Teaching';
+
+      setValidationModal({
+        isOpen: true,
+        personName,
+        position: pos,
+        department: dept,
+        errors
+      });
       return;
     }
 
@@ -1201,9 +1346,82 @@ export default function PersonnelProfile() {
       setEditPerson(updated);
       await savePersonnelChanges(p.id, updated);
       localStorage.removeItem(`draft_personnel_${p.id}`);
-      showToast("Record validated and saved successfully!");
+      showToast(`✨ ${p.firstName || ''} ${p.lastName || ''}'s profile is 100% complete and validated!`, 'success');
     } catch (err) {
       await showAlert("Error", "Failed to save and validate record: " + err.message);
+    }
+  };
+
+  // Backwards compatibility alias
+  const handleSaveValidate = handleValidateOnly;
+
+
+
+  const handleContinueToClasses = async () => {
+    // 1. Scan ALL personnel in the school roster (excluding shared borrowed teachers)
+    const targetPersonnel = (personnel || []).filter(p => !p.isShared);
+    const incompleteList = [];
+
+
+    targetPersonnel.forEach(p => {
+      // Use active in-memory editPerson if IDs match, otherwise check localStorage draft or raw personnel object
+      let personToCheck = p;
+      if (currentPerson && currentPerson.id === p.id) {
+        personToCheck = currentPerson;
+      } else {
+        const savedDraft = localStorage.getItem(`draft_personnel_${p.id}`);
+        if (savedDraft) {
+          try {
+            personToCheck = { ...p, ...JSON.parse(savedDraft) };
+          } catch (e) {
+            personToCheck = p;
+          }
+        }
+      }
+
+      const errors = getPersonnelValidationErrors(personToCheck);
+      if (errors.length > 0) {
+        const personName = `${personToCheck.firstName || ''} ${personToCheck.lastName || ''}`.trim() || 'Unnamed Personnel';
+        const pos = personToCheck.position || personToCheck.plantilla_position || personToCheck.position_title || 'Unassigned Position';
+        const pType = detectPersonnelTypeFromPosition(pos) || personToCheck.type || 'teaching';
+        const dept = pType === 'teaching' ? 'Teaching Faculty' : pType === 'teaching-related' ? 'Related Teaching' : 'Non-Teaching';
+
+        incompleteList.push({
+          id: personToCheck.id,
+          personName,
+          position: pos,
+          department: dept,
+          errors
+        });
+      }
+    });
+
+    // 2. If ANY personnel are incomplete, block progression and show the All-Personnel Restriction Modal
+    if (incompleteList.length > 0) {
+      setAllPersonnelValidationModal({
+        isOpen: true,
+        incompleteList,
+        totalPersonnel: targetPersonnel.length
+      });
+      return;
+    }
+
+    // 3. All personnel are validated! Auto-save current person if needed and advance to Organized Classes
+    if (currentPerson) {
+      try {
+        const updated = { ...currentPerson, personalVerified: true, workloadVerified: true };
+        setEditPerson(updated);
+        await savePersonnelChanges(currentPerson.id, updated);
+        localStorage.removeItem(`draft_personnel_${currentPerson.id}`);
+      } catch (e) {
+        console.warn("Auto-save on continue warning:", e);
+      }
+    }
+
+    if (completeNode) {
+      completeNode('profile', 'classes');
+    } else if (setActiveView) {
+      setActiveView('classes');
     }
   };
 
@@ -1235,7 +1453,6 @@ export default function PersonnelProfile() {
           errors.push("VALID BIRTHDATE (PERSONNEL MUST BE AT LEAST 15 YEARS OLD)");
         }
       }
-      if (!p.philsysNo?.trim()) errors.push("PHILSYS NO.");
       if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
       if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
       if (!p.position) errors.push("PLANTILLA POSITION");
@@ -1252,7 +1469,8 @@ export default function PersonnelProfile() {
       if (!p.newStationDate) errors.push("DATE OF FIRST DAY IN CURRENT STATION");
 
       // Education / Qualifications
-      const isDraftNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+      const draftPType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+      const isDraftNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(draftPType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
       const draftAttainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isDraftNonTeaching ? 'N/A' : ''));
       if (!draftAttainment && !p.collegeDegree && !p.vocationalCourse && !isDraftNonTeaching) {
         errors.push("HIGHEST EDUCATIONAL ATTAINMENT");
@@ -1404,7 +1622,13 @@ export default function PersonnelProfile() {
 
       // 5. Hiring Arrangement default
       if (!updatedP.hiringArrangement) {
-        updatedP.hiringArrangement = 'Regular/Permanent';
+        if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(String(updatedP.natureOfAppointment).toUpperCase())) {
+          updatedP.hiringArrangement = 'N/A';
+        } else if (String(updatedP.natureOfAppointment).toUpperCase() === 'PROVISIONAL') {
+          updatedP.hiringArrangement = 'DOST';
+        } else {
+          updatedP.hiringArrangement = 'REGULAR';
+        }
         isModified = true;
       }
 
@@ -1477,10 +1701,9 @@ export default function PersonnelProfile() {
   };
 
   const tabs = currentPerson && currentPerson.isShared ? [
-    { tab: 'identity', label: 'Identity', Icon: FiCreditCard }
+    { tab: 'identity', label: 'Identity & Personal', Icon: FiCreditCard }
   ] : [
-    { tab: 'identity', label: 'Identity', Icon: FiCreditCard },
-    { tab: 'personal', label: 'Personal', Icon: FiUser },
+    { tab: 'identity', label: 'Identity & Personal', Icon: FiCreditCard },
     { tab: 'employment', label: 'Employment', Icon: FiBriefcase },
     { tab: 'education', label: 'Education', Icon: FiAward },
     { tab: 'development', label: 'L&D', Icon: FiFileText },
@@ -1497,7 +1720,7 @@ export default function PersonnelProfile() {
         description="Detailed personnel identity, employment history, degree specializations, and Learning Area matrix."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={() => completeNode('profile', 'classes')}
+        onContinue={handleContinueToClasses}
         continueText="Save & Continue to Organized Classes ➔"
       />
       <article className="card" style={{ overflow: 'hidden' }}>
@@ -1608,6 +1831,7 @@ export default function PersonnelProfile() {
                         const pType = getPersonCategoryType(p);
                         const catInfo = categoryLabels[pType] || { label: pType, color: '#64748b', bg: '#f1f5f9' };
                         const initials = `${(p.firstName || '')[0] || ''}${(p.lastName || '')[0] || ''}`.toUpperCase();
+                        const completionPct = calculatePersonCompletionPercentage(p, currentPerson);
                         return (
                           <div
                             key={p.id}
@@ -1653,6 +1877,15 @@ export default function PersonnelProfile() {
                               <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {p.position || 'No position set'}
                               </p>
+                              {/* Completion percentage progress bar */}
+                              <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ flex: 1, height: '4px', background: '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${completionPct}%`, height: '100%', background: completionPct === 100 ? '#10b981' : '#0284c7', borderRadius: '2px', transition: 'width 0.3s' }} />
+                                </div>
+                                <span style={{ fontSize: '10px', fontWeight: '700', color: '#64748b', minWidth: '24px', textAlign: 'right' }}>
+                                  {completionPct}%
+                                </span>
+                              </div>
                             </div>
                             {/* Category badge */}
                             <span style={{
@@ -1955,11 +2188,7 @@ export default function PersonnelProfile() {
                               placeholder="e.g. JR., SR., III, IV"
                             />
                           </div>
-                        </>
-                      )}
 
-                      {activeTab === 'personal' && (
-                        <>
                           <div className="profile-subsection">Demographic Profile</div>
                           <div>
                             <label>Sex at Birth</label>
@@ -2013,15 +2242,44 @@ export default function PersonnelProfile() {
                           <div className="profile-subsection">Government ID and Birthdate</div>
                           <div>
                             <label>PhilSys No. / National ID</label>
-                            <input
-                              placeholder="16-digit PhilSys Card Number"
-                              maxLength={16}
-                              value={currentPerson.philsysNo || ''}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/\D/g, ''); // numbers only
-                                handleFieldChange('philsysNo', val);
-                              }}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                              <input
+                                placeholder="16-digit PhilSys Card Number"
+                                maxLength={16}
+                                disabled={!!(currentPerson.noPhilsys || currentPerson.no_philsys)}
+                                value={(currentPerson.noPhilsys || currentPerson.no_philsys) ? '' : (currentPerson.philsysNo || '')}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/\D/g, ''); // numbers only
+                                  handleFieldChange('philsysNo', val);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  minWidth: '160px',
+                                  ...((currentPerson.noPhilsys || currentPerson.no_philsys) ? { background: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' } : {})
+                                }}
+                              />
+                              <label className="checkline" style={{ textTransform: 'none', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!(currentPerson.noPhilsys || currentPerson.no_philsys)}
+                                  onChange={(e) => {
+                                    const isChecked = e.target.checked;
+                                    setEditPerson(prev => {
+                                      const updated = { ...prev, noPhilsys: isChecked, no_philsys: isChecked };
+                                      if (isChecked) {
+                                        updated.philsysNo = '';
+                                        updated.philsys_no = '';
+                                      }
+                                      localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
+                                      return updated;
+                                    });
+                                  }}
+                                /> N/A
+                              </label>
+                            </div>
+                            <p className="field-help" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                              Optional national biometric ID number. Check N/A if card is not yet issued.
+                            </p>
                           </div>
                           <div>
                             <label>Birthdate</label>
@@ -2140,36 +2398,105 @@ export default function PersonnelProfile() {
                               </div>
                             )}
                           </div>
-                          <div>
-                            <label>Fund Source</label>
-                            <SearchableDropdown
-                              options={['NATIONAL', 'SEF', 'LGU', 'PTA', 'NGO', 'MOOE', 'OTHERS']}
-                              value={currentPerson.fundSource || ''}
-                              onChange={(val) => handleFieldChange('fundSource', val)}
-                              placeholder="SELECT FUND SOURCE..."
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label>Nature of Appointment</label>
-                            <SearchableDropdown
-                              options={NATURE_OF_APPOINTMENT_OPTIONS}
-                              value={currentPerson.natureOfAppointment || ''}
-                              onChange={(val) => handleFieldChange('natureOfAppointment', val)}
-                              placeholder="Select nature of appointment..."
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label>Hiring Arrangement</label>
-                            <SearchableDropdown
-                              options={HIRING_ARRANGEMENT_OPTIONS}
-                              value={currentPerson.hiringArrangement || ''}
-                              onChange={(val) => handleFieldChange('hiringArrangement', val)}
-                              placeholder="Select hiring arrangement..."
-                              required
-                            />
-                          </div>
+                          {(() => {
+                            const personCategory = detectPersonnelTypeFromPosition(currentPerson.position) || currentPerson.type || 'teaching';
+                            const isNonTeaching = personCategory === 'non-teaching';
+                            const currentNature = String(currentPerson.natureOfAppointment || '').toUpperCase();
+
+                            // 1. Nature of Appointment Options
+                            const natureOptions = isNonTeaching
+                              ? ['REGULAR PERMANENT', 'CONTRACTUAL', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER']
+                              : ['REGULAR PERMANENT', 'PROVISIONAL', 'CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'];
+
+                            // 2. Hiring Arrangement Config
+                            let hiringOptions = [];
+                            let isHiringDisabled = false;
+                            let hiringValue = currentPerson.hiringArrangement || '';
+
+                            if (currentNature === 'REGULAR PERMANENT') {
+                              if (isNonTeaching) {
+                                hiringOptions = ['REGULAR'];
+                                hiringValue = 'REGULAR';
+                                isHiringDisabled = true;
+                              } else {
+                                hiringOptions = ['REGULAR', 'SPIMS', '4PS', 'DOST'];
+                                isHiringDisabled = false;
+                                if (!hiringValue || hiringValue === 'N/A' || !hiringOptions.includes(hiringValue.toUpperCase())) {
+                                  hiringValue = 'REGULAR';
+                                }
+                              }
+                            } else if (currentNature === 'PROVISIONAL') {
+                              hiringOptions = ['DOST'];
+                              hiringValue = 'DOST';
+                              isHiringDisabled = true;
+                            } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(currentNature)) {
+                              hiringOptions = ['N/A'];
+                              hiringValue = 'N/A';
+                              isHiringDisabled = true;
+                            } else {
+                              hiringOptions = isNonTeaching ? ['REGULAR', 'N/A'] : ['REGULAR', 'SPIMS', '4PS', 'DOST', 'N/A'];
+                              isHiringDisabled = false;
+                            }
+
+                            // 3. Fund Source Config
+                            let fundOptions = [];
+                            let isFundDisabled = false;
+                            let fundValue = currentPerson.fundSource || '';
+
+                            if (currentNature === 'REGULAR PERMANENT' || currentNature === 'PROVISIONAL') {
+                              fundOptions = ['NATIONAL'];
+                              fundValue = 'NATIONAL';
+                              isFundDisabled = true;
+                            } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(currentNature)) {
+                              fundOptions = ['SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
+                              isFundDisabled = false;
+                              if (String(fundValue).toUpperCase() === 'NATIONAL') {
+                                fundValue = '';
+                              } else if (String(fundValue).toUpperCase() === 'MOOE') {
+                                fundValue = 'SCHOOL MOOE';
+                              }
+                            } else {
+                              fundOptions = ['NATIONAL', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
+                              isFundDisabled = false;
+                            }
+
+                            return (
+                              <>
+                                <div>
+                                  <label>Nature of Appointment</label>
+                                  <SearchableDropdown
+                                    options={natureOptions}
+                                    value={currentPerson.natureOfAppointment || ''}
+                                    onChange={(val) => handleFieldChange('natureOfAppointment', val)}
+                                    placeholder="Select nature of appointment..."
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label>Hiring Arrangement</label>
+                                  <SearchableDropdown
+                                    options={hiringOptions}
+                                    value={hiringValue}
+                                    disabled={isHiringDisabled}
+                                    onChange={(val) => handleFieldChange('hiringArrangement', val)}
+                                    placeholder="Select hiring arrangement..."
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label>Fund Source</label>
+                                  <SearchableDropdown
+                                    options={fundOptions}
+                                    value={fundValue}
+                                    disabled={isFundDisabled}
+                                    onChange={(val) => handleFieldChange('fundSource', val)}
+                                    placeholder="SELECT FUND SOURCE..."
+                                    required
+                                  />
+                                </div>
+                              </>
+                            );
+                          })()}
                           <div>
                             <label>Employee No.</label>
                             {(() => {
@@ -2194,7 +2521,7 @@ export default function PersonnelProfile() {
                               const rawEmail = isNonNationalNonTeaching ? (currentPerson.depedEmail || '') : (currentPerson.depedEmail === 'N/A' ? '' : (currentPerson.depedEmail || ''));
                               const emailVal = (!rawEmail || isEmailNA)
                                 ? { isValid: true, error: null }
-                                : validateDepEdEmail(rawEmail, currentPerson.firstName, currentPerson.lastName);
+                                : validateDepEdEmail(rawEmail, currentPerson.firstName, currentPerson.lastName, currentPerson.middleName);
 
                               const localVal = isEmailNA ? 'N/A' : getEmailLocal(rawEmail);
                               const hasError = !emailVal.isValid && !isEmailNA;
@@ -2475,7 +2802,7 @@ export default function PersonnelProfile() {
 
                                                     showToast("Reassignment request sent successfully!", "success");
                                                     await showAlert(
-                                                      "Reassignment Request Sent 🔗",
+                                                      "Reassignment Request Sent",
                                                       `Reassignment request for ${currentPerson.firstName || ''} ${currentPerson.lastName || ''} (${prnToShare}) has been sent to ${match?.name || rawSchool} successfully!\n\nOnce accepted by that school, the personnel's status in their roster will be BORROWED.`
                                                     );
                                                   } catch (err) {
@@ -2483,7 +2810,7 @@ export default function PersonnelProfile() {
                                                   }
                                                 }}
                                               >
-                                                Send Reassignment Request 🔗
+                                                <FiLink size={13} style={{ marginRight: '6px' }} />Send Reassignment Request
                                               </button>
                                               {!prnToShare && (
                                                 <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sending reassignment request.</p>
@@ -2534,7 +2861,7 @@ export default function PersonnelProfile() {
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <span style={{ fontWeight: 'bold', color: 'var(--navy)', fontSize: '13px' }}>Clustered School Assignments</span>
                                           <span style={{ fontSize: '11px', color: '#0369A1', background: '#E0F2FE', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                                            📍 District: {schoolInfo?.district || 'Same District'}
+                                            <FiMapPin size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />District: {schoolInfo?.district || 'Same District'}
                                           </span>
                                         </div>
                                         <p className="field-help" style={{ marginTop: '-8px' }}>Select satellite schools in the same district where this personnel is deployed to teach.</p>
@@ -2614,7 +2941,7 @@ export default function PersonnelProfile() {
 
                                                     showToast("Clustered personnel request(s) sent successfully!", "success");
                                                     await showAlert(
-                                                      "Clustered Request(s) Sent 🔗",
+                                                      "Clustered Request(s) Sent",
                                                       `Clustering request for ${currentPerson.firstName || ''} ${currentPerson.lastName || ''} (${prnToShare}) has been sent to the selected satellite school(s)!\n\nOnce accepted in their Request Center, the personnel will appear in their Roster as CLUSTERED.`
                                                     );
                                                   } catch (err) {
@@ -2622,7 +2949,7 @@ export default function PersonnelProfile() {
                                                   }
                                                 }}
                                               >
-                                                Share to Clustered Schools 🔗
+                                                <FiLink size={13} style={{ marginRight: '6px' }} />Share to Clustered Schools
                                               </button>
                                               {!prnToShare && (
                                                 <p className="field-help" style={{ color: 'var(--danger)' }}>Note: You must save this personnel profile first to generate a PRN before sharing.</p>
@@ -3050,32 +3377,42 @@ export default function PersonnelProfile() {
                             {/* Dropdown to add a new eligibility */}
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                               <select
-                                value=""
-                                onChange={async (e) => {
-                                  const selectedVal = e.target.value;
-                                  if (!selectedVal) return;
+                                  value=""
+                                  onChange={async (e) => {
+                                    const selectedVal = e.target.value;
+                                    if (!selectedVal) return;
 
-                                  const currentList = Array.isArray(currentPerson.eligibility)
-                                    ? currentPerson.eligibility
-                                    : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean);
+                                    const currentList = Array.isArray(currentPerson.eligibility)
+                                      ? currentPerson.eligibility
+                                      : String(currentPerson.eligibility || '').split(',').map(s => s.trim()).filter(Boolean);
 
-                                  const isDup = currentList.includes(selectedVal) || currentList.some(el => el.startsWith(selectedVal) && selectedVal.startsWith('RA 1080'));
-                                  if (isDup) {
-                                    await showAlert("Duplicate Entry", "This eligibility category has already been added.");
-                                    return;
-                                  }
+                                    const isDup = currentList.includes(selectedVal) || currentList.some(el => el.startsWith(selectedVal) && selectedVal.startsWith('RA 1080'));
+                                    if (isDup) {
+                                      await showAlert("Duplicate Entry", "This eligibility category has already been added.");
+                                      return;
+                                    }
 
-                                  if (selectedVal === 'RA 1080 (OTHERS, PLEASE SPECIFY)') {
-                                    setRa1080InputText('');
-                                    setShowRa1080Modal(true);
-                                  } else {
-                                    handleFieldChange('eligibility', [...currentList, selectedVal].join(', '));
-                                  }
-                                }}
-                                className={!currentPerson.eligibility ? 'empty-field' : ''}
-                                style={{ maxWidth: '400px' }}
-                              >
-                                <option value="">+ Add Eligibility...</option>
+                                    if (selectedVal === 'RA 1080 (OTHERS, PLEASE SPECIFY)') {
+                                      setRa1080InputText('');
+                                      setShowRa1080Modal(true);
+                                    } else {
+                                      handleFieldChange('eligibility', [...currentList, selectedVal].join(', '));
+                                    }
+                                  }}
+                                  className={!currentPerson.eligibility ? 'empty-field' : ''}
+                                  style={{
+                                    maxWidth: '400px',
+                                    background: (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.length : String(currentPerson.eligibility || '').split(',').filter(Boolean).length) > 0 ? '#f0f9ff' : 'white',
+                                    borderColor: (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.length : String(currentPerson.eligibility || '').split(',').filter(Boolean).length) > 0 ? '#0284c7' : 'var(--line)',
+                                    color: (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.length : String(currentPerson.eligibility || '').split(',').filter(Boolean).length) > 0 ? '#0369a1' : 'var(--text)',
+                                    fontWeight: (Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.length : String(currentPerson.eligibility || '').split(',').filter(Boolean).length) > 0 ? '600' : 'normal'
+                                  }}
+                                >
+                                  <option value="">
+                                    {(Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.length : String(currentPerson.eligibility || '').split(',').filter(Boolean).length) > 0
+                                      ? `+ Add another eligibility (${Array.isArray(currentPerson.eligibility) ? currentPerson.eligibility.length : String(currentPerson.eligibility || '').split(',').filter(Boolean).length} added)...`
+                                      : '+ Add Eligibility...'}
+                                  </option>
                                 <option value="LICENSURE EXAMINATION FOR TEACHERS">LICENSURE EXAMINATION FOR TEACHERS</option>
                                 <option value="PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)">PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)</option>
                                 <option value="PROVISIONAL TEACHERS">PROVISIONAL TEACHERS</option>
@@ -3175,7 +3512,7 @@ export default function PersonnelProfile() {
                                     <label>Total Hours <span style={{ color: '#EF4444' }}>*</span></label>
                                     <input type="number" min="1" placeholder="Hours *" required value={tr.totalHours || ''} onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'totalHours', e.target.value ? Number(e.target.value) : '')} />
                                   </div>
-                                  <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('neapTrainingRows', index)}>✕</button>
+                                  <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('neapTrainingRows', index)} title="Remove"><FiTrash2 size={14} /></button>
                                 </div>
                               ))}
                               {(currentPerson.neapTrainingRows || []).length === 0 && (
@@ -3231,7 +3568,7 @@ export default function PersonnelProfile() {
                                     <label>Total Hours <span style={{ color: '#EF4444' }}>*</span></label>
                                     <input type="number" min="1" placeholder="Hours *" required value={tr.totalHours || ''} onChange={(e) => handleTrainingChange('certificationRows', index, 'totalHours', e.target.value ? Number(e.target.value) : '')} />
                                   </div>
-                                  <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('certificationRows', index)}>✕</button>
+                                  <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('certificationRows', index)} title="Remove"><FiTrash2 size={14} /></button>
                                 </div>
                               ))}
                               {(currentPerson.certificationRows || []).length === 0 && (
@@ -3317,7 +3654,7 @@ export default function PersonnelProfile() {
                                     <label>Total Hours <span style={{ color: '#EF4444' }}>*</span></label>
                                     <input type="number" min="1" placeholder="Hours *" required value={tr.totalHours || ''} onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'totalHours', e.target.value ? Number(e.target.value) : '')} />
                                   </div>
-                                  <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('otherTrainingRows', index)}>✕</button>
+                                  <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} type="button" onClick={() => removeTrainingRow('otherTrainingRows', index)} title="Remove"><FiTrash2 size={14} /></button>
                                 </div>
                               ))}
                               {(currentPerson.otherTrainingRows || []).length === 0 && (
@@ -3376,14 +3713,37 @@ export default function PersonnelProfile() {
 
                                   handleFieldChange('assignedGradeLevels', [...currentList, selectedVal]);
                                 }}
-                                style={{ maxWidth: '400px' }}
+                                style={{
+                                  maxWidth: '400px',
+                                  background: (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.length > 0) ? '#f0f9ff' : 'white',
+                                  borderColor: (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.length > 0) ? '#0284c7' : 'var(--line)',
+                                  color: (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.length > 0) ? '#0369a1' : 'var(--text)',
+                                  fontWeight: (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.length > 0) ? '600' : 'normal'
+                                }}
                               >
-                                <option value="">+ Add Grade Level...</option>
+                                <option value="">
+                                  {(Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.length > 0)
+                                    ? `+ Add another grade level (${currentPerson.assignedGradeLevels.length} assigned)...`
+                                    : '+ Add Grade Level...'}
+                                </option>
                                 {(() => {
-                                  const offerings = (schoolInfo?.curricularOffering || []).map(o => o.toUpperCase());
-                                  const showElem = offerings.includes('ELEMENTARY');
-                                  const showJHS = offerings.includes('JHS');
-                                  const showSHS = offerings.includes('SHS');
+                                  const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
+                                  const showElem = offerings.some(o => o.includes('ELEM') || o.includes('KINDER') || o.includes('PRIMARY'));
+                                  const showJHS = offerings.some(o => o.includes('JHS') || o.includes('JUNIOR') || o.includes('SECONDARY'));
+                                  const showSHS = offerings.some(o => o.includes('SHS') || o.includes('SENIOR'));
+
+                                  const isElemGrade = (g) => ['KINDER', 'GRADE 1', 'GRADE 2', 'GRADE 3', 'GRADE 4', 'GRADE 5', 'GRADE 6', 'NON-GRADED'].includes(String(g || '').toUpperCase());
+                                  const isJHSGrade = (g) => ['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10'].includes(String(g || '').toUpperCase());
+                                  const isSHSGrade = (g) => ['GRADE 11', 'GRADE 12'].includes(String(g || '').toUpperCase());
+
+                                  const isGradeAllowed = (g) => {
+                                    if (!showElem && !showJHS && !showSHS) return true;
+                                    if (isElemGrade(g)) return showElem;
+                                    if (isJHSGrade(g)) return showJHS;
+                                    if (isSHSGrade(g)) return showSHS;
+                                    if (String(g).toUpperCase() === 'SNED' || String(g).toUpperCase() === 'ALS') return true;
+                                    return true;
+                                  };
 
                                   const list = [];
                                   if (showElem) {
@@ -3399,16 +3759,22 @@ export default function PersonnelProfile() {
                                     list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
                                   }
 
+                                  // Include ALS and SNED for inclusive education faculty
+                                  if (!list.includes('SNED')) list.push('SNED');
+                                  if (!list.includes('ALS')) list.push('ALS');
+
                                   if (Array.isArray(classSections)) {
                                     classSections.forEach(s => {
-                                      if (s.gradeLevel && s.gradeLevel.includes(' - ') && !list.includes(s.gradeLevel)) {
+                                      if (s.gradeLevel && !list.includes(s.gradeLevel) && isGradeAllowed(s.gradeLevel)) {
                                         list.push(s.gradeLevel);
                                       }
                                     });
                                   }
 
+                                  const filteredList = list.filter(g => isGradeAllowed(g));
+
                                   const selected = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
-                                  return list.filter(item => !selected.includes(item)).map(g => (
+                                  return filteredList.filter(item => !selected.includes(item)).map(g => (
                                     <option key={g} value={g}>{g}</option>
                                   ));
                                 })()}
@@ -3668,8 +4034,8 @@ export default function PersonnelProfile() {
                         <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <FiSave size={14} /> <span>Save Changes</span>
                         </button>
-                        <button className="btn secondary" type="button" onClick={handleSaveValidate} style={{ borderColor: 'var(--blue)', color: 'var(--blue)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          <FiCheckCircle size={14} /> <span>Save & Validate</span>
+                        <button className="btn secondary" type="button" onClick={handleValidateOnly} style={{ borderColor: 'var(--blue)', color: 'var(--blue)', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '800' }}>
+                          <FiCheckCircle size={14} /> <span>Validate</span>
                         </button>
                         <button className="btn secondary" type="button" onClick={handleDuplicate} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <FiCopy size={14} /> <span>Duplicate</span>
@@ -3745,6 +4111,475 @@ export default function PersonnelProfile() {
         isOpen={isEmailInfoOpen}
         onClose={() => setIsEmailInfoOpen(false)}
       />
+    
+
+{/* High-Clarity Personnel Validation Checklist Modal */}
+      {validationModal.isOpen && (
+        <div 
+          className="modal-backdrop" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(15, 23, 42, 0.7)', 
+            backdropFilter: 'blur(5px)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            zIndex: 10000,
+            padding: '20px' 
+          }}
+          onClick={() => setValidationModal(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            className="card" 
+            style={{ 
+              maxWidth: '580px', 
+              width: '100%', 
+              background: '#ffffff', 
+              borderRadius: '24px', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
+              overflow: 'hidden',
+              border: '2px solid #fed7aa',
+              animation: 'fadeIn 0.2s ease-out'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              padding: '22px 28px',
+              borderBottom: '1.5px solid #fde68a',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '14px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '14px',
+                  background: '#fef3c7',
+                  border: '2px solid #f59e0b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#d97706',
+                  flexShrink: 0
+                }}>
+                  <FiAlertCircle size={24} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#92400e' }}>
+                    Validation Checklist Needed
+                  </h3>
+                  <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#b45309' }}>
+                    Required profile information must be completed before proceeding.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValidationModal(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#92400e',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* Personnel Being Checked Banner */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '14px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: '#e0f2fe',
+                    color: '#0284c7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid #bae6fd'
+                  }}>
+                    <FiUser size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Faculty Profile Being Checked
+                    </div>
+                    <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a' }}>
+                      {validationModal.personName}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>
+                      {validationModal.position} • <span style={{ color: '#0284c7', fontWeight: '700' }}>{validationModal.department}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#dc2626',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  fontWeight: '800',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#dc2626', display: 'inline-block' }} />
+                  {validationModal.errors.length} Missing Field{validationModal.errors.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+
+              {/* Instructions */}
+              <p style={{ margin: 0, fontSize: '13px', color: '#475569', lineHeight: '1.5' }}>
+                The following fields currently have <strong>no inputted data</strong>. Please click a field below to jump directly to its tab:
+              </p>
+
+              {/* Missing Fields List / Grid */}
+              <div style={{
+                maxHeight: '260px',
+                overflowY: 'auto',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+                gap: '8px',
+                paddingRight: '4px'
+              }}>
+                {validationModal.errors.map((err, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      if (err.tab && setActiveTab) {
+                        setActiveTab(err.tab);
+                      }
+                      setValidationModal(prev => ({ ...prev, isOpen: false }));
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      background: '#fff1f2',
+                      border: '1.5px solid #fecdd3',
+                      borderRadius: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={`Click to jump to ${err.category} tab`}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: '#e11d48', fontSize: '14px', fontWeight: '900' }}>•</span>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#9f1239' }}>
+                        {err.label}
+                      </span>
+                    </div>
+                    {err.category && (
+                      <span style={{
+                        fontSize: '9px',
+                        fontWeight: '800',
+                        color: '#be123c',
+                        background: '#ffe4e6',
+                        padding: '2px 6px',
+                        borderRadius: '6px',
+                        textTransform: 'uppercase'
+                      }}>
+                        {err.category}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setValidationModal(prev => ({ ...prev, isOpen: false }))}
+                  style={{
+                    padding: '10px 22px',
+                    fontSize: '13px',
+                    fontWeight: '800',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 10px rgba(2, 132, 199, 0.25)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Complete Fields ➔
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Incomplete Personnel Restriction Modal for ALL Personnel */}
+      {allPersonnelValidationModal.isOpen && (
+        <div 
+          className="modal-backdrop" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(15, 23, 42, 0.75)', 
+            backdropFilter: 'blur(5px)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            zIndex: 10000,
+            padding: '20px' 
+          }}
+          onClick={() => setAllPersonnelValidationModal(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            className="card" 
+            style={{ 
+              maxWidth: '640px', 
+              width: '100%', 
+              background: '#ffffff', 
+              borderRadius: '24px', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
+              overflow: 'hidden',
+              border: '2px solid #fca5a5',
+              animation: 'fadeIn 0.2s ease-out'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #fff1f2 0%, #fee2e2 100%)',
+              padding: '22px 28px',
+              borderBottom: '1.5px solid #fecaca',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '14px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '14px',
+                  background: '#fef2f2',
+                  border: '2px solid #ef4444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#dc2626',
+                  flexShrink: 0
+                }}>
+                  <FiAlertCircle size={24} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#991b1b' }}>
+                    All Faculty Profiles Must Be Complete
+                  </h3>
+                  <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#b91c1c' }}>
+                    DepEd eSF7 requires all school personnel profiles to be completed before proceeding to Organized Classes.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAllPersonnelValidationModal(prev => ({ ...prev, isOpen: false }))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#991b1b',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              <div style={{
+                background: '#fff7ed',
+                border: '1.5px solid #ffedd5',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#9a3412' }}>
+                  {allPersonnelValidationModal.incompleteList.length} of {allPersonnelValidationModal.totalPersonnel} personnel have missing required information.
+                </span>
+                <span style={{
+                  background: '#ea580c',
+                  color: 'white',
+                  padding: '3px 10px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: '800'
+                }}>
+                  Action Required
+                </span>
+              </div>
+
+              <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
+                Click on any faculty member below to open their profile and complete their missing fields:
+              </p>
+
+              {/* Incomplete Personnel List */}
+              <div style={{
+                maxHeight: '300px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                paddingRight: '4px'
+              }}>
+                {allPersonnelValidationModal.incompleteList.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setActivePersonnelId(item.id);
+                      setAllPersonnelValidationModal(prev => ({ ...prev, isOpen: false }));
+                      setValidationModal({
+                        isOpen: true,
+                        personName: item.personName,
+                        position: item.position,
+                        department: item.department,
+                        errors: item.errors
+                      });
+                    }}
+                    style={{
+                      padding: '12px 16px',
+                      background: '#ffffff',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#0284c7';
+                      e.currentTarget.style.background = '#f0f9ff';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                      e.currentTarget.style.background = '#ffffff';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: '#f8fafc',
+                        border: '1px solid #cbd5e1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#475569'
+                      }}>
+                        <FiUser size={16} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                          {item.personName}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>
+                          {item.position} • {item.department}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: '800',
+                        color: '#dc2626',
+                        background: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        padding: '4px 10px',
+                        borderRadius: '12px'
+                      }}>
+                        {item.errors.length} missing field{item.errors.length !== 1 ? 's' : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '11px',
+                          fontWeight: '800',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        Fix Profile ➔
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Modal Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '14px' }}>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setAllPersonnelValidationModal(prev => ({ ...prev, isOpen: false }))}
+                  style={{ padding: '8px 18px', fontSize: '13px', fontWeight: '700' }}
+                >
+                  Close & Complete Roster
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+    
     </section>
   );
 }

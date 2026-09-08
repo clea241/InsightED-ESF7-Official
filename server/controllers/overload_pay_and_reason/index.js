@@ -6,7 +6,8 @@ const VALID_REASONS = [
   'Teacher Shortage',
   'Relieving Duty',
   'Remediation or Enhancement Class',
-  'Class Advising Duty'
+  'Class Advising Duty',
+  'ARAL Tutor'
 ];
 
 function formatOverloadPayRecord(row) {

@@ -92,7 +92,7 @@ export default function DepEdEmailInfoModal({ isOpen, onClose }) {
 
           <ul style={{ margin: '0 0 16px 0', paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <li>
-              DepEd emails must end in <code>@deped.gov.ph</code> and correspond to the personnel's official registered name (numbers like <code>0001</code> are accepted).
+              DepEd emails must end in <code>@deped.gov.ph</code> and correspond to the personnel's official registered name (numbers like <code>0001</code> are accepted). <strong>Middle names and maiden surnames</strong> are fully accepted for married personnel (e.g. <code>firstname.middlename@deped.gov.ph</code> or <code>firstname.lastname@deped.gov.ph</code>).
             </li>
             <li>
               DepEd Email is <strong>MANDATORY</strong> for all Teaching, Teaching-Related, and Nationally-Funded staff.

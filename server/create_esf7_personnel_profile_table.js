@@ -48,6 +48,7 @@ async function createPersonnelProfileTable() {
           birthdate DATE,
           age INTEGER,
           philsys_no TEXT,
+          no_philsys BOOLEAN NOT NULL DEFAULT FALSE,
           employee_no TEXT,
           deped_email TEXT,
           is_school_head BOOLEAN NOT NULL DEFAULT FALSE,

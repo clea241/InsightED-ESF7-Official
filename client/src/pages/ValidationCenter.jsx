@@ -4,7 +4,11 @@ import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
 import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
 import PortalHeader from '../components/PortalHeader';
-import { FiFileText, FiPrinter, FiShield, FiCheckCircle, FiCheck, FiRepeat, FiEdit3, FiUploadCloud } from 'react-icons/fi';
+import { 
+  FiFileText, FiPrinter, FiShield, FiCheckCircle, FiCheck, FiRepeat, 
+  FiEdit3, FiUploadCloud, FiAward, FiCalendar, FiUser, FiLayers, 
+  FiX, FiExternalLink, FiDownload, FiHome, FiClock, FiCheckSquare 
+} from 'react-icons/fi';
 
 
 export default function ValidationCenter() {
@@ -34,6 +38,10 @@ export default function ValidationCenter() {
   const [submissionHistory, setSubmissionHistory] = useState([]);
   const [hasPriorSubmission, setHasPriorSubmission] = useState(false);
 
+  // Celebratory Success Modal State
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [submissionDetails, setSubmissionDetails] = useState(null);
+
   // Tab & Preview filters for VIEW Sheet / Teacher Class Programs
   const [activeTab, setActiveTab] = useState('validation'); // 'validation' | 'view_preview'
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,20 +57,21 @@ export default function ValidationCenter() {
   }, [schoolInfo?.schoolId, schoolInfo?.schoolYear]);
 
   // Fetch submission history on load/school switch
-  useEffect(() => {
+  const fetchHistory = async () => {
     if (!schoolInfo?.schoolId) return;
-    const fetchHistory = async () => {
-      try {
-        const history = await api.getSubmissionHistory();
-        if (Array.isArray(history)) {
-          setSubmissionHistory(history);
-          const completedOrPending = history.some(job => job.status === 'completed' || job.status === 'pending' || job.status === 'processing');
-          setHasPriorSubmission(completedOrPending || !!schoolInfo?.certifiedAt);
-        }
-      } catch (err) {
-        console.error('Failed to fetch history:', err);
+    try {
+      const history = await api.getSubmissionHistory();
+      if (Array.isArray(history)) {
+        setSubmissionHistory(history);
+        const completedOrPending = history.some(job => job.status === 'completed' || job.status === 'pending' || job.status === 'processing');
+        setHasPriorSubmission(completedOrPending || !!schoolInfo?.certifiedAt);
       }
-    };
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    }
+  };
+
+  useEffect(() => {
     fetchHistory();
   }, [schoolInfo]);
 
@@ -244,23 +253,48 @@ export default function ValidationCenter() {
             showToast("eSF7 Certified and Submitted successfully!");
 
             // Clear IndexedDB and database drafts to restart state
-            const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
+            const draftKey = `draft_${schoolInfo?.schoolId}_${schoolInfo?.schoolYear}`;
             await deleteLocalDraft(draftKey);
             try {
-              await api.deleteSchoolDraft(schoolInfo.schoolYear);
+              await api.deleteSchoolDraft(schoolInfo?.schoolYear);
             } catch (err) {
               console.error('Failed to delete cloud draft on submit:', err);
             }
             setHasUnsavedChanges(false);
+            setQueueStatus(null);
+            setHasPriorSubmission(true);
+            setShowResubmitForm(false);
+            if (completeNode) completeNode('submission');
 
-            // Reload window to fetch fresh from database
-            setTimeout(() => {
-              window.location.reload();
-            }, 1000);
+            // Refresh history
+            await fetchHistory();
+
+            // Set detailed submission info and show celebratory success modal!
+            const now = new Date();
+            setSubmissionDetails({
+              jobId: jobId || res.jobId,
+              schoolId: schoolInfo?.schoolId,
+              schoolName: schoolInfo?.schoolName || schoolInfo?.school_name || `School ${schoolInfo?.schoolId}`,
+              schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
+              certifiedBy: principalName || schoolInfo?.certifiedBy || 'School Head',
+              certifiedAt: now.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              }),
+              personnelCount: personnel.length,
+              sectionsCount: classSections.length
+            });
+            setShowSuccessModal(true);
+            setJobId(null);
           } else if (res.status === 'failed') {
             clearInterval(interval);
             showAlert("Submission Failed", "The background queue worker failed to write to the database: " + res.errorMessage);
             setJobId(null);
+            setQueueStatus(null);
           }
         }
       } catch (err) {
@@ -269,7 +303,7 @@ export default function ValidationCenter() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [jobId, schoolInfo]);
+  }, [jobId, schoolInfo, personnel, classSections, principalName, completeNode, showToast, showAlert, setHasUnsavedChanges]);
 
   const handleSubmitToQueue = async (e) => {
     e.preventDefault();
@@ -1561,6 +1595,292 @@ export default function ValidationCenter() {
         isLocked={errors.length > 0}
         errorsCount={errors.length}
       />
+
+      {/* Official Certified Submission Success Modal */}
+      {showSuccessModal && submissionDetails && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '560px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(226, 232, 240, 0.8)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            textAlign: 'center'
+          }}>
+            {/* Modal Header Bar with Close Button */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              padding: '16px 20px 0 20px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                style={{
+                  background: '#F1F5F9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#64748B',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#E2E8F0'; e.currentTarget.style.color = '#0F172A'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#F1F5F9'; e.currentTarget.style.color = '#64748B'; }}
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+
+            {/* Modal Hero Content */}
+            <div style={{ padding: '0 32px 28px 32px' }}>
+              <div style={{
+                width: '76px',
+                height: '76px',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 12px 24px -6px rgba(16, 185, 129, 0.45)',
+                margin: '0 auto 18px auto'
+              }}>
+                <FiCheckCircle size={42} color="#ffffff" />
+              </div>
+
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#ECFDF5',
+                color: '#047857',
+                padding: '4px 12px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: '800',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                marginBottom: '10px',
+                border: '1px solid #A7F3D0'
+              }}>
+                <FiAward size={13} /> Official Submission Confirmed
+              </span>
+
+              <h2 style={{
+                fontSize: '22px',
+                fontWeight: '800',
+                color: '#0F172A',
+                marginBottom: '8px',
+                letterSpacing: '-0.02em'
+              }}>
+                eSF7 Certified & Submitted!
+              </h2>
+
+              <p style={{
+                fontSize: '13px',
+                color: '#64748B',
+                lineHeight: '1.5',
+                marginBottom: '24px'
+              }}>
+                Your Electronic School Form 7 has been successfully verified, electronically certified, and committed to the official database.
+              </p>
+
+              {/* Summary Metadata Card */}
+              <div style={{
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '16px',
+                padding: '16px 20px',
+                textAlign: 'left',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '14px',
+                marginBottom: '24px'
+              }}>
+                <div style={{ gridColumn: '1 / -1', borderBottom: '1px solid #E2E8F0', paddingBottom: '10px' }}>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '2px' }}>
+                    School Name & ID
+                  </span>
+                  <strong style={{ fontSize: '14px', color: '#0F172A' }}>
+                    {submissionDetails.schoolName} ({submissionDetails.schoolId})
+                  </strong>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '2px' }}>
+                    School Year
+                  </span>
+                  <strong style={{ fontSize: '13px', color: '#1E293B' }}>
+                    {submissionDetails.schoolYear}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '2px' }}>
+                    Certified By
+                  </span>
+                  <strong style={{ fontSize: '13px', color: '#1E293B' }}>
+                    {submissionDetails.certifiedBy}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '2px' }}>
+                    Total Faculty
+                  </span>
+                  <strong style={{ fontSize: '13px', color: '#1E293B' }}>
+                    {submissionDetails.personnelCount} Personnel Records
+                  </strong>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '2px' }}>
+                    Organized Classes
+                  </span>
+                  <strong style={{ fontSize: '13px', color: '#1E293B' }}>
+                    {submissionDetails.sectionsCount} Sections
+                  </strong>
+                </div>
+
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #E2E8F0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <FiClock size={13} /> {submissionDetails.certifiedAt}
+                  </span>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#059669', background: '#DEF7EC', padding: '2px 8px', borderRadius: '8px' }}>
+                    Job #{submissionDetails.jobId} · COMPLETED
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSuccessModal(false);
+                    setShowPrintModal(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '13px 20px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+                    color: 'white',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(37, 99, 235, 0.4)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.3)'; }}
+                >
+                  <FiPrinter size={16} /> Print Official Certified eSF7 Report
+                </button>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleExportXLSB();
+                    }}
+                    style={{
+                      padding: '11px 16px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #BBF7D0',
+                      background: '#F0FDF4',
+                      color: '#166534',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#DCFCE7'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#F0FDF4'; }}
+                  >
+                    <FiDownload size={14} /> Download .XLSB
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSuccessModal(false);
+                      setActiveView('dashboard');
+                    }}
+                    style={{
+                      padding: '11px 16px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#334155',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#F8FAFC'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#FFFFFF'; }}
+                  >
+                    <FiHome size={14} /> Go to Dashboard
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowSuccessModal(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#64748B',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    marginTop: '4px'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#0F172A'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = '#64748B'; }}
+                >
+                  Close and Stay on Submission Center
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

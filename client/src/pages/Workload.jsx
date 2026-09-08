@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import PortalHeader from '../components/PortalHeader';
-import { FiUser, FiGrid, FiTrash2, FiCheck, FiFileText, FiCalendar, FiAlertCircle, FiAlertTriangle, FiBriefcase, FiList, FiLock, FiBookOpen, FiBook, FiClock, FiPlus, FiX, FiBarChart2 } from 'react-icons/fi';
+import { 
+  FiUser, FiGrid, FiTrash2, FiCheck, FiFileText, FiCalendar, FiAlertCircle, 
+  FiAlertTriangle, FiBriefcase, FiList, FiLock, FiUnlock, FiBookOpen, FiBook, 
+  FiClock, FiPlus, FiX, FiBarChart2, FiSearch, FiFilter, FiCheckCircle, 
+  FiChevronRight, FiCopy, FiDownload, FiTrendingUp, FiBookmark, FiArrowRight, 
+  FiSliders, FiCheckSquare, FiSave 
+} from 'react-icons/fi';
 
 
 export const normalizeSubjectName = (sub) => {
@@ -29,14 +35,27 @@ const isRemediationSub = (sub) => {
   return s === 'REMEDIATION' || s.includes('REMEDIAL') || s.includes('ENHANCEMENT');
 };
 
-const isAdvisoryOrHgpPair = (rA, rB) => {
+export const add60MinutesToTime = (timeStr) => {
+  if (!timeStr) return '08:30';
+  const parts = String(timeStr).split(':');
+  let h = parseInt(parts[0], 10);
+  let m = parseInt(parts[1], 10);
+  if (isNaN(h)) h = 7;
+  if (isNaN(m)) m = 30;
+  const newH = (h + 1) % 24;
+  return `${String(newH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+export const isAdvisoryOrHgpPair = (rA, rB) => {
   if (!rA || !rB) return false;
-  const subA = rA.subject || rA.task || '';
-  const subB = rB.subject || rB.task || '';
-  if (isAdvisorySub(subA) || isAdvisorySub(subB)) {
-    return true;
-  }
-  return false;
+  const normA = normalizeSubjectName(rA.subject || rA.task || '');
+  const normB = normalizeSubjectName(rB.subject || rB.task || '');
+  const isAdvA = normA === 'ADVISORY';
+  const isAdvB = normB === 'ADVISORY';
+  const isHgpA = normA === 'HGP';
+  const isHgpB = normB === 'HGP';
+  // HGP can ONLY overlap with ADVISORY (and vice versa)
+  return (isAdvA && isHgpB) || (isAdvB && isHgpA);
 };
 
 function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSections, customSubjects, GRADE_LEVEL_SUBJECTS, REMEDIATION_FOCUS_BY_CATEGORY }) {
@@ -407,7 +426,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         // 1. Class Section Cell
         const tdSec = document.createElement('td');
         if (isLockedSub) {
-          tdSec.innerHTML = '<span style="font-weight: 700; color: var(--navy); font-size: 12px;">[' + (row.gradeLevel || 'Advisory') + '] ' + (row.sectionName || 'Assigned Section') + ' 🔒</span>';
+          tdSec.innerHTML = '<span style="font-weight: 700; color: var(--navy); font-size: 12px;">[' + (row.gradeLevel || 'Advisory') + '] ' + (row.sectionName || 'Assigned Section') + ' [Locked]</span>';
         } else if (data.sections && data.sections.length > 0) {
           const selSec = document.createElement('select');
           selSec.onchange = function() { updateSection(idx, this.value); };
@@ -431,7 +450,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         // 2. Subject Cell
         const tdSub = document.createElement('td');
         if (isLockedSub) {
-          tdSub.innerHTML = '<span style="font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 12px; font-size: 11px;">' + row.subject + ' 🔒</span>';
+          tdSub.innerHTML = '<span style="font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 12px; font-size: 11px;">' + row.subject + ' [Locked]</span>';
         } else {
           const selSub = document.createElement('select');
           const hasSection = Boolean(row.sectionId || row.sectionName);
@@ -492,7 +511,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
           const tdTime = document.createElement('td');
           tdTime.colSpan = 2;
           tdTime.style.textAlign = 'center';
-          tdTime.innerHTML = '<span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 6px; font-weight: bold;">⏱️ 60 Mins / Day (Fixed)</span>';
+          tdTime.innerHTML = '<span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 6px; font-weight: bold;">60 Mins / Day (Fixed)</span>';
           tr.appendChild(tdTime);
         } else {
           const tdStart = document.createElement('td');
@@ -515,11 +534,11 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         // 6. Action Cell
         const tdAct = document.createElement('td');
         if (isLockedSub) {
-          tdAct.innerHTML = '<span style="font-size: 11px; color: #94a3b8; font-weight: bold;">🔒 Locked</span>';
+          tdAct.innerHTML = '<span style="font-size: 11px; color: #94a3b8; font-weight: bold;">Locked</span>';
         } else {
           const btnDel = document.createElement('button');
           btnDel.className = 'del-btn';
-          btnDel.innerText = '✕';
+          btnDel.innerText = 'X';
           btnDel.onclick = function() { deleteRow(idx); };
           tdAct.appendChild(btnDel);
         }
@@ -673,8 +692,8 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
 
       const subUpper = String(row.subject || '').toUpperCase().trim();
       if (subUpper === 'ADVISORY') {
-        row.startTime = '07:30';
-        row.endTime = '08:30';
+        if (!row.startTime) row.startTime = '07:30';
+        row.endTime = add60MinutesToTime(row.startTime);
         row.days = ['M', 'T', 'W', 'TH', 'F'];
       }
 
@@ -700,11 +719,11 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
               const maxM = String(maxEndMins % 60).padStart(2, '0');
               row.endTime = maxH + ':' + maxM;
               alert(isSHS 
-                ? "⚠️ Senior High School (Grade 11 & 12) subject schedule cannot exceed 6 hours. Adjusted to 6 hours max."
-                : "⚠️ A single subject period in workload cannot exceed 1 hour (60 minutes). Adjusted to 1 hour max."
+                ? "Senior High School (Grade 11 & 12) subject schedule cannot exceed 6 hours. Adjusted to 6 hours max."
+                : "A single subject period in workload cannot exceed 1 hour (60 minutes). Adjusted to 1 hour max."
               );
             } else if (diff < 0) {
-              alert("⚠️ Invalid Time Range: End time must be strictly after start time.");
+              alert("Invalid Time Range: End time must be strictly after start time.");
             }
           }
         }
@@ -715,7 +734,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
 
       const conflict = checkTeacherConflictsInHTML(t);
       if (conflict) {
-        alert(['⚠️ Schedule Conflict Detected:', '"' + conflict.sub1 + '" (' + conflict.time1 + ') overlaps with "' + conflict.sub2 + '" (' + conflict.time2 + ') on ' + conflict.days + '.', 'Please adjust the schedule times to avoid double-booking.'].join('\\n'));
+        alert(['Schedule Conflict Detected:', '"' + conflict.sub1 + '" (' + conflict.time1 + ') overlaps with "' + conflict.sub2 + '" (' + conflict.time2 + ') on ' + conflict.days + '.', 'Please adjust the schedule times to avoid double-booking.'].join('\\n'));
       }
     }
 
@@ -725,7 +744,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         const row = t.workloadRows[idx];
         const subUpper = String(row.subject || '').toUpperCase().trim();
         if (subUpper === 'ADVISORY') {
-          return alert('🔒 Advisory days are fixed to Monday through Friday (M-F).');
+          return alert('Advisory days are fixed to Monday through Friday (M-F).');
         }
 
         if (subUpper === 'HGP') {
@@ -746,7 +765,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
 
         const conflict = checkTeacherConflictsInHTML(t);
         if (conflict) {
-          alert(['⚠️ Schedule Conflict Detected:', '"' + conflict.sub1 + '" (' + conflict.time1 + ') overlaps with "' + conflict.sub2 + '" (' + conflict.time2 + ') on ' + conflict.days + '.', 'Please adjust the schedule times to avoid double-booking.'].join('\\n'));
+          alert(['Schedule Conflict Detected:', '"' + conflict.sub1 + '" (' + conflict.time1 + ') overlaps with "' + conflict.sub2 + '" (' + conflict.time2 + ') on ' + conflict.days + '.', 'Please adjust the schedule times to avoid double-booking.'].join('\\n'));
         }
       }
     }
@@ -756,7 +775,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
       if (t && t.workloadRows[idx]) {
         const subUpper = String(t.workloadRows[idx].subject || '').toUpperCase().trim();
         if (subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper === 'HOMEROOM GUIDANCE') {
-          return alert('🔒 Advisory and HGP workload schedules are locked and cannot be deleted.');
+          return alert('Advisory and HGP workload schedules are locked and cannot be deleted.');
         }
         t.workloadRows.splice(idx, 1);
         renderTeacherList();
@@ -785,7 +804,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
       a.download = 'Workload_Return_' + (data.schoolName || 'School').replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now() + '.json';
       a.click();
       URL.revokeObjectURL(url);
-      alert('✅ Return Payload Downloaded Successfully! Send this .json file back to the School Head.');
+      alert('Return Payload Downloaded Successfully! Send this .json file back to the School Head.');
     }
 
     renderTeacherList();
@@ -1459,9 +1478,7 @@ function MultiDatePickerDropdown({ value = [], onChange, disabled = false }) {
                   padding: 0,
                   marginLeft: '2px'
                 }}
-              >
-                ✕
-              </button>
+              ><FiX size={14} /></button>
             </span>
           ))}
           {selectedDates.length === 0 && (
@@ -1656,13 +1673,24 @@ import {
 } from '../context/AppContext';
 import { api } from '../services/api';
 
+const isAralSubject = (sub) => {
+  if (!sub) return false;
+  const u = String(sub).trim().toUpperCase();
+  if (u.startsWith('ARALING')) return false; // Never treat ARALING PANLIPUNAN as ARAL
+  return u === 'ARAL' || u.startsWith('ARAL -') || u.startsWith('ARAL-') || u.startsWith('ARAL ') || u.includes('ARAL TUTORING') || u.includes('ARAL PROGRAM');
+};
+
 let GRADE_LEVEL_SUBJECTS = {
+  'ARAL': [
+    'ARAL - READING',
+    'ARAL - MATH',
+    'ARAL - SCIENCE'
+  ],
   'Kinder': [
     'KINDER BLOCKS OF TIME'
   ],
   'Grade 1': [
     'ADVISORY',
-    'LANGUAGE',
     'LANGUAGE',
     'READING AND LITERACY',
     'MAKABANSA',
@@ -1672,9 +1700,6 @@ let GRADE_LEVEL_SUBJECTS = {
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1699,9 +1724,6 @@ let GRADE_LEVEL_SUBJECTS = {
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1727,9 +1749,6 @@ let GRADE_LEVEL_SUBJECTS = {
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1745,21 +1764,19 @@ let GRADE_LEVEL_SUBJECTS = {
   'Grade 4': [
     'ADVISORY',
     'HGP',
+    'TLE',
+    'MAPEH',
     'ARALING PANLIPUNAN',
     'FILIPINO',
     'ENGLISH',
     'MATHEMATICS',
     'SCIENCE',
-    'EPP/TLE',
-    'MAPEH',
     'GMRC',
+    'EPP/TLE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1775,21 +1792,19 @@ let GRADE_LEVEL_SUBJECTS = {
   'Grade 5': [
     'ADVISORY',
     'HGP',
+    'TLE',
+    'MAPEH',
     'ARALING PANLIPUNAN',
     'FILIPINO',
     'ENGLISH',
     'MATHEMATICS',
     'SCIENCE',
-    'EPP/TLE',
-    'MAPEH',
     'GMRC',
+    'EPP/TLE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1805,21 +1820,19 @@ let GRADE_LEVEL_SUBJECTS = {
   'Grade 6': [
     'ADVISORY',
     'HGP',
+    'TLE',
+    'MAPEH',
     'ARALING PANLIPUNAN',
     'FILIPINO',
     'ENGLISH',
     'MATHEMATICS',
     'SCIENCE',
-    'EPP/TLE',
-    'MAPEH',
     'GMRC',
+    'EPP/TLE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1839,15 +1852,16 @@ let GRADE_LEVEL_SUBJECTS = {
     'LANGUAGE',
     'READING AND LITERACY',
     'MAKABANSA',
+    'TLE',
+    'MAPEH',
     'ARALING PANLIPUNAN',
     'FILIPINO',
     'ENGLISH',
     'MATHEMATICS',
     'SCIENCE',
-    'EPP/TLE',
-    'MAPEH',
     'VALUES EDUCATION',
     'GMRC',
+    'EPP/TLE',
     'SPECIAL PROGRAM IN THE ARTS (SPA)',
     'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)',
     'SPECIAL PROGRAM IN JOURNALISM (SPJ)',
@@ -1858,9 +1872,6 @@ let GRADE_LEVEL_SUBJECTS = {
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
     'MADRASAH SUBJECTS',
-    'ARAL - READING',
-    'ARAL - MATH',
-    'ARAL - SCIENCE',
     'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
     'TR - RESEARCH SCHOOL COORDINATOR',
     'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1879,15 +1890,15 @@ let GRADE_LEVEL_SUBJECTS = {
 const JHS_SUBJECTS = [
   'ADVISORY',
   'HGP',
+  'TLE',
+  'MAPEH',
   'ARALING PANLIPUNAN',
   'FILIPINO',
   'ENGLISH',
   'MATHEMATICS',
   'SCIENCE',
-  'EPP/TLE',
-  'MAPEH',
   'VALUES EDUCATION',
-  'GMRC',
+  'EPP/TLE',
   'SPECIAL PROGRAM IN THE ARTS (SPA)',
   'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)',
   'SPECIAL PROGRAM IN JOURNALISM (SPJ)',
@@ -1898,9 +1909,6 @@ const JHS_SUBJECTS = [
   'SPED MODIFIED SUBJECTS',
   'IP RELATED SUBJECT',
   'MADRASAH SUBJECTS',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -1927,9 +1935,6 @@ const SHS_SUBJECTS = [
   'SPED MODIFIED SUBJECTS',
   'IP RELATED SUBJECT',
   'MADRASAH SUBJECTS',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -2345,9 +2350,6 @@ const SHS_GRADE12_SUBJECTS = [
   'SPED MODIFIED SUBJECTS',
   'IP RELATED SUBJECT',
   'MADRASAH SUBJECTS',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -2779,9 +2781,6 @@ const ELEMENTARY_MONO_GRADE_SUBJECTS = [
   'ADVISORY',
   'HGP',
   'ALS LEARNING STRAND',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -2793,23 +2792,18 @@ const ELEMENTARY_MONO_GRADE_SUBJECTS = [
   'TR - SELG / SSLG TRAINER/ADVISER',
   'TR - GRADE LEVEL CHAIRPERSON',
   'TR - LEARNING AREA CHAIRPERSON',
-  'ADMINISTRATIVE',
   'ADMIN TASK - PERSONNEL ADMINISTRATION',
   'ADMIN TASK - PROPERTY/PHYSICAL FACILITIES CUSTODIANSHIP',
   'ADMIN TASK - GENERAL ADMINISTRATIVE SUPPORT',
   'ADMIN TASK - FINANCIAL MANAGEMENT',
   'ADMIN TASK - RECORDS MANAGEMENT',
-  'ADMIN TASK - PROGRAM MANAGEMENT',
-  'RELATED TASK'
+  'ADMIN TASK - PROGRAM MANAGEMENT'
 ];
 
 const JHS_MONO_GRADE_SUBJECTS = [
   'ADVISORY',
   'HGP',
   'ALS LEARNING STRAND',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -2821,23 +2815,18 @@ const JHS_MONO_GRADE_SUBJECTS = [
   'TR - SELG / SSLG TRAINER/ADVISER',
   'TR - GRADE LEVEL CHAIRPERSON',
   'TR - LEARNING AREA CHAIRPERSON',
-  'ADMINISTRATIVE',
   'ADMIN TASK - PERSONNEL ADMINISTRATION',
   'ADMIN TASK - PROPERTY/PHYSICAL FACILITIES CUSTODIANSHIP',
   'ADMIN TASK - GENERAL ADMINISTRATIVE SUPPORT',
   'ADMIN TASK - FINANCIAL MANAGEMENT',
   'ADMIN TASK - RECORDS MANAGEMENT',
-  'ADMIN TASK - PROGRAM MANAGEMENT',
-  'RELATED TASK'
+  'ADMIN TASK - PROGRAM MANAGEMENT'
 ];
 
 const SHS_MONO_GRADE_SUBJECTS = [
   'ADVISORY',
   'HGP',
   'ALS LEARNING STRAND',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -2849,14 +2838,12 @@ const SHS_MONO_GRADE_SUBJECTS = [
   'TR - SELG / SSLG TRAINER/ADVISER',
   'TR - GRADE LEVEL CHAIRPERSON',
   'TR - LEARNING AREA CHAIRPERSON',
-  'ADMINISTRATIVE',
   'ADMIN TASK - PERSONNEL ADMINISTRATION',
   'ADMIN TASK - PROPERTY/PHYSICAL FACILITIES CUSTODIANSHIP',
   'ADMIN TASK - GENERAL ADMINISTRATIVE SUPPORT',
   'ADMIN TASK - FINANCIAL MANAGEMENT',
   'ADMIN TASK - RECORDS MANAGEMENT',
-  'ADMIN TASK - PROGRAM MANAGEMENT',
-  'RELATED TASK'
+  'ADMIN TASK - PROGRAM MANAGEMENT'
 ];
 
 const JHS_NON_GRADED_SUBJECTS = [
@@ -2880,9 +2867,6 @@ const JHS_NON_GRADED_SUBJECTS = [
   'SPED MODIFIED SUBJECTS',
   'IP RELATED SUBJECT',
   'MADRASAH SUBJECTS',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'REMEDIATION',
   'REMEDIAL/ENHANCEMENT CLASS',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
@@ -2920,9 +2904,6 @@ const SHS_NON_GRADED_SUBJECTS = [
   'SPED MODIFIED SUBJECTS',
   'IP RELATED SUBJECT',
   'MADRASAH SUBJECTS',
-  'ARAL - READING',
-  'ARAL - MATH',
-  'ARAL - SCIENCE',
   'TR - READING / LITERACY AND NUMERACY SCHOOL COORDINATOR',
   'TR - RESEARCH SCHOOL COORDINATOR',
   'TR - SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR',
@@ -2943,6 +2924,15 @@ GRADE_LEVEL_SUBJECTS['Grade 9'] = JHS_SUBJECTS;
 GRADE_LEVEL_SUBJECTS['Grade 10'] = JHS_SUBJECTS;
 GRADE_LEVEL_SUBJECTS['Grade 11'] = SHS_SUBJECTS;
 GRADE_LEVEL_SUBJECTS['Grade 12'] = SHS_GRADE12_SUBJECTS;
+
+['Grade 4', 'GRADE 4', '4', 'G4', 'Grade 4 - MATATAG', 'GRADE 4 - MATATAG'].forEach(k => { if (GRADE_LEVEL_SUBJECTS['Grade 4']) GRADE_LEVEL_SUBJECTS[k] = GRADE_LEVEL_SUBJECTS['Grade 4']; });
+['Grade 5', 'GRADE 5', '5', 'G5', 'Grade 5 - MATATAG', 'GRADE 5 - MATATAG'].forEach(k => { if (GRADE_LEVEL_SUBJECTS['Grade 5']) GRADE_LEVEL_SUBJECTS[k] = GRADE_LEVEL_SUBJECTS['Grade 5']; });
+['Grade 6', 'GRADE 6', '6', 'G6', 'Grade 6 - MATATAG', 'GRADE 6 - MATATAG'].forEach(k => { if (GRADE_LEVEL_SUBJECTS['Grade 6']) GRADE_LEVEL_SUBJECTS[k] = GRADE_LEVEL_SUBJECTS['Grade 6']; });
+['Grade 7', 'GRADE 7', '7', 'G7', 'Grade 7 - MATATAG', 'GRADE 7 - MATATAG'].forEach(k => { GRADE_LEVEL_SUBJECTS[k] = JHS_SUBJECTS; });
+['Grade 8', 'GRADE 8', '8', 'G8', 'Grade 8 - MATATAG', 'GRADE 8 - MATATAG'].forEach(k => { GRADE_LEVEL_SUBJECTS[k] = JHS_SUBJECTS; });
+['Grade 9', 'GRADE 9', '9', 'G9', 'Grade 9 - MATATAG', 'GRADE 9 - MATATAG'].forEach(k => { GRADE_LEVEL_SUBJECTS[k] = JHS_SUBJECTS; });
+['Grade 10', 'GRADE 10', '10', 'G10', 'Grade 10 - MATATAG', 'GRADE 10 - MATATAG'].forEach(k => { GRADE_LEVEL_SUBJECTS[k] = JHS_SUBJECTS; });
+['JHS', 'Junior High School', 'JUNIOR HIGH SCHOOL'].forEach(k => { GRADE_LEVEL_SUBJECTS[k] = JHS_SUBJECTS; });
 
 // Filter out TR - options from GRADE_LEVEL_SUBJECTS lists programmatically
 Object.keys(GRADE_LEVEL_SUBJECTS).forEach(key => {
@@ -2979,26 +2969,38 @@ const REMEDIATION_FOCUS_BY_CATEGORY = {
     "LANGUAGE",
     "READING AND LITERACY",
     "MAKABANSA",
+    "TLE",
+    "MAPEH",
     "ARALING PANLIPUNAN",
     "FILIPINO",
     "ENGLISH",
     "MATHEMATICS",
     "SCIENCE",
-    "EPP/TLE",
+    "GMRC",
+    "EPP/TLE"
+  ],
+  "JHS": [
+    "TLE",
     "MAPEH",
+    "ARALING PANLIPUNAN",
+    "FILIPINO",
+    "ENGLISH",
+    "MATHEMATICS",
+    "SCIENCE",
     "VALUES EDUCATION",
-    "GMRC"
+    "EPP/TLE"
   ],
   "ALL": [
+    "TLE",
+    "MAPEH",
     "ARALING PANLIPUNAN",
     "FILIPINO",
     "ENGLISH",
     "MATHEMATICS",
     "SCIENCE",
-    "EPP/TLE",
-    "MAPEH",
     "VALUES EDUCATION",
-    "GMRC"
+    "GMRC",
+    "EPP/TLE"
   ],
   "SHS-CORE SUBJECTS": [
     "ORAL COMMUNICATION",
@@ -3459,7 +3461,8 @@ function WorkloadGanttScheduleView({
   activePersonnelId,
   selectedBlockIdx,
   setSelectedBlockIdx,
-  handleSectionChangeForRow
+  handleSectionChangeForRow,
+  handleSaveChangesDirectly
 }) {
   const [showWeekend, setShowWeekend] = useState(() => {
     const rows = currentPerson?.workloadRows || [];
@@ -3470,6 +3473,8 @@ function WorkloadGanttScheduleView({
   });
 
   const [dragState, setDragState] = useState(null); // { type, rowIdx, day, initialMouseY, initialStartMins, initialEndMins, initialDays, createDay, createStartMins, createCurrentMins }
+  const dragStateRef = useRef(null);
+  dragStateRef.current = dragState;
 
   const daysList = showWeekend
     ? [
@@ -3496,23 +3501,100 @@ function WorkloadGanttScheduleView({
     return parts[0] * 60 + (parts[1] || 0);
   };
 
-  // Dynamically calculate grid time bounds from rows (default 07:00 to 18:00)
-  const gridBounds = useMemo(() => {
-    let minMins = 7 * 60; // 07:00
-    let maxMins = 18 * 60; // 18:00
+  const personnelId = currentPerson?.id || activePersonnelId || 'default';
+  const storedHoursKey = `insighted_timetable_hours_${personnelId}`;
+
+  const [customStartHour, setCustomStartHour] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`insighted_timetable_hours_${currentPerson?.id || activePersonnelId || 'default'}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.startHour === 'number' && parsed.startHour >= 5 && parsed.startHour <= 18) {
+          return parsed.startHour;
+        }
+      }
+    } catch (e) {}
+    return 7;
+  });
+
+  const [customEndHour, setCustomEndHour] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`insighted_timetable_hours_${currentPerson?.id || activePersonnelId || 'default'}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.endHour === 'number' && parsed.endHour >= 6 && parsed.endHour <= 19) {
+          return parsed.endHour;
+        }
+      }
+    } catch (e) {}
+    return 18;
+  });
+
+  // Reload custom shift bounds when changing personnel
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storedHoursKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.startHour === 'number' && typeof parsed.endHour === 'number') {
+          setCustomStartHour(Math.max(5, Math.min(18, parsed.startHour)));
+          setCustomEndHour(Math.max(6, Math.min(19, parsed.endHour)));
+          return;
+        }
+      }
+    } catch (e) {}
+    let s = 7, e = 18;
     const rows = currentPerson?.workloadRows || [];
     rows.forEach(r => {
       if (r.startTime) {
         const sM = parseMins(r.startTime);
-        if (sM < 99999) minMins = Math.min(minMins, Math.floor(sM / 60) * 60);
+        if (sM < 99999) s = Math.min(s, Math.floor(sM / 60));
       }
       if (r.endTime) {
         const eM = parseMins(r.endTime);
-        if (eM < 99999) maxMins = Math.max(maxMins, Math.ceil(eM / 60) * 60);
+        if (eM < 99999) e = Math.max(e, Math.ceil(eM / 60));
       }
     });
-    return { startHour: Math.max(5, Math.floor(minMins / 60)), endHour: Math.min(22, Math.ceil(maxMins / 60)) };
-  }, [currentPerson?.workloadRows]);
+    setCustomStartHour(Math.max(5, Math.min(18, s)));
+    setCustomEndHour(Math.max(6, Math.min(19, e)));
+  }, [personnelId, storedHoursKey]);
+
+  const handleUpdateScheduleHours = (newStart, newEnd) => {
+    const validStart = Math.max(5, Math.min(18, newStart));
+    const validEnd = Math.max(validStart + 1, Math.min(19, newEnd));
+    setCustomStartHour(validStart);
+    setCustomEndHour(validEnd);
+    try {
+      localStorage.setItem(storedHoursKey, JSON.stringify({ startHour: validStart, endHour: validEnd }));
+    } catch (e) {}
+  };
+
+  const formatHourOption = (h) => {
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:00 ${ampm}`;
+  };
+
+  // Dynamically calculate grid time bounds from rows & custom shift settings
+  const gridBounds = useMemo(() => {
+    let minHour = customStartHour;
+    let maxHour = customEndHour;
+    const rows = currentPerson?.workloadRows || [];
+    rows.forEach(r => {
+      if (r.startTime) {
+        const sM = parseMins(r.startTime);
+        if (sM < 99999) minHour = Math.min(minHour, Math.floor(sM / 60));
+      }
+      if (r.endTime) {
+        const eM = parseMins(r.endTime);
+        if (eM < 99999) maxHour = Math.max(maxHour, Math.ceil(eM / 60));
+      }
+    });
+    return {
+      startHour: Math.max(5, minHour),
+      endHour: Math.min(19, Math.max(minHour + 1, maxHour))
+    };
+  }, [customStartHour, customEndHour, currentPerson?.workloadRows]);
 
   const { startHour, endHour } = gridBounds;
   const gridStartMins = startHour * 60;
@@ -3555,74 +3637,176 @@ function WorkloadGanttScheduleView({
     const SNAP_MINS = 5; // 5-minute drag & resize snap
 
     const handleMouseMove = (e) => {
-      const deltaY = e.clientY - dragState.initialMouseY;
+      const cur = dragStateRef.current;
+      if (!cur) return;
+
+      // Safety: If mouse button was released outside the window or without mouseup, terminate drag immediately
+      if (e.buttons !== undefined && (e.buttons & 1) === 0) {
+        handleMouseUp();
+        return;
+      }
+
+      const deltaY = e.clientY - cur.initialMouseY;
       const deltaMins = Math.round((deltaY / pxPerMin) / SNAP_MINS) * SNAP_MINS;
 
-      if (dragState.type === 'create') {
-        const newCurrentMins = Math.max(dragState.createStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, dragState.createStartMins + deltaMins));
-        setDragState(prev => prev ? { ...prev, createCurrentMins: newCurrentMins } : null);
-      } else if (dragState.type === 'move') {
-        const duration = dragState.initialEndMins - dragState.initialStartMins;
-        let newStartMins = dragState.initialStartMins + deltaMins;
+      if (cur.type === 'create') {
+        const newCurrentMins = Math.max(cur.createStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, cur.createStartMins + deltaMins));
+        
+        // Track horizontal column crossing all the way to Friday
+        let hoveredDay = cur.createStartDay || cur.createDay;
+        if (columnRefs.current && daysList.length > 0) {
+          const firstCol = columnRefs.current[daysList[0].code];
+          const lastCol = columnRefs.current[daysList[daysList.length - 1].code];
+          if (firstCol && e.clientX < firstCol.getBoundingClientRect().left) {
+            hoveredDay = daysList[0].code;
+          } else if (lastCol && e.clientX > lastCol.getBoundingClientRect().right) {
+            hoveredDay = daysList[daysList.length - 1].code;
+          } else {
+            daysList.forEach(d => {
+              const colEl = columnRefs.current[d.code];
+              if (colEl) {
+                const rect = colEl.getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                  hoveredDay = d.code;
+                }
+              }
+            });
+          }
+        }
+
+        const startDayCode = cur.createStartDay || cur.createDay;
+        const startIdx = daysList.findIndex(d => d.code === startDayCode);
+        const hoverIdx = daysList.findIndex(d => d.code === hoveredDay);
+        let spanned = [startDayCode];
+        if (startIdx !== -1 && hoverIdx !== -1) {
+          const minI = Math.min(startIdx, hoverIdx);
+          const maxI = Math.max(startIdx, hoverIdx);
+          spanned = daysList.slice(minI, maxI + 1).map(d => d.code);
+        }
+
+        setDragState(prev => prev ? { 
+          ...prev, 
+          createCurrentMins: newCurrentMins,
+          createCurrentDay: hoveredDay,
+          spannedDays: spanned
+        } : null);
+      } else if (cur.type === 'extend-days') {
+        let hoveredDay = cur.day;
+        if (columnRefs.current && daysList.length > 0) {
+          const firstCol = columnRefs.current[daysList[0].code];
+          const lastCol = columnRefs.current[daysList[daysList.length - 1].code];
+          if (firstCol && e.clientX < firstCol.getBoundingClientRect().left) {
+            hoveredDay = daysList[0].code;
+          } else if (lastCol && e.clientX > lastCol.getBoundingClientRect().right) {
+            hoveredDay = daysList[daysList.length - 1].code;
+          } else {
+            daysList.forEach(d => {
+              const colEl = columnRefs.current[d.code];
+              if (colEl) {
+                const rect = colEl.getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                  hoveredDay = d.code;
+                }
+              }
+            });
+          }
+        }
+
+        const fromIdx = daysList.findIndex(d => d.code === cur.day);
+        const toIdx = daysList.findIndex(d => d.code === hoveredDay);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const minI = Math.min(fromIdx, toIdx);
+          const maxI = Math.max(fromIdx, toIdx);
+          const newSpanned = daysList.slice(minI, maxI + 1).map(d => d.code);
+          const combinedDays = Array.from(new Set([...cur.initialDays, ...newSpanned]));
+          setDragState(prev => prev ? {
+            ...prev,
+            currentDays: combinedDays
+          } : null);
+        }
+      } else if (cur.type === 'move') {
+        const draggedRow = currentPerson?.workloadRows?.[cur.rowIdx];
+        const isAdv = String(draggedRow?.subject || '').toUpperCase().trim() === 'ADVISORY';
+        const duration = isAdv ? 60 : (cur.initialEndMins - cur.initialStartMins);
+        let newStartMins = cur.initialStartMins + deltaMins;
         newStartMins = Math.max(gridStartMins, Math.min(gridStartMins + totalGridMins - duration, newStartMins));
         const newEndMins = newStartMins + duration;
 
         // Check if mouse X crossed into another day column
-        let targetDay = dragState.day;
-        if (columnRefs.current) {
-          daysList.forEach(d => {
-            const colEl = columnRefs.current[d.code];
-            if (colEl) {
-              const rect = colEl.getBoundingClientRect();
-              if (e.clientX >= rect.left && e.clientX <= rect.right) {
-                targetDay = d.code;
-              }
-            }
-          });
-        }
-
-        let updatedDays = dragState.initialDays;
-        if (targetDay !== dragState.day) {
-          if (dragState.initialDays.length <= 1) {
-            updatedDays = [targetDay];
+        let targetDay = cur.day;
+        if (!isAdv && columnRefs.current && daysList.length > 0) {
+          const firstCol = columnRefs.current[daysList[0].code];
+          const lastCol = columnRefs.current[daysList[daysList.length - 1].code];
+          if (firstCol && e.clientX < firstCol.getBoundingClientRect().left) {
+            targetDay = daysList[0].code;
+          } else if (lastCol && e.clientX > lastCol.getBoundingClientRect().right) {
+            targetDay = daysList[daysList.length - 1].code;
           } else {
-            updatedDays = dragState.initialDays.map(d => d === dragState.day ? targetDay : d);
+            daysList.forEach(d => {
+              const colEl = columnRefs.current[d.code];
+              if (colEl) {
+                const rect = colEl.getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                  targetDay = d.code;
+                }
+              }
+            });
           }
         }
 
-        updateWorkloadRowFields(dragState.rowIdx, {
-          startTime: formatMinutesToTime(newStartMins),
-          endTime: formatMinutesToTime(newEndMins),
-          days: Array.from(new Set(updatedDays))
-        });
-      } else if (dragState.type === 'resize-top') {
-        let newStartMins = dragState.initialStartMins + deltaMins;
-        newStartMins = Math.max(gridStartMins, Math.min(dragState.initialEndMins - SNAP_MINS, newStartMins));
+        let updatedDays = isAdv ? ['M', 'T', 'W', 'TH', 'F'] : cur.initialDays;
+        if (!isAdv && targetDay !== cur.day) {
+          if (cur.initialDays.length <= 1) {
+            updatedDays = [targetDay];
+          } else {
+            updatedDays = cur.initialDays.map(d => d === cur.day ? targetDay : d);
+          }
+        }
 
-        updateWorkloadRowFields(dragState.rowIdx, {
-          startTime: formatMinutesToTime(newStartMins)
-        });
-      } else if (dragState.type === 'resize-bottom') {
-        let newEndMins = dragState.initialEndMins + deltaMins;
-        newEndMins = Math.max(dragState.initialStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, newEndMins));
+        setDragState(prev => prev ? {
+          ...prev,
+          currentStartMins: newStartMins,
+          currentEndMins: newEndMins,
+          currentDays: Array.from(new Set(updatedDays))
+        } : null);
+      } else if (cur.type === 'resize-top') {
+        let newStartMins = cur.initialStartMins + deltaMins;
+        newStartMins = Math.max(gridStartMins, Math.min(cur.initialEndMins - SNAP_MINS, newStartMins));
 
-        updateWorkloadRowFields(dragState.rowIdx, {
-          endTime: formatMinutesToTime(newEndMins)
-        });
+        setDragState(prev => prev ? {
+          ...prev,
+          currentStartMins: newStartMins
+        } : null);
+      } else if (cur.type === 'resize-bottom') {
+        let newEndMins = cur.initialEndMins + deltaMins;
+        newEndMins = Math.max(cur.initialStartMins + SNAP_MINS, Math.min(gridStartMins + totalGridMins, newEndMins));
+
+        setDragState(prev => prev ? {
+          ...prev,
+          currentEndMins: newEndMins
+        } : null);
       }
     };
 
     const handleMouseUp = () => {
-      if (dragState.type === 'create') {
-        const sMins = Math.min(dragState.createStartMins, dragState.createCurrentMins);
-        let eMins = Math.max(dragState.createStartMins, dragState.createCurrentMins);
+      const cur = dragStateRef.current;
+      if (!cur) return;
+
+      if (cur.type === 'create') {
+        const sMins = Math.min(cur.createStartMins, cur.createCurrentMins);
+        let eMins = Math.max(cur.createStartMins, cur.createCurrentMins);
         if (eMins - sMins < SNAP_MINS) eMins = sMins + 60;
+
+        const activeDays = (cur.spannedDays && cur.spannedDays.length > 0)
+          ? cur.spannedDays
+          : [cur.createDay];
 
         const assignedGrades = getAssignedGradeLevels(currentPerson);
         let initialGrade = 'Grade 1';
         let initialCategory = 'Elementary';
         let initialSectionId = '';
         let initialSectionName = '';
+        let matchedSec = null;
 
         if (Array.isArray(classSections) && classSections.length > 0) {
           const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
@@ -3631,16 +3815,16 @@ function WorkloadGanttScheduleView({
             return advId && advId === activePersonIdToMatch;
           });
 
-          const matchedSec = advisorySec || classSections.find(s => assignedGrades.includes(s.gradeLevel)) || classSections[0];
+          matchedSec = advisorySec || classSections.find(s => assignedGrades.includes(s.gradeLevel)) || classSections[0];
           if (matchedSec) {
             initialSectionId = String(matchedSec.id);
             initialSectionName = matchedSec.sectionName || matchedSec.section_name || '';
             initialGrade = matchedSec.gradeLevel || matchedSec.grade_level || 'Grade 1';
 
             const gUpper = String(initialGrade).toUpperCase();
-            if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS')) {
+            if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS') || gUpper.includes('SENIOR')) {
               initialCategory = 'SHS-CORE SUBJECTS';
-            } else if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10')) {
+            } else if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10') || gUpper.includes('JHS')) {
               initialCategory = 'Junior High School';
             } else {
               initialCategory = 'Elementary';
@@ -3648,7 +3832,18 @@ function WorkloadGanttScheduleView({
           }
         }
 
-        const availableSubjects = getSubjectsForGrade(initialGrade, initialCategory);
+        const isAralInitial = Boolean(
+          (matchedSec && (
+            String(matchedSec.sectionType || '').startsWith('ARAL') ||
+            String(matchedSec.sectionName || '').toUpperCase().includes('ARAL') ||
+            String(matchedSec.gradeLevel || '').toUpperCase().includes('ARAL')
+          )) ||
+          String(initialGrade || '').toUpperCase().includes('ARAL') ||
+          String(initialSectionName || '').toUpperCase().includes('ARAL')
+        );
+        const availableSubjects = isAralInitial
+          ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
+          : (getSubjectsForGrade(initialGrade, initialCategory) || []).filter(s => !isAralSubject(s));
         let chosenSubject = '';
         for (const sub of availableSubjects) {
           const normSub = String(sub).toUpperCase().trim();
@@ -3677,35 +3872,77 @@ function WorkloadGanttScheduleView({
           sectionName: initialSectionName,
           startTime: formatMinutesToTime(sMins),
           endTime: formatMinutesToTime(eMins),
-          days: [dragState.createDay]
+          days: activeDays
         };
         rows.unshift(newRow);
         if (typeof handleFieldChange === 'function') {
           handleFieldChange('workloadRows', rows);
         }
         setSelectedBlockIdx(0);
+      } else if (cur.type === 'move') {
+        const finalStart = cur.currentStartMins !== undefined ? cur.currentStartMins : cur.initialStartMins;
+        const finalEnd = cur.currentEndMins !== undefined ? cur.currentEndMins : cur.initialEndMins;
+        const finalDays = cur.currentDays !== undefined ? cur.currentDays : cur.initialDays;
+        updateWorkloadRowFields(cur.rowIdx, {
+          startTime: formatMinutesToTime(finalStart),
+          endTime: formatMinutesToTime(finalEnd),
+          days: Array.from(new Set(finalDays))
+        });
+      } else if (cur.type === 'resize-top') {
+        const finalStart = cur.currentStartMins !== undefined ? cur.currentStartMins : cur.initialStartMins;
+        updateWorkloadRowFields(cur.rowIdx, {
+          startTime: formatMinutesToTime(finalStart)
+        });
+      } else if (cur.type === 'resize-bottom') {
+        const finalEnd = cur.currentEndMins !== undefined ? cur.currentEndMins : cur.initialEndMins;
+        updateWorkloadRowFields(cur.rowIdx, {
+          endTime: formatMinutesToTime(finalEnd)
+        });
+      } else if (cur.type === 'extend-days') {
+        const finalDays = cur.currentDays !== undefined ? cur.currentDays : cur.initialDays;
+        updateWorkloadRowFields(cur.rowIdx, {
+          days: Array.from(new Set(finalDays))
+        });
       }
+
       setDragState(null);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setDragState(null);
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [dragState, gridStartMins, totalGridMins, daysList, currentPerson?.workloadRows, pxPerMin]);
+  }, [dragState ? true : false, gridStartMins, totalGridMins, daysList, pxPerMin]);
 
   const handleStartDrag = (e, rowIdx, row, dayCode, type) => {
+    if (e.button !== 0) return; // Left mouse button only
+    e.preventDefault();
     e.stopPropagation();
     const subUpper = String(row.subject || '').toUpperCase().trim();
-    if (subUpper === 'ADVISORY') return; // ADVISORY is locked
+    if (subUpper === 'ADVISORY') {
+      // ADVISORY duration is fixed at 60 mins: resize handles are disabled, only move is permitted
+      if (type === 'resize-top' || type === 'resize-bottom') return;
+    }
 
     const initialStartMins = parseMins(row.startTime || '07:30');
-    const initialEndMins = parseMins(row.endTime || '08:30');
-    const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-      ? row.days
-      : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+    const initialEndMins = subUpper === 'ADVISORY'
+      ? initialStartMins + 60
+      : parseMins(row.endTime || '08:30');
+    const rowDays = subUpper === 'ADVISORY'
+      ? ['M', 'T', 'W', 'TH', 'F']
+      : ((Array.isArray(row.days) && row.days.length > 0)
+        ? row.days
+        : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']));
 
     setDragState({
       type,
@@ -3714,13 +3951,18 @@ function WorkloadGanttScheduleView({
       initialMouseY: e.clientY,
       initialStartMins,
       initialEndMins,
-      initialDays: rowDays
+      initialDays: rowDays,
+      currentStartMins: initialStartMins,
+      currentEndMins: initialEndMins,
+      currentDays: rowDays
     });
     setSelectedBlockIdx(rowIdx);
   };
 
   const handleGridMouseDown = (e, dayCode) => {
     if (e.target.closest('.gantt-block-card')) return;
+    if (e.button !== 0) return; // Left mouse button only
+    e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     const clickY = e.clientY - rect.top;
     const clickedMins = gridStartMins + Math.floor((clickY / pxPerMin) / 5) * 5;
@@ -3744,14 +3986,70 @@ function WorkloadGanttScheduleView({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px', paddingBottom: '14px', borderBottom: '1.5px solid var(--line)' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📊</span> Drag-and-Drop Weekly Schedule Editor
+            <FiBarChart2 size={18} color="#0284C7" /> Drag-and-Drop Weekly Schedule Editor
           </h3>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
             Drag blocks to move time/day slots. Drag top/bottom edges to resize duration (5-min snapping). Click empty slots to add new blocks.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Shift Time Window Dropdowns */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'white', padding: '4px 8px', borderRadius: '8px', border: '1.5px solid #CBD5E1', fontSize: '11px' }}>
+            <FiClock size={13} color="#0284C7" />
+            <span style={{ fontWeight: '800', color: '#475569', textTransform: 'uppercase', fontSize: '10px' }}>Shift:</span>
+            <select
+              value={customStartHour}
+              onChange={(e) => {
+                const s = Number(e.target.value);
+                handleUpdateScheduleHours(s, Math.max(s + 1, customEndHour));
+              }}
+              style={{ border: '1px solid #CBD5E1', borderRadius: '5px', padding: '2px 4px', fontSize: '11px', fontWeight: '700', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
+              title="Timetable Earliest Start Hour (Earliest: 5:00 AM)"
+            >
+              {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(h => (
+                <option key={h} value={h}>{formatHourOption(h)}</option>
+              ))}
+            </select>
+            <span style={{ color: '#94A3B8', fontWeight: '700' }}>–</span>
+            <select
+              value={customEndHour}
+              onChange={(e) => {
+                const endH = Number(e.target.value);
+                handleUpdateScheduleHours(Math.min(customStartHour, endH - 1), endH);
+              }}
+              style={{ border: '1px solid #CBD5E1', borderRadius: '5px', padding: '2px 4px', fontSize: '11px', fontWeight: '700', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
+              title="Timetable Latest End Hour (Latest: 7:00 PM)"
+            >
+              {[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].filter(h => h > customStartHour).map(h => (
+                <option key={h} value={h}>{formatHourOption(h)}</option>
+              ))}
+            </select>
+          </div>
+
+          {typeof handleSaveChangesDirectly === 'function' && (
+            <button
+              type="button"
+              onClick={handleSaveChangesDirectly}
+              style={{
+                padding: '7px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: '800',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 4px rgba(2,132,199,0.25)'
+              }}
+              title="Save current workload schedule to database"
+            >
+              <FiSave size={14} /> Save Workload
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowWeekend(!showWeekend)}
@@ -3769,7 +4067,7 @@ function WorkloadGanttScheduleView({
               gap: '6px'
             }}
           >
-            <span>📅</span> {showWeekend ? 'Mon - Fri Only' : 'Show Weekend (Sat/Sun)'}
+            <FiCalendar size={14} /> {showWeekend ? 'Mon - Fri Only' : 'Show Weekend (Sat/Sun)'}
           </button>
         </div>
       </div>
@@ -3790,7 +4088,7 @@ function WorkloadGanttScheduleView({
                 <div key={d.code} style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid var(--line)', background: '#F8FAFC' }}>
                   <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>{d.full} ({d.code})</div>
                   <div style={{ fontSize: '10px', fontWeight: '700', color: dayMins > 360 ? '#b91c1c' : '#0284c7', background: dayMins > 360 ? '#fef2f2' : '#e0f2fe', padding: '2px 6px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}>
-                    ⏱️ {dayHours} hrs ({dayMins}m)
+                    <FiClock size={11} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{dayHours} hrs ({dayMins}m)
                   </div>
                 </div>
               );
@@ -3842,7 +4140,10 @@ function WorkloadGanttScheduleView({
                 })}
 
                 {/* Drag Create Active Preview Box */}
-                {dragState && dragState.type === 'create' && dragState.createDay === d.code && (() => {
+                {dragState && dragState.type === 'create' && (() => {
+                  const activeDays = dragState.spannedDays || [dragState.createDay];
+                  if (!activeDays.includes(d.code)) return null;
+
                   const sM = Math.min(dragState.createStartMins, dragState.createCurrentMins);
                   const eM = Math.max(dragState.createStartMins, dragState.createCurrentMins);
                   const top = (sM - gridStartMins) * pxPerMin;
@@ -3854,7 +4155,7 @@ function WorkloadGanttScheduleView({
                       left: '4px',
                       right: '4px',
                       height: `${height}px`,
-                      background: 'rgba(2, 132, 199, 0.15)',
+                      background: 'rgba(2, 132, 199, 0.18)',
                       border: '2px dashed #0284C7',
                       borderRadius: '8px',
                       padding: '4px 8px',
@@ -3865,22 +4166,33 @@ function WorkloadGanttScheduleView({
                       color: '#0369A1',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(2, 132, 199, 0.15)'
                     }}>
-                      ➕ New Slot ({formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)})
+                      <FiPlus size={13} style={{ marginRight: '4px' }} />
+                      {activeDays.length > 1 ? `${activeDays[0]}-${activeDays[activeDays.length - 1]} (${formatMinutesTo12Hour(sM)} - ${formatMinutesTo12Hour(eM)})` : `New Slot (${formatMinutesTo12Hour(sM)} - ${formatMinutesTo12Hour(eM)})`}
                     </div>
                   );
                 })()}
 
                 {/* Render Subject Blocks for this Day */}
                 {rawRows.map((row, rowIdx) => {
-                  const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+                  const isDraggingThisRow = dragState && dragState.rowIdx === rowIdx && (dragState.type === 'move' || dragState.type === 'resize-top' || dragState.type === 'resize-bottom' || dragState.type === 'extend-days');
+
+                  let rowDays = (Array.isArray(row.days) && row.days.length > 0)
                     ? row.days
                     : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+                  if (isDraggingThisRow && dragState.currentDays) {
+                    rowDays = dragState.currentDays;
+                  }
                   if (!rowDays.includes(d.code)) return null;
 
-                  const sMins = parseMins(row.startTime || '07:30');
-                  const eMins = parseMins(row.endTime || '08:30');
+                  let sMins = parseMins(row.startTime || '07:30');
+                  let eMins = parseMins(row.endTime || '08:30');
+                  if (isDraggingThisRow) {
+                    if (dragState.currentStartMins !== undefined) sMins = dragState.currentStartMins;
+                    if (dragState.currentEndMins !== undefined) eMins = dragState.currentEndMins;
+                  }
                   if (sMins >= 99999 || eMins >= 99999) return null;
 
                   const top = (sMins - gridStartMins) * pxPerMin;
@@ -3890,7 +4202,7 @@ function WorkloadGanttScheduleView({
                   const subUpper = String(row.subject || '').toUpperCase().trim();
                   const isAdv = subUpper === 'ADVISORY';
                   const isHgp = subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
-                  const isLocked = isAdv;
+                  const canResize = !isAdv;
 
                   // Validation errors
                   const hasConflict = rawRows.some((otherRow, otherIdx) => {
@@ -3914,6 +4226,8 @@ function WorkloadGanttScheduleView({
                   const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
                   const isSelected = selectedBlockIdx === rowIdx;
 
+                  const isSHS = isSHSRow(row);
+
                   let blockBg = 'linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%)';
                   let blockBorder = isSelected ? '2px solid #0284C7' : '1.5px solid #CBD5E1';
                   let textColor = '#0F172A';
@@ -3934,6 +4248,10 @@ function WorkloadGanttScheduleView({
                     blockBg = 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)';
                     blockBorder = '2px solid #F59E0B';
                     textColor = '#92400E';
+                  } else if (isSHS) {
+                    blockBg = 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)';
+                    blockBorder = isSelected ? '2px solid #16A34A' : '1.5px solid #86EFAC';
+                    textColor = '#14532D';
                   }
 
                   const blockKey = `${row.id || rowIdx}-${d.code}`;
@@ -3955,20 +4273,24 @@ function WorkloadGanttScheduleView({
                         borderRadius: '8px',
                         padding: '4px 6px',
                         boxSizing: 'border-box',
-                        cursor: isLocked ? 'not-allowed' : 'move',
-                        zIndex: isSelected ? 5 : 2,
-                        boxShadow: isSelected ? '0 0 0 3px rgba(2, 132, 199, 0.3), 0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.04)',
+                        cursor: isDraggingThisRow ? 'grabbing' : 'move',
+                        zIndex: isDraggingThisRow ? 25 : (isSelected ? 5 : 2),
+                        opacity: isDraggingThisRow ? 0.88 : 1,
+                        boxShadow: isDraggingThisRow
+                          ? '0 10px 25px rgba(2, 132, 199, 0.4), 0 0 0 2px #0284C7'
+                          : (isSelected ? '0 0 0 3px rgba(2, 132, 199, 0.3), 0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.04)'),
                         color: textColor,
                         overflow: 'hidden',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
-                        transition: dragState ? 'none' : 'box-shadow 0.15s ease'
+                        pointerEvents: dragState ? (isDraggingThisRow ? 'auto' : 'none') : 'auto',
+                        transition: isDraggingThisRow ? 'none' : 'box-shadow 0.15s ease'
                       }}
                       title={`${row.subject || 'Subject'} (${row.sectionName || 'Section'}) • ${row.startTime} - ${row.endTime}`}
                     >
-                      {/* Top Resize Handle */}
-                      {!isLocked && (
+                      {/* Top Resize Handle (disabled for ADVISORY fixed 60m) */}
+                      {canResize && (
                         <div
                           onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'resize-top')}
                           style={{
@@ -3988,8 +4310,9 @@ function WorkloadGanttScheduleView({
                       {/* Block Title & Details */}
                       <div style={{ pointerEvents: 'none' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {row.subject || 'Select Subject'} {isLocked && '🔒'}
+                          <span style={{ fontSize: '11px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            {row.subject || 'Select Subject'} {isAdv && <span title="Fixed 60 mins • Moveable" style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px' }}>⏱️ 60m</span>}
+                            {isSHS && <span title="Senior High School" style={{ fontSize: '8px', fontWeight: '800', background: '#16A34A', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>SHS</span>}
                           </span>
                           <span style={{ fontSize: '9px', fontWeight: '700', opacity: 0.85, background: 'rgba(0,0,0,0.08)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
                             {diffMins}m
@@ -3998,7 +4321,7 @@ function WorkloadGanttScheduleView({
 
                         {height >= 40 && (
                           <div style={{ fontSize: '10px', fontWeight: '600', opacity: 0.9, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            [{row.sectionName || row.gradeLevel || 'Section'}]
+                            [{row.gradeLevel ? `${row.gradeLevel} • ` : ''}{row.sectionName || 'Section'}]
                           </div>
                         )}
 
@@ -4011,16 +4334,16 @@ function WorkloadGanttScheduleView({
                         {/* Inline Warning / Conflict Badges */}
                         {cardHasError && height >= 45 && (
                           <div style={{ marginTop: '2px', display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
-                            {hasConflict && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 Overlap</span>}
-                            {hgpWeeklyErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 HGP (60m)</span>}
-                            {duplicateSubErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>🔴 Duplicate</span>}
-                            {matatagWarn && <span style={{ fontSize: '8px', fontWeight: '800', background: matatagWarn.type === 'error' ? '#EF4444' : '#F59E0B', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>⚠️ MATATAG</span>}
+                            {hasConflict && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertCircle size={9} /> Overlap</span>}
+                            {hgpWeeklyErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertCircle size={9} /> HGP (60m)</span>}
+                            {duplicateSubErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertCircle size={9} /> Duplicate</span>}
+                            {matatagWarn && <span style={{ fontSize: '8px', fontWeight: '800', background: matatagWarn.type === 'error' ? '#EF4444' : '#F59E0B', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertTriangle size={9} /> MATATAG</span>}
                           </div>
                         )}
                       </div>
 
-                      {/* Bottom Resize Handle */}
-                      {!isLocked && (
+                      {/* Bottom Resize Handle (disabled for ADVISORY fixed 60m) */}
+                      {canResize && (
                         <div
                           onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'resize-bottom')}
                           style={{
@@ -4076,7 +4399,7 @@ function WorkloadGanttScheduleView({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--line)', paddingBottom: '10px' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
-                      {selectedRow.subject || 'Edit Schedule Slot'} {isLockedSub && '🔒'}
+                      {selectedRow.subject || 'Edit Schedule Slot'} {isLockedSub && <FiLock size={13} style={{ marginLeft: '6px', verticalAlign: 'middle' }} />}
                     </h4>
                     <span style={{ fontSize: '11px', color: '#64748b' }}>Block Inspector & Settings</span>
                   </div>
@@ -4087,7 +4410,7 @@ function WorkloadGanttScheduleView({
                       style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FCA5A5', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
                       title="Remove Block"
                     >
-                      🗑️ Delete
+                      <FiTrash2 size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> Delete
                     </button>
                   )}
                 </div>
@@ -4095,11 +4418,11 @@ function WorkloadGanttScheduleView({
                 {/* Validation Warnings Callout */}
                 {(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || !!matatagWarn) && (
                   <div style={{ background: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FEF2F2' : '#FFFBEB', color: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#991B1B' : '#92400E', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FCA5A5' : '#FCD34D'}`, fontSize: '11px', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {hasConflict && <div>🔴 Schedule Overlap Conflict: Overlaps with another subject or task on selected days.</div>}
-                    {durationErr && <div>🔴 {durationErr}</div>}
-                    {duplicateSubErr && <div>🔴 {duplicateSubErr}</div>}
-                    {hgpWeeklyErr && <div>🔴 {hgpWeeklyErr}</div>}
-                    {matatagWarn && <div>{matatagWarn.type === 'error' ? '🔴' : '⚠️'} {matatagWarn.message}</div>}
+                    {hasConflict && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> Schedule Overlap Conflict: Overlaps with another subject or task on selected days.</div>}
+                    {durationErr && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> {durationErr}</div>}
+                    {duplicateSubErr && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> {duplicateSubErr}</div>}
+                    {hgpWeeklyErr && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> {hgpWeeklyErr}</div>}
+                    {matatagWarn && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertTriangle size={14} color={matatagWarn.type === 'error' ? '#EF4444' : '#F59E0B'} /> {matatagWarn.message}</div>}
                   </div>
                 )}
 
@@ -4108,10 +4431,13 @@ function WorkloadGanttScheduleView({
                   <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Class Section</label>
                   {(() => {
                     const filteredSections = [...(classSections || [])];
-                    const sectionOptions = filteredSections.map(s => ({
-                      value: String(s.id),
-                      label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'})`
-                    }));
+                    const sectionOptions = filteredSections.map(s => {
+                      const trackInfo = s.trackStrand ? ` - ${s.trackStrand}` : '';
+                      return {
+                        value: String(s.id),
+                        label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'}${trackInfo})`
+                      };
+                    });
                     return (
                       <SearchableSelect
                         disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
@@ -4124,28 +4450,79 @@ function WorkloadGanttScheduleView({
                   })()}
                 </div>
 
+                {/* SHS Category Selector if SHS Section or SHS Row */}
+                {(isSHSRow(selectedRow) || (selectedRow.gradeLevel && (String(selectedRow.gradeLevel).includes('11') || String(selectedRow.gradeLevel).includes('12') || String(selectedRow.gradeLevel).toUpperCase().includes('SHS')))) && (
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <FiBook size={12} color="#16A34A" /> SHS Learning Category
+                    </label>
+                    <SearchableSelect
+                      disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
+                      value={selectedRow.category || 'SHS-CORE SUBJECTS'}
+                      onChange={(e) => {
+                        const newCat = e.target.value;
+                        const newSubjects = getSubjectsForGrade(selectedRow.gradeLevel || 'Grade 11', newCat);
+                        updateWorkloadRowFields(idx, {
+                          category: newCat,
+                          subject: (newSubjects || []).includes(selectedRow.subject) ? selectedRow.subject : (newSubjects?.find(s => s !== 'ADVISORY') || newSubjects?.[0] || '')
+                        });
+                      }}
+                      options={[
+                        { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
+                        { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
+                        { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
+                        { value: 'SSHS-CORE', label: 'SSHS-CORE' },
+                        { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
+                        { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
+                        { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
+                      ]}
+                      placeholder="Select SHS category…"
+                    />
+                  </div>
+                )}
+
                 {/* Subject Select */}
                 <div>
                   <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Subject</label>
                   {(() => {
                     const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
                     const currentSub = selectedRow.subject || selectedRow.subject_name || '';
+                    const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (selectedRow.sectionName && s.sectionName === selectedRow.sectionName));
+                    const isAralSection = Boolean(
+                      (linkedSec && (
+                        String(linkedSec.sectionType || '').startsWith('ARAL') ||
+                        String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
+                        String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL')
+                      )) ||
+                      String(selectedRow.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                      String(selectedRow.sectionName || '').toUpperCase().includes('ARAL')
+                    );
+                    const isShsCategory = isSHSRow(selectedRow) || (selectedRow.gradeLevel && (String(selectedRow.gradeLevel).includes('11') || String(selectedRow.gradeLevel).includes('12') || String(selectedRow.gradeLevel).toUpperCase().includes('SHS')));
+                    const effectiveCategory = isShsCategory ? (selectedRow.category && selectedRow.category.includes('SHS') ? selectedRow.category : 'SHS-CORE SUBJECTS') : (selectedRow.category || 'Elementary');
                     const subjectList = (() => {
-                      if (!currentSecId && !currentSub) return [];
-                      if (selectedRow.gradeLevel) {
-                        return getSubjectsForGrade(selectedRow.gradeLevel, selectedRow.category || 'Elementary');
+                      if (isAralSection) {
+                        return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
                       }
-                      return SUBJECT_OPTIONS;
+                      if (!currentSecId && !currentSub && !selectedRow.gradeLevel) return [];
+                      let rawList = [];
+                      if (selectedRow.gradeLevel) {
+                        rawList = getSubjectsForGrade(selectedRow.gradeLevel, effectiveCategory);
+                      } else {
+                        rawList = SUBJECT_OPTIONS;
+                      }
+                      return (rawList || []).filter(s => !isAralSubject(s));
                     })();
 
+                    const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
                     const subjectOptions = [
                       ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY', disabled: false }] : []),
                       ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP', disabled: false }] : []),
+                      ...(isCustom ? [{ value: currentSub, label: currentSub, disabled: false }] : []),
                       ...subjectList.map(sub => {
                         const isSelfCurrent = (sub === currentSub);
                         const assignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, selectedRow.sectionName, sub, isSHSRow(selectedRow) ? (selectedRow.term || '1st') : null, idx) : null;
                         if (assignment && assignment.assigned) {
-                          return { value: sub, label: `${sub} 🔒 (${assignment.teacherName})`, disabled: true };
+                          return { value: sub, label: `${sub} [Locked: ${assignment.teacherName}]`, disabled: true };
                         }
                         return { value: sub, label: sub, disabled: false };
                       })
@@ -4165,7 +4542,32 @@ function WorkloadGanttScheduleView({
 
                 {/* Usual Days Toggles */}
                 <div>
-                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Usual Days</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', margin: 0 }}>Usual Days</label>
+                    <button
+                      type="button"
+                      disabled={selectedRow.subject === 'ADVISORY'}
+                      onClick={() => {
+                        updateWorkloadRowFields(idx, { days: ['M', 'T', 'W', 'TH', 'F'] });
+                      }}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '10px',
+                        fontWeight: '800',
+                        borderRadius: '5px',
+                        border: '1px solid #93C5FD',
+                        background: '#EFF6FF',
+                        color: '#1D4ED8',
+                        cursor: selectedRow.subject === 'ADVISORY' ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Set days to Monday through Friday"
+                    >
+                      <FiClock size={10} /> Mon – Fri (M-F)
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(dayCode => {
                       const rowDays = (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? selectedRow.days : ['M','T','W','TH','F'];
@@ -4204,20 +4606,29 @@ function WorkloadGanttScheduleView({
                     <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
                     <input
                       type="time"
-                      disabled={selectedRow.subject === 'ADVISORY'}
                       value={selectedRow.startTime || '07:30'}
-                      onChange={(e) => updateWorkloadRowFields(idx, { startTime: e.target.value })}
+                      onChange={(e) => {
+                        const newStart = e.target.value;
+                        if (selectedRow.subject === 'ADVISORY') {
+                          updateWorkloadRowFields(idx, { startTime: newStart, endTime: add60MinutesToTime(newStart) });
+                        } else {
+                          updateWorkloadRowFields(idx, { startTime: newStart });
+                        }
+                      }}
                       style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>End Time</label>
+                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>
+                      End Time {selectedRow.subject === 'ADVISORY' && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}>(Fixed 60m)</span>}
+                    </label>
                     <input
                       type="time"
                       disabled={selectedRow.subject === 'ADVISORY'}
                       value={selectedRow.endTime || '08:30'}
                       onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px', opacity: selectedRow.subject === 'ADVISORY' ? 0.75 : 1, background: selectedRow.subject === 'ADVISORY' ? '#F8FAFC' : 'white' }}
+                      title={selectedRow.subject === 'ADVISORY' ? 'Advisory duration is fixed at 60 minutes' : undefined}
                     />
                   </div>
                 </div>
@@ -4225,7 +4636,7 @@ function WorkloadGanttScheduleView({
             );
           })() : (
             <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
-              <div style={{ fontSize: '28px', marginBottom: '8px' }}>👆</div>
+              <div style={{ marginBottom: '8px' }}><FiCalendar size={32} color="#94A3B8" /></div>
               <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>Select a Schedule Block</div>
               <div style={{ fontSize: '11px', marginTop: '4px' }}>Click any block on the Gantt chart or drag across empty time slots to create and edit.</div>
             </div>
@@ -4321,8 +4732,18 @@ export default function Workload() {
   // By-Section view state
   const [workloadView, setWorkloadView] = useState('by-personnel');
   const [selectedSectionId, setSelectedSectionId] = useState('');
-  const [newSlot, setNewSlot] = useState({ teacherId: '', subject: '', startTime: '08:00', endTime: '09:00', days: ['M', 'T', 'W', 'TH', 'F'] });
+  const [sectionSearch, setSectionSearch] = useState('');
+  const [sectionGradeFilter, setSectionGradeFilter] = useState('all');
+  const [sectionViewMode, setSectionViewMode] = useState('timetable'); // 'timetable' | 'matrix'
+  const [showAddSectionSlotModal, setShowAddSectionSlotModal] = useState(false);
+  const [newSlot, setNewSlot] = useState({ teacherId: '', subject: '', remediationSubject: '', startTime: '08:00', endTime: '09:00', days: ['M', 'T', 'W', 'TH', 'F'] });
   const [slotConflict, setSlotConflict] = useState(null);
+
+  useEffect(() => {
+    if (workloadView === 'by-section' && !selectedSectionId && classSections && classSections.length > 0) {
+      setSelectedSectionId(classSections[0].id);
+    }
+  }, [workloadView, selectedSectionId, classSections]);
 
   // Timetable Schedule Verification State & Modal
   const [showAttentionModal, setShowAttentionModal] = useState(false);
@@ -4376,7 +4797,7 @@ export default function Workload() {
     const appliedName = calendarModalConfig.taskName;
     const count = calendarSelectedDates.length;
     setCalendarModalConfig(null);
-    if (showToast) showToast(`✓ Applied ${count} selected date(s) to ${appliedName}!`);
+    if (showToast) showToast(`Applied ${count} selected date(s) to ${appliedName}!`);
   };
 
   const toggleCalendarDate = (dStr) => {
@@ -4466,7 +4887,7 @@ export default function Workload() {
 
     verifiedModalDismissedMap.current[personId] = true;
     setShowAttentionModal(false);
-    if (showToast) showToast("✓ Timetable schedule confirmed and saved!");
+    if (showToast) showToast("Timetable schedule confirmed and saved!");
   };
 
   const handleConfirmAllAndSave = async () => {
@@ -4552,12 +4973,12 @@ export default function Workload() {
     setShowAttentionModal(false);
 
     if (errorTeachers.length === 0) {
-      if (showToast) showToast(`✓ Successfully confirmed & saved timetables for ALL ${confirmedCount} personnel!`);
-      await showAlert("Batch Timetable Verification", `✓ All ${confirmedCount} personnel schedules have been confirmed and saved!`);
+      if (showToast) showToast(`Successfully confirmed & saved timetables for ALL ${confirmedCount} personnel!`);
+      await showAlert("Batch Timetable Verification", `All ${confirmedCount} personnel schedules have been confirmed and saved!`);
     } else {
       await showAlert(
         "Batch Timetable Verification",
-        `✓ Confirmed and saved ${confirmedCount} personnel schedules!\n\n⚠️ ${errorTeachers.length} personnel were skipped due to duration errors (> 60m / > 6h SHS) or schedule overlaps:\n• ${errorTeachers.slice(0, 5).join('\n• ')}${errorTeachers.length > 5 ? `\n...and ${errorTeachers.length - 5} more` : ''}`
+        `Confirmed and saved ${confirmedCount} personnel schedules!\n\nNotice: ${errorTeachers.length} personnel were skipped due to duration errors (> 60m / > 6h SHS) or schedule overlaps:\n• ${errorTeachers.slice(0, 5).join('\n• ')}${errorTeachers.length > 5 ? `\n...and ${errorTeachers.length - 5} more` : ''}`
       );
     }
   };
@@ -4617,7 +5038,7 @@ export default function Workload() {
       }
 
       if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-      if (showToast) showToast(`✓ Workload for ${teacherName} cleared in local draft.`);
+      if (showToast) showToast(`Workload for ${teacherName} cleared in local draft.`);
     } catch (err) {
       if (showAlert) await showAlert("Error", "Failed to clear workload: " + err.message);
     }
@@ -4626,7 +5047,7 @@ export default function Workload() {
   const handleClearAllTeachersWorkload = async () => {
     const totalTeachers = (personnel || []).filter(p => p.type === 'teaching').length || (personnel || []).length;
     const confirmed = await showConfirm(
-      "⚠️ Clear All Teachers' Workload?",
+      "Clear All Teachers' Workload?",
       `Are you sure you want to clear all workload schedule periods across ALL ${totalTeachers} teachers in the school? This will reset all teachers to blank in your local draft.`
     );
     if (!confirmed) return;
@@ -4672,7 +5093,7 @@ export default function Workload() {
       }
 
       if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-      if (showToast) showToast("✓ All teachers' workloads have been cleared in local draft.");
+      if (showToast) showToast("All teachers' workloads have been cleared in local draft.");
     } catch (err) {
       if (showAlert) await showAlert("Error", "Failed to clear all workloads: " + err.message);
     }
@@ -4860,16 +5281,7 @@ export default function Workload() {
     return hours * 60 + minutes;
   };
 
-  const add60MinutesToTime = (timeStr) => {
-    if (!timeStr) return '09:00';
-    const parts = String(timeStr).split(':');
-    let h = parseInt(parts[0], 10);
-    let m = parseInt(parts[1], 10);
-    if (isNaN(h)) h = 8;
-    if (isNaN(m)) m = 0;
-    const newH = (h + 1) % 24;
-    return `${String(newH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  };
+  // add60MinutesToTime is exported at module level (top of file)
 
   const getAssignedGradeLevels = (p) => {
     if (!p) return [];
@@ -5239,25 +5651,59 @@ export default function Workload() {
   }, []);
 
   useEffect(() => {
-    if (currentPerson?.designation && currentPerson.type === 'teaching') {
-      const rawDesig = String(currentPerson.designation).replace('::APPROVED_SDS', '').trim();
-      if (rawDesig) {
-        const existingRows = currentPerson.teachingRelatedRows || [];
-        const alreadyHas = existingRows.some(r => r.task && (r.task.includes(rawDesig) || rawDesig.includes(r.task)));
-        if (!alreadyHas) {
-          const isSds = currentPerson.designation.includes('::APPROVED_SDS');
-          const matchedTask = allTeachingRelatedOptions.find(opt => opt.includes(rawDesig) || rawDesig.includes(opt)) || rawDesig;
-          const newRow = {
-            task: matchedTask,
-            designatedBySds: isSds,
-            hours: 1,
-            days: ['M', 'T', 'W', 'TH', 'F']
-          };
-          handleFieldChange('teachingRelatedRows', [newRow, ...existingRows]);
+    if (!currentPerson) return;
+
+    // Collect all official designations assigned to currentPerson
+    // Supported for ALL personnel types: teaching, teaching-related, and non-teaching
+    const desigsToSync = [];
+    if (currentPerson.designation) {
+      desigsToSync.push(currentPerson.designation);
+    }
+    if (Array.isArray(currentPerson.designations)) {
+      currentPerson.designations.forEach(d => {
+        if (d && !desigsToSync.includes(d)) desigsToSync.push(d);
+      });
+    }
+
+    if (desigsToSync.length > 0) {
+      let existingRows = [...(currentPerson.teachingRelatedRows || [])];
+      let rowsChanged = false;
+
+      desigsToSync.forEach(desigItem => {
+        const rawDesig = String(desigItem).replace(/::APPROVED_SDS/gi, '').trim();
+        if (rawDesig) {
+          const alreadyHas = existingRows.some(r => r.task && (
+            r.task.toLowerCase() === rawDesig.toLowerCase() ||
+            r.task.toLowerCase().includes(rawDesig.toLowerCase()) ||
+            rawDesig.toLowerCase().includes(r.task.toLowerCase())
+          ));
+
+          if (!alreadyHas) {
+            const isSds = String(desigItem).includes('::APPROVED_SDS');
+            const matchedTask = allTeachingRelatedOptions.find(opt => 
+              opt.toLowerCase() === rawDesig.toLowerCase() ||
+              opt.toLowerCase().includes(rawDesig.toLowerCase()) ||
+              rawDesig.toLowerCase().includes(opt.toLowerCase())
+            ) || rawDesig;
+
+            const newRow = {
+              task: matchedTask,
+              designatedBySds: isSds,
+              isSdsApproved: isSds,
+              hours: 1,
+              days: ['M', 'T', 'W', 'TH', 'F']
+            };
+            existingRows = [newRow, ...existingRows];
+            rowsChanged = true;
+          }
         }
+      });
+
+      if (rowsChanged) {
+        handleFieldChange('teachingRelatedRows', existingRows);
       }
     }
-  }, [currentPerson?.id, currentPerson?.designation, allTeachingRelatedOptions]);
+  }, [currentPerson?.id, currentPerson?.designation, currentPerson?.designations, currentPerson?.type, allTeachingRelatedOptions]);
 
 
 
@@ -5289,19 +5735,60 @@ export default function Workload() {
   };
 
   const getSubjectsForGrade = (grade, category = 'Elementary') => {
-    const normGrade = grade ? String(grade).replace(/\s*[\u2013\u2014-]\s*/g, ' - ') : '';
+    const normGrade = grade ? String(grade).replace(/\s*[\u2013\u2014-]\s*/g, ' - ').trim() : '';
+
+    // 1. SNED Rule: If section is SNED, return strictly SPED MODIFIED SUBJECTS ONLY
+    if (normGrade.toUpperCase() === 'SNED' || normGrade.toUpperCase().includes('SNED')) {
+      return ['SPED MODIFIED SUBJECTS'];
+    }
+
+    // 2. ALS Rule: If section is ALS, return regular Grade 7-10 subjects (or regular elementary)
+    if (normGrade.toUpperCase() === 'ALS' || normGrade.toUpperCase().includes('ALS')) {
+      const catUpper = String(category || '').toUpperCase();
+      const isJHS = catUpper.includes('JHS') || catUpper.includes('JUNIOR');
+      const alsBase = isJHS ? (GRADE_LEVEL_SUBJECTS['Grade 7'] || JHS_SUBJECTS) : (GRADE_LEVEL_SUBJECTS['Grade 6'] || ELEMENTARY_MONO_GRADE_SUBJECTS);
+      const disabledMap = (() => {
+        try {
+          return schoolInfo?.subjectsConfig?.disabledMap || (localStorage.getItem('school_disabled_subjects') ? JSON.parse(localStorage.getItem('school_disabled_subjects')) : {});
+        } catch (e) {
+          return {};
+        }
+      })();
+      const subjects = (alsBase || []).filter(subName => {
+        const u = String(subName || '').toUpperCase().trim();
+        if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE')) return false;
+        if (isAralSubject(u)) return false;
+        if (u !== 'ARALING PANLIPUNAN' && disabledMap[subName] === true) return false;
+        return true;
+      });
+      if (!subjects.includes('ALS LEARNING STRAND')) {
+        subjects.unshift('ALS LEARNING STRAND');
+      }
+      return subjects;
+    }
+
+    // 3. ARAL Rule: If section or grade is ARAL, return strictly ARAL subjects ONLY
+    if (normGrade.toUpperCase() === 'ARAL' || normGrade.toUpperCase().includes('ARAL')) {
+      return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
+    }
+
     if (normGrade && normGrade.includes(' - ')) {
       const parts = normGrade.split(' - ');
-      const union = new Set();
-      parts.forEach(p => {
-        const subs = getSubjectsForGrade(p, category);
-        subs.forEach(s => union.add(s));
-      });
-      return Array.from(union);
+      const gradeRegex = /^(grade\s*\d+|kinder|kindergarten|sned|als|aral|g\d+)$/i;
+      const isTrueMultiGrade = parts.filter(p => gradeRegex.test(p.trim())).length > 1;
+      if (isTrueMultiGrade) {
+        const union = new Set();
+        parts.forEach(p => {
+          const subs = getSubjectsForGrade(p, category);
+          subs.forEach(s => union.add(s));
+        });
+        return Array.from(union);
+      }
     }
 
     let baseList = [];
-    if (normGrade.toUpperCase().includes('KINDER')) {
+    const uG = normGrade.toUpperCase();
+    if (uG.includes('KINDER')) {
       return ['KINDER BLOCKS OF TIME'];
     } else if (grade === 'MONO-GRADE') {
       if (category === 'Elementary') baseList = ELEMENTARY_MONO_GRADE_SUBJECTS;
@@ -5312,8 +5799,8 @@ export default function Workload() {
       if (category === 'JHS') baseList = JHS_NON_GRADED_SUBJECTS;
       else if (category === 'SHS') baseList = SHS_NON_GRADED_SUBJECTS;
       else baseList = JHS_NON_GRADED_SUBJECTS;
-    } else if (normGrade.toUpperCase().includes('11') || normGrade.toUpperCase().includes('12') || normGrade.toUpperCase().includes('SHS')) {
-      const isGrade12 = normGrade.includes('12');
+    } else if (uG.includes('11') || uG.includes('12') || uG.includes('SHS') || uG.includes('SENIOR')) {
+      const isGrade12 = uG.includes('12');
       if (category === 'SHS') baseList = isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
       else if (category === 'SHS-CORE SUBJECTS') baseList = isGrade12 ? SHS_CORE_GRADE12_SUBJECTS : SHS_CORE_SUBJECTS;
       else if (category === 'SHS-APPLIED SUBJECTS') baseList = isGrade12 ? SHS_APPLIED_GRADE12_SUBJECTS : SHS_APPLIED_SUBJECTS;
@@ -5322,8 +5809,29 @@ export default function Workload() {
       else if (category === 'SSHS-ACADEMIC') baseList = isGrade12 ? SSHS_ACADEMIC_GRADE12_SUBJECTS : SSHS_ACADEMIC_SUBJECTS;
       else if (category === 'SSHS-TECHPRO') baseList = isGrade12 ? SSHS_TECHPRO_GRADE12_SUBJECTS : SSHS_TECHPRO_SUBJECTS;
       else baseList = isGrade12 ? SHS_GRADE12_SUBJECTS : SHS_SUBJECTS;
+    } else if (
+      (uG.includes('10') && !uG.includes('11') && !uG.includes('12')) ||
+      uG.includes('9') ||
+      uG.includes('8') ||
+      uG.includes('7') ||
+      uG.includes('JHS') ||
+      uG.includes('JUNIOR') ||
+      String(category || '').toUpperCase().includes('JHS') ||
+      String(category || '').toUpperCase().includes('JUNIOR')
+    ) {
+      baseList = JHS_SUBJECTS;
+    } else if (GRADE_LEVEL_SUBJECTS[grade]) {
+      baseList = GRADE_LEVEL_SUBJECTS[grade];
+    } else if (GRADE_LEVEL_SUBJECTS[normGrade]) {
+      baseList = GRADE_LEVEL_SUBJECTS[normGrade];
     } else {
-      baseList = GRADE_LEVEL_SUBJECTS[grade] || SUBJECT_OPTIONS;
+      if (uG.includes('4')) baseList = GRADE_LEVEL_SUBJECTS['Grade 4'] || [];
+      else if (uG.includes('5')) baseList = GRADE_LEVEL_SUBJECTS['Grade 5'] || [];
+      else if (uG.includes('6')) baseList = GRADE_LEVEL_SUBJECTS['Grade 6'] || [];
+      else if (uG.includes('1') && !uG.includes('10') && !uG.includes('11') && !uG.includes('12')) baseList = GRADE_LEVEL_SUBJECTS['Grade 1'] || [];
+      else if (uG.includes('2')) baseList = GRADE_LEVEL_SUBJECTS['Grade 2'] || [];
+      else if (uG.includes('3')) baseList = GRADE_LEVEL_SUBJECTS['Grade 3'] || [];
+      else baseList = SUBJECT_OPTIONS;
     }
 
     // Unify REMEDIATION & REMEDIAL/ENHANCEMENT CLASS into one subject option, and filter out ADVISORY
@@ -5341,13 +5849,28 @@ export default function Workload() {
       }
     })();
 
-    return unifiedList.filter(subName => {
+    const filtered = unifiedList.filter(subName => {
       const u = String(subName || '').toUpperCase().trim();
-      if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE')) return false; // ADVISORY and HGP are auto-assigned to Section Advisors only
-      if (disabledMap[subName] === true) return false;
-      if (!isSpecialProgramSubjectAllowed(subName, grade || category, schoolInfo)) return false;
+      if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE')) return false; 
+      if (isAralSubject(u)) return false; // ARAL only in ARAL sections
+      if (u !== 'ARALING PANLIPUNAN' && disabledMap[subName] === true) return false;
       return true;
     });
+
+    // Explicitly guarantee ARALING PANLIPUNAN in subjects for Grade 4 to 10
+    const isGrade4To10 = (
+      uG.includes('4') || uG.includes('5') || uG.includes('6') ||
+      uG.includes('7') || uG.includes('8') || uG.includes('9') ||
+      (uG.includes('10') && !uG.includes('11') && !uG.includes('12')) ||
+      uG.includes('JHS') || uG.includes('JUNIOR') ||
+      String(category || '').toUpperCase().includes('JHS') ||
+      String(category || '').toUpperCase().includes('JUNIOR')
+    );
+    if (isGrade4To10 && !filtered.some(s => String(s).toUpperCase() === 'ARALING PANLIPUNAN')) {
+      filtered.push('ARALING PANLIPUNAN');
+    }
+
+    return filtered;
   };
 
   const handleCommitTransfer = async () => {
@@ -5884,6 +6407,14 @@ export default function Workload() {
     const rows = [...(currentPerson.workloadRows || [])];
     let updatedRow = { ...rows[index], ...fieldValues };
 
+    const isAdv = String(updatedRow.subject || '').toUpperCase().trim() === 'ADVISORY';
+    if (isAdv) {
+      if (fieldValues.startTime) {
+        updatedRow.endTime = add60MinutesToTime(fieldValues.startTime);
+      }
+      updatedRow.days = ['M', 'T', 'W', 'TH', 'F'];
+    }
+
     if (fieldValues.startTime || fieldValues.endTime || fieldValues.gradeLevel || fieldValues.category || fieldValues.subject) {
       const sTime = updatedRow.startTime;
       const eTime = updatedRow.endTime;
@@ -5933,7 +6464,7 @@ export default function Workload() {
       let resolvedCategory = 'Elementary';
 
       if (secGradeUpper.includes('11') || secGradeUpper.includes('12') || secGradeUpper.includes('SHS') || secGradeUpper.includes('SENIOR')) {
-        resolvedCategory = rows[index].category && rows[index].category.includes('SHS') ? rows[index].category : 'SHS';
+        resolvedCategory = rows[index].category && rows[index].category.includes('SHS') ? rows[index].category : 'SHS-CORE SUBJECTS';
       } else if (secGradeUpper.includes('7') || secGradeUpper.includes('8') || secGradeUpper.includes('9') || secGradeUpper.includes('10') || secGradeUpper.includes('JHS')) {
         resolvedCategory = 'JHS';
       } else {
@@ -5945,8 +6476,15 @@ export default function Workload() {
         }
       }
 
-      const newSubjects = getSubjectsForGrade(section.gradeLevel, resolvedCategory);
-      const isCurrentValid = newSubjects.includes(rows[index].subject);
+      const isAral = Boolean(
+        String(section.sectionType || '').startsWith('ARAL') ||
+        String(section.sectionName || '').toUpperCase().includes('ARAL') ||
+        String(section.gradeLevel || '').toUpperCase().includes('ARAL')
+      );
+      const newSubjects = isAral
+        ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
+        : getSubjectsForGrade(section.gradeLevel, resolvedCategory);
+      const isCurrentValid = (newSubjects || []).includes(rows[index].subject);
 
       rows[index] = {
         ...rows[index],
@@ -5954,7 +6492,7 @@ export default function Workload() {
         sectionName: section.sectionName,
         gradeLevel: section.gradeLevel,
         category: resolvedCategory,
-        subject: isCurrentValid ? rows[index].subject : '',
+        subject: isCurrentValid ? rows[index].subject : (isAral ? newSubjects[0] : (newSubjects?.find(s => s !== 'ADVISORY') || newSubjects?.[0] || '')),
         remediationSubject: isCurrentValid ? rows[index].remediationSubject : ''
       };
     } else {
@@ -5977,7 +6515,7 @@ export default function Workload() {
 
     const subUpper = String(targetRow.subject || '').toUpperCase().trim();
     if (subUpper === 'ADVISORY') {
-      return alert('🔒 Advisory days are fixed to Monday through Friday (M-F).');
+      return alert('Advisory days are fixed to Monday through Friday (M-F).');
     }
 
     if (subUpper === 'HGP') {
@@ -6153,10 +6691,17 @@ export default function Workload() {
 
   // ── By-Section helpers ────────────────────────────────────────────────
 
-  const sectionSlots = (() => {
-    if (!selectedSectionId) return [];
+  const selectedSection = useMemo(() => {
+    return (classSections || []).find(s => String(s.id) === String(selectedSectionId)) || null;
+  }, [classSections, selectedSectionId]);
+
+  const sectionSlots = useMemo(() => {
+    if (!selectedSectionId || !selectedSection) return [];
+    const targetSecName = String(selectedSection.sectionName || '').trim().toLowerCase();
+    const targetSecGrade = String(selectedSection.gradeLevel || '').trim().toLowerCase();
     const slots = [];
-    personnel.forEach(p => {
+
+    (personnel || []).forEach(p => {
       const draftKey = `draft_workload_${p.id}`;
       const savedDraft = localStorage.getItem(draftKey);
       let activeP = p;
@@ -6168,18 +6713,38 @@ export default function Workload() {
       }
 
       (activeP.workloadRows || []).forEach((row, rowIdx) => {
-        let rowSecId = row.sectionId;
-        if (!rowSecId && row.subject === 'ADVISORY') {
-          const advisorySec = (classSections || []).find(s => s.advisorId && p.id && String(s.advisorId) === String(p.id));
-          if (advisorySec) rowSecId = String(advisorySec.id);
+        let isMatch = false;
+        if (row.sectionId && String(row.sectionId) === String(selectedSectionId)) {
+          isMatch = true;
+        } else if (row.sectionName && String(row.sectionName).trim().toLowerCase() === targetSecName) {
+          if (!row.gradeLevel || String(row.gradeLevel).trim().toLowerCase() === targetSecGrade) {
+            isMatch = true;
+          }
+        } else if (row.subject === 'ADVISORY' && selectedSection.advisorId && String(selectedSection.advisorId) === String(p.id)) {
+          isMatch = true;
         }
-        if (rowSecId && String(rowSecId) === String(selectedSectionId)) {
-          slots.push({ ...row, sectionId: String(rowSecId), personnelId: p.id, personnelName: `${p.firstName} ${p.lastName}`, rowIdx });
+
+        if (isMatch) {
+          slots.push({
+            ...row,
+            sectionId: String(selectedSection.id),
+            sectionName: selectedSection.sectionName,
+            gradeLevel: selectedSection.gradeLevel,
+            personnelId: p.id,
+            personnelName: `${p.firstName} ${p.lastName}`,
+            personnelPosition: p.position || 'Teacher',
+            rowIdx
+          });
         }
       });
     });
-    return slots;
-  })();
+
+    return slots.sort((a, b) => {
+      const aTime = parseTimeToMinutes(a.startTime || '00:00');
+      const bTime = parseTimeToMinutes(b.startTime || '00:00');
+      return aTime - bTime;
+    });
+  }, [selectedSectionId, selectedSection, personnel, classSections]);
 
   const checkConflict = (teacherId, sectionId, startTime, endTime, days) => {
     if (!startTime || !endTime || !days || !days.length) return null;
@@ -6253,6 +6818,7 @@ export default function Workload() {
         }
       }
     }
+
     return null;
   };
 
@@ -6261,7 +6827,7 @@ export default function Workload() {
       const c = checkConflict(newSlot.teacherId, selectedSectionId, newSlot.startTime, newSlot.endTime, newSlot.days);
       setSlotConflict(c);
     }
-  }, [newSlot.teacherId, newSlot.startTime, newSlot.endTime, newSlot.days, selectedSectionId, personnel, classSections, workloadView]);
+  }, [newSlot.teacherId, newSlot.startTime, newSlot.endTime, newSlot.days, selectedSectionId, personnel, classSections, workloadView, sectionSlots]);
 
   const handleAddSectionSlot = async () => {
     if (!selectedSectionId || !newSlot.teacherId || !newSlot.subject || !newSlot.startTime || !newSlot.endTime || !newSlot.days.length) {
@@ -6279,7 +6845,18 @@ export default function Workload() {
     for (const [c, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
       if (grades.includes(sec?.gradeLevel || '')) { cat = c; break; }
     }
-    const newRow = { category: cat, subject: newSlot.subject, remediationSubject: newSlot.remediationSubject || '', gradeLevel: sec?.gradeLevel || '', sectionId: selectedSectionId, startTime: newSlot.startTime, endTime: newSlot.endTime, days: newSlot.days };
+    const newRow = {
+      id: `r-${Math.random().toString(36).substring(2, 7)}`,
+      category: cat,
+      subject: newSlot.subject,
+      remediationSubject: newSlot.remediationSubject || '',
+      gradeLevel: sec?.gradeLevel || '',
+      sectionId: selectedSectionId,
+      sectionName: sec?.sectionName || '',
+      startTime: newSlot.startTime,
+      endTime: newSlot.endTime,
+      days: newSlot.days
+    };
 
     const targetTeacher = personnel.find(p => p.id === newSlot.teacherId);
     if (!targetTeacher) return;
@@ -6294,13 +6871,27 @@ export default function Workload() {
       } catch (e) {}
     }
 
-    handleFieldChangeForPerson(targetTeacher.id, 'workloadRows', [...activeRows, newRow]);
+    const updatedRows = [...activeRows, newRow];
+    handleFieldChangeForPerson(targetTeacher.id, 'workloadRows', updatedRows);
+    setPersonnel(prev => (Array.isArray(prev) ? prev : []).map(p => {
+      if (p.id === targetTeacher.id) {
+        return { ...p, workloadRows: updatedRows };
+      }
+      return p;
+    }));
+    if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
+
     setSlotConflict(null);
+    setShowAddSectionSlotModal(false);
     const { nextStart: slotNextStart, nextEnd: slotNextEnd, nextDays: slotNextDays } = getWorkloadScheduleDefaults(sectionSlots);
     setNewSlot({ teacherId: '', subject: '', remediationSubject: '', startTime: slotNextStart, endTime: slotNextEnd, days: slotNextDays });
+    if (showToast) showToast(`Added ${newSlot.subject} to ${sec?.sectionName || 'section'}!`);
   };
 
-  const handleRemoveSectionSlot = (personnelId, rowIdx) => {
+  const handleRemoveSectionSlot = async (personnelId, rowIdx) => {
+    const confirmed = await showConfirm("Remove Schedule Slot", "Are you sure you want to remove this schedule slot from this section?");
+    if (!confirmed) return;
+
     const targetTeacher = personnel.find(p => p.id === personnelId);
     if (!targetTeacher) return;
 
@@ -6316,6 +6907,14 @@ export default function Workload() {
 
     const updatedRows = activeRows.filter((_, i) => i !== rowIdx);
     handleFieldChangeForPerson(targetTeacher.id, 'workloadRows', updatedRows);
+    setPersonnel(prev => (Array.isArray(prev) ? prev : []).map(p => {
+      if (p.id === targetTeacher.id) {
+        return { ...p, workloadRows: updatedRows };
+      }
+      return p;
+    }));
+    if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
+    if (showToast) showToast("Schedule slot removed.");
   };
 
   const toggleNewSlotDay = (day) => {
@@ -6361,7 +6960,8 @@ export default function Workload() {
         currentPerson.id,
         currentPerson.workloadRows || [],
         currentPerson.teachingRelatedRows || [],
-        currentPerson.administrativeRows || []
+        currentPerson.administrativeRows || [],
+        shsWorkloadMap[currentPerson.id] || null
       );
 
       localStorage.removeItem(`draft_workload_${currentPerson.id}`);
@@ -6408,7 +7008,8 @@ export default function Workload() {
         currentPerson.id,
         updated.workloadRows || [],
         updated.teachingRelatedRows || [],
-        updated.administrativeRows || []
+        updated.administrativeRows || [],
+        shsWorkloadMap[currentPerson.id] || null
       );
 
       // Verify workload status on PostgreSQL server
@@ -6430,11 +7031,24 @@ export default function Workload() {
         description="Manage teacher teaching loads, HGP advisory rules, relieving duties, and schedule conflict resolution."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={() => {
+        onContinue={async () => {
+          if (currentPerson) {
+            try {
+              await api.updatePersonnelWorkloadRows(
+                currentPerson.id,
+                currentPerson.workloadRows || [],
+                currentPerson.teachingRelatedRows || [],
+                currentPerson.administrativeRows || [],
+                shsWorkloadMap[currentPerson.id] || null
+              );
+            } catch (e) {
+              console.warn("Auto-saving before continue:", e);
+            }
+          }
           if (completeNode) completeNode('workload', 'room-qr');
           setActiveView('room-qr');
         }}
-        continueText="Save & Continue to Deployment ➔"
+        continueText="Save & Continue to Deployment"
       />
 
       <datalist id="school-times">
@@ -6470,23 +7084,25 @@ export default function Workload() {
           {/* ── View Mode Toggle, Term Selector & Actions ── */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '6px', background: 'var(--blue-50)', padding: '5px', borderRadius: '12px', width: 'fit-content', border: '1.5px solid var(--line)' }}>
+              <div style={{ display: 'flex', gap: '6px', background: '#F1F5F9', padding: '5px', borderRadius: '12px', width: 'fit-content', border: '1.5px solid #E2E8F0' }}>
                 <button type="button" onClick={() => setWorkloadView('by-personnel')}
                   style={{
-                    padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
-                    background: workloadView === 'by-personnel' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
-                    color: workloadView === 'by-personnel' ? 'white' : 'var(--navy)',
-                    display: 'inline-flex', alignItems: 'center', gap: '6px'
+                    padding: '8px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', transition: 'all 0.2s',
+                    background: workloadView === 'by-personnel' ? 'linear-gradient(180deg, #0F172A, #1E293B)' : 'transparent',
+                    color: workloadView === 'by-personnel' ? '#FFFFFF' : '#475569',
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    boxShadow: workloadView === 'by-personnel' ? '0 2px 4px rgba(0,0,0,0.15)' : 'none'
                   }}
-                ><FiUser size={13} /> By Personnel</button>
+                ><FiUser size={14} /> By Personnel</button>
                 <button type="button" onClick={() => setWorkloadView('by-section')}
                   style={{
-                    padding: '7px 18px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s',
-                    background: workloadView === 'by-section' ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'transparent',
-                    color: workloadView === 'by-section' ? 'white' : 'var(--navy)',
-                    display: 'inline-flex', alignItems: 'center', gap: '6px'
+                    padding: '8px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', transition: 'all 0.2s',
+                    background: workloadView === 'by-section' ? 'linear-gradient(180deg, #0284C7, #0369A1)' : 'transparent',
+                    color: workloadView === 'by-section' ? '#FFFFFF' : '#475569',
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    boxShadow: workloadView === 'by-section' ? '0 2px 4px rgba(2,132,199,0.25)' : 'none'
                   }}
-                ><FiGrid size={13} /> By Section</button>
+                ><FiBookOpen size={14} /> By Section Timetable</button>
               </div>
 
               {/* Term Selector (1st, 2nd, 3rd Terms) */}
@@ -6648,331 +7264,1005 @@ export default function Workload() {
             </div>
           )}
 
-          {/* ── BY SECTION VIEW ── */}
+          {/* ── BY SECTION VIEW (Option 1 Master Redesign) ── */}
           {workloadView === 'by-section' && (
-            <div>
-              <div className="workload-header" style={{ marginBottom: '20px' }}>
-                <h2>Workload Management · By Section</h2>
-                <p className="subtext">Assign teachers to class sections by subject and schedule. Conflicts are automatically detected and blocked.</p>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                <div className="workload-personnel-picker" style={{ border: '2.5px solid var(--gold)', background: 'linear-gradient(180deg, #FFFBEB, #fff)', boxShadow: 'inset 0 -3px 0 rgba(251,191,36,.45)' }}>
-                  <SearchableSelect
-                    value={selectedSectionId}
-                    placeholder="-- Choose a section --"
-                    options={(classSections || []).map(s => ({ value: s.id, label: `${s.gradeLevel} — ${s.sectionName}` }))}
-                    onChange={(e) => {
-                      setSelectedSectionId(e.target.value);
-                      setSlotConflict(null);
-                      setNewSlot({ teacherId: '', subject: '', startTime: '08:00', endTime: '09:00', days: ['M', 'T', 'W', 'TH', 'F'] });
-                    }}
-                  />
-                  <p className="field-help" style={{ marginTop: '4px' }}>Select a class section to manage its weekly subject schedule.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px', alignItems: 'start', marginTop: '10px' }}>
+              {/* Left Column: Section Roster Sidebar */}
+              <div style={{
+                background: 'white',
+                padding: '16px',
+                borderRadius: '16px',
+                border: '1.5px solid var(--line)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                minHeight: '850px',
+                maxHeight: 'calc(100vh - 80px)',
+                position: 'sticky',
+                top: '20px',
+                overflowY: 'auto'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '15px', color: 'var(--navy)', margin: 0, fontWeight: 'bold' }}>Class Sections</h3>
+                  <span style={{ fontSize: '11px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', padding: '2px 8px', borderRadius: '12px' }}>
+                    {(classSections || []).length} Total
+                  </span>
                 </div>
 
-                {selectedSectionId && (() => {
-                  const sec = (classSections || []).find(s => s.id === selectedSectionId);
-                  const adviser = sec?.advisorId ? personnel.find(p => p.id === sec.advisorId) : null;
+                {/* Search Input */}
+                <div style={{ position: 'relative' }}>
+                  <FiSearch size={14} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search section or adviser..."
+                    value={sectionSearch}
+                    onChange={(e) => setSectionSearch(e.target.value)}
+                    style={{ width: '100%', padding: '10px 14px 10px 34px', borderRadius: '10px', border: '1.5px solid var(--line)', fontSize: '13px' }}
+                  />
+                </div>
+
+                {/* Grade Level Filter Pills */}
+                <div>
+                  <label style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Filter by Grade</label>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {['all', 'Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'SNED', 'ALS'].map(g => {
+                      const isActive = sectionGradeFilter === g;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => setSectionGradeFilter(g)}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '20px',
+                            border: isActive ? '1px solid #0284C7' : '1px solid #E2E8F0',
+                            background: isActive ? '#0284C7' : '#F8FAFC',
+                            color: isActive ? '#FFFFFF' : '#475569',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {g === 'all' ? 'All Grades' : g}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section List Cards */}
+                {(() => {
+                  const filteredSections = (classSections || []).filter(sec => {
+                    if (sectionGradeFilter !== 'all') {
+                      const sGrade = String(sec.gradeLevel || '').trim().toLowerCase();
+                      const fGrade = String(sectionGradeFilter).trim().toLowerCase();
+                      const matchGrade = sGrade === fGrade || 
+                        (fGrade === 'grade 1' ? (sGrade === 'grade 1' || sGrade.startsWith('grade 1 ') || sGrade.startsWith('grade 1-')) : sGrade.startsWith(fGrade)) ||
+                        (fGrade === 'sned' && sGrade.includes('sned')) ||
+                        (fGrade === 'als' && sGrade.includes('als'));
+                      if (!matchGrade) return false;
+                    }
+                    if (sectionSearch.trim()) {
+                      const q = sectionSearch.toLowerCase();
+                      const secName = String(sec.sectionName || '').toLowerCase();
+                      const secGrade = String(sec.gradeLevel || '').toLowerCase();
+                      const adviser = sec.advisorId ? (personnel || []).find(p => p.id === sec.advisorId) : null;
+                      const advName = adviser ? `${adviser.firstName} ${adviser.lastName}`.toLowerCase() : '';
+                      return secName.includes(q) || secGrade.includes(q) || advName.includes(q);
+                    }
+                    return true;
+                  });
+
+                  if (filteredSections.length === 0) {
+                    return (
+                      <div style={{ textAlign: 'center', padding: '40px 16px', color: '#94A3B8', fontSize: '13px' }}>
+                        No sections match your filter criteria.
+                      </div>
+                    );
+                  }
+
                   return (
-                    <div style={{ background: 'linear-gradient(135deg, var(--navy), var(--blue))', borderRadius: '14px', padding: '16px 20px', color: 'white' }}>
-                      <p style={{ fontSize: '10px', opacity: 0.7, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Section Info</p>
-                      <h3 style={{ margin: '0 0 6px', fontSize: '22px', fontWeight: '800' }}>{sec?.gradeLevel} — {sec?.sectionName}</h3>
-                      <p style={{ margin: '0 0 2px', fontSize: '12px', opacity: 0.85 }}>Class Adviser: <strong>{adviser ? `${adviser.firstName} ${adviser.lastName}` : 'Not assigned'}</strong></p>
-                      <p style={{ margin: 0, fontSize: '12px', opacity: 0.85 }}>{sectionSlots.length} schedule slot{sectionSlots.length !== 1 ? 's' : ''} assigned</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: '600px' }}>
+                      {filteredSections.map(sec => {
+                        const isSelected = selectedSectionId === sec.id;
+                        const adviser = sec.advisorId ? (personnel || []).find(p => p.id === sec.advisorId) : null;
+
+                        // Calculate coverage metrics for this section
+                        let cat = 'JHS';
+                        for (const [c, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
+                          if (grades.includes(sec.gradeLevel || '')) { cat = c; break; }
+                        }
+                        const reqSubs = (getSubjectsForGrade(sec.gradeLevel, cat) || []).filter(s => s !== 'ADVISORY');
+
+                        // Find distinct subjects assigned to this section
+                        const secNameLower = String(sec.sectionName || '').trim().toLowerCase();
+                        const secGradeLower = String(sec.gradeLevel || '').trim().toLowerCase();
+                        const assignedSubjectSet = new Set();
+                        let totalSecMins = 0;
+
+                        (personnel || []).forEach(p => {
+                          const draftKey = `draft_workload_${p.id}`;
+                          const savedDraft = localStorage.getItem(draftKey);
+                          let activeP = p;
+                          if (savedDraft) {
+                            try {
+                              const parsed = JSON.parse(savedDraft);
+                              if (parsed) activeP = parsed;
+                            } catch (e) {}
+                          }
+                          (activeP.workloadRows || []).forEach(r => {
+                            let match = false;
+                            if (r.sectionId && String(r.sectionId) === String(sec.id)) match = true;
+                            else if (r.sectionName && String(r.sectionName).trim().toLowerCase() === secNameLower) {
+                              if (!r.gradeLevel || String(r.gradeLevel).trim().toLowerCase() === secGradeLower) match = true;
+                            } else if (r.subject === 'ADVISORY' && sec.advisorId && String(sec.advisorId) === String(p.id)) match = true;
+
+                            if (match) {
+                              const subNorm = normalizeSubjectName(r.subject);
+                              if (subNorm !== 'ADVISORY' && subNorm !== 'HGP') {
+                                assignedSubjectSet.add(subNorm);
+                              }
+                              if (r.startTime && r.endTime && Array.isArray(r.days)) {
+                                const mins = getTimeDiffMins(r.startTime, r.endTime);
+                                totalSecMins += mins * r.days.length;
+                              }
+                            }
+                          });
+                        });
+
+                        const assignedCount = assignedSubjectSet.size;
+                        const totalReq = reqSubs.length || 8;
+                        const isFull = assignedCount >= totalReq && totalReq > 0;
+                        const totalHours = (totalSecMins / 60).toFixed(1);
+
+                        return (
+                          <div
+                            key={sec.id}
+                            onClick={() => {
+                              setSelectedSectionId(sec.id);
+                              setSlotConflict(null);
+                              const { nextStart: slotNextStart, nextEnd: slotNextEnd, nextDays: slotNextDays } = getWorkloadScheduleDefaults(sectionSlots);
+                              setNewSlot({ teacherId: '', subject: '', remediationSubject: '', startTime: slotNextStart, endTime: slotNextEnd, days: slotNextDays });
+                            }}
+                            style={{
+                              padding: '12px 14px',
+                              borderRadius: '12px',
+                              border: isSelected ? '2px solid #0284C7' : '1px solid #E2E8F0',
+                              background: isSelected ? 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)' : '#FFFFFF',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                              boxShadow: isSelected ? '0 4px 6px -1px rgba(2, 132, 199, 0.15)' : 'none'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                <span style={{
+                                  fontSize: '10px',
+                                  fontWeight: '800',
+                                  background: isSelected ? '#0284C7' : '#F1F5F9',
+                                  color: isSelected ? '#FFFFFF' : '#475569',
+                                  padding: '2px 7px',
+                                  borderRadius: '6px',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  {sec.gradeLevel || 'Section'}
+                                </span>
+                                <h4 style={{ margin: '4px 0 0', fontSize: '14px', fontWeight: '800', color: 'var(--navy)' }}>
+                                  {sec.sectionName}
+                                </h4>
+                              </div>
+                              <span style={{
+                                fontSize: '10px',
+                                fontWeight: '700',
+                                color: isFull ? '#059669' : (assignedCount > 0 ? '#D97706' : '#94A3B8'),
+                                background: isFull ? '#D1FAE5' : (assignedCount > 0 ? '#FEF3C7' : '#F1F5F9'),
+                                padding: '2px 7px',
+                                borderRadius: '10px'
+                              }}>
+                                {isFull ? `${assignedCount}/${totalReq} (Full)` : `${assignedCount}/${totalReq} Subs`}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <FiUser size={11} /> {adviser ? `${adviser.firstName} ${adviser.lastName}` : 'No Adviser'}
+                              </span>
+                              <span style={{ fontWeight: '700', color: '#334155' }}>{totalHours}h/wk</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}
               </div>
 
-              {!selectedSectionId && (
-                <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--muted)', border: '1.5px solid var(--line)', borderRadius: '16px' }}>
-                  <FiGrid size={32} style={{ margin: '0 auto 8px', color: 'var(--muted)', display: 'block' }} />
-                  <p style={{ fontWeight: '700', fontSize: '15px', color: 'var(--navy)', margin: '0 0 6px' }}>Select a Section to Begin</p>
-                  <p style={{ fontSize: '13px', maxWidth: '380px', margin: '0 auto' }}>Choose a class section above to view its schedule and assign teachers.</p>
+              {/* Right Column: Section Timetable & Curriculum Workspace */}
+              {!selectedSection ? (
+                <div className="card" style={{ padding: '60px 40px', textAlign: 'center', border: '1.5px solid var(--line)', borderRadius: '16px', background: 'white' }}>
+                  <FiBookOpen size={48} color="#94A3B8" style={{ margin: '0 auto 16px', display: 'block' }} />
+                  <h3 style={{ color: 'var(--navy)', margin: '0 0 8px', fontSize: '18px' }}>Select a Class Section</h3>
+                  <p className="subtext" style={{ maxWidth: '400px', margin: '0 auto' }}>
+                    Choose a class section from the left sidebar to view its complete weekly timetable, verify curriculum coverage, and assign teachers.
+                  </p>
                 </div>
-              )}
+              ) : (() => {
+                const sec = selectedSection;
+                const adviser = sec.advisorId ? (personnel || []).find(p => p.id === sec.advisorId) : null;
+                let cat = 'JHS';
+                for (const [c, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
+                  if (grades.includes(sec.gradeLevel || '')) { cat = c; break; }
+                }
+                const requiredCurriculumSubjects = (getSubjectsForGrade(sec.gradeLevel, cat) || []).filter(s => s !== 'ADVISORY');
 
-              {selectedSectionId && (<>
+                // Compute Distinct Subjects scheduled
+                const assignedSubMap = new Map();
+                let totalWeeklySectionMins = 0;
+                sectionSlots.forEach(slot => {
+                  const normSub = normalizeSubjectName(slot.subject);
+                  if (normSub !== 'ADVISORY' && normSub !== 'HGP') {
+                    if (!assignedSubMap.has(normSub)) assignedSubMap.set(normSub, []);
+                    assignedSubMap.get(normSub).push(slot);
+                  }
+                  if (slot.startTime && slot.endTime && Array.isArray(slot.days)) {
+                    const durationMins = getTimeDiffMins(slot.startTime, slot.endTime);
+                    totalWeeklySectionMins += durationMins * slot.days.length;
+                  }
+                });
 
-                {/* Schedule Table */}
-                <div className="workload-section-panel" style={{ marginBottom: '24px' }}>
-                  <div className="workload-section-title">
-                    <div>
-                      <h3>Current Section Schedule</h3>
-                      <p className="subtext">All subjects assigned to this section with their teachers and time slots.</p>
-                    </div>
-                  </div>
-                  {sectionSlots.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--muted)', border: '1.5px solid var(--line)', borderRadius: '12px' }}>
-                      <FiFileText size={24} style={{ margin: '0 auto 6px', color: 'var(--muted)', display: 'block' }} />
-                      <p style={{ fontWeight: '600', fontSize: '13px', color: 'var(--navy)', margin: '0 0 4px' }}>No schedule slots yet</p>
-                      <p style={{ fontSize: '12px' }}>Use the form below to add subjects and assign teachers to this section.</p>
-                    </div>
-                  ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', background: 'white', borderRadius: '12px', overflow: 'hidden', border: '1.5px solid var(--line)' }}>
-                      <thead>
-                        <tr style={{ background: 'linear-gradient(180deg, var(--blue-50), white)', borderBottom: '1.5px solid var(--line)' }}>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Subject</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Teacher</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Time</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Days</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sectionSlots.map((slot, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
-                            <td style={{ padding: '10px 14px', fontWeight: '600', color: 'var(--navy)' }}>{slot.subject}</td>
-                            <td style={{ padding: '10px 14px', color: 'var(--slate-700)' }}>{slot.personnelName}</td>
-                            <td style={{ padding: '10px 14px', color: 'var(--slate-700)', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: '12px' }}>{slot.startTime} – {slot.endTime}</td>
-                            <td style={{ padding: '10px 14px' }}>
-                              <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-                                {(slot.days || []).map(d => (
-                                  <span key={d} style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', borderRadius: '4px', padding: '2px 7px', fontSize: '10px', fontWeight: '700' }}>{d}</span>
-                                ))}
-                              </div>
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                              <button className="btn danger" type="button" onClick={() => handleRemoveSectionSlot(slot.personnelId, slot.rowIdx)} style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px', borderRadius: '6px', minHeight: 'auto' }} title="Remove Slot">✕</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                const totalScheduledSubs = assignedSubMap.size;
+                const totalReqCount = requiredCurriculumSubjects.length || 8;
+                const coveragePercent = Math.min(100, Math.round((totalScheduledSubs / (totalReqCount || 1)) * 100));
+                const totalWeeklyHours = (totalWeeklySectionMins / 60).toFixed(1);
 
-                {/* Add Slot Form */}
-                <div className="workload-section-panel" style={{ background: 'linear-gradient(180deg, #f0f9ff, #fff)', border: '1.5px solid #bfdbfe', borderRadius: '16px', padding: '20px' }}>
-                  <div className="workload-section-title" style={{ marginBottom: '16px' }}>
-                    <div>
-                      <h3>+ Add Schedule Slot</h3>
-                      <p className="subtext">Assign a teacher and subject to a time slot. Conflicts will be blocked automatically.</p>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <label>Teacher</label>
-                      {(() => {
-                        const teacherOptions = personnel
-                          .filter(p => !p.isDraft && (p.type === 'teaching' || p.type === 'teaching-related') && getAssignedGradeLevels(p).length > 0)
-                          .map(p => ({
-                            value: p.id,
-                            label: `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}`
-                          }));
-
-                        return (
-                          <SearchableSelect
-                            value={newSlot.teacherId}
-                            placeholder="Select teacher..."
-                            options={teacherOptions}
-                            onChange={(e) => {
-                              const teacherId = e.target.value;
-                              setNewSlot(prev => {
-                                const updated = { ...prev, teacherId };
-                                const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
-                                setSlotConflict(c);
-                                return updated;
-                              });
-                            }}
-                          />
-                        );
-                      })()}
-                      {(() => {
-                        const selectedTeacher = personnel.find(p => p.id === newSlot.teacherId);
-                        if (!selectedTeacher) return null;
-                        const teacherScheduleRows = [
-                          ...(selectedTeacher.workloadRows || []),
-                          ...(selectedTeacher.teachingRelatedRows || []).map(r => ({ startTime: r.startTime, endTime: r.endTime, days: r.days, subject: r.task, isTR: true })),
-                          ...(selectedTeacher.administrativeRows || []).map(r => ({ startTime: r.startTime, endTime: r.endTime, days: r.days, subject: r.task, isAdmin: true }))
-                        ];
-                        return (
-                          <div style={{ marginTop: '8px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
-                            <strong style={{ color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                              <FiCalendar size={13} /> Teacher's Weekly Busy Schedule:
-                            </strong>
-                            {teacherScheduleRows.length === 0 ? (
-                              <span style={{ color: 'var(--muted)' }}>No assigned classes or tasks yet.</span>
-                            ) : (
-                              <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--slate-700)', maxHeight: '120px', overflowY: 'auto' }}>
-                                {teacherScheduleRows.map((r, i) => (
-                                  <li key={i} style={{ marginBottom: '2px' }}>
-                                    <strong>{r.subject}</strong>: {r.startTime} – {r.endTime} [{(r.days || []).join(', ')}]
-                                    {r.isTR && <span style={{ color: 'var(--blue)', marginLeft: '4px', fontSize: '9px', fontWeight: 'bold' }}>(TR)</span>}
-                                    {r.isAdmin && <span style={{ color: 'var(--purple)', marginLeft: '4px', fontSize: '9px', fontWeight: 'bold' }}>(Admin)</span>}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
+                    {/* Executive Section Header Card */}
+                    <div style={{
+                      background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+                      borderRadius: '16px',
+                      padding: '24px',
+                      color: 'white',
+                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '18px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                            <span style={{
+                              background: '#0284C7',
+                              color: 'white',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              padding: '3px 10px',
+                              borderRadius: '6px',
+                              letterSpacing: '0.04em',
+                              textTransform: 'uppercase'
+                            }}>
+                              {sec.gradeLevel || 'Class Section'}
+                            </span>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              background: 'rgba(255, 255, 255, 0.1)',
+                              padding: '3px 10px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              color: '#E2E8F0'
+                            }}>
+                              <FiUser size={12} /> Adviser: <strong>{adviser ? `${adviser.firstName} ${adviser.lastName}` : 'Not Assigned'}</strong>
+                            </span>
                           </div>
-                        );
-                      })()}
-                    </div>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <label>Subject</label>
-                      {(() => {
-                        const sec = (classSections || []).find(s => s.id === selectedSectionId);
-                        let rawSubjects = [];
-                        if (!sec) {
-                          rawSubjects = SUBJECT_OPTIONS;
-                        } else {
-                          let cat = 'JHS';
-                          for (const [c, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
-                            if (grades.includes(sec.gradeLevel)) {
-                              cat = c;
-                              break;
-                            }
-                          }
-                          rawSubjects = getSubjectsForGrade(sec.gradeLevel, cat);
-                        }
+                          <h2 style={{ margin: 0, fontSize: '26px', fontWeight: '800', letterSpacing: '-0.02em', color: '#FFFFFF' }}>
+                            {sec.sectionName}
+                          </h2>
+                          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#94A3B8' }}>
+                            Class Program & Weekly Timetable for {sec.gradeLevel} · {schoolInfo?.schoolYear || 'SY 26-27'}
+                          </p>
+                        </div>
 
-                        const subjectOptions = rawSubjects
-                          .filter(s => s !== 'ADVISORY')
-                          .map(s => ({ value: s, label: s }));
+                        {/* View Switchers & Add Action */}
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.1)', padding: '4px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.15)' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSectionViewMode('timetable')}
+                              style={{
+                                padding: '6px 14px',
+                                borderRadius: '7px',
+                                border: 'none',
+                                background: sectionViewMode === 'timetable' ? '#0284C7' : 'transparent',
+                                color: '#FFFFFF',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <FiCalendar size={13} /> Weekly Timetable
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSectionViewMode('matrix')}
+                              style={{
+                                padding: '6px 14px',
+                                borderRadius: '7px',
+                                border: 'none',
+                                background: sectionViewMode === 'matrix' ? '#0284C7' : 'transparent',
+                                color: '#FFFFFF',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <FiList size={13} /> Curriculum Matrix
+                            </button>
+                          </div>
 
-                        return (
-                          <SearchableSelect
-                            disabled={!selectedSectionId}
-                            value={newSlot.subject || ''}
-                            placeholder={!selectedSectionId ? 'Select section first…' : 'Select subject…'}
-                            options={subjectOptions}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (isRemediationSub(val)) {
-                                const defaultSub = (sec?.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN';
-                                setNewSlot(prev => ({ ...prev, subject: val, remediationSubject: defaultSub }));
-                              } else {
-                                setNewSlot(prev => ({ ...prev, subject: val, remediationSubject: '' }));
-                              }
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const { nextStart: slotNextStart, nextEnd: slotNextEnd, nextDays: slotNextDays } = getWorkloadScheduleDefaults(sectionSlots);
+                              setNewSlot({ teacherId: '', subject: '', remediationSubject: '', startTime: slotNextStart, endTime: slotNextEnd, days: slotNextDays });
+                              setSlotConflict(null);
+                              setShowAddSectionSlotModal(true);
                             }}
-                          />
-                        );
-                      })()}
-
-                      {/* Secondary Remediation Dropdown */}
-                      {(() => {
-                        const sec = (classSections || []).find(s => s.id === selectedSectionId);
-                        if (isRemediationSub(newSlot.subject)) {
-                          const isKinder = sec?.gradeLevel === 'Kinder';
-                          const subOptions = isKinder
-                            ? [
-                              'KINDER BLOCKS OF TIME',
-                              'LANGUAGE',
-                              'READING AND LITERACY',
-                              'MAKABANSA',
-                              'ARALING PANLIPUNAN',
-                              'FILIPINO',
-                              'ENGLISH',
-                              'MATHEMATICS',
-                              'SCIENCE',
-                              'EPP/TLE',
-                              'MAPEH',
-                              'VALUES EDUCATION',
-                              'GMRC'
-                            ]
-                            : [
-                              'ARALING PANLIPUNAN',
-                              'FILIPINO',
-                              'ENGLISH',
-                              'MATHEMATICS',
-                              'SCIENCE',
-                              'EPP/TLE',
-                              'MAPEH',
-                              'VALUES EDUCATION',
-                              'GMRC'
-                            ];
-                          const subSubjectValue = newSlot.remediationSubject || (isKinder ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN');
-
-                          return (
-                            <div style={{ marginTop: '8px' }}>
-                              <label style={{ fontSize: '11px', color: 'var(--navy)', fontWeight: 'bold' }}>Remediation Focus</label>
-                              <select
-                                value={subSubjectValue}
-                                onChange={(e) => setNewSlot(prev => ({ ...prev, remediationSubject: e.target.value }))}
-                                style={{ width: '100%' }}
-                              >
-                                {subOptions.map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </select>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                    <div>
-                      <label>Start Time</label>
-                      <input type="time" list="school-times" value={newSlot.startTime} onChange={(e) => {
-                        const startTime = e.target.value;
-                        const endTime = add60MinutesToTime(startTime);
-                        setNewSlot(prev => {
-                          const updated = { ...prev, startTime, endTime, days: prev.days && prev.days.length > 0 ? prev.days : ['M', 'T', 'W', 'TH', 'F'] };
-                          const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
-                          setSlotConflict(c);
-                          return updated;
-                        });
-                      }} style={{ width: '100%' }} />
-                    </div>
-                    <div>
-                      <label>End Time</label>
-                      <input type="time" list="school-times" value={newSlot.endTime || add60MinutesToTime(newSlot.startTime)} onChange={(e) => {
-                        const endTime = e.target.value;
-                        setNewSlot(prev => {
-                          const updated = { ...prev, endTime };
-                          const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
-                          setSlotConflict(c);
-                          return updated;
-                        });
-                      }} style={{ width: '100%' }} />
-                    </div>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <label>Days</label>
-                      <div className="day-checks">
-                        {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => (
-                          <div key={day} className={`day-check ${newSlot.days.includes(day) ? 'checked' : ''}`} onClick={() => toggleNewSlotDay(day)}
-                            style={{ background: newSlot.days.includes(day) ? 'linear-gradient(180deg, var(--blue), var(--navy))' : 'white', color: newSlot.days.includes(day) ? 'white' : 'var(--blue)' }}
+                            style={{
+                              padding: '8px 16px',
+                              borderRadius: '10px',
+                              border: 'none',
+                              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                              color: '#FFFFFF',
+                              fontSize: '12px',
+                              fontWeight: '800',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)'
+                            }}
                           >
-                            {day === 'M' ? 'Monday' : day === 'T' ? 'Tuesday' : day === 'W' ? 'Wednesday' : day === 'TH' ? 'Thursday' : day === 'F' ? 'Friday' : day === 'SAT' ? 'Saturday' : 'Sunday'}
+                            <FiPlus size={14} /> Add Schedule Slot
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3 Horizontal Executive KPI Badges */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                        <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', padding: '12px 16px' }}>
+                          <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Subjects Scheduled</span>
+                          <div style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF', marginTop: '2px' }}>
+                            {totalScheduledSubs} <span style={{ fontSize: '13px', color: '#64748B', fontWeight: '600' }}>/ {totalReqCount}</span>
                           </div>
-                        ))}
+                        </div>
+                        <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', padding: '12px 16px' }}>
+                          <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Weekly Teaching Time</span>
+                          <div style={{ fontSize: '20px', fontWeight: '800', color: '#38BDF8', marginTop: '2px' }}>
+                            {totalWeeklyHours}h <span style={{ fontSize: '13px', color: '#94A3B8', fontWeight: '600' }}>({totalWeeklySectionMins} mins)</span>
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', padding: '12px 16px' }}>
+                          <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Curriculum Coverage</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                            <span style={{ fontSize: '20px', fontWeight: '800', color: coveragePercent === 100 ? '#4ADE80' : '#FBBF24' }}>
+                              {coveragePercent}%
+                            </span>
+                            <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '6px', background: coveragePercent === 100 ? 'rgba(74, 222, 128, 0.2)' : 'rgba(251, 191, 36, 0.2)', color: coveragePercent === 100 ? '#4ADE80' : '#FBBF24' }}>
+                              {coveragePercent === 100 ? 'Complete' : `${totalReqCount - totalScheduledSubs} Missing`}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    {slotConflict && (
-                      <div style={{ gridColumn: '1 / -1', background: '#fef2f2', border: '1.5px solid #fca5a5', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                        <FiAlertCircle size={20} color="#b91c1c" style={{ flexShrink: 0 }} />
-                        <div>
-                          <p style={{ margin: '0 0 4px', fontWeight: '700', color: '#b91c1c', fontSize: '13px' }}>
-                            {slotConflict.type === 'section' ? 'Section Schedule Conflict Detected' : 'Teacher Schedule Conflict Detected'}
-                          </p>
-                          <p style={{ margin: 0, color: '#7f1d1d', fontSize: '12px' }}>
-                            {slotConflict.type === 'section'
-                              ? `This section already has ${slotConflict.subject} scheduled from ${slotConflict.startTime} – ${slotConflict.endTime} (assigned to ${slotConflict.teacherName}) on [${(slotConflict.days || []).join(', ')}]. Please choose a different time slot or day.`
-                              : `${slotConflict.teacherName} is already assigned to ${slotConflict.subject} from ${slotConflict.startTime} – ${slotConflict.endTime} on [${(slotConflict.days || []).join(', ')}]. Please choose a different time or teacher.`}
-                          </p>
+
+                    {/* VIEW 1: Visual 5-Day Weekly Timetable Grid */}
+                    {sectionViewMode === 'timetable' && (() => {
+                      const daysList = [
+                        { code: 'M', label: 'Monday' },
+                        { code: 'T', label: 'Tuesday' },
+                        { code: 'W', label: 'Wednesday' },
+                        { code: 'TH', label: 'Thursday' },
+                        { code: 'F', label: 'Friday' }
+                      ];
+
+                      // If weekend slots exist, include Saturday/Sunday
+                      const hasSat = sectionSlots.some(s => (s.days || []).includes('SAT'));
+                      const hasSun = sectionSlots.some(s => (s.days || []).includes('SUN'));
+                      if (hasSat) daysList.push({ code: 'SAT', label: 'Saturday' });
+                      if (hasSun) daysList.push({ code: 'SUN', label: 'Sunday' });
+
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${daysList.length}, minmax(170px, 1fr))`, gap: '12px', overflowX: 'auto', paddingBottom: '10px' }}>
+                          {daysList.map(d => {
+                            const daySlots = sectionSlots.filter(s => (s.days || []).includes(d.code));
+                            let dayMins = 0;
+                            daySlots.forEach(s => {
+                              if (s.startTime && s.endTime) dayMins += getTimeDiffMins(s.startTime, s.endTime);
+                            });
+                            const dayHours = (dayMins / 60).toFixed(1);
+
+                            return (
+                              <div
+                                key={d.code}
+                                style={{
+                                  background: 'white',
+                                  borderRadius: '14px',
+                                  border: '1.5px solid var(--line)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  minHeight: '480px',
+                                  overflow: 'hidden'
+                                }}
+                              >
+                                <div style={{
+                                  background: '#F8FAFC',
+                                  padding: '12px 14px',
+                                  borderBottom: '1.5px solid var(--line)',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}>
+                                  <strong style={{ fontSize: '13px', color: 'var(--navy)' }}>{d.label}</strong>
+                                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', background: '#E2E8F0', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {dayHours}h
+                                  </span>
+                                </div>
+
+                                <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                                  {daySlots.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '40px 10px', color: '#94A3B8', fontSize: '11.5px' }}>
+                                      No classes scheduled
+                                    </div>
+                                  ) : (
+                                    daySlots.map((slot, idx) => {
+                                      const isAdvisory = slot.subject === 'ADVISORY' || slot.subject === 'HGP';
+                                      const duration = slot.startTime && slot.endTime ? getTimeDiffMins(slot.startTime, slot.endTime) : 60;
+                                      return (
+                                        <div
+                                          key={idx}
+                                          style={{
+                                            padding: '10px 12px',
+                                            borderRadius: '10px',
+                                            border: isAdvisory ? '1.5px solid #FCD34D' : '1.5px solid #BAE6FD',
+                                            background: isAdvisory ? '#FFFBEB' : '#F0F9FF',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '4px',
+                                            position: 'relative'
+                                          }}
+                                        >
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <span style={{
+                                              fontSize: '10px',
+                                              fontWeight: '800',
+                                              color: isAdvisory ? '#B45309' : '#0284C7',
+                                              fontFamily: 'monospace'
+                                            }}>
+                                              {slot.startTime} – {slot.endTime} ({duration}m)
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveSectionSlot(slot.personnelId, slot.rowIdx)}
+                                              style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                color: '#EF4444',
+                                                cursor: 'pointer',
+                                                padding: '2px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                opacity: 0.7
+                                              }}
+                                              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+                                              title="Remove slot"
+                                            >
+                                              <FiTrash2 size={12} />
+                                            </button>
+                                          </div>
+
+                                          <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--navy)', marginTop: '2px' }}>
+                                            {slot.subject}
+                                            {slot.remediationSubject && (
+                                              <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '600' }}>
+                                                Focus: {slot.remediationSubject}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#475569', marginTop: '2px' }}>
+                                            <FiUser size={11} color="#0284C7" />
+                                            <span style={{ fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                              {slot.personnelName}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* VIEW 2: Curriculum Coverage Matrix & Slot Table */}
+                    {sectionViewMode === 'matrix' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {/* Required Curriculum Checklist */}
+                        <div className="card" style={{ padding: '20px', borderRadius: '16px', border: '1.5px solid var(--line)', background: 'white' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy)', fontWeight: '800' }}>
+                                Curriculum Subject Coverage Checklist
+                              </h3>
+                              <p className="subtext" style={{ margin: '2px 0 0' }}>
+                                Required DepEd curriculum subjects for {sec.gradeLevel} and their assigned teachers.
+                              </p>
+                            </div>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: '#0284C7', background: '#F0F9FF', padding: '4px 10px', borderRadius: '8px', border: '1px solid #BAE6FD' }}>
+                              {totalScheduledSubs} of {totalReqCount} Staffed
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+                            {requiredCurriculumSubjects.map(sub => {
+                              const normSub = normalizeSubjectName(sub);
+                              const assignedList = assignedSubMap.get(normSub) || [];
+                              const isAssigned = assignedList.length > 0;
+
+                              return (
+                                <div
+                                  key={sub}
+                                  style={{
+                                    padding: '12px 14px',
+                                    borderRadius: '12px',
+                                    border: isAssigned ? '1.5px solid #86EFAC' : '1.5px dashed #CBD5E1',
+                                    background: isAssigned ? '#F0FDF4' : '#F8FAFC',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '10px'
+                                  }}
+                                >
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      {isAssigned ? (
+                                        <FiCheckCircle size={14} color="#16A34A" />
+                                      ) : (
+                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#F59E0B' }} />
+                                      )}
+                                      <strong style={{ fontSize: '13px', color: 'var(--navy)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {sub}
+                                      </strong>
+                                    </div>
+                                    {isAssigned ? (
+                                      <div style={{ fontSize: '11px', color: '#15803D', marginTop: '3px', fontWeight: '600', paddingLeft: '20px' }}>
+                                        {assignedList.map(a => a.personnelName).join(', ')}
+                                      </div>
+                                    ) : (
+                                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '3px', paddingLeft: '14px' }}>
+                                        No teacher assigned yet
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {!isAssigned && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const { nextStart: slotNextStart, nextEnd: slotNextEnd, nextDays: slotNextDays } = getWorkloadScheduleDefaults(sectionSlots);
+                                        setNewSlot({ teacherId: '', subject: sub, remediationSubject: '', startTime: slotNextStart, endTime: slotNextEnd, days: slotNextDays });
+                                        setSlotConflict(null);
+                                        setShowAddSectionSlotModal(true);
+                                      }}
+                                      style={{
+                                        padding: '5px 10px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #0284C7',
+                                        background: '#0284C7',
+                                        color: '#FFFFFF',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                    >
+                                      + Assign
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* All Current Section Slots Table */}
+                        <div className="card" style={{ padding: '20px', borderRadius: '16px', border: '1.5px solid var(--line)', background: 'white' }}>
+                          <h3 style={{ margin: '0 0 12px', fontSize: '16px', color: 'var(--navy)', fontWeight: '800' }}>
+                            All Scheduled Section Slots ({sectionSlots.length})
+                          </h3>
+                          {sectionSlots.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '30px 0', color: '#94A3B8', fontSize: '13px' }}>
+                              No schedule slots configured for this section.
+                            </div>
+                          ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                              <thead>
+                                <tr style={{ background: '#F8FAFC', borderBottom: '1.5px solid var(--line)' }}>
+                                  <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Subject</th>
+                                  <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Teacher</th>
+                                  <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Time</th>
+                                  <th style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Days</th>
+                                  <th style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--navy)', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sectionSlots.map((slot, idx) => (
+                                  <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                                    <td style={{ padding: '10px 14px', fontWeight: '700', color: 'var(--navy)' }}>
+                                      {slot.subject}
+                                      {slot.remediationSubject && <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 'normal', marginLeft: '6px' }}>({slot.remediationSubject})</span>}
+                                    </td>
+                                    <td style={{ padding: '10px 14px', color: '#334155' }}>
+                                      <strong>{slot.personnelName}</strong> <span style={{ fontSize: '11px', color: '#64748B' }}>({slot.personnelPosition})</span>
+                                    </td>
+                                    <td style={{ padding: '10px 14px', color: '#334155', fontFamily: 'monospace', fontSize: '12px' }}>
+                                      {slot.startTime} – {slot.endTime}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                                        {(slot.days || []).map(d => (
+                                          <span key={d} style={{ background: '#0284C7', color: 'white', borderRadius: '4px', padding: '2px 7px', fontSize: '10px', fontWeight: '700' }}>
+                                            {d}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveSectionSlot(slot.personnelId, slot.rowIdx)}
+                                        style={{
+                                          width: '28px',
+                                          height: '28px',
+                                          padding: 0,
+                                          background: '#FEE2E2',
+                                          border: '1px solid #FCA5A5',
+                                          borderRadius: '6px',
+                                          color: '#DC2626',
+                                          cursor: 'pointer',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}
+                                        title="Remove Slot"
+                                      >
+                                        <FiTrash2 size={13} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
                         </div>
                       </div>
                     )}
 
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <button className="btn ok" type="button" onClick={handleAddSectionSlot}
-                        disabled={!!slotConflict}
-                        style={{
+                    {/* Add Schedule Slot Modal / Dialog */}
+                    {showAddSectionSlotModal && (
+                      <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(15, 23, 42, 0.65)',
+                        backdropFilter: 'blur(4px)',
+                        zIndex: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '16px'
+                      }}>
+                        <div style={{
+                          background: 'white',
+                          borderRadius: '16px',
+                          border: '1.5px solid #E2E8F0',
                           width: '100%',
-                          background: slotConflict ? '#cbd5e1' : 'linear-gradient(180deg, var(--blue), var(--navy))',
-                          color: slotConflict ? '#64748b' : 'white',
-                          fontWeight: '700',
-                          border: 'none',
-                          cursor: slotConflict ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        {slotConflict ? 'Fix Conflict to Add' : '+ Add Slot to Section'}
-                      </button>
-                    </div>
+                          maxWidth: '560px',
+                          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column'
+                        }}>
+                          {/* Modal Header */}
+                          <div style={{
+                            padding: '18px 22px',
+                            background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+                            color: 'white',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800' }}>+ Add Schedule Slot</h3>
+                              <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94A3B8' }}>
+                                Assign a teacher to <strong>{sec.gradeLevel} — {sec.sectionName}</strong>
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddSectionSlotModal(false)}
+                              style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '4px', display: 'flex' }}
+                            >
+                              <FiX size={20} />
+                            </button>
+                          </div>
+
+                          {/* Modal Form Content */}
+                          <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '75vh', overflowY: 'auto' }}>
+                            {/* Teacher Select */}
+                            <div>
+                              <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>TEACHER</label>
+                              {(() => {
+                                const teacherOptions = personnel
+                                  .filter(p => !p.isDraft && (p.type === 'teaching' || p.type === 'teaching-related') && getAssignedGradeLevels(p).length > 0)
+                                  .map(p => ({
+                                    value: p.id,
+                                    label: `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}`
+                                  }));
+
+                                return (
+                                  <SearchableSelect
+                                    value={newSlot.teacherId}
+                                    placeholder="Select teacher..."
+                                    options={teacherOptions}
+                                    onChange={(e) => {
+                                      const teacherId = e.target.value;
+                                      setNewSlot(prev => {
+                                        const updated = { ...prev, teacherId };
+                                        const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+                                        setSlotConflict(c);
+                                        return updated;
+                                      });
+                                    }}
+                                  />
+                                );
+                              })()}
+
+                              {/* Teacher's Busy Schedule preview */}
+                              {(() => {
+                                const selectedTeacher = personnel.find(p => p.id === newSlot.teacherId);
+                                if (!selectedTeacher) return null;
+                                const teacherScheduleRows = [
+                                  ...(selectedTeacher.workloadRows || []),
+                                  ...(selectedTeacher.teachingRelatedRows || []).map(r => ({ startTime: r.startTime, endTime: r.endTime, days: r.days, subject: r.task, isTR: true })),
+                                  ...(selectedTeacher.administrativeRows || []).map(r => ({ startTime: r.startTime, endTime: r.endTime, days: r.days, subject: r.task, isAdmin: true }))
+                                ];
+                                return (
+                                  <div style={{ marginTop: '8px', padding: '8px 12px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '11px' }}>
+                                    <strong style={{ color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                                      <FiCalendar size={12} /> Teacher's Current Busy Schedule:
+                                    </strong>
+                                    {teacherScheduleRows.length === 0 ? (
+                                      <span style={{ color: '#94A3B8' }}>No assigned classes or tasks yet. Free to assign.</span>
+                                    ) : (
+                                      <ul style={{ margin: 0, paddingLeft: '16px', color: '#475569', maxHeight: '100px', overflowY: 'auto' }}>
+                                        {teacherScheduleRows.map((r, i) => (
+                                          <li key={i} style={{ marginBottom: '2px' }}>
+                                            <strong>{r.subject}</strong>: {r.startTime} – {r.endTime} [{(r.days || []).join(', ')}]
+                                            {r.isTR && <span style={{ color: '#0284C7', marginLeft: '4px', fontSize: '9px', fontWeight: 'bold' }}>(TR)</span>}
+                                            {r.isAdmin && <span style={{ color: '#9333EA', marginLeft: '4px', fontSize: '9px', fontWeight: 'bold' }}>(Admin)</span>}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            {/* Subject Select */}
+                            <div>
+                              <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SUBJECT</label>
+                              {(() => {
+                                const isAral = Boolean(
+                                  String(sec.sectionType || '').startsWith('ARAL') ||
+                                  String(sec.sectionName || '').toUpperCase().includes('ARAL') ||
+                                  String(sec.gradeLevel || '').toUpperCase().includes('ARAL')
+                                );
+                                const rawSubjects = isAral
+                                  ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
+                                  : (getSubjectsForGrade(sec.gradeLevel, cat) || []).filter(s => !isAralSubject(s));
+                                const subjectOptions = rawSubjects
+                                  .filter(s => s !== 'ADVISORY')
+                                  .map(s => ({ value: s, label: s }));
+
+                                return (
+                                  <SearchableSelect
+                                    value={newSlot.subject || ''}
+                                    placeholder="Select subject…"
+                                    options={subjectOptions}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (isRemediationSub(val)) {
+                                        const defaultSub = (sec.gradeLevel === 'Kinder') ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN';
+                                        setNewSlot(prev => ({ ...prev, subject: val, remediationSubject: defaultSub }));
+                                      } else {
+                                        setNewSlot(prev => ({ ...prev, subject: val, remediationSubject: '' }));
+                                      }
+                                    }}
+                                  />
+                                );
+                              })()}
+
+                              {/* Remediation Focus Dropdown */}
+                              {isRemediationSub(newSlot.subject) && (
+                                <div style={{ marginTop: '8px' }}>
+                                  <label style={{ fontSize: '11px', color: 'var(--navy)', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>REMEDIATION FOCUS</label>
+                                  <select
+                                    value={newSlot.remediationSubject || (sec.gradeLevel === 'Kinder' ? 'KINDER BLOCKS OF TIME' : 'ARALING PANLIPUNAN')}
+                                    onChange={(e) => setNewSlot(prev => ({ ...prev, remediationSubject: e.target.value }))}
+                                    style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                                  >
+                                    {[
+                                      'ARALING PANLIPUNAN',
+                                      'FILIPINO',
+                                      'ENGLISH',
+                                      'MATHEMATICS',
+                                      'SCIENCE',
+                                      'EPP/TLE',
+                                      'MAPEH',
+                                      'VALUES EDUCATION',
+                                      'GMRC'
+                                    ].map(opt => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Time Slots */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              <div>
+                                <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>START TIME</label>
+                                <input
+                                  type="time"
+                                  list="school-times"
+                                  value={newSlot.startTime}
+                                  onChange={(e) => {
+                                    const startTime = e.target.value;
+                                    const endTime = add60MinutesToTime(startTime);
+                                    setNewSlot(prev => {
+                                      const updated = { ...prev, startTime, endTime, days: prev.days && prev.days.length > 0 ? prev.days : ['M', 'T', 'W', 'TH', 'F'] };
+                                      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+                                      setSlotConflict(c);
+                                      return updated;
+                                    });
+                                  }}
+                                  style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px' }}
+                                />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>END TIME</label>
+                                <input
+                                  type="time"
+                                  list="school-times"
+                                  value={newSlot.endTime || add60MinutesToTime(newSlot.startTime)}
+                                  onChange={(e) => {
+                                    const endTime = e.target.value;
+                                    setNewSlot(prev => {
+                                      const updated = { ...prev, endTime };
+                                      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+                                      setSlotConflict(c);
+                                      return updated;
+                                    });
+                                  }}
+                                  style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '13px' }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Days of Week */}
+                            <div>
+                              <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SCHEDULE DAYS</label>
+                              <div className="day-checks">
+                                {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => (
+                                  <div
+                                    key={day}
+                                    className={`day-check ${newSlot.days.includes(day) ? 'checked' : ''}`}
+                                    onClick={() => toggleNewSlotDay(day)}
+                                    style={{
+                                      background: newSlot.days.includes(day) ? 'linear-gradient(180deg, #0284C7, #0369A1)' : 'white',
+                                      color: newSlot.days.includes(day) ? 'white' : '#0284C7'
+                                    }}
+                                  >
+                                    {day === 'M' ? 'Monday' : day === 'T' ? 'Tuesday' : day === 'W' ? 'Wednesday' : day === 'TH' ? 'Thursday' : day === 'F' ? 'Friday' : day === 'SAT' ? 'Saturday' : 'Sunday'}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Conflict Alert Box */}
+                            {slotConflict && (
+                              <div style={{ background: '#FEF2F2', border: '1.5px solid #FCA5A5', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                <FiAlertCircle size={20} color="#B91C1C" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                <div>
+                                  <p style={{ margin: '0 0 4px', fontWeight: '700', color: '#B91C1C', fontSize: '13px' }}>
+                                    {slotConflict.type === 'section' ? 'Section Schedule Conflict' : 'Teacher Schedule Conflict'}
+                                  </p>
+                                  <p style={{ margin: 0, color: '#7F1D1D', fontSize: '12px', lineHeight: '1.4' }}>
+                                    {slotConflict.type === 'section'
+                                      ? `This section already has ${slotConflict.subject} scheduled from ${slotConflict.startTime} – ${slotConflict.endTime} (assigned to ${slotConflict.teacherName}) on [${(slotConflict.days || []).join(', ')}]. Please choose a different time slot or day.`
+                                      : `${slotConflict.teacherName} is already assigned to ${slotConflict.subject} from ${slotConflict.startTime} – ${slotConflict.endTime} on [${(slotConflict.days || []).join(', ')}]. Please choose a different time or teacher.`}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Modal Footer Actions */}
+                          <div style={{ padding: '16px 22px', background: '#F8FAFC', borderTop: '1.5px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddSectionSlotModal(false)}
+                              style={{
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                border: '1.5px solid #CBD5E1',
+                                background: '#FFFFFF',
+                                color: '#475569',
+                                fontWeight: '700',
+                                fontSize: '12px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddSectionSlot}
+                              disabled={!!slotConflict}
+                              style={{
+                                padding: '8px 20px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: slotConflict ? '#CBD5E1' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                                color: slotConflict ? '#64748B' : '#FFFFFF',
+                                fontWeight: '800',
+                                fontSize: '12px',
+                                cursor: slotConflict ? 'not-allowed' : 'pointer',
+                                boxShadow: slotConflict ? 'none' : '0 2px 4px rgba(16, 185, 129, 0.25)'
+                              }}
+                            >
+                              {slotConflict ? 'Fix Conflict to Add' : '+ Add Slot to Section'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </>)}
+                );
+              })()}
             </div>
           )}
 
@@ -7077,7 +8367,7 @@ export default function Workload() {
                                       fontSize: '8.5px',
                                       fontWeight: '700'
                                     }}>
-                                      ⚠️ Time Review
+                                      Time Review
                                     </span>
                                   )}
                                   {p.workloadVerified === true && (
@@ -7090,7 +8380,7 @@ export default function Workload() {
                                       fontSize: '8.5px',
                                       fontWeight: '700'
                                     }}>
-                                      ✓ Confirmed & Saved
+                                      Confirmed & Saved
                                     </span>
                                   )}
                                   <span style={{
@@ -7209,7 +8499,7 @@ export default function Workload() {
                           boxShadow: '0 2px 4px rgba(245, 158, 11, 0.15)'
                         }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <span style={{ fontSize: '24px' }}>{hasBlockingErrors ? '🔴' : '⚠️'}</span>
+                            {hasBlockingErrors ? <FiAlertCircle size={24} color="#EF4444" /> : <FiAlertTriangle size={24} color="#F59E0B" />}
                             <div>
                               <strong style={{ color: hasBlockingErrors ? '#991B1B' : '#92400E', fontSize: '13.5px', display: 'block' }}>
                                 {hasBlockingErrors ? 'Fix Invalid Duration / Overlapping Time Slots First' : 'Auto-Populated Schedule Requires Time Verification'}
@@ -7239,7 +8529,7 @@ export default function Workload() {
                             }}
                             title={hasBlockingErrors ? "Fix red duration errors or overlapping schedules before confirming" : "Confirm and save schedule"}
                           >
-                            {hasBlockingErrors ? '🚫 Fix Errors First' : '✓ Confirm Schedule'}
+                            {hasBlockingErrors ? <><FiAlertCircle size={14} style={{ marginRight: '6px' }} /> Fix Errors First</> : <><FiCheck size={14} style={{ marginRight: '6px' }} /> Confirm Schedule</>}
                           </button>
                         </div>
                       );
@@ -7251,7 +8541,7 @@ export default function Workload() {
                         background: '#F1F5F9', border: '1.5px solid #CBD5E1', borderRadius: '12px',
                         padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px'
                       }}>
-                        <span style={{ fontSize: '24px' }}>💼</span>
+                        <FiBriefcase size={28} color="#0284c7" />
                         <div>
                           <strong style={{ color: '#1E293B', fontSize: '14px', display: 'block' }}>
                             Non-Teaching Personnel
@@ -7266,7 +8556,7 @@ export default function Workload() {
                     {/* Draft Banner if exists */}
                     {localStorage.getItem(`draft_workload_${currentPerson?.id}`) && (
                       <div style={{ padding: '12px 16px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '12px', color: '#B45309', fontSize: '13px', marginBottom: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>⚠️ You have unsaved workload changes for this personnel (draft stored locally).</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertTriangle size={15} color="#F59E0B" /> You have unsaved workload changes for this personnel (draft stored locally).</span>
                         <button className="btn secondary" style={{ minHeight: '28px', padding: '0 10px', fontSize: '12px', background: 'white', color: '#B45309', borderColor: '#FCD34D' }} type="button" onClick={async () => {
                           if (await showConfirm("Discard Draft?", "Are you sure you want to discard your unsaved changes and revert to the server data?")) {
                             localStorage.removeItem(`draft_workload_${dbPerson.id}`);
@@ -7310,25 +8600,8 @@ export default function Workload() {
                           });
                         };
 
-                        // 1. Elementary / JHS active teaching subject periods
+                        // 1. Active teaching subject periods (Elementary, JHS, and Senior High School)
                         (currentPerson?.workloadRows || []).forEach(r => {
-                          if (!isSHSRow(r) && isRowActiveOnDay(r, day.code)) {
-                            const subUpper = String(r.subject || '').toUpperCase().trim();
-                            if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
-                              return; // HGP is NOT computed in workload minutes
-                            }
-                            if (r.startTime && r.endTime) {
-                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
-                            }
-                          }
-                        });
-
-                        // 2. Senior High School active term subject periods
-                        const activePersonId = currentPerson?.id;
-                        const currentPersonShsMap = shsWorkloadMap[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
-                        const activeShsTermRows = currentPersonShsMap[selectedShsTerm] || [];
-                        
-                        activeShsTermRows.forEach(r => {
                           if (isRowActiveOnDay(r, day.code)) {
                             const subUpper = String(r.subject || '').toUpperCase().trim();
                             if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
@@ -7340,19 +8613,21 @@ export default function Workload() {
                           }
                         });
 
-                        (currentPerson?.workloadRows || []).forEach(r => {
-                          if (isSHSRow(r)) {
-                            const rowTerm = r.term || r.semester || '1st';
-                            if ((rowTerm === selectedShsTerm || (selectedShsTerm === '1st' && !r.term)) && isRowActiveOnDay(r, day.code)) {
+                        // 2. Legacy fallback: SHS rows from shsWorkloadMap if any exist
+                        const activePersonId = currentPerson?.id;
+                        const currentPersonShsMap = shsWorkloadMap[activePersonId] || {};
+                        ['1st', '2nd', '3rd'].forEach(tKey => {
+                          (currentPersonShsMap[tKey] || []).forEach(r => {
+                            if (isRowActiveOnDay(r, day.code)) {
                               const subUpper = String(r.subject || '').toUpperCase().trim();
                               if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
-                                return; // HGP is NOT computed in workload minutes
+                                return;
                               }
                               if (r.startTime && r.endTime) {
                                 dayMins += getTimeDiffMins(r.startTime, r.endTime);
                               }
                             }
-                          }
+                          });
                         });
 
                         // 3. Extra Tasks (Teaching-Related & Administrative)
@@ -7406,7 +8681,7 @@ export default function Workload() {
                               {dayHrs} hrs
                             </strong>
                             <span style={{ fontSize: '10px', fontWeight: '700', color: fontColor, marginTop: '2px', opacity: 0.9 }}>
-                              {dayHrs === 0 ? '⚪ 0.0 hrs' : dayHrs <= 4 ? '🟢 Normal' : dayHrs <= 6 ? '🟠 Full' : '🔴 Overload'}
+                              {dayHrs === 0 ? '0.0 hrs' : dayHrs <= 4 ? 'Normal' : dayHrs <= 6 ? 'Full' : 'Overload'}
                             </span>
                           </div>
                         );
@@ -7551,6 +8826,27 @@ export default function Workload() {
                               <FiTrash2 size={13} /> Clear This Teacher's Workload
                             </button>
                             <button className="btn secondary" type="button" onClick={addWorkloadRow}>+ Add subject schedule</button>
+                            <button
+                              type="button"
+                              onClick={handleSaveChangesDirectly}
+                              style={{
+                                background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                                color: 'white',
+                                border: 'none',
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                fontSize: '12px',
+                                fontWeight: '800',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 4px rgba(2,132,199,0.25)'
+                              }}
+                              title="Save workload to database"
+                            >
+                              <FiSave size={14} /> Save Workload
+                            </button>
                           </div>
                         </div>
 
@@ -7580,6 +8876,7 @@ export default function Workload() {
                             selectedBlockIdx={selectedBlockIdx}
                             setSelectedBlockIdx={setSelectedBlockIdx}
                             handleSectionChangeForRow={handleSectionChangeForRow}
+                            handleSaveChangesDirectly={handleSaveChangesDirectly}
                           />
                         ) : (
                           <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>
@@ -7709,7 +9006,7 @@ export default function Workload() {
                                       alignItems: 'center',
                                       gap: '6px'
                                     }}>
-                                      <span>🔴</span> {hgpWeeklyErr || duplicateSubErr || durationErr || 'Schedule Overlap Conflict: Time slot overlaps with another subject or task.'}
+                                      <FiAlertCircle size={14} color="#EF4444" style={{ marginRight: '6px', flexShrink: 0 }} /> {hgpWeeklyErr || duplicateSubErr || durationErr || 'Schedule Overlap Conflict: Time slot overlaps with another subject or task.'}
                                     </div>
                                   )}
 
@@ -7727,7 +9024,7 @@ export default function Workload() {
                                       alignItems: 'center',
                                       gap: '6px'
                                     }}>
-                                      <span>{matatagWarn.type === 'error' ? '🔴' : '⚠️'}</span> {matatagWarn.message}
+                                      {matatagWarn.type === 'error' ? <FiAlertCircle size={14} color="#EF4444" style={{ marginRight: '6px', flexShrink: 0 }} /> : <FiAlertTriangle size={14} color="#F59E0B" style={{ marginRight: '6px', flexShrink: 0 }} />} {matatagWarn.message}
                                     </div>
                                   )}
 
@@ -7818,11 +9115,25 @@ export default function Workload() {
                                         {(() => {
                                           const currentSecId = String(row.sectionId || row.section_id || '');
                                           const currentSub = row.subject || row.subject_name || '';
+                                          const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (row.sectionName && s.sectionName === row.sectionName));
+                                          const isAralSection = Boolean(
+                                            (linkedSec && (
+                                              String(linkedSec.sectionType || '').startsWith('ARAL') ||
+                                              String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
+                                              String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL')
+                                            )) ||
+                                            String(row.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                                            String(row.sectionName || '').toUpperCase().includes('ARAL')
+                                          );
                                           const subjectList = (() => {
+                                            if (isAralSection) {
+                                              return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
+                                            }
                                             if (!currentSecId && !currentSub) return [];
                                             const assignedGrades = getAssignedGradeLevels(currentPerson);
+                                            let rawList = [];
                                             if (row.gradeLevel) {
-                                              return getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
+                                              rawList = getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
                                             } else if (assignedGrades.length > 0) {
                                               const unionSubjects = new Set();
                                               assignedGrades.forEach(g => {
@@ -7835,10 +9146,11 @@ export default function Workload() {
                                                 }
                                                 getSubjectsForGrade(g, resolvedCategory).forEach(sub => unionSubjects.add(sub));
                                               });
-                                              return Array.from(unionSubjects);
+                                              rawList = Array.from(unionSubjects);
                                             } else {
-                                              return SUBJECT_OPTIONS;
+                                              rawList = SUBJECT_OPTIONS;
                                             }
+                                            return (rawList || []).filter(s => !isAralSubject(s));
                                           })();
 
                                           const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
@@ -7852,7 +9164,7 @@ export default function Workload() {
                                               if (assignment && assignment.assigned) {
                                                 return {
                                                   value: sub,
-                                                  label: `${sub} 🔒 (Assigned: ${assignment.teacherName})`,
+                                                  label: `${sub} [Locked: ${assignment.teacherName}]`,
                                                   disabled: true
                                                 };
                                               }
@@ -7862,7 +9174,7 @@ export default function Workload() {
 
                                           return (
                                             <SearchableSelect
-                                              disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
+                                              disabled={row.subject === 'HGP'}
                                               value={currentSub}
                                               onChange={(e) => {
                                                 const newSub = e.target.value;
@@ -7878,10 +9190,27 @@ export default function Workload() {
 
                                       {/* Start Time & End Time (Vertical) */}
                                       {row.subject === 'ADVISORY' ? (
-                                        <div style={{ textAlign: 'center' }}>
-                                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', display: 'inline-block', border: '1px solid #bae6fd' }}>
-                                            ⏱️ 60 Mins (Fixed)
-                                          </span>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontSize: '9px', fontWeight: '800', color: '#0284c7', width: '32px' }}>START</span>
+                                            <input
+                                              type="time"
+                                              list="school-times"
+                                              value={row.startTime || '07:30'}
+                                              onChange={(e) => {
+                                                const sTime = e.target.value;
+                                                const eTime = add60MinutesToTime(sTime);
+                                                updateWorkloadRowFields(idx, { startTime: sTime, endTime: eTime });
+                                              }}
+                                              style={{ flex: 1, padding: '3px 6px', borderRadius: '6px', border: '1.5px solid #bae6fd', fontSize: '11px', background: '#f0f9ff' }}
+                                            />
+                                          </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontSize: '9px', fontWeight: '800', color: '#64748b', width: '32px' }}>END</span>
+                                            <span style={{ flex: 1, padding: '3px 6px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', color: '#64748b', background: '#f8fafc' }}>
+                                              {row.endTime || add60MinutesToTime(row.startTime || '07:30')} (60m)
+                                            </span>
+                                          </div>
                                         </div>
                                       ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -7995,27 +9324,27 @@ export default function Workload() {
                                                 alignItems: 'center',
                                                 gap: '3px'
                                               }}>
-                                                ⏱️ {diffM}m/day × {rowDays.length}d = {weeklyM} mins/wk {isExact60 ? '✓' : '⚠️ (Must be 60m)'}
+                                                <FiClock size={12} style={{ marginRight: '4px' }} />{diffM}m/day × {rowDays.length}d = {weeklyM} mins/wk {isExact60 ? '(Verified)' : '(Must be 60m)'}
                                               </span>
                                             );
                                           }
                                           if (isAdv) {
                                             return (
                                               <span style={{ fontSize: '10px', fontWeight: '800', color: '#0369a1', background: '#e0f2fe', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bae6fd', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                                ⏱️ 60 mins / day
+                                                <FiClock size={12} style={{ marginRight: '4px' }} /> 60 mins / day
                                               </span>
                                             );
                                           }
                                           if (diffM > 0) {
                                             return (
                                               <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', background: '#f0fdf4', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                                ⏱️ {diffM} mins / day
+                                                <FiClock size={12} style={{ marginRight: '4px' }} /> {diffM} mins / day
                                               </span>
                                             );
                                           }
                                           return (
                                             <span style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8' }}>
-                                              ⏱️ 0 mins
+                                              <FiClock size={12} style={{ marginRight: '4px' }} /> 0 mins
                                             </span>
                                           );
                                         })()}
@@ -8024,7 +9353,7 @@ export default function Workload() {
                                       {/* Actions */}
                                       <div style={{ display: 'flex', justifyContent: 'center' }}>
                                         {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
-                                          <span style={{ fontSize: '12px', color: '#94a3b8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Advisory/HGP is tied to class section">🔒</span>
+                                          <span style={{ fontSize: '12px', color: '#94a3b8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Advisory/HGP is tied to class section"><FiLock size={12} /></span>
                                         ) : (
                                           <button
                                             type="button"
@@ -8057,9 +9386,7 @@ export default function Workload() {
                                               e.currentTarget.style.borderColor = 'transparent';
                                             }}
                                             title="Remove Schedule Slot"
-                                          >
-                                            ✕
-                                          </button>
+                                          ><FiX size={14} /></button>
                                         )}
                                       </div>
                                     </div>
@@ -8067,7 +9394,7 @@ export default function Workload() {
                                     /* Cards Layout */
                                     <div>
                                       {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
-                                        <span style={{ position: 'absolute', top: '12px', right: '14px', fontSize: '10px', color: '#94a3b8', fontWeight: 'bold' }}>🔒 Locked</span>
+                                        <span style={{ position: 'absolute', top: '12px', right: '14px', fontSize: '10px', color: '#94a3b8', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiLock size={11} /> Locked</span>
                                       ) : (
                                         <button
                                           type="button"
@@ -8076,7 +9403,7 @@ export default function Workload() {
                                           onMouseEnter={(e) => e.target.style.opacity = 1}
                                           onMouseLeave={(e) => e.target.style.opacity = 0.6}
                                           title="Remove Schedule"
-                                        >✕</button>
+                                        ><FiX size={14} /></button>
                                       )}
 
                                       {/* Badges row */}
@@ -8174,20 +9501,33 @@ export default function Workload() {
                                             );
                                             const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
                                             const currentSub = row.subject || row.subjectName || row.subject_name || '';
-                                            const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId);
+                                            const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (row.sectionName && s.sectionName === row.sectionName));
+                                            const isAralSection = Boolean(
+                                              (linkedSec && (
+                                                String(linkedSec.sectionType || '').startsWith('ARAL') ||
+                                                String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
+                                                String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL')
+                                              )) ||
+                                              String(row.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                                              String(row.sectionName || '').toUpperCase().includes('ARAL')
+                                            );
                                             const effectiveGrade = String(row.gradeLevel || linkedSec?.gradeLevel || '').toLowerCase();
 
                                             const subjectList = (() => {
+                                              if (isAralSection) {
+                                                return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
+                                              }
                                               if (!currentSecId && !currentSub) return [];
                                               if (effectiveGrade.includes('kinder')) {
                                                 return ['KINDER BLOCKS OF TIME'];
                                               }
                                               const assignedGrades = getAssignedGradeLevels(currentPerson);
+                                              let rawList = [];
                                               if (row.gradeLevel) {
-                                                return getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
+                                                rawList = getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
                                               } else if (assignedGrades.length > 0) {
                                                 const unionSubjects = new Set();
-                                          assignedGrades.forEach(g => {
+                                                assignedGrades.forEach(g => {
                                                   let resolvedCategory = 'Elementary';
                                                   for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
                                                     if (grades.includes(g)) {
@@ -8197,10 +9537,11 @@ export default function Workload() {
                                                   }
                                                   getSubjectsForGrade(g, resolvedCategory).forEach(sub => unionSubjects.add(sub));
                                                 });
-                                                return Array.from(unionSubjects);
+                                                rawList = Array.from(unionSubjects);
                                               } else {
-                                                return SUBJECT_OPTIONS;
+                                                rawList = SUBJECT_OPTIONS;
                                               }
+                                              return (rawList || []).filter(s => !isAralSubject(s));
                                             })();
 
                                             const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
@@ -8214,7 +9555,7 @@ export default function Workload() {
                                                 if (assignment && assignment.assigned) {
                                                   return {
                                                     value: sub,
-                                                    label: `${sub} 🔒 (Assigned: ${assignment.teacherName})`,
+                                                    label: `${sub} [Locked: ${assignment.teacherName}]`,
                                                     disabled: true
                                                   };
                                                 }
@@ -8258,255 +9599,14 @@ export default function Workload() {
                               );
                             };
 
-                            const elemJhsRows = sortedRows.filter(r => !isSHSRow(r));
-                            const shsRows = sortedRows.filter(r => isSHSRow(r));
-                            const isShsTeacher = !!currentPerson?.teachesShs || (Array.isArray(currentPerson?.assignedGradeLevels) && currentPerson.assignedGradeLevels.some(g => String(g).includes('11') || String(g).includes('12')));
-
                             return (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                {/* ── UPPER PARTITION: ELEMENTARY & JUNIOR HIGH SCHOOL (GRADES K-10) ── */}
-                                <div>
-                                  {(shsRows.length > 0 || isShsTeacher) && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: '#EFF6FF', borderLeft: '4px solid #0284C7', borderRadius: '6px', marginBottom: '12px' }}>
-                                      <FiBookOpen size={14} color="#0284C7" />
-                                      <strong style={{ fontSize: '13px', color: '#0369A1' }}>Elementary & Junior High School (Grades K – 10)</strong>
-                                      <span style={{ fontSize: '11px', color: '#64748B', marginLeft: 'auto' }}>{elemJhsRows.length} subject period(s)</span>
-                                    </div>
-                                  )}
-
-                                  {elemJhsRows.length === 0 ? (
-                                    <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', color: '#64748B', fontSize: '12px', textAlign: 'center' }}>
-                                      No Elementary / JHS workload rows added yet.
-                                    </div>
-                                  ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                      {elemJhsRows.map(row => renderWorkloadRowCardItem(row))}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* ── LOWER PARTITION: SENIOR HIGH SCHOOL (GRADE 11 & GRADE 12) ── */}
-                                {(shsRows.length > 0 || isShsTeacher) && (
-                                  <div style={{ paddingTop: '16px', borderTop: '2px dashed #CBD5E1' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '8px 14px', background: '#F0FDF4', borderLeft: '4px solid #16A34A', borderRadius: '8px', marginBottom: '14px' }}>
-                                      <div>
-                                        <strong style={{ fontSize: '14px', color: '#15803D', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                          <FiBook size={14} color="#16A34A" /> Senior High School (Grade 11 & Grade 12) Term Workload
-                                        </strong>
-                                        <span style={{ fontSize: '11px', color: '#166534' }}>
-                                          Term-based workload for SHS. Selecting a Grade 11 or 12 section automatically routes the row here.
-                                        </span>
-                                      </div>
-
-                                      {/* Term Switcher Tabs */}
-                                      <div style={{ display: 'flex', gap: '6px' }}>
-                                        {[
-                                          { key: '1st', label: '1st Term' },
-                                          { key: '2nd', label: '2nd Term' },
-                                          { key: '3rd', label: '3rd Term' }
-                                        ].map(t => (
-                                          <button
-                                            key={t.key}
-                                            type="button"
-                                            onClick={() => setSelectedShsTerm(t.key)}
-                                            style={{
-                                              padding: '5px 12px',
-                                              borderRadius: '6px',
-                                              fontSize: '11px',
-                                              fontWeight: 'bold',
-                                              border: selectedShsTerm === t.key ? '2px solid #16A34A' : '1px solid #CBD5E1',
-                                              background: selectedShsTerm === t.key ? '#16A34A' : 'white',
-                                              color: selectedShsTerm === t.key ? 'white' : '#475569',
-                                              cursor: 'pointer',
-                                              transition: 'all 0.15s'
-                                            }}
-                                          >
-                                            {t.label}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    {(() => {
-                                      const activePersonId = currentPerson?.id;
-                                      const currentPersonShsMap = shsWorkloadMap[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
-                                      const activeTermRows = currentPersonShsMap[selectedShsTerm] || [];
-
-                                      const addShsRowForActiveTerm = () => {
-                                        const newShsRow = {
-                                          id: `shs-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                                          term: selectedShsTerm,
-                                          sectionId: '',
-                                          sectionName: '',
-                                          gradeLevel: 'Grade 11',
-                                          category: 'SHS-CORE SUBJECTS',
-                                          subject: '',
-                                          startTime: '08:00',
-                                          endTime: '09:00',
-                                          days: ['M', 'T', 'W', 'TH', 'F']
-                                        };
-                                        setShsWorkloadMap(prev => {
-                                          const pMap = prev[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
-                                          const termRows = [...(pMap[selectedShsTerm] || []), newShsRow];
-                                          return {
-                                            ...prev,
-                                            [activePersonId]: {
-                                              ...pMap,
-                                              [selectedShsTerm]: termRows
-                                            }
-                                          };
-                                        });
-                                        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-                                      };
-
-                                      const updateShsRowForActiveTerm = (rowIdx, updatedFields) => {
-                                        setShsWorkloadMap(prev => {
-                                          const pMap = prev[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
-                                          const termRows = [...(pMap[selectedShsTerm] || [])];
-                                          if (termRows[rowIdx]) {
-                                            termRows[rowIdx] = { ...termRows[rowIdx], ...updatedFields };
-                                          }
-                                          return {
-                                            ...prev,
-                                            [activePersonId]: {
-                                              ...pMap,
-                                              [selectedShsTerm]: termRows
-                                            }
-                                          };
-                                        });
-                                        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-                                      };
-
-                                      const removeShsRowForActiveTerm = (rowIdx) => {
-                                        setShsWorkloadMap(prev => {
-                                          const pMap = prev[activePersonId] || { '1st': [], '2nd': [], '3rd': [] };
-                                          const termRows = (pMap[selectedShsTerm] || []).filter((_, i) => i !== rowIdx);
-                                          return {
-                                            ...prev,
-                                            [activePersonId]: {
-                                              ...pMap,
-                                              [selectedShsTerm]: termRows
-                                            }
-                                          };
-                                        });
-                                        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-                                      };
-
-                                      return (
-                                        <div>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#15803D' }}>
-                                              Showing {selectedShsTerm} Term Workload ({activeTermRows.length} subject periods)
-                                            </span>
-                                            <button
-                                              type="button"
-                                              className="btn"
-                                              onClick={addShsRowForActiveTerm}
-                                              style={{
-                                                background: '#16A34A',
-                                                color: 'white',
-                                                fontSize: '11px',
-                                                fontWeight: 'bold',
-                                                padding: '4px 10px',
-                                                borderRadius: '6px',
-                                                border: 'none',
-                                                cursor: 'pointer'
-                                              }}
-                                            >
-                                              + Add {selectedShsTerm} Term Schedule
-                                            </button>
-                                          </div>
-
-                                          {activeTermRows.length === 0 ? (
-                                            <div style={{ padding: '20px', background: '#F0FDF4', borderRadius: '8px', border: '1px dashed #86EFAC', color: '#166534', fontSize: '12px', textAlign: 'center' }}>
-                                              No workload added yet for <strong>{selectedShsTerm} Term</strong>. Click <strong>"+ Add {selectedShsTerm} Term Schedule"</strong> above to create a brand-new schedule for this term.
-                                            </div>
-                                          ) : (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                              {activeTermRows.map((row, rIdx) => (
-                                                <div key={row.id || rIdx} style={{ display: 'grid', gridTemplateColumns: '140px 1.5fr 115px 165px 44px', gap: '12px', alignItems: 'center', padding: '10px 16px', background: 'white', borderBottom: '1px solid var(--line)' }}>
-                                                  {/* Section Dropdown */}
-                                                  <SearchableSelect
-                                                    value={String(row.sectionId || '')}
-                                                    onChange={(e) => {
-                                                      const sec = (classSections || []).find(s => String(s.id) === String(e.target.value));
-                                                      updateShsRowForActiveTerm(rIdx, { sectionId: e.target.value, sectionName: sec?.sectionName || '', gradeLevel: sec?.gradeLevel || 'Grade 11' });
-                                                    }}
-                                                    options={(classSections || []).filter(s => {
-                                                      const gNorm = String(s.gradeLevel || '').toUpperCase();
-                                                      return gNorm.includes('11') || gNorm.includes('12') || gNorm.includes('SHS') || gNorm.includes('SENIOR');
-                                                    }).map(s => ({ value: String(s.id), label: `${s.sectionName} (${s.gradeLevel})` }))}
-                                                    placeholder="Select SHS section…"
-                                                  />
-
-                                                  {/* Subject & Category */}
-                                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                    <SearchableSelect
-                                                      value={row.category || 'SHS-CORE SUBJECTS'}
-                                                      onChange={(e) => {
-                                                        const newCat = e.target.value;
-                                                        const newSubs = getSubjectsForGrade(row.gradeLevel || 'Grade 11', newCat);
-                                                        updateShsRowForActiveTerm(rIdx, { category: newCat, subject: newSubs[0] || '' });
-                                                      }}
-                                                      options={[
-                                                        { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
-                                                        { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
-                                                        { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
-                                                        { value: 'SSHS-CORE', label: 'SSHS-CORE' },
-                                                        { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
-                                                        { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' }
-                                                      ]}
-                                                    />
-                                                    <SearchableSelect
-                                                      value={row.subject || ''}
-                                                      onChange={(e) => updateShsRowForActiveTerm(rIdx, { subject: e.target.value })}
-                                                      options={getSubjectsForGrade(row.gradeLevel || 'Grade 11', row.category || 'SHS-CORE SUBJECTS').map(sub => ({ value: sub, label: sub }))}
-                                                      placeholder="Select SHS subject…"
-                                                    />
-                                                  </div>
-
-                                                  {/* Duration */}
-                                                  <div>
-                                                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '6px 10px', borderRadius: '6px', display: 'inline-block' }}>
-                                                      ⏱️ 60 Mins (Fixed)
-                                                    </span>
-                                                  </div>
-
-                                                  {/* Days */}
-                                                  <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
-                                                    {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(d => {
-                                                      const isSel = (row.days || []).includes(d);
-                                                      return (
-                                                        <button
-                                                          key={d}
-                                                          type="button"
-                                                          onClick={() => {
-                                                            const newDays = isSel ? (row.days || []).filter(x => x !== d) : [...(row.days || []), d];
-                                                            updateShsRowForActiveTerm(rIdx, { days: newDays });
-                                                          }}
-                                                          style={{
-                                                            padding: '2px 5px', fontSize: '10px', fontWeight: '800', borderRadius: '4px', border: 'none',
-                                                            background: isSel ? 'var(--blue)' : '#f1f5f9', color: isSel ? 'white' : '#64748b', cursor: 'pointer'
-                                                          }}
-                                                        >
-                                                          {d}
-                                                        </button>
-                                                      );
-                                                    })}
-                                                  </div>
-
-                                                  {/* Remove */}
-                                                  <div style={{ textAlign: 'right' }}>
-                                                    <button className="btn danger sm" type="button" onClick={() => removeShsRowForActiveTerm(rIdx)}>Remove</button>
-                                                  </div>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })()}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {sortedRows.length === 0 ? (
+                                  <div style={{ padding: '24px', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', color: '#64748B', fontSize: '13px', textAlign: 'center' }}>
+                                    No workload schedule rows added yet. Click <strong>"+ Add Schedule Row"</strong> above to add teaching subjects or special assignments.
                                   </div>
+                                ) : (
+                                  sortedRows.map(row => renderWorkloadRowCardItem(row))
                                 )}
                               </div>
                             );
@@ -8561,75 +9661,202 @@ export default function Workload() {
 
                         {/* Teaching-related tasks */}
                         <div className="multi-task-panel">
-                          <div className="multi-task-panel-head">
-                            <label>Teaching-Related Tasks</label>
-                            <button className="btn secondary" type="button" onClick={() => addTaskRow('teachingRelatedRows', allTeachingRelatedOptions)}>
-                              + Add task
+                          <div className="multi-task-panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <label style={{ fontSize: '14px', fontWeight: '800', color: 'var(--navy)' }}>Teaching-Related Tasks</label>
+                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
+                                Auto-synced from Official Designations (Guidance Designate, Coordinators, Officers). Tasks are locked.
+                              </p>
+                            </div>
+                            <button 
+                              type="button" 
+                              className="btn secondary sm" 
+                              onClick={() => typeof setActiveView === 'function' && setActiveView('designation')}
+                              style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px' }}
+                              title="Assign or unassign official designations in the Designations tab"
+                            >
+                              <FiBookmark size={12} color="#0284C7" /> Manage Designations
                             </button>
                           </div>
 
-                          {currentPerson.designation && currentPerson.designation.includes('::APPROVED_SDS') && (
-                            <div style={{ background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: '10px', padding: '10px 14px', margin: '10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <FiLock size={18} color="#15803D" style={{ flexShrink: 0 }} />
-                              <div>
-                                <div style={{ fontSize: '12px', fontWeight: '800', color: '#15803D' }}>
-                                  Auto-Synced SDS Designation: {currentPerson.designation.replace('::APPROVED_SDS', '')}
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#166534' }}>
-                                  Automatically designated by Schools Division Superintendent. Manual duplicate entries are locked.
-                                </div>
+                          {/* Empty State when no designations assigned */}
+                          {(!currentPerson.teachingRelatedRows || currentPerson.teachingRelatedRows.length === 0) && (
+                            <div style={{ background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '12px', padding: '24px 16px', textAlign: 'center', margin: '14px 0' }}>
+                              <FiBookmark size={28} color="#94A3B8" style={{ marginBottom: '6px' }} />
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>No Teaching-Related Designations Assigned</div>
+                              <div style={{ fontSize: '11px', color: '#64748B', maxWidth: '420px', margin: '4px auto 12px', lineHeight: '1.5' }}>
+                                Teaching-related tasks are automatically assigned through official designations (e.g. Guidance Designate, Property Custodian, Reading Coordinator).
                               </div>
+                              <button 
+                                type="button" 
+                                className="btn sm" 
+                                onClick={() => typeof setActiveView === 'function' && setActiveView('designation')}
+                                style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', color: 'white', border: 'none', fontSize: '11px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <FiPlus size={12} /> Assign Role in Designations
+                              </button>
                             </div>
                           )}
 
-                          <div className="multi-task-rows">
+                          <div className="multi-task-rows" style={{ marginTop: '12px' }}>
                             {(currentPerson.teachingRelatedRows || []).map((row, idx) => {
+                              const cadence = row.cadence || 'daily';
+                              const hours = row.hours !== undefined ? Number(row.hours) : 1.0;
+                              
+                              // Calculate term breakdown:
+                              // Term 1: 12 wks / 60 school days (3 mos)
+                              // Term 2: 11 wks / 55 school days (3 mos)
+                              // Term 3: 11 wks / 55 school days (3 mos)
+                              let term1Hrs = 0, term2Hrs = 0, term3Hrs = 0, annualTotalHrs = 0;
+                              if (cadence === 'daily') {
+                                term1Hrs = (hours * 60).toFixed(1);
+                                term2Hrs = (hours * 55).toFixed(1);
+                                term3Hrs = (hours * 55).toFixed(1);
+                                annualTotalHrs = (hours * 170).toFixed(1);
+                              } else if (cadence === 'weekly') {
+                                term1Hrs = (hours * 12).toFixed(1);
+                                term2Hrs = (hours * 11).toFixed(1);
+                                term3Hrs = (hours * 11).toFixed(1);
+                                annualTotalHrs = (hours * 34).toFixed(1);
+                              } else if (cadence === 'monthly') {
+                                term1Hrs = (hours * 3).toFixed(1);
+                                term2Hrs = (hours * 3).toFixed(1);
+                                term3Hrs = (hours * 3).toFixed(1);
+                                annualTotalHrs = (hours * 9).toFixed(1);
+                              }
+
                               return (
-                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1.2fr 240px 110px 110px 44px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Task Type</label>
-                                    <SearchableSelect
-                                      value={row.task}
-                                      onChange={(e) => updateTaskField('teachingRelatedRows', idx, 'task', e.target.value)}
-                                      options={allTeachingRelatedOptions.map(opt => ({ value: opt, label: opt }))}
-                                    />
+                                <div 
+                                  key={idx} 
+                                  style={{ 
+                                    background: '#FFFFFF', 
+                                    border: '1.5px solid #E2E8F0', 
+                                    borderRadius: '12px', 
+                                    padding: '16px', 
+                                    marginBottom: '12px',
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+                                  }}
+                                >
+                                  {/* Row Header: Designation Task Name (Locked) */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', paddingBottom: '12px', borderBottom: '1px solid #F1F5F9' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ background: '#E0F2FE', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <FiLock size={14} color="#0284C7" />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)', letterSpacing: '0.2px' }}>
+                                          {row.task || 'Official Designation'}
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                          <span style={{ background: '#F1F5F9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                                            Official Designation
+                                          </span>
+                                          <span style={{ color: '#0284C7', fontWeight: '700' }}>
+                                            Locked (Remove in Designations)
+                                          </span>
+                                          {row.isSdsApproved && (
+                                            <span style={{ background: '#DCFCE7', color: '#15803D', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                                              SDS Approved
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#94A3B8', fontStyle: 'italic' }}>
+                                      Non-removable in Workload
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Calendar Dates</label>
-                                    <MultiDatePickerDropdown
-                                      value={row.dates || (row.taskDate ? [row.taskDate] : [])}
-                                      onChange={(newDates) => updateTaskField('teachingRelatedRows', idx, 'dates', newDates)}
-                                    />
+
+                                  {/* Cadence & Hours Controller Grid */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '16px', alignItems: 'center', marginTop: '14px' }}>
+                                    {/* Frequency Cadence Buttons */}
+                                    <div>
+                                      <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                                        How often is this task performed?
+                                      </label>
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                        {[
+                                          { id: 'daily', label: 'Daily' },
+                                          { id: 'weekly', label: 'Weekly' },
+                                          { id: 'monthly', label: 'Monthly' }
+                                        ].map(cOpt => {
+                                          const isSel = cadence === cOpt.id;
+                                          return (
+                                            <button
+                                              key={cOpt.id}
+                                              type="button"
+                                              onClick={() => updateTaskField('teachingRelatedRows', idx, 'cadence', cOpt.id)}
+                                              style={{
+                                                padding: '8px 10px',
+                                                borderRadius: '8px',
+                                                border: isSel ? '1.5px solid #0284C7' : '1.5px solid #CBD5E1',
+                                                background: isSel ? '#EFF6FF' : '#FFFFFF',
+                                                color: isSel ? '#0369A1' : '#475569',
+                                                fontWeight: isSel ? '800' : '600',
+                                                fontSize: '12px',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                            >
+                                              {cOpt.label}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    {/* Number of Hours Input */}
+                                    <div>
+                                      <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                                        {cadence === 'daily' ? 'Hours / Day' : cadence === 'weekly' ? 'Hours / Week' : 'Hours / Month'}
+                                      </label>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <input
+                                          type="number"
+                                          step="0.5"
+                                          min="0.5"
+                                          max="40"
+                                          value={row.hours !== undefined ? row.hours : 1.0}
+                                          onChange={(e) => {
+                                            const val = parseFloat(e.target.value) || 0.5;
+                                            updateTaskField('teachingRelatedRows', idx, 'hours', val);
+                                          }}
+                                          style={{
+                                            width: '100px',
+                                            padding: '7px 10px',
+                                            borderRadius: '8px',
+                                            border: '1.5px solid var(--line)',
+                                            fontSize: '13px',
+                                            fontWeight: '700',
+                                            color: 'var(--navy)'
+                                          }}
+                                        />
+                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#64748B' }}>
+                                          {cadence === 'daily' ? 'hrs/day' : cadence === 'weekly' ? 'hrs/wk' : 'hrs/mo'}
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Start Time</label>
-                                    <input
-                                      type="time"
-                                      list="school-times"
-                                      value={row.startTime || '07:30'}
-                                      onChange={(e) => {
-                                        const sTime = e.target.value;
-                                        const eTime = row.endTime || add60MinutesToTime(sTime);
-                                        updateTaskField('teachingRelatedRows', idx, 'startTime', sTime);
-                                        if (!row.endTime) updateTaskField('teachingRelatedRows', idx, 'endTime', eTime);
-                                      }}
-                                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>End Time</label>
-                                    <input
-                                      type="time"
-                                      list="school-times"
-                                      value={row.endTime || add60MinutesToTime(row.startTime || '07:30')}
-                                      onChange={(e) => {
-                                        updateTaskField('teachingRelatedRows', idx, 'endTime', e.target.value);
-                                      }}
-                                      style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)' }}
-                                    />
-                                  </div>
-                                  <div style={{ textAlign: 'center' }}>
-                                    <button className="btn danger sm" type="button" onClick={() => removeTaskRow('teachingRelatedRows', idx)} style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px', borderRadius: '6px' }} title="Remove Task">✕</button>
+
+                                  {/* Live Term Breakdown Summary Bar */}
+                                  <div style={{ marginTop: '14px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 14px' }}>
+                                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                      Live Term Allocation Breakdown:
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', color: '#1E40AF' }}>
+                                        1st Term: <strong>{term1Hrs} hrs</strong>
+                                      </div>
+                                      <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', color: '#166534' }}>
+                                        2nd Term: <strong>{term2Hrs} hrs</strong>
+                                      </div>
+                                      <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', color: '#92400E' }}>
+                                        3rd Term: <strong>{term3Hrs} hrs</strong>
+                                      </div>
+                                      <div style={{ marginLeft: 'auto', background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '800', color: 'var(--navy)' }}>
+                                        Annual Total: <strong>{annualTotalHrs} hrs</strong>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -8692,7 +9919,7 @@ export default function Workload() {
                                     />
                                   </div>
                                   <div style={{ textAlign: 'center' }}>
-                                    <button className="btn danger sm" type="button" onClick={() => removeTaskRow('administrativeRows', idx)} style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px', borderRadius: '6px' }} title="Remove Task">✕</button>
+                                    <button className="btn danger sm" type="button" onClick={() => removeTaskRow('administrativeRows', idx)} style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px', borderRadius: '6px' }} title="Remove Task"><FiX size={14} /></button>
                                   </div>
                                 </div>
                               );
@@ -8700,6 +9927,26 @@ export default function Workload() {
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Bottom Save Action Controls */}
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '24px', borderTop: '1.5px solid var(--line)', paddingTop: '18px', alignItems: 'center' }}>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={handleSaveChangesDirectly}
+                        style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', borderColor: '#0284c7', color: 'white', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}
+                      >
+                        <FiSave size={15} /> Save Changes
+                      </button>
+                      <button
+                        className="btn secondary"
+                        type="button"
+                        onClick={handleSaveValidate}
+                        style={{ borderColor: 'var(--blue)', color: 'var(--blue)', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}
+                      >
+                        <FiCheckCircle size={15} /> Save & Validate Workload
+                      </button>
                     </div>
                   </div>
                 )}
@@ -9096,7 +10343,7 @@ export default function Workload() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: 'var(--navy)' }}>
-                  📅 Select Dates on Calendar
+                  <FiCalendar size={13} style={{ marginRight: '6px' }} /> Select Dates on Calendar
                 </h3>
                 <span style={{ fontSize: '12px', color: '#0284c7', fontWeight: '700' }}>
                   {calendarModalConfig.taskName}
@@ -9106,9 +10353,7 @@ export default function Workload() {
                 type="button"
                 onClick={() => setCalendarModalConfig(null)}
                 style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontWeight: 'bold' }}
-              >
-                ✕
-              </button>
+              ><FiX size={14} /></button>
             </div>
 
             {/* Month Header Navigation */}
@@ -9356,7 +10601,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
 
     const res = await saveWorkImmersionSchedules(personId, updatedSchedules, schoolYear, schoolInfo?.schoolId);
     if (res && res.success !== false) {
-      if (showToast) showToast(`✓ Saved Work Immersion schedule for ${editingDate} (${editingStartTime} - ${editingEndTime})`);
+      if (showToast) showToast(`Saved Work Immersion schedule for ${editingDate} (${editingStartTime} - ${editingEndTime})`);
       setEditingDate(null);
     }
   };
@@ -9371,7 +10616,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
     }
   };
 
-  // 📋 Copy Month Schedule Pattern (by weekday M-F)
+  // Copy Month Schedule Pattern (by weekday M-F)
   const handleCopyMonthPattern = () => {
     const pattern = {};
     for (let day = 1; day <= totalDaysInMonth; day++) {
@@ -9385,7 +10630,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
     }
 
     if (Object.keys(pattern).length === 0) {
-      if (showToast) showToast("⚠️ No active Work Immersion schedules found in this month to copy.", "error");
+      if (showToast) showToast("No active Work Immersion schedules found in this month to copy.", "error");
       return;
     }
 
@@ -9394,13 +10639,13 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
       pattern
     });
 
-    if (showToast) showToast(`📋 Copied ${Object.keys(pattern).length} weekday immersion pattern(s) from ${monthNames[selectedMonth]} ${selectedYear}!`);
+    if (showToast) showToast(`Copied ${Object.keys(pattern).length} weekday immersion pattern(s) from ${monthNames[selectedMonth]} ${selectedYear}!`);
   };
 
-  // 📥 Paste Month Schedule Pattern onto Target Month
+  // Paste Month Schedule Pattern onto Target Month
   const handlePasteMonthPattern = async () => {
     if (!copiedPattern || !copiedPattern.pattern) {
-      if (showToast) showToast("⚠️ Please copy a month schedule first before pasting.", "error");
+      if (showToast) showToast("Please copy a month schedule first before pasting.", "error");
       return;
     }
 
@@ -9425,7 +10670,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
 
     const res = await saveWorkImmersionSchedules(personId, newSchedules, schoolYear, schoolInfo?.schoolId);
     if (res && res.success !== false) {
-      if (showToast) showToast(`📥 Pasted immersion schedule pattern to ${monthNames[selectedMonth]} ${selectedYear}!`);
+      if (showToast) showToast(`Pasted immersion schedule pattern to ${monthNames[selectedMonth]} ${selectedYear}!`);
     }
   };
 
@@ -9478,7 +10723,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
       {copiedPattern && (
         <div style={{ background: '#E0F2FE', border: '1px solid #7DD3FC', color: '#0369A1', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', fontWeight: 'bold', marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Copied schedule pattern from <strong>{copiedPattern.sourceMonthName}</strong>. Select another month and click "Paste to [Month]" to duplicate.</span>
-          <button type="button" onClick={() => setCopiedPattern(null)} style={{ background: 'none', border: 'none', color: '#0369A1', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
+          <button type="button" onClick={() => setCopiedPattern(null)} style={{ background: 'none', border: 'none', color: '#0369A1', cursor: 'pointer', fontWeight: 'bold' }}><FiX size={14} /></button>
         </div>
       )}
 
@@ -9512,7 +10757,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
             <strong style={{ fontSize: '16px', color: '#0284C7' }}>{totalMonthHours} Hours</strong>
           </div>
           <div style={{ background: '#F0F9FF', padding: '6px 10px', borderRadius: '8px', border: '1px solid #7DD3FC', fontSize: '11px', color: '#0369A1', fontWeight: 'bold' }}>
-            ➕ Integrated into Overload Pay
+            <FiTrendingUp size={13} style={{ marginRight: '4px' }} /> Integrated into Overload Pay
           </div>
         </div>
       </div>
@@ -9568,7 +10813,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
 
                 {entry ? (
                   <div style={{ fontSize: '10px', color: '#0369A1', fontWeight: 'bold', background: 'white', padding: '2px 4px', borderRadius: '4px', border: '1px solid #BAE6FD', textAlign: 'center' }}>
-                    ⏱️ {entry.startTime} - {entry.endTime}
+                    <FiClock size={11} style={{ marginRight: '4px' }} /> {entry.startTime} - {entry.endTime}
                   </div>
                 ) : (
                   <span style={{ fontSize: '10px', color: '#94A3B8', textAlign: 'center' }}>+ Set time</span>
@@ -9707,7 +10952,7 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
                   gap: '8px'
                 }}
               >
-                <span>📋 Unlock & Duplicate from 1st Term</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FiCopy size={15} /> Unlock & Duplicate from 1st Term</span>
               </button>
 
               <button

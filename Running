@@ -1,127 +1,127 @@
        - production npm install...
 
-up to date in 249ms
+up to date in 489ms
 
-up to date in 322ms
+up to date in 317ms
 [PM2] Flushing:
-[PM2] /mnt/insighted-esf7-staging/logs/out-261.log
-[PM2] /mnt/insighted-esf7-staging/logs/error-261.log
+[PM2] /mnt/insighted-esf7-staging/logs/out-341.log
+[PM2] /mnt/insighted-esf7-staging/logs/error-341.log
 [PM2] Flushing:
-[PM2] /mnt/insighted-esf7-staging/logs/out-262.log
-[PM2] /mnt/insighted-esf7-staging/logs/error-262.log
+[PM2] /mnt/insighted-esf7-staging/logs/out-342.log
+[PM2] /mnt/insighted-esf7-staging/logs/error-342.log
 [PM2] Logs flushed
-[PM2] Applying action deleteProcessId on app [insighted-esf7-staging-backend](ids: [ 261, 262 ])
-[PM2] [insighted-esf7-staging-backend](261) ✓
-[PM2] [insighted-esf7-staging-backend](262) ✓
+[PM2] Applying action deleteProcessId on app [insighted-esf7-staging-backend](ids: [ 341, 342 ])
+[PM2] [insighted-esf7-staging-backend](341) ✓
+[PM2] [insighted-esf7-staging-backend](342) ✓
 ┌─────┬──────────────────────────────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
 │ id  │ name                                                 │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
 ├─────┼──────────────────────────────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-│ 326 │ agap-hrmo-backend                                    │ default     │ 1.0.0   │ fork    │ 1240212  │ 3h     │ 0    │ online    │ 0%       │ 206.4mb  │ Adminis… │ disabled │
-│ 325 │ agap-portal-backend                                  │ default     │ 0.0.1   │ fork    │ 1239456  │ 3h     │ 0    │ online    │ 0%       │ 148.3mb  │ Adminis… │ disabled │
-│ 31  │ agap-staging-backend                                 │ default     │ 0.0.1   │ fork    │ 664555   │ 15D    │ 0    │ online    │ 0%       │ 70.7mb   │ Adminis… │ disabled │
-│ 40  │ agap-ticketing-backend                               │ default     │ 1.0.0   │ fork    │ 664812   │ 15D    │ 0    │ online    │ 0%       │ 64.2mb   │ Adminis… │ disabled │
-│ 11  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664336   │ 15D    │ 0    │ online    │ 0%       │ 88.2mb   │ Adminis… │ disabled │
-│ 12  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664343   │ 15D    │ 0    │ online    │ 0%       │ 85.7mb   │ Adminis… │ disabled │
-│ 13  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664350   │ 15D    │ 0    │ online    │ 0%       │ 74.1mb   │ Adminis… │ disabled │
-│ 14  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664361   │ 15D    │ 0    │ online    │ 0%       │ 111.5mb  │ Adminis… │ disabled │
-│ 15  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897528   │ 9D     │ 1    │ online    │ 8.3%     │ 230.2mb  │ Adminis… │ disabled │
-│ 16  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897526   │ 9D     │ 1    │ online    │ 0%       │ 223.6mb  │ Adminis… │ disabled │
-│ 17  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897527   │ 9D     │ 1    │ online    │ 0%       │ 176.3mb  │ Adminis… │ disabled │
-│ 18  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897534   │ 9D     │ 1    │ online    │ 0%       │ 183.8mb  │ Adminis… │ disabled │
-│ 6   │ esf7-scheduler                                       │ default     │ 1.0.25  │ fork    │ 664279   │ 15D    │ 0    │ online    │ 0%       │ 43.8mb   │ Adminis… │ disabled │
-│ 3   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664217   │ 15D    │ 0    │ online    │ 0%       │ 159.9mb  │ Adminis… │ disabled │
-│ 5   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664267   │ 15D    │ 0    │ online    │ 0%       │ 162.2mb  │ Adminis… │ disabled │
-│ 7   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664280   │ 15D    │ 0    │ online    │ 0%       │ 160.1mb  │ Adminis… │ disabled │
-│ 8   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664301   │ 15D    │ 0    │ online    │ 0%       │ 162.2mb  │ Adminis… │ disabled │
-│ 9   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664312   │ 15D    │ 0    │ online    │ 0%       │ 161.4mb  │ Adminis… │ disabled │
-│ 10  │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664325   │ 15D    │ 0    │ online    │ 0%       │ 158.2mb  │ Adminis… │ disabled │
-│ 208 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1039520  │ 6D     │ 0    │ online    │ 0%       │ 133.6mb  │ Adminis… │ disabled │
-│ 209 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1039527  │ 6D     │ 0    │ online    │ 0%       │ 139.7mb  │ Adminis… │ disabled │
-│ 34  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664762   │ 15D    │ 0    │ online    │ 0%       │ 101.5mb  │ Adminis… │ disabled │
-│ 35  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664768   │ 15D    │ 0    │ online    │ 0%       │ 102.2mb  │ Adminis… │ disabled │
-│ 322 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1238616  │ 3h     │ 0    │ online    │ 0%       │ 136.8mb  │ Adminis… │ disabled │
-│ 323 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1238623  │ 3h     │ 0    │ online    │ 0%       │ 133.6mb  │ Adminis… │ disabled │
-│ 320 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1219630  │ 19h    │ 0    │ online    │ 0%       │ 222.9mb  │ Adminis… │ disabled │
-│ 321 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1219637  │ 19h    │ 0    │ online    │ 0%       │ 221.1mb  │ Adminis… │ disabled │
-│ 32  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 866466   │ 9D     │ 4    │ online    │ 0%       │ 376.8mb  │ Adminis… │ disabled │
-│ 33  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 866478   │ 9D     │ 3    │ online    │ 58.3%    │ 382.0mb  │ Adminis… │ disabled │
-│ 51  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666029   │ 15D    │ 0    │ online    │ 8.3%     │ 212.8mb  │ Adminis… │ disabled │
-│ 52  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666036   │ 15D    │ 0    │ online    │ 8.3%     │ 192.1mb  │ Adminis… │ disabled │
-│ 23  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664458   │ 15D    │ 0    │ online    │ 0%       │ 82.0mb   │ Adminis… │ disabled │
-│ 24  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664473   │ 15D    │ 0    │ online    │ 0%       │ 83.1mb   │ Adminis… │ disabled │
-│ 2   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664216   │ 15D    │ 0    │ online    │ 0%       │ 177.4mb  │ Adminis… │ disabled │
-│ 4   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664256   │ 15D    │ 0    │ online    │ 0%       │ 176.6mb  │ Adminis… │ disabled │
-│ 279 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167914  │ 2D     │ 0    │ online    │ 0%       │ 203.8mb  │ Adminis… │ disabled │
-│ 280 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167921  │ 2D     │ 0    │ online    │ 0%       │ 190.5mb  │ Adminis… │ disabled │
-│ 210 │ insighted-ticketing-ai                               │ default     │ 1.0.0   │ fork    │ 1041063  │ 6D     │ 0    │ online    │ 0%       │ 58.2mb   │ Adminis… │ disabled │
-│ 0   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041039  │ 6D     │ 15   │ online    │ 0%       │ 141.4mb  │ Adminis… │ disabled │
-│ 1   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041051  │ 6D     │ 15   │ online    │ 0%       │ 125.8mb  │ Adminis… │ disabled │
-│ 281 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170396  │ 2D     │ 0    │ online    │ 0%       │ 86.7mb   │ Adminis… │ disabled │
-│ 282 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170403  │ 2D     │ 0    │ online    │ 0%       │ 94.5mb   │ Adminis… │ disabled │
-│ 21  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664438   │ 15D    │ 0    │ online    │ 0%       │ 42.0mb   │ Adminis… │ disabled │
-│ 22  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664451   │ 15D    │ 0    │ online    │ 0%       │ 40.9mb   │ Adminis… │ disabled │
-│ 25  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664474   │ 15D    │ 0    │ online    │ 0%       │ 59.6mb   │ Adminis… │ disabled │
-│ 26  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664491   │ 15D    │ 0    │ online    │ 0%       │ 56.7mb   │ Adminis… │ disabled │
-│ 277 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1231011  │ 9h     │ 6    │ online    │ 0%       │ 111.2mb  │ Adminis… │ disabled │
-│ 278 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1222246  │ 17h    │ 2    │ online    │ 0%       │ 145.5mb  │ Adminis… │ disabled │
-│ 19  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664416   │ 15D    │ 0    │ online    │ 0%       │ 40.3mb   │ Adminis… │ disabled │
-│ 20  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664423   │ 15D    │ 0    │ online    │ 0%       │ 40.1mb   │ Adminis… │ disabled │
+│ 326 │ agap-hrmo-backend                                    │ default     │ 1.0.0   │ fork    │ 1240212  │ 4D     │ 0    │ online    │ 0%       │ 184.2mb  │ Adminis… │ disabled │
+│ 325 │ agap-portal-backend                                  │ default     │ 0.0.1   │ fork    │ 1239456  │ 4D     │ 0    │ online    │ 0%       │ 284.4mb  │ Adminis… │ disabled │
+│ 31  │ agap-staging-backend                                 │ default     │ 0.0.1   │ fork    │ 664555   │ 19D    │ 0    │ online    │ 0%       │ 67.0mb   │ Adminis… │ disabled │
+│ 40  │ agap-ticketing-backend                               │ default     │ 1.0.0   │ fork    │ 664812   │ 19D    │ 0    │ online    │ 0%       │ 62.6mb   │ Adminis… │ disabled │
+│ 11  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664336   │ 19D    │ 0    │ online    │ 0%       │ 85.4mb   │ Adminis… │ disabled │
+│ 12  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664343   │ 19D    │ 0    │ online    │ 0%       │ 91.4mb   │ Adminis… │ disabled │
+│ 13  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664350   │ 19D    │ 0    │ online    │ 0%       │ 74.7mb   │ Adminis… │ disabled │
+│ 14  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664361   │ 19D    │ 0    │ online    │ 0%       │ 110.4mb  │ Adminis… │ disabled │
+│ 15  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897528   │ 13D    │ 1    │ online    │ 0%       │ 203.8mb  │ Adminis… │ disabled │
+│ 16  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897526   │ 13D    │ 1    │ online    │ 0%       │ 211.9mb  │ Adminis… │ disabled │
+│ 17  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897527   │ 13D    │ 1    │ online    │ 0%       │ 147.3mb  │ Adminis… │ disabled │
+│ 18  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897534   │ 13D    │ 1    │ online    │ 0%       │ 158.1mb  │ Adminis… │ disabled │
+│ 6   │ esf7-scheduler                                       │ default     │ 1.0.25  │ fork    │ 664279   │ 19D    │ 0    │ online    │ 0%       │ 43.7mb   │ Adminis… │ disabled │
+│ 3   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664217   │ 19D    │ 0    │ online    │ 0%       │ 157.4mb  │ Adminis… │ disabled │
+│ 5   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664267   │ 19D    │ 0    │ online    │ 0%       │ 160.5mb  │ Adminis… │ disabled │
+│ 7   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664280   │ 19D    │ 0    │ online    │ 0%       │ 158.2mb  │ Adminis… │ disabled │
+│ 8   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664301   │ 19D    │ 0    │ online    │ 0%       │ 159.7mb  │ Adminis… │ disabled │
+│ 9   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664312   │ 19D    │ 0    │ online    │ 0%       │ 161.5mb  │ Adminis… │ disabled │
+│ 10  │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664325   │ 19D    │ 0    │ online    │ 0%       │ 158.2mb  │ Adminis… │ disabled │
+│ 339 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1361255  │ 20h    │ 0    │ online    │ 0%       │ 144.1mb  │ Adminis… │ disabled │
+│ 340 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1361262  │ 20h    │ 0    │ online    │ 0%       │ 143.1mb  │ Adminis… │ disabled │
+│ 34  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664762   │ 19D    │ 0    │ online    │ 0%       │ 87.2mb   │ Adminis… │ disabled │
+│ 35  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664768   │ 19D    │ 0    │ online    │ 0%       │ 87.4mb   │ Adminis… │ disabled │
+│ 329 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1251719  │ 4D     │ 0    │ online    │ 0%       │ 80.0mb   │ Adminis… │ disabled │
+│ 330 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1251726  │ 4D     │ 0    │ online    │ 0%       │ 73.4mb   │ Adminis… │ disabled │
+│ 343 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1370248  │ 14h    │ 0    │ online    │ 0%       │ 142.4mb  │ Adminis… │ disabled │
+│ 344 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1370255  │ 14h    │ 0    │ online    │ 0%       │ 107.0mb  │ Adminis… │ disabled │
+│ 32  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 1249488  │ 4D     │ 5    │ online    │ 0%       │ 375.8mb  │ Adminis… │ disabled │
+│ 33  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 1249466  │ 4D     │ 4    │ online    │ 0%       │ 417.7mb  │ Adminis… │ disabled │
+│ 51  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666029   │ 19D    │ 0    │ online    │ 16.7%    │ 214.2mb  │ Adminis… │ disabled │
+│ 52  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666036   │ 19D    │ 0    │ online    │ 8.3%     │ 207.3mb  │ Adminis… │ disabled │
+│ 23  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664458   │ 19D    │ 0    │ online    │ 0%       │ 73.7mb   │ Adminis… │ disabled │
+│ 24  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664473   │ 19D    │ 0    │ online    │ 0%       │ 75.2mb   │ Adminis… │ disabled │
+│ 2   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664216   │ 19D    │ 0    │ online    │ 0%       │ 168.4mb  │ Adminis… │ disabled │
+│ 4   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664256   │ 19D    │ 0    │ online    │ 0%       │ 170.3mb  │ Adminis… │ disabled │
+│ 279 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167914  │ 7D     │ 0    │ online    │ 0%       │ 182.2mb  │ Adminis… │ disabled │
+│ 280 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167921  │ 7D     │ 0    │ online    │ 0%       │ 158.8mb  │ Adminis… │ disabled │
+│ 210 │ insighted-ticketing-ai                               │ default     │ 1.0.0   │ fork    │ 1041063  │ 10D    │ 0    │ online    │ 0%       │ 33.0mb   │ Adminis… │ disabled │
+│ 0   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041039  │ 10D    │ 15   │ online    │ 0%       │ 121.8mb  │ Adminis… │ disabled │
+│ 1   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041051  │ 10D    │ 15   │ online    │ 0%       │ 114.3mb  │ Adminis… │ disabled │
+│ 281 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170396  │ 6D     │ 0    │ online    │ 0%       │ 65.6mb   │ Adminis… │ disabled │
+│ 282 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170403  │ 6D     │ 0    │ online    │ 0%       │ 72.2mb   │ Adminis… │ disabled │
+│ 21  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664438   │ 19D    │ 0    │ online    │ 0%       │ 45.3mb   │ Adminis… │ disabled │
+│ 22  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664451   │ 19D    │ 0    │ online    │ 0%       │ 41.4mb   │ Adminis… │ disabled │
+│ 25  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664474   │ 19D    │ 0    │ online    │ 0%       │ 48.9mb   │ Adminis… │ disabled │
+│ 26  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664491   │ 19D    │ 0    │ online    │ 0%       │ 48.6mb   │ Adminis… │ disabled │
+│ 337 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1356312  │ 23h    │ 0    │ online    │ 0%       │ 94.5mb   │ Adminis… │ disabled │
+│ 338 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1356319  │ 23h    │ 0    │ online    │ 0%       │ 131.1mb  │ Adminis… │ disabled │
+│ 19  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664416   │ 19D    │ 0    │ online    │ 0%       │ 42.3mb   │ Adminis… │ disabled │
+│ 20  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664423   │ 19D    │ 0    │ online    │ 0%       │ 42.3mb   │ Adminis… │ disabled │
 └─────┴──────────────────────────────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
 [PM2][WARN] Applications insighted-esf7-staging-backend not running, starting...
 [PM2] App [insighted-esf7-staging-backend] launched (2 instances)
 ┌─────┬──────────────────────────────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
 │ id  │ name                                                 │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
 ├─────┼──────────────────────────────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-│ 326 │ agap-hrmo-backend                                    │ default     │ 1.0.0   │ fork    │ 1240212  │ 3h     │ 0    │ online    │ 0%       │ 206.4mb  │ Adminis… │ disabled │
-│ 325 │ agap-portal-backend                                  │ default     │ 0.0.1   │ fork    │ 1239456  │ 3h     │ 0    │ online    │ 0%       │ 148.3mb  │ Adminis… │ disabled │
-│ 31  │ agap-staging-backend                                 │ default     │ 0.0.1   │ fork    │ 664555   │ 15D    │ 0    │ online    │ 0%       │ 70.7mb   │ Adminis… │ disabled │
-│ 40  │ agap-ticketing-backend                               │ default     │ 1.0.0   │ fork    │ 664812   │ 15D    │ 0    │ online    │ 0%       │ 64.2mb   │ Adminis… │ disabled │
-│ 11  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664336   │ 15D    │ 0    │ online    │ 0%       │ 88.2mb   │ Adminis… │ disabled │
-│ 12  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664343   │ 15D    │ 0    │ online    │ 0%       │ 85.7mb   │ Adminis… │ disabled │
-│ 13  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664350   │ 15D    │ 0    │ online    │ 0%       │ 74.1mb   │ Adminis… │ disabled │
-│ 14  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664361   │ 15D    │ 0    │ online    │ 0%       │ 111.5mb  │ Adminis… │ disabled │
-│ 15  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897528   │ 9D     │ 1    │ online    │ 0%       │ 230.2mb  │ Adminis… │ disabled │
-│ 16  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897526   │ 9D     │ 1    │ online    │ 0%       │ 223.6mb  │ Adminis… │ disabled │
-│ 17  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897527   │ 9D     │ 1    │ online    │ 0%       │ 176.3mb  │ Adminis… │ disabled │
-│ 18  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897534   │ 9D     │ 1    │ online    │ 0%       │ 184.2mb  │ Adminis… │ disabled │
-│ 6   │ esf7-scheduler                                       │ default     │ 1.0.25  │ fork    │ 664279   │ 15D    │ 0    │ online    │ 0%       │ 43.8mb   │ Adminis… │ disabled │
-│ 3   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664217   │ 15D    │ 0    │ online    │ 0%       │ 159.9mb  │ Adminis… │ disabled │
-│ 5   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664267   │ 15D    │ 0    │ online    │ 0%       │ 162.2mb  │ Adminis… │ disabled │
-│ 7   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664280   │ 15D    │ 0    │ online    │ 0%       │ 160.1mb  │ Adminis… │ disabled │
-│ 8   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664301   │ 15D    │ 0    │ online    │ 0%       │ 162.2mb  │ Adminis… │ disabled │
-│ 9   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664312   │ 15D    │ 0    │ online    │ 0%       │ 161.4mb  │ Adminis… │ disabled │
-│ 10  │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664325   │ 15D    │ 0    │ online    │ 0%       │ 158.7mb  │ Adminis… │ disabled │
-│ 208 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1039520  │ 6D     │ 0    │ online    │ 0%       │ 133.6mb  │ Adminis… │ disabled │
-│ 209 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1039527  │ 6D     │ 0    │ online    │ 0%       │ 139.7mb  │ Adminis… │ disabled │
-│ 34  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664762   │ 15D    │ 0    │ online    │ 0%       │ 101.5mb  │ Adminis… │ disabled │
-│ 35  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664768   │ 15D    │ 0    │ online    │ 0%       │ 101.9mb  │ Adminis… │ disabled │
-│ 322 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1238616  │ 3h     │ 0    │ online    │ 0%       │ 136.8mb  │ Adminis… │ disabled │
-│ 323 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1238623  │ 3h     │ 0    │ online    │ 14.3%    │ 133.6mb  │ Adminis… │ disabled │
-│ 327 │ insighted-esf7-staging-backend                       │ default     │ 1.0.0   │ cluster │ 1245579  │ 0s     │ 0    │ online    │ 0%       │ 48.9mb   │ Adminis… │ disabled │
-│ 328 │ insighted-esf7-staging-backend                       │ default     │ 1.0.0   │ cluster │ 1245586  │ 0s     │ 0    │ online    │ 0%       │ 40.7mb   │ Adminis… │ disabled │
-│ 320 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1219630  │ 19h    │ 0    │ online    │ 0%       │ 222.9mb  │ Adminis… │ disabled │
-│ 321 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1219637  │ 19h    │ 0    │ online    │ 0%       │ 221.1mb  │ Adminis… │ disabled │
-│ 32  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 866466   │ 9D     │ 4    │ online    │ 100%     │ 376.8mb  │ Adminis… │ disabled │
-│ 33  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 866478   │ 9D     │ 3    │ online    │ 0%       │ 382.1mb  │ Adminis… │ disabled │
-│ 51  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666029   │ 15D    │ 0    │ online    │ 14.3%    │ 212.8mb  │ Adminis… │ disabled │
-│ 52  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666036   │ 15D    │ 0    │ online    │ 28.6%    │ 192.1mb  │ Adminis… │ disabled │
-│ 23  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664458   │ 15D    │ 0    │ online    │ 0%       │ 82.0mb   │ Adminis… │ disabled │
-│ 24  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664473   │ 15D    │ 0    │ online    │ 0%       │ 83.1mb   │ Adminis… │ disabled │
-│ 2   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664216   │ 15D    │ 0    │ online    │ 0%       │ 177.4mb  │ Adminis… │ disabled │
-│ 4   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664256   │ 15D    │ 0    │ online    │ 0%       │ 176.8mb  │ Adminis… │ disabled │
-│ 279 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167914  │ 2D     │ 0    │ online    │ 0%       │ 203.8mb  │ Adminis… │ disabled │
-│ 280 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167921  │ 2D     │ 0    │ online    │ 0%       │ 190.5mb  │ Adminis… │ disabled │
-│ 210 │ insighted-ticketing-ai                               │ default     │ 1.0.0   │ fork    │ 1041063  │ 6D     │ 0    │ online    │ 0%       │ 58.2mb   │ Adminis… │ disabled │
-│ 0   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041039  │ 6D     │ 15   │ online    │ 0%       │ 141.0mb  │ Adminis… │ disabled │
-│ 1   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041051  │ 6D     │ 15   │ online    │ 0%       │ 125.8mb  │ Adminis… │ disabled │
-│ 281 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170396  │ 2D     │ 0    │ online    │ 0%       │ 86.7mb   │ Adminis… │ disabled │
-│ 282 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170403  │ 2D     │ 0    │ online    │ 0%       │ 94.5mb   │ Adminis… │ disabled │
-│ 21  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664438   │ 15D    │ 0    │ online    │ 0%       │ 42.3mb   │ Adminis… │ disabled │
-│ 22  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664451   │ 15D    │ 0    │ online    │ 0%       │ 40.9mb   │ Adminis… │ disabled │
-│ 25  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664474   │ 15D    │ 0    │ online    │ 0%       │ 59.6mb   │ Adminis… │ disabled │
-│ 26  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664491   │ 15D    │ 0    │ online    │ 0%       │ 56.7mb   │ Adminis… │ disabled │
-│ 277 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1231011  │ 9h     │ 6    │ online    │ 14.3%    │ 110.8mb  │ Adminis… │ disabled │
-│ 278 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1222246  │ 17h    │ 2    │ online    │ 0%       │ 145.3mb  │ Adminis… │ disabled │
-│ 19  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664416   │ 15D    │ 0    │ online    │ 0%       │ 40.3mb   │ Adminis… │ disabled │
-│ 20  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664423   │ 15D    │ 0    │ online    │ 0%       │ 40.1mb   │ Adminis… │ disabled │
+│ 326 │ agap-hrmo-backend                                    │ default     │ 1.0.0   │ fork    │ 1240212  │ 4D     │ 0    │ online    │ 0%       │ 184.2mb  │ Adminis… │ disabled │
+│ 325 │ agap-portal-backend                                  │ default     │ 0.0.1   │ fork    │ 1239456  │ 4D     │ 0    │ online    │ 0%       │ 284.4mb  │ Adminis… │ disabled │
+│ 31  │ agap-staging-backend                                 │ default     │ 0.0.1   │ fork    │ 664555   │ 19D    │ 0    │ online    │ 0%       │ 67.0mb   │ Adminis… │ disabled │
+│ 40  │ agap-ticketing-backend                               │ default     │ 1.0.0   │ fork    │ 664812   │ 19D    │ 0    │ online    │ 0%       │ 62.6mb   │ Adminis… │ disabled │
+│ 11  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664336   │ 19D    │ 0    │ online    │ 0%       │ 84.9mb   │ Adminis… │ disabled │
+│ 12  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664343   │ 19D    │ 0    │ online    │ 0%       │ 90.9mb   │ Adminis… │ disabled │
+│ 13  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664350   │ 19D    │ 0    │ online    │ 0%       │ 75.0mb   │ Adminis… │ disabled │
+│ 14  │ esf7-api                                             │ default     │ 1.0.0   │ cluster │ 664361   │ 19D    │ 0    │ online    │ 0%       │ 110.4mb  │ Adminis… │ disabled │
+│ 15  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897528   │ 13D    │ 1    │ online    │ 0%       │ 203.8mb  │ Adminis… │ disabled │
+│ 16  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897526   │ 13D    │ 1    │ online    │ 0%       │ 211.9mb  │ Adminis… │ disabled │
+│ 17  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897527   │ 13D    │ 1    │ online    │ 0%       │ 147.3mb  │ Adminis… │ disabled │
+│ 18  │ esf7-harvester                                       │ default     │ 1.0.0   │ cluster │ 897534   │ 13D    │ 1    │ online    │ 0%       │ 158.1mb  │ Adminis… │ disabled │
+│ 6   │ esf7-scheduler                                       │ default     │ 1.0.25  │ fork    │ 664279   │ 19D    │ 0    │ online    │ 0%       │ 43.3mb   │ Adminis… │ disabled │
+│ 3   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664217   │ 19D    │ 0    │ online    │ 0%       │ 157.4mb  │ Adminis… │ disabled │
+│ 5   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664267   │ 19D    │ 0    │ online    │ 0%       │ 160.5mb  │ Adminis… │ disabled │
+│ 7   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664280   │ 19D    │ 0    │ online    │ 0%       │ 158.2mb  │ Adminis… │ disabled │
+│ 8   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664301   │ 19D    │ 0    │ online    │ 0%       │ 159.7mb  │ Adminis… │ disabled │
+│ 9   │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664312   │ 19D    │ 0    │ online    │ 0%       │ 161.5mb  │ Adminis… │ disabled │
+│ 10  │ insighted-backend                                    │ default     │ 1.0.26  │ cluster │ 664325   │ 19D    │ 0    │ online    │ 0%       │ 158.2mb  │ Adminis… │ disabled │
+│ 339 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1361255  │ 20h    │ 0    │ online    │ 14.3%    │ 144.1mb  │ Adminis… │ disabled │
+│ 340 │ insighted-deped-mgmnt-backend                        │ default     │ 1.0.0   │ cluster │ 1361262  │ 20h    │ 0    │ online    │ 0%       │ 143.1mb  │ Adminis… │ disabled │
+│ 34  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664762   │ 19D    │ 0    │ online    │ 0%       │ 87.2mb   │ Adminis… │ disabled │
+│ 35  │ insighted-deped-mgmnt-staging-backend                │ default     │ 1.0.0   │ cluster │ 664768   │ 19D    │ 0    │ online    │ 0%       │ 87.4mb   │ Adminis… │ disabled │
+│ 329 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1251719  │ 4D     │ 0    │ online    │ 0%       │ 80.0mb   │ Adminis… │ disabled │
+│ 330 │ insighted-dpa-backend                                │ default     │ 1.0.0   │ cluster │ 1251726  │ 4D     │ 0    │ online    │ 0%       │ 73.1mb   │ Adminis… │ disabled │
+│ 345 │ insighted-esf7-staging-backend                       │ default     │ 1.0.0   │ cluster │ 1388758  │ 0s     │ 0    │ online    │ 0%       │ 48.1mb   │ Adminis… │ disabled │
+│ 346 │ insighted-esf7-staging-backend                       │ default     │ 1.0.0   │ cluster │ 1388765  │ 0s     │ 0    │ online    │ 0%       │ 40.4mb   │ Adminis… │ disabled │
+│ 343 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1370248  │ 14h    │ 0    │ online    │ 0%       │ 141.9mb  │ Adminis… │ disabled │
+│ 344 │ insighted-hq-api                                     │ default     │ 1.0.0   │ cluster │ 1370255  │ 14h    │ 0    │ online    │ 0%       │ 106.6mb  │ Adminis… │ disabled │
+│ 32  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 1249488  │ 4D     │ 5    │ online    │ 0%       │ 375.8mb  │ Adminis… │ disabled │
+│ 33  │ insighted-infra-backend                              │ default     │ 1.0.34  │ cluster │ 1249466  │ 4D     │ 4    │ online    │ 0%       │ 418.2mb  │ Adminis… │ disabled │
+│ 51  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666029   │ 19D    │ 0    │ online    │ 0%       │ 214.2mb  │ Adminis… │ disabled │
+│ 52  │ insighted-schoolhead-backend                         │ default     │ 1.0.0   │ cluster │ 666036   │ 19D    │ 0    │ online    │ 0%       │ 207.3mb  │ Adminis… │ disabled │
+│ 23  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664458   │ 19D    │ 0    │ online    │ 0%       │ 73.7mb   │ Adminis… │ disabled │
+│ 24  │ insighted-schoolhead-preventive-checklist-backend    │ default     │ 1.0.26  │ cluster │ 664473   │ 19D    │ 0    │ online    │ 0%       │ 74.7mb   │ Adminis… │ disabled │
+│ 2   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664216   │ 19D    │ 0    │ online    │ 0%       │ 168.4mb  │ Adminis… │ disabled │
+│ 4   │ insighted-staging                                    │ default     │ 1.0.25  │ cluster │ 664256   │ 19D    │ 0    │ online    │ 0%       │ 170.3mb  │ Adminis… │ disabled │
+│ 279 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167914  │ 7D     │ 0    │ online    │ 0%       │ 182.2mb  │ Adminis… │ disabled │
+│ 280 │ insighted-thirdlevel-backend                         │ default     │ 1.0.0   │ cluster │ 1167921  │ 7D     │ 0    │ online    │ 0%       │ 158.8mb  │ Adminis… │ disabled │
+│ 210 │ insighted-ticketing-ai                               │ default     │ 1.0.0   │ fork    │ 1041063  │ 10D    │ 0    │ online    │ 0%       │ 33.0mb   │ Adminis… │ disabled │
+│ 0   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041039  │ 10D    │ 15   │ online    │ 0%       │ 121.8mb  │ Adminis… │ disabled │
+│ 1   │ insighted-ticketing-backend                          │ default     │ 1.0.0   │ cluster │ 1041051  │ 10D    │ 15   │ online    │ 14.3%    │ 113.9mb  │ Adminis… │ disabled │
+│ 281 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170396  │ 6D     │ 0    │ online    │ 0%       │ 65.6mb   │ Adminis… │ disabled │
+│ 282 │ nosca-api                                            │ default     │ 1.0.0   │ cluster │ 1170403  │ 6D     │ 0    │ online    │ 14.3%    │ 72.7mb   │ Adminis… │ disabled │
+│ 21  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664438   │ 19D    │ 0    │ online    │ 0%       │ 45.3mb   │ Adminis… │ disabled │
+│ 22  │ opdash-backend                                       │ default     │ 1.0.0   │ cluster │ 664451   │ 19D    │ 0    │ online    │ 0%       │ 41.8mb   │ Adminis… │ disabled │
+│ 25  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664474   │ 19D    │ 0    │ online    │ 0%       │ 48.9mb   │ Adminis… │ disabled │
+│ 26  │ preventive-measure-checklist-standalone-backend      │ default     │ 1.0.0   │ cluster │ 664491   │ 19D    │ 0    │ online    │ 0%       │ 48.6mb   │ Adminis… │ disabled │
+│ 337 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1356312  │ 23h    │ 0    │ online    │ 0%       │ 94.5mb   │ Adminis… │ disabled │
+│ 338 │ stride-dashboard                                     │ default     │ 1.0.0   │ cluster │ 1356319  │ 23h    │ 0    │ online    │ 0%       │ 131.1mb  │ Adminis… │ disabled │
+│ 19  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664416   │ 19D    │ 0    │ online    │ 0%       │ 42.3mb   │ Adminis… │ disabled │
+│ 20  │ stride-unified-staging-backend                       │ default     │ 1.0.0   │ cluster │ 664423   │ 19D    │ 0    │ online    │ 0%       │ 42.3mb   │ Adminis… │ disabled │
 └─────┴──────────────────────────────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘

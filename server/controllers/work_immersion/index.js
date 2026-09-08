@@ -169,7 +169,79 @@ router.post('/', async (req, res) => {
   }
 });
 
-// DELETE a Work Immersion entry
+// POST Batch save Work Immersion visit entries
+router.post('/batch', async (req, res) => {
+  try {
+    const { personnelId, personnel_id, schoolId, schoolYear, school_year, schedules } = req.body;
+    const targetPersonnelId = personnelId || personnel_id;
+    const targetSchoolYear = schoolYear || school_year || '2026-2027';
+    const targetSchoolId = schoolId || '108348';
+
+    if (!targetPersonnelId || !Array.isArray(schedules)) {
+      return res.status(400).json({ success: false, error: 'personnelId and schedules array are required' });
+    }
+
+    const saved = [];
+    for (const sched of schedules) {
+      const vDate = sched.visitDate || sched.visit_date || sched.date;
+      const sTime = sched.startTime || sched.start_time;
+      const eTime = sched.endTime || sched.end_time;
+      if (!vDate || !sTime || !eTime) continue;
+
+      const durationMins = calculateMinutesExcludingLunch(sTime, eTime);
+      const wimId = sched.id || `WIM-${String(targetSchoolId).replace('SCH-', '')}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      const result = await db.query(
+        `INSERT INTO esf7_work_immersion (
+          id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes, raw_payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+        ON CONFLICT (personnel_id, school_year, visit_date) DO UPDATE SET
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
+          duration_minutes = EXCLUDED.duration_minutes,
+          raw_payload = EXCLUDED.raw_payload,
+          updated_at = NOW()
+        RETURNING *;`,
+        [wimId, targetPersonnelId, targetSchoolId, targetSchoolYear, vDate, sTime, eTime, durationMins, JSON.stringify(sched)]
+      );
+      if (result.rows.length > 0) {
+        saved.push(formatWorkImmersionRecord(result.rows[0]));
+      }
+    }
+
+    res.json({ success: true, count: saved.length, data: saved });
+  } catch (err) {
+    console.error('[WorkImmersion POST /batch Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE a Work Immersion entry by date
+router.delete('/date', async (req, res) => {
+  try {
+    const { personnelId, personnel_id, schoolYear, school_year, date, visit_date } = req.body;
+    const targetPersonnelId = personnelId || personnel_id;
+    const targetSchoolYear = schoolYear || school_year || '2026-2027';
+    const targetDate = date || visit_date;
+
+    if (!targetPersonnelId || !targetDate) {
+      return res.status(400).json({ success: false, error: 'personnelId and date are required' });
+    }
+
+    await db.query(
+      `DELETE FROM esf7_work_immersion WHERE personnel_id = $1 AND school_year = $2 AND visit_date = $3`,
+      [targetPersonnelId, targetSchoolYear, targetDate]
+    );
+
+    res.json({ success: true, message: `Work Immersion entry for ${targetDate} deleted successfully.` });
+  } catch (err) {
+    console.error('[WorkImmersion DELETE /date Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE a Work Immersion entry by id
 router.delete('/:id', async (req, res) => {
   try {
     await db.query(`DELETE FROM esf7_work_immersion WHERE id = $1`, [req.params.id]);

@@ -126,6 +126,193 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PUT Batch replace all workload rows for a personnel
+router.put('/personnel/:personnel_id', async (req, res) => {
+  const client = await db.getClient();
+  try {
+    const { personnel_id } = req.params;
+    const {
+      workloadRows = [],
+      workload_rows = [],
+      teachingRelatedRows = [],
+      administrativeRows = [],
+      shsWorkloads = null,
+      schoolId: bodySchoolId,
+      schoolYear: bodySchoolYear
+    } = req.body;
+
+    const rowsToSave = Array.isArray(workloadRows) && workloadRows.length > 0
+      ? workloadRows
+      : (Array.isArray(workload_rows) ? workload_rows : []);
+
+    await client.query('BEGIN');
+
+    // 1. Locate or create personnel profile record to satisfy FK
+    let personRes = await client.query(
+      `SELECT id, school_id, school_year, raw_payload FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [personnel_id]
+    );
+
+    let targetPersonId = personnel_id;
+    let targetSchoolId = bodySchoolId || '108348';
+    let targetSchoolYear = bodySchoolYear || '2026-2027';
+
+    if (personRes.rows.length > 0) {
+      targetPersonId = personRes.rows[0].id;
+      targetSchoolId = bodySchoolId || personRes.rows[0].school_id || targetSchoolId;
+      targetSchoolYear = bodySchoolYear || personRes.rows[0].school_year || targetSchoolYear;
+
+      // Update raw_payload in esf7_personnel_profile
+      const existingRaw = personRes.rows[0].raw_payload || {};
+      const updatedRaw = {
+        ...existingRaw,
+        workloadRows: rowsToSave,
+        teachingRelatedRows,
+        administrativeRows
+      };
+      await client.query(
+        `UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(updatedRaw), targetPersonId]
+      );
+    } else {
+      // Baseline profile fallback so foreign key constraint does not fail
+      await client.query(`
+        INSERT INTO esf7_personnel_profile (id, school_id, school_year, first_name, last_name, raw_payload, created_at, updated_at)
+        VALUES ($1, $2, $3, 'TEACHER', 'STAFF', $4::jsonb, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+      `, [targetPersonId, targetSchoolId, targetSchoolYear, JSON.stringify({ workloadRows: rowsToSave, teachingRelatedRows, administrativeRows })]);
+    }
+
+    // Clean school ID
+    targetSchoolId = String(targetSchoolId).replace('SCH-', '');
+
+    // 2. Delete existing workload rows for this personnel
+    await client.query(
+      `DELETE FROM esf7_workload_rows WHERE personnel_id = $1`,
+      [targetPersonId]
+    );
+
+    // 3. Insert each workload row
+    const insertedRows = [];
+    for (let i = 0; i < rowsToSave.length; i++) {
+      const r = rowsToSave[i];
+      const seq = String(i + 1).padStart(3, '0');
+      const wklId = r.id && !String(r.id).startsWith('new-') && !String(r.id).startsWith('wk-')
+        ? String(r.id)
+        : `WKL-${targetSchoolId}-${targetPersonId.replace('PER-', '').replace('PRN-', '')}-${seq}-${Date.now().toString(36).slice(-4)}`;
+
+      const gradeLevel = r.gradeLevel || r.grade_level || '';
+      const sectionId = r.sectionId || r.section_id || null;
+      const sectionName = r.sectionName || r.section_name || '';
+      const subject = r.subject || r.subjectName || r.subject_name || 'MATHEMATICS';
+      const subjectId = r.subjectId || r.subject_id || null;
+      const remediationSubject = r.remediationSubject || r.remediation_subject || null;
+      const startTime = r.startTime || r.start_time || null;
+      const endTime = r.endTime || r.end_time || null;
+      const days = r.days || (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+      const term = r.term || '1st';
+
+      const insertQuery = `
+        INSERT INTO esf7_workload_rows (
+          id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
+          subject, subject_id, remediation_subject, start_time, end_time, days, term, raw_payload, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15::jsonb, NOW(), NOW())
+        RETURNING *;
+      `;
+
+      const insertValues = [
+        wklId,
+        targetPersonId,
+        targetSchoolId,
+        targetSchoolYear,
+        gradeLevel,
+        sectionId,
+        sectionName,
+        subject,
+        subjectId,
+        remediationSubject,
+        startTime,
+        endTime,
+        JSON.stringify(days),
+        term,
+        JSON.stringify({ ...r, id: wklId, sectionId, sectionName, gradeLevel, subject, startTime, endTime, days })
+      ];
+
+      const resRow = await client.query(insertQuery, insertValues);
+      insertedRows.push(formatWorkloadRecord(resRow.rows[0]));
+    }
+
+    // 4. Also handle SHS workloads if provided or present
+    if (shsWorkloads) {
+      await client.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1`, [targetPersonId]);
+
+      let allShsList = [];
+      if (Array.isArray(shsWorkloads)) {
+        allShsList = shsWorkloads;
+      } else if (typeof shsWorkloads === 'object') {
+        Object.entries(shsWorkloads).forEach(([tKey, tRows]) => {
+          if (Array.isArray(tRows)) {
+            tRows.forEach(tr => allShsList.push({ ...tr, term: tr.term || tKey }));
+          }
+        });
+      }
+
+      for (let sIdx = 0; sIdx < allShsList.length; sIdx++) {
+        const sr = allShsList[sIdx];
+        const sSeq = String(sIdx + 1).padStart(3, '0');
+        const shsId = sr.id && !String(sr.id).startsWith('shs-')
+          ? String(sr.id)
+          : `SHS-WKL-${targetSchoolId}-${targetPersonId.replace('PER-', '')}-${sSeq}`;
+
+        await client.query(`
+          INSERT INTO esf7_shs_workload_rows (
+            id, personnel_id, school_id, school_year, term, semester, grade_level,
+            track_strand, shs_subject_category, section_id, section_name,
+            subject, subject_id, remediation_subject, start_time, end_time, days, raw_payload, created_at, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, NOW(), NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, days = EXCLUDED.days, raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
+        `, [
+          shsId,
+          targetPersonId,
+          targetSchoolId,
+          targetSchoolYear,
+          sr.term || '1st',
+          sr.semester || null,
+          sr.gradeLevel || sr.grade_level || 'Grade 11',
+          sr.trackStrand || sr.track_strand || null,
+          sr.shsSubjectCategory || sr.shs_subject_category || sr.category || null,
+          sr.sectionId || sr.section_id || null,
+          sr.sectionName || sr.section_name || null,
+          sr.subject || 'GENERAL MATHEMATICS',
+          sr.subjectId || sr.subject_id || null,
+          sr.remediationSubject || sr.remediation_subject || null,
+          sr.startTime || sr.start_time || null,
+          sr.endTime || sr.end_time || null,
+          JSON.stringify(sr.days || ['M', 'T', 'W', 'TH', 'F']),
+          JSON.stringify(sr)
+        ]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: `Saved ${insertedRows.length} workload rows for personnel ${targetPersonId} successfully.`,
+      count: insertedRows.length,
+      data: insertedRows
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error updating personnel workload rows:', err);
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // PUT Update an existing workload row
 router.put('/:id', async (req, res) => {
   try {
@@ -232,4 +419,5 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+router.formatWorkloadRecord = formatWorkloadRecord;
 module.exports = router;

@@ -18,6 +18,8 @@ export default function Roster() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [harvestStatus, setHarvestStatus] = useState(null);
   const [isCheckingHarvest, setIsCheckingHarvest] = useState(false);
+  const [isHeadRequiredModalOpen, setIsHeadRequiredModalOpen] = useState(false);
+  const [highlightHeadColumn, setHighlightHeadColumn] = useState(false);
 
   // Poll eSF7 Harvester Queue status if roster is empty
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function Roster() {
     ? `${newPerson.depedEmailLocal.toLowerCase().trim()}@deped.gov.ph`
     : '';
   const addModalEmailVal = addModalEmail
-    ? validateDepEdEmail(addModalEmail, newPerson.firstName, newPerson.lastName)
+    ? validateDepEdEmail(addModalEmail, newPerson.firstName, newPerson.lastName, newPerson.middleName)
     : { isValid: true, error: null };
   const hasAddEmailError = Boolean(addModalEmail && !addModalEmailVal.isValid);
 
@@ -91,6 +93,40 @@ export default function Roster() {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+  };
+
+  const handleSaveAndContinue = async () => {
+    // 1. DepEd eSF7 School Head Verification Gate
+    const currentHead = personnel.find(p => p.isSchoolHead === true);
+    if (!currentHead) {
+      setIsHeadRequiredModalOpen(true);
+      setHighlightHeadColumn(true);
+      return;
+    }
+
+    // 2. Commit any pending auto-fill drafts
+    const drafts = personnel.filter(p => p.isDraft);
+    if (drafts.length > 0) {
+      try {
+        setIsSavingDrafts(true);
+        await commitDraftPersonnel();
+      } catch (err) {
+        console.warn('Draft auto-commit warning:', err);
+      } finally {
+        setIsSavingDrafts(false);
+      }
+    }
+
+    // 3. Confirm and transition to Profiling
+    if (showToast) {
+      showToast(`School Head verified: ${currentHead.firstName} ${currentHead.lastName}`, 'success');
+    }
+
+    if (completeNode) {
+      completeNode('roster', 'profile');
+    } else if (setActiveView) {
+      setActiveView('profile');
+    }
   };
 
   const handleAddSubmit = async (e) => {
@@ -122,7 +158,7 @@ export default function Roster() {
       : null;
 
     if (email) {
-      const emailVal = validateDepEdEmail(email, newPerson.firstName, newPerson.lastName);
+      const emailVal = validateDepEdEmail(email, newPerson.firstName, newPerson.lastName, newPerson.middleName);
       if (!emailVal.isValid) {
         alert(`Invalid DepEd Email: ${emailVal.error}`);
         return;
@@ -188,12 +224,28 @@ export default function Roster() {
 
   return (
     <section id="roster" className="view grid">
+      <style>{`
+        @keyframes headColumnPulse {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+            border-color: #ef4444;
+          }
+          50% {
+            box-shadow: 0 0 16px 4px rgba(239, 68, 68, 0.7);
+            border-color: #dc2626;
+          }
+        }
+        .school-head-highlight-cell {
+          animation: headColumnPulse 1.8s infinite ease-in-out !important;
+          box-shadow: 0 0 12px rgba(239, 68, 68, 0.6) !important;
+        }
+      `}</style>
       <PortalHeader
         title="Personnel Roster & Profile Directory"
         description="Master roster of all registered school personnel, position items, and status tracking."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={() => completeNode('roster', 'profile')}
+        onContinue={handleSaveAndContinue}
         continueText="Save & Continue to Profiling ➔"
       />
       <article className="card">
@@ -373,7 +425,6 @@ export default function Roster() {
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: '70px' }}><button className="roster-sort-button" type="button" onClick={() => handleSort('salutation')}>Desig.</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('firstName')}>First Name</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('middleName')}>Middle Name</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('lastName')}>Last Name</button></th>
@@ -407,14 +458,24 @@ export default function Roster() {
                   </th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('type')}>Position Category</button></th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('position')}>Position</button></th>
-                  <th style={{ width: '100px', textAlign: 'center' }}><button className="roster-sort-button" type="button" onClick={() => handleSort('isSchoolHead')}>School Head</button></th>
+                  <th style={{
+                    width: '110px',
+                    textAlign: 'center',
+                    background: highlightHeadColumn ? '#fef2f2' : undefined,
+                    border: highlightHeadColumn ? '2px dashed #ef4444' : undefined,
+                    borderRadius: highlightHeadColumn ? '8px' : undefined,
+                    transition: 'all 0.3s ease'
+                  }}>
+                    <button className="roster-sort-button" type="button" onClick={() => handleSort('isSchoolHead')}>
+                      School Head {highlightHeadColumn && <span style={{ color: '#ef4444', fontWeight: '900' }}>*</span>}
+                    </button>
+                  </th>
                   <th style={{ width: '190px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredPersonnel.map((p) => (
                   <tr key={p.id} className="roster-row">
-                    <td style={{ width: '70px', fontSize: '11px' }}>{p.salutation || '—'}</td>
                     <td>{p.firstName}</td>
                     <td>{p.middleName || '—'}</td>
                     <td>
@@ -502,6 +563,8 @@ export default function Roster() {
                                  }
                                  const val = e.target.checked;
                                  if (val) {
+                                   setHighlightHeadColumn(false);
+                                   setIsHeadRequiredModalOpen(false);
                                    const currentHead = personnel.find(x => x.isSchoolHead === true && x.id !== p.id);
                                    if (currentHead) {
                                      const confirmed = await showConfirm(
@@ -526,7 +589,9 @@ export default function Roster() {
                                top: 0, left: 0, right: 0, bottom: 0,
                                backgroundColor: p.isSchoolHead ? 'var(--blue)' : '#cbd5e1',
                                transition: '0.3s', borderRadius: '20px'
-                             }}>
+                             }}
+                             className={highlightHeadColumn && !isNonTeaching && !p.isSchoolHead ? 'school-head-highlight-cell' : ''}
+                             >
                                <span style={{
                                  position: 'absolute', content: '""', height: '14px', width: '14px', left: p.isSchoolHead ? '18px' : '3px', bottom: '3px',
                                  backgroundColor: 'white', transition: '0.3s', borderRadius: '50%'
@@ -807,6 +872,127 @@ export default function Roster() {
           if (showToast) showToast('Faculty profiles auto-populated successfully!', 'success');
         }} 
       />
+
+      {/* School Head Required Alert Modal */}
+      {isHeadRequiredModalOpen && (
+        <div 
+          className="modal-overlay" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(15, 23, 42, 0.75)', 
+            backdropFilter: 'blur(5px)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            zIndex: 10000,
+            padding: '20px' 
+          }}
+          onClick={() => setIsHeadRequiredModalOpen(false)}
+        >
+          <div 
+            className="card" 
+            style={{ 
+              maxWidth: '520px', 
+              width: '100%', 
+              background: '#ffffff', 
+              borderRadius: '24px', 
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', 
+              overflow: 'hidden',
+              border: '2px solid #fed7aa',
+              animation: 'fadeIn 0.2s ease-out'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header with warm warning banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              padding: '24px 28px',
+              borderBottom: '1.5px solid #fde68a',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px'
+            }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '16px',
+                background: '#fef3c7',
+                border: '2px solid #f59e0b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#d97706',
+                flexShrink: 0
+              }}>
+                <FiAlertCircle size={26} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#92400e' }}>
+                  School Head Designation Required
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#b45309' }}>
+                  DepEd eSF7 Institutional Compliance Gate
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6', color: '#334155' }}>
+                Under <strong>DepEd Electronic School Form 7 (eSF7)</strong> guidelines, every school must have <strong>at least one official School Head</strong> (Principal, Teacher-in-Charge, or Head Teacher) designated before continuing to Personnel Profiling.
+              </p>
+
+              <div style={{
+                background: '#fef2f2',
+                border: '1.5px solid #fecaca',
+                borderRadius: '14px',
+                padding: '14px 18px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '12px'
+              }}>
+                <div style={{ color: '#dc2626', marginTop: '2px' }}>
+                  <FiAlertCircle size={18} />
+                </div>
+                <div style={{ fontSize: '13px', color: '#991b1b', lineHeight: '1.5' }}>
+                  <strong>Current Status:</strong> No School Head is currently selected.
+                  <div style={{ marginTop: '4px', color: '#7f1d1d' }}>
+                    Please toggle ON the <strong>School Head</strong> switch for the school administrator in the roster list.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setIsHeadRequiredModalOpen(false);
+                    setHighlightHeadColumn(true);
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '14px',
+                    fontWeight: '800',
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Understood, Designate School Head
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

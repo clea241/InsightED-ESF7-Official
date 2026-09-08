@@ -10,6 +10,36 @@
 - Client: React with Vite/Webpack, Topbar, Blueprint backgrounds, Custom CSS modules.
 - Server: Node.js Express server running background jobs, worker threads for report processing, PostgreSQL / SQLite database controllers.
 
+### Added 2026-09-08 (Organized Classes Multi-Grade Restriction)
+- **Multi-Grade (MG) Elementary Isolation**:
+  - In DepEd, Multi-Grade classes are strictly an Elementary curriculum feature (`Grade 1` to `Grade 6`).
+  - Pure Secondary schools (Junior High School and Senior High School) without Elementary offerings (`!hasElementary`) have the **`Multi Grade` (`MULTIGRADE`)** option completely removed from the Class Type dropdown in both inline section creation and inline section editing.
+  - If a school lacks Elementary offerings, any attempt to save or edit a regular section as `MULTIGRADE` automatically defaults/reverts to `MONO GRADE`.
+
+### Added 2026-09-07 (Workload & Gantt Persistence Architecture)
+- **Workload Batch Persistence Pipeline**:
+  - `PUT /api/workloads/personnel/:personnelId` is the canonical endpoint for saving all workload rows (`workloadRows`), teaching-related tasks (`teachingRelatedRows`), administrative tasks (`administrativeRows`), and SHS workloads (`shsWorkloads`).
+  - **Transaction Guarantee**: Wrapped in PostgreSQL `BEGIN ... COMMIT/ROLLBACK`.
+  - **Dual Persistence Strategy**:
+    1. Synchronizes `esf7_personnel_profile.raw_payload` with latest `{ workloadRows, teachingRelatedRows, administrativeRows }`.
+    2. Atomic replacement (`DELETE FROM esf7_workload_rows WHERE personnel_id = $1`) followed by bulk re-insertion into `esf7_workload_rows` with all columns (`grade_level`, `section_id`, `section_name`, `subject`, `start_time`, `end_time`, `days`, `term`, `raw_payload`).
+    3. If SHS workloads are present, updates `esf7_shs_workload_rows`.
+  - **Loading & Querying**: `GET /api/personnel` and `GET /api/personnel/:id` query `esf7_workload_rows` directly to populate `workloadRows`, ensuring that page reloads or cross-device access never lose saved timetable data.
+  - **UI Triggers**:
+    - **Gantt Header**: Quick `<button onClick={handleSaveChangesDirectly}><FiSave /> Save Workload</button>`.
+    - **Workload Toolbar**: Dedicated `<button onClick={handleSaveChangesDirectly}><FiSave /> Save Workload</button>` alongside `+ Add subject schedule`.
+    - **Bottom Action Bar**: Prominent `Save Changes` and `Save & Validate Workload` buttons.
+    - **Navigation Safeguard**: `PortalHeader.onContinue` auto-saves workload before moving to Deployment (`room-qr`).
+  - **Administrative Tasks Dropdown Options**:
+    - Removed generic `"ADMINISTRATIVE"` and `"RELATED TASK"` options from `ADMINISTRATIVE_TASK_OPTIONS` and mono grade subject arrays.
+    - Official selectable options strictly consist of:
+      1. `ADMIN TASK - PERSONNEL ADMINISTRATION`
+      2. `ADMIN TASK - PROPERTY/PHYSICAL FACILITIES CUSTODIANSHIP`
+      3. `ADMIN TASK - GENERAL ADMINISTRATIVE SUPPORT`
+      4. `ADMIN TASK - FINANCIAL MANAGEMENT`
+      5. `ADMIN TASK - RECORDS MANAGEMENT`
+      6. `ADMIN TASK - PROGRAM MANAGEMENT`
+
 
 
 ### Added 2026-07-23
@@ -154,3 +184,158 @@
     - Consolidated the previous 7 scattered KPI boxes into a single horizontal executive summary ribbon with total enrollment (Male / Female pills), total sections, and class size health distribution (Within / Below / Above Standard).
     - Added Grade Level Filter pills (`All`, `Kinder`, `Grade 1`...) for quick jumping across grade levels.
     - Subjects Taught now renders as a full-width responsive grid (`repeat(auto-fill, minmax(320px, 1fr))`) instead of a narrow vertical scroll.
+
+### Added 2026-09-07
+- **DepEd Email Validation Policy & Married Personnel Maiden Surnames**:
+  - **Function Signature**: `validateDepEdEmail(email, firstName, lastName, middleName)` in `client/src/context/AppContext.jsx`.
+  - **Married Personnel Maiden Surnames**:
+    - Under Philippine legal and civil registration conventions, when a female educator marries, her maiden surname becomes her Middle Name on official government records (eSF7/plantilla), and she adopts her husband's surname as her Last Name.
+    - However, her official DepEd Google Workspace email account (`@deped.gov.ph`) is often retained from prior to marriage (e.g. `maria.santos@deped.gov.ph` for `Maria Santos Reyes`) or issued as a compound name (`maria.santos.reyes@deped.gov.ph` / `maria.s.reyes@deped.gov.ph`).
+    - **Validation Rule**: The surname validation check accepts **EITHER** the legal `lastName` OR the `middleName` (maiden surname). Both are fully recognized as valid identity proofs.
+  - **Disambiguation Support**: ICT disambiguation numbers (e.g. `001`, `002`) and middle initials are permitted without triggering name mismatch errors.
+  - **First Name Tokenization**: Multi-word first names (e.g., `Mary Jane`, `Ma. Theresa`) match if any individual token appears in the local part of the email address.
+  - **Mandatory vs Exempt**:
+    - Mandatory for Teaching, Teaching-Related, and Nationally-Funded Non-Teaching staff.
+    - `N/A` is allowed only for Non-Nationally Funded Non-Teaching staff (e.g. MOOE Utility, Contract of Service/JO).
+  - **Master Agent Skill**: `esf7_agents/deped-email-architect/SKILL.md` (and `.agents/skills/deped-email-architect/SKILL.md`). Test suite: `node esf7_agents/deped-email-architect/scripts/audit_email_validation.js`.
+- **Teaching Assignment & Learning Area Full Service Years Rules**:
+  - **Teaching Tab (Assigned Grade Levels)**:
+    - Mandatory for Teaching and Teaching-Related personnel (`type !== 'non-teaching'`).
+    - At least 1 grade level must be assigned (`assignedGradeLevels.length >= 1`).
+    - Non-Teaching personnel are strictly exempt (Teaching tab is hidden).
+  - **Learning Area Matrix (Full Service Allocation)**:
+    - Total teaching experience is calculated dynamically from `firstServiceDate` (`maxYears = currentYear - startYear`).
+    - The sum of assigned years across the Learning Area matrix (`totalAssigned`) must **fully account for all service years** (`totalAssigned === maxYears`).
+    - Partial allocation (e.g. allocating only 1 year when the teacher has 10 years of service) is strictly prohibited.
+    - Saving changes directly, validating, and continuing to Organized Classes are blocked if any faculty has incomplete or under-allocated years.
+    - Non-Teaching personnel are strictly exempt (Learning Area tab is hidden).
+- **Religion and Ethnic Group Options Clean-up & Removal of OTHERS as Default**:
+  - `OTHERS` removed from `RELIGION_OPTIONS` and `ETHNIC_GROUP_OPTIONS` in `client/src/context/AppContext.jsx`.
+  - Neither dropdown displays `"OTHERS"` or defaults to `"OTHERS"`. Options strictly consist of official recognized religions and ethnolinguistic groups.
+  - Removed `'OTHERS'` fallback default from `server/controllers/personnel/index.js`, `server/queue_worker.js`, and `server/debug_autofill.js` (empty values fall back to `''` instead of `'OTHERS'`).
+  - Frontend normalization (`fetchAndNormalizePersonnel`, `autoEnrichPersonnel`, and draft sync) cleans legacy `'OTHERS'` values to empty string `''`.
+  - Moved `"OTHERS"` to the end of `HIRING_ARRANGEMENT_OPTIONS` and `POST_GRADUATE_DEGREE_OPTIONS` so no dropdown in the system defaults to `"OTHERS"`.
+- **Major, Minor, and PRC Specialization Dropdown Options**:
+  - `OTHERS` strictly removed from `MAJOR_OPTIONS`, `MINOR_OPTIONS`, and `PRC_SPECIALIZATION_OPTIONS`. Custom entries are supported via `allowCustom={true}`.
+  - `N/A` is added to `MINOR_OPTIONS` (as having no minor is optional/common), but remains excluded from `MAJOR_OPTIONS` and `PRC_SPECIALIZATION_OPTIONS`.
+  - Normalization in `AppContext.jsx` and `PersonnelProfile.jsx` sanitizes any legacy `'OTHERS'` in major, minor, or PRC specialization to `''`.
+- **Educational Attainment Dynamic Field Rendering**:
+  - `effectiveAttainment` is hoisted and consistently computed across `PersonnelProfile.jsx` and `AppContext.jsx`.
+  - Even before an explicit attainment option is selected or committed to state, default/fallback attainment (e.g. `COLLEGE GRADUATE / BACCALAUREATE` for teaching faculty, or degrees with Master's/Doctorate/Undergraduate) immediately renders the corresponding conditional fields:
+    - `COLLEGE GRADUATE / BACCALAUREATE` & `COLLEGE UNDERGRADUATE`: College Degree, Major in Education (if education degree), Minor (optional).
+    - `MASTER'S DEGREE (GRADUATED)` & `DOCTORATE DEGREE (GRADUATED)`: College Degree, Major, Minor, AND Post-Graduate Discipline.
+    - `VOCATIONAL / TECH-VOC COURSE`: Vocational / TESDA Course & NC Level.
+    - `SENIOR HIGH SCHOOL GRADUATE`: Senior High School Track.
+- **Teaching Licensure Examination for Teachers (LET/PBET) Requirement**:
+  - **Restriction**: All teaching faculty (`type === 'teaching'` or `positionCategory === 'TEACHING'`) and related-teaching school heads (`position` containing Principal, Head Teacher) must possess `LICENSURE EXAMINATION FOR TEACHERS` (LET) or `PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)` eligibility.
+  - **Form Validation (`getPersonnelValidationErrors`)**: If a teaching faculty member has empty eligibilities or does not include LET/PBET, profile saving and navigation are blocked with error `"Licensure Examination for Teachers (LET/PBET)"` in the Education tab.
+  - **Real-Time Issue Tracker (`AppContext.jsx`)**: Flags blocking error `${name}: Teaching personnel must possess Licensure Examination for Teachers (LET/PBET) eligibility.`
+  - **Visual UI Cues (`PersonnelProfile.jsx`)**:
+    - Asterisk and label clarification: `Eligibilities * (Licensure Examination for Teachers Required)`
+    - Inline warning banner: `<FiAlertCircle /> Teaching personnel must possess Licensure Examination for Teachers (LET/PBET) eligibility.`
+    - Select dropdown receives `.empty-field` class and red border (`#EF4444`) until LET/PBET is added.
+  - **Non-Teaching Exemption**: Non-teaching personnel (`type === 'non-teaching'`) are strictly exempt from this restriction and may have CS eligibilities, TESDA, or N/A.
+- **Personnel Profiling, Organized Classes & Designations Sequential Pipeline**:
+  - **Sequential Navigation Flow**:
+    - `Personnel Profiling` ➔ **`Organized Classes`** (`completeNode('profile', 'classes')`, `"Save & Continue to Organized Classes ➔"`).
+    - `Organized Classes` ➔ **`Designations`** (`completeNode('classes', 'designation')`, `"Save & Continue to Designations ➔"`).
+    - `Designations` ➔ **`Workload`** (`completeNode('designation', 'workload')`, `"Save & Continue to Workload ➔"`).
+  - **DepEd Enrollment Rationale**: Under DepEd staffing guidelines, an Assistant School Head / Assistant Principal Designate is required based on total learner enrollment thresholds. Learner counts and section enrollment are encoded in **Organized Classes**. Placing Organized Classes before Designations ensures that total enrollment is established before the system evaluates whether an Assistant School Head Designate is mandatory.
+  - **NodeMap & Sidebar Order**: Aligned to Step 03: Personnel Profiling, Step 04: Organized Classes, Step 05: Designations, Step 06: Workload.
+  - **Mandatory Designations Workload Gate**:
+    - Progression from Designations to Workload (`Save & Continue to Workload ➔`) is strictly blocked until all required designations are answered:
+      1. **Guidance Designate** (`GUIDANCE DESIGNATE`)
+      2. **Learner Information Officer** (`LEARNER INFORMATION OFFICER` / `LEARNER FORMATION OFFICER`)
+      3. **Department Head Designate** (`DEPARTMENT HEAD DESIGNATE` / `DEPARTMENT HEAD`)
+      4. **Assistant School Head Designate** (`ASSISTANT SCHOOL HEAD DESIGNATE`) - strictly mandatory when regular enrollment $\ge 1,001$ learners.
+    - If any required designation is vacant, a blocking modal (`Mandatory School Designations Incomplete`) prevents navigation and highlights the vacant roles with direct `"Assign Now"` action buttons.
+  - **L&D Total Hours 3-Digit Limit**:
+    - Across all Professional Development / Training sections (NEAP Trainings, TESDA Certifications, Other Trainings in both `PersonnelProfile.jsx` and `RoomProfiling.jsx`), total hours input is strictly capped at **3 digits (1 - 999 hours)**.
+    - Sliced on input, clamped in handlers (`slice(0, 3)`), and validated in form errors and real-time audit issues. Numbers $> 999$ or non-digits are strictly prevented.
+- **Designations Management UI Architecture (Option A Redesign)**:
+  - **Problem Solved**: Eliminated the overwhelming 16-card catalogue with vacant/blank cards across the screen. Replaced with an agile, streamlined 2-tier architecture.
+  - **Tier 1: Core School Designations**:
+    - Pre-loads standard leadership/student support slots at the top (Guidance, LIO, Department Head, and Assistant School Head if enrollment >= 1,001).
+    - Removed the loud "2/3 Assigned" banner so users do not feel constrained to only filling 3 roles.
+    - If assigned: Displays teacher avatar, name, position, clean inline switch toggle for `APPROVED BY SDS` / `APPROVE BY SDS`, and `Remove ✕` button.
+    - If vacant: Provides a clean inline `<SearchableDropdown>` for direct teacher assignment without intrusive red alert banners.
+  - **Tier 2: Dynamic School Coordinators (`+ Add Designation`)**:
+    - Features a vibrant, glowing `[ + Add Designation ]` button equipped with continuous CSS pulse glow and an active cyan blinking beacon dot to draw user attention.
+    - High-Engagement Empty State: Includes quick-pick interactive chips (`📖 Reading Coordinator`, `💻 ICT Coordinator`, `👥 Grade Level Chair`, `🏆 Sports`, `🔬 Research`, `🧩 SNED`, `🏛️ SELG/SSLG`) that immediately open the assignment modal with that role pre-selected, plus a prominent glowing central button.
+    - Active Cards: Displays cleanly formatted cards showing designation category, parameter pill (e.g. `GRADE 1`, `ENGLISH`), assigned teacher info, SDS approval switch, and unassign button.
+  - **Validation Gate Intact**: The `handleContinueToWorkload` gate ensures all mandatory roles are satisfied before navigating to Workload. Missing roles trigger the blocking modal with smooth scroll to the vacant slot.
+- **Designations & Workload Dynamic Auto-Sync Connection**:
+  - **Teaching-Related Tasks Auto-Population**:
+    - When a teacher is assigned an official designation in the `Designations` portal (e.g. `GUIDANCE DESIGNATE`, `LEARNER INFORMATION OFFICER`, `READING COORDINATOR`, `DEPARTMENT HEAD`, etc.), that designation automatically syncs into their `teachingRelatedRows` in `Workload.jsx`.
+    - Both `currentPerson.designation` and `currentPerson.designations` array (with or without `::APPROVED_SDS`) are supported and extracted.
+  - **Locked Designation Status**:
+    - Synced designation tasks are **LOCKED** in Workload (`isDesignation: true`).
+    - Users cannot modify the task title or delete the designation task row from inside Workload. To unassign a designation, it must be unassigned in the **Designations** tab.
+    - When unassigned in Designations, the task row is automatically purged from `teachingRelatedRows`.
+    - Visual indicators: `🔒 [Task Name]`, `Official Designation · Locked` pill, and `[✓ SDS Endorsed]` badge if SDS approval was granted.
+  - **Removal of Manual `+ Add task` Button**:
+    - The manual `+ Add task` button in Teaching-Related Tasks has been permanently removed. All teaching-related duties originate from official designations.
+    - A `"Manage Designations"` button in the section header allows 1-click navigation to the Designations portal (`setActiveView('designation')`).
+    - If no designations are assigned to the teacher, a clean empty state directs the user to `"Assign Designation Now ➔"`.
+  - **Administrative Tasks Strictly Independent**:
+    - Administrative Tasks (`administrativeRows`) remain completely unaffected and retain their manual `+ Add task` button for encoding administrative responsibilities.
+  - **Cadence & Allocated Hours Controller**:
+    - Each Teaching-Related Task card allows choosing an execution cadence: `Daily`, `Weekly`, or `Monthly`.
+    - Teachers input their allocated hours (min 0.5, step 0.5).
+    - Weekly equivalent hours automatically feed into `baseWeeklyRelatedHours` and the overall teacher workload totals:
+      - Daily: $h \times 5$ hrs/wk
+      - Weekly: $h$ hrs/wk
+      - Monthly: $h \times \frac{9}{34}$ hrs/wk
+  - **Live Term Summary Bar**:
+    - Displays a live calculation of allocated hours per term aligned with the DepEd 3-Term academic calendar (34 instructional weeks / 170 school days / 9 report months):
+      - **Daily**: Term 1 = $12 \times 5 \times h$ hrs (60 days), Term 2 = $11 \times 5 \times h$ hrs (55 days), Term 3 = $11 \times 5 \times h$ hrs (55 days), Annual Total = $170 \times h$ hrs.
+      - **Weekly**: Term 1 = $12 \times h$ hrs, Term 2 = $11 \times h$ hrs, Term 3 = $11 \times h$ hrs, Annual Total = $34 \times h$ hrs.
+      - **Monthly**: Term 1 = $3 \times h$ hrs, Term 2 = $3 \times h$ hrs, Term 3 = $3 \times h$ hrs, Annual Total = $9 \times h$ hrs.
+    - An aggregate banner displays the combined workload across all teaching-related tasks if the teacher holds multiple designations.
+
+### Added 2026-09-07
+- **Inclusive Education Offerings & Workload Subject Isolation**:
+  - **Question in School Profile**:
+    - Question: *"Does this school offer ALS / SNED / IP and MADRASAH?"*
+    - Nested directly inside each Educational Level card (Elementary, Junior High School, Senior High School).
+    - If user toggles YES, options are selected and tagged per level:
+      - **Elementary**: `ALS-ES`, `SNED-ES`, `IPED-ES`, `MADRASAH-ES`
+      - **Junior High School**: `ALS-JHS`, `SNED-JHS`, `IPED-JHS`, `MADRASAH-JHS`
+      - **Senior High School**: `ALS-SHS`, `SNED-SHS`, `IPED-SHS`
+  - **Organized Classes Grade Level Additions**:
+    - When `ALS-ES`, `ALS-JHS`, or `ALS-SHS` is active, `ALS` is dynamically added as a selectable Grade Level option under Regular Section creation.
+    - When `SNED-ES`, `SNED-JHS`, or `SNED-SHS` is active, `SNED` is dynamically added as a selectable Grade Level option under Regular Section creation.
+  - **Workload Subject Rules & Isolation**:
+    - **SNED Sections**:
+      - If a section's Grade Level is `SNED`, the subject dropdown in `Workload.jsx` strictly and exclusively shows **`SPED MODIFIED SUBJECTS` ONLY**. All other standard subjects are filtered out.
+    - **ALS Sections**:
+      - If a section's Grade Level is `ALS`, the subject dropdown displays regular standard Grade 7–10 subjects (or regular elementary subjects for ES).
+    - **IP Related Subjects**:
+      - `IP RELATED SUBJECT` is strictly hidden in Workload unless the school profile has enabled IP offerings (`IPED-ES`, `IPED-JHS`, or `IPED-SHS`).
+    - **Madrasah Subjects**:
+      - `MADRASAH SUBJECTS` is strictly hidden in Workload unless the school profile has enabled Madrasah offerings (`MADRASAH-ES` or `MADRASAH-JHS`).
+  - **ALS Exclusion from Total Enrollment**:
+    - **Total School Enrollment & Regular Enrollment**: Learners enrolled in `ALS` sections are strictly **excluded** from base school total enrollment (`totalSchool`, `totalMale`, `totalFemale` in `OrganizedClasses.jsx`) and regular sections enrollment (`getRegularSectionsEnrollment` in `AppContext.jsx` and `Designations.jsx`).
+    - **Rationale**: In DepEd staffing and classification rules, Alternative Learning System (ALS) is a parallel learning system with non-formal modular instruction and separate funding/staffing streams; ALS learners do not factor into regular base school enrollment thresholds (such as the 1,001 learner threshold for mandatory Assistant School Head Designate).
+    - **UI Indicator**: ALS section cards display an informative note: *"Alternative Learning System (ALS) · Not counted in base school total enrollment"*.
+  - **ARAL Subject Isolation & Catalog Removal**:
+    - **ARAL Sections**: When a section is an ARAL section (created under ARAL Section tab in `OrganizedClasses.jsx`, or `sectionType` starts with `ARAL`, or section name / grade level contains `ARAL`), the subject dropdown in `Workload.jsx` strictly displays **ARAL subjects ONLY** (`ARAL - READING`, `ARAL - MATH`, `ARAL - SCIENCE`).
+    - **Regular Sections**: ARAL subjects (`ARAL - READING`, `ARAL - MATH`, `ARAL - SCIENCE`, `ARAL TUTORING`) are permanently **removed and filtered out** from the subject dropdowns of all regular, non-ARAL grade levels in `Workload.jsx`, `OrganizedClasses.jsx`, and `AppContext.jsx` (`isSpecialProgramSubjectAllowed`). Standard grade classes cannot be assigned ARAL subjects.
+
+### Added 2026-09-08
+- **PhilSys No. / National ID Rules**:
+  - **Not Required**: PhilSys No. / National ID is optional and not strictly required for 100% profile validation or saving.
+  - **N/A Checkbox**: Added an N/A checkbox next to the PhilSys input. When checked, disables the input, clears any entered value, and flags `noPhilsys: true` / `no_philsys: true`.
+  - **Database Persistence**: Column `no_philsys BOOLEAN NOT NULL DEFAULT FALSE` in table `esf7_personnel_profile`. Fully mapped across frontend state, AppContext update payload, controller, and queue worker.
+  - **Duplicate Check Safeguard**: PhilSys duplicate detection only checks against other records when `p.philsysNo` is non-empty and `noPhilsys` is false.
+- **Employment Role & Appointment Reordering & Cascading Matrix**:
+  - **Field Order**: 1. `Nature of Appointment` -> 2. `Hiring Arrangement / Special Program` -> 3. `Fund Source`.
+  - **Regular Permanent**:
+    - Teaching: Hiring Arrangement permits `REGULAR`, `SPIMS`, `4PS`, `DOST`. Fund Source is locked to `NATIONAL`.
+    - Non-Teaching: Hiring Arrangement is locked to `REGULAR`. Fund Source is locked to `NATIONAL`.
+  - **Provisional**:
+    - Restricted to Teaching personnel only. Hiring Arrangement is locked to `DOST`. Fund Source is locked to `NATIONAL`.
+  - **Non-Permanent Appointments** (`CONTRACTUAL`, `SUBSTITUTE`, `CASUAL/EMERGENCY`, `JOB ORDER/CONTRACT OF SERVICE`, `VOLUNTEER`):
+    - `SUBSTITUTE` is restricted to Teaching personnel only.
+    - Hiring Arrangement is locked to `N/A`.
+    - Fund Source strictly provides local/partner funds (`SEF`, `LGU`, `PTA`, `NGO`, `SCHOOL MOOE`) and excludes `NATIONAL`.

@@ -64,22 +64,22 @@ export default function NodeMap() {
           summary: `${personnel.filter(p => p.degreeMajor || p.major || p.collegeDegree).length} Profiles Configured`
         },
         {
-          id: 'designation',
-          nodeNumber: '04',
-          title: 'Designations & Duties',
-          subtitle: 'Ancillary roles, grade chairpersons & SDS approvals',
-          Icon: FiBookmark,
-          view: 'designation',
-          summary: `${personnel.filter(p => p.designation && p.designation !== 'N/A').length} Assigned Roles`
-        },
-        {
           id: 'classes',
-          nodeNumber: '05',
+          nodeNumber: '04',
           title: 'Organized Classes',
           subtitle: 'Section setup, advisers & learner counts',
           Icon: FiGrid,
           view: 'classes',
           summary: `${classSections.length} Class Sections`
+        },
+        {
+          id: 'designation',
+          nodeNumber: '05',
+          title: 'Designations & Duties',
+          subtitle: 'Ancillary roles, grade chairpersons & SDS approvals',
+          Icon: FiBookmark,
+          view: 'designation',
+          summary: `${personnel.filter(p => p.designation && p.designation !== 'N/A').length} Assigned Roles`
         },
         {
           id: 'workload',

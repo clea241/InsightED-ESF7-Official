@@ -55,8 +55,8 @@ async function autoFillPersonnelForSchool(schoolId) {
         const sexAtBirth = (teacher.sex_at_birth || 'Female').toUpperCase();
         const civilStatus = (teacher.civil_status || 'SINGLE').toUpperCase();
         const soloParent = teacher.solo_parent === true;
-        const religion = teacher.religion || 'CHRISTIANITY';
-        const ethnicGroup = teacher.ethnic_group || teacher.ehtinic_group || 'OTHERS';
+        const religion = teacher.religion === 'OTHERS' ? '' : (teacher.religion || 'CHRISTIANITY');
+        const ethnicGroup = (teacher.ethnic_group === 'OTHERS' || teacher.ehtinic_group === 'OTHERS') ? '' : (teacher.ethnic_group || teacher.ehtinic_group || '');
         const birthdate = teacher.birthdate || null;
         const tin = teacher.tin || null;
         const employeeNo = teacher.employee_no || null;

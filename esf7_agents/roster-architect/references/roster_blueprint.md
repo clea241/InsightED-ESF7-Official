@@ -47,6 +47,7 @@ This document serves as the authoritative blueprint for [Roster.jsx](file:///e:/
 ### C. DepEd Email Format Policy
 * **Pattern**: `<username>@deped.gov.ph`
 * **Sanitization**: Converts local username to lowercase and strips non-alphanumeric/dot characters (`/[^a-z0-9.]/g`).
+* **Name & Married Personnel Matching**: `validateDepEdEmail(email, firstName, lastName, middleName)`. Surnames match either legal `lastName` OR `middleName` (maiden surname for married female personnel). Also allows multi-word first name tokens and numeric disambiguation suffixes (`001`).
 * **Info Modal**: Clicking `i` badge opens `<DepEdEmailInfoModal />`.
 
 ### D. Category & Position Option Mapping
@@ -76,7 +77,7 @@ This document serves as the authoritative blueprint for [Roster.jsx](file:///e:/
 |  Search: Name, DepEd Email, Category, Position                                    |
 +-----------------------------------------------------------------------------------+
 | PERSONNEL TABLE                                                                   |
-|  Columns: Desig | First Name | Middle | Last | DepEd Email | Category | Position | |
+|  Columns: First Name | Middle | Last | DepEd Email | Category | Position |            |
 |           School Head (Toggle) | Actions ([Profile], [Work], [Save], [✕])        |
 |                                                                                   |
 |  [Profile] -> setActivePersonnelId(id) + setActiveView('profile')                 |
@@ -101,3 +102,10 @@ This document serves as the authoritative blueprint for [Roster.jsx](file:///e:/
   * Expanded `DepEd Email` container to span 2 grid columns for easier input.
   * Placed `Position Category` and `Position` side-by-side in a responsive 2-column sub-grid (`1fr 1fr`).
   * Enforced real-time `validateDepEdEmail` restriction in Add Personnel modal (prevents typing `@`, highlights invalid domains or mismatching first/last names in red, displays inline error prompt, and restricts modal submission).
+* **Version 1.2 (2026-09-07)**: School Head Validation Gate & Spotlight Alert on "Save & Continue".
+  * Added mandatory DepEd eSF7 School Head designation check to `handleSaveAndContinue()` in `PortalHeader`.
+  * If `!personnel.some(p => p.isSchoolHead)`, navigation to Profiling is blocked and an institutional alert modal (`isHeadRequiredModalOpen`) is displayed.
+  * Dismissing the modal highlights the "School Head" column (`highlightHeadColumn: true`) with animated pulsing halo indicators on active toggles until a School Head is toggled ON.
+  * Commits pending drafts automatically upon valid School Head verification before transitioning to `'profile'`.
+* **Version 1.3 (2026-09-07)**: Redundant Designation Column Removal.
+  * Removed the obsolete `DESIG.` (MR./MRS./MS.) column header and table cell from the Personnel Roster table, streamlining table real estate to start cleanly with `First Name`.

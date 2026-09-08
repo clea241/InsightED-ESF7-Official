@@ -26,6 +26,145 @@ export const DEFAULT_PH_HOLIDAYS = [
   { id: 'ph-hol-18', date: '2027-05-01', type: 'National Holiday', description: 'Labor Day' }
 ];
 
+export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections = []) {
+  if (!p) return false;
+  const rows = p.workloadRows || [];
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+
+  const timeToMins = (t) => {
+    if (!t || typeof t !== 'string' || !t.includes(':')) return null;
+    const [h, m] = t.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  const isAdvisoryOrHgpPair = (r1, r2) => {
+    const s1 = String(r1?.subject || r1?.subjectName || '').trim().toUpperCase();
+    const s2 = String(r2?.subject || r2?.subjectName || '').trim().toUpperCase();
+    const isAdv1 = s1 === 'ADVISORY' || s1.includes('HOMEROOM ADVISORY');
+    const isAdv2 = s2 === 'ADVISORY' || s2.includes('HOMEROOM ADVISORY');
+    const isHgp1 = s1 === 'HGP' || s1.includes('HOMEROOM GUIDANCE');
+    const isHgp2 = s2 === 'HGP' || s2.includes('HOMEROOM GUIDANCE');
+    return (isAdv1 && isHgp2) || (isHgp1 && isAdv2);
+  };
+
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    if (!row) continue;
+
+    const sMins = timeToMins(row.startTime);
+    const eMins = timeToMins(row.endTime);
+
+    // 1. Time Slot Duration Limits (>60 mins elem/JHS or >360 mins SHS)
+    if (sMins !== null && eMins !== null && eMins > sMins) {
+      const diffMins = eMins - sMins;
+      const gStr = String(row.gradeLevel || '').toUpperCase();
+      const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
+      const maxMins = isSHS ? 360 : 60;
+      if (diffMins > maxMins) return true;
+    }
+
+    // 2. Schedule Conflict (Overlap on same day for same person)
+    const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+      ? row.days
+      : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : []);
+
+    if (sMins !== null && eMins !== null && rowDays.length > 0) {
+      const hasOverlap = rows.some((otherRow, oIdx) => {
+        if (oIdx === idx) return false;
+        const osMins = timeToMins(otherRow.startTime);
+        const oeMins = timeToMins(otherRow.endTime);
+        if (osMins === null || oeMins === null) return false;
+
+        const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0)
+          ? otherRow.days
+          : (otherRow.daySchedule ? String(otherRow.daySchedule).split(',').map(s => s.trim()) : []);
+
+        const dayOverlap = rowDays.some(d => otherDays.includes(d));
+        if (!dayOverlap) return false;
+
+        if (sMins < oeMins && eMins > osMins) {
+          if (isAdvisoryOrHgpPair(row, otherRow)) return false;
+          return true;
+        }
+        return false;
+      });
+
+      if (hasOverlap) return true;
+    }
+
+    // 3. Duplicate Subject Assignment in Section
+    if (row.subject) {
+      const normSub = String(row.subject).trim().toUpperCase();
+      if (normSub !== 'ADVISORY') {
+        const secId = String(row.sectionId || row.section_id || '');
+        const secName = String(row.sectionName || row.section_name || '').trim().toUpperCase();
+        if (secId || secName) {
+          const gStr = String(row.gradeLevel || '').toUpperCase();
+          const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
+          const term = isSHS ? (row.term || row.semester || '1st') : null;
+
+          // Scan other personnel in school
+          for (const otherP of (allPersonnel || [])) {
+            if (String(otherP.id) === String(p.id)) continue;
+            if (otherP.isDraft || !Array.isArray(otherP.workloadRows)) continue;
+
+            for (const r of otherP.workloadRows) {
+              const rSecId = String(r.sectionId || r.section_id || '');
+              const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+              const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+
+              const matchSec = (secId && rSecId && secId === rSecId) || (secName && rSecName && secName === rSecName);
+              if (!matchSec) continue;
+
+              const rGradeStr = String(r.gradeLevel || '').toUpperCase();
+              const rIsSHS = rGradeStr.includes('GRADE 11') || rGradeStr.includes('GRADE 12') || rGradeStr.includes('SHS');
+              if (term && rIsSHS) {
+                const rTerm = r.term || r.semester || '1st';
+                if (rTerm !== term) continue;
+              }
+
+              if (rSub === normSub) return true;
+            }
+          }
+
+          // Scan this person's other rows
+          for (let oIdx = 0; oIdx < rows.length; oIdx++) {
+            if (oIdx === idx) continue;
+            const r = rows[oIdx];
+            const rSecId = String(r.sectionId || r.section_id || '');
+            const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+            const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+
+            const matchSec = (secId && rSecId && secId === rSecId) || (secName && rSecName && secName === rSecName);
+            if (!matchSec) continue;
+
+            const rGradeStr = String(r.gradeLevel || '').toUpperCase();
+            const rIsSHS = rGradeStr.includes('GRADE 11') || rGradeStr.includes('GRADE 12') || rGradeStr.includes('SHS');
+            if (term && rIsSHS) {
+              const rTerm = r.term || r.semester || '1st';
+              if (rTerm !== term) continue;
+            }
+
+            if (rSub === normSub) return true;
+          }
+        }
+      }
+    }
+
+    // 4. HGP Weekly Duration Rule
+    const subStr = String(row.subject || row.subjectName || '').trim().toUpperCase();
+    if (subStr === 'HGP' || subStr.includes('HOMEROOM GUIDANCE')) {
+      if (!row.startTime || !row.endTime) return true;
+      if (sMins !== null && eMins !== null && eMins > sMins && rowDays.length > 0) {
+        if ((eMins - sMins) * rowDays.length !== 60) return true;
+      }
+    }
+  }
+
+  return false;
+};
+
 export const NEAP_TRAINING_OPTIONS = [
   "HIGHER ORDER THINKING SKILLS PROFESSIONAL LEARNING PACKAGES FOR MATHEMATICS, SCIENCE, AND ENGLISH TEACHERS",
   "INSTRUCTIONAL LEADERSHIP TRAINING (ILT): STRENGTHENING LEARNING CONDITIONS FOR EARLY LITERACY",
@@ -234,7 +373,6 @@ export const TESDA_CERTIFICATION_OPTIONS = [
   "RAC SERVICING (WINDOW-TYPE AIR-CONDITIONING/DOMESTIC REFRIGERATION) (SUPERSEDED)",
   "RAC SERVICING (DOMRAC) (SUPERSEDED)",
   "EMERGENCY MEDICAL SERVICES (SUPERSEDED)",
-  "HAIRDRESSING (SUPERSEDED)",
   "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (ORTHOTICS)",
   "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (PROSTHETICS)",
   "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (WHEELCHAIR)",
@@ -601,15 +739,18 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
 
 export const SUBJECT_OPTIONS = [
   "KINDER BLOCKS OF TIME",
-  "English",
-  "Filipino",
-  "Mathematics",
-  "Science",
-  "Araling Panlipunan",
+  "LANGUAGE",
+  "READING AND LITERACY",
+  "MAKABANSA",
+  "TLE",
   "MAPEH",
-  "Edukasyon sa Pagpapakatao",
-  "Technology and Livelihood Education",
-  "Reading and Literacy",
+  "ARALING PANLIPUNAN",
+  "FILIPINO",
+  "ENGLISH",
+  "MATHEMATICS",
+  "SCIENCE",
+  "VALUES EDUCATION",
+  "GMRC",
   "ADVISORY",
   "Practical Research",
   "General Mathematics",
@@ -632,21 +773,19 @@ export const TEACHING_RELATED_TASK_OPTIONS = [
 ];
 
 export const ADMINISTRATIVE_TASK_OPTIONS = [
-  "ADMINISTRATIVE",
   "ADMIN TASK - PERSONNEL ADMINISTRATION",
   "ADMIN TASK - PROPERTY/PHYSICAL FACILITIES CUSTODIANSHIP",
   "ADMIN TASK - GENERAL ADMINISTRATIVE SUPPORT",
   "ADMIN TASK - FINANCIAL MANAGEMENT",
   "ADMIN TASK - RECORDS MANAGEMENT",
-  "ADMIN TASK - PROGRAM MANAGEMENT",
-  "RELATED TASK"
+  "ADMIN TASK - PROGRAM MANAGEMENT"
 ];
 
-export const RELIGION_OPTIONS = ["OTHERS", "BUDDHISM", "CHRISTIANITY", "HINDUISM", "INDIGENOUS RELIGION", "ISLAM", "JUDAISM", "SIKHISM", "TAOISM", "NO RELIGION", "NOT DISCLOSED"];
+export const RELIGION_OPTIONS = ["BUDDHISM", "CHRISTIANITY", "HINDUISM", "INDIGENOUS RELIGION", "ISLAM", "JUDAISM", "SIKHISM", "TAOISM", "NO RELIGION", "NOT DISCLOSED"];
 export const ETHNIC_GROUP_OPTIONS = [
-  "OTHERS", "ABELING", "ABELLEN", "ABELLING", "ABERLING", "ABIYAN (AETA)", "ADASEN", "AETA", "AGTA-AGAY", "AGTA-CIMARON", "AGTA-DUMAGAT", "AGTA-TABANGNON", "AGTA-TABOY", "AGUTAYNON", "AKEANON", "ALAB", "ALANGAN", "ALANGAN MANGYAN", "AMBALA", "APAYAO", "AROMANEN-MANOBO", "AROMANON", "ATA", "ATA-MANOBO", "ATI", "BADJAO", "BADJAO, SAMA LAUT", "BAGKALOT", "BAGO", "BAGOBO", "BAGOBO-TAGABAWA", "BALATOC", "BALIWON", "BALUGA", "BANAO", "BANGON", "BANTOANON", "BANWAON", "BARLIG", "BASAO", "BATAK", "BATANGAN", "BATANGAN MANGYAN", "BELWANG", "BIKOL/BICOL", "BINONGAN", "BISAYA/BINISAYA", "BLAAN", "BOHOLANO", "BONTOK", "BUGKALOT", "BUHID", "BUHID MANGYAN", "BUKIDNON", "BUTBUT", "CAGALUAN", "CAGAYANEN", "CALINGA", "CAPIZEÑO", "CAVITEÑO", "CEBUANO", "CHAVACANO", "CHINESE", "CIMARON", "COTABATEÑO", "COTABATEÑO-CHAVACANO", "CUYONEN", "CUYUNON", "DACALAN", "DAGAYNEN", "DANAK", "DANANAO", "DAVAO-CHAVACANO", "DAVAWEÑO", "DIANGAN", "DIBABAWON", "DIBABEEN MULITAAN", "DIBABEN", "DIRERAYAAN", "DULANGAN", "DUMAGAT-ALTA", "DUMAGAT-REMONTADO", "ESCAYA", "GADDANG", "GUBANG", "GUBATNON", "GUBATNON MANGYAN", "GUIANGAN", "GUILAYON", "GUINAANG", "HALAWODNON", "HANUNUO", "HANUNUO MANGYAN", "HENANGA", "HIGAONON", "HILIGAYNON/LLONGGO", "IABANAG", "IBALOY", "IBATAN", "IFUGAO", "IKALAHAN", "ILAUD", "ILIANEN", "ILOCANO", "IRANON", "IRAYA", "IRAYA MANGYAN", "ISAROG", "ISINAI", "ISOROKEN", "ITAWES", "ITAWIA", "ITNEG", "ITOM", "IVATAN", "JAMA MAPON", "KABAYUKAN", "KABIHUG", "KADAKLAN/KACHAKRAN", "KAILAWAN/KAYLAWAN", "KALAGAN", "KALANGUYA", "KALIBUGAN", "KALIBUGAN/KOLIBUGAN", "KALINGA", "KAMAYO", "KAMIGIN", "KAMIGUIN", "KANKANAEY", "KANKANAEY IBENGUET", "KANKANAEY IYAPLAY", "KAPAMPANGAN", "KARINTIK", "KARULANO", "KAUNANA", "KEN-EY", "KIRENTEKEN", "KLATA", "KONGKING", "KOROLANON", "LAHITANEN", "LAMBANGIAN", "LAMBANGLAN", "LANGILAN", "LIVUNGANEN", "LLONGOT", "LUBO", "LUBUAGAN", "MABAKA", "MAENG", "MAG-ANTI", "MAG-ANTSI", "MAG-INDI", "MAGAHAT", "MAGBEKIN", "MAGBUKON", "MAGKUNANA", "MAGUINDANAO", "MAJOKAYONG", "MALAWEG/MALAUEG", "MALBONG", "MAMANWA", "MANDAYA", "MANDEK-EY", "MANDUKAYAN", "MANGALI", "MANGGUANGAN", "MANOBO", "MANOBO B\"LIT", "MANOBO-DULANGAN", "MANOBO-UBO", "MANSAKA", "MARANAO", "MASADIIT", "MASBATEÑO/MASBATENON", "MATIGSALOG", "MAYUDAN", "MOLBOG", "NANENG", "NEGRITO", "OBU-MANUVU", "PALA WAN", "PALAWAN-O", "PALAWANI", "PALAWANON", "PAN-AYANON", "PANAY-BUKIDNON", "PANGASINAN/PANGGALATO", "PARANANUM", "PUGOT", "PULANGIEN", "PULANGIYEN", "PULLON", "RATAGNON", "RATAGNON MANGYAN", "REMONTADO", "SADANGA", "SAKKI", "SALEGSEG", "SAMA", "SAMA BADJAO", "SAMA BANGINGI", "SAMA LAUT", "SAMAL", "SANGIL", "SIBUYAN MANGYAN-TAGABUKID", "SUBANEN", "SULOD/BUDIKNON", "SUMADEL", "T-BOLI", "TABANGON", "TADYAWAN", "TADYAWAN MANGYAN", "TAGABAWA", "TAGAKAOLO", "TAGALOG", "TAGANUA", "TAGAWAHANON", "TAGBANUA", "TAGBANUA/KALAMIANEN", "TALAANDIG", "TALAINGOD", "TALAINGOD, LANGILAN", "TALOCTOK", "TAO'T BATO", "TAU-BUID", "TAUSUG", "TAUT-BATO", "TBOLI", "TEDURAY", "TIGWAHANON", "TINANANEN", "TINGGLAN", "TINGGUIAN", "TINGLAYAN", "TIRURAY", "TONGLAYAN", "TULGAO", "UBO MANOBO", "UBO-MANOBO", "UMAYAMNON", "WARAY", "YAKAN", "YAPAYAO", "YBANAG", "YOGAD", "ZAMBAL"
+  "ABELING", "ABELLEN", "ABELLING", "ABERLING", "ABIYAN (AETA)", "ADASEN", "AETA", "AGTA-AGAY", "AGTA-CIMARON", "AGTA-DUMAGAT", "AGTA-TABANGNON", "AGTA-TABOY", "AGUTAYNON", "AKEANON", "ALAB", "ALANGAN", "ALANGAN MANGYAN", "AMBALA", "APAYAO", "AROMANEN-MANOBO", "AROMANON", "ATA", "ATA-MANOBO", "ATI", "BADJAO", "BADJAO, SAMA LAUT", "BAGKALOT", "BAGO", "BAGOBO", "BAGOBO-TAGABAWA", "BALATOC", "BALIWON", "BALUGA", "BANAO", "BANGON", "BANTOANON", "BANWAON", "BARLIG", "BASAO", "BATAK", "BATANGAN", "BATANGAN MANGYAN", "BELWANG", "BIKOL/BICOL", "BINONGAN", "BISAYA/BINISAYA", "BLAAN", "BOHOLANO", "BONTOK", "BUGKALOT", "BUHID", "BUHID MANGYAN", "BUKIDNON", "BUTBUT", "CAGALUAN", "CAGAYANEN", "CALINGA", "CAPIZEÑO", "CAVITEÑO", "CEBUANO", "CHAVACANO", "CHINESE", "CIMARON", "COTABATEÑO", "COTABATEÑO-CHAVACANO", "CUYONEN", "CUYUNON", "DACALAN", "DAGAYNEN", "DANAK", "DANANAO", "DAVAO-CHAVACANO", "DAVAWEÑO", "DIANGAN", "DIBABAWON", "DIBABEEN MULITAAN", "DIBABEN", "DIRERAYAAN", "DULANGAN", "DUMAGAT-ALTA", "DUMAGAT-REMONTADO", "ESCAYA", "GADDANG", "GUBANG", "GUBATNON", "GUBATNON MANGYAN", "GUIANGAN", "GUILAYON", "GUINAANG", "HALAWODNON", "HANUNUO", "HANUNUO MANGYAN", "HENANGA", "HIGAONON", "HILIGAYNON/LLONGGO", "IABANAG", "IBALOY", "IBATAN", "IFUGAO", "IKALAHAN", "ILAUD", "ILIANEN", "ILOCANO", "IRANON", "IRAYA", "IRAYA MANGYAN", "ISAROG", "ISINAI", "ISOROKEN", "ITAWES", "ITAWIA", "ITNEG", "ITOM", "IVATAN", "JAMA MAPON", "KABAYUKAN", "KABIHUG", "KADAKLAN/KACHAKRAN", "KAILAWAN/KAYLAWAN", "KALAGAN", "KALANGUYA", "KALIBUGAN", "KALIBUGAN/KOLIBUGAN", "KALINGA", "KAMAYO", "KAMIGIN", "KAMIGUIN", "KANKANAEY", "KANKANAEY IBENGUET", "KANKANAEY IYAPLAY", "KAPAMPANGAN", "KARINTIK", "KARULANO", "KAUNANA", "KEN-EY", "KIRENTEKEN", "KLATA", "KONGKING", "KOROLANON", "LAHITANEN", "LAMBANGIAN", "LAMBANGLAN", "LANGILAN", "LIVUNGANEN", "LLONGOT", "LUBO", "LUBUAGAN", "MABAKA", "MAENG", "MAG-ANTI", "MAG-ANTSI", "MAG-INDI", "MAGAHAT", "MAGBEKIN", "MAGBUKON", "MAGKUNANA", "MAGUINDANAO", "MAJOKAYONG", "MALAWEG/MALAUEG", "MALBONG", "MAMANWA", "MANDAYA", "MANDEK-EY", "MANDUKAYAN", "MANGALI", "MANGGUANGAN", "MANOBO", "MANOBO B\"LIT", "MANOBO-DULANGAN", "MANOBO-UBO", "MANSAKA", "MARANAO", "MASADIIT", "MASBATEÑO/MASBATENON", "MATIGSALOG", "MAYUDAN", "MOLBOG", "NANENG", "NEGRITO", "OBU-MANUVU", "PALA WAN", "PALAWAN-O", "PALAWANI", "PALAWANON", "PAN-AYANON", "PANAY-BUKIDNON", "PANGASINAN/PANGGALATO", "PARANANUM", "PUGOT", "PULANGIEN", "PULANGIYEN", "PULLON", "RATAGNON", "RATAGNON MANGYAN", "REMONTADO", "SADANGA", "SAKKI", "SALEGSEG", "SAMA", "SAMA BADJAO", "SAMA BANGINGI", "SAMA LAUT", "SAMAL", "SANGIL", "SIBUYAN MANGYAN-TAGABUKID", "SUBANEN", "SULOD/BUDIKNON", "SUMADEL", "T-BOLI", "TABANGON", "TADYAWAN", "TADYAWAN MANGYAN", "TAGABAWA", "TAGAKAOLO", "TAGALOG", "TAGANUA", "TAGAWAHANON", "TAGBANUA", "TAGBANUA/KALAMIANEN", "TALAANDIG", "TALAINGOD", "TALAINGOD, LANGILAN", "TALOCTOK", "TAO'T BATO", "TAU-BUID", "TAUSUG", "TAUT-BATO", "TBOLI", "TEDURAY", "TIGWAHANON", "TINANANEN", "TINGGLAN", "TINGGUIAN", "TINGLAYAN", "TIRURAY", "TONGLAYAN", "TULGAO", "UBO MANOBO", "UBO-MANOBO", "UMAYAMNON", "WARAY", "YAKAN", "YAPAYAO", "YBANAG", "YOGAD", "ZAMBAL"
 ];
-export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
+export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS"];
 export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
 export const DISCIPLINE_OPTIONS = [
   "BUSINESS ADMINISTRATION AND RELATED",
@@ -671,10 +810,10 @@ export const DISCIPLINE_OPTIONS = [
   "SERVICE TRADES",
   "ARCHITECTURE AND TOWN PLANNING"
 ];
-export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
+export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS"];
 
 export const NATURE_OF_APPOINTMENT_OPTIONS = ["REGULAR PERMANENT", "PROVISIONAL", "CONTRACTUAL", "SUBSTITUTE", "CASUAL/EMERGENCY", "JOB ORDER/CONTRACT OF SERVICE", "VOLUNTEER"];
-export const HIRING_ARRANGEMENT_OPTIONS = ["OTHERS", "N/A", "REGULAR", "SPIMS", "DOST", "4PS"];
+export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "N/A", "OTHERS"];
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS = [
   "COLLEGE UNDERGRADUATE",
   "COLLEGE GRADUATE / BACCALAUREATE",
@@ -1725,7 +1864,7 @@ export const TESDA_NC_LEVEL_OPTIONS = [
   "CERTIFICATE OF COMPETENCY (COC)"
 ];
 
-export const POST_GRADUATE_DEGREE_OPTIONS = ["OTHERS", "N/A", "MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE"];
+export const POST_GRADUATE_DEGREE_OPTIONS = ["MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE", "N/A", "OTHERS"];
 
 export const DESIGNATION_GRADE_LEVELS = [
   "Kinder", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
@@ -1743,7 +1882,9 @@ export const getRegularSectionsEnrollment = (classSections) => {
     sec.sectionType !== 'REMEDIAL' && 
     sec.sectionType !== 'ENRICHMENT' &&
     !sec.interventionType &&
-    !sec.intervention_type
+    !sec.intervention_type &&
+    String(sec.gradeLevel || '').toUpperCase().trim() !== 'ALS' &&
+    !String(sec.gradeLevel || '').toUpperCase().includes('ALS')
   );
   return baseSections.reduce((acc, sec) => {
     const hasGender = (sec.maleLearners !== undefined && sec.maleLearners !== null && sec.maleLearners !== '') ||
@@ -1798,6 +1939,14 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   const sub = String(subjectName).trim().toUpperCase();
   const gradeStr = String(gradeOrBand || '').trim().toUpperCase();
 
+  // Core curriculum subjects are ALWAYS allowed and never blocked by special program filters
+  const CORE_SUBJECTS = [
+    'KINDER BLOCKS OF TIME', 'LANGUAGE', 'READING AND LITERACY', 'MAKABANSA',
+    'TLE', 'EPP/TLE', 'MAPEH', 'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH',
+    'MATHEMATICS', 'SCIENCE', 'VALUES EDUCATION', 'GMRC'
+  ];
+  if (CORE_SUBJECTS.includes(sub) || sub === 'ARALING PANLIPUNAN' || sub.startsWith('ARALING')) return true;
+
   // Helper to read school special programs config
   const getMergedConfig = () => {
     let progs = Array.isArray(schoolInfo?.specialPrograms) ? [...schoolInfo.specialPrograms] : [];
@@ -1805,6 +1954,8 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
     let hasElem = schoolInfo?.hasElemSpecialPrograms === true || schoolInfo?.hasElemSpecialPrograms === 'yes';
     let elemProg = Boolean(schoolInfo?.elemSpecialProgram);
     let hasJhs = schoolInfo?.hasJhsSpecialPrograms === true || schoolInfo?.hasJhsSpecialPrograms === 'yes';
+
+    let inclusivePrograms = Array.isArray(schoolInfo?.inclusivePrograms) ? [...schoolInfo.inclusivePrograms] : [];
 
     if (typeof localStorage !== 'undefined') {
       try {
@@ -1817,10 +1968,11 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
           if (parsed.hasJhsSpecialPrograms !== undefined) hasJhs = parsed.hasJhsSpecialPrograms === true || parsed.hasJhsSpecialPrograms === 'yes';
           if (Array.isArray(parsed.jhsSpecialPrograms)) jhsProgs = [...new Set([...jhsProgs, ...parsed.jhsSpecialPrograms])];
           if (Array.isArray(parsed.specialPrograms)) progs = [...new Set([...progs, ...parsed.specialPrograms])];
+          if (Array.isArray(parsed.inclusivePrograms)) inclusivePrograms = [...new Set([...inclusivePrograms, ...parsed.inclusivePrograms])];
         }
       } catch (e) {}
     }
-    return { hasElem, elemProg, hasJhs, progs, jhsProgs };
+    return { hasElem, elemProg, hasJhs, progs, jhsProgs, inclusivePrograms };
   };
 
   const config = getMergedConfig();
@@ -1860,11 +2012,33 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
     }
   }
 
-  // Standard subjects (Math, English, SPED, IP, etc.) remain always allowed
+  // 3. Inclusive Education Programs Checks (IP, Madrasah, SNED)
+  if (sub === 'IP RELATED SUBJECT' || sub.includes('IP RELATED') || sub === 'IPED') {
+    const hasIP = (config.inclusivePrograms || []).some(p => p.startsWith('IPED-') || p.startsWith('IP-'));
+    if (!hasIP) return false;
+  }
+
+  if (sub === 'MADRASAH SUBJECTS' || sub.includes('MADRASAH') || sub.includes('ALIVE')) {
+    const hasMadrasah = (config.inclusivePrograms || []).some(p => p.startsWith('MADRASAH-') || p.startsWith('MEP-') || p.startsWith('ALIVE-'));
+    if (!hasMadrasah) return false;
+  }
+
+  if (sub === 'SPED MODIFIED SUBJECTS' || sub.includes('SPED MODIFIED')) {
+    const isSNED = gradeStr.includes('SNED');
+    if (!isSNED) return false;
+  }
+
+  // 4. ARAL Program Check: ARAL subjects are strictly for ARAL sections (never match ARALING PANLIPUNAN)
+  if (sub !== 'ARALING PANLIPUNAN' && !sub.startsWith('ARALING') && (sub === 'ARAL' || sub.startsWith('ARAL -') || sub.startsWith('ARAL-') || sub.startsWith('ARAL ') || sub.includes('ARAL TUTORING') || sub.includes('ARAL PROGRAM'))) {
+    const isAral = gradeStr === 'ARAL' || gradeStr.includes('ARAL');
+    if (!isAral) return false;
+  }
+
+  // Standard subjects (Math, English, etc.) remain always allowed
   return true;
 };
 
-export const validateDepEdEmail = (email, firstName = '', lastName = '') => {
+export const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '') => {
   if (!email || email === 'N/A') return { isValid: true, error: null };
   const rawEmail = String(email).trim().toLowerCase();
 
@@ -1895,21 +2069,41 @@ export const validateDepEdEmail = (email, firstName = '', lastName = '') => {
     };
   }
 
-  // 4. Validate First Name and Last Name matching (letters only normalized)
-  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  // 4. Validate First Name and Last/Middle Name matching (letters and numbers only)
+  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const cleanFn = cleanStr(firstName);
   const cleanLn = cleanStr(lastName);
+  const cleanMn = cleanStr(middleName);
   const cleanLocal = cleanStr(localPart);
 
   // Multi-word first names (e.g. Mary Jane -> check 'mary' or 'jane' or 'maryjane')
   const fnTokens = String(firstName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
-  const fnMatches = fnTokens.length > 0 ? fnTokens.some(t => cleanLocal.includes(t)) || cleanLocal.includes(cleanFn) : true;
-  const lnMatches = cleanLn ? cleanLocal.includes(cleanLn) : true;
+  const fnMatches = fnTokens.length > 0
+    ? fnTokens.some(t => cleanLocal.includes(t)) || (cleanFn && cleanLocal.includes(cleanFn))
+    : true;
 
-  if (!fnMatches || !lnMatches) {
+  // Last name matching (e.g. 'reyes' or multi-word 'delacruz' -> 'dela', 'cruz')
+  const lnTokens = String(lastName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const lnMatches = cleanLn
+    ? (cleanLocal.includes(cleanLn) || lnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
+    : true;
+
+  // Middle name / Maiden surname matching (e.g. 'santos' or middle initial)
+  // In DepEd, married women often retain their maiden surname in their DepEd email, which is stored as middleName in eSF7.
+  const mnTokens = String(middleName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const mnMatches = cleanMn && cleanMn !== 'na'
+    ? (cleanLocal.includes(cleanMn) || mnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
+    : false;
+
+  // Surnames match: accepts legal last name OR maiden/middle name
+  const hasSurnameInput = Boolean(cleanLn || (cleanMn && cleanMn !== 'na'));
+  const surnameMatches = hasSurnameInput ? (lnMatches || mnMatches) : true;
+
+  if (!fnMatches || !surnameMatches) {
+    const suggestedSurname = cleanLn || (cleanMn && cleanMn !== 'na' ? cleanMn : '') || 'lastname';
     return {
       isValid: false,
-      error: `Email should contain personnel's first and last name (e.g. ${cleanFn ? cleanFn : 'firstname'}.${cleanLn ? cleanLn : 'lastname'}@deped.gov.ph).`
+      error: `Email should contain personnel's first and last or middle name (e.g. ${cleanFn ? cleanFn : 'firstname'}.${suggestedSurname}@deped.gov.ph). Middle/maiden names are accepted for married personnel.`
     };
   }
 
@@ -2483,10 +2677,23 @@ export const computeWeeklyAdministrativeMinutesFromWorkload = (rows) => {
 };
 
 export const AppProvider = ({ children }) => {
-  const [activeView, setActiveView] = useState(() => {
+  const [activeView, setActiveViewState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('view') || "landing";
+    const fromUrl = params.get('view');
+    if (fromUrl) return fromUrl;
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('insighted_active_view');
+      if (saved) return saved;
+    }
+    return "landing";
   });
+
+  const setActiveView = (view) => {
+    setActiveViewState(view);
+    if (typeof localStorage !== 'undefined' && view) {
+      localStorage.setItem('insighted_active_view', view);
+    }
+  };
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState(null);
@@ -2799,10 +3006,42 @@ export const AppProvider = ({ children }) => {
         ? String(p.employeeNo).trim() 
         : ((p.employee_no && !String(p.employee_no).toUpperCase().startsWith('PRN')) ? String(p.employee_no).trim() : '');
 
+      const rawEth = p.ethnicGroup || p.ethnic_group || '';
+      const cleanEthnicGroup = (rawEth === 'OTHERS' ? '' : rawEth);
+      const cleanReligion = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
+      const cleanMajor = (p.major === 'OTHERS' ? '' : (p.major || ''));
+      const cleanMinor = (p.minor === 'OTHERS' ? '' : (p.minor || ''));
+      const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
+
+      const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
+      const computedAttainment = p.highestEducationalAttainment || (() => {
+        if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
+          return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
+            ? 'DOCTORATE DEGREE (GRADUATED)'
+            : "MASTER'S DEGREE (GRADUATED)";
+        }
+        const deg = String(p.collegeDegree || '').toUpperCase();
+        if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
+        if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
+        if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
+        if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
+        if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
+        if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
+        return isTeach ? 'COLLEGE GRADUATE / BACCALAUREATE' : '';
+      })();
+
       return {
         ...p,
         employeeNo: cleanEmpNo,
         employee_no: cleanEmpNo,
+        ethnicGroup: cleanEthnicGroup,
+        ethnic_group: cleanEthnicGroup,
+        religion: cleanReligion,
+        highestEducationalAttainment: computedAttainment,
+        major: cleanMajor,
+        minor: cleanMinor,
+        prcSpecialization: cleanPrc,
+        prc_specialization: cleanPrc,
         assignedGradeLevels: p.assignedGradeLevels || p.gradeLevelsTaught || [],
         workloadRows: (p.workloadRows || []).map(r => ({
           ...r,
@@ -2915,9 +3154,41 @@ export const AppProvider = ({ children }) => {
           if (!Array.isArray(list)) return [];
           return list.map(p => {
             const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '');
+            const rawEth = p.ethnicGroup || p.ethnic_group || '';
+            const cleanEthnic = (rawEth === 'OTHERS' ? '' : rawEth);
+            const cleanRel = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
+            const cleanMaj = (p.major === 'OTHERS' ? '' : (p.major || ''));
+            const cleanMin = (p.minor === 'OTHERS' ? '' : (p.minor || ''));
+            const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
+
+            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(autoType || p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
+            const computedAttainment = p.highestEducationalAttainment || (() => {
+              if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
+                return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
+                  ? 'DOCTORATE DEGREE (GRADUATED)'
+                  : "MASTER'S DEGREE (GRADUATED)";
+              }
+              const deg = String(p.collegeDegree || '').toUpperCase();
+              if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
+              if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
+              if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
+              if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
+              if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
+              if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
+              return isTeach ? 'COLLEGE GRADUATE / BACCALAUREATE' : '';
+            })();
+
             return {
               ...p,
-              type: autoType || p.type || 'teaching'
+              type: autoType || p.type || 'teaching',
+              ethnicGroup: cleanEthnic,
+              ethnic_group: cleanEthnic,
+              religion: cleanRel,
+              highestEducationalAttainment: computedAttainment,
+              major: cleanMaj,
+              minor: cleanMin,
+              prcSpecialization: cleanPrc,
+              prc_specialization: cleanPrc
             };
           });
         };
@@ -3073,6 +3344,36 @@ export const AppProvider = ({ children }) => {
           } else {
             setSchoolInfo(currentSchoolInfo);
           }
+          draftPersonnel = draftPersonnel.map(p => {
+            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
+            const computedAttainment = p.highestEducationalAttainment || (() => {
+              if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
+                return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
+                  ? 'DOCTORATE DEGREE (GRADUATED)'
+                  : "MASTER'S DEGREE (GRADUATED)";
+              }
+              const deg = String(p.collegeDegree || '').toUpperCase();
+              if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
+              if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
+              if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
+              if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
+              if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
+              if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
+              return isTeach ? 'COLLEGE GRADUATE / BACCALAUREATE' : '';
+            })();
+
+            return {
+              ...p,
+              ethnicGroup: p.ethnicGroup === 'OTHERS' ? '' : (p.ethnicGroup || ''),
+              ethnic_group: p.ethnic_group === 'OTHERS' ? '' : (p.ethnic_group || ''),
+              religion: p.religion === 'OTHERS' ? '' : (p.religion || ''),
+              highestEducationalAttainment: computedAttainment,
+              major: p.major === 'OTHERS' ? '' : (p.major || ''),
+              minor: p.minor === 'OTHERS' ? '' : (p.minor || ''),
+              prcSpecialization: p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''),
+              prc_specialization: p.prc_specialization === 'OTHERS' ? '' : (p.prc_specialization || p.prcSpecialization || '')
+            };
+          });
           setPersonnel(draftPersonnel);
           setClassSections(loadedDraftSecs);
           setWorkloadTransfers(activeDraft.workloadTransfers || []);
@@ -3402,7 +3703,7 @@ export const AppProvider = ({ children }) => {
           await api.updatePersonnelTrainings(id, payload);
         }
 
-        const coreKeys = ['salutation', 'firstName', 'middleName', 'lastName', 'nameExtension', 'sexAtBirth', 'civilStatus', 'soloParent', 'religion', 'ethnicGroup', 'birthdate', 'philsysNo', 'tin', 'noTin', 'employeeNo', 'deploymentStatus', 'type'];
+        const coreKeys = ['salutation', 'firstName', 'middleName', 'lastName', 'nameExtension', 'sexAtBirth', 'civilStatus', 'soloParent', 'religion', 'ethnicGroup', 'birthdate', 'philsysNo', 'noPhilsys', 'tin', 'noTin', 'employeeNo', 'deploymentStatus', 'type'];
         const hasCore = Object.keys(accumulatedFields).some(k => coreKeys.includes(k));
         if (hasCore) {
           const payload = {
@@ -3419,6 +3720,7 @@ export const AppProvider = ({ children }) => {
             ethnic_group: latestPerson.ethnicGroup || null,
             birthdate: latestPerson.birthdate || null,
             philsys_no: latestPerson.philsysNo || null,
+            no_philsys: latestPerson.noPhilsys === true,
             tin: latestPerson.tin || null,
             no_tin: latestPerson.noTin === true,
             employee_no: latestPerson.employeeNo || null,
@@ -3499,6 +3801,7 @@ export const AppProvider = ({ children }) => {
       ethnicGroup: newPerson.ethnicGroup || '',
       birthdate: newPerson.birthdate || '',
       philsysNo: newPerson.philsysNo || '',
+      noPhilsys: newPerson.noPhilsys === true || newPerson.no_philsys === true,
       tin: newPerson.tin || '',
       noTin: newPerson.noTin === true,
       employeeNo: newPerson.employeeNo || '',
@@ -4187,6 +4490,10 @@ export const AppProvider = ({ children }) => {
         }
       });
 
+      // Detect personnel type
+      const detectedType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+      const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+
       // Required Basic Fields
       const requiredFields = [
         { field: "firstName", label: "First Name", cat: "Identity" },
@@ -4199,7 +4506,6 @@ export const AppProvider = ({ children }) => {
         { field: "fundSource", label: "Fund Source", cat: "Employment" },
         { field: "natureOfAppointment", label: "Nature of Appointment", cat: "Employment" },
         { field: "hiringArrangement", label: "Hiring Arrangement", cat: "Employment" },
-        { field: "collegeDegree", label: "College Degree / Baccalaureate", cat: "Qualifications" },
         { field: "eligibility", label: "Eligibility", cat: "Qualifications" }
       ];
 
@@ -4209,8 +4515,33 @@ export const AppProvider = ({ children }) => {
         }
       });
 
+      // College Degree Requirement: Mandatory for Teaching & Teaching-Related personnel.
+      // For Non-Teaching personnel, College Degree is only required if their highest educational attainment is College/Post-Grad.
+      if (!isNonTeaching) {
+        if (!p.collegeDegree) {
+          issues.push({
+            id: `${p.id}-collegeDegree-req`,
+            personId: p.id,
+            type: "error",
+            category: "Qualifications",
+            message: `${name}: College Degree / Baccalaureate is required.`
+          });
+        }
+      } else {
+        const attainment = p.highestEducationalAttainment || '';
+        const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
+        if (isCollegeOrPostGrad && !p.collegeDegree) {
+          issues.push({
+            id: `${p.id}-collegeDegree-req`,
+            personId: p.id,
+            type: "error",
+            category: "Qualifications",
+            message: `${name}: College Degree / Baccalaureate is required.`
+          });
+        }
+      }
+
       // DepEd Email Requirement & Validation
-      const isNonTeaching = p.type === 'non-teaching';
       const isNationalFund = String(p.fundSource || '').toUpperCase() === 'NATIONAL';
       const isEmailRequired = !isNonTeaching || isNationalFund;
 
@@ -4227,7 +4558,7 @@ export const AppProvider = ({ children }) => {
       }
 
       if (p.depedEmail && p.depedEmail !== 'N/A') {
-        const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName);
+        const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName);
         if (!emailVal.isValid) {
           issues.push({
             id: `${p.id}-deped-email-invalid`,
@@ -4246,7 +4577,7 @@ export const AppProvider = ({ children }) => {
       }
 
       // PhilSys Duplicate Check
-      if (p.philsysNo && hasDuplicate("philsysNo", p.philsysNo, p.id)) {
+      if (!p.noPhilsys && !p.no_philsys && p.philsysNo && hasDuplicate("philsysNo", p.philsysNo, p.id)) {
         issues.push({ id: `${p.id}-philsys-dup`, personId: p.id, type: "error", category: "Demographics", message: `${name}: Duplicate PhilSys / National ID detected.` });
       }
 
@@ -4264,6 +4595,7 @@ export const AppProvider = ({ children }) => {
       if (currentOfferings.includes('Elementary')) offeredGL.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade');
       if (currentOfferings.includes('JHS')) offeredGL.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade');
       if (currentOfferings.includes('SHS')) offeredGL.push('Grade 11', 'Grade 12', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade');
+      offeredGL.push('ALS', 'SNED', 'SPED');
 
       const normalizeGL = (gl) => String(gl || '').toUpperCase().replace(/[-\s]+/g, '');
       const offeredGLNormalized = offeredGL.map(normalizeGL);
@@ -4281,10 +4613,14 @@ export const AppProvider = ({ children }) => {
 
       // Eligibility & PRC Specialization
       const elig = Array.isArray(p.eligibility) ? p.eligibility : String(p.eligibility || "").split(",").map(s => s.trim());
-      const hasLETorPBET = elig.some(e => e.includes("LICENSURE EXAMINATION FOR TEACHERS") || e.includes("PROFESSIONAL BOARD EXAMINATION FOR TEACHERS") || e === "LET" || e === "PBET");
+      const hasLETorPBET = elig.some(e => {
+        const u = (e || '').toUpperCase();
+        return u.includes("LICENSURE EXAMINATION FOR TEACHERS") || u.includes("PROFESSIONAL BOARD EXAMINATION FOR TEACHERS") || u === "LET" || u === "PBET";
+      });
 
-      if (p.type === "teaching" && p.fundSource === "NATIONAL" && p.natureOfAppointment === "REGULAR PERMANENT" && !hasLETorPBET) {
-        issues.push({ id: `${p.id}-regular-let`, personId: p.id, type: "error", category: "Qualifications", message: `${name}: National Regular teachers must have LET or PBET eligibility.` });
+      const isTeachingStaff = p.type === "teaching" || p.type === "TEACHING" || p.positionCategory === "TEACHING";
+      if (isTeachingStaff && !hasLETorPBET) {
+        issues.push({ id: `${p.id}-teaching-let-req`, personId: p.id, type: "error", category: "Qualifications", message: `${name}: Teaching personnel must possess Licensure Examination for Teachers (LET/PBET) eligibility.` });
       }
 
       // Related-Teaching LET/PBET check
@@ -4308,6 +4644,74 @@ export const AppProvider = ({ children }) => {
       }
       if (["Reassigned", "Borrowed"].includes(p.deploymentStatus) && (!p.assignedSchools || p.assignedSchools.length === 0) && !p.clusteredSchools) {
         issues.push({ id: `${p.id}-assigned-none`, personId: p.id, type: "error", category: "Deployment", message: `${name}: ${p.deploymentStatus} deployment requires at least one assigned receiving school.` });
+      }
+
+      // Professional Development / L&D Trainings Check
+      const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
+      if (allTrainings.length > 0) {
+        const hasMissingHours = allTrainings.some(tr => !tr.totalHours || Number(tr.totalHours) <= 0 || Number(tr.totalHours) > 999);
+        if (hasMissingHours) {
+          issues.push({
+            id: `${p.id}-ld-hours-missing`,
+            personId: p.id,
+            type: "error",
+            category: "Qualifications",
+            message: `${name}: Total hours (1-999) is required for all added Professional Development / L&D training records.`
+          });
+        }
+      }
+
+      // Teaching Assignment (Grade Levels) - Teaching & Related Only
+      if (!isNonTeaching) {
+        const assignedGL = Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
+        if (assignedGL.length === 0) {
+          issues.push({
+            id: `${p.id}-assigned-gl-none`,
+            personId: p.id,
+            type: "error",
+            category: "Teaching",
+            message: `${name}: Assigned grade level is required in the Teaching tab.`
+          });
+        }
+      }
+
+      // Learning Area Matrix (Full Service Years Allocation) - Teaching & Related Only
+      if (!isNonTeaching) {
+        const d = p.firstServiceDate || p.first_service_date || '';
+        let requiredYears = 1;
+        if (d && typeof d === 'string' && d.length >= 4) {
+          const startYear = parseInt(d.substring(0, 4), 10);
+          if (!isNaN(startYear)) {
+            const currentYear = new Date().getFullYear();
+            requiredYears = Math.min(70, Math.max(1, currentYear - startYear));
+          }
+        }
+
+        const laMap = p.learningAreaMap || p.matrix_data || {};
+        let totalAssigned = 0;
+        Object.keys(laMap).forEach(k => {
+          if (laMap[k]?.checked) {
+            totalAssigned += Number(laMap[k]?.years || 0);
+          }
+        });
+
+        if (totalAssigned === 0) {
+          issues.push({
+            id: `${p.id}-la-unanswered`,
+            personId: p.id,
+            type: "error",
+            category: "Learning Area",
+            message: `${name}: Learning Area experience must be fully allocated (0 of ${requiredYears} years assigned).`
+          });
+        } else if (totalAssigned < requiredYears) {
+          issues.push({
+            id: `${p.id}-la-incomplete`,
+            personId: p.id,
+            type: "error",
+            category: "Learning Area",
+            message: `${name}: Learning Area experience incomplete (${totalAssigned} of ${requiredYears} years assigned, ${requiredYears - totalAssigned} yrs remaining).`
+          });
+        }
       }
 
       // Workload Rows & Schedule Verification
@@ -4433,7 +4837,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 4',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'EPP/TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
@@ -4448,7 +4852,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 5',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'EPP/TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
@@ -4463,7 +4867,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 6',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'EPP/TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
@@ -4478,7 +4882,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 7',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
@@ -4493,7 +4897,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 8',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
@@ -4508,7 +4912,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 9',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
@@ -4523,7 +4927,7 @@ export const AppProvider = ({ children }) => {
         gradeLabel: 'Grade 10',
         allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
           { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
           { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
           { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },

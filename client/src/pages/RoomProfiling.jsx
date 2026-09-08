@@ -518,6 +518,7 @@ export default function RoomProfiling() {
           depedEmail: teacher.depedEmail || teacher.deped_email || '',
           birthdate: teacher.birthdate ? String(teacher.birthdate).substring(0, 10) : '',
           philsysNo: teacher.philsysNo || teacher.philsys_no || '',
+          noPhilsys: !!(teacher.noPhilsys || teacher.no_philsys),
           neapTrainingRows: Array.isArray(teacher.neapTrainingRows) ? teacher.neapTrainingRows : [],
           certificationRows: Array.isArray(teacher.certificationRows) ? teacher.certificationRows : [],
           otherTrainingRows: Array.isArray(teacher.otherTrainingRows) ? teacher.otherTrainingRows : []
@@ -597,8 +598,18 @@ export default function RoomProfiling() {
 
   // DO NOT AUTO-POPULATE HOURS: User manually specifies total hours
   const handleTrainingChange = (key, index, field, value) => {
+    let sanitizedValue = value;
+    if (field === 'totalHours') {
+      if (typeof sanitizedValue === 'string') {
+        sanitizedValue = sanitizedValue.replace(/\D/g, '').slice(0, 3);
+        sanitizedValue = sanitizedValue ? Number(sanitizedValue) : '';
+      } else if (typeof sanitizedValue === 'number') {
+        const numStr = String(sanitizedValue).replace(/\D/g, '').slice(0, 3);
+        sanitizedValue = numStr ? Number(numStr) : '';
+      }
+    }
     const rows = [...(formData[key] || [])];
-    rows[index] = { ...rows[index], [field]: value };
+    rows[index] = { ...rows[index], [field]: sanitizedValue };
     handleFieldChange(key, rows);
   };
 
@@ -638,13 +649,13 @@ export default function RoomProfiling() {
   const isAgeValid = currentAge !== null && currentAge >= 15;
 
   const rawEmail = formData ? formData.depedEmail || '' : '';
-  const emailVal = validateDepEdEmail(rawEmail);
+  const emailVal = validateDepEdEmail(rawEmail, formData?.firstName, formData?.lastName, formData?.middleName);
   const isEmailNA = rawEmail === 'N/A';
   const localVal = isEmailNA ? 'N/A' : getEmailLocal(rawEmail);
   const hasEmailError = !emailVal.isValid && !isEmailNA && !!rawEmail;
 
   const cleanPhilsys = String(formData?.philsysNo || '').replace(/\D/g, '');
-  const isPhilsysValid = cleanPhilsys.length === 16;
+  const isPhilsysValid = !!(formData?.noPhilsys || formData?.no_philsys) || cleanPhilsys.length === 0 || cleanPhilsys.length === 16;
   const isFirstNameValid = !!formData?.firstName?.trim();
   const isLastNameValid = !!formData?.lastName?.trim();
   const isBirthdateValid = !!formData?.birthdate && isAgeValid;
@@ -660,7 +671,8 @@ export default function RoomProfiling() {
     !!tr.startDate && 
     !!tr.endDate && 
     tr.totalHours !== '' && 
-    Number(tr.totalHours) > 0
+    Number(tr.totalHours) > 0 &&
+    Number(tr.totalHours) <= 999
   );
 
   const isFormValid = isFirstNameValid && isLastNameValid && isBirthdateValid && isPhilsysValid && areTrainingsValid && !hasEmailError;
@@ -1028,27 +1040,43 @@ export default function RoomProfiling() {
                   </div>
 
                   <div style={{ display: 'grid', gap: '4px' }}>
-                    <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>PhilSys No. (National ID) *</span>
-                      <span style={{ color: isPhilsysValid ? '#059669' : '#DC2626', fontWeight: 700 }}>
-                        {cleanPhilsys.length}/16 digits {isPhilsysValid ? '✓' : '(Required 16 digits)'}
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>PhilSys No. (National ID)</span>
+                      <span style={{ color: (formData.noPhilsys || formData.no_philsys) ? '#64748b' : isPhilsysValid ? '#059669' : '#DC2626', fontWeight: 600, fontSize: '11px' }}>
+                        {(formData.noPhilsys || formData.no_philsys) ? 'N/A' : cleanPhilsys.length > 0 ? (cleanPhilsys.length === 16 ? '16/16 digits ✓' : `${cleanPhilsys.length}/16 digits (Needs 16 if provided)`) : '(Optional)'}
                       </span>
                     </label>
-                    <input
-                      type="text"
-                      placeholder="16-digit PhilSys Card Number"
-                      maxLength={16}
-                      value={formData.philsysNo || ''}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '');
-                        handleFieldChange('philsysNo', val);
-                      }}
-                      required
-                      style={{
-                        borderColor: !isPhilsysValid ? '#EF4444' : undefined,
-                        background: !isPhilsysValid ? '#FEF2F2' : undefined
-                      }}
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="16-digit PhilSys Card Number"
+                        maxLength={16}
+                        disabled={!!(formData.noPhilsys || formData.no_philsys)}
+                        value={(formData.noPhilsys || formData.no_philsys) ? '' : (formData.philsysNo || '')}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          handleFieldChange('philsysNo', val);
+                        }}
+                        style={{
+                          flex: 1,
+                          borderColor: !isPhilsysValid ? '#EF4444' : undefined,
+                          background: (formData.noPhilsys || formData.no_philsys) ? '#F1F5F9' : !isPhilsysValid ? '#FEF2F2' : undefined
+                        }}
+                      />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!(formData.noPhilsys || formData.no_philsys)}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked;
+                            handleFieldChange('noPhilsys', isChecked);
+                            if (isChecked) {
+                              handleFieldChange('philsysNo', '');
+                            }
+                          }}
+                        /> N/A
+                      </label>
+                    </div>
                   </div>
 
                     <div style={{ display: 'grid', gap: '4px' }}>
@@ -1137,9 +1165,18 @@ export default function RoomProfiling() {
                               <input 
                                 type="number" 
                                 min={1}
+                                max={999}
                                 placeholder="Enter hours (e.g. 40)"
                                 value={tr.totalHours === '' || tr.totalHours === undefined ? '' : tr.totalHours} 
-                                onChange={(e) => handleTrainingChange('neapTrainingRows', index, 'totalHours', e.target.value === '' ? '' : Number(e.target.value))}
+                                onInput={(e) => {
+                                  if (e.target.value.length > 3) {
+                                    e.target.value = e.target.value.slice(0, 3);
+                                  }
+                                }}
+                                onChange={(e) => {
+                                  const clean = String(e.target.value || '').replace(/\D/g, '').slice(0, 3);
+                                  handleTrainingChange('neapTrainingRows', index, 'totalHours', clean === '' ? '' : Number(clean));
+                                }}
                                 required
                                 style={{
                                   borderColor: isHoursMissing ? '#EF4444' : undefined,
@@ -1216,9 +1253,18 @@ export default function RoomProfiling() {
                               <input 
                                 type="number" 
                                 min={1}
+                                max={999}
                                 placeholder="Enter hours (e.g. 40)"
                                 value={tr.totalHours === '' || tr.totalHours === undefined ? '' : tr.totalHours} 
-                                onChange={(e) => handleTrainingChange('certificationRows', index, 'totalHours', e.target.value === '' ? '' : Number(e.target.value))}
+                                onInput={(e) => {
+                                  if (e.target.value.length > 3) {
+                                    e.target.value = e.target.value.slice(0, 3);
+                                  }
+                                }}
+                                onChange={(e) => {
+                                  const clean = String(e.target.value || '').replace(/\D/g, '').slice(0, 3);
+                                  handleTrainingChange('certificationRows', index, 'totalHours', clean === '' ? '' : Number(clean));
+                                }}
                                 required
                                 style={{
                                   borderColor: isHoursMissing ? '#EF4444' : undefined,
@@ -1324,9 +1370,18 @@ export default function RoomProfiling() {
                               <input 
                                 type="number" 
                                 min={1}
+                                max={999}
                                 placeholder="Enter hours (e.g. 40)"
                                 value={tr.totalHours === '' || tr.totalHours === undefined ? '' : tr.totalHours} 
-                                onChange={(e) => handleTrainingChange('otherTrainingRows', index, 'totalHours', e.target.value === '' ? '' : Number(e.target.value))}
+                                onInput={(e) => {
+                                  if (e.target.value.length > 3) {
+                                    e.target.value = e.target.value.slice(0, 3);
+                                  }
+                                }}
+                                onChange={(e) => {
+                                  const clean = String(e.target.value || '').replace(/\D/g, '').slice(0, 3);
+                                  handleTrainingChange('otherTrainingRows', index, 'totalHours', clean === '' ? '' : Number(clean));
+                                }}
                                 required
                                 style={{
                                   borderColor: isHoursMissing ? '#EF4444' : undefined,

@@ -17,7 +17,8 @@ import {
   FiClipboard, 
   FiX, 
   FiCheckCircle,
-  FiTrash2 
+  FiTrash2,
+  FiBook 
 } from 'react-icons/fi';
 
 
@@ -299,39 +300,44 @@ export default function Overload() {
   const [transferEndDate, setTransferEndDate] = useState('');
   const [selectedTransferSlots, setSelectedTransferSlots] = useState({}); // { rowIdx: substituteTeacherId }
 
-  // Work Immersion form state (Step 4)
+  // Work Immersion form state (Step 5)
   const [workImmersionTeacherId, setWorkImmersionTeacherId] = useState('');
   const [workImmersionMonth, setWorkImmersionMonth] = useState('June');
-  const [workImmersionData, setWorkImmersionData] = useState({}); // { [dayInt]: minutes }
-  const [workImmersionTimes, setWorkImmersionTimes] = useState({}); // { [dayInt]: { startTime, endTime } }
+  const [workImmersionData, setWorkImmersionData] = useState({}); // { [dateStr]: minutes }
+  const [workImmersionTimes, setWorkImmersionTimes] = useState({}); // { [dateStr]: { startTime, endTime } }
   const [workImmersionLoading, setWorkImmersionLoading] = useState(false);
+  const [batchImmersionStart, setBatchImmersionStart] = useState('08:00');
+  const [batchImmersionEnd, setBatchImmersionEnd] = useState('12:00');
+  const [immersionStatusMsg, setImmersionStatusMsg] = useState('');
 
-  // Overload Reasons state (Step 5)
+  // Overload Reasons state (Step 6)
   const [overloadReasonsMap, setOverloadReasonsMap] = useState({});
   const [activeReasonModalTeacher, setActiveReasonModalTeacher] = useState(null);
 
-  // Fetch Work Immersion data when Step 4 is active
+  // Fetch Work Immersion data when Step 5 is active
   useEffect(() => {
-    if (activeStep !== 4 || !workImmersionTeacherId) return;
+    if (activeStep !== 5 || !workImmersionTeacherId) return;
     let isMounted = true;
     setWorkImmersionLoading(true);
-    const sy = schoolInfo?.schoolYear || 'SY 26-27';
-    api.getWorkImmersion({
-      personnelId: workImmersionTeacherId,
-      schoolYear: sy,
-      month: workImmersionMonth
-    })
+    const sy = schoolInfo?.schoolYear || '2026-2027';
+
+    api.getWorkImmersionSchedules(workImmersionTeacherId, sy)
       .then(res => {
         if (!isMounted) return;
-        const rows = res.rows || [];
+        const rows = (res && res.data) ? res.data : (res && Array.isArray(res.rows) ? res.rows : (Array.isArray(res) ? res : []));
         const data = {};
         const times = {};
+
         rows.forEach(r => {
-          data[r.day] = r.minutes || 0;
-          times[r.day] = {
-            startTime: r.startTime || r.start_time || '',
-            endTime: r.endTime || r.end_time || ''
-          };
+          const vDate = r.visitDate || r.visit_date || r.date;
+          if (vDate) {
+            const cleanDate = String(vDate).substring(0, 10);
+            const sTime = r.startTime || r.start_time || '';
+            const eTime = r.endTime || r.end_time || '';
+            const dur = Number(r.durationMinutes || r.duration_minutes || r.minutes || 0);
+            data[cleanDate] = dur;
+            times[cleanDate] = { startTime: sTime, endTime: eTime };
+          }
         });
         setWorkImmersionData(data);
         setWorkImmersionTimes(times);
@@ -343,44 +349,175 @@ export default function Overload() {
         if (isMounted) setWorkImmersionLoading(false);
       });
     return () => { isMounted = false; };
-  }, [activeStep, workImmersionTeacherId, workImmersionMonth, schoolInfo?.schoolYear]);
+  }, [activeStep, workImmersionTeacherId, schoolInfo?.schoolYear]);
 
-  const handleSaveWorkImmersionTime = async (day, startTime, endTime) => {
+  // Toggle a single day on the interactive calendar
+  const handleToggleImmersionDay = async (dateStr) => {
+    if (!workImmersionTeacherId) {
+      await showAlert("Select Teacher", "Please select a teacher first before picking immersion days.");
+      return;
+    }
+
+    const sy = schoolInfo?.schoolYear || '2026-2027';
+    const isCurrentlySelected = Boolean(workImmersionTimes[dateStr]);
+
+    if (isCurrentlySelected) {
+      // Untoggle: remove from state & delete from DB
+      const updatedTimes = { ...workImmersionTimes };
+      delete updatedTimes[dateStr];
+      const updatedData = { ...workImmersionData };
+      delete updatedData[dateStr];
+
+      setWorkImmersionTimes(updatedTimes);
+      setWorkImmersionData(updatedData);
+
+      try {
+        await api.deleteWorkImmersionDate({
+          personnelId: workImmersionTeacherId,
+          schoolYear: sy,
+          date: dateStr
+        });
+        setImmersionStatusMsg(`Removed immersion schedule for ${dateStr}`);
+        setTimeout(() => setImmersionStatusMsg(''), 3000);
+      } catch (err) {
+        console.error('Failed to delete work immersion date:', err);
+      }
+    } else {
+      // Toggle ON: default to batch times
+      const sTime = batchImmersionStart || '08:00';
+      const eTime = batchImmersionEnd || '12:00';
+      let mins = 0;
+      if (sTime && eTime) {
+        const sm = timeToMins(sTime);
+        const em = timeToMins(eTime);
+        if (em > sm) mins = em - sm;
+      }
+
+      const updatedTimes = {
+        ...workImmersionTimes,
+        [dateStr]: { startTime: sTime, endTime: eTime }
+      };
+      const updatedData = {
+        ...workImmersionData,
+        [dateStr]: mins
+      };
+
+      setWorkImmersionTimes(updatedTimes);
+      setWorkImmersionData(updatedData);
+
+      try {
+        await api.saveWorkImmersionBatch({
+          personnelId: workImmersionTeacherId,
+          schoolId: schoolInfo?.schoolId || '108348',
+          schoolYear: sy,
+          schedules: [{
+            visitDate: dateStr,
+            startTime: sTime,
+            endTime: eTime
+          }]
+        });
+        setImmersionStatusMsg(`Added immersion schedule for ${dateStr} (${mins} mins)`);
+        setTimeout(() => setImmersionStatusMsg(''), 3000);
+      } catch (err) {
+        console.error('Failed to save work immersion date:', err);
+      }
+    }
+  };
+
+  // Update Start/End time for a specific day
+  const handleUpdateImmersionDayTime = async (dateStr, startTime, endTime) => {
     if (!workImmersionTeacherId) return;
-    const sy = schoolInfo?.schoolYear || 'SY 26-27';
+    const sy = schoolInfo?.schoolYear || '2026-2027';
 
     let minutes = 0;
     if (startTime && endTime) {
-      const startMins = timeToMins(startTime);
-      const endMins = timeToMins(endTime);
-      if (endMins > startMins) {
-        minutes = endMins - startMins;
-      }
+      const sm = timeToMins(startTime);
+      const em = timeToMins(endTime);
+      if (em > sm) minutes = em - sm;
     }
 
     setWorkImmersionTimes(prev => ({
       ...prev,
-      [day]: { startTime, endTime }
+      [dateStr]: { startTime, endTime }
     }));
     setWorkImmersionData(prev => ({
       ...prev,
-      [day]: minutes
+      [dateStr]: minutes
     }));
 
     try {
-      await api.saveWorkImmersion({
+      await api.saveWorkImmersionBatch({
         personnelId: workImmersionTeacherId,
+        schoolId: schoolInfo?.schoolId || '108348',
         schoolYear: sy,
-        month: workImmersionMonth,
-        day,
-        minutes,
-        startTime,
-        endTime
+        schedules: [{
+          visitDate: dateStr,
+          startTime,
+          endTime
+        }]
       });
-      showToast(`Work immersion for day ${day} updated (${minutes} mins)`, 'success');
+      setImmersionStatusMsg(`Updated schedule for ${dateStr} (${minutes} mins)`);
+      setTimeout(() => setImmersionStatusMsg(''), 3000);
     } catch (err) {
-      console.error('Failed to save work immersion times:', err);
-      showToast('Failed to save work immersion times', 'error');
+      console.error('Failed to update work immersion schedule:', err);
+    }
+  };
+
+  // Remove single immersion day
+  const handleRemoveImmersionDay = async (dateStr) => {
+    await handleToggleImmersionDay(dateStr);
+  };
+
+  // Batch apply Start & End times to all selected days in the active month
+  const handleBatchApplyTimesToMonth = async () => {
+    if (!workImmersionTeacherId) {
+      await showAlert("Select Teacher", "Please select a teacher first.");
+      return;
+    }
+    const currentMonthDates = getWeekdaysInMonth(workImmersionMonth, schoolInfo?.schoolYear || 'SY 26-27')
+      .map(d => getLocalDateString(d));
+    const selectedInMonth = currentMonthDates.filter(dStr => Boolean(workImmersionTimes[dStr]));
+
+    if (selectedInMonth.length === 0) {
+      await showAlert("No Days Selected", `No immersion days are currently selected for ${workImmersionMonth}. Click days on the calendar first.`);
+      return;
+    }
+
+    const sTime = batchImmersionStart || '08:00';
+    const eTime = batchImmersionEnd || '12:00';
+    const sm = timeToMins(sTime);
+    const em = timeToMins(eTime);
+    const mins = em > sm ? em - sm : 0;
+
+    const updatedTimes = { ...workImmersionTimes };
+    const updatedData = { ...workImmersionData };
+    const batchList = [];
+
+    selectedInMonth.forEach(dStr => {
+      updatedTimes[dStr] = { startTime: sTime, endTime: eTime };
+      updatedData[dStr] = mins;
+      batchList.push({
+        visitDate: dStr,
+        startTime: sTime,
+        endTime: eTime
+      });
+    });
+
+    setWorkImmersionTimes(updatedTimes);
+    setWorkImmersionData(updatedData);
+
+    try {
+      const sy = schoolInfo?.schoolYear || '2026-2027';
+      await api.saveWorkImmersionBatch({
+        personnelId: workImmersionTeacherId,
+        schoolId: schoolInfo?.schoolId || '108348',
+        schoolYear: sy,
+        schedules: batchList
+      });
+      setImmersionStatusMsg(`Applied ${sTime} – ${eTime} to all ${selectedInMonth.length} selected days!`);
+      setTimeout(() => setImmersionStatusMsg(''), 4000);
+    } catch (err) {
+      console.error('Failed to batch save work immersion schedules:', err);
     }
   };
 
@@ -542,6 +679,29 @@ export default function Overload() {
   // Filter strictly to TEACHING PERSONNEL ONLY across all steps, dropdowns, and views
   const activePersonnel = effectivePersonnel.filter(isStrictTeachingPersonnel);
 
+  // Senior High School (SHS) Offering Detection
+  const hasSHS = React.useMemo(() => {
+    const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
+    const eduLevels = (schoolInfo?.educationalLevels || []).map(o => String(o).toUpperCase());
+    if (offerings.length > 0) {
+      return offerings.some(o => o.includes('SHS') || o.includes('SENIOR') || o.includes('HIGH'));
+    }
+    if (eduLevels.length > 0) {
+      return eduLevels.some(o => o.includes('SHS') || o.includes('SENIOR') || o.includes('HIGH'));
+    }
+    return activePersonnel.some(p => 
+      p.teachesSeniorHigh || 
+      (p.workloadRows || []).some(r => String(r.gradeLevel || '').includes('11') || String(r.gradeLevel || '').includes('12'))
+    );
+  }, [schoolInfo, activePersonnel]);
+
+  // If SHS is not offered and user somehow lands on step 5, redirect to step 6 (Teaching Overload)
+  useEffect(() => {
+    if (!hasSHS && activeStep === 5) {
+      setActiveStep(6);
+    }
+  }, [hasSHS, activeStep]);
+
   // Overload eligible personnel is strictly teaching personnel
   const overloadEligiblePersonnel = activePersonnel;
 
@@ -650,6 +810,8 @@ export default function Overload() {
     const teacher = getEffectiveTeacher(rawTeacher);
     let grossOverloadTotal = 0;
     let deductionTotal = 0;
+    let leaveDeductionTotal = 0;
+    let lateDeductionTotal = 0;
     let netOverloadTotal = 0;
     
     // Helper to map weekday indexes to short codes
@@ -671,10 +833,50 @@ export default function Overload() {
         return; // No teaching load / overload pay on holidays or suspensions
       }
       
-      // Calculate teaching load for this teacher on this day
-      let dailyTeachingMinutes = 0;
-      
-      // 1. Process base workload rows
+      // Helper: normalize teacher IDs for robust matching (id, prn, personnel_id, employee_no)
+      const teacherIds = [
+        String(teacher.id || '').trim(),
+        String(teacher.prn || '').trim(),
+        String(teacher.personnelId || '').trim(),
+        String(teacher.personnel_id || '').trim(),
+        String(teacher.employeeNo || '').trim(),
+        String(teacher.employee_no || '').trim()
+      ].filter(Boolean);
+
+      // Check for full-day absence / leave on this date
+      const isAbsent = absences.some(a => {
+        const targetPId = String(a.personnelId || a.personnel_id || '').trim();
+        if (!teacherIds.includes(targetPId)) return false;
+
+        const lType = a.leaveType || a.leave_type || '';
+        if (lType.includes('Late') || lType.includes('Tardiness')) return false;
+
+        const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+        const eStr = a.endDate || a.end_date || sStr;
+        const cleanStart = String(sStr).includes('T') ? String(sStr).split('T')[0] : String(sStr).trim();
+        const cleanEnd = String(eStr).includes('T') ? String(eStr).split('T')[0] : (cleanStart || String(eStr).trim());
+
+        return dateStr >= cleanStart && dateStr <= cleanEnd;
+      });
+
+      // Check for tardiness / late on this date (ineligible for overload pay on late days)
+      const isLate = absences.some(a => {
+        const targetPId = String(a.personnelId || a.personnel_id || '').trim();
+        if (!teacherIds.includes(targetPId)) return false;
+
+        const lType = a.leaveType || a.leave_type || '';
+        if (!lType.includes('Late') && !lType.includes('Tardiness')) return false;
+
+        const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
+        const eStr = a.endDate || a.end_date || sStr;
+        const cleanStart = String(sStr).includes('T') ? String(sStr).split('T')[0] : String(sStr).trim();
+        const cleanEnd = String(eStr).includes('T') ? String(eStr).split('T')[0] : (cleanStart || String(eStr).trim());
+
+        return dateStr >= cleanStart && dateStr <= cleanEnd;
+      });
+
+      // 1. Process base scheduled workload rows (regular timetable)
+      let baseScheduledMinutes = 0;
       const currentSy = schoolInfo?.schoolYear || 'SY 26-27';
       const currentYearWorkloads = (teacher.workloadRows || []).filter(row => {
         const rowSy = row.schoolYear || row.school_year;
@@ -687,33 +889,28 @@ export default function Overload() {
           const eTime = row.endTime || row.end_time;
           const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
 
-          // Check if this slot was transferred to someone else on this date
-          const isTransferred = workloadTransfers.some(t => 
-            t.absentTeacherId === teacher.id && 
-            t.status !== 'ended' &&
-            t.startDate <= dateStr && 
-            t.endDate >= dateStr &&
-            (String(t.workloadRowId) === String(row.id) || (t.workloadRows && t.workloadRows.some(wr => (wr.subject || wr.subject_name) === subName && (wr.startTime || wr.start_time) === sTime && (wr.endTime || wr.end_time) === eTime)))
-          );
-          
-          if (!isTransferred) {
-            if (subName === 'HGP') {
-              // HGP is stored for tracking program duration only and does not add extra teaching load minutes
-            } else if (subName === 'ADVISORY') {
-              dailyTeachingMinutes += 60;
-            } else {
-              dailyTeachingMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
-            }
+          if (subName === 'HGP') {
+            // HGP is stored for tracking program duration only and does not add extra teaching load minutes
+          } else if (subName === 'ADVISORY') {
+            baseScheduledMinutes += 60;
+          } else {
+            baseScheduledMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
           }
         }
       });
-      
-      // 2. Process workloads transferred TO this teacher on this date
+
+      // Base daily scheduled hours and daily overload
+      const baseDailyHours = baseScheduledMinutes / 60;
+      const baseDailyOverload = Math.max(0, baseDailyHours - 6.0);
+
+      // 2. Extra minutes if this teacher served as a substitute for someone else on this date
+      let substituteMinutes = 0;
       workloadTransfers.forEach(t => {
-        if (t.substituteTeacherId === teacher.id && 
-            t.status !== 'ended' &&
-            t.startDate <= dateStr && 
-            t.endDate >= dateStr) {
+        const subId = String(t.substituteTeacherId || t.substitute_personnel_id || t.substitute_teacher_id || '').trim();
+        const cleanStart = String(t.startDate || '').split('T')[0].trim();
+        const cleanEnd = String(t.endDate || cleanStart).split('T')[0].trim();
+
+        if (teacherIds.includes(subId) && t.status !== 'ended' && dateStr >= cleanStart && dateStr <= cleanEnd) {
           (t.workloadRows || []).forEach(row => {
             if (matchesDay(row.days, dayShort)) {
               const sTime = row.startTime || row.start_time;
@@ -723,36 +920,41 @@ export default function Overload() {
               if (subName === 'HGP') {
                 // HGP does not add extra teaching load minutes
               } else if (subName === 'ADVISORY') {
-                dailyTeachingMinutes += 60;
+                substituteMinutes += 60;
               } else {
-                dailyTeachingMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
+                substituteMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
               }
             }
           });
         }
       });
-      
-      // Daily hours
-      const dailyHours = dailyTeachingMinutes / 60;
-      
-      // Gross daily overload
-      const grossDailyOverload = Math.max(0, dailyHours - 6.0);
-      
-      const isAbsent = absences.some(a => {
-        if (String(a.personnelId || a.personnel_id) !== String(teacher.id)) return false;
-        const lType = a.leaveType || a.leave_type || '';
-        if (lType.includes('Late') || lType.includes('Tardiness')) return false;
-        const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
-        const eStr = a.endDate || a.end_date || sStr;
-        return dateStr >= sStr && dateStr <= eStr;
-      });
-      
-      if (grossDailyOverload > 0) {
-        grossOverloadTotal += grossDailyOverload;
-        if (isAbsent) {
-          deductionTotal += grossDailyOverload;
+
+      // 3. Process Work Immersion for this teacher on this date if recorded
+      const immersionMins = (workImmersionTeacherId && teacherIds.includes(String(workImmersionTeacherId)) && workImmersionData[dateStr])
+        ? workImmersionData[dateStr]
+        : 0;
+
+      // If teacher is absent or late, their scheduled overload for this day is forfeited / deducted
+      if (baseDailyOverload > 0) {
+        grossOverloadTotal += baseDailyOverload;
+        if (isAbsent || isLate) {
+          deductionTotal += baseDailyOverload;
+          if (isAbsent) leaveDeductionTotal += baseDailyOverload;
+          if (isLate) lateDeductionTotal += baseDailyOverload;
         } else {
-          netOverloadTotal += grossDailyOverload;
+          netOverloadTotal += baseDailyOverload;
+        }
+      }
+
+      // Add extra overload earned from substitute teaching or work immersion on this day (only if teacher wasn't absent)
+      if (!isAbsent) {
+        const extraHours = (substituteMinutes + immersionMins) / 60;
+        if (extraHours > 0) {
+          const effectiveExtraOverload = Math.max(0, ((baseScheduledMinutes + substituteMinutes + immersionMins) / 60) - 6.0) - baseDailyOverload;
+          if (effectiveExtraOverload > 0) {
+            grossOverloadTotal += effectiveExtraOverload;
+            netOverloadTotal += effectiveExtraOverload;
+          }
         }
       }
     });
@@ -760,6 +962,8 @@ export default function Overload() {
     return {
       gross: Math.round(grossOverloadTotal * 100) / 100,
       deductions: Math.round(deductionTotal * 100) / 100,
+      leaveDeductions: Math.round(leaveDeductionTotal * 100) / 100,
+      lateDeductions: Math.round(lateDeductionTotal * 100) / 100,
       net: Math.round(netOverloadTotal * 100) / 100
     };
   };
@@ -839,7 +1043,14 @@ export default function Overload() {
       return;
     }
 
-    const teacherAbsences = absences.filter(a => String(a.personnelId) === String(tardinessTeacherId));
+    const teacher = activePersonnel.find(p => p.id === tardinessTeacherId);
+    const tardyTeacherIds = [
+      String(tardinessTeacherId || '').trim(),
+      String(teacher?.prn || '').trim(),
+      String(teacher?.personnelId || '').trim(),
+      String(teacher?.personnel_id || '').trim()
+    ].filter(Boolean);
+    const teacherAbsences = absences.filter(a => tardyTeacherIds.includes(String(a.personnelId || a.personnel_id || '').trim()));
     let hasConflict = false;
     let conflictDate = '';
 
@@ -850,7 +1061,9 @@ export default function Overload() {
       if (teacherAbsences.some(a => {
         const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
         const eStr = a.endDate || a.end_date || sStr;
-        return dStr >= sStr && dStr <= eStr;
+        const cleanStart = String(sStr).includes('T') ? String(sStr).split('T')[0] : String(sStr).trim();
+        const cleanEnd = String(eStr).includes('T') ? String(eStr).split('T')[0] : (cleanStart || String(eStr).trim());
+        return dStr >= cleanStart && dStr <= cleanEnd;
       })) {
         hasConflict = true;
         conflictDate = dStr;
@@ -889,7 +1102,14 @@ export default function Overload() {
     }
 
     // Guard against duplicate / overlapping absence dates for this teacher across all leave types
-    const teacherAbsences = absences.filter(a => String(a.personnelId) === String(absentTeacherId));
+    const absTeacher = activePersonnel.find(p => p.id === absentTeacherId);
+    const absTeacherIds = [
+      String(absentTeacherId || '').trim(),
+      String(absTeacher?.prn || '').trim(),
+      String(absTeacher?.personnelId || '').trim(),
+      String(absTeacher?.personnel_id || '').trim()
+    ].filter(Boolean);
+    const teacherAbsences = absences.filter(a => absTeacherIds.includes(String(a.personnelId || a.personnel_id || '').trim()));
     let hasConflict = false;
     let conflictDate = '';
 
@@ -900,7 +1120,9 @@ export default function Overload() {
       if (teacherAbsences.some(a => {
         const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
         const eStr = a.endDate || a.end_date || sStr;
-        return dStr >= sStr && dStr <= eStr;
+        const cleanStart = String(sStr).includes('T') ? String(sStr).split('T')[0] : String(sStr).trim();
+        const cleanEnd = String(eStr).includes('T') ? String(eStr).split('T')[0] : (cleanStart || String(eStr).trim());
+        return dStr >= cleanStart && dStr <= cleanEnd;
       })) {
         hasConflict = true;
         conflictDate = dStr;
@@ -1158,121 +1380,44 @@ export default function Overload() {
       />
 
 
-      {/* 6-Step Wizard Navigation Stepper */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '8px' }}>
-        <button 
-          onClick={() => setActiveStep(1)}
-          style={{
-            padding: '14px 18px',
-            borderRadius: '14px',
-            border: '2px solid',
-            borderColor: activeStep === 1 ? 'var(--blue)' : 'var(--line)',
-            background: activeStep === 1 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
-            color: activeStep === 1 ? 'var(--navy)' : 'var(--muted)',
-            fontWeight: 'bold',
-            textAlign: 'left',
-            cursor: 'pointer',
-            boxShadow: activeStep === 1 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
-          }}
-        >
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 1</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>📅 Calendar</div>
-        </button>
-
-        <button 
-          onClick={() => setActiveStep(2)}
-          style={{
-            padding: '14px 18px',
-            borderRadius: '14px',
-            border: '2px solid',
-            borderColor: activeStep === 2 ? 'var(--blue)' : 'var(--line)',
-            background: activeStep === 2 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
-            color: activeStep === 2 ? 'var(--navy)' : 'var(--muted)',
-            fontWeight: 'bold',
-            textAlign: 'left',
-            cursor: 'pointer',
-            boxShadow: activeStep === 2 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
-          }}
-        >
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 2</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiUserX size={14} /> Absences</div>
-        </button>
-
-        <button 
-          onClick={() => setActiveStep(3)}
-          style={{
-            padding: '14px 18px',
-            borderRadius: '14px',
-            border: '2px solid',
-            borderColor: activeStep === 3 ? 'var(--blue)' : 'var(--line)',
-            background: activeStep === 3 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
-            color: activeStep === 3 ? 'var(--navy)' : 'var(--muted)',
-            fontWeight: 'bold',
-            textAlign: 'left',
-            cursor: 'pointer',
-            boxShadow: activeStep === 3 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
-          }}
-        >
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 3</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiClock size={14} /> Tardiness Log</div>
-        </button>
-
-        <button 
-          onClick={() => setActiveStep(4)}
-          style={{
-            padding: '14px 18px',
-            borderRadius: '14px',
-            border: '2px solid',
-            borderColor: activeStep === 4 ? 'var(--blue)' : 'var(--line)',
-            background: activeStep === 4 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
-            color: activeStep === 4 ? 'var(--navy)' : 'var(--muted)',
-            fontWeight: 'bold',
-            textAlign: 'left',
-            cursor: 'pointer',
-            boxShadow: activeStep === 4 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
-          }}
-        >
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 4</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiRepeat size={14} /> Workload Transfers</div>
-        </button>
-
-        <button 
-          onClick={() => setActiveStep(5)}
-          style={{
-            padding: '14px 18px',
-            borderRadius: '14px',
-            border: '2px solid',
-            borderColor: activeStep === 5 ? 'var(--blue)' : 'var(--line)',
-            background: activeStep === 5 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
-            color: activeStep === 5 ? 'var(--navy)' : 'var(--muted)',
-            fontWeight: 'bold',
-            textAlign: 'left',
-            cursor: 'pointer',
-            boxShadow: activeStep === 5 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
-          }}
-        >
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 5</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiBriefcase size={14} /> Work Immersion (for SHS)</div>
-        </button>
-
-        <button 
-          onClick={() => setActiveStep(6)}
-          style={{
-            padding: '14px 18px',
-            borderRadius: '14px',
-            border: '2px solid',
-            borderColor: activeStep === 6 ? 'var(--blue)' : 'var(--line)',
-            background: activeStep === 6 ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
-            color: activeStep === 6 ? 'var(--navy)' : 'var(--muted)',
-            fontWeight: 'bold',
-            textAlign: 'left',
-            cursor: 'pointer',
-            boxShadow: activeStep === 6 ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none'
-          }}
-        >
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>Step 6</div>
-          <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}><FiTrendingUp size={14} /> Teaching Overload</div>
-        </button>
+      {/* Dynamic Wizard Navigation Stepper */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${hasSHS ? 6 : 5}, 1fr)`, gap: '12px', marginBottom: '8px' }}>
+        {[
+          { id: 1, label: 'Calendar', icon: <FiCalendar size={14} /> },
+          { id: 2, label: 'Absences', icon: <FiUserX size={14} /> },
+          { id: 3, label: 'Tardiness Log', icon: <FiClock size={14} /> },
+          { id: 4, label: 'Workload Transfers', icon: <FiRepeat size={14} /> },
+          ...(hasSHS ? [{ id: 5, label: 'Work Immersion (SHS)', icon: <FiBriefcase size={14} /> }] : []),
+          { id: 6, label: 'Teaching Overload', icon: <FiTrendingUp size={14} /> }
+        ].map((step, idx) => {
+          const isActive = activeStep === step.id;
+          return (
+            <button
+              key={step.id}
+              onClick={() => setActiveStep(step.id)}
+              style={{
+                padding: '14px 18px',
+                borderRadius: '14px',
+                border: '2px solid',
+                borderColor: isActive ? 'var(--blue)' : 'var(--line)',
+                background: isActive ? 'linear-gradient(180deg, var(--blue-50), #fff)' : 'white',
+                color: isActive ? 'var(--navy)' : 'var(--muted)',
+                fontWeight: 'bold',
+                textAlign: 'left',
+                cursor: 'pointer',
+                boxShadow: isActive ? '0 4px 12px rgba(14, 116, 144, 0.12)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.8 }}>
+                Step {idx + 1}
+              </div>
+              <div style={{ fontSize: '14px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {step.icon} {step.label}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* STEP 1: School Calendar & Suspensions */}
@@ -1600,7 +1745,14 @@ export default function Overload() {
                     ))}
                     {(() => {
                       const monthDates = getWeekdaysInMonth(tardinessMonth, 'SY 26-27');
-                      const teacherAbsences = absences.filter(a => String(a.personnelId || a.personnel_id) === String(tardinessTeacherId));
+                      const teacher = activePersonnel.find(p => p.id === tardinessTeacherId);
+                      const tardyTeacherIds = [
+                        String(tardinessTeacherId || '').trim(),
+                        String(teacher?.prn || '').trim(),
+                        String(teacher?.personnelId || '').trim(),
+                        String(teacher?.personnel_id || '').trim()
+                      ].filter(Boolean);
+                      const teacherAbsences = absences.filter(a => tardyTeacherIds.includes(String(a.personnelId || a.personnel_id || '').trim()));
 
                       return monthDates.map((dateObj, idx) => {
                         const dateStr = getLocalDateString(dateObj);
@@ -1608,7 +1760,9 @@ export default function Overload() {
                         const existingLog = teacherAbsences.find(a => {
                           const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
                           const eStr = a.endDate || a.end_date || sStr;
-                          return dateStr >= sStr && dateStr <= eStr;
+                          const cleanStart = String(sStr).includes('T') ? String(sStr).split('T')[0] : String(sStr).trim();
+                          const cleanEnd = String(eStr).includes('T') ? String(eStr).split('T')[0] : (cleanStart || String(eStr).trim());
+                          return dateStr >= cleanStart && dateStr <= cleanEnd;
                         });
                         const lType = existingLog?.leaveType || existingLog?.leave_type || '';
                         const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
@@ -1693,10 +1847,10 @@ export default function Overload() {
                 <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Tardiness & Late Log History</h2>
                 <button 
                   className="btn" 
-                  onClick={() => setActiveStep(2)}
+                  onClick={() => setActiveStep(4)}
                   style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
                 >
-                  Proceed to Step 2: Absences & Leave →
+                  Proceed to Step 4: Workload Transfers →
                 </button>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -1868,7 +2022,14 @@ export default function Overload() {
                     ))}
                     {(() => {
                       const monthDates = getWeekdaysInMonth(absenceMonth, 'SY 26-27');
-                      const teacherAbsences = absences.filter(a => String(a.personnelId || a.personnel_id) === String(absentTeacherId));
+                      const teacher = activePersonnel.find(p => p.id === absentTeacherId);
+                      const absTeacherIds = [
+                        String(absentTeacherId || '').trim(),
+                        String(teacher?.prn || '').trim(),
+                        String(teacher?.personnelId || '').trim(),
+                        String(teacher?.personnel_id || '').trim()
+                      ].filter(Boolean);
+                      const teacherAbsences = absences.filter(a => absTeacherIds.includes(String(a.personnelId || a.personnel_id || '').trim()));
 
                       return monthDates.map((dateObj, idx) => {
                         const dateStr = getLocalDateString(dateObj);
@@ -1876,7 +2037,9 @@ export default function Overload() {
                         const existingLog = teacherAbsences.find(a => {
                           const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
                           const eStr = a.endDate || a.end_date || sStr;
-                          return dateStr >= sStr && dateStr <= eStr;
+                          const cleanStart = String(sStr).includes('T') ? String(sStr).split('T')[0] : String(sStr).trim();
+                          const cleanEnd = String(eStr).includes('T') ? String(eStr).split('T')[0] : (cleanStart || String(eStr).trim());
+                          return dateStr >= cleanStart && dateStr <= cleanEnd;
                         });
                         const lType = existingLog?.leaveType || existingLog?.leave_type || '';
                         const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
@@ -2016,7 +2179,7 @@ export default function Overload() {
                   onClick={() => setActiveStep(3)}
                   style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
                 >
-                  Proceed to Step 3: Workload Transfers →
+                  Proceed to Step 3: Tardiness Log →
                 </button>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -2339,10 +2502,10 @@ export default function Overload() {
                 <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Active Workload Transfers</h2>
                 <button 
                   className="btn" 
-                  onClick={() => setActiveStep(4)}
+                  onClick={() => setActiveStep(hasSHS ? 5 : 6)}
                   style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
                 >
-                  Proceed to Step 4: Computation →
+                  {hasSHS ? 'Proceed to Step 5: Work Immersion →' : 'Proceed to Step 5: Teaching Overload →'}
                 </button>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -2435,145 +2598,322 @@ export default function Overload() {
         </div>
       )}
 
-      {/* STEP 5: Work Immersion (for SHS) */}
+      {/* STEP 5: Work Immersion (Option 1: Interactive Calendar + Selected Days Table) */}
       {activeStep === 5 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '20px' }}>
-          <article className="card">
+        <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
+          {/* Left: Teacher / Month Selector + Interactive Calendar */}
+          <article className="card" style={{ height: 'fit-content' }}>
             <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)' }}>Work Immersion Details</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FiBriefcase size={18} color="var(--blue)" /> Work Immersion Logger
+                </h2>
+                <span style={{ fontSize: '10px', background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '12px', fontWeight: '800' }}>
+                  SHS Only
+                </span>
+              </div>
               <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)', lineHeight: 1.4 }}>
-                Select a Senior High School teacher and month to record daily work immersion minutes.
+                Select a Senior High School teacher and month. Click any weekday on the calendar to toggle immersion duty dates.
               </p>
 
+              {/* Teacher Selector */}
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SELECT TEACHER</label>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>
+                  1. SELECT SHS TEACHER
+                </label>
                 <SearchableDropdown
-                  options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}`)}
+                  options={activePersonnel.map(p => {
+                    const isShs = p.teachesSeniorHigh || (p.workloadRows || []).some(r => String(r.gradeLevel || '').includes('11') || String(r.gradeLevel || '').includes('12'));
+                    return `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}${isShs ? ' (SHS)' : ''}`;
+                  })}
                   value={activePersonnel.find(p => p.id === workImmersionTeacherId) ? (() => {
                     const p = activePersonnel.find(p => p.id === workImmersionTeacherId);
-                    return `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}`;
+                    const isShs = p.teachesSeniorHigh || (p.workloadRows || []).some(r => String(r.gradeLevel || '').includes('11') || String(r.gradeLevel || '').includes('12'));
+                    return `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}${isShs ? ' (SHS)' : ''}`;
                   })() : ''}
                   onChange={(val) => {
-                    const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}` === val);
+                    const p = activePersonnel.find(p => {
+                      const isShs = p.teachesSeniorHigh || (p.workloadRows || []).some(r => String(r.gradeLevel || '').includes('11') || String(r.gradeLevel || '').includes('12'));
+                      return `${p.firstName} ${p.lastName} · ${p.position || 'Teacher'}${isShs ? ' (SHS)' : ''}` === val;
+                    });
                     setWorkImmersionTeacherId(p ? p.id : '');
                   }}
-                  placeholder="Select teacher..."
+                  placeholder="Select teacher to log immersion..."
                 />
               </div>
 
+              {/* Month Selector */}
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SELECT MONTH</label>
+                <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>
+                  2. SELECT MONTH
+                </label>
                 <select
                   value={workImmersionMonth}
                   onChange={(e) => setWorkImmersionMonth(e.target.value)}
-                  style={{ width: '100%', padding: '10px', borderRadius: '10px', border: '1.5px solid var(--line)', background: 'white' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
                 >
-                  {MONTHS_LIST.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                  {MONTHS_LIST.map(m => (
+                    <option key={m.name} value={m.name}>{m.name} ({m.quarter})</option>
+                  ))}
                 </select>
               </div>
 
-              <button
-                className="btn primary"
-                onClick={() => setActiveStep(5)}
-                disabled={!workImmersionTeacherId}
-                style={{ marginTop: '10px', width: '100%', padding: '12px', fontWeight: 'bold' }}
-              >
-                Proceed to Step 5 (Teaching Overload) →
-              </button>
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#1d4ed8', fontWeight: 'bold' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#eff6ff', border: '1.5px solid #3b82f6' }}></span> Immersion
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'white', border: '1px solid var(--line)' }}></span> Regular Day
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309' }}>
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef08a', border: '1px solid #eab308' }}></span> Holiday
+                </span>
+              </div>
+
+              {/* Interactive Calendar Picker */}
+              {!workImmersionTeacherId ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
+                  Please select a teacher above to enable the interactive immersion calendar.
+                </div>
+              ) : workImmersionLoading ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)', fontSize: '13px' }}>
+                  <FiRefreshCw size={18} style={{ animation: 'spin 1s linear infinite', marginBottom: '6px' }} />
+                  <div>Loading immersion records...</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{workImmersionMonth} 2026 Workdays Calendar</span>
+                    <small style={{ color: 'var(--muted)', fontWeight: 'normal' }}>Click date to toggle</small>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
+                      <div key={day} style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', padding: '4px', background: '#e2e8f0', borderRadius: '4px' }}>
+                        {day}
+                      </div>
+                    ))}
+                    {(() => {
+                      const monthDates = getWeekdaysInMonth(workImmersionMonth, schoolInfo?.schoolYear || 'SY 26-27');
+
+                      return monthDates.map((dateObj, idx) => {
+                        const dateStr = getLocalDateString(dateObj);
+                        const dayNum = dateObj.getDate();
+                        const isSelected = Boolean(workImmersionTimes[dateStr]);
+                        const mins = workImmersionData[dateStr] || 0;
+                        const existingHoliday = (localNonWorkingDays || []).find(h => h.date === dateStr);
+
+                        let bg = 'white';
+                        let border = '1.5px solid var(--line)';
+                        let color = 'var(--navy)';
+                        let badgeText = '';
+
+                        if (isSelected) {
+                          bg = '#eff6ff';
+                          border = '2px solid #3b82f6';
+                          color = '#1e40af';
+                          badgeText = mins > 0 ? `${(mins / 60).toFixed(1)}h` : 'ACTIVE';
+                        } else if (existingHoliday) {
+                          bg = '#fef9c3';
+                          border = '1px solid #fde047';
+                          color = '#854d0e';
+                          badgeText = 'HOLIDAY';
+                        }
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleToggleImmersionDay(dateStr)}
+                            style={{
+                              padding: '8px 4px',
+                              borderRadius: '10px',
+                              background: bg,
+                              border: border,
+                              color: color,
+                              fontWeight: 'bold',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minHeight: '52px',
+                              boxShadow: isSelected ? '0 2px 8px rgba(59, 130, 246, 0.25)' : 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <span style={{ fontSize: '14px' }}>{dayNum}</span>
+                            <span style={{ fontSize: '9px', textTransform: 'uppercase', marginTop: '2px', fontWeight: '800' }}>
+                              {badgeText || 'Workday'}
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {immersionStatusMsg && (
+                <div style={{ padding: '8px 12px', borderRadius: '8px', background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiCheckCircle size={14} /> {immersionStatusMsg}
+                </div>
+              )}
             </div>
           </article>
 
+          {/* Right: Selected Immersion Days & Schedule Table */}
           <article className="card">
-            <div className="card-inner" style={{ padding: '20px' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '6px', fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)' }}>Work Immersion Calendar</h3>
-              <p style={{ marginBottom: '16px', fontSize: '12px', color: 'var(--muted)' }}>
-                Enter the number of minutes each teacher performed work immersion activities per day. Changes save automatically when moving between fields.
-              </p>
+            <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {(() => {
+                const currentMonthDates = getWeekdaysInMonth(workImmersionMonth, schoolInfo?.schoolYear || 'SY 26-27')
+                  .map(d => getLocalDateString(d));
+                const selectedDates = currentMonthDates.filter(dStr => Boolean(workImmersionTimes[dStr]));
+                const totalMins = selectedDates.reduce((acc, dStr) => acc + (workImmersionData[dStr] || 0), 0);
+                const totalHrs = totalMins / 60;
 
-              {!workImmersionTeacherId ? (
-                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '13px' }}>
-                  Please select a teacher on the left to record work immersion minutes.
-                </div>
-              ) : workImmersionLoading ? (
-                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)', fontSize: '13px' }}>
-                  Loading work immersion records...
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                    <div key={d} style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '12px', color: 'var(--navy)', padding: '6px 0', background: '#F8FAFC', borderRadius: '6px' }}>
-                      {d}
-                    </div>
-                  ))}
-                  {(() => {
-                    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-                    const monthIdx = monthNames.indexOf(workImmersionMonth) !== -1 ? monthNames.indexOf(workImmersionMonth) : 5;
-                    const syYearStr = schoolInfo?.schoolYear || 'SY 26-27';
-                    const years = syYearStr.match(/\d+/g) || ['26', '27'];
-                    const startYear = 2000 + parseInt(years[0], 10);
-                    const endYear = 2000 + parseInt(years[1] || years[0], 10);
-                    const yearInt = monthIdx >= 5 ? startYear : endYear;
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div>
+                        <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <FiClock size={16} /> Selected Immersion Dates ({selectedDates.length})
+                        </h2>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+                          Only dates selected on the calendar require start and end times.
+                        </p>
+                      </div>
 
-                    const firstDayOfWeek = new Date(yearInt, monthIdx, 1).getDay();
-                    const daysInMonth = new Date(yearInt, monthIdx + 1, 0).getDate();
-                    const cells = [];
-
-                    for (let i = 0; i < firstDayOfWeek; i++) {
-                      cells.push(<div key={`pad-${i}`} style={{ background: '#f8fafc', borderRadius: '8px', minHeight: '60px' }} />);
-                    }
-
-                    for (let day = 1; day <= daysInMonth; day++) {
-                      const mins = workImmersionData[day] ?? 0;
-                      const timeObj = workImmersionTimes[day] || {};
-                      const sTime = timeObj.startTime || '';
-                      const eTime = timeObj.endTime || '';
-
-                      cells.push(
-                        <div
-                          key={day}
-                          style={{
-                            background: mins > 0 ? '#EFF6FF' : '#FFFFFF',
-                            border: mins > 0 ? '1.5px solid #BFDBFE' : '1px solid var(--line)',
-                            borderRadius: '8px',
-                            padding: '6px 4px',
-                            textAlign: 'center',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1d4ed8', background: '#eff6ff', padding: '6px 12px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                          Total: {totalHrs.toFixed(1)} hrs ({totalMins}m)
+                        </span>
+                        <button
+                          className="btn"
+                          onClick={() => setActiveStep(6)}
+                          style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                         >
-                          <div style={{ fontSize: '11px', fontWeight: 'bold', color: mins > 0 ? '#1E40AF' : '#64748B' }}>
-                            Day {day}
-                          </div>
-                          <div style={{ width: '100%' }}>
-                            <input
-                              type="time"
-                              value={sTime}
-                              onChange={(e) => handleSaveWorkImmersionTime(day, e.target.value, eTime)}
-                              title="Start Time"
-                              style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', fontSize: '11px', padding: '2px', textAlign: 'center' }}
-                            />
-                          </div>
-                          <div style={{ width: '100%' }}>
-                            <input
-                              type="time"
-                              value={eTime}
-                              onChange={(e) => handleSaveWorkImmersionTime(day, sTime, e.target.value)}
-                              title="End Time"
-                              style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', fontSize: '11px', padding: '2px', textAlign: 'center' }}
-                            />
-                          </div>
-                          <div style={{ fontSize: '10px', fontWeight: '800', color: mins > 0 ? '#1D4ED8' : '#94A3B8' }}>
-                            {mins > 0 ? `${mins}m (${(mins / 60).toFixed(1)}h)` : '0m'}
-                          </div>
+                          Proceed to Step 6: Overload →
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick-Fill Batch Bar */}
+                    {selectedDates.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px', padding: '12px 16px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid var(--line)' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)' }}>
+                          Batch Quick-Fill:
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>Start</label>
+                          <input
+                            type="time"
+                            value={batchImmersionStart}
+                            onChange={(e) => setBatchImmersionStart(e.target.value)}
+                            style={{ padding: '6px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }}
+                          />
                         </div>
-                      );
-                    }
-                    return cells;
-                  })()}
-                </div>
-              )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>End</label>
+                          <input
+                            type="time"
+                            value={batchImmersionEnd}
+                            onChange={(e) => setBatchImmersionEnd(e.target.value)}
+                            style={{ padding: '6px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '12px' }}
+                          />
+                        </div>
+                        <button
+                          className="btn secondary"
+                          onClick={handleBatchApplyTimesToMonth}
+                          style={{ fontSize: '12px', padding: '6px 14px', background: '#eff6ff', border: '1px solid #93c5fd', color: '#1e40af', fontWeight: 'bold' }}
+                        >
+                          Apply to All {selectedDates.length} Days
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Table or Empty State */}
+                    {!workImmersionTeacherId ? (
+                      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--muted)', fontSize: '13px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)' }}>
+                        <FiBriefcase size={36} color="var(--muted)" style={{ marginBottom: '10px', opacity: 0.6 }} />
+                        <div>Select a teacher on the left to view or configure their work immersion schedule.</div>
+                      </div>
+                    ) : selectedDates.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--muted)', fontSize: '13px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)' }}>
+                        <FiCalendar size={36} color="var(--muted)" style={{ marginBottom: '10px', opacity: 0.6 }} />
+                        <div style={{ fontWeight: 'bold', color: 'var(--navy)', marginBottom: '4px' }}>No immersion dates selected for {workImmersionMonth}</div>
+                        <div>Click any date on the calendar to the left to mark it as an immersion day.</div>
+                      </div>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
+                              <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date & Day</th>
+                              <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)', width: '160px' }}>Start Time</th>
+                              <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)', width: '160px' }}>End Time</th>
+                              <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)', width: '140px' }}>Duration</th>
+                              <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '80px' }}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedDates.map((dateStr) => {
+                              const timeObj = workImmersionTimes[dateStr] || {};
+                              const mins = workImmersionData[dateStr] || 0;
+                              const dateObj = new Date(dateStr);
+                              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                              const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                              const formattedDate = !isNaN(dateObj.getTime())
+                                ? `${monthNames[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()} (${dayNames[dateObj.getDay()]})`
+                                : dateStr;
+
+                              return (
+                                <tr key={dateStr} style={{ borderBottom: '1px solid var(--line)' }}>
+                                  <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>
+                                    {formattedDate}
+                                  </td>
+                                  <td style={{ padding: '12px 10px' }}>
+                                    <input
+                                      type="time"
+                                      value={timeObj.startTime || ''}
+                                      onChange={(e) => handleUpdateImmersionDayTime(dateStr, e.target.value, timeObj.endTime || '')}
+                                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '13px' }}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '12px 10px' }}>
+                                    <input
+                                      type="time"
+                                      value={timeObj.endTime || ''}
+                                      onChange={(e) => handleUpdateImmersionDayTime(dateStr, timeObj.startTime || '', e.target.value)}
+                                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '13px' }}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '12px 10px' }}>
+                                    <span style={{ fontWeight: 'bold', color: mins > 0 ? '#1d4ed8' : '#94a3b8' }}>
+                                      {mins > 0 ? `${mins}m (${(mins / 60).toFixed(1)}h)` : '0m'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                                    <button
+                                      className="btn danger"
+                                      onClick={() => handleRemoveImmersionDay(dateStr)}
+                                      style={{ padding: '4px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                      title="Remove this immersion date"
+                                    >
+                                      <FiTrash2 size={12} /> Remove
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </article>
         </div>
@@ -2667,11 +3007,19 @@ export default function Overload() {
                         <td style={{ padding: '12px 10px', fontWeight: 'bold' }}>{item.weeklyOverload} hrs</td>
                         <td style={{ padding: '12px 10px' }}>
                           <span style={{ fontWeight: 'bold', color: '#15803d' }}>{item.monthStats.net} hrs</span>
-                          {item.monthStats.deductions > 0 && <span style={{ fontSize: '10px', color: '#b91c1c', marginLeft: '6px' }}>(-{item.monthStats.deductions} hrs leave)</span>}
+                          {item.monthStats.deductions > 0 && (
+                            <span style={{ fontSize: '10px', color: '#b91c1c', marginLeft: '6px' }}>
+                              (-{item.monthStats.deductions} hrs {item.monthStats.lateDeductions > 0 && item.monthStats.leaveDeductions > 0 ? 'leave/late' : (item.monthStats.lateDeductions > 0 ? 'late' : 'leave')})
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: '12px 10px' }}>
                           <span style={{ fontWeight: 'bold', color: '#15803d' }}>{item.quarterStats.net} hrs</span>
-                          {item.quarterStats.deductions > 0 && <span style={{ fontSize: '10px', color: '#b91c1c', marginLeft: '6px' }}>(-{item.quarterStats.deductions} hrs leave)</span>}
+                          {item.quarterStats.deductions > 0 && (
+                            <span style={{ fontSize: '10px', color: '#b91c1c', marginLeft: '6px' }}>
+                              (-{item.quarterStats.deductions} hrs {item.quarterStats.lateDeductions > 0 && item.quarterStats.leaveDeductions > 0 ? 'leave/late' : (item.quarterStats.lateDeductions > 0 ? 'late' : 'leave')})
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--navy)' }}>
                           ₱{formattedPay}
@@ -2683,7 +3031,8 @@ export default function Overload() {
                               'Teacher Shortage',
                               'Relieving Duty',
                               'Remediation or Enhancement Class',
-                              'Class Advising Duty'
+                              'Class Advising Duty',
+                              'ARAL Tutor'
                             ];
                             const isInvalid = !Array.isArray(teacherReasons) || teacherReasons.length < 1;
                             const remainingOptions = allOptions.filter(opt => !teacherReasons.includes(opt));

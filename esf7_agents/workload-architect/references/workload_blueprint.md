@@ -97,11 +97,28 @@ Each row object inside `workloadRows` contains:
 
 ## 4. Versioned Flow History Log
 
+* **Version 1.5 (2026-09-08)**: Fixed Gantt Schedule Drag-and-Drop Loop & Re-Drag Bug.
+  * Decoupled high-frequency mousemove events from persistent workload state mutations, eliminating continuous localStorage serialization and unneeded component re-renders during drags.
+  * Maintained live drag positions (`currentStartMins`, `currentEndMins`, `currentDays`) in `dragState`, committing `updateWorkloadRowFields` strictly ONCE on `handleMouseUp`.
+  * Bound window drag listeners using a stable boolean state dependency (`dragState ? true : false`) backed by `dragStateRef`, preventing mid-drag listener teardown and missed `mouseup` events.
+  * Added `e.preventDefault()` on mousedown to prevent native browser text selection/drag-drop interception.
+  * Added `e.buttons` safety check during mousemove to auto-terminate dragging if mouse release occurred outside window focus.
+  * Enabled Escape key listener to gracefully cancel active dragging operations.
+* **Version 1.4 (2026-09-08)**: Customizable Per-Personnel Timetable Shift Hours (5 AM – 7 PM).
+  * Added customizable Start Hour (5:00 AM to 6:00 PM) and End Hour (up to 7:00 PM) controls on the Gantt timetable toolbar.
+  * Stored and persisted custom schedule hours individually per personnel (`insighted_timetable_hours_${personnelId}`) across teacher switches and reloads.
+  * Added one-click shift presets: `Morning (5am-12pm)`, `Afternoon (12pm-7pm)`, `Standard (7am-5pm)`, and `Full Day (5am-7pm)`.
+  * Integrated safety auto-expansion in `gridBounds` to prevent scheduled classes from being clipped if they fall outside the chosen shift window.
+* **Version 1.3 (2026-09-08)**: Moveable 60-Minute ADVISORY & Strict HGP Overlap Restriction.
+  * Made `ADVISORY` blocks draggable/moveable in the Gantt weekly timetable and adjustable via Start Time inputs across all views.
+  * Permanently locked `ADVISORY` duration to strictly 60 minutes (`endTime = startTime + 60 mins`) and disabled top/bottom resize handles.
+  * Enforced Monday through Friday (`['M', 'T', 'W', 'TH', 'F']`) lock for `ADVISORY` so moving the block shifts all 5 days simultaneously.
+  * Refactored `isAdvisoryOrHgpPair` to strictly exempt ONLY mutual `HGP` + `ADVISORY` overlaps. Any collision between `HGP` and regular subjects (e.g. Mathematics, Science) or between `ADVISORY` and regular subjects is strictly flagged as a schedule overlap conflict.
 * **Version 1.2 (2026-09-03)**: Added Drag-and-Drop Gantt Weekly Schedule View (`WorkloadGanttScheduleView`).
   * Replaced default row-based schedule time-entry UI with a drag-and-drop Gantt weekly grid view featuring days as columns and a 15-minute resolution time scale.
   * Added drag-to-move and top/bottom edge drag-to-resize subject blocks with 15-minute grid snapping.
   * Reimplemented MATATAG Order No. 12 s. 2024 per-grade duration warnings, HGP 60m weekly rules, duplicate subject rules, and schedule overlap conflicts as live visual indicators (red/amber block borders, conflict badges, policy callouts).
-  * Maintained non-draggable/non-resizable locked treatment for `ADVISORY` blocks (07:30 to 08:30 M-F fixed).
+  * Maintained non-resizable treatment for `ADVISORY` blocks (60m duration fixed, M-F fixed).
   * Created Block Inspector panel for focused editing of Section, Subject, Remediation Focus, SHS Category, Days, and Start/End times.
   * Preserved `Sort Time`, `Cards`, `List`, `Clear This Teacher's Workload`, and `+ Add subject schedule` toolbar actions.
 * **Version 1.1 (2026-08-26)**: Added Work Immersion Monthly Calendar & Overload Integration.
