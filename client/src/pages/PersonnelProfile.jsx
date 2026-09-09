@@ -50,6 +50,7 @@ import {
   TESDA_COURSE_TO_LEVELS_MAP,
   TESDA_COURSES,
   POST_GRADUATE_DEGREE_OPTIONS,
+  DEGREE_LEVEL_OPTIONS,
   COLLEGE_DEGREE_OPTIONS,
   TESDA_CERTIFICATION_OPTIONS,
   NEAP_TRAINING_OPTIONS,
@@ -67,6 +68,27 @@ export const getAge = (dobString) => {
   const monthDiff = today.getMonth() - birth.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
   return age;
+};
+
+// Degree records used to live as a single collegeDegree/major/minor + a separate
+// postGraduateDegree/postGraduateDiscipline block tied to one "highest attainment" value.
+// They now live as a proper array (p.degreeRows), each entry tagged with its own level
+// (BACCALAUREATE/MASTERS/DOCTORATE) and, for MASTERS/DOCTORATE, its own discipline field.
+// Old records may only have the legacy flat fields — synthesize an equivalent array from
+// them on the fly so nothing is lost, without requiring a destructive migration.
+export const getEffectiveDegreeRows = (p) => {
+  if (!p) return [];
+  if (Array.isArray(p.degreeRows) && p.degreeRows.length > 0) return p.degreeRows;
+
+  const rows = [];
+  if (p.collegeDegree) {
+    rows.push({ clientKey: 'legacy-baccalaureate', level: 'BACCALAUREATE', collegeDegree: p.collegeDegree, major: p.major || '', minor: p.minor || '' });
+  }
+  const legacyPostGradLevel = String(p.postGraduateDegree || '').toUpperCase().includes('DOCTOR') ? 'DOCTORATE' : 'MASTERS';
+  if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(String(p.postGraduateDegree).toUpperCase())) {
+    rows.push({ clientKey: 'legacy-postgrad', level: legacyPostGradLevel, collegeDegree: p.postGraduateDegree, postGraduateDiscipline: p.postGraduateDiscipline || '' });
+  }
+  return rows;
 };
 
 export const getPersonnelValidationChecklist = (p) => {
@@ -122,16 +144,20 @@ export const getPersonnelValidationChecklist = (p) => {
   // 4. Education / Qualifications
   const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
   const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
-  const attainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isNonTeaching ? 'N/A' : ''));
+  const degreeRows = getEffectiveDegreeRows(p);
+  const hasAnyDegree = degreeRows.some(d => d.collegeDegree);
+  // Degree levels (Baccalaureate/Master's/Doctorate) come from the degreeRows entries themselves;
+  // the top-level attainment field now only covers non-degree levels (N/A, Elementary/HS/SHS Grad,
+  // Vocational, College Undergraduate).
+  const attainment = p.highestEducationalAttainment || (hasAnyDegree ? 'COLLEGE UNDERGRADUATE' : (isNonTeaching ? 'N/A' : ''));
 
   if (!isNonTeaching) {
-    check('highestEducationalAttainment', "Highest Educational Attainment", !!(attainment || p.collegeDegree || p.vocationalCourse), "Education", "education");
+    check('highestEducationalAttainment', "Highest Educational Attainment", !!(attainment || hasAnyDegree || p.vocationalCourse), "Education", "education");
   }
 
   const isSHS = attainment === 'SENIOR HIGH SCHOOL GRADUATE';
   const isVocational = attainment === 'VOCATIONAL / TECH-VOC COURSE';
-  const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment) || (!attainment && p.collegeDegree);
-  const isPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
+  const isCollegeOrPostGrad = attainment === 'COLLEGE UNDERGRADUATE' || hasAnyDegree;
 
   if (isSHS) {
     check('shsTrack', "Senior High School Track", !!p.shsTrack, "Education", "education");
@@ -141,18 +167,17 @@ export const getPersonnelValidationChecklist = (p) => {
     check('vocationalLevel', "NC Level / Qualification Level", !!p.vocationalLevel?.trim(), "Education", "education");
   }
   if (isCollegeOrPostGrad) {
-    check('collegeDegree', "College Degree / Baccalaureate", !!p.collegeDegree, "Education", "education");
+    check('collegeDegree', "College Degree / Baccalaureate", degreeRows.length > 0 && degreeRows.every(d => !!d.collegeDegree), "Education", "education");
   }
-  const isEdu = p.collegeDegree && String(p.collegeDegree).toUpperCase().includes('EDUCATION');
-  if (isCollegeOrPostGrad && isEdu) {
-    check('major', "Major in Education", !!p.major, "Education", "education");
-  }
-  if (isPostGrad) {
-    if (!p.postGraduateDegree) {
-      p.postGraduateDegree = attainment === "DOCTORATE DEGREE (GRADUATED)" ? 'DOCTORATE DEGREE' : 'MASTERS DEGREE';
+  degreeRows.forEach((d, idx) => {
+    const isEdu = d.collegeDegree && d.level !== 'MASTERS' && d.level !== 'DOCTORATE' && String(d.collegeDegree).toUpperCase().includes('EDUCATION');
+    if (isCollegeOrPostGrad && isEdu) {
+      check(`degreeMajor_${idx}`, "Major in Education", !!d.major, "Education", "education");
     }
-    check('postGraduateDiscipline', "Post-Graduate Discipline", !!p.postGraduateDiscipline?.trim(), "Education", "education");
-  }
+    if (d.level === 'MASTERS' || d.level === 'DOCTORATE') {
+      check(`postGraduateDiscipline_${idx}`, "Post-Graduate Discipline", !!d.postGraduateDiscipline?.trim(), "Education", "education");
+    }
+  });
 
   check('eligibility', "Civil Service / PRC Eligibility", !!(p.eligibility && (!Array.isArray(p.eligibility) || p.eligibility.length > 0)), "Education", "education");
   if (['let', 'pbet'].includes(String(p.eligibility || '').toLowerCase())) {
@@ -1283,6 +1308,47 @@ export default function PersonnelProfile() {
     handleFieldChange(key, rows);
   };
 
+  // Once degreeRows is edited directly, it becomes the sole source of truth — the legacy flat
+  // fields are cleared alongside so getEffectiveDegreeRows never resurrects them as a fallback.
+  const commitDegreeRows = (rows) => {
+    handleMultipleFieldsChange({
+      degreeRows: rows,
+      postGraduateDegree: '', postGraduateDiscipline: '', collegeDegree: '', major: '', minor: ''
+    });
+  };
+
+  const handleDegreeChange = (index, field, value) => {
+    const rows = [...getEffectiveDegreeRows(currentPerson)];
+    rows[index] = { ...rows[index], [field]: value };
+    if (field === 'collegeDegree' && rows[index].level !== 'MASTERS' && rows[index].level !== 'DOCTORATE') {
+      const d = (value || '').toUpperCase();
+      const isEdu = value && value !== 'NONE' && value !== 'N/A' && (
+        d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+      );
+      if (!isEdu) {
+        rows[index].major = '';
+        rows[index].minor = '';
+      }
+    }
+    commitDegreeRows(rows);
+  };
+
+  const addDegreeRow = (level) => {
+    const rows = [...getEffectiveDegreeRows(currentPerson)];
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const newRow = { clientKey: tempId, level, collegeDegree: '', major: '', minor: '' };
+    if (level === 'MASTERS' || level === 'DOCTORATE') {
+      newRow.postGraduateDiscipline = '';
+    }
+    rows.push(newRow);
+    commitDegreeRows(rows);
+  };
+
+  const removeDegreeRow = (index) => {
+    const rows = [...getEffectiveDegreeRows(currentPerson)].filter((_, idx) => idx !== index);
+    commitDegreeRows(rows);
+  };
+
   const checkSchoolHeadConflict = (person) => {
     const checkIsHead = (pos, des) => {
       const roleText = `${pos || ""} ${des || ""}`.toLowerCase();
@@ -1471,14 +1537,15 @@ export default function PersonnelProfile() {
       // Education / Qualifications
       const draftPType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
       const isDraftNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(draftPType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
-      const draftAttainment = p.highestEducationalAttainment || (p.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : (isDraftNonTeaching ? 'N/A' : ''));
-      if (!draftAttainment && !p.collegeDegree && !p.vocationalCourse && !isDraftNonTeaching) {
+      const draftDegreeRows = getEffectiveDegreeRows(p);
+      const draftHasAnyDegree = draftDegreeRows.some(d => d.collegeDegree);
+      const draftAttainment = p.highestEducationalAttainment || (draftHasAnyDegree ? 'COLLEGE UNDERGRADUATE' : (isDraftNonTeaching ? 'N/A' : ''));
+      if (!draftAttainment && !draftHasAnyDegree && !p.vocationalCourse && !isDraftNonTeaching) {
         errors.push("HIGHEST EDUCATIONAL ATTAINMENT");
       }
       const isDraftSHS = draftAttainment === 'SENIOR HIGH SCHOOL GRADUATE';
       const isDraftVocational = draftAttainment === 'VOCATIONAL / TECH-VOC COURSE';
-      const isDraftCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(draftAttainment) || (!draftAttainment && p.collegeDegree);
-      const isDraftPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(draftAttainment);
+      const isDraftCollegeOrPostGrad = draftAttainment === 'COLLEGE UNDERGRADUATE' || draftHasAnyDegree;
 
       if (isDraftSHS && !p.shsTrack) {
         errors.push("SENIOR HIGH SCHOOL TRACK");
@@ -1487,21 +1554,18 @@ export default function PersonnelProfile() {
         if (!p.vocationalCourse?.trim()) errors.push("VOCATIONAL / TESDA COURSE");
         if (!p.vocationalLevel?.trim()) errors.push("NC LEVEL / QUALIFICATION LEVEL");
       }
-      if (isDraftCollegeOrPostGrad && !p.collegeDegree) {
+      if (isDraftCollegeOrPostGrad && !(draftDegreeRows.length > 0 && draftDegreeRows.every(d => !!d.collegeDegree))) {
         errors.push("COLLEGE DEGREE / BACCALAUREATE");
       }
-      const isDraftEdu = p.collegeDegree && String(p.collegeDegree).toUpperCase().includes('EDUCATION');
-      if (isDraftCollegeOrPostGrad && isDraftEdu && !p.major) {
-        errors.push("MAJOR IN EDUCATION");
-      }
-      if (isDraftPostGrad) {
-        if (!p.postGraduateDegree) {
-          p.postGraduateDegree = draftAttainment === "DOCTORATE DEGREE (GRADUATED)" ? 'DOCTORATE DEGREE' : 'MASTERS DEGREE';
+      draftDegreeRows.forEach(d => {
+        const isDraftEdu = d.collegeDegree && d.level !== 'MASTERS' && d.level !== 'DOCTORATE' && String(d.collegeDegree).toUpperCase().includes('EDUCATION');
+        if (isDraftCollegeOrPostGrad && isDraftEdu && !d.major) {
+          errors.push("MAJOR IN EDUCATION");
         }
-        if (!p.postGraduateDiscipline?.trim()) {
+        if ((d.level === 'MASTERS' || d.level === 'DOCTORATE') && !d.postGraduateDiscipline?.trim()) {
           errors.push("POST-GRADUATE DISCIPLINE");
         }
-      }
+      });
       if (!p.eligibility || (Array.isArray(p.eligibility) && p.eligibility.length === 0)) {
         errors.push("ELIGIBILITY");
       }
@@ -1874,8 +1938,15 @@ export default function PersonnelProfile() {
                               <p style={{ margin: 0, fontSize: '13px', fontWeight: isActive ? '700' : '600', color: isActive ? 'var(--navy)' : '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {p.salutation} {p.firstName} {p.lastName}{p.nameExtension ? ` ${p.nameExtension}` : ''}
                               </p>
-                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {p.position || 'No position set'}
+                              <p style={{ margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                                  {p.position || 'No position set'}
+                                </span>
+                                <span style={{
+                                  padding: '1px 6px', borderRadius: '6px',
+                                  background: catInfo.bg, color: catInfo.color,
+                                  fontSize: '9px', fontWeight: '700', flexShrink: 0, whiteSpace: 'nowrap'
+                                }}>{catInfo.label}</span>
                               </p>
                               {/* Completion percentage progress bar */}
                               <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1887,12 +1958,6 @@ export default function PersonnelProfile() {
                                 </span>
                               </div>
                             </div>
-                            {/* Category badge */}
-                            <span style={{
-                              padding: '2px 6px', borderRadius: '6px',
-                              background: catInfo.bg, color: catInfo.color,
-                              fontSize: '10px', fontWeight: '700', flexShrink: 0
-                            }}>{catInfo.label}</span>
                           </div>
                         );
                       })}
@@ -3122,90 +3187,32 @@ export default function PersonnelProfile() {
                         <>
                           <div className="profile-subsection">Educational Attainment</div>
                           <div style={{ gridColumn: '1 / -1' }}>
-                            <label>Highest Educational Attainment <span style={{ color: '#EF4444' }}>*</span></label>
+                            <label>Highest Educational Attainment <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(non-degree levels only — use "+ Add Degree" below for College/Master's/Doctorate)</span></label>
                             {(() => {
                               const isTeachingOrRelated = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(currentPerson.type) || ['TEACHING', 'TEACHING-RELATED'].includes(currentPerson.positionCategory);
-                              const options = isTeachingOrRelated 
-                                ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS 
+                              const options = isTeachingOrRelated
+                                ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS
                                 : HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
+                              const hasAnyDegree = getEffectiveDegreeRows(currentPerson).some(d => d.collegeDegree);
 
                               return (
                                 <SearchableDropdown
                                   options={options}
-                                  value={
-                                    currentPerson.highestEducationalAttainment ||
-                                    (() => {
-                                      if (currentPerson.postGraduateDegree && !['NONE', 'N/A', ''].includes(currentPerson.postGraduateDegree)) {
-                                        return String(currentPerson.postGraduateDegree).toUpperCase().includes('DOCTOR')
-                                          ? 'DOCTORATE DEGREE (GRADUATED)'
-                                          : "MASTER'S DEGREE (GRADUATED)";
-                                      }
-                                      const deg = String(currentPerson.collegeDegree || '').toUpperCase();
-                                      if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
-                                      if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
-                                      if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
-                                      if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
-                                      if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
-                                      if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
-                                      return isTeachingOrRelated ? 'COLLEGE GRADUATE / BACCALAUREATE' : 'N/A';
-                                    })()
-                                  }
+                                  value={currentPerson.highestEducationalAttainment || (hasAnyDegree ? '' : (isTeachingOrRelated ? '' : 'N/A'))}
                                   onChange={(val) => {
                                     const updates = { highestEducationalAttainment: val };
-                                    const isElemOrHSOrNA = ['ELEMENTARY GRADUATE', 'HIGH SCHOOL GRADUATE', 'N/A'].includes(val);
                                     const isSeniorHS = val === 'SENIOR HIGH SCHOOL GRADUATE';
                                     const isVocational = val === 'VOCATIONAL / TECH-VOC COURSE';
-                                    const isCollegeOnly = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE'].includes(val);
 
-                                    if (isElemOrHSOrNA) {
-                                      updates.shsTrack = '';
-                                      updates.vocationalCourse = '';
-                                      updates.vocationalLevel = '';
-                                      updates.collegeDegree = '';
-                                      updates.major = '';
-                                      updates.minor = '';
-                                      updates.postGraduateDegree = '';
-                                      updates.postGraduateDiscipline = '';
-                                    } else if (isSeniorHS) {
-                                      updates.vocationalCourse = '';
-                                      updates.vocationalLevel = '';
-                                      updates.collegeDegree = '';
-                                      updates.major = '';
-                                      updates.minor = '';
-                                      updates.postGraduateDegree = '';
-                                      updates.postGraduateDiscipline = '';
-                                    } else if (isVocational) {
-                                      updates.shsTrack = '';
-                                      updates.collegeDegree = '';
-                                      updates.major = '';
-                                      updates.minor = '';
-                                      updates.postGraduateDegree = '';
-                                      updates.postGraduateDiscipline = '';
-                                    } else if (isCollegeOnly) {
-                                      updates.shsTrack = '';
-                                      updates.vocationalCourse = '';
-                                      updates.vocationalLevel = '';
-                                      updates.postGraduateDegree = '';
-                                      updates.postGraduateDiscipline = '';
-                                    } else if (val === "MASTER'S DEGREE (GRADUATED)") {
-                                      updates.shsTrack = '';
-                                      updates.vocationalCourse = '';
-                                      updates.vocationalLevel = '';
-                                      updates.postGraduateDegree = 'MASTERS DEGREE';
-                                    } else if (val === "DOCTORATE DEGREE (GRADUATED)") {
-                                      updates.shsTrack = '';
-                                      updates.vocationalCourse = '';
-                                      updates.vocationalLevel = '';
-                                      updates.postGraduateDegree = 'DOCTORATE DEGREE';
-                                    } else {
-                                      updates.shsTrack = '';
+                                    if (!isSeniorHS) updates.shsTrack = '';
+                                    if (!isVocational) {
                                       updates.vocationalCourse = '';
                                       updates.vocationalLevel = '';
                                     }
                                     handleMultipleFieldsChange(updates);
                                   }}
-                                  placeholder="SELECT HIGHEST EDUCATIONAL ATTAINMENT..."
-                                  required
+                                  placeholder={hasAnyDegree ? "N/A — degree already on file below" : "SELECT HIGHEST EDUCATIONAL ATTAINMENT..."}
+                                  disabled={hasAnyDegree}
                                 />
                               );
                             })()}
@@ -3267,83 +3274,95 @@ export default function PersonnelProfile() {
                             </>
                           )}
 
-                          {/* College Degree if College, Master's, or Doctorate */}
-                          {['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(
-                            currentPerson.highestEducationalAttainment || (currentPerson.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : '')
-                          ) && (
-                            <>
-                              <div>
-                                <label>College Degree / Baccalaureate <span style={{ color: '#EF4444' }}>*</span></label>
-                                <SearchableDropdown
-                                  options={COLLEGE_DEGREE_OPTIONS}
-                                  value={currentPerson.collegeDegree || ''}
-                                  onChange={(val) => {
-                                    const d = (val || '').toUpperCase();
-                                    const isEdu = val && val !== 'NONE' && val !== 'N/A' && (
-                                      d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
-                                    );
-                                    if (!isEdu) {
-                                      handleMultipleFieldsChange({ collegeDegree: val, major: '', minor: '' });
-                                    } else {
-                                      handleFieldChange('collegeDegree', val);
-                                    }
-                                  }}
-                                  placeholder="Select college degree..."
-                                  required
-                                />
+                          {/* Repeatable Degree Entries — each entry picks its own level (Baccalaureate/Master's/Doctorate) */}
+                          <div className="credential-group" style={{ gridColumn: '1 / -1', marginBottom: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                              <label style={{ margin: 0 }}>Degrees Earned</label>
+                              <div style={{ position: 'relative' }}>
+                                <select
+                                  value=""
+                                  onChange={(e) => { if (e.target.value) addDegreeRow(e.target.value); }}
+                                  className="btn secondary"
+                                  style={{ minHeight: '34px', cursor: 'pointer', fontWeight: '700' }}
+                                >
+                                  <option value="">+ Add Degree</option>
+                                  {DEGREE_LEVEL_OPTIONS.map(lvl => (
+                                    <option key={lvl.key} value={lvl.key}>{lvl.label}</option>
+                                  ))}
+                                </select>
                               </div>
-
-                              {(() => {
-                                const d = (currentPerson.collegeDegree || '').toUpperCase();
-                                const isEdu = currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree !== 'N/A' && (
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              {getEffectiveDegreeRows(currentPerson).map((deg, index) => {
+                                const isPostGrad = deg.level === 'MASTERS' || deg.level === 'DOCTORATE';
+                                const d = (deg.collegeDegree || '').toUpperCase();
+                                const isEdu = !isPostGrad && deg.collegeDegree && deg.collegeDegree !== 'NONE' && deg.collegeDegree !== 'N/A' && (
                                   d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
                                 );
-                                if (!isEdu) return null;
+                                const levelLabel = (DEGREE_LEVEL_OPTIONS.find(l => l.key === deg.level) || DEGREE_LEVEL_OPTIONS[0]).label;
+                                const gridCols = isPostGrad ? '1.2fr 1fr 40px' : (isEdu ? '1.2fr 1fr 1fr 40px' : '1fr 40px');
                                 return (
-                                  <>
-                                    <div>
-                                      <label>Major in Education <span style={{ color: '#EF4444' }}>*</span></label>
-                                      <SearchableDropdown
-                                        options={MAJOR_OPTIONS}
-                                        value={currentPerson.major || ''}
-                                        onChange={(val) => handleFieldChange('major', val)}
-                                        placeholder="Select major..."
-                                        required
-                                      />
+                                  <div key={deg.clientKey || deg.id || index} className="multi-task-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', background: '#fff', border: '1.5px solid var(--line)', borderRadius: '12px' }}>
+                                    <span style={{ fontSize: '10px', fontWeight: '800', color: 'var(--blue)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{levelLabel}</span>
+                                    <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '8px' }}>
+                                      <div>
+                                        <label>{isPostGrad ? "Degree / Program" : "College Degree / Baccalaureate"} <span style={{ color: '#EF4444' }}>*</span></label>
+                                        <SearchableDropdown
+                                          options={COLLEGE_DEGREE_OPTIONS}
+                                          value={deg.collegeDegree || ''}
+                                          onChange={(val) => handleDegreeChange(index, 'collegeDegree', val)}
+                                          placeholder="Select degree..."
+                                          required
+                                          allowCustom={isPostGrad}
+                                        />
+                                      </div>
+                                      {isEdu && (
+                                        <>
+                                          <div>
+                                            <label>Major in Education <span style={{ color: '#EF4444' }}>*</span></label>
+                                            <SearchableDropdown
+                                              options={MAJOR_OPTIONS}
+                                              value={deg.major || ''}
+                                              onChange={(val) => handleDegreeChange(index, 'major', val)}
+                                              placeholder="Select major..."
+                                              required
+                                            />
+                                          </div>
+                                          <div>
+                                            <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
+                                            <SearchableDropdown
+                                              options={MINOR_OPTIONS}
+                                              value={deg.minor || ''}
+                                              onChange={(val) => handleDegreeChange(index, 'minor', val)}
+                                              placeholder="Select minor subject (optional)..."
+                                            />
+                                          </div>
+                                        </>
+                                      )}
+                                      {isPostGrad && (
+                                        <div>
+                                          <label>Post-Graduate Discipline <span style={{ color: '#EF4444' }}>*</span></label>
+                                          <SearchableDropdown
+                                            options={DISCIPLINE_OPTIONS}
+                                            value={deg.postGraduateDiscipline || ''}
+                                            onChange={(val) => handleDegreeChange(index, 'postGraduateDiscipline', val)}
+                                            placeholder="Select discipline..."
+                                            required
+                                          />
+                                        </div>
+                                      )}
+                                      <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'end' }} type="button" onClick={() => removeDegreeRow(index)} title="Remove"><FiTrash2 size={14} /></button>
                                     </div>
-                                    <div>
-                                      <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
-                                      <SearchableDropdown
-                                        options={MINOR_OPTIONS}
-                                        value={currentPerson.minor || ''}
-                                        onChange={(val) => handleFieldChange('minor', val)}
-                                        placeholder="Select minor subject (optional)..."
-                                      />
-                                    </div>
-                                  </>
+                                  </div>
                                 );
-                              })()}
-                            </>
-                          )}
-
-                          {/* Post-Graduate Discipline ONLY if Master's or Doctorate */}
-                          {["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(currentPerson.highestEducationalAttainment) && (
-                            <>
-                              <div className="profile-subsection">
-                                Post-Graduate Information ({currentPerson.highestEducationalAttainment === "DOCTORATE DEGREE (GRADUATED)" ? "Doctorate Degree" : "Master's Degree"})
-                              </div>
-                              <div style={{ gridColumn: '1 / -1' }}>
-                                <label>Post-Graduate Discipline <span style={{ color: '#EF4444' }}>*</span></label>
-                                <SearchableDropdown
-                                  options={DISCIPLINE_OPTIONS}
-                                  value={currentPerson.postGraduateDiscipline || ''}
-                                  onChange={(val) => handleFieldChange('postGraduateDiscipline', val)}
-                                  placeholder="SELECT POST-GRADUATE DISCIPLINE..."
-                                  required
-                                />
-                              </div>
-                            </>
-                          )}
+                              })}
+                              {getEffectiveDegreeRows(currentPerson).length === 0 && (
+                                <div style={{ padding: '15px', background: '#F0F9FF', color: 'var(--blue)', border: '1.5px solid var(--line)', borderRadius: '12px', fontSize: '13px', textAlign: 'center' }}>
+                                  No degrees added yet. Click "+ Add Degree" to encode a Baccalaureate, Master's, or Doctorate degree.
+                                </div>
+                              )}
+                            </div>
+                          </div>
 
                           <div className="profile-subsection">Civil Service and Professional Eligibilities</div>
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>

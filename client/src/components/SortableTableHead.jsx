@@ -5,7 +5,13 @@ import React from 'react';
 // table so filter/sort UI + behavior isn't duplicated per table.
 export default function SortableTableHead({ columns, sortConfig, requestSort, filters, setFilter, headerBg = '#F8FAFC', headerColor = '#475569' }) {
   return (
-    <thead>
+    <>
+      <colgroup>
+        {columns.map(col => (
+          <col key={col.key} style={{ width: col.width, minWidth: col.width }} />
+        ))}
+      </colgroup>
+      <thead>
       <tr style={{ background: headerBg }}>
         {columns.map(col => {
           const isSorted = sortConfig.key === col.key;
@@ -39,27 +45,29 @@ export default function SortableTableHead({ columns, sortConfig, requestSort, fi
       </tr>
       <tr style={{ background: headerBg }}>
         {columns.map(col => (
-          <td key={col.key} style={{ padding: '4px 8px' }}>
+          <td key={col.key} style={{ padding: '4px 4px' }}>
             {col.filterable === false ? null : (
               <input
                 type="text"
                 value={filters[col.key] || ''}
                 onChange={e => setFilter(col.key, e.target.value)}
-                placeholder="Filter..."
+                placeholder={col.filterPlaceholder !== undefined ? col.filterPlaceholder : 'Filter...'}
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
-                  padding: '4px 6px',
+                  padding: '4px 4px',
                   fontSize: '11px',
                   borderRadius: '5px',
                   border: '1px solid #E2E8F0',
-                  fontWeight: '600'
+                  fontWeight: '600',
+                  textAlign: col.align || 'left'
                 }}
               />
             )}
           </td>
         ))}
       </tr>
-    </thead>
+      </thead>
+    </>
   );
 }

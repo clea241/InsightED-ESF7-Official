@@ -6,6 +6,50 @@ import useSortableFilterableTable from '../hooks/useSortableFilterableTable';
 import { FiGrid, FiBookOpen, FiBook, FiUsers, FiTrash2, FiCheck, FiX, FiTarget, FiEdit2, FiSearch, FiLayers, FiTag, FiAlertCircle, FiBookmark } from 'react-icons/fi';
 
 
+const ELEM_GRADE_ORDER = ['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
+const ELEM_SPECIAL_KEYS = ['SNED', 'ALS'];
+const JHS_GRADE_ORDER = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'];
+
+const gradeShortCode = (g) => (g === 'Kinder' ? 'K' : g.replace('Grade ', ''));
+
+// Compresses an ordered subset of a grade-order list into a compact "Gr 1-3" style label.
+// Falls back to a comma list when the matched grades aren't contiguous.
+const compressGradeKeys = (orderedAll, matched) => {
+  if (matched.length === 0) return '';
+  if (matched.length === orderedAll.length) {
+    const first = gradeShortCode(orderedAll[0]);
+    const last = gradeShortCode(orderedAll[orderedAll.length - 1]);
+    return first === last ? first : `Gr ${first}–${last}`;
+  }
+  const indices = matched.map(g => orderedAll.indexOf(g));
+  const isContiguous = indices.every((idx, i) => i === 0 || idx === indices[i - 1] + 1);
+  const codes = matched.map(gradeShortCode);
+  if (isContiguous) {
+    return codes.length === 1 ? (codes[0] === 'K' ? 'K' : `Gr ${codes[0]}`) : `Gr ${codes[0]}–${codes[codes.length - 1]}`;
+  }
+  return `Gr ${codes.join(', ')}`;
+};
+
+// Reads a subject's applicable grade range directly from MASTER_SUBJECTS_CATALOG so the
+// "Subjects Taught" list can show a read-only badge without needing separate mapping data.
+const getSubjectGradeRangeLabel = (subjectName, band) => {
+  if (band === 'Elementary') {
+    const matched = ELEM_GRADE_ORDER.filter(g => (MASTER_SUBJECTS_CATALOG.Elementary[g] || []).includes(subjectName));
+    const matchedSpecial = ELEM_SPECIAL_KEYS.filter(g => (MASTER_SUBJECTS_CATALOG.Elementary[g] || []).includes(subjectName));
+    let label = compressGradeKeys(ELEM_GRADE_ORDER, matched);
+    if (matchedSpecial.length) {
+      label = label ? `${label}, ${matchedSpecial.join('/')}` : matchedSpecial.join('/');
+    }
+    return label || null;
+  }
+  if (band === 'Junior High School') {
+    const matched = JHS_GRADE_ORDER.filter(g => (MASTER_SUBJECTS_CATALOG['Junior High School'][g] || []).includes(subjectName));
+    const label = compressGradeKeys(JHS_GRADE_ORDER, matched);
+    return label || null;
+  }
+  return null;
+};
+
 const MASTER_SUBJECTS_CATALOG = {
   Elementary: {
     Kinder: [
@@ -323,6 +367,56 @@ const MASTER_SUBJECTS_CATALOG = {
       'INQUIRIES, INVESTIGATIONS AND IMMERSION', 'RESEARCH/CAPSTONE PROJECT', 'OTHERS SPECIALIZED SUBJECT'
     ]
   }
+};
+
+// Flattens MASTER_SUBJECTS_CATALOG into the school's active subject list — same enable/disable
+// ("TAUGHT" toggle), curricular-offering (Elem/JHS/SHS bands actually offered by the school),
+// restricted-subject, and special-program rules as the "Subjects Taught" modal — so other
+// screens (e.g. Workload's Block Inspector) show exactly what that modal shows, not the full
+// catalog. Returns [{ name, tag }] where `tag` mirrors the modal's grade-range / SHS-category badge.
+export const getActiveSubjectsForSchool = (schoolInfo) => {
+  const disabledMap = schoolInfo?.subjectsConfig?.disabledMap || {};
+  const customSubjects = Array.isArray(schoolInfo?.subjectsConfig?.customSubjects)
+    ? schoolInfo.subjectsConfig.customSubjects
+    : [];
+
+  const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
+  const showElem = offerings.length === 0 || offerings.some(o => o.includes('ELEM') || o.includes('KINDER') || o.includes('PRIMARY'));
+  const showJHS = offerings.length === 0 || offerings.some(o => o.includes('JHS') || o.includes('JUNIOR') || o.includes('INTERMEDIATE'));
+  const showSHS = offerings.length === 0 || offerings.some(o => o.includes('SHS') || o.includes('SENIOR') || o.includes('HIGH'));
+
+  const seen = new Set();
+  const list = [];
+
+  const addSubject = (name, gradeOrBand, tag) => {
+    const u = String(name || '').toUpperCase().trim();
+    if (!u || seen.has(u)) return;
+    if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE') || u.includes('MOTHER TONGUE')) return;
+    if (!isSpecialProgramSubjectAllowed(name, gradeOrBand, schoolInfo)) return;
+    if (disabledMap[name] === true) return;
+    seen.add(u);
+    list.push({ name, tag: tag || null });
+  };
+
+  if (showElem) {
+    Object.entries(MASTER_SUBJECTS_CATALOG.Elementary).forEach(([grade, subs]) => {
+      subs.forEach(s => addSubject(s, grade, getSubjectGradeRangeLabel(s, 'Elementary')));
+    });
+  }
+  if (showJHS) {
+    Object.entries(MASTER_SUBJECTS_CATALOG['Junior High School']).forEach(([grade, subs]) => {
+      if (grade === 'All') return;
+      subs.forEach(s => addSubject(s, grade, getSubjectGradeRangeLabel(s, 'Junior High School')));
+    });
+  }
+  if (showSHS) {
+    Object.entries(MASTER_SUBJECTS_CATALOG['Senior High School']).forEach(([cat, subs]) => {
+      subs.forEach(s => addSubject(s, 'Senior High School', cat.replace('SHS-', '').replace(' SUBJECTS', '')));
+    });
+  }
+  customSubjects.forEach(cs => addSubject(cs.name, cs.gradeLevel || cs.band, cs.gradeLevel || cs.band || null));
+
+  return list.sort((a, b) => a.name.localeCompare(b.name));
 };
 
 const GRADE_SUBJECT_MAP = {
@@ -1285,39 +1379,82 @@ export default function OrganizedClasses() {
               const hasGender = (sec.maleLearners !== null && sec.maleLearners !== undefined && sec.maleLearners !== '') || (sec.femaleLearners !== null && sec.femaleLearners !== undefined && sec.femaleLearners !== '');
               return hasGender ? (mVal + fVal) : (Number(sec.numberOfLearners) !== 35 && sec.numberOfLearners ? Number(sec.numberOfLearners) : 0);
             };
+            // Shared column-width scale reused across all three section tables so equivalent
+            // columns (person-name, section name, total, actions, etc.) share identical pixel
+            // widths and the Actions column lands at the same horizontal position in every table.
+            // Widths are sized to each header label's own content (no wrapping/truncation) —
+            // see SortableTableHead, which renders a <colgroup> from these to lock in real boundaries.
+            const COL_W = {
+              shortTag: '150px',     // Class Type / ARAL Basis — widened so dropdown values like "MULTI GRADE" don't clip
+              gradeLevel: '160px',   // Grade Level / Target Grade — widened for values like "NON-GRADED"
+              sectionName: '170px',  // Section Name (~15-20 char content)
+              sexIcon: '64px',       // ♂ / ♀ counts
+              total: '78px',
+              personName: '220px',  // Class Adviser / Section Tutor / Assigned Teacher — fixed (not flexible), roughly half its old flex-stretched width
+              actions: '100px',
+              aralProfile: '210px', // Assessment Profile (longest ARAL label)
+              aralLevel: '150px',   // Target / Level
+              learners: '100px',
+              interventionCategory: '210px' // Intervention Category (longest label in Remedial table)
+            };
+
             const regularColumns = [
-              { key: 'classType', label: 'Class Type', getValue: sec => (String(sec.gradeLevel || '').includes(' - ') || sec.sectionType === 'MULTIGRADE') ? 'Multi Grade' : 'Mono Grade' },
-              { key: 'gradeLevel', label: 'Grade Level', getValue: sec => sec.gradeLevel },
-              { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
-              { key: 'male', label: '♂', align: 'center', width: '60px', getValue: sec => Number(sec.maleLearners) || 0 },
-              { key: 'female', label: '♀', align: 'center', width: '60px', getValue: sec => Number(sec.femaleLearners) || 0 },
-              { key: 'total', label: 'Total', align: 'center', width: '70px', getValue: regularTotal },
-              { key: 'adviser', label: 'Class Adviser', getValue: sec => { const a = personnel.find(p => p.id === sec.advisorId); return a ? `${a.firstName} ${a.lastName}` : ''; } },
-              { key: 'actions', label: 'Actions', align: 'center', width: '90px', sortable: false, filterable: false, getValue: () => '' }
+              { key: 'classType', label: 'Class Type', width: COL_W.shortTag, getValue: sec => (String(sec.gradeLevel || '').includes(' - ') || sec.sectionType === 'MULTIGRADE') ? 'Multi Grade' : 'Mono Grade' },
+              { key: 'gradeLevel', label: 'Grade Level', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel },
+              { key: 'sectionName', label: 'Section Name', width: COL_W.sectionName, getValue: sec => sec.sectionName },
+              { key: 'male', label: '♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.maleLearners) || 0 },
+              { key: 'female', label: '♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.femaleLearners) || 0 },
+              { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: '#', getValue: regularTotal },
+              { key: 'adviser', label: 'Class Adviser', width: COL_W.personName, getValue: sec => { const a = personnel.find(p => p.id === sec.advisorId); return a ? `${a.firstName} ${a.lastName}` : ''; } },
+              { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
             ];
             const regularTable = useSortableFilterableTable(regularSections, regularColumns);
 
+            const isAralAssessmentBasis = sec => sec.aralBasis === 'assessment' || String(sec.sectionType || '').includes('CRLA') || String(sec.sectionType || '').includes('PHIL') || String(sec.sectionType || '').includes('RMA');
             const aralColumns = [
-              { key: 'basis', label: '1. ARAL Basis', getValue: sec => (sec.aralBasis === 'assessment' || String(sec.sectionType || '').includes('CRLA') || String(sec.sectionType || '').includes('PHIL') || String(sec.sectionType || '').includes('RMA')) ? 'Assessment Profile' : 'Grade Level' },
-              { key: 'target', label: '2. Target / Assessment Profile', getValue: sec => sec.aralGrade || sec.gradeLevel || '' },
+              { key: 'basis', label: 'ARAL Basis', width: COL_W.shortTag, getValue: sec => isAralAssessmentBasis(sec) ? 'Assessment Profile' : 'Grade Level' },
+              {
+                key: 'profile', label: 'Assessment Profile', width: COL_W.aralProfile, getValue: sec => {
+                  if (!isAralAssessmentBasis(sec)) return sec.aralGrade || sec.gradeLevel || '';
+                  const toolKey = normalizeAralToolKey(sec.aralToolKey || sec.aralTool || sec.sectionType || sec.gradeLevel);
+                  const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+                  return `${toolObj.tool} — ${toolObj.domainDesc}`;
+                }
+              },
+              {
+                key: 'level', label: 'Target / Level', width: COL_W.aralLevel, getValue: sec => {
+                  if (!isAralAssessmentBasis(sec)) return '';
+                  const toolKey = normalizeAralToolKey(sec.aralToolKey || sec.aralTool || sec.sectionType || sec.gradeLevel);
+                  const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+                  return toolObj.levels.includes(sec.aralProfileLevel) ? sec.aralProfileLevel : toolObj.levels[0];
+                }
+              },
               { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
-              { key: 'learners', label: 'Learners', align: 'center', width: '80px', getValue: sec => Number(sec.aralLearners || sec.numberOfLearners) || 0 },
-              { key: 'tutor', label: 'Section Tutor', getValue: sec => { const t = personnel.find(p => p.id === (sec.tutorId || sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
-              { key: 'actions', label: 'Actions', align: 'center', width: '90px', sortable: false, filterable: false, getValue: () => '' }
+              { key: 'learners', label: 'Learners', align: 'center', width: COL_W.learners, filterPlaceholder: '#', getValue: sec => Number(sec.aralLearners || sec.numberOfLearners) || 0 },
+              { key: 'tutor', label: 'Section Tutor', width: COL_W.personName, getValue: sec => { const t = personnel.find(p => p.id === (sec.tutorId || sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
+              { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
             ];
             const aralTable = useSortableFilterableTable(aralSections, aralColumns);
 
             const remedialColumns = [
-              { key: 'category', label: 'Intervention Category', getValue: sec => sec.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : 'REMEDIAL' },
-              { key: 'gradeLevel', label: 'Target Grade', getValue: sec => sec.gradeLevel },
+              { key: 'category', label: 'Intervention Category', width: COL_W.interventionCategory, getValue: sec => sec.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : 'REMEDIAL' },
+              { key: 'gradeLevel', label: 'Target Grade', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel },
               { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
-              { key: 'male', label: '♂', align: 'center', width: '60px', getValue: sec => Number(sec.maleLearners) || 0 },
-              { key: 'female', label: '♀', align: 'center', width: '60px', getValue: sec => Number(sec.femaleLearners) || 0 },
-              { key: 'total', label: 'Total', align: 'center', width: '70px', getValue: sec => (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0) },
-              { key: 'teacher', label: 'Assigned Teacher', getValue: sec => { const t = personnel.find(p => p.id === (sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
-              { key: 'actions', label: 'Actions', align: 'center', width: '90px', sortable: false, filterable: false, getValue: () => '' }
+              { key: 'male', label: '♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.maleLearners) || 0 },
+              { key: 'female', label: '♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.femaleLearners) || 0 },
+              { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: '#', getValue: sec => (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0) },
+              { key: 'teacher', label: 'Assigned Teacher', width: COL_W.personName, getValue: sec => { const t = personnel.find(p => p.id === (sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
+              { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
             ];
             const remedialTable = useSortableFilterableTable(remedialSections, remedialColumns);
+
+            // Section Name and the person-name column (Class Adviser / Section Tutor / Assigned Teacher)
+            // are left with no declared width above, so with table width:100% + tableLayout:fixed they
+            // absorb whatever's left of the card's width between them, instead of one dead invisible
+            // spacer column. Actions keeps its own fixed width and is the last column in every table, so
+            // it always ends flush against the table's true right edge regardless of how that leftover
+            // space gets split between the flexible columns — identically in all three tables.
+            const minWidthOf = cols => cols.reduce((sum, col) => sum + (col.width ? parseInt(col.width, 10) : 120), 0) + 'px';
 
             const cellInput = { padding: '5px 8px', borderRadius: '6px', border: '1.5px solid #CBD5E1', fontSize: '12px', fontWeight: '700', width: '100%', boxSizing: 'border-box' };
             const cellSelect = { ...cellInput, background: 'white' };
@@ -1351,19 +1488,23 @@ export default function OrganizedClasses() {
                           {availableGrades.filter(g => !g.includes('NON')).map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <select style={cellSelect} value={d.aralToolKey} onChange={e => {
-                            const tk = normalizeAralToolKey(e.target.value);
-                            setEditingRowData({ ...d, aralToolKey: tk, aralProfileLevel: ARAL_TOOLS[tk].levels[0] });
-                          }}>
-                            <option value="crla">CRLA — Reading (Gr 1-3)</option>
-                            <option value="philIri">Phil-IRI — Reading (Gr 4-10)</option>
-                            <option value="rma">RMA — Math (Gr 1-10)</option>
-                          </select>
-                          <select style={cellSelect} value={toolObj.levels.includes(d.aralProfileLevel) ? d.aralProfileLevel : toolObj.levels[0]} onChange={e => setEditingRowData({ ...d, aralProfileLevel: e.target.value })}>
-                            {toolObj.levels.map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
-                          </select>
-                        </div>
+                        <select style={cellSelect} value={d.aralToolKey} onChange={e => {
+                          const tk = normalizeAralToolKey(e.target.value);
+                          setEditingRowData({ ...d, aralToolKey: tk, aralProfileLevel: ARAL_TOOLS[tk].levels[0] });
+                        }}>
+                          <option value="crla">CRLA — Reading (Gr 1-3)</option>
+                          <option value="philIri">Phil-IRI — Reading (Gr 4-10)</option>
+                          <option value="rma">RMA — Math (Gr 1-10)</option>
+                        </select>
+                      )}
+                    </td>
+                    <td>
+                      {d.aralBasis === 'grade' ? (
+                        <span style={{ color: '#94A3B8', fontSize: '12px' }}>—</span>
+                      ) : (
+                        <select style={cellSelect} value={toolObj.levels.includes(d.aralProfileLevel) ? d.aralProfileLevel : toolObj.levels[0]} onChange={e => setEditingRowData({ ...d, aralProfileLevel: e.target.value })}>
+                          {toolObj.levels.map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
+                        </select>
                       )}
                     </td>
                     <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
@@ -1375,8 +1516,8 @@ export default function OrganizedClasses() {
                       </select>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button type="button" onClick={() => handleSaveInlineEdit(sec)} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheck size={12} /> Save</button>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button type="button" onClick={() => handleSaveInlineEdit(sec)} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}><FiCheck size={12} /> Save</button>
                         <button type="button" onClick={handleCancelInlineEdit} style={{ background: '#F1F5F9', color: '#475569', border: '1.5px solid #CBD5E1', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Cancel"><FiX size={12} /></button>
                       </div>
                     </td>
@@ -1409,8 +1550,8 @@ export default function OrganizedClasses() {
                       </select>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button type="button" onClick={() => handleSaveInlineEdit(sec)} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheck size={12} /> Save</button>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button type="button" onClick={() => handleSaveInlineEdit(sec)} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}><FiCheck size={12} /> Save</button>
                         <button type="button" onClick={handleCancelInlineEdit} style={{ background: '#F1F5F9', color: '#475569', border: '1.5px solid #CBD5E1', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Cancel"><FiX size={12} /></button>
                       </div>
                     </td>
@@ -1458,8 +1599,8 @@ export default function OrganizedClasses() {
                     </select>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button type="button" onClick={() => handleSaveInlineEdit(sec)} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheck size={12} /> Save</button>
+                    <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                      <button type="button" onClick={() => handleSaveInlineEdit(sec)} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}><FiCheck size={12} /> Save</button>
                       <button type="button" onClick={handleCancelInlineEdit} style={{ background: '#F1F5F9', color: '#475569', border: '1.5px solid #CBD5E1', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Cancel"><FiX size={12} /></button>
                     </div>
                   </td>
@@ -1478,7 +1619,7 @@ export default function OrganizedClasses() {
                   </div>
                 </div>
                 <div style={{ overflowX: 'auto', border: '1.5px solid #E2E8F0', borderRadius: '14px', marginBottom: '24px' }}>
-                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <table className="table" style={{ width: '100%', minWidth: minWidthOf(regularColumns), borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
                     <SortableTableHead
                       columns={regularColumns}
                       sortConfig={regularTable.sortConfig}
@@ -1524,7 +1665,7 @@ export default function OrganizedClasses() {
                             </td>
                             <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                               <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                <button type="button" disabled={isBeingEdited} onClick={() => startEditingRow(sec)} style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: isBeingEdited ? 'not-allowed' : 'pointer' }}><FiEdit2 size={11} /> Edit</button>
+                                <button type="button" disabled={isBeingEdited} onClick={() => startEditingRow(sec)} style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: isBeingEdited ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}><FiEdit2 size={11} /> Edit</button>
                                 <button type="button" disabled={isBeingEdited} onClick={async () => { if (await showConfirm('Remove Section', `Remove ${sec.sectionName}?`)) removeClassSection(sec.id); }} style={{ background: 'none', color: '#EF4444', border: 'none', cursor: isBeingEdited ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px 6px' }} title="Delete Section"><FiTrash2 size={13} /></button>
                               </div>
                             </td>
@@ -1580,8 +1721,8 @@ export default function OrganizedClasses() {
                               </select>
                             </td>
                             <td style={{ padding: '8px 10px' }}>
-                              <div style={{ display: 'flex', gap: '4px' }}>
-                                <button type="button" onClick={handleSaveInlineAdd} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheck size={12} /> Save</button>
+                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                <button type="button" onClick={handleSaveInlineAdd} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}><FiCheck size={12} /> Save</button>
                                 <button type="button" onClick={() => setShowInlineAdd(false)} style={{ background: '#F1F5F9', color: '#475569', border: '1.5px solid #CBD5E1', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Cancel"><FiX size={12} /></button>
                               </div>
                             </td>
@@ -1619,7 +1760,7 @@ export default function OrganizedClasses() {
                     </div>
                   </div>
                   <div style={{ overflowX: 'auto', border: '1.5px solid #BBF7D0', borderRadius: '14px' }}>
-                    <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <table className="table" style={{ width: '100%', minWidth: minWidthOf(aralColumns), borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
                       <SortableTableHead
                         columns={aralColumns}
                         sortConfig={aralTable.sortConfig}
@@ -1647,18 +1788,22 @@ export default function OrganizedClasses() {
                               </td>
                               <td style={{ padding: '10px 12px' }}>
                                 {isAssessmentBasis && toolObj ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                    <span style={{ padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '800', background: '#ECFDF5', color: '#065F46', border: '1px solid #A7F3D0', display: 'inline-block' }}>
-                                      <FiLayers size={11} /> {toolObj.tool} — {toolObj.domainDesc}
-                                    </span>
-                                    <span style={{ padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '700', background: '#FEF9C3', color: '#854D0E', border: '1px solid #FDE68A', display: 'inline-block' }}>
-                                      <FiTag size={11} /> {profileLevel}
-                                    </span>
-                                  </div>
+                                  <span style={{ padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '800', background: '#ECFDF5', color: '#065F46', border: '1px solid #A7F3D0', display: 'inline-block' }}>
+                                    <FiLayers size={11} /> {toolObj.tool} — {toolObj.domainDesc}
+                                  </span>
                                 ) : (
                                   <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', background: '#EFF6FF', color: '#1E40AF', border: '1px solid #BFDBFE' }}>
                                     <FiBook size={11} /> {sec.aralGrade || sec.gradeLevel}
                                   </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px 12px' }}>
+                                {isAssessmentBasis && toolObj ? (
+                                  <span style={{ padding: '2px 8px', borderRadius: '5px', fontSize: '11px', fontWeight: '700', background: '#FEF9C3', color: '#854D0E', border: '1px solid #FDE68A', display: 'inline-block' }}>
+                                    <FiTag size={11} /> {profileLevel}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#94A3B8', fontSize: '12px' }}>—</span>
                                 )}
                               </td>
                               <td style={{ padding: '10px 12px', fontWeight: '700', color: '#0F172A' }}>{sec.sectionName}</td>
@@ -1671,7 +1816,7 @@ export default function OrganizedClasses() {
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                 <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                  <button type="button" disabled={isBeingEdited} onClick={() => startEditingRow(sec)} style={{ background: '#ECFDF5', color: '#15803D', border: '1px solid #BBF7D0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: isBeingEdited ? 'not-allowed' : 'pointer' }}><FiEdit2 size={11} /> Edit</button>
+                                  <button type="button" disabled={isBeingEdited} onClick={() => startEditingRow(sec)} style={{ background: '#ECFDF5', color: '#15803D', border: '1px solid #BBF7D0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: isBeingEdited ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}><FiEdit2 size={11} /> Edit</button>
                                   <button type="button" disabled={isBeingEdited} onClick={async () => { if (await showConfirm('Remove ARAL Section', `Remove ${sec.sectionName}?`)) removeClassSection(sec.id); }} style={{ background: 'none', color: '#EF4444', border: 'none', cursor: isBeingEdited ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px 6px' }} title="Delete Section"><FiTrash2 size={13} /></button>
                                 </div>
                               </td>
@@ -1679,7 +1824,7 @@ export default function OrganizedClasses() {
                           );
                         })}
                         {aralSections.length === 0 && !showInlineAddAral && (
-                          <tr><td colSpan="6" style={{ textAlign: 'center', padding: '16px', color: '#94A3B8', fontStyle: 'italic', fontSize: '13px' }}>No ARAL sections yet.</td></tr>
+                          <tr><td colSpan="7" style={{ textAlign: 'center', padding: '16px', color: '#94A3B8', fontStyle: 'italic', fontSize: '13px' }}>No ARAL sections yet.</td></tr>
                         )}
                         {/* Inline Add ARAL Row */}
                         {showInlineAddAral && (() => {
@@ -1700,19 +1845,23 @@ export default function OrganizedClasses() {
                                     {availableGrades.filter(g => !g.includes('NON')).map(g => <option key={g} value={g}>{g}</option>)}
                                   </select>
                                 ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <select style={cellInput} value={d.aralToolKey} onChange={e => {
-                                      const tk = normalizeAralToolKey(e.target.value);
-                                      setInlineAralData({ ...d, aralToolKey: tk, aralProfileLevel: ARAL_TOOLS[tk].levels[0] });
-                                    }}>
-                                      <option value="crla">CRLA — Reading (Gr 1-3)</option>
-                                      <option value="philIri">Phil-IRI — Reading (Gr 4-10)</option>
-                                      <option value="rma">RMA — Math (Gr 1-10)</option>
-                                    </select>
-                                    <select style={cellInput} value={toolObj.levels.includes(d.aralProfileLevel) ? d.aralProfileLevel : toolObj.levels[0]} onChange={e => setInlineAralData({ ...d, aralProfileLevel: e.target.value })}>
-                                      {toolObj.levels.map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
-                                    </select>
-                                  </div>
+                                  <select style={cellInput} value={d.aralToolKey} onChange={e => {
+                                    const tk = normalizeAralToolKey(e.target.value);
+                                    setInlineAralData({ ...d, aralToolKey: tk, aralProfileLevel: ARAL_TOOLS[tk].levels[0] });
+                                  }}>
+                                    <option value="crla">CRLA — Reading (Gr 1-3)</option>
+                                    <option value="philIri">Phil-IRI — Reading (Gr 4-10)</option>
+                                    <option value="rma">RMA — Math (Gr 1-10)</option>
+                                  </select>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 10px' }}>
+                                {d.aralBasis === 'grade' ? (
+                                  <span style={{ color: '#94A3B8', fontSize: '12px' }}>—</span>
+                                ) : (
+                                  <select style={cellInput} value={toolObj.levels.includes(d.aralProfileLevel) ? d.aralProfileLevel : toolObj.levels[0]} onChange={e => setInlineAralData({ ...d, aralProfileLevel: e.target.value })}>
+                                    {toolObj.levels.map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
+                                  </select>
                                 )}
                               </td>
                               <td style={{ padding: '8px 10px' }}><input style={cellInput} value={d.sectionName} onChange={e => setInlineAralData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" autoFocus /></td>
@@ -1724,8 +1873,8 @@ export default function OrganizedClasses() {
                                 </select>
                               </td>
                               <td style={{ padding: '8px 10px' }}>
-                                <div style={{ display: 'flex', gap: '4px' }}>
-                                  <button type="button" onClick={handleSaveInlineAddAral} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheck size={12} /> Save</button>
+                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                  <button type="button" onClick={handleSaveInlineAddAral} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}><FiCheck size={12} /> Save</button>
                                   <button type="button" onClick={() => setShowInlineAddAral(false)} style={{ background: '#F1F5F9', color: '#475569', border: '1.5px solid #CBD5E1', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Cancel"><FiX size={12} /></button>
                                 </div>
                               </td>
@@ -1734,7 +1883,7 @@ export default function OrganizedClasses() {
                         })()}
                         {!showInlineAddAral && (
                           <tr onClick={() => { if (editingRowId) return; setInlineAralData({ aralBasis: 'grade', aralGrade: availableGrades.filter(g => !g.includes('NON') && !g.includes('Kinder'))[0] || 'Grade 3', aralToolKey: 'crla', aralProfileLevel: 'Emerging', aralLearners: 15, tutorId: '', sectionName: '' }); setShowInlineAddAral(true); }} style={{ cursor: editingRowId ? 'not-allowed' : 'pointer', opacity: editingRowId ? 0.4 : 1 }}>
-                            <td colSpan="6" style={{ padding: '10px 16px', textAlign: 'center', border: '2px dashed #BBF7D0', borderRadius: '0 0 12px 12px', color: '#15803D', fontSize: '13px', fontWeight: '700', background: '#F0FDF4' }}>
+                            <td colSpan="7" style={{ padding: '10px 16px', textAlign: 'center', border: '2px dashed #BBF7D0', borderRadius: '0 0 12px 12px', color: '#15803D', fontSize: '13px', fontWeight: '700', background: '#F0FDF4' }}>
                               + Add ARAL Section
                             </td>
                           </tr>
@@ -1755,7 +1904,7 @@ export default function OrganizedClasses() {
                     </div>
                   </div>
                   <div style={{ overflowX: 'auto', border: '1.5px solid #E9D5FF', borderRadius: '14px' }}>
-                    <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <table className="table" style={{ width: '100%', minWidth: minWidthOf(remedialColumns), borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
                       <SortableTableHead
                         columns={remedialColumns}
                         sortConfig={remedialTable.sortConfig}
@@ -1793,7 +1942,7 @@ export default function OrganizedClasses() {
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                 <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                                  <button type="button" disabled={isBeingEdited} onClick={() => startEditingRow(sec)} style={{ background: '#FAF5FF', color: '#7E22CE', border: '1px solid #E9D5FF', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: isBeingEdited ? 'not-allowed' : 'pointer' }}><FiEdit2 size={11} /> Edit</button>
+                                  <button type="button" disabled={isBeingEdited} onClick={() => startEditingRow(sec)} style={{ background: '#FAF5FF', color: '#7E22CE', border: '1px solid #E9D5FF', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '700', cursor: isBeingEdited ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}><FiEdit2 size={11} /> Edit</button>
                                   <button type="button" disabled={isBeingEdited} onClick={async () => { if (await showConfirm('Remove Section', `Remove ${sec.sectionName}?`)) removeClassSection(sec.id); }} style={{ background: 'none', color: '#EF4444', border: 'none', cursor: isBeingEdited ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '4px 6px' }} title="Delete Section"><FiTrash2 size={13} /></button>
                                 </div>
                               </td>
@@ -1829,8 +1978,8 @@ export default function OrganizedClasses() {
                                 </select>
                               </td>
                               <td style={{ padding: '8px 10px' }}>
-                                <div style={{ display: 'flex', gap: '4px' }}>
-                                  <button type="button" onClick={handleSaveInlineAddRemedial} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiCheck size={12} /> Save</button>
+                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                  <button type="button" onClick={handleSaveInlineAddRemedial} style={{ background: '#16A34A', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}><FiCheck size={12} /> Save</button>
                                   <button type="button" onClick={() => setShowInlineAddRemedial(false)} style={{ background: '#F1F5F9', color: '#475569', border: '1.5px solid #CBD5E1', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Cancel"><FiX size={12} /></button>
                                 </div>
                               </td>
@@ -2051,8 +2200,10 @@ export default function OrganizedClasses() {
           </div>
 
           {/* Subjects List with On/Off Toggles (Responsive Multi-Column Grid) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '10px', maxHeight: '600px', overflowY: 'auto', padding: '4px' }}>
-            {getSubjectsForView().map((sub, index) => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '6px', maxHeight: '600px', overflowY: 'auto', padding: '4px' }}>
+            {getSubjectsForView().map((sub, index) => {
+              const gradeRangeLabel = getSubjectGradeRangeLabel(sub.name, selectedBand);
+              return (
               <div
                 key={sub.name || index}
                 onClick={() => toggleSubject(sub.name)}
@@ -2060,7 +2211,7 @@ export default function OrganizedClasses() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '10px 14px',
+                  padding: '6px 12px',
                   borderRadius: '10px',
                   border: sub.enabled ? '1.5px solid #bbf7d0' : '1.5px solid var(--line)',
                   background: sub.enabled ? '#ffffff' : '#f8fafc',
@@ -2070,10 +2221,24 @@ export default function OrganizedClasses() {
                   transition: 'all 0.15s'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: sub.enabled ? 'var(--navy)' : 'var(--muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: sub.enabled ? 'var(--navy)' : 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {sub.name}
                   </span>
+                  {gradeRangeLabel && (
+                    <span style={{
+                      fontSize: '8px',
+                      fontWeight: '800',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      background: '#eef2ff',
+                      color: '#4338ca',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0
+                    }}>
+                      {gradeRangeLabel}
+                    </span>
+                  )}
                   {selectedBand === 'Senior High School' && sub.shsCategory && (
                     <span style={{
                       fontSize: '9px',
@@ -2101,7 +2266,8 @@ export default function OrganizedClasses() {
                   />
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </article>

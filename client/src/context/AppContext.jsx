@@ -814,11 +814,12 @@ export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND
 
 export const NATURE_OF_APPOINTMENT_OPTIONS = ["REGULAR PERMANENT", "PROVISIONAL", "CONTRACTUAL", "SUBSTITUTE", "CASUAL/EMERGENCY", "JOB ORDER/CONTRACT OF SERVICE", "VOLUNTEER"];
 export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "N/A", "OTHERS"];
+// Degree-level attainments (College/Baccalaureate, Master's, Doctorate) are no longer picked from a
+// single top-level "highest attainment" field — they are selected per-entry from the "+ Add Degree"
+// control in the Educational Attainment section (see DEGREE_LEVEL_OPTIONS). This list only covers
+// attainment levels below a completed degree.
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS = [
-  "COLLEGE UNDERGRADUATE",
-  "COLLEGE GRADUATE / BACCALAUREATE",
-  "MASTER'S DEGREE (GRADUATED)",
-  "DOCTORATE DEGREE (GRADUATED)"
+  "COLLEGE UNDERGRADUATE"
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
@@ -827,13 +828,18 @@ export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
   "HIGH SCHOOL GRADUATE",
   "SENIOR HIGH SCHOOL GRADUATE",
   "VOCATIONAL / TECH-VOC COURSE",
-  "COLLEGE UNDERGRADUATE",
-  "COLLEGE GRADUATE / BACCALAUREATE",
-  "MASTER'S DEGREE (GRADUATED)",
-  "DOCTORATE DEGREE (GRADUATED)"
+  "COLLEGE UNDERGRADUATE"
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS = HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
+
+// Levels selectable when adding a degree entry via "+ Add Degree". MASTERS/DOCTORATE entries carry
+// an additional post-graduate discipline field folded directly into the entry.
+export const DEGREE_LEVEL_OPTIONS = [
+  { key: 'BACCALAUREATE', label: "Baccalaureate / College Degree" },
+  { key: 'MASTERS', label: "Master's Degree" },
+  { key: 'DOCTORATE', label: "Doctorate Degree" }
+];
 
 export const SHS_TRACK_OPTIONS = [
   "ACADEMIC TRACK",
@@ -3009,8 +3015,9 @@ export const AppProvider = ({ children }) => {
       const rawEth = p.ethnicGroup || p.ethnic_group || '';
       const cleanEthnicGroup = (rawEth === 'OTHERS' ? '' : rawEth);
       const cleanReligion = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
-      const cleanMajor = (p.major === 'OTHERS' ? '' : (p.major || ''));
-      const cleanMinor = (p.minor === 'OTHERS' ? '' : (p.minor || ''));
+      const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
+      const cleanMajor = (primaryDegree.major === 'OTHERS' ? '' : (primaryDegree.major || ''));
+      const cleanMinor = (primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''));
       const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
 
       const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
@@ -3020,7 +3027,7 @@ export const AppProvider = ({ children }) => {
             ? 'DOCTORATE DEGREE (GRADUATED)'
             : "MASTER'S DEGREE (GRADUATED)";
         }
-        const deg = String(p.collegeDegree || '').toUpperCase();
+        const deg = String(primaryDegree.collegeDegree || '').toUpperCase();
         if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
         if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
         if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
@@ -3157,8 +3164,9 @@ export const AppProvider = ({ children }) => {
             const rawEth = p.ethnicGroup || p.ethnic_group || '';
             const cleanEthnic = (rawEth === 'OTHERS' ? '' : rawEth);
             const cleanRel = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
-            const cleanMaj = (p.major === 'OTHERS' ? '' : (p.major || ''));
-            const cleanMin = (p.minor === 'OTHERS' ? '' : (p.minor || ''));
+            const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
+            const cleanMaj = (primaryDegree.major === 'OTHERS' ? '' : (primaryDegree.major || ''));
+            const cleanMin = (primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''));
             const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
 
             const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(autoType || p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
@@ -3168,7 +3176,7 @@ export const AppProvider = ({ children }) => {
                   ? 'DOCTORATE DEGREE (GRADUATED)'
                   : "MASTER'S DEGREE (GRADUATED)";
               }
-              const deg = String(p.collegeDegree || '').toUpperCase();
+              const deg = String(primaryDegree.collegeDegree || '').toUpperCase();
               if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
               if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
               if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
@@ -3345,6 +3353,7 @@ export const AppProvider = ({ children }) => {
             setSchoolInfo(currentSchoolInfo);
           }
           draftPersonnel = draftPersonnel.map(p => {
+            const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
             const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
             const computedAttainment = p.highestEducationalAttainment || (() => {
               if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
@@ -3352,7 +3361,7 @@ export const AppProvider = ({ children }) => {
                   ? 'DOCTORATE DEGREE (GRADUATED)'
                   : "MASTER'S DEGREE (GRADUATED)";
               }
-              const deg = String(p.collegeDegree || '').toUpperCase();
+              const deg = String(primaryDegree.collegeDegree || '').toUpperCase();
               if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
               if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
               if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
@@ -3368,8 +3377,8 @@ export const AppProvider = ({ children }) => {
               ethnic_group: p.ethnic_group === 'OTHERS' ? '' : (p.ethnic_group || ''),
               religion: p.religion === 'OTHERS' ? '' : (p.religion || ''),
               highestEducationalAttainment: computedAttainment,
-              major: p.major === 'OTHERS' ? '' : (p.major || ''),
-              minor: p.minor === 'OTHERS' ? '' : (p.minor || ''),
+              major: primaryDegree.major === 'OTHERS' ? '' : (primaryDegree.major || ''),
+              minor: primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''),
               prcSpecialization: p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''),
               prc_specialization: p.prc_specialization === 'OTHERS' ? '' : (p.prc_specialization || p.prcSpecialization || '')
             };
@@ -3676,13 +3685,15 @@ export const AppProvider = ({ children }) => {
           await api.updateEmployment(id, payload);
         }
 
-        const qualKeys = ['collegeDegree', 'major', 'minor', 'postGraduateDegree', 'discipline', 'eligibility', 'prcSpecialization', 'prcLicenseNo', 'prcExpiryDate'];
+        const qualKeys = ['collegeDegree', 'major', 'minor', 'degreeRows', 'postGraduateDegree', 'discipline', 'eligibility', 'prcSpecialization', 'prcLicenseNo', 'prcExpiryDate'];
         const hasQual = Object.keys(accumulatedFields).some(k => qualKeys.includes(k));
         if (hasQual) {
+          const primaryQualDegree = (latestPerson.degreeRows && latestPerson.degreeRows.length) ? latestPerson.degreeRows[0] : { collegeDegree: latestPerson.collegeDegree, major: latestPerson.major, minor: latestPerson.minor };
           const payload = {
-            college_degree: latestPerson.collegeDegree || '',
-            major: latestPerson.major || '',
-            minor: latestPerson.minor || '',
+            college_degree: primaryQualDegree.collegeDegree || '',
+            major: primaryQualDegree.major || '',
+            minor: primaryQualDegree.minor || '',
+            degree_rows: latestPerson.degreeRows || [],
             post_graduate_degree: latestPerson.postGraduateDegree || 'N/A',
             discipline: latestPerson.discipline || '',
             eligibility: latestPerson.eligibility || '',
@@ -3822,6 +3833,7 @@ export const AppProvider = ({ children }) => {
       collegeDegree: newPerson.collegeDegree || '',
       major: newPerson.major || '',
       minor: newPerson.minor || '',
+      degreeRows: newPerson.degreeRows || [],
       postGraduateDegree: newPerson.postGraduateDegree || 'N/A',
       discipline: newPerson.discipline || '',
       eligibility: newPerson.eligibility || '',
@@ -4517,8 +4529,9 @@ export const AppProvider = ({ children }) => {
 
       // College Degree Requirement: Mandatory for Teaching & Teaching-Related personnel.
       // For Non-Teaching personnel, College Degree is only required if their highest educational attainment is College/Post-Grad.
+      const hasAnyCollegeDegree = (p.degreeRows && p.degreeRows.some(d => d.collegeDegree)) || !!p.collegeDegree;
       if (!isNonTeaching) {
-        if (!p.collegeDegree) {
+        if (!hasAnyCollegeDegree) {
           issues.push({
             id: `${p.id}-collegeDegree-req`,
             personId: p.id,
@@ -4530,7 +4543,7 @@ export const AppProvider = ({ children }) => {
       } else {
         const attainment = p.highestEducationalAttainment || '';
         const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
-        if (isCollegeOrPostGrad && !p.collegeDegree) {
+        if (isCollegeOrPostGrad && !hasAnyCollegeDegree) {
           issues.push({
             id: `${p.id}-collegeDegree-req`,
             personId: p.id,

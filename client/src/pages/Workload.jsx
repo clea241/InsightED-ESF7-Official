@@ -5,7 +5,7 @@ import {
   FiAlertTriangle, FiBriefcase, FiList, FiLock, FiUnlock, FiBookOpen, FiBook, 
   FiClock, FiPlus, FiX, FiBarChart2, FiSearch, FiFilter, FiCheckCircle, 
   FiChevronRight, FiCopy, FiDownload, FiTrendingUp, FiBookmark, FiArrowRight, 
-  FiSliders, FiCheckSquare, FiSave 
+  FiSliders, FiCheckSquare, FiSave, FiMove
 } from 'react-icons/fi';
 
 
@@ -34,6 +34,16 @@ const isRemediationSub = (sub) => {
   const s = String(sub).toUpperCase();
   return s === 'REMEDIATION' || s.includes('REMEDIAL') || s.includes('ENHANCEMENT');
 };
+
+// Grade 1/2 MATATAG core subjects (DepEd Order No. 12, s. 2024) are locked to exactly 40 mins/day
+// wherever they're scheduled at those grades — mirrors the G1/G2 core lists in
+// getMatatagFixedDurationMins below, used here just to badge the subject in the "Subjects Taught"
+// sidebar list (which isn't grade-specific, so this flags "fixed at G1/G2" rather than a live row).
+const MATATAG_40M_CORE_SUBJECTS = new Set([
+  'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'MAKABANSA', 'MATHEMATICS', 'MATH',
+  'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'FILIPINO', 'ENGLISH'
+]);
+export const isMatatagFixed40Subject = (subjectName) => MATATAG_40M_CORE_SUBJECTS.has(String(subjectName || '').toUpperCase().trim());
 
 export const add60MinutesToTime = (timeStr) => {
   if (!timeStr) return '08:30';
@@ -1672,6 +1682,7 @@ import {
   isSpecialProgramSubjectAllowed
 } from '../context/AppContext';
 import { api } from '../services/api';
+import { getActiveSubjectsForSchool } from './OrganizedClasses';
 
 const isAralSubject = (sub) => {
   if (!sub) return false;
@@ -3449,6 +3460,7 @@ function WorkloadGanttScheduleView({
   getSubjectAssignmentForSection,
   getRowDurationError,
   getMatatagRowWarning,
+  getMatatagFixedDurationMins,
   getDuplicateSectionSubjectError,
   getHgpWeeklyError,
   isAdvisoryOrHgpPair,
@@ -3464,6 +3476,58 @@ function WorkloadGanttScheduleView({
   handleSectionChangeForRow,
   handleSaveChangesDirectly
 }) {
+  const { schoolInfo } = useApp();
+  const activeSchoolSubjects = useMemo(() => getActiveSubjectsForSchool(schoolInfo), [schoolInfo]);
+  // Subject-first creation: pick a subject in the sidebar, then click/drag an empty Gantt
+  // slot to create a block pre-filled with it (Flow 1). Left null for the plain drag-first
+  // flow (Flow 2), which instead leaves Subject/Class Section blank for the inspector to require.
+  const [pendingCreateSubject, setPendingCreateSubject] = useState(null);
+  // Section-first creation: pick an organized class/section in the sidebar, then click/drag an
+  // empty Gantt slot to create a block pre-filled with that section's grade level/name. Independent
+  // of pendingCreateSubject above — either, both, or neither can be set when a slot is created.
+  const [pendingCreateSection, setPendingCreateSection] = useState(null); // { sectionId, sectionName, gradeLevel, category }
+
+  // Block Inspector floating panel: null position = default (top-right, via CSS); once the user
+  // drags it, panelPos holds explicit viewport coordinates that persist across block selections
+  // for the rest of the session (only reset by a page reload, never automatically).
+  const [panelPos, setPanelPos] = useState(null); // { x, y } in px, top-left origin
+  const panelDragRef = useRef(null); // { startMouseX, startMouseY, startPanelX, startPanelY }
+  const panelRef = useRef(null);
+
+  const handlePanelDragStart = (e) => {
+    if (e.button !== 0) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    e.preventDefault();
+    panelDragRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startPanelX: rect.left,
+      startPanelY: rect.top
+    };
+  };
+
+  useEffect(() => {
+    const handleMove = (e) => {
+      const drag = panelDragRef.current;
+      if (!drag) return;
+      const nextX = drag.startPanelX + (e.clientX - drag.startMouseX);
+      const nextY = drag.startPanelY + (e.clientY - drag.startMouseY);
+      const maxX = window.innerWidth - 60;
+      const maxY = window.innerHeight - 40;
+      setPanelPos({ x: Math.max(-260, Math.min(maxX, nextX)), y: Math.max(0, Math.min(maxY, nextY)) });
+    };
+    const handleUp = () => {
+      panelDragRef.current = null;
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, []);
+
   const [showWeekend, setShowWeekend] = useState(() => {
     const rows = currentPerson?.workloadRows || [];
     return rows.some(r => {
@@ -3475,6 +3539,39 @@ function WorkloadGanttScheduleView({
   const [dragState, setDragState] = useState(null); // { type, rowIdx, day, initialMouseY, initialStartMins, initialEndMins, initialDays, createDay, createStartMins, createCurrentMins }
   const dragStateRef = useRef(null);
   dragStateRef.current = dragState;
+  const pendingCreateSubjectRef = useRef(null);
+  pendingCreateSubjectRef.current = pendingCreateSubject;
+  const pendingCreateSectionRef = useRef(null);
+  pendingCreateSectionRef.current = pendingCreateSection;
+
+  // Same section list configured in Organized Classes Setup (Class Sections & Advisers,
+  // ARAL Sections, Remedial & Enrichment Sections), reduced to a name + type label for the
+  // Block Inspector's "Organized Classes at This School" sidebar list.
+  const organizedClassesList = useMemo(() => {
+    return (classSections || []).map(sec => {
+      const sectionType = String(sec.sectionType || '').toUpperCase();
+      const gradeLevel = sec.gradeLevel || sec.grade_level || '';
+      let typeLabel;
+      if (sectionType.startsWith('ARAL')) {
+        typeLabel = sec.aralBasis === 'assessment'
+          ? `ARAL — ${sectionType.replace('ARAL - ', '').replace('ARAL', '').trim() || 'Assessment-Based'}`
+          : 'ARAL — Grade Level';
+      } else if (sectionType === 'REMEDIAL' || sectionType === 'ENRICHMENT') {
+        typeLabel = sectionType === 'ENRICHMENT' ? 'Enrichment' : 'Remedial';
+      } else if (String(gradeLevel).includes(' - ') || sectionType === 'MULTIGRADE') {
+        typeLabel = `Multi Grade · ${gradeLevel}`;
+      } else {
+        typeLabel = `Mono Grade · ${gradeLevel || 'Grade'}`;
+      }
+      return {
+        id: String(sec.id),
+        sectionName: sec.sectionName || sec.section_name || 'Section',
+        gradeLevel,
+        category: sec.category || '',
+        typeLabel
+      };
+    }).sort((a, b) => a.sectionName.localeCompare(b.sectionName));
+  }, [classSections]);
 
   const daysList = showWeekend
     ? [
@@ -3801,65 +3898,56 @@ function WorkloadGanttScheduleView({
           ? cur.spannedDays
           : [cur.createDay];
 
-        const assignedGrades = getAssignedGradeLevels(currentPerson);
-        let initialGrade = 'Grade 1';
-        let initialCategory = 'Elementary';
+        const presetSubject = pendingCreateSubjectRef.current;
+        const presetSection = pendingCreateSectionRef.current;
+
+        let initialGrade = '';
+        let initialCategory = '';
         let initialSectionId = '';
         let initialSectionName = '';
-        let matchedSec = null;
+        let chosenSubject = '';
 
-        if (Array.isArray(classSections) && classSections.length > 0) {
-          const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
-          const advisorySec = classSections.find(s => {
-            const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
-            return advId && advId === activePersonIdToMatch;
-          });
+        const categoryForGrade = (grade) => {
+          const gUpper = String(grade || '').toUpperCase();
+          if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS') || gUpper.includes('SENIOR')) return 'SHS-CORE SUBJECTS';
+          if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10') || gUpper.includes('JHS')) return 'Junior High School';
+          return 'Elementary';
+        };
 
-          matchedSec = advisorySec || classSections.find(s => assignedGrades.includes(s.gradeLevel)) || classSections[0];
-          if (matchedSec) {
-            initialSectionId = String(matchedSec.id);
-            initialSectionName = matchedSec.sectionName || matchedSec.section_name || '';
-            initialGrade = matchedSec.gradeLevel || matchedSec.grade_level || 'Grade 1';
-
-            const gUpper = String(initialGrade).toUpperCase();
-            if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS') || gUpper.includes('SENIOR')) {
-              initialCategory = 'SHS-CORE SUBJECTS';
-            } else if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10') || gUpper.includes('JHS')) {
-              initialCategory = 'Junior High School';
-            } else {
-              initialCategory = 'Elementary';
+        if (presetSection) {
+          // Section-first (Organized Classes sidebar): use the exact section/grade picked.
+          initialSectionId = presetSection.sectionId;
+          initialSectionName = presetSection.sectionName;
+          initialGrade = presetSection.gradeLevel;
+          initialCategory = presetSection.category || categoryForGrade(presetSection.gradeLevel);
+        } else if (presetSubject) {
+          // Flow 1 (subject-first): a subject was picked from the "Subjects Taught" sidebar
+          // before clicking/dragging the slot. Best-effort match a class section/grade so the
+          // inspector opens with sensible defaults, but the subject itself is exactly what was chosen.
+          const assignedGrades = getAssignedGradeLevels(currentPerson);
+          let matchedSec = null;
+          if (Array.isArray(classSections) && classSections.length > 0) {
+            const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
+            const advisorySec = classSections.find(s => {
+              const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
+              return advId && advId === activePersonIdToMatch;
+            });
+            matchedSec = advisorySec || classSections.find(s => assignedGrades.includes(s.gradeLevel)) || classSections[0];
+            if (matchedSec) {
+              initialSectionId = String(matchedSec.id);
+              initialSectionName = matchedSec.sectionName || matchedSec.section_name || '';
+              initialGrade = matchedSec.gradeLevel || matchedSec.grade_level || '';
+              initialCategory = categoryForGrade(initialGrade);
             }
           }
         }
+        // Flow 2 (drag-first, nothing preselected): leave Class Section/Grade Level blank so the
+        // Block Inspector requires the user to pick them explicitly instead of assuming defaults.
 
-        const isAralInitial = Boolean(
-          (matchedSec && (
-            String(matchedSec.sectionType || '').startsWith('ARAL') ||
-            String(matchedSec.sectionName || '').toUpperCase().includes('ARAL') ||
-            String(matchedSec.gradeLevel || '').toUpperCase().includes('ARAL')
-          )) ||
-          String(initialGrade || '').toUpperCase().includes('ARAL') ||
-          String(initialSectionName || '').toUpperCase().includes('ARAL')
-        );
-        const availableSubjects = isAralInitial
-          ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
-          : (getSubjectsForGrade(initialGrade, initialCategory) || []).filter(s => !isAralSubject(s));
-        let chosenSubject = '';
-        for (const sub of availableSubjects) {
-          const normSub = String(sub).toUpperCase().trim();
-          if (normSub === 'ADVISORY' || normSub === 'HGP' || normSub.includes('HOMEROOM GUIDANCE')) continue;
-          const assignment = getSubjectAssignmentForSection(initialSectionId, initialSectionName, sub, null, null);
-          if (!assignment || !assignment.assigned) {
-            chosenSubject = sub;
-            break;
-          }
+        if (presetSubject) {
+          chosenSubject = presetSubject;
         }
-        if (!chosenSubject) {
-          chosenSubject = availableSubjects.find(s => {
-            const u = String(s).toUpperCase().trim();
-            return u !== 'ADVISORY' && u !== 'HGP' && !u.includes('HOMEROOM GUIDANCE');
-          }) || availableSubjects[0] || '';
-        }
+        // If only a section was preselected (no subject), Subject stays blank — required in the inspector.
 
         const rows = [...(currentPerson?.workloadRows || [])];
         const newId = `new-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -3878,6 +3966,8 @@ function WorkloadGanttScheduleView({
         if (typeof handleFieldChange === 'function') {
           handleFieldChange('workloadRows', rows);
         }
+        setPendingCreateSubject(null);
+        setPendingCreateSection(null);
         setSelectedBlockIdx(0);
       } else if (cur.type === 'move') {
         const finalStart = cur.currentStartMins !== undefined ? cur.currentStartMins : cur.initialStartMins;
@@ -3933,6 +4023,11 @@ function WorkloadGanttScheduleView({
       // ADVISORY duration is fixed at 60 mins: resize handles are disabled, only move is permitted
       if (type === 'resize-top' || type === 'resize-bottom') return;
     }
+    if ((type === 'resize-top' || type === 'resize-bottom') && typeof getMatatagFixedDurationMins === 'function' && getMatatagFixedDurationMins(row) != null) {
+      // MATATAG-mandated exact-duration subject (e.g. Grade 1/2 core subjects): resizing would
+      // desync the block from its required minutes/day, so only move (which preserves duration) is allowed.
+      return;
+    }
 
     const initialStartMins = parseMins(row.startTime || '07:30');
     const initialEndMins = subUpper === 'ADVISORY'
@@ -3979,6 +4074,47 @@ function WorkloadGanttScheduleView({
 
   const rawRows = currentPerson?.workloadRows || [];
   const selectedRow = (selectedBlockIdx !== null && rawRows[selectedBlockIdx]) ? rawRows[selectedBlockIdx] : null;
+
+  useEffect(() => {
+    if (selectedBlockIdx === null || !selectedRow) return;
+
+    const handleDeleteKey = (e) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+
+      const tag = (e.target?.tagName || '').toUpperCase();
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
+      if (isEditable) return;
+
+      if (dragState) return;
+
+      const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
+      const isLocked = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
+      if (isLocked) return;
+
+      e.preventDefault();
+      removeWorkloadRow(selectedBlockIdx);
+      setSelectedBlockIdx(null);
+    };
+
+    window.addEventListener('keydown', handleDeleteKey);
+    return () => window.removeEventListener('keydown', handleDeleteKey);
+  }, [selectedBlockIdx, selectedRow, dragState, removeWorkloadRow, setSelectedBlockIdx]);
+
+  // Snap duration to the MATATAG-mandated length as soon as a block's subject/grade/section
+  // resolves into a fixed-duration policy (e.g. subject picked/changed via the dropdown), not
+  // only when the user subsequently edits Start Time.
+  useEffect(() => {
+    if (selectedBlockIdx === null || !selectedRow || typeof getMatatagFixedDurationMins !== 'function') return;
+    const fixedDurationMins = getMatatagFixedDurationMins(selectedRow);
+    if (fixedDurationMins == null || !selectedRow.startTime) return;
+
+    const [h, m] = selectedRow.startTime.split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+    const correctEndTime = formatMinutesToTime((h * 60 + m) + fixedDurationMins);
+    if (selectedRow.endTime !== correctEndTime) {
+      updateWorkloadRowFields(selectedBlockIdx, { endTime: correctEndTime });
+    }
+  }, [selectedBlockIdx, selectedRow?.subject, selectedRow?.gradeLevel, selectedRow?.sectionId, selectedRow?.startTime, selectedRow?.endTime, getMatatagFixedDurationMins, updateWorkloadRowFields]);
 
   return (
     <div className="gantt-schedule-container" style={{ background: '#F8FAFC', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
@@ -4072,8 +4208,10 @@ function WorkloadGanttScheduleView({
         </div>
       </div>
 
-      {/* Main Split View: Gantt Grid (Left 70-75%) + Block Inspector (Right 25-30%) */}
-      <div style={{ display: 'grid', gridTemplateColumns: selectedRow ? '1fr 340px' : '1fr 280px', gap: '20px', alignItems: 'start' }}>
+      {/* Main Split View: Gantt Grid (left) + fixed "browse" sidebar (right) — the block-editing
+          panel below floats separately once a block is clicked, but this browse sidebar (Select a
+          Schedule Block / Subjects Taught / Organized Classes) stays docked in the layout. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '20px', alignItems: 'start' }}>
         {/* Gantt Timetable Grid */}
         <div style={{ background: 'white', borderRadius: '14px', border: '1.5px solid var(--line)', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
           {/* Day Headers Row */}
@@ -4083,12 +4221,27 @@ function WorkloadGanttScheduleView({
             </div>
             {daysList.map(d => {
               const dayMins = dailyTotalMins[d.code] || 0;
-              const dayHours = (dayMins / 60).toFixed(1);
+              const dayHoursNum = dayMins / 60;
+              const dayHours = dayHoursNum.toFixed(1);
+              // Daily policy limit derives from the same 30 hrs/week regular teaching load cap used
+              // for overload computation elsewhere on this page (see teachingOverloadHours), spread evenly across the 5 weekdays.
+              const dailyLimitHrs = 30 / 5;
+              const fillPct = Math.min(100, (dayHoursNum / dailyLimitHrs) * 100);
+              // Same Normal/Full/Overload 3-tier palette used by the workload status badges elsewhere on this page.
+              const statusColor = dayHoursNum === 0 ? '#94A3B8' : dayHoursNum <= 4 ? '#10B981' : dayHoursNum <= 6 ? '#F59E0B' : '#F43F5E';
+              const statusBg = dayHoursNum === 0 ? '#F1F5F9' : dayHoursNum <= 4 ? '#ECFDF5' : dayHoursNum <= 6 ? '#FFFBEB' : '#FEF2F2';
+              const statusLabel = dayHoursNum === 0 ? null : dayHoursNum <= 4 ? 'Normal' : dayHoursNum <= 6 ? 'Full' : 'Overload';
               return (
-                <div key={d.code} style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid var(--line)', background: '#F8FAFC' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>{d.full} ({d.code})</div>
-                  <div style={{ fontSize: '10px', fontWeight: '700', color: dayMins > 360 ? '#b91c1c' : '#0284c7', background: dayMins > 360 ? '#fef2f2' : '#e0f2fe', padding: '2px 6px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}>
-                    <FiClock size={11} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{dayHours} hrs ({dayMins}m)
+                <div key={d.code} style={{ position: 'relative', padding: '10px 8px', textAlign: 'center', borderRight: '1px solid var(--line)', background: '#F8FAFC', overflow: 'hidden' }}>
+                  <div
+                    aria-hidden="true"
+                    style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${fillPct}%`, background: statusColor, opacity: 0.16, transition: 'height 0.25s ease' }}
+                  />
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>{d.full} ({d.code})</div>
+                    <div style={{ fontSize: '10px', fontWeight: '700', color: statusColor, background: statusBg, padding: '2px 6px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}>
+                      <FiClock size={11} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{dayHours} hrs ({dayMins}m){statusLabel ? ` · ${statusLabel}` : ''}
+                    </div>
                   </div>
                 </div>
               );
@@ -4148,6 +4301,10 @@ function WorkloadGanttScheduleView({
                   const eM = Math.max(dragState.createStartMins, dragState.createCurrentMins);
                   const top = (sM - gridStartMins) * pxPerMin;
                   const height = Math.max(20, (eM - sM) * pxPerMin);
+                  const durationMins = eM - sM;
+                  const durationLabel = durationMins >= 60
+                    ? `${(durationMins / 60).toFixed(durationMins % 60 === 0 ? 0 : 1)}h`
+                    : `${durationMins}m`;
                   return (
                     <div style={{
                       position: 'absolute',
@@ -4167,10 +4324,22 @@ function WorkloadGanttScheduleView({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      gap: '6px',
                       boxShadow: '0 4px 12px rgba(2, 132, 199, 0.15)'
                     }}>
-                      <FiPlus size={13} style={{ marginRight: '4px' }} />
-                      {activeDays.length > 1 ? `${activeDays[0]}-${activeDays[activeDays.length - 1]} (${formatMinutesTo12Hour(sM)} - ${formatMinutesTo12Hour(eM)})` : `New Slot (${formatMinutesTo12Hour(sM)} - ${formatMinutesTo12Hour(eM)})`}
+                      <FiPlus size={13} />
+                      <span>{formatMinutesTo12Hour(sM)} - {formatMinutesTo12Hour(eM)}</span>
+                      <span style={{
+                        background: '#0284C7',
+                        color: 'white',
+                        borderRadius: '10px',
+                        padding: '1px 7px',
+                        fontSize: '10px',
+                        fontWeight: '800',
+                        flexShrink: 0
+                      }}>
+                        {durationLabel}
+                      </span>
                     </div>
                   );
                 })()}
@@ -4367,9 +4536,263 @@ function WorkloadGanttScheduleView({
           </div>
         </div>
 
-        {/* Right Side: Block Inspector & Editor Drawer */}
+        {/* Fixed "Browse" Sidebar — Subjects Taught + Organized Classes for subject-first /
+            section-first block creation. Stays docked in the layout (not floating). */}
         <div style={{ background: 'white', borderRadius: '14px', border: '1.5px solid var(--line)', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {selectedRow ? (() => {
+          <div style={{ padding: '4px 0' }}>
+            <div style={{ textAlign: 'center', color: '#94a3b8', marginBottom: '16px' }}>
+              <div style={{ marginBottom: '8px' }}><FiCalendar size={32} color="#94A3B8" /></div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>Select a Schedule Block</div>
+              <div style={{ fontSize: '11px', marginTop: '4px' }}>Click any block on the Gantt chart or drag across empty time slots to create and edit.</div>
+            </div>
+            <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
+                  Subjects Taught at This School ({activeSchoolSubjects.length})
+                </div>
+                {pendingCreateSubject && (
+                  <button
+                    type="button"
+                    onClick={() => setPendingCreateSubject(null)}
+                    style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {pendingCreateSubject ? (
+                <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
+                  "{pendingCreateSubject}" selected — click or drag an empty slot on the Gantt chart to place it.
+                </div>
+              ) : (
+                <div style={{ fontSize: '10.5px', color: '#94a3b8', marginBottom: '8px' }}>
+                  Pick a subject first, then click/drag an empty slot to place it — or skip this and drag directly to choose the subject after.
+                </div>
+              )}
+              {activeSchoolSubjects.length === 0 ? (
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>No active subjects configured yet. Set them up in Organized Classes &rarr; Curriculum &amp; Subjects Taught.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' }}>
+                  {activeSchoolSubjects.map(({ name: subj, tag }) => {
+                    const isSelected = pendingCreateSubject === subj;
+                    const isFixed40 = isMatatagFixed40Subject(subj);
+                    return (
+                      <button
+                        key={subj}
+                        type="button"
+                        onClick={() => setPendingCreateSubject(isSelected ? null : subj)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          textAlign: 'left',
+                          fontSize: '11px',
+                          fontWeight: isSelected ? '800' : '600',
+                          color: isSelected ? 'white' : '#334155',
+                          background: isSelected ? 'var(--blue)' : '#F8FAFC',
+                          border: isSelected ? '1px solid var(--blue)' : '1px solid var(--line)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subj}</span>
+                        {isFixed40 && (
+                          <span
+                            title="MATATAG Policy: locked to exactly 40 mins/day at Grade 1/2 (DepEd Order No. 12, s. 2024)"
+                            style={{
+                              fontSize: '8.5px',
+                              fontWeight: '800',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: isSelected ? 'rgba(255,255,255,0.25)' : '#FEF2F2',
+                              color: isSelected ? 'white' : '#DC2626',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0
+                            }}
+                          >
+                            🔒 40m
+                          </span>
+                        )}
+                        {tag && (
+                          <span style={{
+                            fontSize: '8.5px',
+                            fontWeight: '800',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            background: isSelected ? 'rgba(255,255,255,0.25)' : '#eef2ff',
+                            color: isSelected ? 'white' : '#4338ca',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0
+                          }}>
+                            {tag}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px', marginTop: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
+                  Organized Classes at This School ({organizedClassesList.length})
+                </div>
+                {pendingCreateSection && (
+                  <button
+                    type="button"
+                    onClick={() => setPendingCreateSection(null)}
+                    style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {pendingCreateSection ? (
+                <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
+                  "{pendingCreateSection.sectionName}" selected — click or drag an empty slot on the Gantt chart to place it.
+                </div>
+              ) : (
+                <div style={{ fontSize: '10.5px', color: '#94a3b8', marginBottom: '8px' }}>
+                  Pick a class/section first, then click/drag an empty slot to place it — independent of any subject picked above.
+                </div>
+              )}
+              {(() => {
+                // Once a subject is picked from the "Subjects Taught" list above, only show
+                // sections whose grade band actually teaches that subject (per
+                // MASTER_SUBJECTS_CATALOG via getSubjectsForGrade) — same rule as the Block
+                // Inspector's own section dropdown, so an invalid pairing can't be dragged in
+                // either (the drag-first path only left it up to the after-the-fact MATATAG
+                // warning until now).
+                const categoryForGrade = (gradeLevel) => {
+                  const g = String(gradeLevel || '').toUpperCase();
+                  if (g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR')) return 'SHS';
+                  if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10') || g.includes('JHS') || g.includes('JUNIOR')) return 'JHS';
+                  return 'Elementary';
+                };
+                const visibleClasses = pendingCreateSubject
+                  ? organizedClassesList.filter(sec => {
+                      const subs = getSubjectsForGrade(sec.gradeLevel, categoryForGrade(sec.gradeLevel)) || [];
+                      return subs.some(sub => String(sub).toUpperCase().trim() === String(pendingCreateSubject).toUpperCase().trim());
+                    })
+                  : organizedClassesList;
+                if (visibleClasses.length === 0) {
+                  return (
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      {organizedClassesList.length === 0
+                        ? 'No organized classes configured yet. Set them up in Organized Classes Setup.'
+                        : `No sections teach "${pendingCreateSubject}" at this school.`}
+                    </div>
+                  );
+                }
+                return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' }}>
+                  {visibleClasses.map((sec) => {
+                    const isSelected = pendingCreateSection?.sectionId === sec.id;
+                    return (
+                      <button
+                        key={sec.id}
+                        type="button"
+                        onClick={() => setPendingCreateSection(isSelected ? null : {
+                          sectionId: sec.id,
+                          sectionName: sec.sectionName,
+                          gradeLevel: sec.gradeLevel,
+                          category: sec.category
+                        })}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          textAlign: 'left',
+                          fontSize: '11px',
+                          fontWeight: isSelected ? '800' : '600',
+                          color: isSelected ? 'white' : '#334155',
+                          background: isSelected ? 'var(--blue)' : '#F8FAFC',
+                          border: isSelected ? '1px solid var(--blue)' : '1px solid var(--line)',
+                          borderRadius: '6px',
+                          padding: '6px 8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sectionName}</span>
+                        <span style={{
+                          fontSize: '8.5px',
+                          fontWeight: '800',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background: isSelected ? 'rgba(255,255,255,0.25)' : '#F0FDF4',
+                          color: isSelected ? 'white' : '#15803D',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0
+                        }}>
+                          {sec.typeLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Block Inspector & Editor Drawer — floating, draggable overlay that appears only when a block is selected */}
+      {selectedRow && (
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed',
+            top: panelPos ? `${panelPos.y}px` : '50%',
+            left: panelPos ? `${panelPos.x}px` : '50%',
+            right: 'auto',
+            transform: panelPos ? 'none' : 'translate(-50%, -50%)',
+            width: '340px',
+            maxHeight: 'calc(100vh - 100px)',
+            overflowY: 'auto',
+            background: 'white',
+            borderRadius: '14px',
+            border: '1.5px solid var(--line)',
+            padding: '16px',
+            boxShadow: '0 12px 32px rgba(15, 23, 42, 0.18)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            zIndex: 200
+          }}
+        >
+          {/* Drag Handle / Title Bar */}
+          <div
+            onMouseDown={handlePanelDragStart}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              marginBottom: '-4px',
+              paddingBottom: '8px',
+              borderBottom: '1px dashed var(--line)',
+              cursor: 'grab',
+              userSelect: 'none'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94A3B8', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase' }}>
+              <FiMove size={13} /> Drag to move
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedBlockIdx(null)}
+              title="Close panel"
+              style={{ background: '#F1F5F9', color: '#475569', border: 'none', borderRadius: '6px', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <FiX size={13} />
+            </button>
+          </div>
+
+          {(() => {
             const idx = selectedBlockIdx;
             const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
             const isLockedSub = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
@@ -4426,64 +4849,11 @@ function WorkloadGanttScheduleView({
                   </div>
                 )}
 
-                {/* Class Section Select */}
-                <div>
-                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Class Section</label>
-                  {(() => {
-                    const filteredSections = [...(classSections || [])];
-                    const sectionOptions = filteredSections.map(s => {
-                      const trackInfo = s.trackStrand ? ` - ${s.trackStrand}` : '';
-                      return {
-                        value: String(s.id),
-                        label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'}${trackInfo})`
-                      };
-                    });
-                    return (
-                      <SearchableSelect
-                        disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
-                        value={selectedRow.sectionId}
-                        onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
-                        options={sectionOptions}
-                        placeholder="Select section…"
-                      />
-                    );
-                  })()}
-                </div>
-
-                {/* SHS Category Selector if SHS Section or SHS Row */}
-                {(isSHSRow(selectedRow) || (selectedRow.gradeLevel && (String(selectedRow.gradeLevel).includes('11') || String(selectedRow.gradeLevel).includes('12') || String(selectedRow.gradeLevel).toUpperCase().includes('SHS')))) && (
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <FiBook size={12} color="#16A34A" /> SHS Learning Category
-                    </label>
-                    <SearchableSelect
-                      disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
-                      value={selectedRow.category || 'SHS-CORE SUBJECTS'}
-                      onChange={(e) => {
-                        const newCat = e.target.value;
-                        const newSubjects = getSubjectsForGrade(selectedRow.gradeLevel || 'Grade 11', newCat);
-                        updateWorkloadRowFields(idx, {
-                          category: newCat,
-                          subject: (newSubjects || []).includes(selectedRow.subject) ? selectedRow.subject : (newSubjects?.find(s => s !== 'ADVISORY') || newSubjects?.[0] || '')
-                        });
-                      }}
-                      options={[
-                        { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
-                        { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
-                        { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
-                        { value: 'SSHS-CORE', label: 'SSHS-CORE' },
-                        { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
-                        { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
-                        { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
-                      ]}
-                      placeholder="Select SHS category…"
-                    />
-                  </div>
-                )}
-
                 {/* Subject Select */}
                 <div>
-                  <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>Subject</label>
+                  <label style={{ fontSize: '10px', fontWeight: '800', color: !selectedRow.subject ? '#DC2626' : '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>
+                    Subject {!selectedRow.subject && <span title="Required">*</span>}
+                  </label>
                   {(() => {
                     const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
                     const currentSub = selectedRow.subject || selectedRow.subject_name || '';
@@ -4503,7 +4873,6 @@ function WorkloadGanttScheduleView({
                       if (isAralSection) {
                         return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
                       }
-                      if (!currentSecId && !currentSub && !selectedRow.gradeLevel) return [];
                       let rawList = [];
                       if (selectedRow.gradeLevel) {
                         rawList = getSubjectsForGrade(selectedRow.gradeLevel, effectiveCategory);
@@ -4538,7 +4907,88 @@ function WorkloadGanttScheduleView({
                       />
                     );
                   })()}
+                  {!selectedRow.subject && (
+                    <div style={{ fontSize: '10px', color: '#DC2626', fontWeight: '700', marginTop: '4px' }}>Required — select the subject for this block.</div>
+                  )}
                 </div>
+
+                {/* Class Section Select (also carries the block's Grade Level) */}
+                <div>
+                  <label style={{ fontSize: '10px', fontWeight: '800', color: !selectedRow.gradeLevel ? '#DC2626' : '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>
+                    Class Section &amp; Grade Level {!selectedRow.gradeLevel && <span title="Required">*</span>}
+                  </label>
+                  {(() => {
+                    const currentSubj = selectedRow.subject || selectedRow.subject_name || '';
+                    const currentSecIdForFilter = String(selectedRow.sectionId || '');
+                    // Once a subject is picked, only offer sections whose grade band actually
+                    // teaches that subject (per MASTER_SUBJECTS_CATALOG via getSubjectsForGrade) —
+                    // prevents assigning e.g. a Grade-1-only subject to a Grade 2 section, which
+                    // used to only be caught after the fact by the MATATAG policy warning below.
+                    const categoryForGrade = (gradeLevel) => {
+                      const g = String(gradeLevel || '').toUpperCase();
+                      if (g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR')) return 'SHS';
+                      if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10') || g.includes('JHS') || g.includes('JUNIOR')) return 'JHS';
+                      return 'Elementary';
+                    };
+                    const filteredSections = (classSections || []).filter(s => {
+                      if (!currentSubj || currentSubj === 'ADVISORY' || currentSubj === 'HGP') return true;
+                      if (String(s.id) === currentSecIdForFilter) return true; // keep current selection visible even if it now mismatches
+                      const secGrade = s.gradeLevel || s.grade_level || '';
+                      const subs = getSubjectsForGrade(secGrade, categoryForGrade(secGrade)) || [];
+                      return subs.some(sub => String(sub).toUpperCase().trim() === String(currentSubj).toUpperCase().trim());
+                    });
+                    const sectionOptions = filteredSections.map(s => {
+                      const trackInfo = s.trackStrand ? ` - ${s.trackStrand}` : '';
+                      return {
+                        value: String(s.id),
+                        label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'}${trackInfo})`
+                      };
+                    });
+                    return (
+                      <SearchableSelect
+                        disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
+                        value={selectedRow.sectionId}
+                        onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
+                        options={sectionOptions}
+                        placeholder="Select section…"
+                      />
+                    );
+                  })()}
+                  {!selectedRow.gradeLevel && (
+                    <div style={{ fontSize: '10px', color: '#DC2626', fontWeight: '700', marginTop: '4px' }}>Required — select a class section to set the grade level.</div>
+                  )}
+                </div>
+
+                {/* SHS Category Selector if SHS Section or SHS Row */}
+                {(isSHSRow(selectedRow) || (selectedRow.gradeLevel && (String(selectedRow.gradeLevel).includes('11') || String(selectedRow.gradeLevel).includes('12') || String(selectedRow.gradeLevel).toUpperCase().includes('SHS')))) && (
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <FiBook size={12} color="#16A34A" /> SHS Learning Category
+                    </label>
+                    <SearchableSelect
+                      disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
+                      value={selectedRow.category || 'SHS-CORE SUBJECTS'}
+                      onChange={(e) => {
+                        const newCat = e.target.value;
+                        const newSubjects = getSubjectsForGrade(selectedRow.gradeLevel || 'Grade 11', newCat);
+                        updateWorkloadRowFields(idx, {
+                          category: newCat,
+                          subject: (newSubjects || []).includes(selectedRow.subject) ? selectedRow.subject : (newSubjects?.find(s => s !== 'ADVISORY') || newSubjects?.[0] || '')
+                        });
+                      }}
+                      options={[
+                        { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
+                        { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
+                        { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
+                        { value: 'SSHS-CORE', label: 'SSHS-CORE' },
+                        { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
+                        { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
+                        { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
+                      ]}
+                      placeholder="Select SHS category…"
+                    />
+                  </div>
+                )}
 
                 {/* Usual Days Toggles */}
                 <div>
@@ -4601,51 +5051,62 @@ function WorkloadGanttScheduleView({
                 </div>
 
                 {/* Time Range Pickers */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
-                    <input
-                      type="time"
-                      value={selectedRow.startTime || '07:30'}
-                      onChange={(e) => {
-                        const newStart = e.target.value;
-                        if (selectedRow.subject === 'ADVISORY') {
-                          updateWorkloadRowFields(idx, { startTime: newStart, endTime: add60MinutesToTime(newStart) });
-                        } else {
-                          updateWorkloadRowFields(idx, { startTime: newStart });
-                        }
-                      }}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>
-                      End Time {selectedRow.subject === 'ADVISORY' && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}>(Fixed 60m)</span>}
-                    </label>
-                    <input
-                      type="time"
-                      disabled={selectedRow.subject === 'ADVISORY'}
-                      value={selectedRow.endTime || '08:30'}
-                      onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px', opacity: selectedRow.subject === 'ADVISORY' ? 0.75 : 1, background: selectedRow.subject === 'ADVISORY' ? '#F8FAFC' : 'white' }}
-                      title={selectedRow.subject === 'ADVISORY' ? 'Advisory duration is fixed at 60 minutes' : undefined}
-                    />
-                  </div>
-                </div>
+                {(() => {
+                  const fixedDurationMins = typeof getMatatagFixedDurationMins === 'function' ? getMatatagFixedDurationMins(selectedRow) : null;
+                  const isFixedDuration = fixedDurationMins != null;
+                  const isEndLocked = selectedRow.subject === 'ADVISORY' || isFixedDuration;
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Start Time</label>
+                        <input
+                          type="time"
+                          value={selectedRow.startTime || '07:30'}
+                          onChange={(e) => {
+                            const newStart = e.target.value;
+                            if (selectedRow.subject === 'ADVISORY') {
+                              updateWorkloadRowFields(idx, { startTime: newStart, endTime: add60MinutesToTime(newStart) });
+                            } else if (isFixedDuration) {
+                              const [h, m] = newStart.split(':').map(Number);
+                              updateWorkloadRowFields(idx, { startTime: newStart, endTime: formatMinutesToTime((h * 60 + m) + fixedDurationMins) });
+                            } else {
+                              updateWorkloadRowFields(idx, { startTime: newStart });
+                            }
+                          }}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>
+                          End Time {selectedRow.subject === 'ADVISORY' && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}>(Fixed 60m)</span>}
+                          {isFixedDuration && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}>(MATATAG: Fixed {fixedDurationMins}m)</span>}
+                        </label>
+                        <input
+                          type="time"
+                          disabled={isEndLocked}
+                          value={selectedRow.endTime || '08:30'}
+                          onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px', opacity: isEndLocked ? 0.75 : 1, background: isEndLocked ? '#F8FAFC' : 'white' }}
+                          title={selectedRow.subject === 'ADVISORY' ? 'Advisory duration is fixed at 60 minutes' : isFixedDuration ? `MATATAG Policy locks this subject/grade to exactly ${fixedDurationMins} minutes/day` : undefined}
+                        />
+                        {isFixedDuration && (
+                          <div style={{ fontSize: '10px', color: '#0284C7', fontWeight: '600', marginTop: '4px' }}>
+                            MATATAG Policy: {selectedRow.subject} is fixed at {fixedDurationMins} mins/day under DepEd Order No. 12, s. 2024 — End Time auto-adjusts with Start Time.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             );
-          })() : (
-            <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
-              <div style={{ marginBottom: '8px' }}><FiCalendar size={32} color="#94A3B8" /></div>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>Select a Schedule Block</div>
-              <div style={{ fontSize: '11px', marginTop: '4px' }}>Click any block on the Gantt chart or drag across empty time slots to create and edit.</div>
-            </div>
-          )}
+          })()}
         </div>
-      </div>
+      )}
     </div>
   );
 }
+
 
 export default function Workload() {
   const {
@@ -6230,6 +6691,35 @@ export default function Workload() {
     return null;
   };
 
+  // Only Grade 1 and Grade 2 MATATAG core subjects have an exact fixed-minute mandate (40 mins/day,
+  // no flexible range) — Grade 3+ allows 45/50/55/60, so those stay freely editable. Mirrors the
+  // Grade 1/2 matching logic in getMatatagRowWarning above, but returns the mandated minutes (or
+  // null) instead of a warning message, so the Block Inspector can hard-lock the duration.
+  const getMatatagFixedDurationMins = (row) => {
+    if (!row) return null;
+    const gStr = String(row.gradeLevel || '').trim().toUpperCase();
+    const subStr = String(row.subject || row.task || '').trim().toUpperCase();
+
+    const matchedSec = (classSections || []).find(s => String(s.id) === String(row.sectionId) || (s.sectionName === row.sectionName && (s.gradeLevel === row.gradeLevel || !row.gradeLevel)));
+    let secGLevel = String(matchedSec?.gradeLevel || gStr).trim().toUpperCase();
+    if (secGLevel === 'GRADE 1 - MATATAG') secGLevel = 'GRADE 1';
+    if (secGLevel === 'GRADE 2 - MATATAG') secGLevel = 'GRADE 2';
+
+    const isMulti = (matchedSec && (matchedSec.sectionType === 'MULTIGRADE' || String(matchedSec.sectionType).includes('MULTI') || String(matchedSec.gradeLevel).includes(' - '))) ||
+                    gStr.includes(' - ') || gStr.includes('MULTI');
+    if (isMulti) return null;
+
+    if (secGLevel === 'GRADE 1') {
+      const G1_MATATAG_CORE = ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'MAKABANSA', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'];
+      if (G1_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `))) return 40;
+    }
+    if (secGLevel === 'GRADE 2') {
+      const G2_MATATAG_CORE = ['MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'];
+      if (G2_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `))) return 40;
+    }
+    return null;
+  };
+
   // Helper: Find who is currently assigned to a subject in a specific section across all personnel & this workload
   const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowIdx = null) => {
     if ((!sectionId && !sectionName) || !subjectName) return null;
@@ -6617,6 +7107,54 @@ export default function Workload() {
     return { teachingMins, relatedMins, adminMins };
   };
 
+  // Same weekly teaching-hours computation used below for currentPerson (base schedule minutes,
+  // merged per-day overlaps, plus any covered/substitute minutes), but parameterized so the
+  // "Select Teacher" sidebar can flag any person's card as Overload without opening their schedule.
+  const getPersonWeeklyTeachingHours = (person) => {
+    const rows = person?.workloadRows || [];
+    const daysList = ['M', 'T', 'W', 'TH', 'F'];
+    let totalMins = 0;
+
+    for (const d of daysList) {
+      const intervals = [];
+      for (const r of rows) {
+        if ((r.days || []).includes(d)) {
+          const subUpper = String(r.subject || '').toUpperCase().trim();
+          if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
+            continue;
+          } else if (subUpper === 'ADVISORY') {
+            totalMins += 60;
+          } else if (r.startTime && r.endTime) {
+            const [startH, startM] = r.startTime.split(':').map(Number);
+            const [endH, endM] = r.endTime.split(':').map(Number);
+            intervals.push([startH * 60 + startM, endH * 60 + endM]);
+          }
+        }
+      }
+
+      if (intervals.length > 0) {
+        intervals.sort((a, b) => a[0] - b[0]);
+        let merged = [intervals[0]];
+        for (let i = 1; i < intervals.length; i++) {
+          const current = intervals[i];
+          const lastMerged = merged[merged.length - 1];
+          if (current[0] <= lastMerged[1]) {
+            lastMerged[1] = Math.max(lastMerged[1], current[1]);
+          } else {
+            merged.push(current);
+          }
+        }
+        for (const [start, end] of merged) {
+          totalMins += (end - start);
+        }
+      }
+    }
+
+    const baseHours = totalMins / 60;
+    const coverageHours = getCoverageMinutes(workloadTransfers, person?.id || '').teachingMins / 60;
+    return baseHours + coverageHours;
+  };
+
   // Calculations for display
   const coverageLoads = getCoverageMinutes(workloadTransfers, currentPerson?.id || '');
   const coverageTeachingHours = (coverageLoads.teachingMins / 60);
@@ -6929,6 +7467,12 @@ export default function Workload() {
 
   const handleSaveChangesDirectly = async () => {
     if (!currentPerson) return;
+
+    const hasIncompleteBlock = (currentPerson.workloadRows || []).some(row => !row.subject || !row.gradeLevel);
+    if (hasIncompleteBlock) {
+      await showAlert("Incomplete Schedule Block", "Cannot save. One or more schedule blocks are missing a Subject or Class Section/Grade Level. Please complete them first.");
+      return;
+    }
 
     // Check for workload conflicts
     const hasAnyConflict = (currentPerson.workloadRows || []).some((row, idx) => {
@@ -8357,6 +8901,19 @@ export default function Workload() {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--muted)' }}>
                                 <span>{p.position}</span>
                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                  {getPersonWeeklyTeachingHours(p) > 30 && (
+                                    <span style={{
+                                      background: '#FEF2F2',
+                                      color: '#F43F5E',
+                                      border: '1px solid #FCA5A5',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      fontSize: '8.5px',
+                                      fontWeight: '700'
+                                    }}>
+                                      Overload
+                                    </span>
+                                  )}
                                   {p.workloadVerified === false && (
                                     <span style={{
                                       background: '#FEF3C7',
@@ -8568,126 +9125,6 @@ export default function Workload() {
                       </div>
                     )}
 
-                    {/* 5 Daily Workload KPI Cards (Monday to Friday) */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', margin: '16px 0' }}>
-                      {[
-                        { code: 'M', name: 'Monday' },
-                        { code: 'T', name: 'Tuesday' },
-                        { code: 'W', name: 'Wednesday' },
-                        { code: 'TH', name: 'Thursday' },
-                        { code: 'F', name: 'Friday' }
-                      ].map(day => {
-                        let dayMins = 0;
-
-                        const isRowActiveOnDay = (r, dayCode) => {
-                          if (!r) return false;
-                          const rDays = (Array.isArray(r.days) && r.days.length > 0)
-                            ? r.days
-                            : (r.daySchedule || r.day_schedule)
-                              ? String(r.daySchedule || r.day_schedule).split(',').map(s => s.trim())
-                              : ['M', 'T', 'W', 'TH', 'F'];
-                          
-                          return rDays.some(d => {
-                            const s = String(d).toUpperCase().trim();
-                            if (dayCode === 'M') return s === 'M' || s.startsWith('MON');
-                            if (dayCode === 'T') return s === 'T' || s.startsWith('TUE');
-                            if (dayCode === 'W') return s === 'W' || s.startsWith('WED');
-                            if (dayCode === 'TH') return s === 'TH' || s.startsWith('THU');
-                            if (dayCode === 'F') return s === 'F' || s.startsWith('FRI');
-                            if (dayCode === 'SAT') return s === 'SAT';
-                            if (dayCode === 'SUN') return s === 'SUN';
-                            return false;
-                          });
-                        };
-
-                        // 1. Active teaching subject periods (Elementary, JHS, and Senior High School)
-                        (currentPerson?.workloadRows || []).forEach(r => {
-                          if (isRowActiveOnDay(r, day.code)) {
-                            const subUpper = String(r.subject || '').toUpperCase().trim();
-                            if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
-                              return; // HGP is NOT computed in workload minutes
-                            }
-                            if (r.startTime && r.endTime) {
-                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
-                            }
-                          }
-                        });
-
-                        // 2. Legacy fallback: SHS rows from shsWorkloadMap if any exist
-                        const activePersonId = currentPerson?.id;
-                        const currentPersonShsMap = shsWorkloadMap[activePersonId] || {};
-                        ['1st', '2nd', '3rd'].forEach(tKey => {
-                          (currentPersonShsMap[tKey] || []).forEach(r => {
-                            if (isRowActiveOnDay(r, day.code)) {
-                              const subUpper = String(r.subject || '').toUpperCase().trim();
-                              if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
-                                return;
-                              }
-                              if (r.startTime && r.endTime) {
-                                dayMins += getTimeDiffMins(r.startTime, r.endTime);
-                              }
-                            }
-                          });
-                        });
-
-                        // 3. Extra Tasks (Teaching-Related & Administrative)
-                        (currentPerson?.teachingRelatedRows || []).forEach(r => {
-                          if (isRowActiveOnDay(r, day.code)) {
-                            if (r.startTime && r.endTime) {
-                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
-                            }
-                          }
-                        });
-
-                        (currentPerson?.administrativeRows || []).forEach(r => {
-                          if (isRowActiveOnDay(r, day.code)) {
-                            if (r.startTime && r.endTime) {
-                              dayMins += getTimeDiffMins(r.startTime, r.endTime);
-                            }
-                          }
-                        });
-
-                        const dayHrs = parseFloat((dayMins / 60).toFixed(1));
-                        
-                        // Font color scale: 0 = White (#FFFFFF), <=4 = Emerald Green (#10B981), <=6 = Amber Orange (#F59E0B), >6 = Rose Red (#F43F5E)
-                        let fontColor = '#FFFFFF';
-                        if (dayHrs > 0 && dayHrs <= 4) {
-                          fontColor = '#10B981';
-                        } else if (dayHrs > 4 && dayHrs <= 6) {
-                          fontColor = '#F59E0B';
-                        } else if (dayHrs > 6) {
-                          fontColor = '#F43F5E';
-                        }
-
-                        return (
-                          <div
-                            key={day.code}
-                            style={{
-                              background: '#0F172A',
-                              border: '1.5px solid #1E293B',
-                              borderRadius: '12px',
-                              padding: '12px 14px',
-                              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justify: 'space-between',
-                              minHeight: '80px'
-                            }}
-                          >
-                            <span style={{ fontSize: '11px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                              {day.name}
-                            </span>
-                            <strong style={{ fontSize: '20px', fontWeight: '900', color: fontColor, marginTop: '4px', letterSpacing: '-0.5px' }}>
-                              {dayHrs} hrs
-                            </strong>
-                            <span style={{ fontSize: '10px', fontWeight: '700', color: fontColor, marginTop: '2px', opacity: 0.9 }}>
-                              {dayHrs === 0 ? '0.0 hrs' : dayHrs <= 4 ? 'Normal' : dayHrs <= 6 ? 'Full' : 'Overload'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
                     {/* Subject schedule panel */}
                     {currentPerson.type === 'teaching' && (
                       <div className="workload-section-panel">
@@ -8863,6 +9300,7 @@ export default function Workload() {
                             getSubjectAssignmentForSection={getSubjectAssignmentForSection}
                             getRowDurationError={getRowDurationError}
                             getMatatagRowWarning={getMatatagRowWarning}
+                            getMatatagFixedDurationMins={getMatatagFixedDurationMins}
                             getDuplicateSectionSubjectError={getDuplicateSectionSubjectError}
                             getHgpWeeklyError={getHgpWeeklyError}
                             isAdvisoryOrHgpPair={isAdvisoryOrHgpPair}
