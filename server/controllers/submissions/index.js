@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
+const redisQueue = require('../../services/redisQueue');
 
 // POST /api/submissions - Queue a new certified submission
 router.post('/', async (req, res) => {
@@ -13,16 +14,27 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing submission payload data' });
     }
 
+    const cleanSchoolYear = schoolYear || 'SY 26-27';
+
     // 1. Insert into esf7_submission_queue
     const result = await db.query(
       `INSERT INTO esf7_submission_queue (school_id, school_year, payload, signature, certified_by, status)
        VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id`,
-      [schoolId, schoolYear || 'SY 26-27', JSON.stringify(payload), signature || null, certifiedBy || null]
+      [schoolId, cleanSchoolYear, JSON.stringify(payload), signature || null, certifiedBy || null]
     );
 
     const jobId = result.rows[0].id;
 
-    // 2. Fetch initial queue position
+    // 2. Publish lightweight job pointer to Redis Stream (non-blocking, falls back to DB worker if offline)
+    redisQueue.publishSubmissionJob({
+      jobId,
+      schoolId,
+      schoolYear: cleanSchoolYear
+    }).catch(err => {
+      console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
+    });
+
+    // 3. Fetch initial queue position
     const posRes = await db.query(
       `SELECT COUNT(*) FROM esf7_submission_queue WHERE status = 'pending' AND id < $1`,
       [jobId]

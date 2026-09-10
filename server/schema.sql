@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS esf7_regular_sections (
     male_learners INTEGER DEFAULT 0,
     female_learners INTEGER DEFAULT 0,
     number_of_learners INTEGER DEFAULT 0,
+    size_status TEXT DEFAULT 'WITHIN STANDARD',
     
     raw_payload JSONB DEFAULT '{}'::jsonb,
     

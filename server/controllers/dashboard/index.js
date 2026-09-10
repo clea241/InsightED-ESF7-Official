@@ -67,6 +67,27 @@ function getTermCalendarStatus(currentDateStr) {
   };
 }
 
+let insightEdPoolInstance = null;
+function getInsightEdPool() {
+  if (!insightEdPoolInstance) {
+    const { Pool } = require('pg');
+    const poolString = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
+      : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
+    insightEdPoolInstance = new Pool({
+      connectionString: poolString,
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000
+    });
+    insightEdPoolInstance.on('error', (err) => {
+      console.warn('[InsightEd Pool Error]:', err.message);
+    });
+  }
+  return insightEdPoolInstance;
+}
+
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 
 // Reused across requests — opening a fresh pg Pool (and tearing it down) on every
@@ -89,6 +110,7 @@ function getInsightEdPool() {
 // GET /api/dashboard/stats
 router.get('/stats', async (req, res) => {
   const startTime = Date.now();
+  console.log('[Dashboard Stats] Request started');
   try {
     const schoolId = getSchoolIdFromRequest(req) || req.query.school_id || req.headers['x-school-id'] || '199999';
     const simulatedDate = req.query.simulated_date || null;
@@ -96,6 +118,7 @@ router.get('/stats', async (req, res) => {
     // Parallel optimized DB queries
     const cleanSchoolId = schoolId.replace('SCH-', '');
 
+    const t0 = Date.now();
     // Parallel optimized DB queries from active esf7 tables
     let [
       schoolRes,
@@ -106,72 +129,68 @@ router.get('/stats', async (req, res) => {
       queueRes,
       recentExportRes
     ] = await Promise.all([
-      db.query('SELECT school_id, school_name FROM esf7_school_profile WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] })),
+      db.query('SELECT school_id, school_name FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1', [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
       db.query(`
         SELECT p.id, p.sex_at_birth AS sex, p.type, p.is_school_head, e.position
         FROM esf7_personnel_profile p
         LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
         WHERE p.school_id = $1 OR p.school_id = $2
       `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`SELECT personnel_id, college_degree AS bachelors_degree FROM esf7_perssonel_educ`).catch(() => ({ rows: [] })),
-      db.query(`SELECT personnel_id, subject AS subject_name, grade_level FROM esf7_workload_rows WHERE school_id = $1`, [cleanSchoolId]).catch(() => ({ rows: [] })),
+      db.query(`
+        SELECT e.personnel_id, e.college_degree AS bachelors_degree 
+        FROM esf7_perssonel_educ e
+        JOIN esf7_personnel_profile p ON e.personnel_id = p.id
+        WHERE p.school_id = $1 OR p.school_id = $2
+      `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
+      db.query(`SELECT personnel_id, subject AS subject_name, grade_level, duration_minutes FROM esf7_workload_rows WHERE school_id = $1 OR school_id = $2`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
       db.query(`SELECT id, adviser_id, number_of_learners FROM esf7_regular_sections WHERE school_id = $1 OR school_id = $2`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`SELECT status, COUNT(*) as count FROM esf7_submission_queue GROUP BY status`).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, status, created_at FROM esf7_submission_queue ORDER BY created_at DESC LIMIT 1`).catch(() => ({ rows: [] }))
+      db.query(`SELECT status, COUNT(*) as count FROM esf7_submission_queue WHERE school_id = $1 OR school_id = $2 GROUP BY status`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
+      db.query(`SELECT id, status, created_at FROM esf7_submission_queue WHERE school_id = $1 OR school_id = $2 ORDER BY created_at DESC LIMIT 1`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] }))
     ]);
+    console.log(`[Dashboard Stats] Parallel DB queries took ${Date.now() - t0}ms`);
 
-    // Fetch master insightEd personnel in-memory to ensure complete count
     let personnelList = personnelRes.rows;
-    try {
-      const insightEdPool = getInsightEdPool();
+    // Only fall back to external insightEd database if local esf7_personnel_profile has 0 records
+    if (personnelList.length === 0) {
+      const t1 = Date.now();
+      try {
+        const insightEdPool = getInsightEdPool();
+        const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
+        const masterPersonnelRes = await insightEdPool.query(
+          `SELECT sex, position FROM ${tableName} WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
+          [cleanSchoolId]
+        ).catch((err) => {
+          console.error('[Dashboard Master Fallback Error]:', err.message);
+          return { rows: [] };
+        });
 
-      const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-      const masterPersonnelRes = await insightEdPool.query(
-        `SELECT sex, position FROM ${tableName} WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
-        [cleanSchoolId]
-      ).catch((err) => {
-        console.error('[Dashboard Master Fallback Error]:', err.message);
-        return { rows: [] };
-      });
-
-      if (masterPersonnelRes.rows.length > 0) {
-        const masterList = masterPersonnelRes.rows.map(r => ({
-          sex: (r.sex || 'FEMALE').toUpperCase(),
-          type: 'teaching',
-          is_school_head: false,
-          position: r.position || 'TEACHER I'
-        }));
-
-        if (personnelRes.rows.length === 0) {
-          personnelList = masterList;
-        } else if (personnelRes.rows.length < masterList.length) {
-          const merged = [...personnelRes.rows];
-          for (let i = personnelRes.rows.length; i < masterList.length; i++) {
-            merged.push(masterList[i]);
-          }
-          personnelList = merged;
+        if (masterPersonnelRes.rows.length > 0) {
+          personnelList = masterPersonnelRes.rows.map(r => ({
+            sex: (r.sex || 'FEMALE').toUpperCase(),
+            type: 'teaching',
+            is_school_head: false,
+            position: r.position || 'TEACHER I'
+          }));
         }
+      } catch (e) {
+        console.error('[Dashboard Master Fallback Error]:', e.message);
       }
-
-    } catch (e) {
-      console.error('[Dashboard Master Fallback Error]:', e.message);
+      console.log(`[Dashboard Stats] insightEd master personnel fallback took ${Date.now() - t1}ms`);
     }
 
     let schoolInfo = schoolRes.rows[0];
     if (!schoolInfo || !schoolInfo.school_name || schoolInfo.school_name.includes('Sample National') || schoolInfo.school_name.includes('TEST K-12')) {
+      const t2 = Date.now();
       try {
         const insightEdPool = getInsightEdPool();
-        const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-        const [identityRes, esfMatch] = await Promise.all([
-          insightEdPool.query('SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] })),
-          insightEdPool.query(`SELECT DISTINCT school_id, school_name FROM ${tableName} WHERE school_id = $1 OR schoool_id = $1 LIMIT 1`, [cleanSchoolId]).catch(() => ({ rows: [] }))
-        ]);
+        const identityRes = await insightEdPool.query('SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] }));
         if (identityRes.rows.length > 0 && identityRes.rows[0].school_name) {
           schoolInfo = identityRes.rows[0];
         } else if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
           schoolInfo = esfMatch.rows[0];
         }
       } catch (e) {}
+      console.log(`[Dashboard Stats] insightEd school identity fallback took ${Date.now() - t2}ms`);
     }
 
     if (!schoolInfo || !schoolInfo.school_name) {

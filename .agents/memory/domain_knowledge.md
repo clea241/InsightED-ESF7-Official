@@ -339,3 +339,31 @@
     - `SUBSTITUTE` is restricted to Teaching personnel only.
     - Hiring Arrangement is locked to `N/A`.
     - Fund Source strictly provides local/partner funds (`SEF`, `LGU`, `PTA`, `NGO`, `SCHOOL MOOE`) and excludes `NATIONAL`.
+
+### Added 2026-09-09: Overload Computation, School Calendar Term Blocks & FY Quarterly Mapping
+- **Core Principle**: Overload computation is strictly per **School Calendar Term**, while filtering in Step 6 supports both **Term** and **Fiscal Year Quarter (FY)**.
+- **End-of-Term Exclusion Rule**:
+  - During **End-of-Term blocks** (and Vacation blocks), regular classroom contact instruction ceases.
+  - **No Overload Pay is earned during End-of-Term and Vacation dates**.
+  - All days within End-of-Term and Vacation ranges are strictly **excluded** (0 hours) from Overload calculations and workdays aggregation.
+- **Official DepEd 3-Term School Calendar Schedule (SY 2026-2027)**:
+  - **Term 1**:
+    - *Opening & Instructional Block*: **June 8 – September 1, 2026** (Overload ACTIVE)
+    - *End-of-Term Block*: **September 2 – September 15, 2026** (Overload EXCLUDED / 0h)
+  - **Term 2**:
+    - *Instructional Block*: **September 16 – December 4, 2026** (Overload ACTIVE)
+    - *End-of-Term Block*: **December 7 – December 18, 2026** (Overload EXCLUDED / 0h)
+    - *Holiday Break*: **December 19, 2026 – January 3, 2027** (Overload EXCLUDED / 0h)
+  - **Term 3**:
+    - *Instructional Block*: **January 4 – March 23, 2027** (Overload ACTIVE)
+    - *End-of-Term Block*: **March 24 – April 8, 2027** (Overload EXCLUDED / 0h)
+  - **Vacation / EOSY**:
+    - **April 9 – June 6, 2027** (Overload EXCLUDED / 0h)
+- **Fiscal Year (FY) Quarterly Mapping**:
+  - **FY Q1**: January, February, March (maps to Term 3 instructional block Jan 4 – Mar 23).
+  - **FY Q2**: April, May, June (maps to Term 1 instructional block June 8 – June 30).
+  - **FY Q3**: July, August, September (maps to Term 1: July 1 – Sept 1; and Term 2: Sept 16 – Sept 30; Sept 2–15 is excluded).
+  - **FY Q4**: October, November, December (maps to Term 2: Oct 1 – Dec 4; Dec 7–31 is excluded).
+- **Step 6 Table View Layout**:
+  - Remove daily and weekly granular columns from the main roster view.
+  - Display **Monthly breakdown columns** (e.g. Month 1, Month 2, Month 3 of the selected Term/Quarter) followed by the **Total Net Hours Per Term / Quarter** and **Total Overload Pay (₱)**.

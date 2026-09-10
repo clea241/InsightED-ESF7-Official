@@ -50,22 +50,39 @@ const DAY_MAP = {
   'F': 'Friday'
 };
 
+const ACADEMIC_TERMS = [
+  { id: 'Term 1', label: 'Term 1 (June – August)', months: ['June', 'July', 'August'], fyLabel: 'FY Q2 & FY Q3' },
+  { id: 'Term 2', label: 'Term 2 (September – December)', months: ['September', 'October', 'November', 'December'], fyLabel: 'FY Q3 & FY Q4' },
+  { id: 'Term 3', label: 'Term 3 (January – March)', months: ['January', 'February', 'March'], fyLabel: 'FY Q1' }
+];
+
+const FY_QUARTERS = [
+  { id: 'FY Q1', label: 'FY Q1 (January – March)', months: ['January', 'February', 'March'], termLabel: 'Term 3' },
+  { id: 'FY Q2', label: 'FY Q2 (April – June)', months: ['April', 'May', 'June'], termLabel: 'Term 1 (June 8–30)' },
+  { id: 'FY Q3', label: 'FY Q3 (July – September)', months: ['July', 'August', 'September'], termLabel: 'Term 1 & Term 2' },
+  { id: 'FY Q4', label: 'FY Q4 (October – December)', months: ['October', 'November', 'December'], termLabel: 'Term 2 (Oct–Dec 4)' }
+];
+
 const MONTHS_LIST = [
-  { name: 'June', quarter: 'Term 1', index: 5 },
-  { name: 'July', quarter: 'Term 1', index: 6 },
-  { name: 'August', quarter: 'Term 1', index: 7 },
-  { name: 'September', quarter: 'Term 2', index: 8 },
-  { name: 'October', quarter: 'Term 2', index: 9 },
-  { name: 'November', quarter: 'Term 2', index: 10 },
-  { name: 'January', quarter: 'Term 3', index: 0 },
-  { name: 'February', quarter: 'Term 3', index: 1 },
-  { name: 'March', quarter: 'Term 3', index: 2 }
+  { name: 'June', quarter: 'Term 1', fy: 'FY Q2', index: 5 },
+  { name: 'July', quarter: 'Term 1', fy: 'FY Q3', index: 6 },
+  { name: 'August', quarter: 'Term 1', fy: 'FY Q3', index: 7 },
+  { name: 'September', quarter: 'Term 2', fy: 'FY Q3', index: 8 },
+  { name: 'October', quarter: 'Term 2', fy: 'FY Q4', index: 9 },
+  { name: 'November', quarter: 'Term 2', fy: 'FY Q4', index: 10 },
+  { name: 'December', quarter: 'Term 2', fy: 'FY Q4', index: 11 },
+  { name: 'January', quarter: 'Term 3', fy: 'FY Q1', index: 0 },
+  { name: 'February', quarter: 'Term 3', fy: 'FY Q1', index: 1 },
+  { name: 'March', quarter: 'Term 3', fy: 'FY Q1', index: 2 },
+  { name: 'April', quarter: 'Vacation', fy: 'FY Q2', index: 3 },
+  { name: 'May', quarter: 'Vacation', fy: 'FY Q2', index: 4 }
 ];
 
 // End-of-Term blocks & Vacation where teachers have no teaching load and NO overload pay
 const NON_INSTRUCTIONAL_RANGES = [
   { start: '2026-09-02', end: '2026-09-15', label: 'Term 1 End-of-Term Block' },
   { start: '2026-12-07', end: '2026-12-18', label: 'Term 2 End-of-Term Block' },
+  { start: '2026-12-19', end: '2027-01-03', label: 'Holiday Break' },
   { start: '2027-03-24', end: '2027-04-08', label: 'Term 3 End-of-Term Block' },
   { start: '2027-04-09', end: '2027-06-06', label: 'Vacation' }
 ];
@@ -224,7 +241,10 @@ export default function Overload() {
 
   const [activeStep, setActiveStep] = useState(1); // 1: Tardiness Log, 2: Absences & Leave, 3: Workload Transfers, 4: Overload Computation
   
-  // Roster Tab filters
+  // Step 6 / Roster Tab filters
+  const [filterMode, setFilterMode] = useState('term'); // 'term' | 'fy'
+  const [selectedTerm, setSelectedTerm] = useState('Term 1');
+  const [selectedFY, setSelectedFY] = useState('FY Q3');
   const [selectedMonth, setSelectedMonth] = useState('June');
   const [selectedQuarter, setSelectedQuarter] = useState('Term 1');
   const [teacherSearch, setTeacherSearch] = useState('');
@@ -521,23 +541,84 @@ export default function Overload() {
     }
   };
 
+  const activeTermKey = filterMode === 'term' ? selectedTerm : selectedFY;
+
+  const OVERLOAD_REASON_OPTIONS = [
+    'Teacher Shortage',
+    'Class Advising Duty',
+    'Relieving Duty',
+    'Remediation or Enhancement Class',
+    'ARAL Tutor'
+  ];
+
+  const normalizeReasonString = (r) => {
+    if (r === 'Excess teaching load beyond 6 hours of actual classroom teaching') return 'Teacher Shortage';
+    if (r === 'Advisory class assignment') return 'Class Advising Duty';
+    return r;
+  };
+
+  const getAutoReasonsForTeacher = (teacher, overloadItem) => {
+    const reasons = [];
+    
+    // 1. Teacher Shortage (Excess teaching load beyond 6 hours of actual classroom teaching)
+    const weeklyHrs = Number(overloadItem?.weeklyOverload || 0);
+    const netHrs = Number(overloadItem?.totalStats?.net || 0);
+    if (weeklyHrs > 0 || netHrs > 0 || true) {
+      reasons.push('Teacher Shortage');
+    }
+
+    // 2. Class Advising Duty (Advisory class assignment)
+    const rows = teacher?.workloadRows || [];
+    const hasAdvisory = rows.some(r => {
+      const s = String(r.subject || '').toUpperCase().trim();
+      return s === 'ADVISORY' || s.startsWith('ADVISORY') || s === 'HGP' || s.startsWith('HGP') || s.includes('HOMEROOM');
+    }) || Boolean(teacher?.isAdviser || teacher?.advisoryClass || teacher?.advisorySection || teacher?.advisory_section);
+
+    if (hasAdvisory) {
+      reasons.push('Class Advising Duty');
+    }
+
+    // 3. Relieving Duty (Substitutions)
+    const hasTransfers = (workloadTransfers || []).some(t => String(t.substituteTeacherId || t.substitute_id) === String(teacher?.id));
+    if (hasTransfers) {
+      reasons.push('Relieving Duty');
+    }
+
+    // 4. ARAL Tutor
+    const hasAral = rows.some(r => {
+      const s = String(r.subject || '').toUpperCase().trim();
+      return s.includes('ARAL');
+    });
+    if (hasAral) {
+      reasons.push('ARAL Tutor');
+    }
+
+    return reasons.length > 0 ? Array.from(new Set(reasons)) : ['Teacher Shortage'];
+  };
+
   useEffect(() => {
     const fetchReasons = async () => {
       try {
         const sy = schoolInfo?.schoolYear || 'SY 26-27';
-        const res = await api.getOverloadReasons(sy, selectedQuarter);
+        const res = await api.getOverloadReasons(sy, activeTermKey);
         if (res && res.success && res.data) {
-          setOverloadReasonsMap(res.data);
+          const normalizedMap = {};
+          Object.entries(res.data).forEach(([pId, rList]) => {
+            if (Array.isArray(rList)) {
+              normalizedMap[pId] = rList.map(normalizeReasonString);
+            }
+          });
+          setOverloadReasonsMap(normalizedMap);
         }
       } catch (e) {
         console.error('Failed to load overload reasons:', e);
       }
     };
     fetchReasons();
-  }, [schoolInfo?.schoolYear, selectedQuarter]);
+  }, [schoolInfo?.schoolYear, activeTermKey]);
 
-  const handleToggleReasonForTeacher = async (personnelId, reasonName) => {
-    const current = overloadReasonsMap[personnelId] || ['Teacher Shortage'];
+  const handleToggleReasonForTeacher = async (personnelId, reasonName, currentReasons = []) => {
+    const current = currentReasons.length > 0 ? currentReasons : (overloadReasonsMap[personnelId] || ['Teacher Shortage']);
     let updated = [];
     if (current.includes(reasonName)) {
       updated = current.filter(r => r !== reasonName);
@@ -556,7 +637,7 @@ export default function Overload() {
         await api.saveOverloadReasons({
           personnelId,
           schoolYear: sy,
-          term: selectedQuarter,
+          term: activeTermKey,
           reasons: updated
         });
       } catch (e) {
@@ -752,12 +833,14 @@ export default function Overload() {
     return dates;
   };
 
-  // Helper to get weekdays in a quarter
-  const getWeekdaysInQuarter = (quarterCode, yearString = 'SY 26-27') => {
-    const months = MONTHS_LIST.filter(m => m.quarter === quarterCode);
+  // Helper to get weekdays in a quarter or term
+  const getWeekdaysInQuarter = (code, yearString = 'SY 26-27') => {
+    const termObj = ACADEMIC_TERMS.find(t => t.id === code);
+    const fyObj = FY_QUARTERS.find(q => q.id === code);
+    const monthNames = termObj ? termObj.months : (fyObj ? fyObj.months : ['June', 'July', 'August']);
     let allDates = [];
-    months.forEach(m => {
-      allDates = [...allDates, ...getWeekdaysInMonth(m.name, yearString)];
+    monthNames.forEach(mName => {
+      allDates = [...allDates, ...getWeekdaysInMonth(mName, yearString)];
     });
     return allDates;
   };
@@ -968,6 +1051,12 @@ export default function Overload() {
     };
   };
 
+  // Dynamic active months based on active filterMode
+  const activeTermObj = ACADEMIC_TERMS.find(t => t.id === selectedTerm) || ACADEMIC_TERMS[0];
+  const activeFYObj = FY_QUARTERS.find(q => q.id === selectedFY) || FY_QUARTERS[2];
+  const activeMonths = filterMode === 'term' ? activeTermObj.months : activeFYObj.months;
+  const activePeriodLabel = filterMode === 'term' ? activeTermObj.label : activeFYObj.label;
+
   // Compute stats for all active teachers
   const syYear = schoolInfo?.schoolYear || 'SY 26-27';
   const monthDates = getWeekdaysInMonth(selectedMonth, syYear);
@@ -1012,20 +1101,53 @@ export default function Overload() {
       weeklyOverload += dailyOverloads[day];
     });
 
-    const monthStats = calculateOverloadForTeacher(teacher, monthDates);
-    const quarterStats = calculateOverloadForTeacher(teacher, quarterDates);
+    // Compute stats for each month in activeMonths
+    const monthlyStatsMap = {};
+    let totalGross = 0;
+    let totalDeductions = 0;
+    let totalLeaveDeductions = 0;
+    let totalLateDeductions = 0;
+    let totalNet = 0;
+
+    activeMonths.forEach(mName => {
+      const dates = getWeekdaysInMonth(mName, syYear);
+      const stats = calculateOverloadForTeacher(teacher, dates);
+      monthlyStatsMap[mName] = stats;
+      totalGross += stats.gross;
+      totalDeductions += stats.deductions;
+      totalLeaveDeductions += stats.leaveDeductions;
+      totalLateDeductions += stats.lateDeductions;
+      totalNet += stats.net;
+    });
+
+    const totalStats = {
+      gross: Math.round(totalGross * 100) / 100,
+      deductions: Math.round(totalDeductions * 100) / 100,
+      leaveDeductions: Math.round(totalLeaveDeductions * 100) / 100,
+      lateDeductions: Math.round(totalLateDeductions * 100) / 100,
+      net: Math.round(totalNet * 100) / 100
+    };
+
+    const phtr = calculatePHTR(teacher);
+    const overloadPay = Math.round(totalStats.net * phtr * 100) / 100;
+    const monthStats = monthlyStatsMap[selectedMonth] || calculateOverloadForTeacher(teacher, monthDates);
+    const quarterStats = totalStats;
 
     return {
       teacher,
       dailyOverloads,
       weeklyOverload: Math.round(weeklyOverload * 100) / 100,
+      monthlyStatsMap,
+      totalStats,
       monthStats,
-      quarterStats
+      quarterStats,
+      phtr,
+      overloadPay
     };
   });
   // Step 6: Filter to ONLY include teachers who have actual computed overload (> 0 hours)
   const filteredRoster = overloadRoster.filter(item => {
-    const hasOverload = Number(item.quarterStats?.net || 0) > 0 || Number(item.monthStats?.net || 0) > 0 || Number(item.weeklyOverload || 0) > 0;
+    const hasOverload = Number(item.totalStats?.net || 0) > 0 || Object.values(item.monthlyStatsMap).some(s => Number(s.net || 0) > 0) || Number(item.weeklyOverload || 0) > 0;
     if (!hasOverload) return false;
 
     const fullName = `${item.teacher.firstName} ${item.teacher.lastName}`.toLowerCase();
@@ -1228,8 +1350,7 @@ export default function Overload() {
       return;
     }
 
-    const quarterMonths = MONTHS_LIST.filter(m => m.quarter === selectedQuarter);
-    const monthNames = quarterMonths.map(m => m.name);
+    const monthNames = activeMonths;
 
     // Generate simple print page window
     const printWindow = window.open('', '_blank');
@@ -1239,11 +1360,11 @@ export default function Overload() {
       const monthlyWeeklyMinutes = []; 
       let totalMinutes = 0;
       
-      quarterMonths.forEach(monthObj => {
-        const monthDates = getWeekdaysInMonth(monthObj.name, syYear);
+      monthNames.forEach(mName => {
+        const mDates = getWeekdaysInMonth(mName, syYear);
         let w1 = 0, w2 = 0, w3 = 0, w4 = 0;
         
-        monthDates.forEach(date => {
+        mDates.forEach(date => {
           const stats = calculateOverloadForTeacher(teacher, [date]);
           const dailyOverloadMinutes = stats.net * 60; 
           
@@ -1289,6 +1410,20 @@ export default function Overload() {
       `;
     }).join('');
 
+    const totalOverloadCols = monthNames.length * 4;
+    const totalTableCols = 3 + totalOverloadCols + 4;
+
+    const monthHeaders = monthNames.map(mName => 
+      `<th colspan="4" style="border: 1px solid #475569; padding: 4px; text-align: center; font-weight: bold;">${mName}</th>`
+    ).join('');
+
+    const weekHeaders = monthNames.map(() => 
+      `<th style="border: 1px solid #475569; padding: 3px; text-align: center;">W1</th>
+       <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W2</th>
+       <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W3</th>
+       <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W4</th>`
+    ).join('');
+
     printWindow.document.write(`
       <html>
         <head>
@@ -1311,7 +1446,7 @@ export default function Overload() {
 
           <div style="font-size: 12px; line-height: 1.6; margin-bottom: 20px;">
             This is to certify that the following teaching personnel of <strong>${schoolInfo?.schoolName || 'Capas Integrated School'}</strong> are eligible for the payment of teaching overload S.Y. <strong>${syYear}</strong>:
-            <div style="margin-top: 5px; font-weight: bold;">Term: ${selectedQuarter} | FY: ${syYear.replace(/[^0-9]/g, '').substring(0, 4)}</div>
+            <div style="margin-top: 5px; font-weight: bold;">Period: ${activePeriodLabel} | Calendar Mode: ${filterMode === 'term' ? 'Academic Term' : 'Fiscal Year (FY) Quarter'}</div>
           </div>
           
           <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #475569; font-size: 11px; margin-top: 15px;">
@@ -1320,34 +1455,21 @@ export default function Overload() {
                 <th rowspan="3" style="border: 1px solid #475569; padding: 8px 4px; text-align: center;">No.</th>
                 <th rowspan="3" style="border: 1px solid #475569; padding: 8px 4px; text-align: left; min-width: 140px;">Name of Teacher</th>
                 <th rowspan="3" style="border: 1px solid #475569; padding: 8px 4px; text-align: left; min-width: 100px;">Position</th>
-                <th colspan="12" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold;">Teaching Overload (in minutes)</th>
+                <th colspan="${totalOverloadCols}" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold;">Teaching Overload (in minutes)</th>
                 <th rowspan="3" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold;">Total<br>(in minutes)</th>
                 <th rowspan="3" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold;">Total<br>(in hours)</th>
-                <th rowspan="3" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold; min-width: 90px;">Overload Pay<br>(in ₱)</th>
+                <th rowspan="3" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold; min-width: 90px;">Estimated Overload Pay<br>(in ₱)</th>
                 <th rowspan="3" style="border: 1px solid #475569; padding: 6px; text-align: center; font-weight: bold; min-width: 110px;">Reasons for Teaching Overload</th>
               </tr>
               <tr style="background-color: #f1f5f9;">
-                <th colspan="4" style="border: 1px solid #475569; padding: 4px; text-align: center; font-weight: bold;">${monthNames[0] || 'Month 1'}</th>
-                <th colspan="4" style="border: 1px solid #475569; padding: 4px; text-align: center; font-weight: bold;">${monthNames[1] || 'Month 2'}</th>
-                <th colspan="4" style="border: 1px solid #475569; padding: 4px; text-align: center; font-weight: bold;">${monthNames[2] || 'Month 3'}</th>
+                ${monthHeaders}
               </tr>
               <tr style="background-color: #f8fafc; font-size: 9px;">
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W1</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W2</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W3</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W4</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W1</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W2</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W3</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W4</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W1</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W2</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W3</th>
-                <th style="border: 1px solid #475569; padding: 3px; text-align: center;">W4</th>
+                ${weekHeaders}
               </tr>
             </thead>
             <tbody>
-              ${tableRows.length > 0 ? tableRows : '<tr><td colspan="19" style="text-align:center; padding:20px; border: 1px solid #475569; color: #64748b;">No eligible teachers found with teaching overload.</td></tr>'}
+              ${tableRows.length > 0 ? tableRows : `<tr><td colspan="${totalTableCols}" style="text-align:center; padding:20px; border: 1px solid #475569; color: #64748b;">No eligible teachers found with teaching overload.</td></tr>`}
             </tbody>
           </table>
 
@@ -2923,43 +3045,122 @@ export default function Overload() {
       {activeStep === 6 && (
         <article className="card">
           <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', gap: '12px' }}>
+            {/* Header & Controls Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: '#F8FAFC', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--line)' }}>
+              
+              {/* Left: Mode Toggle & Period Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>SELECT MONTH (For Monthly views)</label>
-                  <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ padding: '8px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}>
-                    {MONTHS_LIST.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                  </select>
+                  <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    1. Report Calendar Mode
+                  </label>
+                  <div style={{ display: 'inline-flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setFilterMode('term')}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 0,
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        background: filterMode === 'term' ? 'white' : 'transparent',
+                        color: filterMode === 'term' ? 'var(--navy)' : '#64748b',
+                        boxShadow: filterMode === 'term' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      📅 3-Term Calendar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterMode('fy')}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 0,
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        background: filterMode === 'fy' ? 'white' : 'transparent',
+                        color: filterMode === 'fy' ? 'var(--navy)' : '#64748b',
+                        boxShadow: filterMode === 'fy' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      📊 Fiscal Year (FY)
+                    </button>
+                  </div>
                 </div>
+
+                {/* Period Dropdown */}
                 <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>SELECT TERM</label>
-                  <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)} style={{ padding: '8px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white' }}>
-                    <option value="Term 1">Term 1 (June – August)</option>
-                    <option value="Term 2">Term 2 (September – November)</option>
-                    <option value="Term 3">Term 3 (January – March)</option>
-                  </select>
+                  <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--navy)', display: 'block', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {filterMode === 'term' ? '2. Select Academic Term' : '2. Select FY Quarter'}
+                  </label>
+                  {filterMode === 'term' ? (
+                    <select
+                      value={selectedTerm}
+                      onChange={(e) => setSelectedTerm(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px', color: 'var(--navy)' }}
+                    >
+                      {ACADEMIC_TERMS.map(t => (
+                        <option key={t.id} value={t.id}>{t.label} ({t.months.join(' – ')})</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={selectedFY}
+                      onChange={(e) => setSelectedFY(e.target.value)}
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px', color: 'var(--navy)' }}
+                    >
+                      {FY_QUARTERS.map(q => (
+                        <option key={q.id} value={q.id}>{q.label} ({q.months.join(' – ')})</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px' }}>
+
+              {/* Right: Search, Refresh, Generate PDF */}
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <input 
                   type="text" 
                   placeholder="Search teacher..." 
                   value={teacherSearch}
                   onChange={(e) => setTeacherSearch(e.target.value)}
-                  style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', width: '220px' }}
+                  style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', width: '200px', fontSize: '13px' }}
                 />
                 <button
                   className="btn"
                   onClick={refreshOverloadData}
                   disabled={freshLoading}
                   title="Re-fetch workload data from database"
-                  style={{ padding: '8px 12px', background: freshLoading ? '#e2e8f0' : '#f0fdf4', color: freshLoading ? '#94a3b8' : '#15803d', border: '1.5px solid #86efac', borderRadius: '8px', fontWeight: 'bold', cursor: freshLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  style={{ padding: '8px 12px', background: freshLoading ? '#e2e8f0' : '#f0fdf4', color: freshLoading ? '#94a3b8' : '#15803d', border: '1.5px solid #86efac', borderRadius: '8px', fontWeight: 'bold', cursor: freshLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}
                 >
                   <FiRefreshCw size={13} style={{ display: 'inline', marginRight: '4px' }} /> Refresh
                 </button>
-                <button className="btn" onClick={handleGeneratePDF} style={{ padding: '8px 16px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <button 
+                  className="btn" 
+                  onClick={handleGeneratePDF} 
+                  style={{ padding: '8px 16px', background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', border: 0, borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', boxShadow: '0 2px 6px rgba(30, 58, 138, 0.25)' }}
+                >
                   <FiPrinter size={14} /> Generate Report (PDF)
                 </button>
+              </div>
+            </div>
+
+            {/* Active Period Overview Banner */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 16px' }}>
+              <div style={{ fontSize: '13px', color: '#1e40af', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>📅 Reporting Period: <strong>{activePeriodLabel}</strong> ({activeMonths.join(' · ')})</span>
+                <span style={{ fontSize: '11px', background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: '12px' }}>
+                  {filteredRoster.length} Eligible Teachers
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                End-of-term exam weeks and holidays are strictly excluded from overload calculations.
               </div>
             </div>
 
@@ -2969,95 +3170,121 @@ export default function Overload() {
                 <span style={{ fontSize: '14px', fontWeight: '600' }}>Loading teacher workload data from database...</span>
               </div>
             )}
+            
             {!freshLoading && (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
                     <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
                     <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Position</th>
-                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Daily Overload Breakdown</th>
-                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Weekly Total</th>
-                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Net Monthly ({selectedMonth})</th>
-                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Net Term ({selectedQuarter})</th>
-                    <th style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--navy)' }}>Overload Pay (₱)</th>
-                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Reason for Overload</th>
+                    
+                    {/* Dynamic Monthly Columns */}
+                    {activeMonths.map(mName => (
+                      <th key={mName} style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)' }}>
+                        Net {mName}
+                      </th>
+                    ))}
+
+                    <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', background: '#f1f5f9' }}>
+                      Period Net Total
+                    </th>
+                    <th style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--navy)' }}>
+                      PHTR (₱/hr)
+                    </th>
+                    <th style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', color: '#15803d', background: '#f0fdf4' }}>
+                      Estimated Overload Pay (₱)
+                    </th>
+                    <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)', minWidth: '220px' }}>
+                      Reason for Overload
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRoster.map((item, idx) => {
-                    const daysBreakdown = Object.entries(item.dailyOverloads)
-                      .filter(([_, hrs]) => hrs > 0)
-                      .map(([day, hrs]) => `${DAY_MAP[day]}: +${hrs}h`)
-                      .join(', ');
-
-                    const phtr = calculatePHTR(item.teacher);
-                    const overloadPay = Math.round(item.quarterStats.net * phtr * 100) / 100;
-                    const formattedPay = overloadPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    const teacherReasons = overloadReasonsMap[item.teacher.id] || ['Teacher Shortage'];
+                    const phtr = item.phtr;
+                    const formattedPhtr = phtr.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    const formattedPay = item.overloadPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    const rawTeacherReasons = overloadReasonsMap[item.teacher.id];
+                    const teacherReasons = (Array.isArray(rawTeacherReasons) && rawTeacherReasons.length > 0)
+                      ? rawTeacherReasons.map(normalizeReasonString)
+                      : getAutoReasonsForTeacher(item.teacher, item);
                     const isInvalid = !Array.isArray(teacherReasons) || teacherReasons.length < 1;
 
                     return (
                       <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
-                        <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{item.teacher.lastName}, {item.teacher.firstName}</td>
-                        <td style={{ padding: '12px 10px', color: 'var(--muted)' }}>{item.teacher.position}</td>
-                        <td style={{ padding: '12px 10px', fontStyle: daysBreakdown ? 'normal' : 'italic', color: daysBreakdown ? 'var(--navy)' : 'var(--muted)' }}>
-                          {daysBreakdown || 'None'}
+                        <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>
+                          {item.teacher.lastName}, {item.teacher.firstName}
                         </td>
-                        <td style={{ padding: '12px 10px', fontWeight: 'bold' }}>{item.weeklyOverload} hrs</td>
-                        <td style={{ padding: '12px 10px' }}>
-                          <span style={{ fontWeight: 'bold', color: '#15803d' }}>{item.monthStats.net} hrs</span>
-                          {item.monthStats.deductions > 0 && (
-                            <span style={{ fontSize: '10px', color: '#b91c1c', marginLeft: '6px' }}>
-                              (-{item.monthStats.deductions} hrs {item.monthStats.lateDeductions > 0 && item.monthStats.leaveDeductions > 0 ? 'leave/late' : (item.monthStats.lateDeductions > 0 ? 'late' : 'leave')})
-                            </span>
+                        <td style={{ padding: '12px 10px', color: 'var(--muted)' }}>
+                          {item.teacher.position}
+                        </td>
+
+                        {/* Monthly stats */}
+                        {activeMonths.map(mName => {
+                          const mStat = item.monthlyStatsMap[mName] || { gross: 0, deductions: 0, net: 0, lateDeductions: 0, leaveDeductions: 0 };
+                          return (
+                            <td key={mName} style={{ padding: '12px 10px', textAlign: 'center' }}>
+                              <span style={{ fontWeight: 'bold', color: mStat.net > 0 ? '#15803d' : 'var(--navy)' }}>
+                                {mStat.net}h
+                              </span>
+                              {mStat.deductions > 0 && (
+                                <div style={{ fontSize: '10px', color: '#b91c1c' }}>
+                                  (-{mStat.deductions}h {mStat.lateDeductions > 0 && mStat.leaveDeductions > 0 ? 'late/leave' : (mStat.lateDeductions > 0 ? 'late' : 'leave')})
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        {/* Total Net Hours */}
+                        <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', background: '#f8fafc', color: item.totalStats.net > 0 ? '#15803d' : 'var(--navy)' }}>
+                          {item.totalStats.net} hrs
+                          {item.totalStats.deductions > 0 && (
+                            <div style={{ fontSize: '10px', color: '#b91c1c' }}>
+                              (-{item.totalStats.deductions}h ded.)
+                            </div>
                           )}
                         </td>
-                        <td style={{ padding: '12px 10px' }}>
-                          <span style={{ fontWeight: 'bold', color: '#15803d' }}>{item.quarterStats.net} hrs</span>
-                          {item.quarterStats.deductions > 0 && (
-                            <span style={{ fontSize: '10px', color: '#b91c1c', marginLeft: '6px' }}>
-                              (-{item.quarterStats.deductions} hrs {item.quarterStats.lateDeductions > 0 && item.quarterStats.leaveDeductions > 0 ? 'leave/late' : (item.quarterStats.lateDeductions > 0 ? 'late' : 'leave')})
-                            </span>
-                          )}
+
+                        {/* PHTR */}
+                        <td style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--navy)', fontWeight: '600' }}>
+                          ₱{formattedPhtr}
                         </td>
-                        <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--navy)' }}>
+
+                        {/* Overload Pay */}
+                        <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace', color: '#15803d', background: '#f0fdf4' }}>
                           ₱{formattedPay}
                         </td>
-                        <td style={{ padding: '8px 10px', minWidth: '260px' }}>
+
+                        {/* Overload Reasons */}
+                        <td style={{ padding: '8px 10px', minWidth: '240px' }}>
                           {(() => {
-                            const teacherReasons = overloadReasonsMap[item.teacher.id] || ['Teacher Shortage'];
-                            const allOptions = [
-                              'Teacher Shortage',
-                              'Relieving Duty',
-                              'Remediation or Enhancement Class',
-                              'Class Advising Duty',
-                              'ARAL Tutor'
-                            ];
-                            const isInvalid = !Array.isArray(teacherReasons) || teacherReasons.length < 1;
-                            const remainingOptions = allOptions.filter(opt => !teacherReasons.includes(opt));
+                            const remainingOptions = OVERLOAD_REASON_OPTIONS.filter(opt => !teacherReasons.includes(opt));
 
                             return (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '240px' }}>
                                 {/* Active Reason Badges / Pills */}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   {teacherReasons.map((reason, rIdx) => (
                                     <div
                                       key={rIdx}
                                       style={{
-                                        display: 'inline-flex',
+                                        display: 'flex',
                                         alignItems: 'center',
-                                        gap: '6px',
+                                        justifyContent: 'space-between',
+                                        gap: '8px',
                                         background: '#eff6ff',
                                         border: '1px solid #bfdbfe',
                                         borderRadius: '6px',
-                                        padding: '3px 8px',
+                                        padding: '4px 8px',
                                         fontSize: '11px',
                                         fontWeight: '700',
-                                        color: '#1e40af'
+                                        color: '#1e40af',
+                                        lineHeight: 1.3
                                       }}
                                     >
-                                      <span>{reason}</span>
+                                      <span style={{ wordBreak: 'break-word' }}>{reason}</span>
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -3071,7 +3298,7 @@ export default function Overload() {
                                             api.saveOverloadReasons({
                                               personnelId: item.teacher.id,
                                               schoolYear: sy,
-                                              term: selectedQuarter,
+                                              term: activeTermKey,
                                               reasons: updated
                                             });
                                           }
@@ -3086,7 +3313,8 @@ export default function Overload() {
                                           lineHeight: 1,
                                           padding: 0,
                                           display: 'flex',
-                                          alignItems: 'center'
+                                          alignItems: 'center',
+                                          flexShrink: 0
                                         }}
                                         title="Remove Reason"
                                       >
@@ -3109,17 +3337,18 @@ export default function Overload() {
                                     onChange={(e) => {
                                       const selectedVal = e.target.value;
                                       if (!selectedVal) return;
-                                      handleToggleReasonForTeacher(item.teacher.id, selectedVal);
+                                      handleToggleReasonForTeacher(item.teacher.id, selectedVal, teacherReasons);
                                     }}
                                     style={{
                                       fontSize: '11px',
-                                      padding: '4px 8px',
+                                      padding: '5px 8px',
                                       borderRadius: '6px',
                                       border: '1.5px dashed #cbd5e1',
                                       background: '#ffffff',
                                       color: '#475569',
                                       cursor: 'pointer',
-                                      width: 'fit-content'
+                                      width: '100%',
+                                      fontWeight: '600'
                                     }}
                                   >
                                     <option value="">+ Add Overload Reason...</option>
@@ -3137,10 +3366,10 @@ export default function Overload() {
                   })}
                   {filteredRoster.length === 0 && (
                     <tr>
-                      <td colSpan="8" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>
+                      <td colSpan={5 + activeMonths.length} style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                           <FiClipboard size={24} color="#64748B" />
-                          <span style={{ fontWeight: '600', color: 'var(--navy)' }}>No overload-eligible teachers found.</span>
+                          <span style={{ fontWeight: '600', color: 'var(--navy)' }}>No overload-eligible teachers found for {activePeriodLabel}.</span>
                           <span style={{ fontSize: '12px' }}>Make sure teachers have their workload saved in the Workload section, then click <strong>Refresh</strong> above.</span>
                           <span style={{ fontSize: '11px', color: '#94a3b8' }}>Total personnel loaded: {effectivePersonnel.length} | Eligible: {overloadEligiblePersonnel.length}</span>
                         </div>
@@ -3157,3 +3386,4 @@ export default function Overload() {
     </main>
   );
 }
+

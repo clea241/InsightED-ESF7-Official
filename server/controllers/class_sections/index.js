@@ -33,6 +33,8 @@ function formatRegularRecord(row) {
     female_learners: f,
     numberOfLearners: total,
     number_of_learners: total,
+    sizeStatus: row.size_status || 'WITHIN STANDARD',
+    size_status: row.size_status || 'WITHIN STANDARD',
     rawPayload: raw
   };
 }
@@ -141,6 +143,57 @@ router.get('/', async (req, res) => {
   }
 });
 
+function calculateSizeStatus(gradeLevel, totalLearners, sectionType = '') {
+  const total = Number(totalLearners) || 0;
+  if (!total || total === 0) return 'UNSET';
+
+  const gradeStr = String(gradeLevel || '').toUpperCase().trim();
+  const typeStr = String(sectionType || '').toUpperCase().trim();
+
+  if (typeStr.includes('MULTI') || gradeStr.includes('MULTI') || gradeStr.includes('MG')) {
+    if (total <= 25) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (gradeStr.includes('SNED') || gradeStr.includes('SPED')) {
+    if (total < 5) return 'BELOW STANDARD';
+    if (total <= 15) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (gradeStr.includes('ALS')) {
+    if (total < 15) return 'BELOW STANDARD';
+    if (total <= 50) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (gradeStr.includes('KINDER')) {
+    if (total < 25) return 'BELOW STANDARD';
+    if (total <= 30) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (['GRADE 1', 'GRADE 2', 'GRADE 3', '1', '2', '3', 'G1', 'G2', 'G3'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 30) return 'BELOW STANDARD';
+    if (total <= 35) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (gradeStr === 'GRADE 4' || gradeStr === '4' || gradeStr === 'G4' || gradeStr.includes('GRADE 4')) {
+    if (total < 40) return 'BELOW STANDARD';
+    if (total <= 45) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (['GRADE 5', 'GRADE 6', 'GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '5', '6', '7', '8', '9', '10', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 40) return 'BELOW STANDARD';
+    if (total <= 45) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (['GRADE 11', 'GRADE 12', '11', '12', 'G11', 'G12', 'SHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 30) return 'BELOW STANDARD';
+    if (total <= 40) return 'WITHIN STANDARD';
+    return 'ABOVE STANDARD';
+  }
+  if (total < 40) return 'BELOW STANDARD';
+  if (total <= 45) return 'WITHIN STANDARD';
+  return 'ABOVE STANDARD';
+}
+
 // POST /regular - Insert/Update Regular Section
 router.post('/regular', async (req, res) => {
   const {
@@ -148,7 +201,8 @@ router.post('/regular', async (req, res) => {
     grade_level, gradeLevel, section_name, sectionName,
     adviser_id, advisor_id, advisorId, adviserId,
     section_type, sectionType,
-    male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners
+    male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners,
+    size_status, sizeStatus
   } = req.body;
 
   const targetSchoolId = school_id || bodySchoolId || '108348';
@@ -162,6 +216,7 @@ router.post('/regular', async (req, res) => {
   const fVal = Number(female_learners || femaleLearners || 0);
   const rawTotal = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
   const totalLearners = rawTotal !== undefined && rawTotal !== null && rawTotal !== '' ? Number(rawTotal) : (mVal + fVal);
+  const targetSizeStatus = size_status || sizeStatus || calculateSizeStatus(targetGradeLevel, totalLearners, targetType);
 
   try {
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_regular_sections WHERE school_id = $1`, [targetSchoolId]);
@@ -177,15 +232,16 @@ router.post('/regular', async (req, res) => {
     const query = `
       INSERT INTO esf7_regular_sections (
         id, school_id, school_year, grade_level, section_name, section_type,
-        adviser_id, male_learners, female_learners, number_of_learners, raw_payload
+        adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
       ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
         adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_regular_sections.adviser_id),
         section_type = EXCLUDED.section_type,
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         number_of_learners = EXCLUDED.number_of_learners,
+        size_status = EXCLUDED.size_status,
         raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
@@ -193,7 +249,7 @@ router.post('/regular', async (req, res) => {
 
     const result = await db.query(query, [
       secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetType,
-      validAdviserId, mVal, fVal, totalLearners, JSON.stringify(req.body)
+      validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, JSON.stringify(req.body)
     ]);
     res.status(201).json(formatRegularRecord(result.rows[0]));
   } catch (err) {

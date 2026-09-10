@@ -63,10 +63,27 @@ router.get('/check/:schoolId', async (req, res) => {
   const cleanSchoolId = String(req.params.schoolId).replace(/^SCH-/i, '').trim();
 
   try {
-    // 1. Check production esf7_database
+    // 1. Check active operational database (insighted_esf7)
+    const mainDb = require('../../db');
+    const activeRes = await mainDb.query(
+      'SELECT count(*) FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2',
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [{ count: '0' }] }));
+
+    const activeCount = parseInt(activeRes.rows[0]?.count || '0', 10);
+    if (activeCount > 0) {
+      return res.json({
+        hasData: true,
+        dataCount: activeCount,
+        sourceTable: 'esf7_personnel_profile',
+        queueStatus: null
+      });
+    }
+
+    // 2. Check production esf7_database (historical repository in insightEd)
     const prodRes = await pool.query(
-      'SELECT count(*) FROM esf7_database WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1',
-      [cleanSchoolId]
+      'SELECT count(*) FROM esf7_database WHERE school_id = $1 OR school_id = $2',
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
     ).catch(() => ({ rows: [{ count: '0' }] }));
 
     const prodCount = parseInt(prodRes.rows[0]?.count || '0', 10);
@@ -79,10 +96,10 @@ router.get('/check/:schoolId', async (req, res) => {
       });
     }
 
-    // 2. Check test sandbox esf7_database_dummy
+    // 3. Check test sandbox esf7_database_dummy
     const dummyRes = await pool.query(
-      'SELECT count(*) FROM esf7_database_dummy WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1',
-      [cleanSchoolId]
+      'SELECT count(*) FROM esf7_database_dummy WHERE school_id = $1 OR school_id = $2',
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
     ).catch(() => ({ rows: [{ count: '0' }] }));
 
     const dummyCount = parseInt(dummyRes.rows[0]?.count || '0', 10);
@@ -95,22 +112,23 @@ router.get('/check/:schoolId', async (req, res) => {
       });
     }
 
-    // 3. Check pending_schools table in insightEd
+    // 4. Check pending_schools table in insightEd
     const pendingRes = await pool.query(
       `SELECT pending_id, registration_type, old_school_id, mother_school_id, status 
        FROM pending_schools 
-       WHERE school_id = $1 AND is_deleted = false 
+       WHERE (school_id = $1 OR school_id = $2) AND is_deleted = false 
        LIMIT 1`,
-      [cleanSchoolId]
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
     ).catch(() => ({ rows: [] }));
 
     const pendingRow = pendingRes.rows[0] || null;
     let oldSchoolDataCount = 0;
 
     if (pendingRow && pendingRow.old_school_id) {
+      const cleanOldId = String(pendingRow.old_school_id).replace(/^SCH-/i, '').trim();
       const oldProdRes = await pool.query(
-        'SELECT count(*) FROM esf7_database WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1',
-        [pendingRow.old_school_id]
+        'SELECT count(*) FROM esf7_database WHERE school_id = $1 OR school_id = $2',
+        [cleanOldId, `SCH-${cleanOldId}`]
       ).catch(() => ({ rows: [{ count: '0' }] }));
       oldSchoolDataCount = parseInt(oldProdRes.rows[0]?.count || '0', 10);
     }
@@ -118,7 +136,7 @@ router.get('/check/:schoolId', async (req, res) => {
     const isNewlyEstablished = pendingRow?.registration_type === 'newly-established';
     const isConversion = pendingRow?.registration_type === 'conversion';
 
-    // 4. Check queue table esf7_link for active harvesting
+    // 5. Check queue table esf7_link for active harvesting
     const queueRes = await pool.query(
       'SELECT status, row_count, uploaded_at, updated_at, audit_remarks FROM esf7_link WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1',
       [cleanSchoolId]
