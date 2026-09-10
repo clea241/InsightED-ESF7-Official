@@ -1,5 +1,6 @@
 import React from 'react';
 import { FiPrinter, FiX, FiAlertTriangle, FiCheck } from 'react-icons/fi';
+import { detectPersonnelTypeFromPosition } from '../context/AppContext';
 
 export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount }) {
   if (!isOpen) return null;
@@ -36,8 +37,14 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
 
   const finalSig = signature || schoolHead?.e_signature_url || schoolHead?.signature || schoolInfo?.certifiedSignature;
 
-  const teachingList = (personnel || []).filter(p => p.type !== 'non-teaching');
-  const nonTeachingList = (personnel || []).filter(p => p.type === 'non-teaching');
+  const teachingList = (personnel || []).filter(p => {
+    const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    return pType === 'teaching' || pType === 'teaching-related' || pType === 'related-teaching';
+  });
+  const nonTeachingList = (personnel || []).filter(p => {
+    const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+    return pType === 'non-teaching';
+  });
 
   const handlePrint = () => {
     window.print();
@@ -322,7 +329,8 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
           (personnel || []).forEach(p => {
             const fund = String(p.fundSource || p.fund_source || 'NATIONAL').trim().toUpperCase();
             const pos = (p.position || p.position_title || 'TEACHER I').toUpperCase().trim();
-            const isNonTeaching = p.type === 'non-teaching' || pos.includes('ADMINISTRATIVE') || pos.includes('OFFICER') || pos.includes('ASSISTANT') || pos.includes('AIDE') || pos.includes('PROJECT') || pos.includes('UTILITY') || pos.includes('SECURITY') || pos.includes('DRIVER') || pos.includes('NURSE') || pos.includes('BOOKKEEPER') || pos.includes('ACCOUNTANT');
+            const pType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+            const isNonTeaching = pType === 'non-teaching';
 
             if (fund === 'NATIONAL') {
               if (isNonTeaching) {
@@ -441,7 +449,7 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
             </tr>
           </thead>
           <tbody>
-            {(personnel || []).map((p, pIdx) => {
+            {teachingList.map((p, pIdx) => {
               const firstName  = (p.firstName || p.first_name || '').toUpperCase();
               const middleName = (p.middleName || p.middle_name || '').toUpperCase();
               const lastName   = (p.lastName || p.last_name || '').toUpperCase();

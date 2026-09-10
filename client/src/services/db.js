@@ -75,3 +75,45 @@ export async function deleteLocalDraft(key) {
     }
   }
 }
+
+export async function clearAllLocalDatabases() {
+  try {
+    if (cachedDbPromise) {
+      try {
+        const db = await cachedDbPromise;
+        db.close();
+      } catch (e) {}
+      cachedDbPromise = null;
+    }
+    if (typeof window !== 'undefined' && window.indexedDB) {
+      if (indexedDB.databases) {
+        try {
+          const dbs = await indexedDB.databases();
+          for (const dbInfo of dbs) {
+            if (dbInfo.name) {
+              indexedDB.deleteDatabase(dbInfo.name);
+            }
+          }
+        } catch (e) {
+          indexedDB.deleteDatabase(DB_NAME);
+        }
+      } else {
+        indexedDB.deleteDatabase(DB_NAME);
+      }
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.clear();
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to clear local databases:', err);
+    if (typeof localStorage !== 'undefined') localStorage.clear();
+    if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
+    return false;
+  }
+}
+
+

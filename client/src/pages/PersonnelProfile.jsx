@@ -1102,6 +1102,14 @@ export default function PersonnelProfile() {
   const handleFieldChange = (key, value) => {
     if (!currentPerson) return;
     let updated = { ...currentPerson, [key]: value };
+
+    if (key === 'assignedGradeLevels') {
+      const grades = Array.isArray(value) ? value : [];
+      const hasShs = grades.some(g => String(g).includes('11') || String(g).includes('12'));
+      updated.teachesShs = hasShs;
+      updated.teaches_shs = hasShs;
+    }
+
     if (key === 'fundSource' && String(value).toUpperCase() === 'NATIONAL') {
       if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
       if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
@@ -3711,7 +3719,8 @@ export default function PersonnelProfile() {
                                     return;
                                   }
 
-                                  handleFieldChange('assignedGradeLevels', [...currentList, selectedVal]);
+                                  const newList = [...currentList, selectedVal];
+                                  handleFieldChange('assignedGradeLevels', newList);
                                 }}
                                 style={{
                                   maxWidth: '400px',
@@ -3728,22 +3737,9 @@ export default function PersonnelProfile() {
                                 </option>
                                 {(() => {
                                   const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
-                                  const showElem = offerings.some(o => o.includes('ELEM') || o.includes('KINDER') || o.includes('PRIMARY'));
-                                  const showJHS = offerings.some(o => o.includes('JHS') || o.includes('JUNIOR') || o.includes('SECONDARY'));
-                                  const showSHS = offerings.some(o => o.includes('SHS') || o.includes('SENIOR'));
-
-                                  const isElemGrade = (g) => ['KINDER', 'GRADE 1', 'GRADE 2', 'GRADE 3', 'GRADE 4', 'GRADE 5', 'GRADE 6', 'NON-GRADED'].includes(String(g || '').toUpperCase());
-                                  const isJHSGrade = (g) => ['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10'].includes(String(g || '').toUpperCase());
-                                  const isSHSGrade = (g) => ['GRADE 11', 'GRADE 12'].includes(String(g || '').toUpperCase());
-
-                                  const isGradeAllowed = (g) => {
-                                    if (!showElem && !showJHS && !showSHS) return true;
-                                    if (isElemGrade(g)) return showElem;
-                                    if (isJHSGrade(g)) return showJHS;
-                                    if (isSHSGrade(g)) return showSHS;
-                                    if (String(g).toUpperCase() === 'SNED' || String(g).toUpperCase() === 'ALS') return true;
-                                    return true;
-                                  };
+                                  const showElem = offerings.length === 0 || offerings.some(o => o.includes('ELEM') || o.includes('KINDER') || o.includes('PRIMARY') || o.includes('K-12') || o.includes('INTEGRATED'));
+                                  const showJHS = offerings.length === 0 || offerings.some(o => o.includes('JHS') || o.includes('JUNIOR') || o.includes('SECONDARY') || o.includes('HIGH') || o.includes('K-12') || o.includes('INTEGRATED'));
+                                  const showSHS = offerings.length === 0 || offerings.some(o => o.includes('SHS') || o.includes('SENIOR') || o.includes('K-12') || o.includes('INTEGRATED'));
 
                                   const list = [];
                                   if (showElem) {
@@ -3765,41 +3761,19 @@ export default function PersonnelProfile() {
 
                                   if (Array.isArray(classSections)) {
                                     classSections.forEach(s => {
-                                      if (s.gradeLevel && !list.includes(s.gradeLevel) && isGradeAllowed(s.gradeLevel)) {
+                                      if (s.gradeLevel && !list.includes(s.gradeLevel)) {
                                         list.push(s.gradeLevel);
                                       }
                                     });
                                   }
 
-                                  const filteredList = list.filter(g => isGradeAllowed(g));
-
                                   const selected = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
-                                  return filteredList.filter(item => !selected.includes(item)).map(g => (
+                                  return list.filter(item => !selected.includes(item)).map(g => (
                                     <option key={g} value={g}>{g}</option>
                                   ));
                                 })()}
                               </select>
                             </div>
-
-                            {/* Dedicated SHS Teacher Toggle - Only shown if school offers Senior High School */}
-                            {((schoolInfo?.curricularOffering || []).some(o => String(o).toUpperCase().includes('SHS') || String(o).toUpperCase().includes('SENIOR'))) && (
-                              <div style={{ marginTop: '20px', padding: '12px 16px', background: '#F0F9FF', border: '1.5px solid #0284C7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <div>
-                                  <label style={{ fontWeight: 'bold', color: '#0369A1', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <FiBook size={14} /> Teaches Senior High School (Grade 11 / Grade 12)
-                                  </label>
-                                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
-                                    Enabling this unlocks the <strong>SHS Term Workload Card</strong> (1st, 2nd, 3rd Term) in the Workload module.
-                                  </p>
-                                </div>
-                                <input
-                                  type="checkbox"
-                                  checked={!!currentPerson.teachesShs || (Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.some(g => String(g).includes('11') || String(g).includes('12')))}
-                                  onChange={(e) => handleFieldChange('teachesShs', e.target.checked)}
-                                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0284C7' }}
-                                />
-                              </div>
-                            )}
                           </div>
                         </>
                       )}

@@ -1,4 +1,5 @@
 const db = require('./db');
+const redisQueue = require('./services/redisQueue');
 const { 
   generateSchoolId,
   generatePersonnelId, 
@@ -70,43 +71,38 @@ const sanitizePositionCategory = (posCat, position) => {
 };
 
 let isProcessing = false;
+let isRedisWorkerActive = false;
 
-async function processNextJob() {
-  if (isProcessing) {
-    return false;
-  }
-  isProcessing = true;
-  let client = null;
-  let jobId = null;
+async function processJobById(targetJobId, specificClient = null) {
+  let client = specificClient;
+  let shouldRelease = false;
+  let jobId = targetJobId;
+
   try {
-    client = await db.pool.connect();
-    
-    // 0. Auto-recover jobs stuck in 'processing' for > 2 minutes
-    await client.query(`
-      UPDATE esf7_submission_queue
-      SET status = 'pending', updated_at = NOW()
-      WHERE status = 'processing'
-        AND updated_at < NOW() - INTERVAL '2 minutes'
-    `);
+    if (!client) {
+      client = await db.pool.connect();
+      shouldRelease = true;
+    }
 
-    // 1. Fetch next pending job
-    const jobRes = await client.query(`
-      SELECT id, school_id, school_year, payload, signature, certified_by 
-      FROM esf7_submission_queue 
-      WHERE status = 'pending' 
-      ORDER BY id ASC 
-      LIMIT 1 
-      FOR UPDATE SKIP LOCKED
-    `);
+    const jobRes = await client.query(
+      `SELECT id, school_id, school_year, payload, signature, certified_by, status 
+       FROM esf7_submission_queue 
+       WHERE id = $1 
+       FOR UPDATE`,
+      [jobId]
+    );
 
     if (jobRes.rows.length === 0) {
-      if (client) client.release();
-      isProcessing = false;
-      return false; // No pending jobs
+      if (shouldRelease && client) client.release();
+      return false;
     }
 
     const job = jobRes.rows[0];
-    jobId = job.id;
+    if (job.status === 'completed') {
+      if (shouldRelease && client) client.release();
+      return true;
+    }
+
     const cleanSchoolId = String(job.school_id).replace('SCH-', '').trim();
     const cleanSchoolYear = job.school_year || '2026-2027';
 
@@ -440,6 +436,21 @@ async function processNextJob() {
       const maleL = parseInt(s.maleLearners || s.male_learners || 0, 10) || 0;
       const femaleL = parseInt(s.femaleLearners || s.female_learners || 0, 10) || 0;
 
+      const sizeStat = s.sizeStatus || s.size_status || ((() => {
+        if (!totalL || totalL === 0) return 'UNSET';
+        const g = String(gl).toUpperCase().trim();
+        const t = String(st).toUpperCase().trim();
+        if (t.includes('MULTI') || g.includes('MULTI') || g.includes('MG')) return totalL <= 25 ? 'WITHIN STANDARD' : 'ABOVE STANDARD';
+        if (g.includes('SNED') || g.includes('SPED')) return totalL < 5 ? 'BELOW STANDARD' : (totalL <= 15 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        if (g.includes('ALS')) return totalL < 15 ? 'BELOW STANDARD' : (totalL <= 50 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        if (g.includes('KINDER')) return totalL < 25 ? 'BELOW STANDARD' : (totalL <= 30 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        if (['GRADE 1', 'GRADE 2', 'GRADE 3', '1', '2', '3', 'G1', 'G2', 'G3'].some(k => g === k || g.includes(k))) return totalL < 30 ? 'BELOW STANDARD' : (totalL <= 35 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        if (g === 'GRADE 4' || g === '4' || g === 'G4' || g.includes('GRADE 4')) return totalL < 40 ? 'BELOW STANDARD' : (totalL <= 45 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        if (['GRADE 5', 'GRADE 6', 'GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '5', '6', '7', '8', '9', '10', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'JHS'].some(k => g === k || g.includes(k))) return totalL < 40 ? 'BELOW STANDARD' : (totalL <= 45 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        if (['GRADE 11', 'GRADE 12', '11', '12', 'G11', 'G12', 'SHS'].some(k => g === k || g.includes(k))) return totalL < 30 ? 'BELOW STANDARD' : (totalL <= 40 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+        return totalL < 40 ? 'BELOW STANDARD' : (totalL <= 45 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
+      })());
+
       if (st === 'ARAL') {
         await client.query(
           `INSERT INTO esf7_aral_sections (
@@ -460,17 +471,18 @@ async function processNextJob() {
         await client.query(
           `INSERT INTO esf7_regular_sections (
              id, school_id, school_year, grade_level, section_name, section_type, adviser_id,
-             male_learners, female_learners, number_of_learners, raw_payload, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+             male_learners, female_learners, number_of_learners, size_status, raw_payload, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
            ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
              section_type = EXCLUDED.section_type,
              adviser_id = EXCLUDED.adviser_id,
              male_learners = EXCLUDED.male_learners,
              female_learners = EXCLUDED.female_learners,
              number_of_learners = EXCLUDED.number_of_learners,
+             size_status = EXCLUDED.size_status,
              raw_payload = EXCLUDED.raw_payload,
              updated_at = NOW()`,
-          [secId, cleanSchoolId, cleanSchoolYear, gl, sn, st, advId, maleL, femaleL, totalL, JSON.stringify(s)]
+          [secId, cleanSchoolId, cleanSchoolYear, gl, sn, st, advId, maleL, femaleL, totalL, sizeStat, JSON.stringify(s)]
         );
       }
     }
@@ -602,8 +614,7 @@ async function processNextJob() {
     );
 
     console.log(`[Queue Worker] Job ${jobId} for School ${cleanSchoolId} completed successfully!`);
-    if (client) client.release();
-    isProcessing = false;
+    if (shouldRelease && client) client.release();
     return true;
 
   } catch (error) {
@@ -629,41 +640,152 @@ async function processNextJob() {
       } catch (uErr) {
         // Ignore update error on broken connection
       }
-      try {
-        client.release(true);
-      } catch (relErr) {
-        // Ignore release error
+      if (shouldRelease) {
+        try {
+          client.release(true);
+        } catch (relErr) {
+          // Ignore release error
+        }
       }
+    }
+    return false;
+  }
+}
+
+async function processNextJob() {
+  if (isProcessing) return false;
+  isProcessing = true;
+  let client = null;
+
+  try {
+    client = await db.pool.connect();
+    
+    // 0. Auto-recover jobs stuck in 'processing' for > 2 minutes
+    await client.query(`
+      UPDATE esf7_submission_queue
+      SET status = 'pending', updated_at = NOW()
+      WHERE status = 'processing'
+        AND updated_at < NOW() - INTERVAL '2 minutes'
+    `).catch(() => {});
+
+    // 1. Fetch next pending job
+    const jobRes = await client.query(`
+      SELECT id 
+      FROM esf7_submission_queue 
+      WHERE status = 'pending' 
+      ORDER BY id ASC 
+      LIMIT 1 
+      FOR UPDATE SKIP LOCKED
+    `);
+
+    if (jobRes.rows.length === 0) {
+      client.release();
+      isProcessing = false;
+      return false;
+    }
+
+    const nextId = jobRes.rows[0].id;
+    const result = await processJobById(nextId, client);
+    client.release();
+    isProcessing = false;
+    return result;
+  } catch (err) {
+    if (client) {
+      try { client.release(true); } catch (e) {}
     }
     isProcessing = false;
     return false;
   }
 }
 
-let workerInterval = null;
+async function startRedisStreamWorker(consumerName = `worker-${process.pid || '1'}`) {
+  if (isRedisWorkerActive) return;
+  isRedisWorkerActive = true;
 
-function startWorker(intervalMs = 3000) {
-  if (workerInterval) return;
-  console.log('[Queue Worker] Initializing submissions queue background processor...');
-  workerInterval = setInterval(async () => {
+  console.log(`🌊 [Redis Queue Worker] Started Redis Stream consumer loop (${consumerName})...`);
+
+  let lastClaimCheck = 0;
+
+  while (isRedisWorkerActive) {
     try {
-      await processNextJob();
-    } catch (err) {
-      console.error('[Queue Worker] Unexpected error in worker loop:', err.message);
-    }
-  }, intervalMs);
-}
+      const now = Date.now();
+      // Check for stalled jobs every 30 seconds
+      if (now - lastClaimCheck > 30000) {
+        lastClaimCheck = now;
+        const stalledJobs = await redisQueue.claimStalledJobs({ consumerName, minIdleTimeMs: 120000 });
+        for (const sJob of stalledJobs) {
+          console.log(`🔄 [Redis Queue Worker] Auto-claimed stalled job ${sJob.jobId} (Message: ${sJob.messageId})`);
+          const success = await processJobById(sJob.jobId);
+          if (success) {
+            await redisQueue.ackJob(sJob.messageId);
+          }
+        }
+      }
 
-function stopWorker() {
-  if (workerInterval) {
-    clearInterval(workerInterval);
-    workerInterval = null;
-    console.log('[Queue Worker] Stopped background processor.');
+      // Read next incoming event from stream (blocking up to 3000ms)
+      const event = await redisQueue.readNextStreamJob({ consumerName, blockMs: 3000 });
+      if (event && event.jobId) {
+        console.log(`📥 [Redis Queue Worker] Received job ${event.jobId} from stream (School: ${event.schoolId})`);
+        const success = await processJobById(event.jobId);
+        if (success) {
+          await redisQueue.ackJob(event.messageId);
+        }
+      }
+    } catch (err) {
+      console.warn('[Redis Queue Worker Loop Notice]:', err.message);
+      await new Promise(res => setTimeout(res, 2000));
+    }
   }
 }
 
+let workerInterval = null;
+
+async function startWorker(intervalMs = 3000) {
+  if (workerInterval || isRedisWorkerActive) return;
+
+  console.log('[Queue Worker] Initializing submissions queue background processor...');
+
+  // 1. Attempt Redis Stream Consumer setup
+  const hasRedis = await redisQueue.initRedisStream();
+
+  if (hasRedis) {
+    console.log('🚀 [Queue Worker] Redis Streams connected! Running in Event-Driven Consumer Mode.');
+    // Start consumer loop in background
+    startRedisStreamWorker().catch(err => {
+      console.error('[Redis Worker Fatal]:', err);
+    });
+
+    // Also run a low-frequency DB sweep (every 15 seconds) as fallback safety net
+    workerInterval = setInterval(async () => {
+      try {
+        await processNextJob();
+      } catch (err) {}
+    }, 15000);
+  } else {
+    console.log('ℹ️ [Queue Worker] Redis offline. Operating in PostgreSQL (SKIP LOCKED) fallback mode.');
+    workerInterval = setInterval(async () => {
+      try {
+        await processNextJob();
+      } catch (err) {
+        console.error('[Queue Worker] Unexpected error in worker loop:', err.message);
+      }
+    }, intervalMs);
+  }
+}
+
+function stopWorker() {
+  isRedisWorkerActive = false;
+  if (workerInterval) {
+    clearInterval(workerInterval);
+    workerInterval = null;
+  }
+  console.log('[Queue Worker] Stopped background processor.');
+}
+
 module.exports = {
+  processJobById,
   processNextJob,
+  startRedisStreamWorker,
   startWorker,
   stopWorker
 };

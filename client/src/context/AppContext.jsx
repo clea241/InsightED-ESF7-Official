@@ -2781,8 +2781,10 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  const CORE_REGISTRY_NODES = ['school', 'roster', 'profile', 'classes', 'designation', 'workload'];
+
   const [journeyState, setJourneyState] = useState({
-    unlockedNodes: ['school', 'requests'],
+    unlockedNodes: ['school'],
     completedNodes: [],
     currentNode: 'school'
   });
@@ -2791,8 +2793,11 @@ export const AppProvider = ({ children }) => {
 
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
-    if (!nodeId || nodeId === 'dashboard' || nodeId === 'requests' || nodeId === 'request-center') return true;
-    return (journeyState?.unlockedNodes || ['school', 'requests']).includes(nodeId);
+    if (!nodeId) return true;
+    // ESF7 Core Registry & Operations is the ONLY section that can be locked
+    // All other nodes (Room QR, Requests, Overload, Allowances, Validation, etc.) are permanently UNLOCKED
+    if (!CORE_REGISTRY_NODES.includes(nodeId)) return true;
+    return (journeyState?.unlockedNodes || ['school']).includes(nodeId);
   };
 
   const isNodeCompleted = (nodeId) => {
@@ -3069,6 +3074,7 @@ export const AppProvider = ({ children }) => {
 
   const { user } = useAuth();
 
+  const [isInitialized, setIsInitialized] = useState(false);
   const initialLoadCompleteRef = useRef(false);
 
   // Load initial data from draft or DB
@@ -3475,6 +3481,8 @@ export const AppProvider = ({ children }) => {
         }
       } catch (err) {
         console.error('Error loading initial data:', err);
+      } finally {
+        setIsInitialized(true);
       }
     };
 
@@ -3490,6 +3498,7 @@ export const AppProvider = ({ children }) => {
       setOutgoingRequests([]);
       setDistrictSchools([]);
       initialLoadCompleteRef.current = false;
+      setIsInitialized(false);
       setHasUnsavedChanges(false);
     }
   }, [user, user?.school_id, user?.schoolId]);
@@ -4493,6 +4502,8 @@ export const AppProvider = ({ children }) => {
       // Detect personnel type
       const detectedType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
       const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+      const isTeachingRelated = ['teaching-related', 'TEACHING-RELATED', 'related', 'RELATED'].includes(detectedType) || ['teaching-related', 'TEACHING-RELATED', 'related', 'RELATED'].includes(p.type) || ['TEACHING-RELATED', 'RELATED'].includes(p.positionCategory);
+      const isTeachingOnly = !isNonTeaching && !isTeachingRelated;
 
       // Required Basic Fields
       const requiredFields = [
@@ -4661,8 +4672,8 @@ export const AppProvider = ({ children }) => {
         }
       }
 
-      // Teaching Assignment (Grade Levels) - Teaching & Related Only
-      if (!isNonTeaching) {
+      // Teaching Assignment (Grade Levels) - Pure Teaching Only (Related-teaching & Non-teaching are excluded)
+      if (isTeachingOnly) {
         const assignedGL = Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
         if (assignedGL.length === 0) {
           issues.push({
@@ -5346,7 +5357,8 @@ export const AppProvider = ({ children }) => {
       isNodeUnlocked,
       isNodeCompleted,
       bypassNodeLocks,
-      setBypassNodeLocks
+      setBypassNodeLocks,
+      isInitialized
     }}>
       {children}
     </AppContext.Provider>
@@ -5370,6 +5382,7 @@ export const useApp = () => {
       schoolInfo: {},
       selectedTeachers: [],
       personnel: [],
+      isInitialized: false,
       journeyState: { unlockedNodes: ['school'], completedNodes: [], currentNode: 'school' },
       isNodeUnlocked: () => true,
       isNodeCompleted: () => false,

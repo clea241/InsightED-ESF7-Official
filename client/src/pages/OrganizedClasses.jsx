@@ -408,12 +408,19 @@ const GRADE_SUBJECT_MAP = {
   ]
 };
 
-const getSectionSizeStatus = (gradeLevel, totalLearners) => {
+const getSectionSizeStatus = (gradeLevel, totalLearners, sectionType = '') => {
   const total = Number(totalLearners) || 0;
   if (!total || total === 0) {
     return { status: 'NO ENROLLMENT', short: 'UNSET', label: 'No Enrollment Input', color: '#64748B', bg: '#F1F5F9', border: '#CBD5E1' };
   }
   const gradeStr = String(gradeLevel || '').toUpperCase().trim();
+  const typeStr = String(sectionType || '').toUpperCase().trim();
+
+  // Multigrade Classes (MG) - Maximum of 25 learners
+  if (typeStr.includes('MULTI') || gradeStr.includes('MULTI') || gradeStr.includes('MG')) {
+    if (total <= 25) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (≤25)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>25)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+  }
 
   // Special Needs Education (SNED / SPED)
   if (gradeStr.includes('SNED') || gradeStr.includes('SPED')) {
@@ -429,44 +436,44 @@ const getSectionSizeStatus = (gradeLevel, totalLearners) => {
     return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>50)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
   }
 
-  // Kindergarten
+  // Kindergarten: 25 learners or maximum of 30 learners per session
   if (gradeStr.includes('KINDER')) {
-    if (total < 15) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<15)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
-    if (total <= 25) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (15-25)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
-    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>25)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
+    if (total < 25) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<25)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 30) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (25-30)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>30)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
   }
 
-  // Grades 1 to 3 (Key Stage 1)
+  // Grades 1 to 3: 30 learners per class, maximum of 35 learners
   if (['GRADE 1', 'GRADE 2', 'GRADE 3', '1', '2', '3', 'G1', 'G2', 'G3'].some(g => gradeStr === g || gradeStr.includes(g))) {
-    if (total < 25) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<25)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
-    if (total <= 35) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (25-35)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+    if (total < 30) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<30)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 35) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (30-35)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
     return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>35)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
   }
 
-  // Grades 4 to 6 (Key Stage 2)
-  if (['GRADE 4', 'GRADE 5', 'GRADE 6', '4', '5', '6', 'G4', 'G5', 'G6'].some(g => gradeStr === g || gradeStr.includes(g))) {
-    if (total < 30) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<30)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
-    if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (30-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+  // Grade 4: 40 learners per class, maximum of 45 learners
+  if (gradeStr === 'GRADE 4' || gradeStr === '4' || gradeStr === 'G4' || gradeStr.includes('GRADE 4')) {
+    if (total < 40) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<40)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (40-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
     return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
   }
 
-  // Grades 7 to 10 (Junior High School / Key Stage 3)
-  if (['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '7', '8', '9', '10', 'G7', 'G8', 'G9', 'G10', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
-    if (total < 35) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<35)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
-    if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (35-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+  // Grades 5 to 10: 40 learners per class, maximum of 45 learners
+  if (['GRADE 5', 'GRADE 6', 'GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '5', '6', '7', '8', '9', '10', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
+    if (total < 40) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<40)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+    if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (40-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
     return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
   }
 
-  // Grades 11 to 12 (Senior High School / Key Stage 4)
+  // Grades 11 to 12 (Senior High School): Maximum of 40 learners per class
   if (['GRADE 11', 'GRADE 12', '11', '12', 'G11', 'G12', 'SHS'].some(g => gradeStr === g || gradeStr.includes(g))) {
     if (total < 30) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<30)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
     if (total <= 40) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (30-40)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
     return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>40)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
   }
 
-  // Default fallback (35-45)
-  if (total < 35) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<35)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
-  if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (35-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
+  // Default fallback (40-45)
+  if (total < 40) return { status: 'BELOW STANDARD', short: 'BELOW', label: 'Below Standard (<40)', color: '#D97706', bg: '#FEF3C7', border: '#FCD34D' };
+  if (total <= 45) return { status: 'WITHIN STANDARD', short: 'WITHIN', label: 'Within Standard (40-45)', color: '#047857', bg: '#DCFCE7', border: '#6EE7B7' };
   return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
 };
 
@@ -947,6 +954,44 @@ export default function OrganizedClasses() {
     const isAral = String(sec.sectionType || '').startsWith('ARAL') || sec.sectionType === 'ARAL';
     const isRemedialOrEnrichment = sec.sectionType === 'REMEDIAL' || sec.sectionType === 'ENRICHMENT';
 
+    // 1. Mandatory Advisory Teacher Validation
+    if (isAral) {
+      const tutor = editingRowData.tutorId || editingRowData.advisorId;
+      if (!tutor) {
+        if (showAlert) await showAlert('Validation Error', 'Section Tutor is required. Please assign a tutor for this ARAL section.');
+        return;
+      }
+    } else if (isRemedialOrEnrichment) {
+      if (!editingRowData.advisorId) {
+        if (showAlert) await showAlert('Validation Error', 'Assigned Teacher is required. Please assign a teacher for this remedial/enrichment section.');
+        return;
+      }
+    } else {
+      if (!editingRowData.advisorId) {
+        if (showAlert) await showAlert('Validation Error', 'Class Adviser is required. Please assign a class adviser for this section.');
+        return;
+      }
+    }
+
+    // 2. Mandatory Enrollment Validation
+    if (isAral) {
+      const aralCount = Number(editingRowData.aralLearners);
+      if (!aralCount || aralCount <= 0) {
+        if (showAlert) await showAlert('Validation Error', 'Learner enrollment is required. Please enter the number of ARAL learners (must be greater than 0).');
+        return;
+      }
+    } else {
+      const rawM = String(editingRowData.maleLearners || '').slice(0, 2);
+      const rawF = String(editingRowData.femaleLearners || '').slice(0, 2);
+      const mVal = rawM === '' ? null : Math.min(99, Math.max(0, Number(rawM)));
+      const fVal = rawF === '' ? null : Math.min(99, Math.max(0, Number(rawF)));
+      const total = (mVal || 0) + (fVal || 0);
+      if (total <= 0 || (mVal === null && fVal === null)) {
+        if (showAlert) await showAlert('Validation Error', 'Learner enrollment is required. Please enter male and female learner counts (total enrollment must be greater than 0).');
+        return;
+      }
+    }
+
     let finalGradeLevel = editingRowData.gradeLevel;
     let finalSectionType = editingRowData.sectionType;
     let toolKey = null;
@@ -1017,6 +1062,8 @@ export default function OrganizedClasses() {
       aralToolKey: updatedToolKey,
       aralTool: isAral ? updatedToolObj.tool : undefined,
       aralProfileLevel: updatedLevel,
+      sizeStatus: getSectionSizeStatus(finalGradeLevel, total, finalSectionType).status,
+      size_status: getSectionSizeStatus(finalGradeLevel, total, finalSectionType).status,
       advisorId: editingRowData.advisorId || editingRowData.tutorId,
       adviserId: editingRowData.advisorId || editingRowData.tutorId,
       tutorId: editingRowData.tutorId || editingRowData.advisorId
@@ -1038,6 +1085,23 @@ export default function OrganizedClasses() {
       if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
       return;
     }
+
+    // Advisory teacher check
+    if (!inlineAddData.advisorId) {
+      if (showAlert) await showAlert('Validation Error', 'Class Adviser is required. Please assign a class adviser for this section.');
+      return;
+    }
+
+    // Enrollment check
+    const mVal = inlineAddData.maleLearners === '' ? null : Math.min(99, Math.max(0, Number(inlineAddData.maleLearners)));
+    const fVal = inlineAddData.femaleLearners === '' ? null : Math.min(99, Math.max(0, Number(inlineAddData.femaleLearners)));
+    const total = (mVal || 0) + (fVal || 0);
+
+    if (total <= 0 || (mVal === null && fVal === null)) {
+      if (showAlert) await showAlert('Validation Error', 'Learner enrollment is required. Please enter male and female learner counts (total enrollment must be greater than 0).');
+      return;
+    }
+
     let finalGradeLevel = inlineAddData.gradeLevel || availableGrades[0] || 'Grade 1';
     let finalSectionType = inlineAddData.sectionType;
 
@@ -1066,10 +1130,6 @@ export default function OrganizedClasses() {
       return;
     }
 
-    const mVal = inlineAddData.maleLearners === '' ? null : Math.min(99, Math.max(0, Number(inlineAddData.maleLearners)));
-    const fVal = inlineAddData.femaleLearners === '' ? null : Math.min(99, Math.max(0, Number(inlineAddData.femaleLearners)));
-    const total = (mVal || 0) + (fVal || 0);
-
     await addClassSection({
       gradeLevel: finalGradeLevel,
       sectionName: inlineAddData.sectionName.toUpperCase().trim(),
@@ -1077,7 +1137,9 @@ export default function OrganizedClasses() {
       sectionType: finalSectionType,
       maleLearners: mVal,
       femaleLearners: fVal,
-      numberOfLearners: total
+      numberOfLearners: total,
+      sizeStatus: getSectionSizeStatus(finalGradeLevel, total, finalSectionType).status,
+      size_status: getSectionSizeStatus(finalGradeLevel, total, finalSectionType).status
     });
 
     setInlineAddData({ sectionType: 'MONO GRADE', gradeLevel: availableGrades[0] || '', selectedGrades: [], sectionName: '', maleLearners: '', femaleLearners: '', advisorId: '' });
@@ -1091,6 +1153,20 @@ export default function OrganizedClasses() {
       if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
       return;
     }
+
+    // Tutor check
+    if (!inlineAralData.tutorId) {
+      if (showAlert) await showAlert('Validation Error', 'Section Tutor is required. Please assign a tutor for this ARAL section.');
+      return;
+    }
+
+    // Learners check
+    const aralCount = Number(inlineAralData.aralLearners);
+    if (!aralCount || aralCount <= 0) {
+      if (showAlert) await showAlert('Validation Error', 'Learner enrollment is required. Please enter the number of ARAL learners (must be greater than 0).');
+      return;
+    }
+
     let resGrade = inlineAralData.aralGrade;
     let sectionType = 'ARAL - GRADE LEVEL';
     let toolKeyToSave = null;
@@ -1132,9 +1208,22 @@ export default function OrganizedClasses() {
       if (showAlert) await showAlert('Validation Error', 'Please fill in all required fields.');
       return;
     }
+
+    // Teacher check
+    if (!inlineRemedialData.teacherId) {
+      if (showAlert) await showAlert('Validation Error', 'Assigned Teacher is required. Please assign a teacher for this section.');
+      return;
+    }
+
+    // Learners check
     const mVal = inlineRemedialData.maleLearners === '' ? null : Math.min(99, Math.max(0, Number(inlineRemedialData.maleLearners)));
     const fVal = inlineRemedialData.femaleLearners === '' ? null : Math.min(99, Math.max(0, Number(inlineRemedialData.femaleLearners)));
     const total = (mVal || 0) + (fVal || 0);
+
+    if (total <= 0 || (mVal === null && fVal === null)) {
+      if (showAlert) await showAlert('Validation Error', 'Learner enrollment is required. Please enter learner counts (total enrollment must be greater than 0).');
+      return;
+    }
 
     await addClassSection({
       gradeLevel: inlineRemedialData.gradeLevel,
@@ -1152,6 +1241,62 @@ export default function OrganizedClasses() {
     if (showToast) showToast(`✓ Remedial/Enrichment Section added.`);
   };
 
+  const handleContinueToDesignation = async () => {
+    // Validate that all sections have assigned advisers and valid enrollment
+    const invalidSections = (classSections || []).filter(sec => {
+      const isAral = String(sec.sectionType || '').startsWith('ARAL');
+      const isRem = sec.sectionType === 'REMEDIAL' || sec.sectionType === 'ENRICHMENT';
+      if (isAral) {
+        const hasTutor = Boolean(sec.tutorId || sec.advisorId || sec.adviserId);
+        const hasCount = Number(sec.aralLearners || sec.numberOfLearners) > 0;
+        return !hasTutor || !hasCount;
+      }
+      if (isRem) {
+        const hasTeacher = Boolean(sec.advisorId || sec.adviserId);
+        const mVal = Number(sec.maleLearners) || 0;
+        const fVal = Number(sec.femaleLearners) || 0;
+        const total = (mVal + fVal) > 0 || (Number(sec.numberOfLearners) > 0 && Number(sec.numberOfLearners) !== 35);
+        return !hasTeacher || !total;
+      }
+      // Regular section
+      const hasAdviser = Boolean(sec.advisorId || sec.adviserId);
+      const mVal = Number(sec.maleLearners) || 0;
+      const fVal = Number(sec.femaleLearners) || 0;
+      const hasGender = (sec.maleLearners !== null && sec.maleLearners !== undefined && sec.maleLearners !== '') || (sec.femaleLearners !== null && sec.femaleLearners !== undefined && sec.femaleLearners !== '');
+      const total = hasGender ? (mVal + fVal) : (Number(sec.numberOfLearners) > 0 && Number(sec.numberOfLearners) !== 35 ? Number(sec.numberOfLearners) : 0);
+      return !hasAdviser || total <= 0;
+    });
+
+    if (invalidSections.length > 0) {
+      const firstInvalid = invalidSections[0];
+      const secName = firstInvalid.sectionName || 'Unnamed Section';
+      const isAral = String(firstInvalid.sectionType || '').startsWith('ARAL');
+      const isRem = firstInvalid.sectionType === 'REMEDIAL' || firstInvalid.sectionType === 'ENRICHMENT';
+      const hasAdvisor = Boolean(firstInvalid.advisorId || firstInvalid.adviserId || firstInvalid.tutorId);
+
+      let reason = '';
+      if (!hasAdvisor) {
+        reason = isAral ? 'missing an assigned Section Tutor' : isRem ? 'missing an assigned Teacher' : 'missing an assigned Class Adviser';
+      } else {
+        reason = 'has 0 or missing learner enrollment';
+      }
+
+      if (showAlert) {
+        await showAlert(
+          'Incomplete Class Sections',
+          `Cannot continue: Section "${secName}" is ${reason}. All sections must have an assigned advisory teacher and valid learner enrollment before proceeding.`
+        );
+      }
+      return;
+    }
+
+    if (completeNode) {
+      completeNode('classes', 'designation');
+    } else {
+      setActiveView('designation');
+    }
+  };
+
   return (
     <div style={{ width: '100%' }}>
       <PortalHeader
@@ -1159,8 +1304,8 @@ export default function OrganizedClasses() {
         description="Configure curriculum-level sections, assign class advisers, and manage active subjects offered."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={() => completeNode('classes', 'workload')}
-        continueText="Save & Continue to Workload ➔"
+        onContinue={handleContinueToDesignation}
+        continueText="Save & Continue to Designations ➔"
       />
       <section id="classes" className="view" style={{ width: '100%' }}>
         <article className="card" style={{ width: '100%', marginBottom: '24px' }}>

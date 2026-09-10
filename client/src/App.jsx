@@ -42,9 +42,9 @@ function MainAppContent() {
   } = appState;
 
   React.useEffect(() => {
-    const standaloneViews = ['landing', 'dashboard', 'nodemap', 'room-profiling', 'room-qr', 'requests'];
-    if (!standaloneViews.includes(activeView) && isNodeUnlocked && !isNodeUnlocked(activeView)) {
-      showToast('This node is locked. Complete the preceding steps on the Node Map first.', 'error');
+    const coreRegistryViews = ['school', 'roster', 'profile', 'classes', 'designation', 'workload'];
+    if (coreRegistryViews.includes(activeView) && isNodeUnlocked && !isNodeUnlocked(activeView)) {
+      showToast('This step is locked. Complete the preceding steps in the ESF7 Core Registry first.', 'error');
       setActiveView('nodemap');
     }
   }, [activeView, isNodeUnlocked, setActiveView, showToast]);
@@ -99,7 +99,7 @@ function MainAppContent() {
           {activeView === 'school' && <SchoolProfile />}
           {activeView === 'roster' && <Roster />}
           {activeView === 'profile' && <PersonnelProfile />}
-          {activeView === 'designation' && <Designations />}
+          {(activeView === 'designation' || activeView === 'designations') && <Designations />}
           {activeView === 'classes' && <OrganizedClasses />}
           {activeView === 'workload' && <Workload />}
           {activeView === 'deployment' && <Deployment />}

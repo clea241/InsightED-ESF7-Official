@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
 import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
@@ -514,7 +514,10 @@ export default function ValidationCenter() {
                 fontSize: '11px',
                 fontWeight: '800'
               }}>
-                {personnel.length} Teachers
+                {personnel.filter(p => {
+                  const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+                  return pType === 'teaching' || pType === 'teaching-related' || pType === 'related-teaching';
+                }).length} Teachers
               </span>
             </button>
           </div>
@@ -1024,23 +1027,38 @@ export default function ValidationCenter() {
             {(() => {
               const teachingMap = {};
               const nonTeachingMap = {};
+              const otherFundingRows = [];
               let totalTeachingCount = 0;
               let totalNonTeachingCount = 0;
 
               (personnel || []).forEach(p => {
-                const pos = (p.position || 'TEACHER I').toUpperCase().trim();
-                if (p.type === 'non-teaching' || pos.includes('ADMINISTRATIVE') || pos.includes('OFFICER') || pos.includes('ASSISTANT') || pos.includes('AIDE') || pos.includes('PROJECT')) {
-                  nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
-                  totalNonTeachingCount++;
+                const pos = (p.position || p.plantilla_position || p.position_title || 'TEACHER I').toUpperCase().trim();
+                const fund = String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase().trim();
+                const isNational = fund === 'NATIONAL';
+
+                if (isNational) {
+                  const detectedType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+                  const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+                  if (isNonTeaching) {
+                    nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
+                    totalNonTeachingCount++;
+                  } else {
+                    teachingMap[pos] = (teachingMap[pos] || 0) + 1;
+                    totalTeachingCount++;
+                  }
                 } else {
-                  teachingMap[pos] = (teachingMap[pos] || 0) + 1;
-                  totalTeachingCount++;
+                  // (C) Other Appointments and Funding Source (MOOE, SEF, LGU, PTA, NGO, OTHERS, etc.)
+                  otherFundingRows.push({
+                    title: pos,
+                    appointment: String(p.natureOfAppointment || p.nature_of_appointment || p.hiringArrangement || p.hiring_arrangement || 'JOB ORDER / COS').toUpperCase(),
+                    fundSource: fund
+                  });
                 }
               });
 
               const activeTeachingRows = Object.keys(teachingMap).map(t => ({ title: t, count: teachingMap[t] }));
               const activeNonTeachingRows = Object.keys(nonTeachingMap).map(t => ({ title: t, count: nonTeachingMap[t] }));
-              const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, 6);
+              const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, otherFundingRows.length, 6);
 
               return (
                 <div style={{ overflowX: 'auto' }}>
@@ -1071,6 +1089,7 @@ export default function ValidationCenter() {
                       {Array.from({ length: maxRows }).map((_, rIdx) => {
                         const tItem = activeTeachingRows[rIdx];
                         const ntItem = activeNonTeachingRows[rIdx];
+                        const otherItem = otherFundingRows[rIdx];
 
                         return (
                           <tr key={rIdx} style={{ textAlign: 'left', height: '22px' }}>
@@ -1086,14 +1105,14 @@ export default function ValidationCenter() {
                             <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', textAlign: 'center', fontWeight: '800', color: '#1D4ED8' }}>
                               {ntItem ? ntItem.count : ''}
                             </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: '#94A3B8' }}>
-                              {rIdx === 0 ? 'UTILITY WORKER' : ''}
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: '600', color: otherItem ? '#0F172A' : '#94A3B8' }}>
+                              {otherItem ? otherItem.title : ''}
                             </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: '#94A3B8' }}>
-                              {rIdx === 0 ? 'JOB ORDER / COS' : ''}
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: otherItem ? '#334155' : '#94A3B8' }}>
+                              {otherItem ? otherItem.appointment : ''}
                             </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: '#94A3B8' }}>
-                              {rIdx === 0 ? 'MOOE' : ''}
+                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: otherItem ? '700' : 'normal', color: otherItem ? '#D97706' : '#94A3B8' }}>
+                              {otherItem ? otherItem.fundSource : ''}
                             </td>
                           </tr>
                         );
@@ -1103,7 +1122,9 @@ export default function ValidationCenter() {
                         <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#047857', fontSize: '13px' }}>{totalTeachingCount}</td>
                         <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>TOTAL</td>
                         <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#1D4ED8', fontSize: '13px' }}>{totalNonTeachingCount}</td>
-                        <td colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '6px 8px' }}></td>
+                        <td colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'right', fontSize: '12px', color: '#475569' }}>
+                          {otherFundingRows.length > 0 ? `TOTAL (OTHER): ${otherFundingRows.length}` : ''}
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -1145,7 +1166,7 @@ export default function ValidationCenter() {
                   cursor: 'pointer'
                 }}
               >
-                All Personnel
+                All Teaching & Related
               </button>
               <button
                 type="button"
@@ -1165,19 +1186,19 @@ export default function ValidationCenter() {
               </button>
               <button
                 type="button"
-                onClick={() => setPosFilter('NON_TEACHING')}
+                onClick={() => setPosFilter('TEACHING_RELATED')}
                 style={{
                   padding: '8px 14px',
                   fontSize: '12px',
                   fontWeight: '700',
                   borderRadius: '8px',
                   border: '1px solid #CBD5E1',
-                  background: posFilter === 'NON_TEACHING' ? 'var(--blue, #2563EB)' : 'white',
-                  color: posFilter === 'NON_TEACHING' ? 'white' : '#475569',
+                  background: posFilter === 'TEACHING_RELATED' ? 'var(--blue, #2563EB)' : 'white',
+                  color: posFilter === 'TEACHING_RELATED' ? 'white' : '#475569',
                   cursor: 'pointer'
                 }}
               >
-                Non-Teaching
+                Related-Teaching Only
               </button>
             </div>
           </div>
@@ -1186,8 +1207,13 @@ export default function ValidationCenter() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {personnel
               .filter(p => {
-                if (posFilter === 'TEACHING' && p.type === 'non-teaching') return false;
-                if (posFilter === 'NON_TEACHING' && p.type !== 'non-teaching') return false;
+                const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+                // Strictly exclude non-teaching personnel from Teacher Class Programs
+                if (pType === 'non-teaching') return false;
+                
+                if (posFilter === 'TEACHING' && pType !== 'teaching') return false;
+                if (posFilter === 'TEACHING_RELATED' && pType !== 'teaching-related' && pType !== 'related-teaching') return false;
+                
                 if (!searchQuery) return true;
                 const q = searchQuery.toLowerCase();
                 const name = `${p.firstName} ${p.lastName} ${p.tin} ${p.position}`.toLowerCase();

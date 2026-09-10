@@ -220,11 +220,6 @@ export default function Login() {
                 Streamlining school data collection and reporting for real-time evidence-based management and decision-making.
               </p>
             </div>
-
-            {/* Bottom coordinates reference */}
-            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', letterSpacing: '0.15em' }}>
-              COORD // 14.5995° N • 120.9842° E
-            </div>
           </div>
 
           {/* RIGHT PANEL: Login Input Fields (White theme) */}

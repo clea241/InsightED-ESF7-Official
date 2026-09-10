@@ -9,10 +9,10 @@ import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle,
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
-  const { personnel = [], classSections = [], schoolInfo = {}, setActiveView, showToast, isNodeUnlocked, isNodeCompleted } = useApp();
+  const { personnel = [], classSections = [], schoolInfo = {}, setActiveView, showToast, isNodeUnlocked, isNodeCompleted, journeyState, isInitialized } = useApp();
   const { logout } = useAuth();
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [pendingSchool, setPendingSchool] = useState(null);
   const [requiresForceUpload, setRequiresForceUpload] = useState(false);
@@ -21,7 +21,6 @@ export default function Dashboard() {
   useEffect(() => {
     let isCancelled = false;
     const fetchDashboardStats = async () => {
-      setLoading(true);
       try {
         const data = await api.getDashboardStats();
         if (!isCancelled) {
@@ -29,8 +28,6 @@ export default function Dashboard() {
         }
       } catch (err) {
         console.error('Failed to fetch dashboard stats:', err);
-      } finally {
-        if (!isCancelled) setLoading(false);
       }
     };
 
@@ -47,7 +44,13 @@ export default function Dashboard() {
   useEffect(() => {
     let isCancelled = false;
     const checkUploadRequirement = async () => {
-      if (loading || safePersonnel.length > 0) return;
+      // Must wait for AppContext to complete initial data loading from DB or local drafts
+      if (!isInitialized) return;
+      if (safePersonnel.length > 0) {
+        setIsUploadModalOpen(false);
+        setRequiresForceUpload(false);
+        return;
+      }
       const rawSchoolId = schoolInfo?.schoolId ? String(schoolInfo.schoolId).replace(/^SCH-/i, '').trim() : '';
       if (!rawSchoolId) return;
 
@@ -60,6 +63,13 @@ export default function Dashboard() {
           setPendingSchool(data.pendingSchool);
         }
 
+        if (data.hasData) {
+          // School has records in active or historical DB - never force upload
+          setRequiresForceUpload(false);
+          setIsUploadModalOpen(false);
+          return;
+        }
+
         if (data.requiresForceUpload) {
           setRequiresForceUpload(true);
           setIsUploadModalOpen(true);
@@ -70,22 +80,15 @@ export default function Dashboard() {
             setIsUploadModalOpen(true);
             sessionStorage.setItem(storageKey, 'true');
           }
-        } else if (!data.hasData) {
-          setRequiresForceUpload(true);
-          setIsUploadModalOpen(true);
         }
       } catch (err) {
         console.warn('eSF7 check error:', err.message);
-        if (!isCancelled) {
-          setRequiresForceUpload(true);
-          setIsUploadModalOpen(true);
-        }
       }
     };
 
     checkUploadRequirement();
     return () => { isCancelled = true; };
-  }, [loading, safePersonnel.length, schoolInfo?.schoolId]);
+  }, [isInitialized, safePersonnel.length, schoolInfo?.schoolId]);
 
   const handleForceLogout = () => {
     setIsLogoutNoticeModalOpen(true);
@@ -159,27 +162,33 @@ export default function Dashboard() {
     }
   ];
 
-  const completedCount = NODES.filter(n => isNodeCompleted(n.id)).length;
-  const maleCount = personnel.filter(p => String(p.sexAtBirth || p.sex_at_birth || p.sex || p.gender || '').toUpperCase().startsWith('M')).length;
-  const femaleCount = personnel.filter(p => String(p.sexAtBirth || p.sex_at_birth || p.sex || p.gender || '').toUpperCase().startsWith('F')).length;
+  const completedCount = useMemo(() => NODES.filter(n => typeof isNodeCompleted === 'function' ? isNodeCompleted(n.id) : false).length, [journeyState?.completedNodes, isNodeCompleted]);
 
-  const teachingCount = personnel.filter(p => {
-    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
-    const t = String(autoType).toLowerCase().trim();
-    return t === 'teaching';
-  }).length;
+  const { maleCount, femaleCount, teachingCount, relatedTeachingCount, nonTeachingCount } = useMemo(() => {
+    let male = 0;
+    let female = 0;
+    let teaching = 0;
+    let relatedTeaching = 0;
+    let nonTeaching = 0;
 
-  const relatedTeachingCount = personnel.filter(p => {
-    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
-    const t = String(autoType).toLowerCase().trim();
-    return t === 'teaching-related' || t === 'teaching_related' || t === 'related' || t.includes('related');
-  }).length;
+    for (let i = 0; i < safePersonnel.length; i++) {
+      const p = safePersonnel[i];
+      const sex = String(p.sexAtBirth || p.sex_at_birth || p.sex || p.gender || '').toUpperCase();
+      if (sex.startsWith('M')) male++;
+      else if (sex.startsWith('F')) female++;
 
-  const nonTeachingCount = personnel.filter(p => {
-    const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
-    const t = String(autoType).toLowerCase().trim();
-    return t === 'non-teaching' || t === 'non_teaching' || (t !== 'teaching' && !t.includes('related'));
-  }).length;
+      const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+      const t = String(autoType).toLowerCase().trim();
+      if (t === 'teaching') {
+        teaching++;
+      } else if (t === 'teaching-related' || t === 'teaching_related' || t === 'related' || t.includes('related')) {
+        relatedTeaching++;
+      } else {
+        nonTeaching++;
+      }
+    }
+    return { maleCount: male, femaleCount: female, teachingCount: teaching, relatedTeachingCount: relatedTeaching, nonTeachingCount: nonTeaching };
+  }, [safePersonnel]);
 
   const termStatus = stats?.term_calendar_status || {
     current_school_year: 'SY 2026-2027',
@@ -190,132 +199,154 @@ export default function Dashboard() {
   };
 
   // 1. AGE BRACKET CALCULATION
-  const ageBrackets = {
-    '20-25': 0,
-    '26-30': 0,
-    '31-40': 0,
-    '41-50': 0,
-    '51-60': 0,
-    '60+': 0,
-    'Unspecified': 0
-  };
-
-  personnel.forEach(p => {
-    const dob = p.birthdate || p.dateOfBirth || p.dob || p.birthDate;
-    if (!dob) {
-      ageBrackets['Unspecified']++;
-      return;
-    }
-    const bday = new Date(dob);
-    if (isNaN(bday.getTime())) {
-      ageBrackets['Unspecified']++;
-      return;
-    }
+  const ageBrackets = useMemo(() => {
+    const brackets = {
+      '20-25': 0,
+      '26-30': 0,
+      '31-40': 0,
+      '41-50': 0,
+      '51-60': 0,
+      '60+': 0,
+      'Unspecified': 0
+    };
     const today = new Date();
-    let age = today.getFullYear() - bday.getFullYear();
-    const m = today.getMonth() - bday.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < bday.getDate())) {
-      age--;
-    }
+    const curYear = today.getFullYear();
+    const curMonth = today.getMonth();
+    const curDate = today.getDate();
 
-    if (age >= 20 && age <= 25) ageBrackets['20-25']++;
-    else if (age >= 26 && age <= 30) ageBrackets['26-30']++;
-    else if (age >= 31 && age <= 40) ageBrackets['31-40']++;
-    else if (age >= 41 && age <= 50) ageBrackets['41-50']++;
-    else if (age >= 51 && age <= 60) ageBrackets['51-60']++;
-    else if (age > 60) ageBrackets['60+']++;
-    else ageBrackets['Unspecified']++;
-  });
+    for (let i = 0; i < safePersonnel.length; i++) {
+      const p = safePersonnel[i];
+      const dob = p.birthdate || p.dateOfBirth || p.dob || p.birthDate;
+      if (!dob) {
+        brackets['Unspecified']++;
+        continue;
+      }
+      const bday = new Date(dob);
+      if (isNaN(bday.getTime())) {
+        brackets['Unspecified']++;
+        continue;
+      }
+      let age = curYear - bday.getFullYear();
+      const m = curMonth - bday.getMonth();
+      if (m < 0 || (m === 0 && curDate < bday.getDate())) {
+        age--;
+      }
+
+      if (age >= 20 && age <= 25) brackets['20-25']++;
+      else if (age >= 26 && age <= 30) brackets['26-30']++;
+      else if (age >= 31 && age <= 40) brackets['31-40']++;
+      else if (age >= 41 && age <= 50) brackets['41-50']++;
+      else if (age >= 51 && age <= 60) brackets['51-60']++;
+      else if (age > 60) brackets['60+']++;
+      else brackets['Unspecified']++;
+    }
+    return brackets;
+  }, [safePersonnel]);
 
   // 2. APPOINTMENT STATUS BREAKDOWN
-  const appointmentCounts = {
-    'PERMANENT': 0,
-    'PROVISIONAL': 0,
-    'SUBSTITUTE': 0,
-    'CONTRACT OF SERVICE': 0,
-    'OTHERS': 0
-  };
+  const appointmentCounts = useMemo(() => {
+    const counts = {
+      'PERMANENT': 0,
+      'PROVISIONAL': 0,
+      'SUBSTITUTE': 0,
+      'CONTRACT OF SERVICE': 0,
+      'OTHERS': 0
+    };
 
-  personnel.forEach(p => {
-    const appt = String(p.natureOfAppointment || p.appointmentStatus || p.employmentStatus || '').toUpperCase().trim();
-    if (appt.includes('PERMANENT') || appt.includes('REGULAR')) appointmentCounts['PERMANENT']++;
-    else if (appt.includes('PROVISIONAL')) appointmentCounts['PROVISIONAL']++;
-    else if (appt.includes('SUBSTITUTE')) appointmentCounts['SUBSTITUTE']++;
-    else if (appt.includes('CONTRACT') || appt.includes('COS') || appt.includes('JOB ORDER')) appointmentCounts['CONTRACT OF SERVICE']++;
-    else appointmentCounts['OTHERS']++;
-  });
+    for (let i = 0; i < safePersonnel.length; i++) {
+      const p = safePersonnel[i];
+      const appt = String(p.natureOfAppointment || p.appointmentStatus || p.employmentStatus || '').toUpperCase().trim();
+      if (appt.includes('PERMANENT') || appt.includes('REGULAR')) counts['PERMANENT']++;
+      else if (appt.includes('PROVISIONAL')) counts['PROVISIONAL']++;
+      else if (appt.includes('SUBSTITUTE')) counts['SUBSTITUTE']++;
+      else if (appt.includes('CONTRACT') || appt.includes('COS') || appt.includes('JOB ORDER')) counts['CONTRACT OF SERVICE']++;
+      else counts['OTHERS']++;
+    }
+    return counts;
+  }, [safePersonnel]);
 
   // -------------------------------------------------------------
   // WORKLOAD HOURS & MONO/MULTI GRADE SUMMARY CALCULATIONS
   // -------------------------------------------------------------
-  let underload6hCount = 0; // < 6 hours (< 360 mins)
-  let standard6to7hCount = 0; // 6 to < 7 hours (360 - 419 mins)
-  let heavy7hPlusCount = 0; // 7+ hours (>= 420 mins)
+  const { underload6hCount, standard6to7hCount, heavy7hPlusCount, monoGradeTeacherCount, multiGradeTeacherCount } = useMemo(() => {
+    let underload = 0;
+    let standard = 0;
+    let heavy = 0;
+    let mono = 0;
+    let multi = 0;
 
-  let monoGradeTeacherCount = 0;
-  let multiGradeTeacherCount = 0;
-
-  personnel.forEach(p => {
-    const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
-    if (pType === 'non-teaching') return; // Exclude non-teaching staff
-
-    // Calculate daily workload minutes
-    let dailyMins = 0;
-    const rows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
-    rows.forEach(wk => {
-      const subUpper = String(wk.subject || wk.subjectName || wk.task || '').toUpperCase().trim();
-      if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
-        return; // HGP is for schedule/day tracking only and is not added to workload minutes
+    const sectionLookup = new Map();
+    for (let i = 0; i < safeClassSections.length; i++) {
+      const s = safeClassSections[i];
+      if (s.id) sectionLookup.set(String(s.id), s);
+      if (s.sectionName && s.gradeLevel) {
+        sectionLookup.set(`${String(s.sectionName).toUpperCase()}_${String(s.gradeLevel).toUpperCase()}`, s);
       }
-      let mins = Number(wk.durationMinutes || wk.minutes) || 0;
-      if (!mins && wk.startTime && wk.endTime) {
-        const [sh, sm] = wk.startTime.split(':').map(Number);
-        const [eh, em] = wk.endTime.split(':').map(Number);
-        if (!isNaN(sh) && !isNaN(eh)) {
-          mins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+    }
+
+    for (let i = 0; i < safePersonnel.length; i++) {
+      const p = safePersonnel[i];
+      const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+      if (pType === 'non-teaching') continue;
+
+      let dailyMins = 0;
+      const rows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
+      let handlesMulti = false;
+      let handlesMono = false;
+
+      for (let j = 0; j < rows.length; j++) {
+        const wk = rows[j];
+        const subUpper = String(wk.subject || wk.subjectName || wk.task || '').toUpperCase().trim();
+        if (subUpper !== 'HGP' && !subUpper.startsWith('HGP (') && !subUpper.includes('HOMEROOM GUIDANCE')) {
+          let mins = Number(wk.durationMinutes || wk.minutes) || 0;
+          if (!mins && wk.startTime && wk.endTime) {
+            const [sh, sm] = wk.startTime.split(':').map(Number);
+            const [eh, em] = wk.endTime.split(':').map(Number);
+            if (!isNaN(sh) && !isNaN(eh)) {
+              mins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+            }
+          }
+          if (mins > 0) dailyMins += mins;
+        }
+
+        const g = String(wk.gradeLevel || '').toUpperCase();
+        const secType = String(wk.sectionType || '').toUpperCase();
+        const secName = String(wk.sectionName || '').toUpperCase();
+
+        const matchingSection = (wk.sectionId ? sectionLookup.get(String(wk.sectionId)) : null) || sectionLookup.get(`${secName}_${g}`);
+        const isMulti = (matchingSection && (matchingSection.sectionType === 'MULTIGRADE' || String(matchingSection.sectionType).toUpperCase().includes('MULTI') || String(matchingSection.gradeLevel || '').includes(' - '))) ||
+                        secType.includes('MULTI') || g.includes(' - ') || g.includes(',') || secName.includes('MULTI');
+
+        if (isMulti) {
+          handlesMulti = true;
+        } else if (g || secName) {
+          handlesMono = true;
         }
       }
-      if (mins > 0) dailyMins += mins;
-    });
 
-    if (dailyMins < 360) {
-      underload6hCount++;
-    } else if (dailyMins >= 420) {
-      heavy7hPlusCount++;
-    } else {
-      standard6to7hCount++;
-    }
-
-    // Section Type (Mono-Grade vs Multi-Grade)
-    let handlesMulti = false;
-    let handlesMono = false;
-
-    rows.forEach(wk => {
-      const g = String(wk.gradeLevel || '').toUpperCase();
-      const secType = String(wk.sectionType || '').toUpperCase();
-      const secName = String(wk.sectionName || '').toUpperCase();
-
-      const matchingSection = classSections.find(s => 
-        (wk.sectionId && String(s.id) === String(wk.sectionId)) ||
-        (s.sectionName && String(s.sectionName).toUpperCase() === secName && String(s.gradeLevel).toUpperCase() === g)
-      );
-
-      const isMulti = (matchingSection && (matchingSection.sectionType === 'MULTIGRADE' || String(matchingSection.sectionType).toUpperCase().includes('MULTI') || String(matchingSection.gradeLevel || '').includes(' - '))) ||
-                      secType.includes('MULTI') || g.includes(' - ') || g.includes(',') || secName.includes('MULTI');
-
-      if (isMulti) {
-        handlesMulti = true;
-      } else if (g || secName) {
-        handlesMono = true;
+      if (dailyMins < 360) {
+        underload++;
+      } else if (dailyMins >= 420) {
+        heavy++;
+      } else {
+        standard++;
       }
-    });
 
-    if (handlesMulti) {
-      multiGradeTeacherCount++;
-    } else if (handlesMono) {
-      monoGradeTeacherCount++;
+      if (handlesMulti) {
+        multi++;
+      } else if (handlesMono) {
+        mono++;
+      }
     }
-  });
+
+    return {
+      underload6hCount: underload,
+      standard6to7hCount: standard,
+      heavy7hPlusCount: heavy,
+      monoGradeTeacherCount: mono,
+      multiGradeTeacherCount: multi
+    };
+  }, [safePersonnel, safeClassSections]);
 
   // -------------------------------------------------------------
   // SPECIAL CURRICULAR PROGRAMS & SHS MODEL COMPUTATION
@@ -369,77 +400,82 @@ export default function Dashboard() {
     return curricularConfig.hasElemSpecialPrograms === false && curricularConfig.hasJhsSpecialPrograms === false;
   }, [curricularConfig]);
 
-  // 3. ORGANIZED CLASSES BREAKDOWN BY GRADE LEVEL
-  const gradeLevelSectionMap = {};
-  classSections.forEach(sec => {
-    const g = sec.gradeLevel || 'Unassigned';
-    if (!gradeLevelSectionMap[g]) gradeLevelSectionMap[g] = 0;
-    gradeLevelSectionMap[g]++;
-  });
-
-  // 4. TEACHER EXCESS & SHORTAGE BY GRADE LEVEL
-  const gradeTeacherAnalysis = {};
-  const allGrades = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
-  
-  const activeGradeKeys = Array.from(new Set([...Object.keys(gradeLevelSectionMap), ...allGrades.filter(g => gradeLevelSectionMap[g])]));
-
-  activeGradeKeys.forEach(g => {
-    const sectionCount = gradeLevelSectionMap[g] || 0;
-    const teachersInGrade = personnel.filter(p => {
-      if (Array.isArray(p.assignedGradeLevels) && p.assignedGradeLevels.includes(g)) return true;
-      if (Array.isArray(p.workloadRows) && p.workloadRows.some(r => r.gradeLevel === g)) return true;
-      return false;
-    });
-
-    const teacherCount = teachersInGrade.length;
-    let diff = teacherCount - sectionCount;
-    let statusText = 'Balanced';
-    let statusBadgeClass = 'balanced';
-
-    if (sectionCount > 0) {
-      if (diff === 0) {
-        statusText = 'Ideal Ratio';
-        statusBadgeClass = 'balanced';
-      } else if (diff < 0) {
-        statusText = `Shortage (${Math.abs(diff)} Needed)`;
-        statusBadgeClass = 'shortage';
-      } else {
-        statusText = `Surplus (+${diff} Extra)`;
-        statusBadgeClass = 'surplus';
-      }
-    } else {
-      statusText = 'No Classes';
-      statusBadgeClass = 'none';
+  // 3. ORGANIZED CLASSES BREAKDOWN BY GRADE LEVEL & 4. TEACHER EXCESS & SHORTAGE
+  const { gradeLevelSectionMap, gradeTeacherAnalysis, activeGradeKeys } = useMemo(() => {
+    const secMap = {};
+    for (let i = 0; i < safeClassSections.length; i++) {
+      const g = safeClassSections[i].gradeLevel || 'Unassigned';
+      secMap[g] = (secMap[g] || 0) + 1;
     }
 
-    gradeTeacherAnalysis[g] = {
-      sectionCount,
-      teacherCount,
-      diff,
-      statusText,
-      statusBadgeClass
-    };
-  });
+    const allGrades = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
+    const keys = Array.from(new Set([...Object.keys(secMap), ...allGrades.filter(g => secMap[g])]));
+    const analysis = {};
+
+    for (let i = 0; i < keys.length; i++) {
+      const g = keys[i];
+      const sectionCount = secMap[g] || 0;
+      let teacherCount = 0;
+
+      for (let j = 0; j < safePersonnel.length; j++) {
+        const p = safePersonnel[j];
+        if (Array.isArray(p.assignedGradeLevels) && p.assignedGradeLevels.includes(g)) {
+          teacherCount++;
+        } else if (Array.isArray(p.workloadRows) && p.workloadRows.some(r => r.gradeLevel === g)) {
+          teacherCount++;
+        }
+      }
+
+      const diff = teacherCount - sectionCount;
+      let statusText = 'Balanced';
+      let statusBadgeClass = 'balanced';
+
+      if (sectionCount > 0) {
+        if (diff === 0) {
+          statusText = 'Ideal Ratio';
+          statusBadgeClass = 'balanced';
+        } else if (diff < 0) {
+          statusText = `Shortage (${Math.abs(diff)} Needed)`;
+          statusBadgeClass = 'shortage';
+        } else {
+          statusText = `Surplus (+${diff} Extra)`;
+          statusBadgeClass = 'surplus';
+        }
+      } else {
+        statusText = 'No Classes';
+        statusBadgeClass = 'none';
+      }
+
+      analysis[g] = {
+        sectionCount,
+        teacherCount,
+        diff,
+        statusText,
+        statusBadgeClass
+      };
+    }
+
+    return { gradeLevelSectionMap: secMap, gradeTeacherAnalysis: analysis, activeGradeKeys: keys };
+  }, [safeClassSections, safePersonnel]);
 
   // 5. OUT-OF-FIELD TEACHING & MAJOR ALIGNMENT KPI
-  let inFieldCount = 0;
-  let outOfFieldCount = 0;
-  let totalEvaluated = 0;
+  const { inFieldCount, outOfFieldCount, totalEvaluated } = useMemo(() => {
+    let inField = 0;
+    let outOfField = 0;
+    let total = 0;
 
-  personnel.forEach(p => {
-    const major = String(p.degreeMajor || p.major || p.specialization || '').toUpperCase().trim();
-    if (!major || major === 'NONE' || major === 'N/A' || major === 'GENERALIST') {
-      return;
+    for (let i = 0; i < safePersonnel.length; i++) {
+      const p = safePersonnel[i];
+      const major = String(p.degreeMajor || p.major || p.specialization || '').toUpperCase().trim();
+      if (!major || major === 'NONE' || major === 'N/A' || major === 'GENERALIST') continue;
+      total++;
+      const teachingSubjects = (p.workloadRows || []).map(r => String(r.subject || r.subjectName || '').toUpperCase().trim());
+      const isAligned = teachingSubjects.some(sub => sub.includes(major) || major.includes(sub));
+      if (isAligned) inField++;
+      else outOfField++;
     }
-    totalEvaluated++;
-    const teachingSubjects = (p.workloadRows || []).map(r => String(r.subject || r.subjectName || '').toUpperCase().trim());
-    const isAligned = teachingSubjects.some(sub => sub.includes(major) || major.includes(sub));
-    if (isAligned) {
-      inFieldCount++;
-    } else {
-      outOfFieldCount++;
-    }
-  });
+    return { inFieldCount: inField, outOfFieldCount: outOfField, totalEvaluated: total };
+  }, [safePersonnel]);
 
   // 6. SUBJECT-SPECIALIZATION ALIGNMENT SUMMARY (EXACT SUBJECTS FROM SCREENSHOT)
   const [activeSubjectLevel, setActiveSubjectLevel] = useState('jhs'); // 'jhs', 'elem', 'shs'
