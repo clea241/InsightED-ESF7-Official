@@ -90,6 +90,23 @@ function getInsightEdPool() {
 
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 
+// Reused across requests — opening a fresh pg Pool (and tearing it down) on every
+// dashboard load added a full extra TCP+auth round trip to the response time.
+let insightEdPool = null;
+function getInsightEdPool() {
+  if (!insightEdPool) {
+    const { Pool } = require('pg');
+    const poolString = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
+      : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
+    insightEdPool = new Pool({
+      connectionString: poolString,
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+    });
+  }
+  return insightEdPool;
+}
+
 // GET /api/dashboard/stats
 router.get('/stats', async (req, res) => {
   const startTime = Date.now();
@@ -169,12 +186,8 @@ router.get('/stats', async (req, res) => {
         const identityRes = await insightEdPool.query('SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] }));
         if (identityRes.rows.length > 0 && identityRes.rows[0].school_name) {
           schoolInfo = identityRes.rows[0];
-        } else {
-          const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-          const esfMatch = await insightEdPool.query(`SELECT DISTINCT school_id, school_name FROM ${tableName} WHERE school_id = $1 OR schoool_id = $1 LIMIT 1`, [cleanSchoolId]).catch(() => ({ rows: [] }));
-          if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
-            schoolInfo = esfMatch.rows[0];
-          }
+        } else if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
+          schoolInfo = esfMatch.rows[0];
         }
       } catch (e) {}
       console.log(`[Dashboard Stats] insightEd school identity fallback took ${Date.now() - t2}ms`);

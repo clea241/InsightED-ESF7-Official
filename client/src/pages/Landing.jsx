@@ -250,6 +250,16 @@ export default function Landing({ onGetStarted }) {
           max-width: 860px;
         }
 
+        .esf7-glass-tagline {
+          font-size: 22px;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.92);
+          letter-spacing: -0.01em;
+          line-height: 1.3;
+          margin: -6px 0 20px 0;
+          text-shadow: 0 2px 10px rgba(8, 49, 95, 0.8), 0 1px 3px rgba(0, 0, 0, 0.6);
+        }
+
         .esf7-glass-desc {
           font-size: 17px;
           line-height: 1.6;
@@ -445,13 +455,17 @@ export default function Landing({ onGetStarted }) {
         {/* Center Hero Area */}
         <section className="esf7-glass-hero">
           <div className="esf7-glass-badge">
-            <FiCheckCircle size={14} color="#34D399" />
+            <img src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo.png`} alt="eSF7 Logo" style={{ height: '16px', width: 'auto', objectFit: 'contain' }} />
             <span>DepEd Electronic School Form 7</span>
           </div>
 
           <h1 className="esf7-glass-title">
-            Faculty &amp; Workload Intelligence
+            eSF7
           </h1>
+
+          <p className="esf7-glass-tagline">
+            Faculty &amp; Workload Intelligence
+          </p>
 
           <p className="esf7-glass-desc">
             Unified DepEd teacher profiling, national plantilla compliance, automated timetable matrix, and 3-Term overload computation.
