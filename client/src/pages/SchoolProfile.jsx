@@ -78,16 +78,25 @@ export default function SchoolProfile() {
           : (Array.isArray(schoolInfo?.inclusivePrograms) ? schoolInfo.inclusivePrograms : []);
 
         const elemInc = allInclusive.filter(p => p.endsWith('-ES'));
-        setHasElemInclusive(elemInc.length > 0 ? 'yes' : 'no');
-        setElemInclusivePrograms(elemInc);
+        const hasElemIncVal = config?.hasElemInclusive !== undefined
+          ? (config.hasElemInclusive ? 'yes' : 'no')
+          : (schoolInfo?.hasElemInclusive ? 'yes' : (elemInc.length > 0 ? 'yes' : 'no'));
+        setHasElemInclusive(hasElemIncVal);
+        setElemInclusivePrograms(elemInc.length > 0 ? elemInc : (config?.elemInclusivePrograms || schoolInfo?.elemInclusivePrograms || []));
 
         const jhsInc = allInclusive.filter(p => p.endsWith('-JHS'));
-        setHasJhsInclusive(jhsInc.length > 0 ? 'yes' : 'no');
-        setJhsInclusivePrograms(jhsInc);
+        const hasJhsIncVal = config?.hasJhsInclusive !== undefined
+          ? (config.hasJhsInclusive ? 'yes' : 'no')
+          : (schoolInfo?.hasJhsInclusive ? 'yes' : (jhsInc.length > 0 ? 'yes' : 'no'));
+        setHasJhsInclusive(hasJhsIncVal);
+        setJhsInclusivePrograms(jhsInc.length > 0 ? jhsInc : (config?.jhsInclusivePrograms || schoolInfo?.jhsInclusivePrograms || []));
 
         const shsInc = allInclusive.filter(p => p.endsWith('-SHS'));
-        setHasShsInclusive(shsInc.length > 0 ? 'yes' : 'no');
-        setShsInclusivePrograms(shsInc);
+        const hasShsIncVal = config?.hasShsInclusive !== undefined
+          ? (config.hasShsInclusive ? 'yes' : 'no')
+          : (schoolInfo?.hasShsInclusive ? 'yes' : (shsInc.length > 0 ? 'yes' : 'no'));
+        setHasShsInclusive(hasShsIncVal);
+        setShsInclusivePrograms(shsInc.length > 0 ? shsInc : (config?.shsInclusivePrograms || schoolInfo?.shsInclusivePrograms || []));
 
         if (config) {
           setHasElemSpecialPrograms(config.hasElemSpecialPrograms ? 'yes' : 'no');
@@ -99,15 +108,17 @@ export default function SchoolProfile() {
           if (config.shsCurriculumModel) {
             setShsCurriculumModel(config.shsCurriculumModel);
           }
-        } else if (schoolInfo.specialPrograms || schoolInfo.shsCurriculumModel) {
+        } else if (schoolInfo.specialPrograms || schoolInfo.shsCurriculumModel || schoolInfo.hasElemSpecialPrograms || schoolInfo.hasJhsSpecialPrograms) {
           const progs = Array.isArray(schoolInfo.specialPrograms) ? schoolInfo.specialPrograms : [];
-          const hasElem = progs.includes('SPECIAL SCIENCE ELEMENTARY SCHOOL');
-          const jhsProgs = progs.filter(p => p !== 'SPECIAL SCIENCE ELEMENTARY SCHOOL');
+          const hasElem = schoolInfo.hasElemSpecialPrograms || progs.includes('SPECIAL SCIENCE ELEMENTARY SCHOOL');
+          const jhsProgs = Array.isArray(schoolInfo.jhsSpecialPrograms) && schoolInfo.jhsSpecialPrograms.length > 0
+            ? schoolInfo.jhsSpecialPrograms
+            : progs.filter(p => p !== 'SPECIAL SCIENCE ELEMENTARY SCHOOL');
 
           setHasElemSpecialPrograms(hasElem ? 'yes' : 'no');
           setElemSpecialProgram(hasElem);
 
-          setHasJhsSpecialPrograms(jhsProgs.length > 0 ? 'yes' : 'no');
+          setHasJhsSpecialPrograms(schoolInfo.hasJhsSpecialPrograms || jhsProgs.length > 0 ? 'yes' : 'no');
           setJhsSpecialPrograms(jhsProgs);
 
           if (schoolInfo.shsCurriculumModel) {
@@ -119,7 +130,7 @@ export default function SchoolProfile() {
       }
     };
     loadConfig();
-  }, [schoolInfo.schoolId]);
+  }, [schoolInfo.schoolId, schoolInfo.inclusivePrograms, schoolInfo.specialPrograms]);
 
   const handleToggleJhsProgram = (programLabel) => {
     setJhsSpecialPrograms(prev => 
@@ -174,17 +185,11 @@ export default function SchoolProfile() {
       if (setSchoolInfo) {
         setSchoolInfo(prev => ({
           ...prev,
+          ...configData,
           specialPrograms: selectedPrograms,
           shsCurriculumModel: configData.shsCurriculumModel,
           inclusivePrograms: selectedInclusive
         }));
-      }
-
-      // 3. Attempt Backend Server Database Sync
-      try {
-        await api.updateCurricularConfig(configData);
-      } catch (backendErr) {
-        console.warn('Backend database sync deferred (saved locally):', backendErr.message);
       }
 
       setIsConfirmModalOpen(false);
@@ -893,6 +898,104 @@ export default function SchoolProfile() {
                       />
                       <FiAward size={16} /> Strengthened SHS Curriculum (Grade 12)
                     </label>
+                  </div>
+
+                  {/* SHS Inclusive Education Programs Question */}
+                  <div style={{ marginTop: '16px', borderTop: '1px solid #ddd6fe', paddingTop: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: hasShsInclusive === 'yes' ? '12px' : '0' }}>
+                      <div>
+                        <label style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                          Does your Senior High School implement Inclusive Education Programs (ALS, SNED, IPED, Madrasah)?
+                        </label>
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#6d28d9' }}>
+                          Select authorized SHS inclusive offerings (e.g. ALS-SHS, SNED-SHS, IPED-SHS, MADRASAH-SHS).
+                        </p>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHasShsInclusive('yes');
+                            if (shsInclusivePrograms.length === 0) setShsInclusivePrograms(['ALS-SHS', 'SNED-SHS']);
+                          }}
+                          style={{
+                            padding: '6px 18px',
+                            borderRadius: '8px',
+                            border: hasShsInclusive === 'yes' ? '1.5px solid #8b5cf6' : '1px solid #cbd5e1',
+                            background: hasShsInclusive === 'yes' ? '#8b5cf6' : '#ffffff',
+                            color: hasShsInclusive === 'yes' ? '#ffffff' : '#475569',
+                            fontWeight: '800',
+                            fontSize: '12px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          YES
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHasShsInclusive('no');
+                            setShsInclusivePrograms([]);
+                          }}
+                          style={{
+                            padding: '6px 18px',
+                            borderRadius: '8px',
+                            border: hasShsInclusive === 'no' ? '1.5px solid #64748b' : '1px solid #cbd5e1',
+                            background: hasShsInclusive === 'no' ? '#64748b' : '#ffffff',
+                            color: hasShsInclusive === 'no' ? '#ffffff' : '#475569',
+                            fontWeight: '800',
+                            fontSize: '12px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          NO
+                        </button>
+                      </div>
+                    </div>
+
+                    {hasShsInclusive === 'yes' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px', marginTop: '10px' }}>
+                        {[
+                          { tag: 'ALS-SHS', label: 'ALS (Alternative Learning System)' },
+                          { tag: 'SNED-SHS', label: 'SNED (Special Needs Education)' },
+                          { tag: 'IPED-SHS', label: 'IPED (Indigenous Peoples Education)' },
+                          { tag: 'MADRASAH-SHS', label: 'MADRASAH (ALIVE Program)' }
+                        ].map(item => {
+                          const isChecked = shsInclusivePrograms.includes(item.tag);
+                          return (
+                            <label
+                              key={item.tag}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '10px 14px',
+                                borderRadius: '10px',
+                                border: isChecked ? '1.5px solid #8b5cf6' : '1px solid #cbd5e1',
+                                background: isChecked ? '#ffffff' : '#f8fafc',
+                                cursor: 'pointer',
+                                fontWeight: '700',
+                                fontSize: '12px',
+                                color: isChecked ? '#5b21b6' : '#475569'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setShsInclusivePrograms(prev => 
+                                    prev.includes(item.tag) ? prev.filter(t => t !== item.tag) : [...prev, item.tag]
+                                  );
+                                }}
+                                style={{ width: '15px', height: '15px', accentColor: '#8b5cf6' }}
+                              />
+                              <span>{item.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

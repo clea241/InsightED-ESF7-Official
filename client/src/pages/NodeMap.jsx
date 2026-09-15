@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import PortalHeader from '../components/PortalHeader';
 import ESF7UploadModal from '../components/ESF7UploadModal';
+import SettingsModal from '../components/SettingsModal';
 import { 
   FiCheckCircle, 
   FiLock, 
@@ -21,12 +22,14 @@ import {
   FiDollarSign,
   FiShield,
   FiArrowRight,
-  FiCheck
+  FiCheck,
+  FiSettings
 } from 'react-icons/fi';
 
 export default function NodeMap() {
   const { personnel, classSections, schoolInfo, setActiveView, isNodeUnlocked, isNodeCompleted, bypassNodeLocks, setBypassNodeLocks, incomingRequests } = useApp();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const schoolName = schoolInfo?.schoolName || 'DepEd Integrated School';
 
@@ -601,26 +604,64 @@ export default function NodeMap() {
             DepEd Electronic School Form 7 (eSF7) progressive registry journey enforces cross-registry validation integrity prior to final submission.
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setActiveView('validation')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--blue)',
-            fontWeight: '800',
-            cursor: 'pointer',
-            padding: 0,
-            fontSize: '12.5px'
-          }}
-        >
-          View Quality Check Rules ➔
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button
+            type="button"
+            onClick={() => setActiveView('validation')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--blue)',
+              fontWeight: '800',
+              cursor: 'pointer',
+              padding: 0,
+              fontSize: '12.5px'
+            }}
+          >
+            View Quality Check Rules ➔
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSettingsModalOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              padding: '4px',
+              borderRadius: '6px',
+              transition: 'all 0.2s ease',
+              opacity: 0.5
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.color = '#475569';
+              e.currentTarget.style.background = '#e2e8f0';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '0.5';
+              e.currentTarget.style.color = '#94a3b8';
+              e.currentTarget.style.background = 'transparent';
+            }}
+            title="Database & Storage Settings (Clear IndexedDB / Local Cache)"
+          >
+            <FiSettings size={15} />
+          </button>
+        </div>
       </div>
 
       <ESF7UploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
       />
     </section>
   );

@@ -187,23 +187,9 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
           // 1. TR -> Teaching-Related Tasks
           // 2. ADMIN, ANCILLARY, COACHING, MENTORING -> Administrative Tasks
           // 3. Subject periods -> Classroom Subject Periods
-          const isTR = taskUpper.startsWith('TR') || taskUpper.includes('TR -') || taskUpper.includes('TEACHING RELATED') || taskUpper.includes('TEACHING-RELATED');
           const isAdmin = taskUpper.includes('ADMIN') || taskUpper.includes('COACHING') || taskUpper.includes('MENTORING') || taskUpper.includes('ANCILLARY') || taskUpper.includes('FLASH VISITS');
 
-          if (isTR) {
-            teachingRelatedRows.push({
-              id: `tr-ext-${Date.now()}-${pIdx}-${wIdx}`,
-              task: taskOrSubj,
-              dates: [
-                {
-                  date: '',
-                  startTime: w.startTime || '08:00',
-                  endTime: w.endTime || '09:00',
-                  days: w.days || ['M', 'T', 'W', 'TH', 'F']
-                }
-              ]
-            });
-          } else if (isAdmin) {
+          if (isAdmin) {
             administrativeRows.push({
               id: `adm-ext-${Date.now()}-${pIdx}-${wIdx}`,
               task: taskOrSubj,
@@ -232,36 +218,18 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
             );
 
             if (isNonTeachingPerson) {
-              // Non-teaching personnel automatically has NO teaching workload.
-              // Workloads are placed under Administrative Tasks or Teaching-Related Tasks!
-              const isTRTask = taskUpper.startsWith('TR') || taskUpper.includes('TR -') || taskUpper.includes('TEACHING RELATED') || taskUpper.includes('TEACHING-RELATED');
-              if (isTRTask) {
-                teachingRelatedRows.push({
-                  id: `tr-ext-${Date.now()}-${pIdx}-${wIdx}`,
-                  task: taskOrSubj || 'Teaching-Related Duties',
-                  dates: [
-                    {
-                      date: '',
-                      startTime: w.startTime || '08:00',
-                      endTime: w.endTime || '17:00',
-                      days: w.days || ['M', 'T', 'W', 'TH', 'F']
-                    }
-                  ]
-                });
-              } else {
-                administrativeRows.push({
-                  id: `adm-ext-${Date.now()}-${pIdx}-${wIdx}`,
-                  task: taskOrSubj || 'Administrative Duties',
-                  dates: [
-                    {
-                      date: '',
-                      startTime: w.startTime || '08:00',
-                      endTime: w.endTime || '17:00',
-                      days: w.days || ['M', 'T', 'W', 'TH', 'F']
-                    }
-                  ]
-                });
-              }
+              administrativeRows.push({
+                id: `adm-ext-${Date.now()}-${pIdx}-${wIdx}`,
+                task: taskOrSubj || 'Administrative Duties',
+                dates: [
+                  {
+                    date: '',
+                    startTime: w.startTime || '08:00',
+                    endTime: w.endTime || '17:00',
+                    days: w.days || ['M', 'T', 'W', 'TH', 'F']
+                  }
+                ]
+              });
               return;
             }
 
@@ -384,18 +352,29 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
         }
       });
 
-      // Filter out unassigned dummy sections so harvested sections take priority
+      // Filter out unassigned dummy sections and invalid multi-grade/mono-grade scanned sections
       const harvestedSecNames = new Set(
         listToImport.flatMap(p => (p.workloads || []).map(w => (w.sectionName || '').toLowerCase().trim())).filter(name => name && !isNonClassSection(name))
       );
 
-      let finalSections = updatedSections.filter(s => {
+      const isInvalidSec = (s) => {
+        const g = String(s.gradeLevel || s.grade_level || '').toUpperCase().trim();
+        const n = String(s.sectionName || s.section_name || '').toUpperCase().trim();
+        return (
+          g.includes('MULTI-GRADE') || g.includes('MULTIGRADE') || g.includes('MULTI GRADE') ||
+          g.includes('MONO-GRADE') || g.includes('MONOGRADE') || g.includes('MONO GRADE') ||
+          n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
+          n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
+        );
+      };
+
+      let finalSections = updatedSections.filter(s => !isInvalidSec(s)).filter(s => {
         const sName = String(s.sectionName || s.section_name || '').toLowerCase().trim();
         return harvestedSecNames.has(sName) || s.advisorId || s.adviserId;
       });
 
       if (finalSections.length === 0 && updatedSections.length > 0) {
-        finalSections = updatedSections;
+        finalSections = updatedSections.filter(s => !isInvalidSec(s));
       }
 
       // Update Local State & Trigger IndexedDB Auto-Save

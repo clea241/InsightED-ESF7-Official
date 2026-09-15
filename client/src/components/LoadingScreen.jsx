@@ -1,35 +1,52 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
-const LoadingScreen = () => {
+const LoadingScreen = ({ message = "Loading InsightED eSF7 Database..." }) => {
+    const [loopKey, setLoopKey] = useState(0);
+
+    useEffect(() => {
+        // The GIF animation runs for 5 seconds (5000ms).
+        // Refresh the image instance every 5 seconds so it loops continuously even if the browser stops playback.
+        const interval = setInterval(() => {
+            setLoopKey(prev => prev + 1);
+        }, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
     return (
         <div style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 9999,
+            zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(255, 255, 255, 0.9)',
-            backdropFilter: 'blur(4px)',
-            transition: 'opacity 0.3s ease'
+            background: '#FFFFFF',
+            fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif"
         }}>
-            <div style={{
-                width: '40px',
-                height: '40px',
-                border: '4px solid #f3f3f3',
-                borderTop: '4px solid var(--blue, #3b82f6)',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                marginBottom: '16px'
-            }} />
-            <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--navy, #1e293b)' }}>Loading InsightED...</span>
-            <style>{`
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            `}</style>
+            <img 
+                key={loopKey}
+                src={`/insighted_loading.gif?v=${loopKey}`} 
+                alt="Loading InsightED..." 
+                style={{
+                    width: '180px',
+                    height: 'auto',
+                    maxWidth: '85vw',
+                    objectFit: 'contain'
+                }} 
+            />
+            {message && (
+                <span style={{ 
+                    marginTop: '16px',
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    color: '#475569',
+                    letterSpacing: '-0.01em',
+                    textAlign: 'center'
+                }}>
+                    {message}
+                </span>
+            )}
         </div>
     );
 };

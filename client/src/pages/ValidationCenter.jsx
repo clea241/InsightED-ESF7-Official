@@ -23,7 +23,8 @@ export default function ValidationCenter() {
     setHasUnsavedChanges,
     showToast,
     showAlert,
-    completeNode
+    completeNode,
+    allowancesMap
   } = useApp();
 
   const [certified, setCertified] = useState(false);
@@ -325,12 +326,14 @@ export default function ValidationCenter() {
         personnel,
         classSections,
         workloadTransfers: [],
-        absences: []
+        absences: [],
+        allowancesMap: allowancesMap || {}
       };
 
       const payload = {
         ...basePayload,
-        personnel: (basePayload.personnel || []).filter(p => !p.isShared)
+        personnel: (basePayload.personnel || []).filter(p => !p.isShared),
+        allowancesMap: allowancesMap || basePayload.allowancesMap || {}
       };
 
       const res = await api.submitSchoolWorkload({

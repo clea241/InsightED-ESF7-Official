@@ -5,11 +5,11 @@ import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import ForceLogoutNoticeModal from '../components/ForceLogoutNoticeModal';
 import PortalHeader from '../components/PortalHeader';
-import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight, FiMap, FiSettings, FiAward, FiBarChart2, FiStar, FiBookOpen, FiUploadCloud } from 'react-icons/fi';
+import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight, FiMap, FiSettings, FiAward, FiBarChart2, FiStar, FiBookOpen, FiUploadCloud, FiInbox } from 'react-icons/fi';
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
-  const { personnel = [], classSections = [], schoolInfo = {}, setActiveView, showToast, isNodeUnlocked, isNodeCompleted, journeyState, isInitialized } = useApp();
+  const { personnel = [], classSections = [], schoolInfo = {}, incomingRequests = [], setActiveView, showToast, isNodeUnlocked, isNodeCompleted, journeyState, isInitialized } = useApp();
   const { logout } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +39,11 @@ export default function Dashboard() {
   const safePersonnel = Array.isArray(personnel) ? personnel : [];
   const safeClassSections = Array.isArray(classSections) ? classSections : [];
   const totalPersonnel = safePersonnel.length;
+
+  const pendingIncomingList = Array.isArray(incomingRequests)
+    ? incomingRequests.filter(r => !r.status || r.status === 'pending' || r.status === 'PENDING')
+    : [];
+  const pendingIncomingCount = pendingIncomingList.length;
 
   // Check pending_schools table & auto-open SY 2025-2026 upload modal when no personnel records exist
   useEffect(() => {
@@ -638,71 +643,7 @@ export default function Dashboard() {
         }
       />
 
-      {/* SY 2025-2026 INITIALIZATION BANNER */}
-      {!loading && safePersonnel.length === 0 && (
-        <div style={{
-          background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
-          border: '1.5px solid #93C5FD',
-          borderRadius: '16px',
-          padding: '18px 24px',
-          marginBottom: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '20px',
-          flexWrap: 'wrap',
-          boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.1)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, minWidth: '280px' }}>
-            <div style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              backgroundColor: '#2563EB',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              boxShadow: '0 4px 10px rgba(37, 99, 235, 0.3)'
-            }}>
-              <FiUploadCloud size={24} />
-            </div>
-            <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '2px 8px', background: '#DBEAFE', border: '1px solid #BFDBFE', borderRadius: '6px', fontSize: '11px', color: '#1E40AF', fontWeight: '800', textTransform: 'uppercase', marginBottom: '4px' }}>
-                Action Required • SY 2025–2026 Data Initialization
-              </div>
-              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1E3A8A' }}>
-                You need to submit your eSF7 file for SY 2025–2026
-              </h4>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#3B82F6' }}>
-                No historical personnel records were detected in the master database. Upload your school's official eSF7 spreadsheet (.xlsb) to automatically populate all faculty profiles, item numbers, and teaching workloads.
-              </p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setIsUploadModalOpen(true)}
-              style={{
-                padding: '10px 20px',
-                fontSize: '13px',
-                fontWeight: '700',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: '#2563EB',
-                color: '#FFFFFF',
-                border: 'none',
-                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)'
-              }}
-            >
-              <FiUploadCloud size={16} /> Submit SY 2025–2026 eSF7 Now ➔
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {/* CONTENT GRID */}
       {loading ? (
@@ -809,41 +750,108 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* CARD 3: MAJOR ALIGNMENT & OUT-OF-FIELD KPI */}
+            {/* CARD 3: INTER-SCHOOL REQUESTS & NOTIFICATIONS */}
             <div 
               className="card" 
-              onClick={() => setActiveView('validation')} 
-              style={{ cursor: 'pointer', background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
-              title="Click to open Validation Center"
+              onClick={() => setActiveView('requests')} 
+              style={{ 
+                cursor: 'pointer', 
+                background: pendingIncomingCount > 0 ? 'linear-gradient(135deg, #FFFDF5 0%, #FEF3C7 100%)' : '#FFFFFF', 
+                borderRadius: '16px', 
+                border: pendingIncomingCount > 0 ? '1.5px solid #F59E0B' : '1.5px solid var(--line)', 
+                padding: '20px', 
+                boxShadow: pendingIncomingCount > 0 ? '0 4px 14px rgba(245, 158, 11, 0.15)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                transition: 'all 0.2s ease'
+              }}
+              title="Click to open Inter-School Request Center"
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FiTarget style={{ color: '#6366F1' }} /> Major Alignment KPI
-                </h3>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: '#4338CA', background: '#EEF2FF', padding: '2px 8px', borderRadius: '6px' }}>
-                  Teaching Quality
-                </span>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FiInbox style={{ color: pendingIncomingCount > 0 ? '#D97706' : '#059669' }} size={18} />
+                    Incoming School Requests
+                  </h3>
+                  <span style={{ 
+                    fontSize: '11px', 
+                    fontWeight: '800', 
+                    color: pendingIncomingCount > 0 ? '#B45309' : '#15803D', 
+                    background: pendingIncomingCount > 0 ? '#FEF3C7' : '#DCFCE7', 
+                    border: pendingIncomingCount > 0 ? '1px solid #FDE68A' : '1px solid #BBF7D0',
+                    padding: '2px 8px', 
+                    borderRadius: '6px',
+                    letterSpacing: '0.03em'
+                  }}>
+                    {pendingIncomingCount > 0 ? `${pendingIncomingCount} PENDING` : 'ALL CAUGHT UP'}
+                  </span>
+                </div>
+
+                {pendingIncomingCount > 0 ? (
+                  <div>
+                    <div style={{ 
+                      background: '#FFFFFF', 
+                      borderRadius: '10px', 
+                      border: '1px solid #FDE68A', 
+                      padding: '10px 12px', 
+                      marginBottom: '10px' 
+                    }}>
+                      <div style={{ fontSize: '11px', fontWeight: '800', color: '#B45309', textTransform: 'uppercase', marginBottom: '2px' }}>
+                        {pendingIncomingList[0].request_type === 'school_merger' 
+                          ? 'School Merger Request' 
+                          : pendingIncomingList[0].request_type === 'reassigned_teacher' 
+                          ? 'Reassigned Teacher Request' 
+                          : 'Clustered Teacher Request'}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#1E293B' }}>
+                        From School ID: <span style={{ color: '#2563EB' }}>{pendingIncomingList[0].requester_school_id}</span>
+                      </div>
+                      {pendingIncomingList[0].teacher_name && (
+                        <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                          Target: <strong>{pendingIncomingList[0].teacher_name}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px', 
+                      background: '#F0FDF4', 
+                      border: '1px solid #BBF7D0', 
+                      borderRadius: '10px', 
+                      padding: '10px 12px',
+                      color: '#15803D',
+                      fontSize: '13px',
+                      fontWeight: '700'
+                    }}>
+                      <FiCheckCircle size={16} style={{ color: '#16A34A', flexShrink: 0 }} />
+                      <span>No pending requests from other schools.</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
-                <div style={{ flex: 1, background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--line)' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '700' }}>IN-FIELD (MATCHING)</div>
-                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{inFieldCount}</div>
-                </div>
-                <div style={{ flex: 1, background: '#FEF2F2', padding: '10px 12px', borderRadius: '10px', border: '1px solid #FCA5A5' }}>
-                  <div style={{ fontSize: '11px', color: '#991B1B', fontWeight: '700' }}>OUT-OF-FIELD</div>
-                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#DC2626' }}>{outOfFieldCount}</div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <FiTarget size={14} style={{ color: '#4338CA' }} />
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                paddingTop: '10px',
+                borderTop: '1px solid rgba(0,0,0,0.06)',
+                fontSize: '12px',
+                color: pendingIncomingCount > 0 ? '#B45309' : 'var(--blue)',
+                fontWeight: '700'
+              }}>
                 <span>
-                  {totalEvaluated > 0 ? (
-                    <><strong>{Math.round((inFieldCount / totalEvaluated) * 100)}%</strong> of evaluated teachers teach their major discipline.</>
-                  ) : (
-                    'Degree majors loaded and ready for alignment check.'
-                  )}
+                  {pendingIncomingCount > 0 
+                    ? `${pendingIncomingCount} action required in Request Center`
+                    : 'Manage inter-school transfers & clustering'}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  Review <FiArrowRight size={14} />
                 </span>
               </div>
             </div>

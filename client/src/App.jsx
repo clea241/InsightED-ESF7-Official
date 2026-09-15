@@ -38,7 +38,8 @@ function MainAppContent() {
     showToast = () => {}, 
     toast = null, 
     setToast = () => {}, 
-    customModal = null 
+    customModal = null,
+    isInitialized = false
   } = appState;
 
   React.useEffect(() => {
@@ -64,12 +65,17 @@ function MainAppContent() {
   }
 
   if (authLoading) {
-    return <LoadingScreen />;
+    return <LoadingScreen message="Authenticating session..." />;
   }
 
   // Enforce Login first: Users see Login BEFORE entering the app
   if (!user) {
     return <Login />;
+  }
+
+  // If user is authenticated and AppContext is still initializing initial data from DB / cloud draft
+  if (!isInitialized) {
+    return <LoadingScreen message="Loading InsightED eSF7 Database..." />;
   }
 
   // After login: show Landing Page when activeView === 'landing'

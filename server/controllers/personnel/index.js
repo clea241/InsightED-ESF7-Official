@@ -34,6 +34,147 @@ const parseDateFromParts = (yyyy, mmName, dd) => {
   return `${yyyy}-${monthNum}-${dayPadded}`;
 };
 
+const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {}, highestAttainment = '') => {
+  let masters = [];
+  let doctorate = [];
+
+  const extractList = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.map(s => String(s).trim()).filter(Boolean);
+        } catch (e) {}
+      }
+      return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  if (rawDiscipline && typeof rawDiscipline === 'object' && !Array.isArray(rawDiscipline)) {
+    if (Array.isArray(rawDiscipline.masters)) masters = rawDiscipline.masters;
+    if (Array.isArray(rawDiscipline.doctorate)) doctorate = rawDiscipline.doctorate;
+  } else if (typeof rawDiscipline === 'string' && rawDiscipline.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawDiscipline);
+      if (Array.isArray(parsed.masters)) masters = parsed.masters;
+      if (Array.isArray(parsed.doctorate)) doctorate = parsed.doctorate;
+    } catch (e) {}
+  } else if (rawDiscipline) {
+    const list = extractList(rawDiscipline);
+    if (String(highestAttainment).toUpperCase().includes('DOCTOR')) {
+      doctorate = list;
+    } else {
+      masters = list;
+    }
+  }
+
+  const combinedSource = { ...rawProfile, ...rawEduc };
+  if (masters.length === 0) {
+    if (combinedSource.mastersDisciplines) {
+      masters = extractList(combinedSource.mastersDisciplines);
+    } else if (combinedSource.mastersDiscipline) {
+      masters = extractList(combinedSource.mastersDiscipline);
+    }
+  }
+
+  if (doctorate.length === 0) {
+    if (combinedSource.doctorateDisciplines) {
+      doctorate = extractList(combinedSource.doctorateDisciplines);
+    } else if (combinedSource.doctorateDiscipline) {
+      doctorate = extractList(combinedSource.doctorateDiscipline);
+    }
+  }
+
+  const degreeRows = combinedSource.degreeRows || [];
+  if (Array.isArray(degreeRows)) {
+    for (const d of degreeRows) {
+      const lvl = String(d.level || '').toUpperCase();
+      const dList = extractList(d.postGraduateDiscipline || d.discipline || d.disciplines);
+      if (lvl === 'MASTERS' && masters.length === 0) masters.push(...dList);
+      if (lvl === 'DOCTORATE' && doctorate.length === 0) doctorate.push(...dList);
+    }
+  }
+
+  masters = [...new Set(masters.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorate = [...new Set(doctorate.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+
+  return {
+    masters,
+    doctorate,
+    mastersDiscipline: masters.join(', '),
+    doctorateDiscipline: doctorate.join(', '),
+    jsonString: JSON.stringify({ masters, doctorate }),
+    rawObject: { masters, doctorate }
+  };
+};
+
+const sanitizeGradeLevel = (rawLvl, secName = '') => {
+  if (!rawLvl && !secName) return null;
+  const str = String(rawLvl || '').trim();
+  const upper = str.toUpperCase();
+
+  // 1. Filter out delivery modes / section types that are NOT grade levels
+  if (
+    upper.includes('MULTI-GRADE') || upper.includes('MULTIGRADE') || upper.includes('MULTI GRADE') ||
+    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE')
+  ) {
+    if (secName) {
+      const secMatch = String(secName).match(/(?:Grade\s*|G)(\d{1,2})/i);
+      if (secMatch) return `Grade ${secMatch[1]}`;
+      if (String(secName).toUpperCase().includes('KINDER')) return 'Kinder';
+      if (String(secName).toUpperCase().includes('SNED') || String(secName).toUpperCase().includes('NON-GRADED') || String(secName).toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+      if (String(secName).toUpperCase().includes('ALS')) return 'ALS';
+    }
+    return null;
+  }
+
+  // 2. Handle Kinder / Kindergarten / Grade KINDER
+  if (upper.includes('KINDER')) {
+    return 'Kinder';
+  }
+
+  // 3. Handle Special Programs (SNED & NON-GRADED unified)
+  if (upper === 'SNED' || upper === 'SPED' || upper === 'NON-GRADED' || upper === 'NON GRADED' || upper.includes('SNED') || upper.includes('NON-GRADED') || upper.includes('NON GRADED')) {
+    return 'SNED (NON-GRADED)';
+  }
+  if (upper === 'ALS') return 'ALS';
+
+  // 4. Handle Numeric e.g. "7", "G7", "Grade 7"
+  const numMatch = str.match(/(?:Grade\s*|G|^)(\d{1,2})$/i) || str.match(/(\d{1,2})/);
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    if (num >= 1 && num <= 12) {
+      return `Grade ${num}`;
+    }
+  }
+
+  if (upper.startsWith('GRADE ')) {
+    const rest = str.substring(6).trim();
+    if (rest.toUpperCase().includes('KINDER')) return 'Kinder';
+    if (rest.toUpperCase().includes('MULTI') || rest.toUpperCase().includes('MONO')) return null;
+    if (rest.toUpperCase().includes('SNED') || rest.toUpperCase().includes('NON-GRADED') || rest.toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+    return `Grade ${rest}`;
+  }
+
+  return str || null;
+};
+
+const sanitizeGradeArray = (arr) => {
+  if (!Array.isArray(arr)) return [];
+  const res = [];
+  for (const item of arr) {
+    const sanitized = sanitizeGradeLevel(item);
+    if (sanitized && !res.includes(sanitized)) {
+      res.push(sanitized);
+    }
+  }
+  return res;
+};
+
 const checkIsSchoolHead = (p) => {
   if (p.isSchoolHead === true || p.is_school_head === true || String(p.isSchoolHead).toLowerCase() === 'true' || String(p.is_school_head).toLowerCase() === 'true') {
     return true;
@@ -83,52 +224,87 @@ function convertExcelTimeToHHMM(val) {
   return String(val).trim();
 }
 
+const CANONICAL_POSITIONS_BY_CATEGORY = {
+  teaching: [
+    "TEACHER I", "TEACHER II", "TEACHER III", "TEACHER IV", "TEACHER IV - SNED",
+    "TEACHER V", "TEACHER V - SNED", "TEACHER VI", "TEACHER VI - SNED",
+    "TEACHER VII", "TEACHER VII - SNED", "EXTERNAL TUTOR",
+    "SPECIAL SCIENCE TEACHER I", "SPECIAL SCIENCE TEACHER II", "SPECIAL SCIENCE TEACHER III",
+    "SPECIAL SCIENCE TEACHER IV", "SPECIAL SCIENCE TEACHER V",
+    "MASTER TEACHER I", "MASTER TEACHER II", "MASTER TEACHER III", "MASTER TEACHER IV",
+    "ALIVE TEACHER"
+  ],
+  "teaching-related": [
+    "TIC - HEAD TEACHER I", "TIC - HEAD TEACHER II", "TIC - HEAD TEACHER III",
+    "TIC - HEAD TEACHER IV", "TIC - HEAD TEACHER V", "TIC - HEAD TEACHER VI",
+    "GUIDANCE DESIGNATE - HEAD TEACHER I", "GUIDANCE DESIGNATE - HEAD TEACHER II",
+    "GUIDANCE DESIGNATE - HEAD TEACHER III", "GUIDANCE DESIGNATE - HEAD TEACHER IV",
+    "GUIDANCE DESIGNATE - HEAD TEACHER V", "GUIDANCE DESIGNATE - HEAD TEACHER VI",
+    "CLINIC - HEAD TEACHER I", "CLINIC - HEAD TEACHER II", "CLINIC - HEAD TEACHER III",
+    "CLINIC - HEAD TEACHER IV", "CLINIC - HEAD TEACHER V", "CLINIC - HEAD TEACHER VI",
+    "ASSISTANT SCHOOL PRINCIPAL I", "ASSISTANT SCHOOL PRINCIPAL II", "ASSISTANT SCHOOL PRINCIPAL III",
+    "ASSISTANT SPECIAL SCHOOL PRINCIPAL", "GUIDANCE COORDINATOR I", "GUIDANCE COORDINATOR II",
+    "GUIDANCE COORDINATOR III", "GUIDANCE COUNSELOR I", "GUIDANCE COUNSELOR II",
+    "GUIDANCE COUNSELOR III", "HEAD TEACHER I", "HEAD TEACHER II", "HEAD TEACHER III",
+    "HEAD TEACHER IV", "HEAD TEACHER V", "HEAD TEACHER VI",
+    "SCHOOL PRINCIPAL I", "SCHOOL PRINCIPAL II", "SCHOOL PRINCIPAL III", "SCHOOL PRINCIPAL IV",
+    "SPECIAL SCHOOL PRINCIPAL I", "SPECIAL SCHOOL PRINCIPAL II",
+    "GUIDANCE SERVICES SPECIALIST", "VOCATIONAL SCHOOL ADMINISTRATOR", "VOCATIONAL SCHOOL SUPERINTENDENT"
+  ],
+  "non-teaching": [
+    "ACCOUNTANT", "ACCOUNTING CLERK", "ADMINISTRATIVE AIDE",
+    "ADMINISTRATIVE AIDE I (ADA I)", "ADMINISTRATIVE AIDE II (ADA II)",
+    "ADMINISTRATIVE AIDE III (ADA III)", "ADMINISTRATIVE AIDE IV (ADA IV)",
+    "ADMINISTRATIVE AIDE V (ADA V)", "ADMINISTRATIVE AIDE VI (ADA VI)",
+    "ADMINISTRATIVE ASSISTANT", "ADMINISTRATIVE ASSISTANT I (ADAS I)",
+    "ADMINISTRATIVE ASSISTANT II (ADAS II)", "ADMINISTRATIVE ASSISTANT III (ADAS III)",
+    "ADMINISTRATIVE ASSISTANT IV (ADAS IV)", "ADMINISTRATIVE ASSISTANT V (ADAS V)",
+    "ADMINISTRATIVE ASSISTANT VI (ADAS VI)", "ADMINISTRATIVE OFFICER",
+    "ADMINISTRATIVE OFFICER I (AO I)", "ADMINISTRATIVE OFFICER II (AO II)",
+    "ADMINISTRATIVE OFFICER III (AO III)", "ADMINISTRATIVE OFFICER IV (AO IV)",
+    "ADMINISTRATIVE OFFICER V (AO V)", "AGRICULTURIST", "AQUACULTURAL TECHNICIAN",
+    "AQUACULTURIST", "BOOKKEEPER", "CASHIER", "CHIEF ADMINISTRATIVE OFFICER",
+    "CLERK", "COLLEGE LIBRARIAN", "COMMUNICATIONS EQUIPMENT OPERATOR",
+    "COMPUTER MAINTENANCE TECHNOLOGIST", "CONSTRUCTION AND MAINTENANCE MAN",
+    "COOK", "COXSWAIN", "DENTAL AIDE", "DENTIST", "DISBURSING OFFICER",
+    "DRIVER", "ENGINEER", "FARM WORKER", "FISCAL CLERK", "FISHERMAN",
+    "HANDICRAFT WORKER", "HEAVY EQUIPMENT OPERATOR", "HOUSEPARENT",
+    "INFORMATION SYSTEMS ANALYST", "INFORMATION TECHNOLOGY OFFICER",
+    "LABORATORY TECHNICIAN", "LIBRARIAN", "LIGHT EQUIPMENT OPERATOR",
+    "LINEMAN", "MARINE ENGINEMAN", "MASTER FISHERMAN", "MECHANIC",
+    "MECHANICAL PLANT OPERATOR", "MEDICAL OFFICER", "NURSE", "NURSE MAID",
+    "NURSING ATTENDANT", "NUTRITIONIST-DIETITIAN", "PLANNING OFFICER",
+    "PROJECT DEVELOPMENT OFFICER", "PSYCHOLOGIST", "REGISTRAR",
+    "REPRODUCTION MACHINE OPERATOR", "SCHOOL LIBRARIAN",
+    "SCHOOLS DIVISION SUPERINTENDENT", "SECURITY GUARD", "SECURITY OFFICER",
+    "SENIOR BOOKKEEPER", "SOCIAL WELFARE OFFICER", "STATISTICIAN AIDE",
+    "SUPPLY OFFICER", "TECHNICAL EDUCATION AND SKILLS DEVELOPMENT SPECIALIST",
+    "TELEGRAM CARRIER", "UTILITY FOREMAN", "UTILITY WORKER",
+    "VOCATIONAL PLACEMENT COORDINATOR", "WATCHMAN", "LEARNING SUPPORT AIDE",
+    "INTERN", "OTHERS"
+  ]
+};
+
+function isCanonicalPosition(positionStr) {
+  if (!positionStr || typeof positionStr !== 'string') return false;
+  const pos = positionStr.trim();
+  if (pos.startsWith('OTHERS')) return true;
+  return (
+    CANONICAL_POSITIONS_BY_CATEGORY.teaching.includes(pos) ||
+    CANONICAL_POSITIONS_BY_CATEGORY['teaching-related'].includes(pos) ||
+    CANONICAL_POSITIONS_BY_CATEGORY['non-teaching'].includes(pos)
+  );
+}
+
 function determinePositionCategory(positionStr) {
-  if (!positionStr) return { type: 'teaching', category: 'TEACHING' };
-  const pos = String(positionStr).toUpperCase().trim();
-
-  if (
-    pos.includes('ADMINISTRATIVE') ||
-    pos.includes('AO ') ||
-    pos.includes('AO I') ||
-    pos.includes('ADAS') ||
-    pos.includes('ADA ') ||
-    pos.includes('AIDE') ||
-    pos.includes('UTILITY') ||
-    pos.includes('CLERK') ||
-    pos.includes('WATCHMAN') ||
-    pos.includes('SECURITY') ||
-    pos.includes('GUARD') ||
-    pos.includes('NURSE') ||
-    pos.includes('DENTIST') ||
-    pos.includes('PHYSICIAN') ||
-    pos.includes('MEDICAL') ||
-    pos.includes('BOOKKEEPER') ||
-    pos.includes('ACCOUNTANT') ||
-    pos.includes('DISBURSING') ||
-    pos.includes('REGISTRAR') ||
-    pos.includes('DRIVER') ||
-    pos.includes('WORKER') ||
-    pos.includes('JANITOR') ||
-    pos.includes('ENGINEER') ||
-    pos.includes('CUSTODIAN')
-  ) {
-    return { type: 'non-teaching', category: 'NON-TEACHING' };
-  }
-
-  if (
-    pos.includes('PRINCIPAL') ||
-    pos.includes('HEAD TEACHER') ||
-    pos.includes('SUPERVISOR') ||
-    pos.includes('SUPERINTENDENT') ||
-    pos.includes('GUIDANCE') ||
-    pos.includes('VOCATIONAL SCHOOL') ||
-    pos.includes('CHIEF')
-  ) {
-    return { type: 'teaching-related', category: 'RELATED TEACHING' };
-  }
-
-  return { type: 'teaching', category: 'TEACHING' };
+  if (!positionStr || typeof positionStr !== 'string') return { type: '', category: '' };
+  const pos = positionStr.trim();
+  if (!isCanonicalPosition(pos)) return { type: '', category: '' };
+  if (pos.startsWith('OTHERS')) return { type: 'non-teaching', category: 'NON-TEACHING' };
+  if (CANONICAL_POSITIONS_BY_CATEGORY.teaching.includes(pos)) return { type: 'teaching', category: 'TEACHING' };
+  if (CANONICAL_POSITIONS_BY_CATEGORY['teaching-related'].includes(pos)) return { type: 'teaching-related', category: 'RELATED TEACHING' };
+  if (CANONICAL_POSITIONS_BY_CATEGORY['non-teaching'].includes(pos)) return { type: 'non-teaching', category: 'NON-TEACHING' };
+  return { type: '', category: '' };
 }
 
 async function fetchMasterPersonnelFromInsightEd(schoolId) {
@@ -197,41 +373,10 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     const cleanEmpNo = (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '';
     const depedEmail = row.deped_email || '';
 
-    const posName = (row.position || 'TEACHER I').toUpperCase();
+    const rawPos = (row.position || '').trim();
+    const isCanon = isCanonicalPosition(rawPos);
+    const posName = isCanon ? rawPos : '';
     const catObj = determinePositionCategory(posName);
-
-    // Parse Workload Slots 1..20
-    const teacherWorkloads = [];
-    const gradeLevelsSet = new Set();
-
-    for (let s = 1; s <= 20; s++) {
-      const sKey = s === 1 ? '_1' : `_1_${s}`;
-      const subj = row[`subject${sKey}`];
-      const lvl = row[`lvl${sKey}`];
-      const sec = row[`section${sKey}`];
-      const fromTime = convertExcelTimeToHHMM(row[`from${sKey}`]);
-      const toTime = convertExcelTimeToHHMM(row[`to${sKey}`]);
-
-      if (subj && String(subj).trim() !== '') {
-        const gradeStr = lvl ? (String(lvl).startsWith('Grade') ? String(lvl) : `Grade ${lvl}`) : 'Grade 7';
-        gradeLevelsSet.add(gradeStr);
-        teacherWorkloads.push({
-          id: `wk-${profileId}-${s}`,
-          personnelId: profileId,
-          schoolId: cleanSchoolId,
-          schoolYear: '2026-2027',
-          subject: String(subj).trim(),
-          subjectName: String(subj).trim(),
-          gradeLevel: gradeStr,
-          sectionName: sec ? String(sec).trim() : '',
-          startTime: fromTime || '08:00',
-          endTime: toTime || '09:00',
-          days: ['M', 'T', 'W', 'TH', 'F']
-        });
-      }
-    }
-
-    const gradeLevelsTaught = Array.from(gradeLevelsSet);
 
     list.push({
       ...row,
@@ -288,10 +433,10 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       deployment_status: (row.status__item_ || 'OWN STATION').toUpperCase(),
       assignedSchools: [],
       assigned_schools: [],
-      gradeLevelsTaught: gradeLevelsTaught,
-      grade_levels_taught: gradeLevelsTaught,
-      assignedGradeLevels: gradeLevelsTaught,
-      assigned_grade_levels: gradeLevelsTaught,
+      gradeLevelsTaught: [],
+      grade_levels_taught: [],
+      assignedGradeLevels: [],
+      assigned_grade_levels: [],
       firstServiceDate: firstApptDate,
       lastPromotionDate: firstApptDate,
       newStationDate: stationDate,
@@ -307,7 +452,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       post_graduate_degree: String(postGrad).toUpperCase(),
       eligibility: [elig],
 
-      workloadRows: teacherWorkloads,
+      workloadRows: [],
       neapTrainingRows: [],
       certificationRows: [],
       otherTrainingRows: [],
@@ -446,6 +591,13 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     row.position_category.toLowerCase().includes('related') ? 'teaching-related' : 'teaching'
   ) : catObj.type);
 
+  const parsedPostDisc = parsePostGraduateDiscipline(
+    row.post_graduate_discipline,
+    rawEduc,
+    rawProfile,
+    row.highest_educational_attainment
+  );
+
   return {
     ...rawProfile,
     ...rawEmp,
@@ -508,10 +660,10 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     deployment_status: row.deployment_status || 'OWN STATION',
     assignedSchools: row.assigned_schools || [],
     assigned_schools: row.assigned_schools || [],
-    gradeLevelsTaught: row.grade_levels_taught || [],
-    grade_levels_taught: row.grade_levels_taught || [],
-    assignedGradeLevels: row.grade_levels_taught || [],
-    assigned_grade_levels: row.grade_levels_taught || [],
+    gradeLevelsTaught: sanitizeGradeArray(row.grade_levels_taught || []),
+    grade_levels_taught: sanitizeGradeArray(row.grade_levels_taught || []),
+    assignedGradeLevels: sanitizeGradeArray(row.grade_levels_taught || []),
+    assigned_grade_levels: sanitizeGradeArray(row.grade_levels_taught || []),
     teachesShs: !!(rawEmp.teachesShs || rawEmp.teaches_shs || rawProfile.teachesShs) || (Array.isArray(row.grade_levels_taught) && row.grade_levels_taught.some(g => String(g).includes('11') || String(g).includes('12'))),
     teaches_shs: !!(rawEmp.teachesShs || rawEmp.teaches_shs || rawProfile.teachesShs) || (Array.isArray(row.grade_levels_taught) && row.grade_levels_taught.some(g => String(g).includes('11') || String(g).includes('12'))),
     firstServiceDate: row.first_service_date ? (row.first_service_date instanceof Date ? row.first_service_date.toISOString().split('T')[0] : String(row.first_service_date).split('T')[0]) : null,
@@ -535,8 +687,12 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     minor: row.minor || '',
     postGraduateDegree: row.post_graduate_degree || 'N/A',
     post_graduate_degree: row.post_graduate_degree || 'N/A',
-    postGraduateDiscipline: row.post_graduate_discipline || '',
-    post_graduate_discipline: row.post_graduate_discipline || '',
+    postGraduateDiscipline: parsedPostDisc.jsonString,
+    post_graduate_discipline: parsedPostDisc.jsonString,
+    mastersDiscipline: parsedPostDisc.mastersDiscipline,
+    mastersDisciplines: parsedPostDisc.masters,
+    doctorateDiscipline: parsedPostDisc.doctorateDiscipline,
+    doctorateDisciplines: parsedPostDisc.doctorate,
     eligibility: row.eligibility || [],
     prcSpecialization: row.prc_specialization || '',
     prc_specialization: row.prc_specialization || '',
@@ -907,20 +1063,84 @@ async function syncDesignationsInTransaction(client, personnelId, targetSchoolId
 
   await client.query('DELETE FROM esf7_personnel_designations WHERE personnel_id = $1', [personnelId]);
 
-  let desigList = [];
-  if (Array.isArray(designations) && designations.length > 0) {
-    desigList = designations;
-  } else if (designation && typeof designation === 'string' && designation.trim().length > 0) {
-    desigList = [{ designation: designation.trim() }];
+  const rawDesigList = [];
+  if (designation && typeof designation === 'string' && designation.trim()) {
+    rawDesigList.push(designation.trim());
+  }
+  if (Array.isArray(designations)) {
+    designations.forEach(d => {
+      if (d) rawDesigList.push(d);
+    });
   }
 
+  const processedKeys = new Set();
   let counter = 1;
-  for (const d of desigList) {
-    const dsgId = `DSG-${targetSchoolId.replace('SCH-', '')}-${String(counter++).padStart(3, '0')}`;
-    const key = d.serializedKey || d.serialized_key || d.designation || d.designation_name || d.name || 'OFFICIAL DESIGNATION';
-    const isApproved = d.isSdsApproved === true || d.is_sds_approved === true || key.endsWith('::APPROVED_SDS');
-    const isConfirmed = d.sdsConfirmed === true || d.sds_confirmed === true;
-    const name = d.designationName || d.designation_name || d.name || key.split(' - ')[0].replace('::APPROVED_SDS', '').trim();
+
+  for (const item of rawDesigList) {
+    if (!item) continue;
+
+    let dsgObj = {};
+    if (typeof item === 'string') {
+      const rawStr = item.trim();
+      const isSds = rawStr.includes('::APPROVED_SDS') || rawStr.toUpperCase().includes('APPROVED_SDS');
+      const cleanKey = rawStr.replace(/::APPROVED_SDS/gi, '').trim();
+      if (!cleanKey || processedKeys.has(cleanKey.toUpperCase())) continue;
+      processedKeys.add(cleanKey.toUpperCase());
+
+      let dsgName = cleanKey;
+      let gradeLevel = null;
+      let subjectArea = null;
+      let track = null;
+
+      if (cleanKey.includes(' - ')) {
+        const parts = cleanKey.split(' - ');
+        dsgName = parts[0].trim();
+        const subPart = parts.slice(1).join(' - ').trim();
+
+        const gradeMatch = subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i);
+        if (gradeMatch) {
+          gradeLevel = gradeMatch[1];
+          subjectArea = subPart.replace(gradeMatch[0], '').trim();
+        } else {
+          subjectArea = subPart;
+        }
+      }
+
+      dsgObj = {
+        designationName: dsgName,
+        gradeLevel: gradeLevel || '',
+        subjectArea: subjectArea || '',
+        track: track || '',
+        isSdsApproved: isSds,
+        sdsConfirmed: isSds,
+        serializedKey: rawStr,
+        rawPayload: { designation: cleanKey, isSdsApproved: isSds, serializedKey: rawStr }
+      };
+    } else if (typeof item === 'object') {
+      const rawKey = item.serializedKey || item.serialized_key || item.designation || item.designationName || item.designation_name || item.name || 'OFFICIAL DESIGNATION';
+      const cleanKey = String(rawKey).replace(/::APPROVED_SDS/gi, '').trim();
+      if (!cleanKey || processedKeys.has(cleanKey.toUpperCase())) continue;
+      processedKeys.add(cleanKey.toUpperCase());
+
+      const isSds = !!(item.isSdsApproved || item.is_sds_approved || String(rawKey).includes('::APPROVED_SDS'));
+      const isConf = !!(item.sdsConfirmed || item.sds_confirmed || isSds);
+      const dsgName = (item.designationName || item.designation_name || item.name || cleanKey.split(' - ')[0]).replace(/::APPROVED_SDS/gi, '').trim();
+
+      dsgObj = {
+        designationName: dsgName || 'OFFICIAL DESIGNATION',
+        gradeLevel: item.gradeLevel || item.grade_level || '',
+        subjectArea: item.subjectArea || item.subject_area || '',
+        track: item.track || '',
+        isSdsApproved: isSds,
+        sdsConfirmed: isConf,
+        serializedKey: rawKey,
+        rawPayload: item
+      };
+    }
+
+    if (!dsgObj.designationName) continue;
+
+    const dsgId = `DSG-${String(targetSchoolId).replace('SCH-', '')}-${String(personnelId).split('-').pop()}-${String(counter++).padStart(3, '0')}`;
 
     await client.query(
       `INSERT INTO esf7_personnel_designations (
@@ -930,14 +1150,14 @@ async function syncDesignationsInTransaction(client, personnelId, targetSchoolId
       [
         dsgId,
         personnelId,
-        name,
-        d.gradeLevel || d.grade_level || null,
-        d.subjectArea || d.subject_area || null,
-        d.track || null,
-        isApproved,
-        isConfirmed,
-        key,
-        JSON.stringify(d)
+        dsgObj.designationName,
+        dsgObj.gradeLevel || null,
+        dsgObj.subjectArea || null,
+        dsgObj.track || null,
+        !!dsgObj.isSdsApproved,
+        !!dsgObj.sdsConfirmed,
+        dsgObj.serializedKey || dsgObj.designationName,
+        JSON.stringify(dsgObj.rawPayload || dsgObj)
       ]
     );
   }
@@ -1085,7 +1305,7 @@ router.post('/', async (req, res) => {
       empHire,
       empDeploy,
       JSON.stringify(assigned_schools || assignedSchools || []),
-      JSON.stringify(assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || []),
+      JSON.stringify(sanitizeGradeArray(assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [])),
       first_service_date || firstServiceDate || null,
       last_promotion_date || lastPromotionDate || null,
       new_station_date || newStationDate || null,
@@ -1107,7 +1327,13 @@ router.post('/', async (req, res) => {
     const eduMaj = (major || '').toUpperCase();
     const eduMin = (minor || '').toUpperCase();
     const eduPostDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
-    const eduPostDisc = (post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom || '').toUpperCase();
+    const parsedPostDisc = parsePostGraduateDiscipline(
+      post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom,
+      req.body,
+      req.body,
+      eduHighestAttainment
+    );
+    const eduPostDisc = parsedPostDisc.jsonString;
     const eduPrcSpec = (prc_specialization || prcSpecialization || '').toUpperCase();
     const eduId = `EDU-${targetSchoolId.replace('SCH-', '')}-${seq}`;
 
@@ -1463,7 +1689,7 @@ router.put('/:id', async (req, res) => {
       empHire,
       empDeploy,
       JSON.stringify(assigned_schools || assignedSchools || []),
-      JSON.stringify(assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || []),
+      JSON.stringify(sanitizeGradeArray(assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [])),
       first_service_date || firstServiceDate || null,
       last_promotion_date || lastPromotionDate || null,
       new_station_date || newStationDate || null,
@@ -1485,7 +1711,13 @@ router.put('/:id', async (req, res) => {
     const eduMaj = (major || '').toUpperCase();
     const eduMin = (minor || '').toUpperCase();
     const eduPostDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
-    const eduPostDisc = (post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom || '').toUpperCase();
+    const parsedPostDisc = parsePostGraduateDiscipline(
+      post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom,
+      req.body,
+      req.body,
+      eduHighestAttainment
+    );
+    const eduPostDisc = parsedPostDisc.jsonString;
     const eduPrcSpec = (prc_specialization || prcSpecialization || '').toUpperCase();
     const eduId = `EDU-${updatedProfile.school_id.replace('SCH-', '')}-${updatedProfile.id.split('-').pop()}`;
 
@@ -1585,6 +1817,10 @@ router.put('/:id', async (req, res) => {
       last_lateral_movement_date: empRes.rows[0].last_lateral_movement_date,
       employment_raw_payload: empRes.rows[0].raw_payload,
       educ_id: educRes.rows[0].id,
+      highest_educational_attainment: educRes.rows[0].highest_educational_attainment,
+      shs_track: educRes.rows[0].shs_track,
+      vocational_course: educRes.rows[0].vocational_course,
+      vocational_level: educRes.rows[0].vocational_level,
       college_degree: educRes.rows[0].college_degree,
       major: educRes.rows[0].major,
       minor: educRes.rows[0].minor,

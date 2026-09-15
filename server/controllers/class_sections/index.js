@@ -3,12 +3,29 @@ const router = express.Router();
 const db = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 
+function isInvalidSectionRecord(row) {
+  if (!row) return true;
+  const g = String(row.grade_level || row.gradeLevel || '').toUpperCase().trim();
+  const n = String(row.section_name || row.sectionName || '').toUpperCase().trim();
+  return (
+    g.includes('MULTI-GRADE') || g.includes('MULTIGRADE') || g.includes('MULTI GRADE') ||
+    g.includes('MONO-GRADE') || g.includes('MONOGRADE') || g.includes('MONO GRADE') ||
+    n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
+    n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
+  );
+}
+
 function formatRegularRecord(row) {
-  if (!row) return null;
+  if (!row || isInvalidSectionRecord(row)) return null;
   const raw = row.raw_payload || {};
   const m = Number(row.male_learners || 0);
   const f = Number(row.female_learners || 0);
   const total = row.number_of_learners !== null && row.number_of_learners !== undefined ? Number(row.number_of_learners) : (m + f);
+
+  let cleanGrade = row.grade_level;
+  const upperG = String(cleanGrade || '').toUpperCase().trim();
+  if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
+  else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
 
   return {
     ...raw,
@@ -17,8 +34,8 @@ function formatRegularRecord(row) {
     school_id: row.school_id,
     schoolYear: row.school_year,
     school_year: row.school_year,
-    gradeLevel: row.grade_level,
-    grade_level: row.grade_level,
+    gradeLevel: cleanGrade,
+    grade_level: cleanGrade,
     sectionName: row.section_name,
     section_name: row.section_name,
     sectionType: row.section_type || 'MONO GRADE',
@@ -125,9 +142,9 @@ router.get('/', async (req, res) => {
       db.query(`SELECT * FROM esf7_remedial_enrichment_sections WHERE school_id = $1 OR school_id = $2 ORDER BY grade_level ASC, section_name ASC`, [schoolId, cleanSchoolId])
     ]);
 
-    const regularSections = regRes.rows.map(formatRegularRecord);
-    const aralSections = aralRes.rows.map(formatAralRecord);
-    const remedialEnrichmentSections = remRes.rows.map(formatRemedialRecord);
+    const regularSections = regRes.rows.map(formatRegularRecord).filter(Boolean);
+    const aralSections = aralRes.rows.map(formatAralRecord).filter(Boolean);
+    const remedialEnrichmentSections = remRes.rows.map(formatRemedialRecord).filter(Boolean);
 
     res.json({
       success: true,

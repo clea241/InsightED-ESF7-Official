@@ -13,6 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(require('./utils/devLogger'));
 
 // Routes wiring
 app.use('/api/auth', require('./controllers/auth'));
@@ -56,6 +57,7 @@ app.use('/api/tardiness', require('./controllers/overload_late'));
 app.use('/api/overload-pay-and-reason', require('./controllers/overload_pay_and_reason'));
 app.use('/api/overload-pay', require('./controllers/overload_pay_and_reason'));
 app.use('/api/dashboard', require('./controllers/dashboard'));
+app.use('/api/dev', require('./controllers/dev_snapshot'));
 
 
 const queueWorker = require('./queue_worker');
@@ -75,13 +77,47 @@ app.get('/api/salary-matrix', async (req, res) => {
   }
 });
 
-// Initialize DB schema
+// Initialize DB schema & ensure zero VARCHAR character-length restrictions
 const initDB = async () => {
   try {
     const schemaPath = path.join(__dirname, 'schema.sql');
-    const sql = fs.readFileSync(schemaPath, 'utf8');
-    await db.query(sql);
-    console.log('✅ Database schema initialized successfully.');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      await db.query(sql);
+      console.log('✅ Database schema initialized successfully.');
+    }
+
+    // Self-healing: expand critical VARCHAR columns to TEXT so ID and error strings never truncate
+    await db.query(`
+      DO $$ 
+      BEGIN
+        ALTER TABLE esf7_submission_queue ALTER COLUMN error_message TYPE TEXT;
+        ALTER TABLE esf7_submission_queue ALTER COLUMN status TYPE TEXT;
+        ALTER TABLE esf7_submission_queue ALTER COLUMN school_id TYPE TEXT;
+        ALTER TABLE esf7_submission_queue ALTER COLUMN school_year TYPE TEXT;
+        ALTER TABLE esf7_submission_queue ALTER COLUMN certified_by TYPE TEXT;
+
+        ALTER TABLE esf7_workload_rows ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_workload_rows ALTER COLUMN personnel_id TYPE TEXT;
+        ALTER TABLE esf7_perssonel_educ ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_personnel_learning_areas ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_personnel_ld_trainings ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_personnel_designations ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_personnel_allowances ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_regular_sections ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_aral_sections ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_remedial_enrichment_sections ALTER COLUMN id TYPE TEXT;
+        ALTER TABLE esf7_workload_transfer ALTER COLUMN id TYPE TEXT;
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END $$;
+    `);
+
+    // Reset any stuck processing jobs in queue
+    await db.query(`
+      UPDATE esf7_submission_queue
+      SET status = 'pending', error_message = NULL, updated_at = NOW()
+      WHERE status = 'processing'
+    `).catch(() => {});
   } catch (err) {
     console.error('❌ Failed to initialize database:', err.message);
   }

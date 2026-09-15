@@ -2,10 +2,95 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 
+const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {}, highestAttainment = '') => {
+  let masters = [];
+  let doctorate = [];
+
+  const extractList = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.map(s => String(s).trim()).filter(Boolean);
+        } catch (e) {}
+      }
+      return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  if (rawDiscipline && typeof rawDiscipline === 'object' && !Array.isArray(rawDiscipline)) {
+    if (Array.isArray(rawDiscipline.masters)) masters = rawDiscipline.masters;
+    if (Array.isArray(rawDiscipline.doctorate)) doctorate = rawDiscipline.doctorate;
+  } else if (typeof rawDiscipline === 'string' && rawDiscipline.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawDiscipline);
+      if (Array.isArray(parsed.masters)) masters = parsed.masters;
+      if (Array.isArray(parsed.doctorate)) doctorate = parsed.doctorate;
+    } catch (e) {}
+  } else if (rawDiscipline) {
+    const list = extractList(rawDiscipline);
+    if (String(highestAttainment).toUpperCase().includes('DOCTOR')) {
+      doctorate = list;
+    } else {
+      masters = list;
+    }
+  }
+
+  const combinedSource = { ...rawProfile, ...rawEduc };
+  if (masters.length === 0) {
+    if (combinedSource.mastersDisciplines) {
+      masters = extractList(combinedSource.mastersDisciplines);
+    } else if (combinedSource.mastersDiscipline) {
+      masters = extractList(combinedSource.mastersDiscipline);
+    }
+  }
+
+  if (doctorate.length === 0) {
+    if (combinedSource.doctorateDisciplines) {
+      doctorate = extractList(combinedSource.doctorateDisciplines);
+    } else if (combinedSource.doctorateDiscipline) {
+      doctorate = extractList(combinedSource.doctorateDiscipline);
+    }
+  }
+
+  const degreeRows = combinedSource.degreeRows || [];
+  if (Array.isArray(degreeRows)) {
+    for (const d of degreeRows) {
+      const lvl = String(d.level || '').toUpperCase();
+      const dList = extractList(d.postGraduateDiscipline || d.discipline || d.disciplines);
+      if (lvl === 'MASTERS' && masters.length === 0) masters.push(...dList);
+      if (lvl === 'DOCTORATE' && doctorate.length === 0) doctorate.push(...dList);
+    }
+  }
+
+  masters = [...new Set(masters.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorate = [...new Set(doctorate.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+
+  return {
+    masters,
+    doctorate,
+    mastersDiscipline: masters.join(', '),
+    doctorateDiscipline: doctorate.join(', '),
+    jsonString: JSON.stringify({ masters, doctorate }),
+    rawObject: { masters, doctorate }
+  };
+};
+
 function formatEducRecord(row) {
   if (!row) return null;
   const raw = row.raw_payload || {};
   const elList = Array.isArray(row.eligibility) ? row.eligibility : [];
+
+  const parsedPostDisc = parsePostGraduateDiscipline(
+    row.post_graduate_discipline,
+    raw,
+    raw,
+    row.highest_educational_attainment
+  );
 
   return {
     ...raw,
@@ -26,8 +111,12 @@ function formatEducRecord(row) {
     minor: row.minor || '',
     postGraduateDegree: row.post_graduate_degree || 'N/A',
     post_graduate_degree: row.post_graduate_degree || 'N/A',
-    postGraduateDiscipline: row.post_graduate_discipline || '',
-    post_graduate_discipline: row.post_graduate_discipline || '',
+    postGraduateDiscipline: parsedPostDisc.jsonString,
+    post_graduate_discipline: parsedPostDisc.jsonString,
+    mastersDiscipline: parsedPostDisc.mastersDiscipline,
+    mastersDisciplines: parsedPostDisc.masters,
+    doctorateDiscipline: parsedPostDisc.doctorateDiscipline,
+    doctorateDisciplines: parsedPostDisc.doctorate,
     eligibility: elList,
     prcSpecialization: row.prc_specialization || '',
     prc_specialization: row.prc_specialization || '',
@@ -88,7 +177,14 @@ router.post('/:personnel_id', async (req, res) => {
     const maj = (major || '').toUpperCase();
     const min = (minor || '').toUpperCase();
     const postDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
-    const postDisc = (post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom || '').toUpperCase();
+    
+    const parsedPostDisc = parsePostGraduateDiscipline(
+      post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom,
+      req.body,
+      req.body,
+      eduHighestAttainment
+    );
+    const postDisc = parsedPostDisc.jsonString;
     const prcSpec = (prc_specialization || prcSpecialization || '').toUpperCase();
 
     // Process eligibility array preserving custom RA 1080 strings

@@ -11,9 +11,11 @@ const pool = new Pool({
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
-  idleTimeoutMillis: 60000,
-  connectionTimeoutMillis: 20000,
-  max: 20
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  statement_timeout: 45000,
+  query_timeout: 45000,
+  max: 30
 });
 
 pool.on('error', (err, client) => {

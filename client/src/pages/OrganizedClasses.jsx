@@ -571,6 +571,53 @@ const getSectionSizeStatus = (gradeLevel, totalLearners, sectionType = '') => {
   return { status: 'ABOVE STANDARD', short: 'ABOVE', label: 'Above Standard (>45)', color: '#B91C1C', bg: '#FEE2E2', border: '#FCA5A5' };
 };
 
+export const sanitizeTwoDigit = (val) => {
+  if (val === '' || val === null || val === undefined) return '';
+  return String(val).replace(/\D/g, '').slice(0, 2);
+};
+
+export const isTeacherQualifiedForGrade = (teacher, sectionGradeLevel, sectionType = '', selectedGrades = []) => {
+  if (!teacher) return false;
+  const teacherGrades = Array.isArray(teacher.assignedGradeLevels) && teacher.assignedGradeLevels.length > 0
+    ? teacher.assignedGradeLevels
+    : (Array.isArray(teacher.gradeLevelsTaught) && teacher.gradeLevelsTaught.length > 0 ? teacher.gradeLevelsTaught : []);
+
+  // If teacher has not yet configured Teaching Tab at all, allow as fallback
+  if (teacherGrades.length === 0) {
+    return true;
+  }
+
+  const normTeacherGrades = teacherGrades.map(g => String(g).toUpperCase().trim());
+
+  let targetGrades = [];
+  if (Array.isArray(selectedGrades) && selectedGrades.length > 0) {
+    targetGrades = selectedGrades.map(g => String(g).toUpperCase().trim());
+  } else if (sectionGradeLevel) {
+    const sGrade = String(sectionGradeLevel).toUpperCase().trim();
+    if (sGrade.includes(' - ')) {
+      targetGrades = sGrade.split(' - ').map(s => s.trim());
+    } else {
+      targetGrades = [sGrade];
+    }
+  }
+
+  if (targetGrades.length === 0) return true;
+
+  return targetGrades.some(tg => {
+    return normTeacherGrades.some(ag => {
+      if (tg === ag) return true;
+      const tgMatch = tg.match(/^(?:GRADE\s*|G\s*)?(\d+|KINDER|K|ALS|SNED|SPED|NON-GRADED|NON GRADED)$/i);
+      const agMatch = ag.match(/^(?:GRADE\s*|G\s*)?(\d+|KINDER|K|ALS|SNED|SPED|NON-GRADED|NON GRADED)$/i);
+      if (tgMatch && agMatch && tgMatch[1] === agMatch[1]) return true;
+      if ((ag.includes('KINDER') || ag === 'K') && (tg.includes('KINDER') || tg === 'K')) return true;
+      if ((ag.includes('SNED') || ag.includes('SPED')) && (tg.includes('SNED') || tg.includes('SPED'))) return true;
+      if (ag.includes('ALS') && tg.includes('ALS')) return true;
+      if (ag.includes('ARAL') && tg.includes('ARAL')) return true;
+      return false;
+    });
+  });
+};
+
 export default function OrganizedClasses() {
   const { classSections, setClassSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, setPersonnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm, showToast, setHasUnsavedChanges, completeNode, setActiveView } = useApp();
 
@@ -906,25 +953,21 @@ export default function OrganizedClasses() {
 
   const availableGrades = [];
   if (showElem) {
-    availableGrades.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED');
+    availableGrades.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6');
   }
   if (showJHS) {
     availableGrades.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10');
-    if (!availableGrades.includes('NON-GRADED')) {
-      availableGrades.push('NON-GRADED');
-    }
   }
   if (showSHS) {
     availableGrades.push('Grade 11', 'Grade 12');
-    // Note: NON-GRADED is for Elementary and Junior High only (no NON-GRADED in Senior High).
   }
   if (availableGrades.length === 0) {
-    availableGrades.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
+    availableGrades.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
   }
 
-  // Include ALS & SNED when active in Inclusive Programs or school curriculum
-  if (hasSNED && !availableGrades.includes('SNED')) {
-    availableGrades.push('SNED');
+  // Include ALS & SNED (NON-GRADED) when active in Inclusive Programs or school curriculum
+  if (hasSNED && !availableGrades.includes('SNED (NON-GRADED)')) {
+    availableGrades.push('SNED (NON-GRADED)');
   }
   if (hasALS && !availableGrades.includes('ALS')) {
     availableGrades.push('ALS');
@@ -949,25 +992,44 @@ export default function OrganizedClasses() {
     }
   }, [availableBands.join(',')]);
 
-  // Auto-clean legacy default 35 values from cached classSections if male/female are unset
+  // Auto-clean invalid scanned sections (multi-grade / mono-grade artifacts) and legacy default 35 values
   React.useEffect(() => {
-    let hasLegacy = false;
-    classSections.forEach(sec => {
-      if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
-        hasLegacy = true;
+    const isInvalid = (sec) => {
+      if (!sec) return true;
+      const g = String(sec.gradeLevel || sec.grade_level || '').toUpperCase().trim();
+      const n = String(sec.sectionName || sec.section_name || '').toUpperCase().trim();
+      return (
+        g.includes('MULTI-GRADE') || g.includes('MULTIGRADE') || g.includes('MULTI GRADE') ||
+        g.includes('MONO-GRADE') || g.includes('MONOGRADE') || g.includes('MONO GRADE') ||
+        n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
+        n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
+      );
+    };
+
+    let needsUpdate = false;
+    const cleanList = (classSections || []).filter(sec => !isInvalid(sec)).map(sec => {
+      let cleanGrade = sec.gradeLevel || sec.grade_level || '';
+      const upperG = String(cleanGrade).toUpperCase().trim();
+      if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
+      else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
+
+      let updated = { ...sec };
+      if (cleanGrade !== sec.gradeLevel) {
+        updated.gradeLevel = cleanGrade;
+        updated.grade_level = cleanGrade;
+        needsUpdate = true;
       }
+      if (updated.numberOfLearners === 35 && (!updated.maleLearners || Number(updated.maleLearners) === 0) && (!updated.femaleLearners || Number(updated.femaleLearners) === 0)) {
+        updated.numberOfLearners = null;
+        updated.maleLearners = null;
+        updated.femaleLearners = null;
+        needsUpdate = true;
+      }
+      return updated;
     });
-    if (hasLegacy) {
-      classSections.forEach(sec => {
-        if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
-          sec.numberOfLearners = null;
-          sec.maleLearners = null;
-          sec.femaleLearners = null;
-          if (sec.id) {
-            updateSectionDetails(sec.id, { numberOfLearners: null, maleLearners: null, femaleLearners: null });
-          }
-        }
-      });
+
+    if (cleanList.length !== (classSections || []).length || needsUpdate) {
+      setClassSections(cleanList);
     }
   }, [classSections]);
 
@@ -1533,7 +1595,7 @@ export default function OrganizedClasses() {
               shortTag: '150px',     // Class Type / ARAL Basis — widened so dropdown values like "MULTI GRADE" don't clip
               gradeLevel: '160px',   // Grade Level / Target Grade — widened for values like "NON-GRADED"
               sectionName: '170px',  // Section Name (~15-20 char content)
-              sexIcon: '64px',       // ♂ / ♀ counts
+              sexIcon: '78px',       // Male ♂ / Female ♀ enrollment counts
               total: '78px',
               personName: '220px',  // Class Adviser / Section Tutor / Assigned Teacher — fixed (not flexible), roughly half its old flex-stretched width
               actions: '100px',
@@ -1547,9 +1609,9 @@ export default function OrganizedClasses() {
               { key: 'classType', label: 'Class Type', width: COL_W.shortTag, getValue: sec => (String(sec.gradeLevel || '').includes(' - ') || sec.sectionType === 'MULTIGRADE') ? 'Multi Grade' : 'Mono Grade' },
               { key: 'gradeLevel', label: 'Grade Level', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel },
               { key: 'sectionName', label: 'Section Name', width: COL_W.sectionName, getValue: sec => sec.sectionName },
-              { key: 'male', label: '♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.maleLearners) || 0 },
-              { key: 'female', label: '♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.femaleLearners) || 0 },
-              { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: '#', getValue: regularTotal },
+              { key: 'male', label: 'Male ♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Male', getValue: sec => Number(sec.maleLearners) || 0 },
+              { key: 'female', label: 'Female ♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Female', getValue: sec => Number(sec.femaleLearners) || 0 },
+              { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: 'Total', getValue: regularTotal },
               { key: 'adviser', label: 'Class Adviser', width: COL_W.personName, getValue: sec => { const a = personnel.find(p => p.id === sec.advisorId); return a ? `${a.firstName} ${a.lastName}` : ''; } },
               { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
             ];
@@ -1575,7 +1637,7 @@ export default function OrganizedClasses() {
                 }
               },
               { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
-              { key: 'learners', label: 'Learners', align: 'center', width: COL_W.learners, filterPlaceholder: '#', getValue: sec => Number(sec.aralLearners || sec.numberOfLearners) || 0 },
+              { key: 'learners', label: 'Learners', align: 'center', width: COL_W.learners, filterPlaceholder: 'Count', getValue: sec => Number(sec.aralLearners || sec.numberOfLearners) || 0 },
               { key: 'tutor', label: 'Section Tutor', width: COL_W.personName, getValue: sec => { const t = personnel.find(p => p.id === (sec.tutorId || sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
               { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
             ];
@@ -1585,9 +1647,9 @@ export default function OrganizedClasses() {
               { key: 'category', label: 'Intervention Category', width: COL_W.interventionCategory, getValue: sec => sec.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : 'REMEDIAL' },
               { key: 'gradeLevel', label: 'Target Grade', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel },
               { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
-              { key: 'male', label: '♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.maleLearners) || 0 },
-              { key: 'female', label: '♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: '#', getValue: sec => Number(sec.femaleLearners) || 0 },
-              { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: '#', getValue: sec => (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0) },
+              { key: 'male', label: 'Male ♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Male', getValue: sec => Number(sec.maleLearners) || 0 },
+              { key: 'female', label: 'Female ♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Female', getValue: sec => Number(sec.femaleLearners) || 0 },
+              { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: 'Total', getValue: sec => (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0) },
               { key: 'teacher', label: 'Assigned Teacher', width: COL_W.personName, getValue: sec => { const t = personnel.find(p => p.id === (sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
               { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
             ];
@@ -1612,13 +1674,22 @@ export default function OrganizedClasses() {
               const isMulti = d.sectionType === 'MULTIGRADE' && hasElementary;
 
               const currentAdvisorId = d.advisorId || d.tutorId || '';
-              const availableAdvisors = teachingPersonnel.filter(p =>
-                String(p.id) === String(currentAdvisorId) || !assignedRegularAdvisorIds.has(String(p.id))
-              );
+              const targetGradeForEdit = d.sectionType === 'MULTIGRADE' ? (d.selectedGrades?.join(' - ') || d.gradeLevel) : d.gradeLevel;
+              const availableAdvisors = teachingPersonnel.filter(p => {
+                const isCurrentlySelected = String(p.id) === String(currentAdvisorId);
+                const isAvailable = isCurrentlySelected || !assignedRegularAdvisorIds.has(String(p.id));
+                const isQualified = isTeacherQualifiedForGrade(p, targetGradeForEdit, d.sectionType, d.selectedGrades);
+                return isAvailable && (isQualified || isCurrentlySelected);
+              });
 
               if (isAral) {
                 const toolKey = normalizeAralToolKey(d.aralToolKey);
                 const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+                const aralTarget = d.aralBasis === 'grade' ? d.aralGrade : 'Grade 3';
+                const availableAralTutors = teachingPersonnel.filter(p => {
+                  const isCurrentlySelected = String(p.id) === String(d.tutorId || d.advisorId || '');
+                  return isCurrentlySelected || isTeacherQualifiedForGrade(p, aralTarget, 'ARAL');
+                });
                 return (
                   <tr key={`edit-${sec.id}`} style={{ background: '#F0F9FF', outline: '2px solid #38BDF8', outlineOffset: '-2px' }}>
                     <td>
@@ -1657,7 +1728,7 @@ export default function OrganizedClasses() {
                     <td>
                       <select style={cellSelect} value={d.tutorId || d.advisorId || ''} onChange={e => setEditingRowData({ ...d, tutorId: e.target.value, advisorId: e.target.value })}>
                         <option value="">-- Select Tutor --</option>
-                        {teachingPersonnel.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
+                        {availableAralTutors.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
                       </select>
                     </td>
                     <td>
@@ -1671,6 +1742,10 @@ export default function OrganizedClasses() {
               }
 
               if (isRem) {
+                const availableRemTeachers = teachingPersonnel.filter(p => {
+                  const isCurrentlySelected = String(p.id) === String(d.advisorId || '');
+                  return isCurrentlySelected || isTeacherQualifiedForGrade(p, d.gradeLevel, d.interventionCategory);
+                });
                 return (
                   <tr key={`edit-${sec.id}`} style={{ background: '#F5F3FF', outline: '2px solid #A78BFA', outlineOffset: '-2px' }}>
                     <td>
@@ -1685,13 +1760,13 @@ export default function OrganizedClasses() {
                       </select>
                     </td>
                     <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
-                    <td><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: e.target.value })} placeholder="♂" /></td>
-                    <td><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: e.target.value })} placeholder="♀" /></td>
+                    <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
+                    <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                     <td><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
                     <td>
                       <select style={cellSelect} value={d.advisorId || ''} onChange={e => setEditingRowData({ ...d, advisorId: e.target.value })}>
                         <option value="">-- Select Teacher --</option>
-                        {teachingPersonnel.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
+                        {availableRemTeachers.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
                       </select>
                     </td>
                     <td>
@@ -1734,8 +1809,8 @@ export default function OrganizedClasses() {
                     )}
                   </td>
                   <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
-                  <td><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: e.target.value })} placeholder="♂" /></td>
-                  <td><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: e.target.value })} placeholder="♀" /></td>
+                  <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
+                  <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                   <td><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
                   <td>
                     <select style={cellSelect} value={d.advisorId} onChange={e => setEditingRowData({ ...d, advisorId: e.target.value })}>
@@ -1824,7 +1899,8 @@ export default function OrganizedClasses() {
                       {showInlineAdd && (() => {
                         const d = inlineAddData;
                         const isMulti = d.sectionType === 'MULTIGRADE' && hasElementary;
-                        const availableAdvisorsForNew = teachingPersonnel.filter(p => !assignedRegularAdvisorIds.has(String(p.id)));
+                        const targetGradeForAdd = isMulti ? (d.selectedGrades || []) : (d.gradeLevel || availableGrades[0]);
+                        const availableAdvisorsForNew = teachingPersonnel.filter(p => !assignedRegularAdvisorIds.has(String(p.id)) && isTeacherQualifiedForGrade(p, targetGradeForAdd, d.sectionType, d.selectedGrades));
                         return (
                           <tr style={{ background: '#F0FDF4', outline: '2px solid #86EFAC', outlineOffset: '-2px' }}>
                             <td style={{ padding: '8px 10px' }}>
@@ -1856,12 +1932,12 @@ export default function OrganizedClasses() {
                             <td style={{ padding: '8px 10px' }}>
                               <input style={cellInput} value={d.sectionName} onChange={e => setInlineAddData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" autoFocus />
                             </td>
-                            <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.maleLearners} onChange={e => setInlineAddData({ ...d, maleLearners: e.target.value })} placeholder="♂" /></td>
-                            <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.femaleLearners} onChange={e => setInlineAddData({ ...d, femaleLearners: e.target.value })} placeholder="♀" /></td>
+                            <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setInlineAddData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
+                            <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setInlineAddData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                             <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
                             <td style={{ padding: '8px 10px' }}>
                               <select style={cellInput} value={d.advisorId} onChange={e => setInlineAddData({ ...d, advisorId: e.target.value })}>
-                                <option value="">-- Adviser (Optional) --</option>
+                                <option value="">-- Select Adviser --</option>
                                 {availableAdvisorsForNew.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
                               </select>
                             </td>
@@ -1976,6 +2052,8 @@ export default function OrganizedClasses() {
                           const d = inlineAralData;
                           const toolKey = normalizeAralToolKey(d.aralToolKey);
                           const toolObj = ARAL_TOOLS[toolKey] || ARAL_TOOLS.crla;
+                          const aralAddTargetGrade = d.aralBasis === 'grade' ? d.aralGrade : (toolKey === 'crla' ? 'Grade 1' : toolKey === 'philIri' ? 'Grade 4' : 'Grade 1');
+                          const availableAralTutorsForNew = teachingPersonnel.filter(p => isTeacherQualifiedForGrade(p, aralAddTargetGrade, 'ARAL'));
                           return (
                             <tr style={{ background: '#F0FDF4', outline: '2px solid #86EFAC', outlineOffset: '-2px' }}>
                               <td style={{ padding: '8px 10px' }}>
@@ -2014,7 +2092,7 @@ export default function OrganizedClasses() {
                               <td style={{ padding: '8px 10px' }}>
                                 <select style={cellInput} value={d.tutorId || ''} onChange={e => setInlineAralData({ ...d, tutorId: e.target.value })}>
                                   <option value="">-- Select Tutor --</option>
-                                  {teachingPersonnel.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
+                                  {availableAralTutorsForNew.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
                                 </select>
                               </td>
                               <td style={{ padding: '8px 10px' }}>
@@ -2099,6 +2177,8 @@ export default function OrganizedClasses() {
                         )}
                         {showInlineAddRemedial && (() => {
                           const d = inlineRemedialData;
+                          const remGrade = d.gradeLevel || availableGrades[0];
+                          const availableRemTeachersForNew = teachingPersonnel.filter(p => isTeacherQualifiedForGrade(p, remGrade, d.interventionCategory));
                           return (
                             <tr style={{ background: '#FAF5FF', outline: '2px solid #D8B4FE', outlineOffset: '-2px' }}>
                               <td style={{ padding: '8px 10px' }}>
@@ -2113,13 +2193,13 @@ export default function OrganizedClasses() {
                                 </select>
                               </td>
                               <td style={{ padding: '8px 10px' }}><input style={cellInput} value={d.sectionName} onChange={e => setInlineRemedialData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" autoFocus /></td>
-                              <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.maleLearners} onChange={e => setInlineRemedialData({ ...d, maleLearners: e.target.value })} placeholder="♂" /></td>
-                              <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '55px' }} type="number" min="0" max="99" value={d.femaleLearners} onChange={e => setInlineRemedialData({ ...d, femaleLearners: e.target.value })} placeholder="♀" /></td>
+                              <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setInlineRemedialData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
+                              <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setInlineRemedialData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                               <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
                               <td style={{ padding: '8px 10px' }}>
                                 <select style={cellInput} value={d.teacherId || ''} onChange={e => setInlineRemedialData({ ...d, teacherId: e.target.value })}>
                                   <option value="">-- Select Teacher --</option>
-                                  {teachingPersonnel.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
+                                  {availableRemTeachersForNew.map(p => <option key={p.id} value={p.id}>{p.firstName} {p.lastName}</option>)}
                                 </select>
                               </td>
                               <td style={{ padding: '8px 10px' }}>

@@ -189,7 +189,20 @@ router.get('/', async (req, res) => {
       if (ls.school_year) schoolYear = ls.school_year;
     }
 
-    // 6. Query esf7_school_profile (for user-configured special programs & SHS model)
+    let hasElemInclusive = false;
+    let elemInclusivePrograms = [];
+    let hasJhsInclusive = false;
+    let jhsInclusivePrograms = [];
+    let hasShsInclusive = false;
+    let shsInclusivePrograms = [];
+    let inclusivePrograms = [];
+    let hasAls = false;
+    let hasSned = false;
+    let hasIped = false;
+    let hasMadrasah = false;
+    let elemSpecialPrograms = [];
+
+    // 6. Query esf7_school_profile (for user-configured special programs & SHS model & inclusive programs)
     const localProf = await db.query(
       'SELECT * FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1',
       [cleanSchoolId, `SCH-${cleanSchoolId}`]
@@ -200,10 +213,41 @@ router.get('/', async (req, res) => {
       if (pRow.school_year) schoolYear = pRow.school_year;
       if (pRow.shs_curriculum_model) shsCurriculumModel = pRow.shs_curriculum_model;
       hasElemSpecialPrograms = Boolean(pRow.has_elem_special_programs);
+      elemSpecialPrograms = Array.isArray(pRow.elem_special_programs)
+        ? pRow.elem_special_programs
+        : (hasElemSpecialPrograms ? ['SPECIAL SCIENCE ELEMENTARY SCHOOL'] : []);
       hasJhsSpecialPrograms = Boolean(pRow.has_jhs_special_programs);
       if (Array.isArray(pRow.jhs_special_programs)) {
         jhsSpecialPrograms = pRow.jhs_special_programs;
       }
+
+      hasElemInclusive = Boolean(pRow.has_elem_inclusive ?? pRow.raw_payload?.hasElemInclusive);
+      elemInclusivePrograms = Array.isArray(pRow.elem_inclusive_programs)
+        ? pRow.elem_inclusive_programs
+        : (Array.isArray(pRow.raw_payload?.elemInclusivePrograms) ? pRow.raw_payload.elemInclusivePrograms : []);
+
+      hasJhsInclusive = Boolean(pRow.has_jhs_inclusive ?? pRow.raw_payload?.hasJhsInclusive);
+      jhsInclusivePrograms = Array.isArray(pRow.jhs_inclusive_programs)
+        ? pRow.jhs_inclusive_programs
+        : (Array.isArray(pRow.raw_payload?.jhsInclusivePrograms) ? pRow.raw_payload.jhsInclusivePrograms : []);
+
+      hasShsInclusive = Boolean(pRow.has_shs_inclusive ?? pRow.raw_payload?.hasShsInclusive);
+      shsInclusivePrograms = Array.isArray(pRow.shs_inclusive_programs)
+        ? pRow.shs_inclusive_programs
+        : (Array.isArray(pRow.raw_payload?.shsInclusivePrograms) ? pRow.raw_payload.shsInclusivePrograms : []);
+
+      inclusivePrograms = Array.isArray(pRow.inclusive_programs)
+        ? pRow.inclusive_programs
+        : (Array.isArray(pRow.raw_payload?.inclusivePrograms) ? pRow.raw_payload.inclusivePrograms : [
+            ...(hasElemInclusive ? elemInclusivePrograms : []),
+            ...(hasJhsInclusive ? jhsInclusivePrograms : []),
+            ...(hasShsInclusive ? shsInclusivePrograms : [])
+          ]);
+
+      hasAls = Boolean(pRow.has_als ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('ALS')));
+      hasSned = Boolean(pRow.has_sned ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('SNED') || String(p).toUpperCase().includes('SPED')));
+      hasIped = Boolean(pRow.has_iped ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('IPED') || String(p).toUpperCase().startsWith('IP-')));
+      hasMadrasah = Boolean(pRow.has_madrasah ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('MADRASAH') || String(p).toUpperCase().includes('MEP') || String(p).toUpperCase().includes('ALIVE')));
 
       if (pRow.raw_payload && Array.isArray(pRow.raw_payload.specialPrograms)) {
         specialPrograms = pRow.raw_payload.specialPrograms;
@@ -215,23 +259,38 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Align special programs and curriculum model with active offerings
+    // Align special programs, inclusive programs, and curriculum model with active offerings
     const isElem = curricularOffering.includes('Elementary');
     const isJHS = curricularOffering.includes('JHS');
     const isSHS = curricularOffering.includes('SHS');
 
     if (!isElem) {
       hasElemSpecialPrograms = false;
+      elemSpecialPrograms = [];
+      hasElemInclusive = false;
+      elemInclusivePrograms = [];
       specialPrograms = specialPrograms.filter(p => !p.toUpperCase().includes('ELEMENTARY') && !p.toUpperCase().includes('SSES'));
+      inclusivePrograms = inclusivePrograms.filter(p => !p.endsWith('-ES'));
     }
     if (!isJHS) {
       hasJhsSpecialPrograms = false;
       jhsSpecialPrograms = [];
+      hasJhsInclusive = false;
+      jhsInclusivePrograms = [];
       specialPrograms = specialPrograms.filter(p => p.toUpperCase().includes('ELEMENTARY') || p.toUpperCase().includes('SSES'));
+      inclusivePrograms = inclusivePrograms.filter(p => !p.endsWith('-JHS'));
     }
     if (!isSHS) {
       shsCurriculumModel = null;
+      hasShsInclusive = false;
+      shsInclusivePrograms = [];
+      inclusivePrograms = inclusivePrograms.filter(p => !p.endsWith('-SHS'));
     }
+
+    hasAls = inclusivePrograms.some(p => String(p).toUpperCase().includes('ALS'));
+    hasSned = inclusivePrograms.some(p => String(p).toUpperCase().includes('SNED') || String(p).toUpperCase().includes('SPED'));
+    hasIped = inclusivePrograms.some(p => String(p).toUpperCase().includes('IPED') || String(p).toUpperCase().startsWith('IP-'));
+    hasMadrasah = inclusivePrograms.some(p => String(p).toUpperCase().includes('MADRASAH') || String(p).toUpperCase().includes('MEP') || String(p).toUpperCase().includes('ALIVE'));
 
     return res.json({
       schoolId: cleanSchoolId,
@@ -248,9 +307,21 @@ router.get('/', async (req, res) => {
       subjectsConfig,
       specialPrograms,
       hasElemSpecialPrograms,
+      elemSpecialPrograms,
       hasJhsSpecialPrograms,
       jhsSpecialPrograms,
-      shsCurriculumModel
+      shsCurriculumModel,
+      hasElemInclusive,
+      elemInclusivePrograms,
+      hasJhsInclusive,
+      jhsInclusivePrograms,
+      hasShsInclusive,
+      shsInclusivePrograms,
+      hasAls,
+      hasSned,
+      hasIped,
+      hasMadrasah,
+      inclusivePrograms
     });
 
   } catch (err) {
@@ -270,7 +341,7 @@ router.get('/draft', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.json({ payload: null });
+      return res.json({ payload: null, updatedAt: null });
     }
 
     res.json({
@@ -282,40 +353,35 @@ router.get('/draft', async (req, res) => {
   }
 });
 
-// PUT /api/school/draft - Save/overwrite cloud draft for the school
-router.put('/draft', async (req, res) => {
+// PUT / POST /api/school/draft - Upsert cloud draft for the school
+const handleSaveDraft = async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || '123456';
-    const { schoolYear, payload, journey_state } = req.body;
+    const { payload, schoolYear = 'SY 26-27' } = req.body;
 
     if (!payload) {
       return res.status(400).json({ error: 'Missing draft payload' });
-    }
-
-    let finalPayload = payload;
-    if (typeof payload === 'object' && payload !== null && journey_state) {
-      finalPayload = { ...payload, journey_state };
     }
 
     const result = await db.query(
       `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (school_id, school_year)
-       DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+       DO UPDATE SET payload = $3, updated_at = NOW()
        RETURNING updated_at`,
-      [schoolId, schoolYear || 'SY 26-27', JSON.stringify(finalPayload)]
+      [schoolId, schoolYear, JSON.stringify(payload)]
     );
 
-    res.json({
-      success: true,
-      updatedAt: result.rows[0].updated_at
-    });
+    res.json({ success: true, updatedAt: result.rows[0].updated_at });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
 
-// DELETE /api/school/draft - Delete cloud draft for the school
+router.put('/draft', handleSaveDraft);
+router.post('/draft', handleSaveDraft);
+
+// DELETE /api/school/draft - Clear cloud draft upon form reset
 router.delete('/draft', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || '123456';
@@ -327,6 +393,30 @@ router.delete('/draft', async (req, res) => {
     );
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/school-info/shifts - Update number of shifts for current school
+router.post('/shifts', async (req, res) => {
+  try {
+    const schoolId = getSchoolIdFromRequest(req) || '123456';
+    const { shifts } = req.body;
+
+    if (!shifts || !['1', '2', '3'].includes(String(shifts))) {
+      return res.status(400).json({ error: 'Invalid shifts value. Must be 1, 2, or 3' });
+    }
+
+    await db.query(
+      `INSERT INTO schools (id, school_id, school_name, region, division, school_year, number_of_shifts)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (school_id, school_year) DO UPDATE
+       SET number_of_shifts = EXCLUDED.number_of_shifts, updated_at = NOW()`,
+      [`SCH-${schoolId}`, schoolId, 'School', 'Region', 'Division', 'SY 26-27', parseInt(shifts, 10)]
+    );
+
+    res.json({ success: true, numberOfShifts: String(shifts) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -356,36 +446,81 @@ router.put('/subjects', async (req, res) => {
   }
 });
 
-// PUT /api/schools/curricular-config - Save esf7_school_profile Special Curricular Programs
+// PUT /api/schools/curricular-config - Save esf7_school_profile Special Curricular & Inclusive Programs
 router.put('/curricular-config', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || req.body.schoolId || req.body.school_id || '108348';
     const {
       hasElemSpecialPrograms, has_elem_special_programs,
+      elemSpecialPrograms, elem_special_programs,
       hasJhsSpecialPrograms, has_jhs_special_programs,
       jhsSpecialPrograms, jhs_special_programs,
       shsCurriculumModel, shs_curriculum_model,
+      hasElemInclusive, has_elem_inclusive,
+      elemInclusivePrograms, elem_inclusive_programs,
+      hasJhsInclusive, has_jhs_inclusive,
+      jhsInclusivePrograms, jhs_inclusive_programs,
+      hasShsInclusive, has_shs_inclusive,
+      shsInclusivePrograms, shs_inclusive_programs,
+      inclusivePrograms, inclusive_programs,
       schoolYear = '2026-2027'
     } = req.body;
 
     const profileId = `SCH-PROFILE-${schoolId.replace('SCH-', '')}`;
     const elemFlag = hasElemSpecialPrograms === true || has_elem_special_programs === true;
+    const elemSpecialProgs = Array.isArray(elemSpecialPrograms) ? elemSpecialPrograms : (Array.isArray(elem_special_programs) ? elem_special_programs : (elemFlag ? ['SPECIAL SCIENCE ELEMENTARY SCHOOL'] : []));
     const jhsFlag = hasJhsSpecialPrograms === true || has_jhs_special_programs === true;
     const jhsProgs = Array.isArray(jhsSpecialPrograms) ? jhsSpecialPrograms : (Array.isArray(jhs_special_programs) ? jhs_special_programs : []);
     const shsModel = shsCurriculumModel || shs_curriculum_model || 'Standard K-12 SHS Curriculum';
 
+    const elemIncFlag = hasElemInclusive === true || has_elem_inclusive === true;
+    const elemIncProgs = Array.isArray(elemInclusivePrograms) ? elemInclusivePrograms : (Array.isArray(elem_inclusive_programs) ? elem_inclusive_programs : []);
+    const jhsIncFlag = hasJhsInclusive === true || has_jhs_inclusive === true;
+    const jhsIncProgs = Array.isArray(jhsInclusivePrograms) ? jhsInclusivePrograms : (Array.isArray(jhs_inclusive_programs) ? jhs_inclusive_programs : []);
+    const shsIncFlag = hasShsInclusive === true || has_shs_inclusive === true;
+    const shsIncProgs = Array.isArray(shsInclusivePrograms) ? shsInclusivePrograms : (Array.isArray(shs_inclusive_programs) ? shs_inclusive_programs : []);
+    const incProgs = Array.isArray(inclusivePrograms) ? inclusivePrograms : (Array.isArray(inclusive_programs) ? inclusive_programs : [
+      ...(elemIncFlag ? elemIncProgs : []),
+      ...(jhsIncFlag ? jhsIncProgs : []),
+      ...(shsIncFlag ? shsIncProgs : [])
+    ]);
+
+    const hasAls = incProgs.some(p => String(p).toUpperCase().includes('ALS'));
+    const hasSned = incProgs.some(p => String(p).toUpperCase().includes('SNED') || String(p).toUpperCase().includes('SPED'));
+    const hasIped = incProgs.some(p => String(p).toUpperCase().includes('IPED') || String(p).toUpperCase().startsWith('IP-') || String(p).toUpperCase().startsWith('IP_'));
+    const hasMadrasah = incProgs.some(p => String(p).toUpperCase().includes('MADRASAH') || String(p).toUpperCase().includes('MEP') || String(p).toUpperCase().includes('ALIVE'));
+
     const sql = `
       INSERT INTO esf7_school_profile (
-        id, school_id, school_year, has_elem_special_programs, has_jhs_special_programs,
-        jhs_special_programs, shs_curriculum_model, raw_payload
+        id, school_id, school_year,
+        has_elem_special_programs, elem_special_programs,
+        has_jhs_special_programs, jhs_special_programs,
+        shs_curriculum_model,
+        has_elem_inclusive, elem_inclusive_programs,
+        has_jhs_inclusive, jhs_inclusive_programs,
+        has_shs_inclusive, shs_inclusive_programs,
+        has_als, has_sned, has_iped, has_madrasah,
+        inclusive_programs, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17, $18, $19::jsonb, $20::jsonb)
       ON CONFLICT (school_id, school_year) DO UPDATE
       SET
         has_elem_special_programs = EXCLUDED.has_elem_special_programs,
+        elem_special_programs = EXCLUDED.elem_special_programs,
         has_jhs_special_programs = EXCLUDED.has_jhs_special_programs,
         jhs_special_programs = EXCLUDED.jhs_special_programs,
         shs_curriculum_model = EXCLUDED.shs_curriculum_model,
+        has_elem_inclusive = EXCLUDED.has_elem_inclusive,
+        elem_inclusive_programs = EXCLUDED.elem_inclusive_programs,
+        has_jhs_inclusive = EXCLUDED.has_jhs_inclusive,
+        jhs_inclusive_programs = EXCLUDED.jhs_inclusive_programs,
+        has_shs_inclusive = EXCLUDED.has_shs_inclusive,
+        shs_inclusive_programs = EXCLUDED.shs_inclusive_programs,
+        has_als = EXCLUDED.has_als,
+        has_sned = EXCLUDED.has_sned,
+        has_iped = EXCLUDED.has_iped,
+        has_madrasah = EXCLUDED.has_madrasah,
+        inclusive_programs = EXCLUDED.inclusive_programs,
         raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
@@ -396,9 +531,21 @@ router.put('/curricular-config', async (req, res) => {
       schoolId,
       schoolYear,
       elemFlag,
+      JSON.stringify(elemSpecialProgs),
       jhsFlag,
       JSON.stringify(jhsProgs),
       shsModel,
+      elemIncFlag,
+      JSON.stringify(elemIncProgs),
+      jhsIncFlag,
+      JSON.stringify(jhsIncProgs),
+      shsIncFlag,
+      JSON.stringify(shsIncProgs),
+      hasAls,
+      hasSned,
+      hasIped,
+      hasMadrasah,
+      JSON.stringify(incProgs),
       JSON.stringify(req.body)
     ]);
 
@@ -409,9 +556,21 @@ router.put('/curricular-config', async (req, res) => {
         schoolId: result.rows[0].school_id,
         schoolYear: result.rows[0].school_year,
         hasElemSpecialPrograms: result.rows[0].has_elem_special_programs,
+        elemSpecialPrograms: result.rows[0].elem_special_programs,
         hasJhsSpecialPrograms: result.rows[0].has_jhs_special_programs,
         jhsSpecialPrograms: result.rows[0].jhs_special_programs,
-        shsCurriculumModel: result.rows[0].shs_curriculum_model
+        shsCurriculumModel: result.rows[0].shs_curriculum_model,
+        hasElemInclusive: result.rows[0].has_elem_inclusive,
+        elemInclusivePrograms: result.rows[0].elem_inclusive_programs,
+        hasJhsInclusive: result.rows[0].has_jhs_inclusive,
+        jhsInclusivePrograms: result.rows[0].jhs_inclusive_programs,
+        hasShsInclusive: result.rows[0].has_shs_inclusive,
+        shsInclusivePrograms: result.rows[0].shs_inclusive_programs,
+        hasAls: result.rows[0].has_als,
+        hasSned: result.rows[0].has_sned,
+        hasIped: result.rows[0].has_iped,
+        hasMadrasah: result.rows[0].has_madrasah,
+        inclusivePrograms: result.rows[0].inclusive_programs
       }
     });
   } catch (err) {

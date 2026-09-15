@@ -167,6 +167,48 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_designations (
 
 CREATE INDEX IF NOT EXISTS idx_esf7_personnel_designations_personnel ON esf7_personnel_designations (personnel_id);
 
+-- 7B. Teaching-Related Tasks Table (Extra Task Builder - Teaching Related)
+CREATE TABLE IF NOT EXISTS esf7_related_task (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id VARCHAR(50) NOT NULL,
+    school_year VARCHAR(20) NOT NULL DEFAULT '2026-2027',
+    
+    task_name TEXT NOT NULL,
+    frequency VARCHAR(20) NOT NULL DEFAULT 'weekly',
+    duration_minutes INTEGER NOT NULL DEFAULT 60,
+    term1_hours NUMERIC(6, 2) DEFAULT 0.00,
+    is_designation_synced BOOLEAN DEFAULT FALSE,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_related_task_personnel ON esf7_related_task (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_related_task_school ON esf7_related_task (school_id, school_year);
+
+-- 7C. Administrative Tasks Table (Extra Task Builder - Administrative Duties)
+CREATE TABLE IF NOT EXISTS esf7_admin_task (
+    id VARCHAR(50) PRIMARY KEY,
+    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    school_id VARCHAR(50) NOT NULL,
+    school_year VARCHAR(20) NOT NULL DEFAULT '2026-2027',
+    
+    task_name TEXT NOT NULL,
+    dates JSONB DEFAULT '[]'::jsonb,
+    duration_minutes INTEGER NOT NULL DEFAULT 60,
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_admin_task_personnel ON esf7_admin_task (personnel_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_admin_task_school ON esf7_admin_task (school_id, school_year);
+
 -- 8A. Regular Base Sections Table (Official Base Enrollment)
 CREATE TABLE IF NOT EXISTS esf7_regular_sections (
     id VARCHAR(50) PRIMARY KEY,
@@ -535,16 +577,35 @@ CREATE INDEX IF NOT EXISTS idx_esf7_requests_target ON esf7_requests (target_sch
 CREATE INDEX IF NOT EXISTS idx_esf7_requests_requester ON esf7_requests (requester_school_id, status);
 CREATE INDEX IF NOT EXISTS idx_esf7_requests_personnel ON esf7_requests (personnel_id);
 
--- 20. School Profile Table (Stores Elementary, JHS, JHS JSONB Special Programs, and SHS Curriculum Model)
+-- 20. School Profile Table (Stores Elementary, JHS, Special Programs, SHS Curriculum Model, and Inclusive Education Programs)
 CREATE TABLE IF NOT EXISTS esf7_school_profile (
     id VARCHAR(50) PRIMARY KEY,
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL DEFAULT '2026-2027',
     
+    -- Special Programs (SSES, SPA, SPFL, SPJ, SPS, STE, SPTVE)
     has_elem_special_programs BOOLEAN NOT NULL DEFAULT FALSE,
+    elem_special_programs JSONB DEFAULT '[]'::jsonb,
     has_jhs_special_programs BOOLEAN NOT NULL DEFAULT FALSE,
     jhs_special_programs JSONB DEFAULT '[]'::jsonb,
     shs_curriculum_model TEXT,
+
+    -- Inclusive Education Level Offerings (ALS, SNED, IPED, MADRASAH)
+    has_elem_inclusive BOOLEAN NOT NULL DEFAULT FALSE,
+    elem_inclusive_programs JSONB DEFAULT '[]'::jsonb,
+    has_jhs_inclusive BOOLEAN NOT NULL DEFAULT FALSE,
+    jhs_inclusive_programs JSONB DEFAULT '[]'::jsonb,
+    has_shs_inclusive BOOLEAN NOT NULL DEFAULT FALSE,
+    shs_inclusive_programs JSONB DEFAULT '[]'::jsonb,
+    
+    -- Dedicated Program Boolean Flags
+    has_als BOOLEAN NOT NULL DEFAULT FALSE,
+    has_sned BOOLEAN NOT NULL DEFAULT FALSE,
+    has_iped BOOLEAN NOT NULL DEFAULT FALSE,
+    has_madrasah BOOLEAN NOT NULL DEFAULT FALSE,
+    
+    -- Aggregate Array of Active Inclusive Program Tags
+    inclusive_programs JSONB DEFAULT '[]'::jsonb,
     
     raw_payload JSONB DEFAULT '{}'::jsonb,
     

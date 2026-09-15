@@ -33,6 +33,8 @@ import {
   useApp,
   POSITION_OPTIONS_BY_CATEGORY,
   detectPersonnelTypeFromPosition,
+  isCanonicalPosition,
+  getCategoryForCanonicalPosition,
   RELIGION_OPTIONS,
   ETHNIC_GROUP_OPTIONS,
   MAJOR_OPTIONS,
@@ -50,7 +52,6 @@ import {
   TESDA_COURSE_TO_LEVELS_MAP,
   TESDA_COURSES,
   POST_GRADUATE_DEGREE_OPTIONS,
-  DEGREE_LEVEL_OPTIONS,
   COLLEGE_DEGREE_OPTIONS,
   TESDA_CERTIFICATION_OPTIONS,
   NEAP_TRAINING_OPTIONS,
@@ -120,7 +121,9 @@ export const getPersonnelValidationChecklist = (p) => {
   const validAge = hasBirthdate && ageVal !== null && ageVal >= 15;
   check('birthdate', "Valid Birthdate (Must be at least 15 yrs old)", validAge, "Personal", "personal");
 
-  // PhilSys No. is optional (not required) per DepEd guidelines
+  const cleanPhilsys = String(p.philsysNo || p.philsys_no || '').replace(/\D/g, '');
+  const hasValidPhilsys = !!(p.noPhilsys || p.no_philsys || cleanPhilsys.length === 16);
+  check('philsysNo', "PhilSys No. / National ID (16 digits or N/A)", hasValidPhilsys, "Personal", "personal");
   check('depedEmail', "DepEd Official Email", !!(p.depedEmail?.trim() || p.email?.trim()), "Employment", "employment");
   check('tin', "TIN Number", !!(p.noTin || p.tin?.trim()), "Personal", "personal");
 
@@ -144,20 +147,17 @@ export const getPersonnelValidationChecklist = (p) => {
   // 4. Education / Qualifications
   const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
   const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
-  const degreeRows = getEffectiveDegreeRows(p);
-  const hasAnyDegree = degreeRows.some(d => d.collegeDegree);
-  // Degree levels (Baccalaureate/Master's/Doctorate) come from the degreeRows entries themselves;
-  // the top-level attainment field now only covers non-degree levels (N/A, Elementary/HS/SHS Grad,
-  // Vocational, College Undergraduate).
-  const attainment = p.highestEducationalAttainment || (hasAnyDegree ? 'COLLEGE UNDERGRADUATE' : (isNonTeaching ? 'N/A' : ''));
+
+  const attainment = p.highestEducationalAttainment || '';
 
   if (!isNonTeaching) {
-    check('highestEducationalAttainment', "Highest Educational Attainment", !!(attainment || hasAnyDegree || p.vocationalCourse), "Education", "education");
+    check('highestEducationalAttainment', "Highest Educational Attainment", !!attainment, "Education", "education");
   }
 
   const isSHS = attainment === 'SENIOR HIGH SCHOOL GRADUATE';
   const isVocational = attainment === 'VOCATIONAL / TECH-VOC COURSE';
-  const isCollegeOrPostGrad = attainment === 'COLLEGE UNDERGRADUATE' || hasAnyDegree;
+  const isCollege = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE'].includes(attainment);
+  const isPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
 
   if (isSHS) {
     check('shsTrack', "Senior High School Track", !!p.shsTrack, "Education", "education");
@@ -166,21 +166,33 @@ export const getPersonnelValidationChecklist = (p) => {
     check('vocationalCourse', "Vocational / TESDA Course", !!p.vocationalCourse?.trim(), "Education", "education");
     check('vocationalLevel', "NC Level / Qualification Level", !!p.vocationalLevel?.trim(), "Education", "education");
   }
-  if (isCollegeOrPostGrad) {
-    check('collegeDegree', "College Degree / Baccalaureate", degreeRows.length > 0 && degreeRows.every(d => !!d.collegeDegree), "Education", "education");
+  if (isCollege || isPostGrad || (!isNonTeaching && !isSHS && !isVocational)) {
+    check('collegeDegree', "College Degree / Baccalaureate", !!(p.collegeDegree?.trim() && p.collegeDegree !== 'NONE' && p.collegeDegree !== 'N/A'), "Education", "education");
+    const d = String(p.collegeDegree || '').toUpperCase();
+    const isEdu = p.collegeDegree && p.collegeDegree !== 'NONE' && p.collegeDegree !== 'N/A' && (
+      d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+    );
+    if (isEdu) {
+      check('major', "Major in Education", !!p.major?.trim(), "Education", "education");
+    }
   }
-  degreeRows.forEach((d, idx) => {
-    const isEdu = d.collegeDegree && d.level !== 'MASTERS' && d.level !== 'DOCTORATE' && String(d.collegeDegree).toUpperCase().includes('EDUCATION');
-    if (isCollegeOrPostGrad && isEdu) {
-      check(`degreeMajor_${idx}`, "Major in Education", !!d.major, "Education", "education");
-    }
-    if (d.level === 'MASTERS' || d.level === 'DOCTORATE') {
-      check(`postGraduateDiscipline_${idx}`, "Post-Graduate Discipline", !!d.postGraduateDiscipline?.trim(), "Education", "education");
-    }
-  });
+  if (attainment === "MASTER'S DEGREE (GRADUATED)") {
+    const rawDisc = p.mastersDiscipline || p.postGraduateDiscipline || '';
+    const listDisc = Array.isArray(p.mastersDisciplines) && p.mastersDisciplines.length > 0
+      ? p.mastersDisciplines
+      : (rawDisc ? rawDisc.split(',').map(s => s.trim()).filter(Boolean) : []);
+    check('postGraduateDiscipline', "Master's Discipline", listDisc.length > 0, "Education", "education");
+  } else if (attainment === "DOCTORATE DEGREE (GRADUATED)") {
+    const rawDocDisc = p.doctorateDiscipline || p.postGraduateDiscipline || '';
+    const listDocDisc = Array.isArray(p.doctorateDisciplines) && p.doctorateDisciplines.length > 0
+      ? p.doctorateDisciplines
+      : (rawDocDisc ? rawDocDisc.split(',').map(s => s.trim()).filter(Boolean) : []);
+    check('doctorateDiscipline', "Doctorate Discipline", listDocDisc.length > 0, "Education", "education");
+  }
 
   check('eligibility', "Civil Service / PRC Eligibility", !!(p.eligibility && (!Array.isArray(p.eligibility) || p.eligibility.length > 0)), "Education", "education");
-  if (['let', 'pbet'].includes(String(p.eligibility || '').toLowerCase())) {
+  const eligStr = (Array.isArray(p.eligibility) ? p.eligibility.join(',') : String(p.eligibility || '')).toUpperCase();
+  if (eligStr.includes('LET') || eligStr.includes('PBET') || eligStr.includes('LICENSURE EXAMINATION FOR TEACHERS') || eligStr.includes('PROFESSIONAL BOARD EXAMINATION FOR TEACHERS')) {
     check('prcSpecialization', "PRC Specialization", !!p.prcSpecialization?.trim(), "Education", "education");
   }
 
@@ -923,9 +935,14 @@ export default function PersonnelProfile() {
         }
       }
 
-      const autoType = detectPersonnelTypeFromPosition(personObj.position || dbPerson.position);
-      if (autoType && (personObj.type !== autoType || !personObj.type)) {
-        personObj = { ...personObj, type: autoType };
+      const rawPos = personObj.position || dbPerson.position || '';
+      if (!isCanonicalPosition(rawPos)) {
+        personObj = { ...personObj, position: '', type: '', positionCategory: '', position_category: '' };
+      } else {
+        const autoType = getCategoryForCanonicalPosition(rawPos) || detectPersonnelTypeFromPosition(rawPos);
+        if (autoType && (personObj.type !== autoType || !personObj.type)) {
+          personObj = { ...personObj, type: autoType, position: rawPos };
+        }
       }
 
       setEditPerson(personObj);
@@ -1057,18 +1074,12 @@ export default function PersonnelProfile() {
     setLearningAreaMap(prev => {
       const updated = { ...prev, [key]: { checked: newChecked, years: newYears } };
       localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(updated));
+      if (typeof handleFieldChange === 'function') {
+        handleFieldChange('learningAreaMap', updated);
+        handleFieldChange('matrix_data', updated);
+      }
       return updated;
     });
-
-    if (!String(currentPerson.id).startsWith('draft-')) {
-      api.saveLearningArea({
-        personnelId: currentPerson.id,
-        schoolYear: eraKey,
-        learningArea: subjectKey,
-        checked: newChecked,
-        yearsTaught: newYears
-      }).catch(err => console.warn('Background sync learning area:', err.message));
-    }
 
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
     showToast(`Learning area ${newChecked ? 'added' : 'removed'} in draft`, 'success');
@@ -1092,18 +1103,12 @@ export default function PersonnelProfile() {
     setLearningAreaMap(prev => {
       const updated = { ...prev, [key]: { checked: true, years: parsedYears } };
       localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(updated));
+      if (typeof handleFieldChange === 'function') {
+        handleFieldChange('learningAreaMap', updated);
+        handleFieldChange('matrix_data', updated);
+      }
       return updated;
     });
-
-    if (!String(currentPerson.id).startsWith('draft-')) {
-      api.saveLearningArea({
-        personnelId: currentPerson.id,
-        schoolYear: eraKey,
-        learningArea: subjectKey,
-        checked: true,
-        yearsTaught: parsedYears
-      }).catch(err => console.warn('Background sync learning area:', err.message));
-    }
 
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
   };
@@ -1716,22 +1721,18 @@ export default function PersonnelProfile() {
         isModified = true;
       }
 
-      // 8. Assigned Grade Levels from workloads & classSections
-      const assigned = [...(Array.isArray(updatedP.assignedGradeLevels) ? updatedP.assignedGradeLevels : [])];
-      (classSections || []).forEach(s => {
-        if (s.advisorId && String(s.advisorId) === String(updatedP.id) && !assigned.includes(s.gradeLevel)) {
-          assigned.push(s.gradeLevel);
-          isModified = true;
+      // 8. Assigned Grade Levels: preserve user-assigned grade levels from Teaching Tab
+      if (!Array.isArray(updatedP.assignedGradeLevels) || updatedP.assignedGradeLevels.length === 0) {
+        const fallbackGrades = [];
+        (updatedP.workloadRows || []).forEach(r => {
+          if (r.gradeLevel && !fallbackGrades.includes(r.gradeLevel)) {
+            fallbackGrades.push(r.gradeLevel);
+            isModified = true;
+          }
+        });
+        if (fallbackGrades.length > 0) {
+          updatedP.assignedGradeLevels = fallbackGrades;
         }
-      });
-      (updatedP.workloadRows || []).forEach(r => {
-        if (r.gradeLevel && !assigned.includes(r.gradeLevel)) {
-          assigned.push(r.gradeLevel);
-          isModified = true;
-        }
-      });
-      if (assigned.length > 0) {
-        updatedP.assignedGradeLevels = assigned;
       }
 
       if (isModified) {
@@ -2314,45 +2315,68 @@ export default function PersonnelProfile() {
                           </div>
                           <div className="profile-subsection">Government ID and Birthdate</div>
                           <div>
-                            <label>PhilSys No. / National ID</label>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                              <input
-                                placeholder="16-digit PhilSys Card Number"
-                                maxLength={16}
-                                disabled={!!(currentPerson.noPhilsys || currentPerson.no_philsys)}
-                                value={(currentPerson.noPhilsys || currentPerson.no_philsys) ? '' : (currentPerson.philsysNo || '')}
-                                onChange={(e) => {
-                                  const val = e.target.value.replace(/\D/g, ''); // numbers only
-                                  handleFieldChange('philsysNo', val);
-                                }}
-                                style={{
-                                  flex: 1,
-                                  minWidth: '160px',
-                                  ...((currentPerson.noPhilsys || currentPerson.no_philsys) ? { background: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' } : {})
-                                }}
-                              />
-                              <label className="checkline" style={{ textTransform: 'none', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={!!(currentPerson.noPhilsys || currentPerson.no_philsys)}
-                                  onChange={(e) => {
-                                    const isChecked = e.target.checked;
-                                    setEditPerson(prev => {
-                                      const updated = { ...prev, noPhilsys: isChecked, no_philsys: isChecked };
-                                      if (isChecked) {
-                                        updated.philsysNo = '';
-                                        updated.philsys_no = '';
-                                      }
-                                      localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
-                                      return updated;
-                                    });
-                                  }}
-                                /> N/A
-                              </label>
-                            </div>
-                            <p className="field-help" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
-                              Optional national biometric ID number. Check N/A if card is not yet issued.
-                            </p>
+                            {(() => {
+                              const cleanPs = String(currentPerson.philsysNo || currentPerson.philsys_no || '').replace(/\D/g, '');
+                              const isNA = !!(currentPerson.noPhilsys || currentPerson.no_philsys);
+                              const isValid = isNA || cleanPs.length === 16;
+                              return (
+                                <>
+                                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span>PhilSys No. / National ID</span>
+                                    {(isNA || cleanPs.length > 0) && (
+                                      <span style={{ 
+                                        color: isNA ? '#64748b' : cleanPs.length === 16 ? '#059669' : '#DC2626', 
+                                        fontWeight: 600, 
+                                        fontSize: '11px' 
+                                      }}>
+                                        {isNA 
+                                          ? 'N/A' 
+                                          : (cleanPs.length === 16 ? '16/16 digits ✓' : `${cleanPs.length}/16 digits`)}
+                                      </span>
+                                    )}
+                                  </label>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                    <input
+                                      placeholder="16-digit PhilSys Card Number"
+                                      maxLength={16}
+                                      disabled={isNA}
+                                      value={isNA ? '' : (currentPerson.philsysNo || '')}
+                                      onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, ''); // numbers only
+                                        handleFieldChange('philsysNo', val);
+                                      }}
+                                      style={{
+                                        flex: 1,
+                                        minWidth: '160px',
+                                        ...(isNA ? { background: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' } : {}),
+                                        ...(!isValid && cleanPs.length > 0 ? { borderColor: '#EF4444', background: '#FEF2F2' } : {})
+                                      }}
+                                    />
+                                    <label className="checkline" style={{ textTransform: 'none', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isNA}
+                                        onChange={(e) => {
+                                          const isChecked = e.target.checked;
+                                          setEditPerson(prev => {
+                                            const updated = { ...prev, noPhilsys: isChecked, no_philsys: isChecked };
+                                            if (isChecked) {
+                                              updated.philsysNo = '';
+                                              updated.philsys_no = '';
+                                            }
+                                            localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
+                                            return updated;
+                                          });
+                                        }}
+                                      /> N/A
+                                    </label>
+                                  </div>
+                                  <p className="field-help" style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                                    16-digit PhilSys National ID number. If not yet issued or unavailable, click <strong>N/A</strong>.
+                                  </p>
+                                </>
+                              );
+                            })()}
                           </div>
                           <div>
                             <label>Birthdate</label>
@@ -2386,9 +2410,10 @@ export default function PersonnelProfile() {
                             <SearchableDropdown
                               options={['TEACHING', 'RELATED TEACHING', 'NON-TEACHING']}
                               value={
+                                (!currentPerson.type && !isCanonicalPosition(currentPerson.position)) ? '' :
                                 (currentPerson.type === 'non-teaching') ? 'NON-TEACHING' :
                                 (currentPerson.type === 'teaching-related') ? 'RELATED TEACHING' :
-                                'TEACHING'
+                                (currentPerson.type === 'teaching') ? 'TEACHING' : ''
                               }
                               onChange={(val) => {
                                 const mapping = {
@@ -2396,7 +2421,7 @@ export default function PersonnelProfile() {
                                   'RELATED TEACHING': 'teaching-related',
                                   'NON-TEACHING': 'non-teaching'
                                 };
-                                const newType = mapping[val] || 'teaching';
+                                const newType = mapping[val] || '';
                                 const validPositions = (POSITION_OPTIONS_BY_CATEGORY[newType] || []).map(p => p.toUpperCase());
                                 let newPosition = currentPerson.position || '';
                                 if (newPosition && !validPositions.includes(newPosition.toUpperCase()) && !newPosition.toUpperCase().startsWith('OTHERS')) {
@@ -2405,7 +2430,9 @@ export default function PersonnelProfile() {
                                 const updated = {
                                   ...currentPerson,
                                   type: newType,
-                                  position: newPosition
+                                  position: newPosition,
+                                  positionCategory: val || '',
+                                  position_category: val || ''
                                 };
                                 setEditPerson(updated);
                                 localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
@@ -2418,24 +2445,42 @@ export default function PersonnelProfile() {
                             <SearchableDropdown
                               options={
                                 (() => {
-                                  const rawType = String(currentPerson.type || 'teaching').toLowerCase();
+                                  const rawType = String(currentPerson.type || '').toLowerCase();
                                   const categoryKey = rawType === 'teaching'
                                     ? 'teaching'
                                     : rawType === 'teaching-related'
                                       ? 'teaching-related'
-                                      : 'non-teaching';
-                                  const list = POSITION_OPTIONS_BY_CATEGORY[categoryKey] || POSITION_OPTIONS_BY_CATEGORY.teaching || [];
+                                      : rawType === 'non-teaching'
+                                        ? 'non-teaching'
+                                        : null;
+                                  if (!categoryKey) {
+                                    // If no category selected yet, offer all positions
+                                    return [
+                                      ...POSITION_OPTIONS_BY_CATEGORY.teaching,
+                                      ...POSITION_OPTIONS_BY_CATEGORY['teaching-related'],
+                                      ...POSITION_OPTIONS_BY_CATEGORY['non-teaching']
+                                    ].map(p => p.toUpperCase());
+                                  }
+                                  const list = POSITION_OPTIONS_BY_CATEGORY[categoryKey] || [];
                                   return list.map(p => p.toUpperCase());
                                 })()
                               }
-                              value={currentPerson.position?.startsWith('OTHERS') ? 'OTHERS' : (currentPerson.position || '')}
+                              value={
+                                isCanonicalPosition(currentPerson.position)
+                                  ? (currentPerson.position?.startsWith('OTHERS') ? 'OTHERS' : (currentPerson.position || ''))
+                                  : ''
+                              }
                               onChange={(val) => {
                                 const selectedPos = val === 'OTHERS' ? 'OTHERS' : val;
-                                const autoType = detectPersonnelTypeFromPosition(selectedPos) || currentPerson.type || 'teaching';
+                                const autoType = getCategoryForCanonicalPosition(selectedPos) || detectPersonnelTypeFromPosition(selectedPos) || currentPerson.type || '';
+                                const catName = autoType === 'teaching' ? 'TEACHING' : autoType === 'teaching-related' ? 'RELATED TEACHING' : autoType === 'non-teaching' ? 'NON-TEACHING' : '';
                                 const updated = {
                                   ...currentPerson,
                                   position: selectedPos,
-                                  type: autoType
+                                  plantilla_position: selectedPos,
+                                  type: autoType,
+                                  positionCategory: catName,
+                                  position_category: catName
                                 };
                                 setEditPerson(updated);
                                 localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
@@ -3195,32 +3240,90 @@ export default function PersonnelProfile() {
                         <>
                           <div className="profile-subsection">Educational Attainment</div>
                           <div style={{ gridColumn: '1 / -1' }}>
-                            <label>Highest Educational Attainment <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(non-degree levels only — use "+ Add Degree" below for College/Master's/Doctorate)</span></label>
+                            <label>Highest Educational Attainment <span style={{ color: '#EF4444' }}>*</span></label>
                             {(() => {
                               const isTeachingOrRelated = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(currentPerson.type) || ['TEACHING', 'TEACHING-RELATED'].includes(currentPerson.positionCategory);
-                              const options = isTeachingOrRelated
-                                ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS
+                              const options = isTeachingOrRelated 
+                                ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS 
                                 : HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
-                              const hasAnyDegree = getEffectiveDegreeRows(currentPerson).some(d => d.collegeDegree);
 
                               return (
                                 <SearchableDropdown
                                   options={options}
-                                  value={currentPerson.highestEducationalAttainment || (hasAnyDegree ? '' : (isTeachingOrRelated ? '' : 'N/A'))}
+                                  value={
+                                    currentPerson.highestEducationalAttainment ||
+                                    (() => {
+                                      if (currentPerson.postGraduateDegree && !['NONE', 'N/A', ''].includes(currentPerson.postGraduateDegree)) {
+                                        return String(currentPerson.postGraduateDegree).toUpperCase().includes('DOCTOR')
+                                          ? 'DOCTORATE DEGREE (GRADUATED)'
+                                          : "MASTER'S DEGREE (GRADUATED)";
+                                      }
+                                      const deg = String(currentPerson.collegeDegree || '').toUpperCase();
+                                      if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
+                                      if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
+                                      if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
+                                      if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
+                                      if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
+                                      if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
+                                      return isTeachingOrRelated ? 'COLLEGE GRADUATE / BACCALAUREATE' : 'N/A';
+                                    })()
+                                  }
                                   onChange={(val) => {
                                     const updates = { highestEducationalAttainment: val };
+                                    const isElemOrHSOrNA = ['ELEMENTARY GRADUATE', 'HIGH SCHOOL GRADUATE', 'N/A'].includes(val);
                                     const isSeniorHS = val === 'SENIOR HIGH SCHOOL GRADUATE';
                                     const isVocational = val === 'VOCATIONAL / TECH-VOC COURSE';
+                                    const isCollegeOnly = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE'].includes(val);
 
-                                    if (!isSeniorHS) updates.shsTrack = '';
-                                    if (!isVocational) {
+                                    if (isElemOrHSOrNA) {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.collegeDegree = '';
+                                      updates.major = '';
+                                      updates.minor = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (isSeniorHS) {
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.collegeDegree = '';
+                                      updates.major = '';
+                                      updates.minor = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (isVocational) {
+                                      updates.shsTrack = '';
+                                      updates.collegeDegree = '';
+                                      updates.major = '';
+                                      updates.minor = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (isCollegeOnly) {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.postGraduateDegree = '';
+                                      updates.postGraduateDiscipline = '';
+                                    } else if (val === "MASTER'S DEGREE (GRADUATED)") {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.postGraduateDegree = 'MASTERS DEGREE';
+                                    } else if (val === "DOCTORATE DEGREE (GRADUATED)") {
+                                      updates.shsTrack = '';
+                                      updates.vocationalCourse = '';
+                                      updates.vocationalLevel = '';
+                                      updates.postGraduateDegree = 'DOCTORATE DEGREE';
+                                    } else {
+                                      updates.shsTrack = '';
                                       updates.vocationalCourse = '';
                                       updates.vocationalLevel = '';
                                     }
                                     handleMultipleFieldsChange(updates);
                                   }}
-                                  placeholder={hasAnyDegree ? "N/A — degree already on file below" : "SELECT HIGHEST EDUCATIONAL ATTAINMENT..."}
-                                  disabled={hasAnyDegree}
+                                  placeholder="SELECT HIGHEST EDUCATIONAL ATTAINMENT..."
+                                  required
                                 />
                               );
                             })()}
@@ -3282,95 +3385,249 @@ export default function PersonnelProfile() {
                             </>
                           )}
 
-                          {/* Repeatable Degree Entries — each entry picks its own level (Baccalaureate/Master's/Doctorate) */}
-                          <div className="credential-group" style={{ gridColumn: '1 / -1', marginBottom: '20px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                              <label style={{ margin: 0 }}>Degrees Earned</label>
-                              <div style={{ position: 'relative' }}>
-                                <select
-                                  value=""
-                                  onChange={(e) => { if (e.target.value) addDegreeRow(e.target.value); }}
-                                  className="btn secondary"
-                                  style={{ minHeight: '34px', cursor: 'pointer', fontWeight: '700' }}
-                                >
-                                  <option value="">+ Add Degree</option>
-                                  {DEGREE_LEVEL_OPTIONS.map(lvl => (
-                                    <option key={lvl.key} value={lvl.key}>{lvl.label}</option>
-                                  ))}
-                                </select>
+                          {/* College Degree if College, Master's, or Doctorate */}
+                          {['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(
+                            currentPerson.highestEducationalAttainment || (currentPerson.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : '')
+                          ) && (
+                            <>
+                              <div>
+                                <label>College Degree / Baccalaureate <span style={{ color: '#EF4444' }}>*</span></label>
+                                <SearchableDropdown
+                                  options={COLLEGE_DEGREE_OPTIONS}
+                                  value={currentPerson.collegeDegree || ''}
+                                  onChange={(val) => {
+                                    const d = (val || '').toUpperCase();
+                                    const isEdu = val && val !== 'NONE' && val !== 'N/A' && (
+                                      d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                                    );
+                                    if (!isEdu) {
+                                      handleMultipleFieldsChange({ collegeDegree: val, major: '', minor: '' });
+                                    } else {
+                                      handleFieldChange('collegeDegree', val);
+                                    }
+                                  }}
+                                  placeholder="Select college degree..."
+                                  required
+                                />
                               </div>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                              {getEffectiveDegreeRows(currentPerson).map((deg, index) => {
-                                const isPostGrad = deg.level === 'MASTERS' || deg.level === 'DOCTORATE';
-                                const d = (deg.collegeDegree || '').toUpperCase();
-                                const isEdu = !isPostGrad && deg.collegeDegree && deg.collegeDegree !== 'NONE' && deg.collegeDegree !== 'N/A' && (
+
+                              {(() => {
+                                const d = (currentPerson.collegeDegree || '').toUpperCase();
+                                const isEdu = currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree !== 'N/A' && (
                                   d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
                                 );
-                                const levelLabel = (DEGREE_LEVEL_OPTIONS.find(l => l.key === deg.level) || DEGREE_LEVEL_OPTIONS[0]).label;
-                                const gridCols = isPostGrad ? '1.2fr 1fr 40px' : (isEdu ? '1.2fr 1fr 1fr 40px' : '1fr 40px');
+                                if (!isEdu) return null;
                                 return (
-                                  <div key={deg.clientKey || deg.id || index} className="multi-task-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', background: '#fff', border: '1.5px solid var(--line)', borderRadius: '12px' }}>
-                                    <span style={{ fontSize: '10px', fontWeight: '800', color: 'var(--blue)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{levelLabel}</span>
-                                    <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '8px' }}>
-                                      <div>
-                                        <label>{isPostGrad ? "Degree / Program" : "College Degree / Baccalaureate"} <span style={{ color: '#EF4444' }}>*</span></label>
-                                        <SearchableDropdown
-                                          options={COLLEGE_DEGREE_OPTIONS}
-                                          value={deg.collegeDegree || ''}
-                                          onChange={(val) => handleDegreeChange(index, 'collegeDegree', val)}
-                                          placeholder="Select degree..."
-                                          required
-                                          allowCustom={isPostGrad}
-                                        />
-                                      </div>
-                                      {isEdu && (
-                                        <>
-                                          <div>
-                                            <label>Major in Education <span style={{ color: '#EF4444' }}>*</span></label>
-                                            <SearchableDropdown
-                                              options={MAJOR_OPTIONS}
-                                              value={deg.major || ''}
-                                              onChange={(val) => handleDegreeChange(index, 'major', val)}
-                                              placeholder="Select major..."
-                                              required
-                                            />
-                                          </div>
-                                          <div>
-                                            <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
-                                            <SearchableDropdown
-                                              options={MINOR_OPTIONS}
-                                              value={deg.minor || ''}
-                                              onChange={(val) => handleDegreeChange(index, 'minor', val)}
-                                              placeholder="Select minor subject (optional)..."
-                                            />
-                                          </div>
-                                        </>
-                                      )}
-                                      {isPostGrad && (
-                                        <div>
-                                          <label>Post-Graduate Discipline <span style={{ color: '#EF4444' }}>*</span></label>
-                                          <SearchableDropdown
-                                            options={DISCIPLINE_OPTIONS}
-                                            value={deg.postGraduateDiscipline || ''}
-                                            onChange={(val) => handleDegreeChange(index, 'postGraduateDiscipline', val)}
-                                            placeholder="Select discipline..."
-                                            required
-                                          />
-                                        </div>
-                                      )}
-                                      <button className="btn danger" style={{ minHeight: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'end' }} type="button" onClick={() => removeDegreeRow(index)} title="Remove"><FiTrash2 size={14} /></button>
+                                  <>
+                                    <div>
+                                      <label>Major in Education <span style={{ color: '#EF4444' }}>*</span></label>
+                                      <SearchableDropdown
+                                        options={MAJOR_OPTIONS}
+                                        value={currentPerson.major || ''}
+                                        onChange={(val) => handleFieldChange('major', val)}
+                                        placeholder="Select major..."
+                                        required
+                                      />
                                     </div>
-                                  </div>
+                                    <div>
+                                      <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
+                                      <SearchableDropdown
+                                        options={MINOR_OPTIONS}
+                                        value={currentPerson.minor || ''}
+                                        onChange={(val) => handleFieldChange('minor', val)}
+                                        placeholder="Select minor subject (optional)..."
+                                      />
+                                    </div>
+                                  </>
                                 );
-                              })}
-                              {getEffectiveDegreeRows(currentPerson).length === 0 && (
-                                <div style={{ padding: '15px', background: '#F0F9FF', color: 'var(--blue)', border: '1.5px solid var(--line)', borderRadius: '12px', fontSize: '13px', textAlign: 'center' }}>
-                                  No degrees added yet. Click "+ Add Degree" to encode a Baccalaureate, Master's, or Doctorate degree.
-                                </div>
-                              )}
+                              })()}
+                            </>
+                          )}
+
+                          {/* Master's Degree Discipline(s) for Master's or Doctorate */}
+                          {["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(currentPerson.highestEducationalAttainment) && (
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <label>
+                                Master's Degree Discipline(s) <span style={{ color: currentPerson.highestEducationalAttainment === "MASTER'S DEGREE (GRADUATED)" ? '#EF4444' : '#0284C7' }}>*</span>
+                              </label>
+
+                              {(() => {
+                                const parseDiscs = (val) => {
+                                  if (!val) return [];
+                                  if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
+                                  if (typeof val === 'string') {
+                                    const trimmed = val.trim();
+                                    if (trimmed.startsWith('{')) {
+                                      try {
+                                        const obj = JSON.parse(trimmed);
+                                        if (Array.isArray(obj.masters)) return obj.masters.map(s => String(s).trim()).filter(Boolean);
+                                      } catch(e) {}
+                                    }
+                                    if (trimmed.startsWith('[')) {
+                                      try {
+                                        const arr = JSON.parse(trimmed);
+                                        if (Array.isArray(arr)) return arr.map(s => String(s).trim()).filter(Boolean);
+                                      } catch(e) {}
+                                    }
+                                    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+                                  }
+                                  return [];
+                                };
+
+                                let list = Array.isArray(currentPerson.mastersDisciplines) && currentPerson.mastersDisciplines.length > 0
+                                  ? currentPerson.mastersDisciplines
+                                  : parseDiscs(currentPerson.mastersDiscipline || currentPerson.postGraduateDiscipline || currentPerson.post_graduate_discipline);
+
+                                const updateDisciplines = (newList) => {
+                                  const str = newList.join(', ');
+                                  const docList = Array.isArray(currentPerson.doctorateDisciplines) ? currentPerson.doctorateDisciplines : [];
+                                  const jsonStr = JSON.stringify({ masters: newList, doctorate: docList });
+                                  const updates = {
+                                    mastersDisciplines: newList,
+                                    mastersDiscipline: str,
+                                    postGraduateDiscipline: jsonStr,
+                                    post_graduate_discipline: jsonStr
+                                  };
+                                  handleMultipleFieldsChange(updates);
+                                };
+
+                                return (
+                                  <>
+                                    {list.length > 0 && (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                                        {list.map((disc, index) => (
+                                          <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50, #EFF6FF)', border: '1.5px solid var(--line, #BAE6FD)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
+                                            <span style={{ fontSize: '13px', color: 'var(--navy, #0F172A)', fontWeight: 'bold' }}>{disc}</span>
+                                            <button
+                                              type="button"
+                                              style={{ background: 'transparent', border: 0, color: 'var(--blue, #0284C7)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
+                                              onClick={() => {
+                                                const newList = list.filter((_, idx) => idx !== index);
+                                                updateDisciplines(newList);
+                                              }}
+                                              title="Remove discipline"
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                      <SearchableDropdown
+                                        options={DISCIPLINE_OPTIONS}
+                                        value=""
+                                        onChange={(val) => {
+                                          if (!val) return;
+                                          if (!list.includes(val)) {
+                                            updateDisciplines([...list, val]);
+                                          }
+                                        }}
+                                        placeholder={list.length === 0 ? "+ SELECT OR TYPE MASTER'S DISCIPLINE..." : "+ ADD ANOTHER MASTER'S DISCIPLINE..."}
+                                        allowCustom={true}
+                                      />
+                                    </div>
+                                    <p className="field-help" style={{ marginTop: '6px', fontSize: '11px', color: '#64748B' }}>
+                                      Select from preset disciplines or type a custom Master's discipline title and press Enter.
+                                    </p>
+                                  </>
+                                );
+                              })()}
                             </div>
-                          </div>
+                          )}
+
+                          {/* Doctorate Degree Discipline(s) for Doctorate */}
+                          {currentPerson.highestEducationalAttainment === "DOCTORATE DEGREE (GRADUATED)" && (
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              <label>
+                                Doctorate Degree Discipline(s) <span style={{ color: '#EF4444' }}>*</span>
+                              </label>
+
+                              {(() => {
+                                const parseDiscs = (val) => {
+                                  if (!val) return [];
+                                  if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
+                                  if (typeof val === 'string') {
+                                    const trimmed = val.trim();
+                                    if (trimmed.startsWith('{')) {
+                                      try {
+                                        const obj = JSON.parse(trimmed);
+                                        if (Array.isArray(obj.doctorate)) return obj.doctorate.map(s => String(s).trim()).filter(Boolean);
+                                      } catch(e) {}
+                                    }
+                                    if (trimmed.startsWith('[')) {
+                                      try {
+                                        const arr = JSON.parse(trimmed);
+                                        if (Array.isArray(arr)) return arr.map(s => String(s).trim()).filter(Boolean);
+                                      } catch(e) {}
+                                    }
+                                    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+                                  }
+                                  return [];
+                                };
+
+                                let list = Array.isArray(currentPerson.doctorateDisciplines) && currentPerson.doctorateDisciplines.length > 0
+                                  ? currentPerson.doctorateDisciplines
+                                  : parseDiscs(currentPerson.doctorateDiscipline || currentPerson.postGraduateDiscipline || currentPerson.post_graduate_discipline);
+
+                                const updateDisciplines = (newList) => {
+                                  const str = newList.join(', ');
+                                  const mList = Array.isArray(currentPerson.mastersDisciplines) ? currentPerson.mastersDisciplines : [];
+                                  const jsonStr = JSON.stringify({ masters: mList, doctorate: newList });
+                                  handleMultipleFieldsChange({
+                                    doctorateDisciplines: newList,
+                                    doctorateDiscipline: str,
+                                    postGraduateDiscipline: jsonStr,
+                                    post_graduate_discipline: jsonStr
+                                  });
+                                };
+
+                                return (
+                                  <>
+                                    {list.length > 0 && (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                                        {list.map((disc, index) => (
+                                          <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50, #EFF6FF)', border: '1.5px solid var(--line, #BAE6FD)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
+                                            <span style={{ fontSize: '13px', color: 'var(--navy, #0F172A)', fontWeight: 'bold' }}>{disc}</span>
+                                            <button
+                                              type="button"
+                                              style={{ background: 'transparent', border: 0, color: 'var(--blue, #0284C7)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
+                                              onClick={() => {
+                                                const newList = list.filter((_, idx) => idx !== index);
+                                                updateDisciplines(newList);
+                                              }}
+                                              title="Remove discipline"
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                      <SearchableDropdown
+                                        options={DISCIPLINE_OPTIONS}
+                                        value=""
+                                        onChange={(val) => {
+                                          if (!val) return;
+                                          if (!list.includes(val)) {
+                                            updateDisciplines([...list, val]);
+                                          }
+                                        }}
+                                        placeholder={list.length === 0 ? "+ SELECT OR TYPE DOCTORATE DISCIPLINE..." : "+ ADD ANOTHER DOCTORATE DISCIPLINE..."}
+                                        allowCustom={true}
+                                      />
+                                    </div>
+                                    <p className="field-help" style={{ marginTop: '6px', fontSize: '11px', color: '#64748B' }}>
+                                      Select from preset disciplines or type a custom Doctorate discipline title and press Enter.
+                                    </p>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          )}
 
                           <div className="profile-subsection">Civil Service and Professional Eligibilities</div>
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
@@ -3703,14 +3960,39 @@ export default function PersonnelProfile() {
 
                             {/* List of currently selected grade levels as tags */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                              {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).map((grade, index) => (
+                              {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
+                                .map(g => {
+                                  const u = String(g || '').toUpperCase();
+                                  if (u.includes('KINDER')) return 'Kinder';
+                                  if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                  return g;
+                                })
+                                .filter(g => {
+                                  const u = String(g).toUpperCase();
+                                  return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
+                                         !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
+                                         u !== 'GRADE KINDER';
+                                })
+                                .map((grade, index) => (
                                 <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
                                   <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{grade}</span>
                                   <button
                                     type="button"
                                     style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
                                     onClick={() => {
-                                      const currentList = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
+                                      const currentList = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
+                                        .map(g => {
+                                          const u = String(g || '').toUpperCase();
+                                          if (u.includes('KINDER')) return 'Kinder';
+                                          if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                          return g;
+                                        })
+                                        .filter(g => {
+                                          const u = String(g).toUpperCase();
+                                          return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
+                                                 !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
+                                                 u !== 'GRADE KINDER';
+                                        });
                                       const newList = currentList.filter((_, idx) => idx !== index);
                                       handleFieldChange('assignedGradeLevels', newList);
                                     }}
@@ -3719,7 +4001,12 @@ export default function PersonnelProfile() {
                                   </button>
                                 </div>
                               ))}
-                              {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).length === 0 && (
+                              {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).filter(g => {
+                                const u = String(g).toUpperCase();
+                                return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
+                                       !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
+                                       u !== 'GRADE KINDER';
+                              }).length === 0 && (
                                 <span style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic' }}>No grade levels assigned yet.</span>
                               )}
                             </div>
@@ -3732,7 +4019,19 @@ export default function PersonnelProfile() {
                                   const selectedVal = e.target.value;
                                   if (!selectedVal) return;
 
-                                  const currentList = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
+                                  const currentList = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
+                                    .map(g => {
+                                      const u = String(g || '').toUpperCase();
+                                      if (u.includes('KINDER')) return 'Kinder';
+                                      if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                      return g;
+                                    })
+                                    .filter(g => {
+                                      const u = String(g).toUpperCase();
+                                      return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
+                                             !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
+                                             u !== 'GRADE KINDER';
+                                    });
                                   if (currentList.includes(selectedVal)) {
                                     await showAlert("Duplicate Entry", "This grade level has already been assigned.");
                                     return;
@@ -3762,7 +4061,7 @@ export default function PersonnelProfile() {
 
                                   const list = [];
                                   if (showElem) {
-                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED');
+                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6');
                                   }
                                   if (showJHS) {
                                     list.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10');
@@ -3771,23 +4070,61 @@ export default function PersonnelProfile() {
                                     list.push('Grade 11', 'Grade 12');
                                   }
                                   if (list.length === 0) {
-                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
+                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
                                   }
 
-                                  // Include ALS and SNED for inclusive education faculty
-                                  if (!list.includes('SNED')) list.push('SNED');
+                                  // Include SNED (NON-GRADED) and ALS for inclusive education faculty
+                                  if (!list.includes('SNED (NON-GRADED)')) list.push('SNED (NON-GRADED)');
                                   if (!list.includes('ALS')) list.push('ALS');
 
                                   if (Array.isArray(classSections)) {
                                     classSections.forEach(s => {
-                                      if (s.gradeLevel && !list.includes(s.gradeLevel)) {
-                                        list.push(s.gradeLevel);
+                                      const rawG = String(s.gradeLevel || '').trim();
+                                      const u = rawG.toUpperCase();
+                                      if (
+                                        !rawG ||
+                                        u.includes('MULTI-GRADE') || u.includes('MULTIGRADE') || u.includes('MULTI GRADE') ||
+                                        u.includes('MONO-GRADE') || u.includes('MONOGRADE') || u.includes('MONO GRADE') ||
+                                        u === 'GRADE KINDER'
+                                      ) {
+                                        return;
+                                      }
+                                      let cleanG = rawG;
+                                      if (u.includes('KINDER')) cleanG = 'Kinder';
+                                      else if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) cleanG = 'SNED (NON-GRADED)';
+                                      
+                                      if (!list.includes(cleanG)) {
+                                        list.push(cleanG);
                                       }
                                     });
                                   }
 
-                                  const selected = Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [];
-                                  return list.filter(item => !selected.includes(item)).map(g => (
+                                  const cleanList = list.filter(g => {
+                                    const u = String(g).toUpperCase();
+                                    return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
+                                           !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
+                                           u !== 'GRADE KINDER' && u !== 'NON-GRADED' && u !== 'NON GRADED' && u !== 'SNED';
+                                  });
+
+                                  // Ensure SNED (NON-GRADED) and ALS are present
+                                  if (!cleanList.includes('SNED (NON-GRADED)')) cleanList.push('SNED (NON-GRADED)');
+                                  if (!cleanList.includes('ALS')) cleanList.push('ALS');
+
+                                  const selected = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
+                                    .map(g => {
+                                      const u = String(g || '').toUpperCase();
+                                      if (u.includes('KINDER')) return 'Kinder';
+                                      if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                      return g;
+                                    })
+                                    .filter(g => {
+                                      const u = String(g).toUpperCase();
+                                      return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
+                                             !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
+                                             u !== 'GRADE KINDER';
+                                    });
+
+                                  return cleanList.filter(item => !selected.includes(item)).map(g => (
                                     <option key={g} value={g}>{g}</option>
                                   ));
                                 })()}

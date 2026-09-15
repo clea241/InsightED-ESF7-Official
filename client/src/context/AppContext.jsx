@@ -531,54 +531,6 @@ export const TESDA_CERTIFICATION_OPTIONS = [
   "CUSTOMER SERVICES"
 ];
 
-export const detectPersonnelTypeFromPosition = (positionName) => {
-  const pos = String(positionName || '').toUpperCase().trim();
-  if (!pos) return 'teaching';
-
-  const nonTeachingKeywords = [
-    'ADMINISTRATIVE', 'AO ', 'AO I', 'AO II', 'AO III', 'AO IV', 'AO V',
-    'ADAS', 'ADA ', 'ADA I', 'ADA II', 'ADA III', 'ADA IV', 'ADA V', 'ADA VI',
-    'AIDE', 'UTILITY', 'WATCHMAN', 'SECURITY', 'GUARD', 'NURSE', 'DENTAL',
-    'PHYSICIAN', 'MEDICAL', 'ACCOUNTANT', 'BOOKKEEPER', 'CLERK', 'DISBURSING',
-    'DRIVER', 'ENGINEER', 'ARCHITECT', 'ATTORNEY', 'LEGAL', 'STOREKEEPER',
-    'CUSTODIAN', 'SUPPLY', 'CHIEF ADMINISTRATIVE', 'IT OFFICER', 'REGISTRAR',
-    'STATISTICIAN', 'PLANNING OFFICER', 'LIBRARIAN'
-  ];
-
-  if (nonTeachingKeywords.some(kw => pos.includes(kw))) {
-    return 'non-teaching';
-  }
-
-  const teachingRelatedKeywords = [
-    'PRINCIPAL', 'HEAD TEACHER', 'SUPERINTENDENT', 'SUPERVISOR',
-    'GUIDANCE COUNSELOR', 'GUIDANCE COORDINATOR', 'GUIDANCE SERVICES',
-    'VOCATIONAL SCHOOL ADMINISTRATOR', 'VOCATIONAL SCHOOL SUPERINTENDENT',
-    'PUBLIC SCHOOLS DISTRICT SUPERVISOR', 'EDUCATION PROGRAM SUPERVISOR',
-    'EDUCATION PROGRAM SPECIALIST', 'CHIEF EDUCATION PROGRAM'
-  ];
-
-  if (teachingRelatedKeywords.some(kw => pos.includes(kw))) {
-    return 'teaching-related';
-  }
-
-  const teachingKeywords = [
-    'TEACHER', 'MASTER TEACHER', 'SPED', 'SNED', 'SPECIAL SCIENCE', 'TUTOR', 'ALIVE', 'INSTRUCTOR', 'PROFESSOR'
-  ];
-
-  if (teachingKeywords.some(kw => pos.includes(kw))) {
-    return 'teaching';
-  }
-
-  if (POSITION_OPTIONS_BY_CATEGORY['non-teaching']?.some(p => p.toUpperCase() === pos || pos.includes(p.toUpperCase()))) {
-    return 'non-teaching';
-  }
-  if (POSITION_OPTIONS_BY_CATEGORY['teaching-related']?.some(p => p.toUpperCase() === pos || pos.includes(p.toUpperCase()))) {
-    return 'teaching-related';
-  }
-
-  return 'teaching';
-};
-
 // Default constants from the prototype
 export const POSITION_OPTIONS_BY_CATEGORY = {
   teaching: [
@@ -737,6 +689,34 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
   ]
 };
 
+export const isCanonicalPosition = (positionName) => {
+  if (!positionName || typeof positionName !== 'string') return false;
+  const pos = positionName.trim();
+  if (pos.startsWith('OTHERS')) return true;
+  return (
+    (POSITION_OPTIONS_BY_CATEGORY.teaching || []).includes(pos) ||
+    (POSITION_OPTIONS_BY_CATEGORY['teaching-related'] || []).includes(pos) ||
+    (POSITION_OPTIONS_BY_CATEGORY['non-teaching'] || []).includes(pos)
+  );
+};
+
+export const getCategoryForCanonicalPosition = (positionName) => {
+  if (!positionName || typeof positionName !== 'string') return '';
+  const pos = positionName.trim();
+  if (pos.startsWith('OTHERS')) return 'non-teaching';
+  if ((POSITION_OPTIONS_BY_CATEGORY.teaching || []).includes(pos)) return 'teaching';
+  if ((POSITION_OPTIONS_BY_CATEGORY['teaching-related'] || []).includes(pos)) return 'teaching-related';
+  if ((POSITION_OPTIONS_BY_CATEGORY['non-teaching'] || []).includes(pos)) return 'non-teaching';
+  return '';
+};
+
+export const detectPersonnelTypeFromPosition = (positionName) => {
+  if (!positionName || typeof positionName !== 'string') return '';
+  const pos = positionName.trim();
+  if (!isCanonicalPosition(pos)) return '';
+  return getCategoryForCanonicalPosition(pos);
+};
+
 export const SUBJECT_OPTIONS = [
   "KINDER BLOCKS OF TIME",
   "LANGUAGE",
@@ -817,9 +797,10 @@ export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "N
 // Degree-level attainments (College/Baccalaureate, Master's, Doctorate) are no longer picked from a
 // single top-level "highest attainment" field — they are selected per-entry from the "+ Add Degree"
 // control in the Educational Attainment section (see DEGREE_LEVEL_OPTIONS). This list only covers
-// attainment levels below a completed degree.
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS = [
-  "COLLEGE UNDERGRADUATE"
+  "COLLEGE GRADUATE / BACCALAUREATE",
+  "MASTER'S DEGREE (GRADUATED)",
+  "DOCTORATE DEGREE (GRADUATED)"
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
@@ -828,18 +809,13 @@ export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
   "HIGH SCHOOL GRADUATE",
   "SENIOR HIGH SCHOOL GRADUATE",
   "VOCATIONAL / TECH-VOC COURSE",
-  "COLLEGE UNDERGRADUATE"
+  "COLLEGE UNDERGRADUATE",
+  "COLLEGE GRADUATE / BACCALAUREATE",
+  "MASTER'S DEGREE (GRADUATED)",
+  "DOCTORATE DEGREE (GRADUATED)"
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS = HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
-
-// Levels selectable when adding a degree entry via "+ Add Degree". MASTERS/DOCTORATE entries carry
-// an additional post-graduate discipline field folded directly into the entry.
-export const DEGREE_LEVEL_OPTIONS = [
-  { key: 'BACCALAUREATE', label: "Baccalaureate / College Degree" },
-  { key: 'MASTERS', label: "Master's Degree" },
-  { key: 'DOCTORATE', label: "Doctorate Degree" }
-];
 
 export const SHS_TRACK_OPTIONS = [
   "ACADEMIC TRACK",
@@ -3013,6 +2989,12 @@ export const AppProvider = ({ children }) => {
     };
 
     return list.map(p => {
+      const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
+      const isCanon = isCanonicalPosition(rawPos);
+      const cleanPosition = isCanon ? rawPos : '';
+      const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : '';
+      const cleanCategory = cleanType === 'teaching' ? 'TEACHING' : cleanType === 'teaching-related' ? 'RELATED TEACHING' : cleanType === 'non-teaching' ? 'NON-TEACHING' : '';
+
       const cleanEmpNo = (p.employeeNo && !String(p.employeeNo).toUpperCase().startsWith('PRN')) 
         ? String(p.employeeNo).trim() 
         : ((p.employee_no && !String(p.employee_no).toUpperCase().startsWith('PRN')) ? String(p.employee_no).trim() : '');
@@ -3025,7 +3007,7 @@ export const AppProvider = ({ children }) => {
       const cleanMinor = (primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''));
       const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
 
-      const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
+      const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
       const computedAttainment = p.highestEducationalAttainment || (() => {
         if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
           return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
@@ -3044,6 +3026,12 @@ export const AppProvider = ({ children }) => {
 
       return {
         ...p,
+        position: cleanPosition,
+        plantilla_position: cleanPosition,
+        position_title: cleanPosition,
+        type: cleanType,
+        positionCategory: cleanCategory,
+        position_category: cleanCategory,
         employeeNo: cleanEmpNo,
         employee_no: cleanEmpNo,
         ethnicGroup: cleanEthnicGroup,
@@ -3117,7 +3105,22 @@ export const AppProvider = ({ children }) => {
             certifiedAt: school.certifiedAt || null,
             subjectsConfig: school.subjectsConfig || null,
             specialPrograms: school.specialPrograms || [],
-            shsCurriculumModel: school.shsCurriculumModel || 'Standard K-12 SHS Curriculum'
+            hasElemSpecialPrograms: school.hasElemSpecialPrograms || false,
+            elemSpecialPrograms: school.elemSpecialPrograms || [],
+            hasJhsSpecialPrograms: school.hasJhsSpecialPrograms || false,
+            jhsSpecialPrograms: school.jhsSpecialPrograms || [],
+            shsCurriculumModel: school.shsCurriculumModel || 'Standard K-12 SHS Curriculum',
+            hasElemInclusive: school.hasElemInclusive || false,
+            elemInclusivePrograms: school.elemInclusivePrograms || [],
+            hasJhsInclusive: school.hasJhsInclusive || false,
+            jhsInclusivePrograms: school.jhsInclusivePrograms || [],
+            hasShsInclusive: school.hasShsInclusive || false,
+            shsInclusivePrograms: school.shsInclusivePrograms || [],
+            hasAls: school.hasAls || false,
+            hasSned: school.hasSned || false,
+            hasIped: school.hasIped || false,
+            hasMadrasah: school.hasMadrasah || false,
+            inclusivePrograms: school.inclusivePrograms || []
           };
         }
         setSchoolInfo(currentSchoolInfo);
@@ -3166,7 +3169,12 @@ export const AppProvider = ({ children }) => {
         const autoEnrichPersonnel = (list) => {
           if (!Array.isArray(list)) return [];
           return list.map(p => {
-            const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '');
+            const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
+            const isCanon = isCanonicalPosition(rawPos);
+            const cleanPosition = isCanon ? rawPos : '';
+            const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : '';
+            const cleanCategory = cleanType === 'teaching' ? 'TEACHING' : cleanType === 'teaching-related' ? 'RELATED TEACHING' : cleanType === 'non-teaching' ? 'NON-TEACHING' : '';
+
             const rawEth = p.ethnicGroup || p.ethnic_group || '';
             const cleanEthnic = (rawEth === 'OTHERS' ? '' : rawEth);
             const cleanRel = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
@@ -3175,7 +3183,7 @@ export const AppProvider = ({ children }) => {
             const cleanMin = (primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''));
             const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
 
-            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(autoType || p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
+            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
             const computedAttainment = p.highestEducationalAttainment || (() => {
               if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
                 return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
@@ -3194,7 +3202,12 @@ export const AppProvider = ({ children }) => {
 
             return {
               ...p,
-              type: autoType || p.type || 'teaching',
+              position: cleanPosition,
+              plantilla_position: cleanPosition,
+              position_title: cleanPosition,
+              type: cleanType,
+              positionCategory: cleanCategory,
+              position_category: cleanCategory,
               ethnicGroup: cleanEthnic,
               ethnic_group: cleanEthnic,
               religion: cleanRel,
@@ -3207,6 +3220,34 @@ export const AppProvider = ({ children }) => {
           });
         };
 
+        // Helper: Check if section is invalid (multi-grade/mono-grade artifacts from spreadsheet scanning)
+        const isInvalidClassSection = (sec) => {
+          if (!sec) return true;
+          const g = String(sec.gradeLevel || sec.grade_level || '').toUpperCase().trim();
+          const n = String(sec.sectionName || sec.section_name || '').toUpperCase().trim();
+          return (
+            g.includes('MULTI-GRADE') || g.includes('MULTIGRADE') || g.includes('MULTI GRADE') ||
+            g.includes('MONO-GRADE') || g.includes('MONOGRADE') || g.includes('MONO GRADE') ||
+            n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
+            n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
+          );
+        };
+
+        const sanitizeClassSectionList = (list) => {
+          if (!Array.isArray(list)) return [];
+          return list.filter(sec => !isInvalidClassSection(sec)).map(sec => {
+            let cleanGrade = sec.gradeLevel || sec.grade_level || '';
+            const upperG = String(cleanGrade).toUpperCase().trim();
+            if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
+            else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
+            return {
+              ...sec,
+              gradeLevel: cleanGrade,
+              grade_level: cleanGrade
+            };
+          });
+        };
+
         // Helper: Extract class sections fallback from workload rows
         const extractClassSectionsFromPersonnel = (personnelList, schoolInf) => {
           if (!Array.isArray(personnelList) || personnelList.length === 0) return [];
@@ -3214,7 +3255,7 @@ export const AppProvider = ({ children }) => {
           const IGNORE_SECTION_KEYWORDS = [
             'LEAVE', 'ADMINISTRATIVE', 'UTILITY', 'DATA MANAGEMENT', 'CHAIRMAN',
             'CLERK', 'WATCHMAN', 'PRINCIPAL', 'COORDINATOR', 'PROJECTS', 'PROGRAMS',
-            'ADVISORY', 'READING', 'REMEDIATION'
+            'ADVISORY', 'READING', 'REMEDIATION', 'MULTI-GRADE', 'MONO-GRADE', 'MULTIGRADE', 'MONOGRADE', 'MULTI GRADE', 'MONO GRADE'
           ];
 
           personnelList.forEach(p => {
@@ -3222,10 +3263,15 @@ export const AppProvider = ({ children }) => {
               p.workloadRows.forEach(wk => {
                 if (wk.gradeLevel && wk.sectionName) {
                   const secUpper = String(wk.sectionName).toUpperCase().trim();
-                  const isNonClassSection = IGNORE_SECTION_KEYWORDS.some(kw => secUpper.includes(kw));
+                  const gradeUpper = String(wk.gradeLevel).toUpperCase().trim();
+                  const isNonClassSection = IGNORE_SECTION_KEYWORDS.some(kw => secUpper.includes(kw) || gradeUpper.includes(kw));
 
                   if (!isNonClassSection && secUpper.length > 0) {
-                    const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
+                    let cleanGrade = wk.gradeLevel;
+                    if (gradeUpper.includes('KINDER')) cleanGrade = 'Kinder';
+                    else if (gradeUpper === 'SNED' || gradeUpper === 'NON-GRADED' || gradeUpper === 'NON GRADED' || gradeUpper === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
+
+                    const key = `${cleanGrade}-${wk.sectionName}`.toLowerCase();
                     const isAdvRow = wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY';
                     const existing = extractedSecsMap.get(key);
                     
@@ -3234,7 +3280,7 @@ export const AppProvider = ({ children }) => {
                         id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
                         schoolId: schoolInf?.schoolId || '199999',
                         schoolYear: schoolInf?.schoolYear || 'SY 26-27',
-                        gradeLevel: wk.gradeLevel,
+                        gradeLevel: cleanGrade,
                         sectionName: wk.sectionName,
                         sectionType: 'MONO GRADE',
                         advisorId: isAdvRow ? String(p.id) : null,
@@ -3359,8 +3405,14 @@ export const AppProvider = ({ children }) => {
             setSchoolInfo(currentSchoolInfo);
           }
           draftPersonnel = draftPersonnel.map(p => {
+            const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
+            const isCanon = isCanonicalPosition(rawPos);
+            const cleanPosition = isCanon ? rawPos : '';
+            const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : '';
+            const cleanCategory = cleanType === 'teaching' ? 'TEACHING' : cleanType === 'teaching-related' ? 'RELATED TEACHING' : cleanType === 'non-teaching' ? 'NON-TEACHING' : '';
+
             const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
-            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(p.type) || ['TEACHING', 'TEACHING-RELATED'].includes(p.positionCategory);
+            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
             const computedAttainment = p.highestEducationalAttainment || (() => {
               if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
                 return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
@@ -3379,6 +3431,12 @@ export const AppProvider = ({ children }) => {
 
             return {
               ...p,
+              position: cleanPosition,
+              plantilla_position: cleanPosition,
+              position_title: cleanPosition,
+              type: cleanType,
+              positionCategory: cleanCategory,
+              position_category: cleanCategory,
               ethnicGroup: p.ethnicGroup === 'OTHERS' ? '' : (p.ethnicGroup || ''),
               ethnic_group: p.ethnic_group === 'OTHERS' ? '' : (p.ethnic_group || ''),
               religion: p.religion === 'OTHERS' ? '' : (p.religion || ''),
@@ -3389,10 +3447,14 @@ export const AppProvider = ({ children }) => {
               prc_specialization: p.prc_specialization === 'OTHERS' ? '' : (p.prc_specialization || p.prcSpecialization || '')
             };
           });
+          const cleanDraftSecs = sanitizeClassSectionList(loadedDraftSecs);
           setPersonnel(draftPersonnel);
-          setClassSections(loadedDraftSecs);
+          setClassSections(cleanDraftSecs);
           setWorkloadTransfers(activeDraft.workloadTransfers || []);
           setAbsences(activeDraft.absences || []);
+          if (activeDraft.allowancesMap) {
+            setAllowancesMap(activeDraft.allowancesMap);
+          }
           if (activeDraft.journey_state || activeDraft.journeyState) {
             const jState = activeDraft.journey_state || activeDraft.journeyState;
             setJourneyState({
@@ -3405,7 +3467,7 @@ export const AppProvider = ({ children }) => {
             setActivePersonnelId(draftPersonnel[0].id);
           }
           // Make sure local IndexedDB is synced with the loaded draft
-          await setLocalDraft(draftKey, { ...activeDraft, personnel: draftPersonnel, classSections: loadedDraftSecs });
+          await setLocalDraft(draftKey, { ...activeDraft, personnel: draftPersonnel, classSections: cleanDraftSecs });
           setHasUnsavedChanges(true);
         } else {
           // Initialize from official PostgreSQL DB
@@ -3428,6 +3490,8 @@ export const AppProvider = ({ children }) => {
           if (loadedSections.length === 0 && !activeDraft?.sectionsCleared && extractedFallbackSecs.length > 0) {
             loadedSections = extractedFallbackSecs;
           }
+
+          loadedSections = sanitizeClassSectionList(loadedSections);
 
           loadedSections.forEach(sec => {
             if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
@@ -3621,170 +3685,25 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('esf7_school_edited', String(schoolEdited));
   }, [schoolEdited]);
 
-  const updateTimeouts = React.useRef({});
-  const pendingFields = React.useRef({});
-
   const updatePersonnelInfo = async (id, fields) => {
-    // 1. Instantly update local state for 0ms typing delay
+    // 1. Instantly update local state for 0ms typing delay (IndexedDB auto-save handles persistence)
     setPersonnel(prev => prev.map(p => String(p.id) === String(id) ? { ...p, ...fields } : p));
-
-    // 2. Accumulate pending changes for this personnel
-    if (!pendingFields.current[id]) {
-      pendingFields.current[id] = {};
-    }
-    Object.assign(pendingFields.current[id], fields);
-
-    // 3. Clear any existing timeout for this personnel
-    if (updateTimeouts.current[id]) {
-      clearTimeout(updateTimeouts.current[id]);
-    }
-
-    // 4. Schedule debounced API save
-    updateTimeouts.current[id] = setTimeout(async () => {
-      const accumulatedFields = pendingFields.current[id];
-      delete pendingFields.current[id];
-      delete updateTimeouts.current[id];
-
-      // Safe retrieval of latest state outside state updater side effects
-      let latestPerson;
-      setPersonnel(prev => {
-        latestPerson = prev.find(p => String(p.id) === String(id));
-        return prev;
-      });
-
-      if (!latestPerson) return;
-
-      try {
-        if ('personalVerified' in accumulatedFields) {
-          await api.verifyPersonnel(id, 'personal', accumulatedFields.personalVerified);
-        }
-        if ('workloadVerified' in accumulatedFields) {
-          await api.verifyPersonnel(id, 'workload', accumulatedFields.workloadVerified);
-        }
-        if ('workloadRows' in accumulatedFields || 'teachingRelatedRows' in accumulatedFields || 'administrativeRows' in accumulatedFields) {
-          await api.updatePersonnelWorkloadRows(
-            id, 
-            latestPerson.workloadRows || [], 
-            latestPerson.teachingRelatedRows || [], 
-            latestPerson.administrativeRows || []
-          );
-        }
-
-        const empKeys = ['position', 'designation', 'fundSource', 'natureOfAppointment', 'hiringArrangement', 'assignedSchools', 'gradeLevelsTaught', 'assignedGradeLevels', 'teachesShs', 'firstServiceDate', 'lastPromotionDate', 'newStationDate', 'lastLateralMovementDate', 'stepIncrement'];
-        const hasEmp = Object.keys(accumulatedFields).some(k => empKeys.includes(k));
-        if (hasEmp) {
-          const cat = detectPersonnelTypeFromPosition(latestPerson.position);
-          const posCategory = cat === 'non-teaching' ? 'NON-TEACHING' : cat === 'teaching-related' ? 'RELATED TEACHING' : 'TEACHING';
-          const payload = {
-            position: latestPerson.position || '',
-            position_category: posCategory,
-            designation: latestPerson.designation || '',
-            fund_source: latestPerson.fundSource || '',
-            nature_of_appointment: latestPerson.natureOfAppointment || '',
-            hiring_arrangement: latestPerson.hiringArrangement || '',
-            assigned_schools: latestPerson.assignedSchools || [],
-            grade_levels_taught: latestPerson.assignedGradeLevels || latestPerson.gradeLevelsTaught || [],
-            teaches_shs: !!latestPerson.teachesShs,
-            first_service_date: latestPerson.firstServiceDate || '2000-01-01',
-            last_promotion_date: latestPerson.lastPromotionDate || '2000-01-01',
-            new_station_date: latestPerson.newStationDate || '2000-01-01',
-            last_lateral_movement_date: latestPerson.lastLateralMovementDate || null,
-            step_number: Number(latestPerson.stepIncrement || 1)
-          };
-          await api.updateEmployment(id, payload);
-        }
-
-        const qualKeys = ['collegeDegree', 'major', 'minor', 'degreeRows', 'postGraduateDegree', 'discipline', 'eligibility', 'prcSpecialization', 'prcLicenseNo', 'prcExpiryDate'];
-        const hasQual = Object.keys(accumulatedFields).some(k => qualKeys.includes(k));
-        if (hasQual) {
-          const primaryQualDegree = (latestPerson.degreeRows && latestPerson.degreeRows.length) ? latestPerson.degreeRows[0] : { collegeDegree: latestPerson.collegeDegree, major: latestPerson.major, minor: latestPerson.minor };
-          const payload = {
-            college_degree: primaryQualDegree.collegeDegree || '',
-            major: primaryQualDegree.major || '',
-            minor: primaryQualDegree.minor || '',
-            degree_rows: latestPerson.degreeRows || [],
-            post_graduate_degree: latestPerson.postGraduateDegree || 'N/A',
-            discipline: latestPerson.discipline || '',
-            eligibility: latestPerson.eligibility || '',
-            prc_specialization: latestPerson.prcSpecialization || '',
-            prc_license_no: latestPerson.prcLicenseNo || '',
-            prc_expiry_date: latestPerson.prcExpiryDate || null
-          };
-          await api.updateQualifications(id, payload);
-        }
-
-        const hasTrainings = 'neapTrainingRows' in accumulatedFields || 'certificationRows' in accumulatedFields || 'otherTrainingRows' in accumulatedFields;
-        if (hasTrainings) {
-          const payload = {
-            neapTrainingRows: latestPerson.neapTrainingRows || [],
-            certificationRows: latestPerson.certificationRows || [],
-            otherTrainingRows: latestPerson.otherTrainingRows || []
-          };
-          await api.updatePersonnelTrainings(id, payload);
-        }
-
-        const coreKeys = ['salutation', 'firstName', 'middleName', 'lastName', 'nameExtension', 'sexAtBirth', 'civilStatus', 'soloParent', 'religion', 'ethnicGroup', 'birthdate', 'philsysNo', 'noPhilsys', 'tin', 'noTin', 'employeeNo', 'deploymentStatus', 'type'];
-        const hasCore = Object.keys(accumulatedFields).some(k => coreKeys.includes(k));
-        if (hasCore) {
-          const payload = {
-            type: latestPerson.type || 'teaching',
-            salutation: latestPerson.salutation || 'MR.',
-            first_name: latestPerson.firstName || '',
-            middle_name: latestPerson.middleName || null,
-            last_name: latestPerson.lastName || '',
-            name_extension: latestPerson.nameExtension || null,
-            sex_at_birth: latestPerson.sexAtBirth || null,
-            civil_status: latestPerson.civilStatus || null,
-            solo_parent: latestPerson.soloParent === true,
-            religion: latestPerson.religion || null,
-            ethnic_group: latestPerson.ethnicGroup || null,
-            birthdate: latestPerson.birthdate || null,
-            philsys_no: latestPerson.philsysNo || null,
-            no_philsys: latestPerson.noPhilsys === true,
-            tin: latestPerson.tin || null,
-            no_tin: latestPerson.noTin === true,
-            employee_no: latestPerson.employeeNo || null,
-            deployment_status: latestPerson.deploymentStatus || null
-          };
-          await api.updatePersonnel(id, payload);
-        }
-
-        // Periodically refresh data from server to ensure exact sync
-        const list = await fetchAndNormalizePersonnel();
-        setPersonnel(prev => {
-          return list.map(person => {
-            const prevPerson = prev.find(p => p.id === person.id);
-            if (!prevPerson) return person;
-
-            const mergeRows = (prevRows = [], newRows = []) => {
-              return newRows.map((row, idx) => {
-                const prevRow = prevRows[idx];
-                return {
-                  ...row,
-                  clientKey: prevRow?.clientKey || prevRow?.id || `client-${Date.now()}-${Math.random()}`
-                };
-              });
-            };
-
-            return {
-              ...person,
-              neapTrainingRows: mergeRows(prevPerson.neapTrainingRows, person.neapTrainingRows),
-              certificationRows: mergeRows(prevPerson.certificationRows, person.certificationRows),
-              otherTrainingRows: mergeRows(prevPerson.otherTrainingRows, person.otherTrainingRows)
-            };
-          });
-        });
-      } catch (err) {
-        console.error('Failed to sync debounced updates to server:', err);
-      }
-    }, 500);
+    setHasUnsavedChanges(true);
   };
 
   const savePersonnelChanges = async (id, updatedPerson) => {
     // Clear isDraft when user explicitly saves — this makes the record visible
     // in PersonnelProfile and Workload which filter out isDraft: true records.
-    const confirmedPerson = { ...updatedPerson, isDraft: false };
-    setPersonnel(prev => prev.map(p => p.id === id ? confirmedPerson : p));
+    setPersonnel(prev => prev.map(p => {
+      if (String(p.id) === String(id)) {
+        return {
+          ...p,
+          ...updatedPerson,
+          isDraft: false
+        };
+      }
+      return p;
+    }));
     showToast("Changes saved locally.");
   };
 
@@ -3844,6 +3763,12 @@ export const AppProvider = ({ children }) => {
       minor: newPerson.minor || '',
       degreeRows: newPerson.degreeRows || [],
       postGraduateDegree: newPerson.postGraduateDegree || 'N/A',
+      postGraduateDiscipline: newPerson.postGraduateDiscipline || '{"masters":[],"doctorate":[]}',
+      post_graduate_discipline: newPerson.post_graduate_discipline || '{"masters":[],"doctorate":[]}',
+      mastersDisciplines: newPerson.mastersDisciplines || [],
+      doctorateDisciplines: newPerson.doctorateDisciplines || [],
+      mastersDiscipline: newPerson.mastersDiscipline || '',
+      doctorateDiscipline: newPerson.doctorateDiscipline || '',
       discipline: newPerson.discipline || '',
       eligibility: newPerson.eligibility || '',
       prcSpecialization: newPerson.prcSpecialization || '',
@@ -4055,6 +3980,7 @@ export const AppProvider = ({ children }) => {
     }
     const strAdvisorId = advisorId !== undefined ? (advisorId ? String(advisorId) : null) : undefined;
 
+    const origSec = (classSections || []).find(s => String(s.id) === String(sectionId));
     let targetSec = null;
     setClassSections(prev => prev.map(s => {
       if (String(s.id) === String(sectionId)) {
@@ -4082,14 +4008,21 @@ export const AppProvider = ({ children }) => {
           const isEnrichment = targetSec.sectionType === 'ENRICHMENT';
           const linkedSub = isRemedial ? 'REMEDIATION' : (isEnrichment ? 'ENRICHMENT' : 'ADVISORY');
 
-          const wasOldTeacher = rows.some(r => 
-            (r.subject === linkedSub || r.subjectName === linkedSub || (linkedSub === 'ADVISORY' && (r.subject === 'HGP' || r.subjectName === 'HGP'))) && 
-            (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel))
-          );
+          const isSecRow = (r) => {
+            const rSecId = String(r.sectionId || r.section_id || '');
+            const targetSecId = String(sectionId);
+            const origSecId = origSec ? String(origSec.id) : '';
+            if (rSecId && (rSecId === targetSecId || rSecId === origSecId)) return true;
+            const rName = (r.sectionName || r.section_name || '').toUpperCase().trim();
+            const tName = (targetSec.sectionName || '').toUpperCase().trim();
+            const oName = (origSec?.sectionName || '').toUpperCase().trim();
+            if (rName && (rName === tName || (oName && rName === oName))) return true;
+            return false;
+          };
 
           if (isTargetTeacher) {
             if (isRemedial) {
-              const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && isSecRow(r));
               if (!hasRem) {
                 rows.push({
                   id: `wk-rem-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4105,10 +4038,10 @@ export const AppProvider = ({ children }) => {
                   durationMinutes: 60
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
             } else if (isEnrichment) {
-              const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && isSecRow(r));
               if (!hasEnr) {
                 rows.push({
                   id: `wk-enr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4124,10 +4057,10 @@ export const AppProvider = ({ children }) => {
                   durationMinutes: 60
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
             } else {
-              const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && isSecRow(r));
               if (!hasAdv) {
                 rows.unshift({
                   id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4143,9 +4076,9 @@ export const AppProvider = ({ children }) => {
                   durationMinutes: 60
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
-              const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)));
+              const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && isSecRow(r));
               if (!hasHgp) {
                 rows.push({
                   id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4161,15 +4094,30 @@ export const AppProvider = ({ children }) => {
                   durationMinutes: 60
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
             }
-            return { ...p, workloadRows: rows };
-          } else if (wasOldTeacher && (!strAdvisorId || String(p.id) !== strAdvisorId)) {
-            rows = rows.filter(r => !( (r.subject === linkedSub || r.subject === 'HGP' || r.subjectName === linkedSub || r.subjectName === 'HGP') && (String(r.sectionId) === String(sectionId) || (r.sectionName === targetSec.sectionName && r.gradeLevel === targetSec.gradeLevel)) ));
-            return { ...p, workloadRows: rows };
+          } else {
+            // For all previous / other teachers: remove any linked advisory / HGP / remediation / enrichment for this section
+            rows = rows.filter(r => !(
+              (r.subject === linkedSub || r.subject === 'HGP' || r.subjectName === linkedSub || r.subjectName === 'HGP') &&
+              isSecRow(r)
+            ));
           }
-          return p;
+
+          // Sync localStorage draft if present for this teacher
+          const draftKey = `draft_workload_${p.id}`;
+          const savedDraft = localStorage.getItem(draftKey);
+          if (savedDraft) {
+            try {
+              const parsed = JSON.parse(savedDraft);
+              if (parsed) {
+                localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: rows }));
+              }
+            } catch (e) {}
+          }
+
+          return { ...p, workloadRows: rows };
         });
       });
     }
@@ -4197,6 +4145,16 @@ export const AppProvider = ({ children }) => {
             (String(r.sectionId) === String(id)) ||
             (r.sectionName === target.sectionName && r.gradeLevel === target.gradeLevel && ['ADVISORY', 'HGP', 'REMEDIATION', 'ENRICHMENT'].includes(r.subject))
           ));
+          const draftKey = `draft_workload_${p.id}`;
+          const savedDraft = localStorage.getItem(draftKey);
+          if (savedDraft) {
+            try {
+              const parsed = JSON.parse(savedDraft);
+              if (parsed) {
+                localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: rows }));
+              }
+            } catch (e) {}
+          }
           return { ...p, workloadRows: rows };
         });
       });
@@ -4302,8 +4260,8 @@ export const AppProvider = ({ children }) => {
 
         if (school && !school.error) {
           currentSchoolInfo = {
-            schoolId: school.school_id,
-            schoolName: school.school_name,
+            schoolId: school.school_id || school.schoolId,
+            schoolName: school.school_name || school.schoolName,
             region: school.region,
             division: school.division,
             district: school.district,
@@ -4312,7 +4270,24 @@ export const AppProvider = ({ children }) => {
             curricularOffering: school.curricularOffering || school.curricular_offering || [],
             certifiedBy: school.certifiedBy || null,
             certifiedSignature: school.certifiedSignature || null,
-            certifiedAt: school.certifiedAt || null
+            certifiedAt: school.certifiedAt || null,
+            specialPrograms: school.specialPrograms || [],
+            hasElemSpecialPrograms: school.hasElemSpecialPrograms || false,
+            elemSpecialPrograms: school.elemSpecialPrograms || [],
+            hasJhsSpecialPrograms: school.hasJhsSpecialPrograms || false,
+            jhsSpecialPrograms: school.jhsSpecialPrograms || [],
+            shsCurriculumModel: school.shsCurriculumModel || 'Standard K-12 SHS Curriculum',
+            hasElemInclusive: school.hasElemInclusive || false,
+            elemInclusivePrograms: school.elemInclusivePrograms || [],
+            hasJhsInclusive: school.hasJhsInclusive || false,
+            jhsInclusivePrograms: school.jhsInclusivePrograms || [],
+            hasShsInclusive: school.hasShsInclusive || false,
+            shsInclusivePrograms: school.shsInclusivePrograms || [],
+            hasAls: school.hasAls || false,
+            hasSned: school.hasSned || false,
+            hasIped: school.hasIped || false,
+            hasMadrasah: school.hasMadrasah || false,
+            inclusivePrograms: school.inclusivePrograms || []
           };
         }
 
@@ -4357,7 +4332,7 @@ export const AppProvider = ({ children }) => {
           });
           loadedSections = Array.from(extractedSecsMap.values());
         }
-        setClassSections(loadedSections);
+        setClassSections(sanitizeClassSectionList(loadedSections));
 
         const transfers = await api.getTransfers();
         setWorkloadTransfers(transfers || []);
@@ -4392,7 +4367,7 @@ export const AppProvider = ({ children }) => {
       }
 
       const sections = await api.getSections();
-      setClassSections(sections || []);
+      setClassSections(sanitizeClassSectionList(sections || []));
 
       const transfers = await api.getTransfers();
       setWorkloadTransfers(transfers || []);
@@ -4613,21 +4588,34 @@ export const AppProvider = ({ children }) => {
         issues.push({ id: `${p.id}-age-questionable`, personId: p.id, type: "warn", category: "Demographics", message: `${name}: Computed age (${age}) is questionable and requires verification.` });
       }
 
-      // MCOC Grade Levels Handled check
-      const currentOfferings = Array.isArray(schoolInfo.curricularOffering) ? schoolInfo.curricularOffering : [];
-      const offeredGL = [];
-      if (currentOfferings.includes('Elementary')) offeredGL.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade');
-      if (currentOfferings.includes('JHS')) offeredGL.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade');
-      if (currentOfferings.includes('SHS')) offeredGL.push('Grade 11', 'Grade 12', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade');
-      offeredGL.push('ALS', 'SNED', 'SPED');
+      // MCOC Grade Levels Handled check (Pure Teaching Only - Non-teaching & Related-teaching do not teach grade levels)
+      if (isTeachingOnly) {
+        const currentOfferings = Array.isArray(schoolInfo.curricularOffering) ? schoolInfo.curricularOffering : [];
+        const offeredGL = [];
+        if (currentOfferings.includes('Elementary')) {
+          offeredGL.push('Kinder', 'Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade', 'SNED (NON-GRADED)', 'SPED (NON-GRADED)', 'SNED', 'SPED');
+        }
+        if (currentOfferings.includes('JHS')) {
+          offeredGL.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade', 'SNED (NON-GRADED)', 'SPED (NON-GRADED)', 'SNED', 'SPED');
+        }
+        if (currentOfferings.includes('SHS')) {
+          offeredGL.push('Grade 11', 'Grade 12', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade', 'SNED (NON-GRADED)', 'SPED (NON-GRADED)', 'SNED', 'SPED');
+        }
+        offeredGL.push('ALS', 'ALS (NON-GRADED)', 'SNED', 'SNED (NON-GRADED)', 'SPED', 'SPED (NON-GRADED)');
 
-      const normalizeGL = (gl) => String(gl || '').toUpperCase().replace(/[-\s]+/g, '');
-      const offeredGLNormalized = offeredGL.map(normalizeGL);
+        const normalizeGL = (gl) => String(gl || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const offeredGLNormalized = offeredGL.map(normalizeGL);
 
-      const assignedGL = Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
-      const invalidGLs = assignedGL.filter(gl => !offeredGLNormalized.includes(normalizeGL(gl)));
-      if (invalidGLs.length > 0) {
-        issues.push({ id: `${p.id}-mcoc-mismatch`, personId: p.id, type: "error", category: "Employment", message: `${name}: Grade levels handled (${invalidGLs.join(', ')}) are not offered by the school's pre-registered Curricular Offerings (${currentOfferings.join(', ')}).` });
+        const assignedGL = Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
+        const invalidGLs = assignedGL.filter(gl => {
+          const norm = normalizeGL(gl);
+          if (!norm) return false;
+          return !offeredGLNormalized.includes(norm) && !offeredGLNormalized.some(off => norm.includes(off) || off.includes(norm));
+        });
+
+        if (invalidGLs.length > 0) {
+          issues.push({ id: `${p.id}-mcoc-mismatch`, personId: p.id, type: "error", category: "Employment", message: `${name}: Grade levels handled (${invalidGLs.join(', ')}) are not offered by the school's pre-registered Curricular Offerings (${currentOfferings.join(', ')}).` });
+        }
       }
 
       // Deployment & Funding Status

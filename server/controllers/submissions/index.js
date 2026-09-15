@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 const redisQueue = require('../../services/redisQueue');
+const queueWorker = require('../../queue_worker');
 
 // POST /api/submissions - Queue a new certified submission
 router.post('/', async (req, res) => {
@@ -34,7 +35,14 @@ router.post('/', async (req, res) => {
       console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
     });
 
-    // 3. Fetch initial queue position
+    // 3. Trigger immediate worker execution asynchronously (instant processing)
+    setImmediate(() => {
+      queueWorker.processNextJob().catch(err => {
+        console.warn(`[Queue Immediate Trigger Notice]: ${err.message}`);
+      });
+    });
+
+    // 4. Fetch initial queue position
     const posRes = await db.query(
       `SELECT COUNT(*) FROM esf7_submission_queue WHERE status = 'pending' AND id < $1`,
       [jobId]

@@ -367,3 +367,13 @@
 - **Step 6 Table View Layout**:
   - Remove daily and weekly granular columns from the main roster view.
   - Display **Monthly breakdown columns** (e.g. Month 1, Month 2, Month 3 of the selected Term/Quarter) followed by the **Total Net Hours Per Term / Quarter** and **Total Overload Pay (₱)**.
+
+### Added 2026-09-14: Database Field Verification & Backend Testing Protocol
+- **Backend & Route Architecture (`server/server.js`)**:
+  - Central express dispatcher managing 30+ modular controller endpoints with `50mb` payload parsing and CORS.
+  - Self-healing schema engine (`initDB`) ensuring `schema.sql` synchronizes table definitions on boot.
+  - Local submission queue worker (`queue_worker.js`) executing transactional ingestion (`BEGIN` / `COMMIT` / `ROLLBACK`).
+- **Database Schema Core (21 Tables)**:
+  - Alphanumeric String IDs (`VARCHAR(50)`) across all relational entities, with `salary_matrix` and `esf7_submission_queue` utilizing auto-incrementing serial PKs.
+  - Mandatory `raw_payload JSONB` on all entity tables ensuring lossless payload retention and zero frontend drift.
+  - Full relational cascade constraints (`ON DELETE CASCADE` / `ON DELETE SET NULL`) linking personnel profile children, class sections, and overload deduction logs.

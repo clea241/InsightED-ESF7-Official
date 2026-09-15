@@ -1,12 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import PageTransition from '../components/PageTransition';
 import PortalHeader from '../components/PortalHeader';
 import { FiCheck, FiMap, FiArrowRight } from 'react-icons/fi';
 
 export default function Allowances() {
-  const { personnel, showToast, allowancesMap, toggleAllowance, schoolInfo, setActiveView } = useApp();
+  const { personnel, showToast, allowancesMap, toggleAllowance, fetchAllowances, schoolInfo, setActiveView } = useApp();
   const currentSchoolYear = schoolInfo?.schoolYear || 'SY 26-27';
+
+  useEffect(() => {
+    if (fetchAllowances) {
+      fetchAllowances(currentSchoolYear);
+    }
+  }, [currentSchoolYear]);
 
   // Configured Allowance Items (Boolean tracking per teacher)
   const allowanceConfig = [

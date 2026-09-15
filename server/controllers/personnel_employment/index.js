@@ -2,11 +2,65 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 
+const sanitizeGradeLevel = (rawLvl, secName = '') => {
+  if (!rawLvl && !secName) return null;
+  const str = String(rawLvl || '').trim();
+  const upper = str.toUpperCase();
+
+  if (
+    upper.includes('MULTI-GRADE') || upper.includes('MULTIGRADE') || upper.includes('MULTI GRADE') ||
+    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE')
+  ) {
+    if (secName) {
+      const secMatch = String(secName).match(/(?:Grade\s*|G)(\d{1,2})/i);
+      if (secMatch) return `Grade ${secMatch[1]}`;
+      if (String(secName).toUpperCase().includes('KINDER')) return 'Kinder';
+      if (String(secName).toUpperCase().includes('SNED') || String(secName).toUpperCase().includes('NON-GRADED') || String(secName).toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+      if (String(secName).toUpperCase().includes('ALS')) return 'ALS';
+    }
+    return null;
+  }
+
+  if (upper.includes('KINDER')) return 'Kinder';
+  if (upper === 'SNED' || upper === 'SPED' || upper === 'NON-GRADED' || upper === 'NON GRADED' || upper.includes('SNED') || upper.includes('NON-GRADED') || upper.includes('NON GRADED')) {
+    return 'SNED (NON-GRADED)';
+  }
+  if (upper === 'ALS') return 'ALS';
+
+  const numMatch = str.match(/(?:Grade\s*|G|^)(\d{1,2})$/i) || str.match(/(\d{1,2})/);
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    if (num >= 1 && num <= 12) return `Grade ${num}`;
+  }
+
+  if (upper.startsWith('GRADE ')) {
+    const rest = str.substring(6).trim();
+    if (rest.toUpperCase().includes('KINDER')) return 'Kinder';
+    if (rest.toUpperCase().includes('MULTI') || rest.toUpperCase().includes('MONO')) return null;
+    if (rest.toUpperCase().includes('SNED') || rest.toUpperCase().includes('NON-GRADED') || rest.toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+    return `Grade ${rest}`;
+  }
+
+  return str || null;
+};
+
+const sanitizeGradeArray = (arr) => {
+  if (!Array.isArray(arr)) return [];
+  const res = [];
+  for (const item of arr) {
+    const sanitized = sanitizeGradeLevel(item);
+    if (sanitized && !res.includes(sanitized)) {
+      res.push(sanitized);
+    }
+  }
+  return res;
+};
+
 // Helper function to format employment DB row
 function formatEmploymentRecord(row) {
   if (!row) return null;
   const raw = row.raw_payload || {};
-  const grades = row.grade_levels_taught || [];
+  const grades = sanitizeGradeArray(row.grade_levels_taught || []);
   const hasShsGrade = Array.isArray(grades) && grades.some(g => String(g).includes('11') || String(g).includes('12'));
   const teachesShsFlag = raw.teachesShs !== undefined ? !!raw.teachesShs : (raw.teaches_shs !== undefined ? !!raw.teaches_shs : hasShsGrade);
 
@@ -97,7 +151,7 @@ router.post('/:personnel_id', async (req, res) => {
 
     const targetGrades = assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [];
     const schoolsJson = JSON.stringify(assigned_schools || assignedSchools || []);
-    const gradesJson = JSON.stringify(targetGrades);
+    const gradesJson = JSON.stringify(sanitizeGradeArray(targetGrades));
 
     const query = `
       INSERT INTO esf7_personnel_employment (

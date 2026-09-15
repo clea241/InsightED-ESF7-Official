@@ -6,11 +6,11 @@ const { getSchoolIdFromRequest } = require('../../utils/auth');
 const ALLOWED_KEYS = ['pera', 'uniform', 'supplies', 'medical', 'hardship'];
 
 const DEFAULT_AMOUNTS = {
-  pera: 2000.00,
-  uniform: 7000.00,
-  supplies: 10000.00,
-  medical: 7000.00,
-  hardship: 0.00
+  pera: null,
+  uniform: null,
+  supplies: null,
+  medical: null,
+  hardship: null
 };
 
 function formatAllowanceRecord(row) {
@@ -26,36 +26,36 @@ function formatAllowanceRecord(row) {
     schoolYear: row.school_year,
     school_year: row.school_year,
     
-    // Booleans & Amounts
+    // Booleans & Amounts (Amounts are null)
     pera: !!row.has_pera,
     has_pera: !!row.has_pera,
     hasPera: !!row.has_pera,
-    pera_amount: Number(row.pera_amount || DEFAULT_AMOUNTS.pera),
-    peraAmount: Number(row.pera_amount || DEFAULT_AMOUNTS.pera),
+    pera_amount: row.pera_amount !== null && row.pera_amount !== undefined ? Number(row.pera_amount) : null,
+    peraAmount: row.pera_amount !== null && row.pera_amount !== undefined ? Number(row.pera_amount) : null,
     
     uniform: !!row.has_uniform,
     has_uniform: !!row.has_uniform,
     hasUniform: !!row.has_uniform,
-    uniform_amount: Number(row.uniform_amount || DEFAULT_AMOUNTS.uniform),
-    uniformAmount: Number(row.uniform_amount || DEFAULT_AMOUNTS.uniform),
+    uniform_amount: row.uniform_amount !== null && row.uniform_amount !== undefined ? Number(row.uniform_amount) : null,
+    uniformAmount: row.uniform_amount !== null && row.uniform_amount !== undefined ? Number(row.uniform_amount) : null,
     
     supplies: !!row.has_supplies,
     has_supplies: !!row.has_supplies,
     hasSupplies: !!row.has_supplies,
-    supplies_amount: Number(row.supplies_amount || DEFAULT_AMOUNTS.supplies),
-    suppliesAmount: Number(row.supplies_amount || DEFAULT_AMOUNTS.supplies),
+    supplies_amount: row.supplies_amount !== null && row.supplies_amount !== undefined ? Number(row.supplies_amount) : null,
+    suppliesAmount: row.supplies_amount !== null && row.supplies_amount !== undefined ? Number(row.supplies_amount) : null,
     
     medical: !!row.has_medical,
     has_medical: !!row.has_medical,
     hasMedical: !!row.has_medical,
-    medical_amount: Number(row.medical_amount || DEFAULT_AMOUNTS.medical),
-    medicalAmount: Number(row.medical_amount || DEFAULT_AMOUNTS.medical),
+    medical_amount: row.medical_amount !== null && row.medical_amount !== undefined ? Number(row.medical_amount) : null,
+    medicalAmount: row.medical_amount !== null && row.medical_amount !== undefined ? Number(row.medical_amount) : null,
     
     hardship: !!row.has_hardship,
     has_hardship: !!row.has_hardship,
     hasHardship: !!row.has_hardship,
-    hardship_amount: Number(row.hardship_amount || DEFAULT_AMOUNTS.hardship),
-    hardshipAmount: Number(row.hardship_amount || DEFAULT_AMOUNTS.hardship),
+    hardship_amount: row.hardship_amount !== null && row.hardship_amount !== undefined ? Number(row.hardship_amount) : null,
+    hardshipAmount: row.hardship_amount !== null && row.hardship_amount !== undefined ? Number(row.hardship_amount) : null,
     
     rawPayload: raw
   };
@@ -115,10 +115,10 @@ router.get('/', async (req, res) => {
             has_pera, pera_amount, has_uniform, uniform_amount,
             has_supplies, supplies_amount, has_medical, medical_amount,
             has_hardship, hardship_amount, raw_payload
-          ) VALUES ($1, $2, $3, $4, FALSE, $5, FALSE, $6, FALSE, $7, FALSE, $8, FALSE, $9, '{}'::jsonb)
+          ) VALUES ($1, $2, $3, $4, FALSE, NULL, FALSE, NULL, FALSE, NULL, FALSE, NULL, FALSE, NULL, '{}'::jsonb)
            ON CONFLICT (personnel_id, school_year) DO UPDATE SET updated_at = NOW()
            RETURNING *;`,
-          [alwId, p.id, p.school_id, schoolYear, DEFAULT_AMOUNTS.pera, DEFAULT_AMOUNTS.uniform, DEFAULT_AMOUNTS.supplies, DEFAULT_AMOUNTS.medical, DEFAULT_AMOUNTS.hardship]
+          [alwId, p.id, p.school_id, schoolYear]
         );
         const formatted = formatAllowanceRecord(insertRes.rows[0]);
         allowancesMap[p.id] = {
@@ -127,11 +127,11 @@ router.get('/', async (req, res) => {
           supplies: formatted.supplies,
           medical: formatted.medical,
           hardship: formatted.hardship,
-          pera_amount: formatted.pera_amount,
-          uniform_amount: formatted.uniform_amount,
-          supplies_amount: formatted.supplies_amount,
-          medical_amount: formatted.medical_amount,
-          hardship_amount: formatted.hardship_amount
+          pera_amount: null,
+          uniform_amount: null,
+          supplies_amount: null,
+          medical_amount: null,
+          hardship_amount: null
         };
         fullRecords.push(formatted);
       }

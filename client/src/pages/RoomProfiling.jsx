@@ -655,7 +655,7 @@ export default function RoomProfiling() {
   const hasEmailError = !emailVal.isValid && !isEmailNA && !!rawEmail;
 
   const cleanPhilsys = String(formData?.philsysNo || '').replace(/\D/g, '');
-  const isPhilsysValid = !!(formData?.noPhilsys || formData?.no_philsys) || cleanPhilsys.length === 0 || cleanPhilsys.length === 16;
+  const isPhilsysValid = !!(formData?.noPhilsys || formData?.no_philsys) || cleanPhilsys.length === 16;
   const isFirstNameValid = !!formData?.firstName?.trim();
   const isLastNameValid = !!formData?.lastName?.trim();
   const isBirthdateValid = !!formData?.birthdate && isAgeValid;
@@ -1042,9 +1042,11 @@ export default function RoomProfiling() {
                   <div style={{ display: 'grid', gap: '4px' }}>
                     <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>PhilSys No. (National ID)</span>
-                      <span style={{ color: (formData.noPhilsys || formData.no_philsys) ? '#64748b' : isPhilsysValid ? '#059669' : '#DC2626', fontWeight: 600, fontSize: '11px' }}>
-                        {(formData.noPhilsys || formData.no_philsys) ? 'N/A' : cleanPhilsys.length > 0 ? (cleanPhilsys.length === 16 ? '16/16 digits ✓' : `${cleanPhilsys.length}/16 digits (Needs 16 if provided)`) : '(Optional)'}
-                      </span>
+                      {(!!(formData.noPhilsys || formData.no_philsys) || cleanPhilsys.length > 0) && (
+                        <span style={{ color: (formData.noPhilsys || formData.no_philsys) ? '#64748b' : cleanPhilsys.length === 16 ? '#059669' : '#DC2626', fontWeight: 600, fontSize: '11px' }}>
+                          {(formData.noPhilsys || formData.no_philsys) ? 'N/A' : (cleanPhilsys.length === 16 ? '16/16 digits ✓' : `${cleanPhilsys.length}/16 digits`)}
+                        </span>
+                      )}
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <input
@@ -1421,7 +1423,7 @@ export default function RoomProfiling() {
                 {!isFirstNameValid && <li>First Name is required.</li>}
                 {!isLastNameValid && <li>Last Name is required.</li>}
                 {!isBirthdateValid && <li>Birthdate is required.</li>}
-                {!isPhilsysValid && <li>PhilSys Card No. must be exactly 16 digits ({cleanPhilsys.length}/16 entered).</li>}
+                {!isPhilsysValid && <li>PhilSys Card No. is required (16 digits) or click N/A.</li>}
                 {!areTrainingsValid && <li>All training rows must have Title, Start Date, End Date, and positive Total Hours.</li>}
                 {hasEmailError && <li>Please enter a valid DepEd email address.</li>}
               </ul>

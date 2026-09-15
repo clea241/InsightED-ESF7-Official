@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useApp, POSITION_OPTIONS_BY_CATEGORY, detectPersonnelTypeFromPosition, validateDepEdEmail } from '../context/AppContext';
+import { useApp, POSITION_OPTIONS_BY_CATEGORY, detectPersonnelTypeFromPosition, isCanonicalPosition, getCategoryForCanonicalPosition, validateDepEdEmail } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import ESF7UploadModal from '../components/ESF7UploadModal';
@@ -257,15 +257,6 @@ export default function Roster() {
               <p className="subtext">View and manage all school staff members.</p>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button 
-                className="btn secondary" 
-                type="button" 
-                onClick={() => setIsUploadModalOpen(true)} 
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                title="Upload last year's official eSF7 (.xlsb) to auto-populate faculty"
-              >
-                <FiUploadCloud size={15} /> <span>Upload eSF7 (.xlsb)</span>
-              </button>
               <button className="btn" type="button" onClick={() => setIsModalOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <FiPlus size={15} /> <span>Add Personnel</span>
               </button>
@@ -328,7 +319,7 @@ export default function Roster() {
           <div className="roster-search-row">
             <label>Search roster</label>
             <input
-              placeholder="Search name, DepEd email, category, or position…"
+              placeholder="Search name, DepEd email, category, or plantilla position…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -360,13 +351,13 @@ export default function Roster() {
                 marginBottom: '16px',
                 boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)'
               }}>
-                <FiUploadCloud size={32} />
+                <FiUser size={32} />
               </div>
               <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0F172A', margin: '0 0 8px' }}>
                 No Faculty Records Found for Your Station
               </h3>
               <p style={{ maxWidth: '580px', color: '#64748B', fontSize: '13px', lineHeight: '1.6', margin: '0 0 20px' }}>
-                No historical personnel records were detected for this school. Upload your school's official DepEd eSF7 spreadsheet (.xlsb or .xlsx) from the previous school year to automatically populate your faculty profiles, plantillas, and item numbers.
+                No faculty records were detected for this school station. Click <strong>+ Add Personnel</strong> to encode your faculty profiles, plantilla positions, and item numbers.
               </p>
 
               {/* Ingestion Status Badge */}
@@ -406,17 +397,9 @@ export default function Roster() {
                     gap: '8px',
                     boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)'
                   }}
-                  onClick={() => setIsUploadModalOpen(true)}
-                >
-                  <FiUploadCloud size={16} /> Upload Last Year's eSF7 Spreadsheet (.xlsb)
-                </button>
-                <button
-                  type="button"
-                  className="btn secondary"
-                  style={{ padding: '10px 18px', fontSize: '13px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                   onClick={() => setIsModalOpen(true)}
                 >
-                  <FiPlus size={15} /> Encode Manually
+                  <FiPlus size={16} /> Add Personnel
                 </button>
               </div>
             </div>
@@ -457,7 +440,7 @@ export default function Roster() {
                     </div>
                   </th>
                   <th><button className="roster-sort-button" type="button" onClick={() => handleSort('type')}>Position Category</button></th>
-                  <th><button className="roster-sort-button" type="button" onClick={() => handleSort('position')}>Position</button></th>
+                  <th><button className="roster-sort-button" type="button" onClick={() => handleSort('position')}>Plantilla Position</button></th>
                   <th style={{
                     width: '110px',
                     textAlign: 'center',
@@ -526,7 +509,11 @@ export default function Roster() {
                     <td>{p.depedEmail}</td>
                     <td>
                       {(() => {
-                        const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+                        const isCanon = isCanonicalPosition(p.position);
+                        if (!isCanon) {
+                          return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12px' }}>—</span>;
+                        }
+                        const pType = getCategoryForCanonicalPosition(p.position) || detectPersonnelTypeFromPosition(p.position || '') || p.type || 'teaching';
                         return (
                           <span className={`category-badge category-${pType}`}>
                             {pType === 'teaching' ? 'Teaching' : pType === 'teaching-related' ? 'Related' : 'Non-Teaching'}
@@ -534,10 +521,12 @@ export default function Roster() {
                         );
                       })()}
                     </td>
-                    <td>{p.position}</td>
+                    <td>
+                      {isCanonicalPosition(p.position) ? p.position : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12px' }}>—</span>}
+                    </td>
                     <td style={{ textAlign: 'center', width: '100px' }}>
                        {(() => {
-                         const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
+                         const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || '';
                          const isNonTeaching = pType === 'non-teaching';
                          return (
                            <label
@@ -803,7 +792,7 @@ export default function Roster() {
                   </div>
 
                   <div>
-                    <label>Position</label>
+                    <label>Plantilla Position</label>
                     <SearchableDropdown
                       options={POSITION_OPTIONS_BY_CATEGORY[newPerson.type] || []}
                       value={newPerson.position?.startsWith('OTHERS') ? 'OTHERS' : newPerson.position}
@@ -814,7 +803,7 @@ export default function Roster() {
                           setNewPerson({ ...newPerson, position: val });
                         }
                       }}
-                      placeholder="SELECT POSITION..."
+                      placeholder="SELECT PLANTILLA POSITION..."
                     />
                     {newPerson.type === 'non-teaching' && (newPerson.position === 'OTHERS' || newPerson.position?.startsWith('OTHERS')) && (
                       <div style={{ marginTop: '8px' }}>

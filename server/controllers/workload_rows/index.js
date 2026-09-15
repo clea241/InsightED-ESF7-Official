@@ -297,6 +297,104 @@ router.put('/personnel/:personnel_id', async (req, res) => {
       }
     }
 
+    // 5. Ingest Teaching-Related Tasks (esf7_related_task)
+    if (Array.isArray(teachingRelatedRows)) {
+      await client.query('DELETE FROM esf7_related_task WHERE personnel_id = $1', [targetPersonId]);
+      let trCounter = 1;
+      for (const tr of teachingRelatedRows) {
+        if (!tr || (!tr.task && !tr.task_name && !tr.designationName)) continue;
+        const trId = `TRT-${targetSchoolId}-${targetPersonId.split('-').pop()}-${String(trCounter++).padStart(3, '0')}`;
+        const tName = tr.task || tr.task_name || tr.designationName || 'Teaching-Related Task';
+        const freq = String(tr.cadence || tr.frequency || 'weekly').toLowerCase();
+        
+        let durMins = 60;
+        if (tr.duration_minutes !== undefined && tr.duration_minutes !== null) {
+          durMins = parseInt(tr.duration_minutes, 10) || 60;
+        } else if (tr.durationMinutes !== undefined && tr.durationMinutes !== null) {
+          durMins = parseInt(tr.durationMinutes, 10) || 60;
+        } else if (tr.hours !== undefined && tr.hours !== null) {
+          durMins = Math.round(parseFloat(tr.hours) * 60) || 60;
+        }
+
+        const durHours = durMins / 60;
+        let t1Hrs = 0;
+        if (freq === 'daily') {
+          t1Hrs = parseFloat((durHours * 60).toFixed(2));
+        } else if (freq === 'monthly') {
+          t1Hrs = parseFloat((durHours * 3).toFixed(2));
+        } else {
+          t1Hrs = parseFloat((durHours * 12).toFixed(2));
+        }
+
+        const isDesig = !!(tr.isDesignationSynced || tr.is_designation_synced || tr.isLocked || tr.isSdsApproved);
+
+        await client.query(
+          `INSERT INTO esf7_related_task (
+             id, personnel_id, school_id, school_year, task_name, frequency,
+             duration_minutes, term1_hours, is_designation_synced, raw_payload, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+          [
+            trId,
+            targetPersonId,
+            targetSchoolId,
+            targetSchoolYear,
+            tName,
+            freq,
+            durMins,
+            t1Hrs,
+            isDesig,
+            JSON.stringify(tr)
+          ]
+        );
+      }
+    }
+
+    // 6. Ingest Administrative Tasks (esf7_admin_task)
+    if (Array.isArray(administrativeRows)) {
+      await client.query('DELETE FROM esf7_admin_task WHERE personnel_id = $1', [targetPersonId]);
+      let admCounter = 1;
+      for (const adm of administrativeRows) {
+        if (!adm || (!adm.task && !adm.task_name && !adm.name)) continue;
+        const admId = `ADM-${targetSchoolId}-${targetPersonId.split('-').pop()}-${String(admCounter++).padStart(3, '0')}`;
+        const tName = adm.task || adm.task_name || adm.name || 'Administrative Task';
+        const datesArr = Array.isArray(adm.dates) ? adm.dates : (adm.taskDate ? [adm.taskDate] : (adm.date ? [adm.date] : []));
+        
+        let durMins = 60;
+        if (adm.duration_minutes !== undefined && adm.duration_minutes !== null) {
+          durMins = parseInt(adm.duration_minutes, 10) || 60;
+        } else if (adm.durationMinutes !== undefined && adm.durationMinutes !== null) {
+          durMins = parseInt(adm.durationMinutes, 10) || 60;
+        } else if (adm.minutes !== undefined && adm.minutes !== null) {
+          durMins = parseInt(adm.minutes, 10) || 60;
+        } else if (adm.hours !== undefined && adm.hours !== null) {
+          durMins = Math.round(parseFloat(adm.hours) * 60) || 60;
+        } else if (adm.startTime && adm.endTime) {
+          const [sh, sm] = adm.startTime.split(':').map(Number);
+          const [eh, em] = adm.endTime.split(':').map(Number);
+          if (!isNaN(sh) && !isNaN(eh)) {
+            durMins = Math.max(15, (eh * 60 + em) - (sh * 60 + sm));
+          }
+        }
+
+        await client.query(
+          `INSERT INTO esf7_admin_task (
+             id, personnel_id, school_id, school_year, task_name, dates,
+             duration_minutes, raw_payload, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+          [
+            admId,
+            targetPersonId,
+            targetSchoolId,
+            targetSchoolYear,
+            tName,
+            JSON.stringify(datesArr),
+            durMins,
+            JSON.stringify(adm)
+          ]
+        );
+      }
+    }
+
     await client.query('COMMIT');
     res.json({
       success: true,

@@ -7,12 +7,16 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "db:studio": "drizzle-kit studio --config=drizzle.config.js",
+    "test:db": "node tests/master_db_verifier.js",
     "db:truncate": "node truncate_esf7_tables.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.19.2",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
