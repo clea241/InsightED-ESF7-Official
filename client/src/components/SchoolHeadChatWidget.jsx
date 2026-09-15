@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiKey } from 'react-icons/fi';
 
+const API_BASE = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000/api' : '/api');
+
 // Helper to resolve School Head backend server URL dynamically
 const getChatApiUrl = (path) => {
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const base = isDev ? 'http://localhost:5000' : window.location.origin;
-  return `${base}${path}`;
+  const cleanPath = path.startsWith('/api/') ? path.slice(5) : path.startsWith('/api') ? path.slice(4) : path.replace(/^\//, '');
+  return `${API_BASE}/${cleanPath}`;
 };
 
 const SchoolHeadChatWidget = () => {

@@ -72,29 +72,62 @@ def run_command(cmd, capture=False, timeout=90, retries=8, delay=5):
         error(f"Command failed after {max_attempts} attempts: {cmd_str}")
     return subprocess.CompletedProcess(cmd, 1, "", "Failed after retries")
 
+import shutil
+
+def sync_media_assets():
+    """Ensure all root media and client/public images, GIFs, and PNGs are synchronized into client/dist."""
+    info("Synchronizing media assets (GIFs, PNGs, JPGs, SVGs)...")
+    
+    # 1. Sync root loading GIF to client/public
+    if os.path.exists("INSIGHTED LOADING.gif"):
+        os.makedirs("client/public", exist_ok=True)
+        shutil.copy2("INSIGHTED LOADING.gif", "client/public/INSIGHTED LOADING.gif")
+        shutil.copy2("INSIGHTED LOADING.gif", "client/public/insighted_loading.gif")
+    
+    # 2. Sync all client/public assets directly into client/dist
+    if os.path.exists("client/public") and os.path.exists("client/dist"):
+        shutil.copytree("client/public", "client/dist", dirs_exist_ok=True)
+        
+    # Count verified media assets in client/dist
+    media_count = 0
+    if os.path.exists("client/dist"):
+        for root, _, files in os.walk("client/dist"):
+            for f in files:
+                if f.lower().endswith(('.gif', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico')):
+                    media_count += 1
+    success(f"Verified {media_count} media assets staged in client/dist/")
+
 def main():
     print(f"\n{CYAN}" + "="*60 + f"{NC}")
-    print(f"{GREEN}🚀 [DEPLOY] ESF7 OFFICIAL STAGING: DEPLOYMENT (v1.2 Resilient Auto-Revive){NC}")
+    print(f"{GREEN}🚀 [DEPLOY] ESF7 OFFICIAL STAGING: DEPLOYMENT (v1.3 Media & Auto-Revive){NC}")
     print(f"{CYAN}" + "="*60 + f"{NC}")
     
     start_time = time.time()
 
     # 1. Pre-build local assets in client folder
     print(f"\n{YELLOW}🏗️  [1/5] BUILDING client frontend...{NC}")
+    
+    # Ensure client/public has all root assets prior to build
+    if os.path.exists("INSIGHTED LOADING.gif"):
+        os.makedirs("client/public", exist_ok=True)
+        shutil.copy2("INSIGHTED LOADING.gif", "client/public/INSIGHTED LOADING.gif")
+        shutil.copy2("INSIGHTED LOADING.gif", "client/public/insighted_loading.gif")
+
     env = os.environ.copy()
     env["VITE_BASE_PATH"] = "/insighted-esf7-staging/"
     env["VITE_API_URL"] = "/insighted-esf7-staging/api"
     env["NODE_OPTIONS"] = "--max-old-space-size=4096"
     try:
         subprocess.run("npm run build", shell=True, check=True, env=env, cwd="client")
-        success("Client build complete.")
+        sync_media_assets()
+        success("Client build & media synchronization complete.")
     except subprocess.CalledProcessError:
         error("Client Build failed! Aborting.")
         sys.exit(1)
 
     # 2. Archive essential files (skipping node_modules)
     print(f"\n{YELLOW}📦 [2/5] ARCHIVING deployment payload -> {ARCHIVE_NAME}...{NC}")
-    files_to_include = ["server", "client/dist", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
+    files_to_include = ["server", "client/dist", "client/public", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
     
     def exclude_node_modules(tarinfo):
         if "node_modules" in tarinfo.name or ".git" in tarinfo.name:
@@ -127,9 +160,10 @@ def main():
     # 4. Remote Extraction and PM2 Reset with Auto-Revive retry
     print(f"\n{YELLOW}⚡ [4/5] REMOTE extraction, production install, and PM2 reset...{NC}")
     remote_script = (
-        f"mkdir -p {REMOTE_ROOT}/logs && "
+        f"mkdir -p {REMOTE_ROOT}/logs {REMOTE_ROOT}/client/dist {REMOTE_ROOT}/dist && "
         f"cd {REMOTE_ROOT} && "
         f"tar -xzf {ARCHIVE_NAME} && "
+        f"cp -rf {REMOTE_ROOT}/client/dist/* {REMOTE_ROOT}/dist/ 2>/dev/null || true && "
         f"sudo chown -R {REMOTE_USER}:{REMOTE_USER} {REMOTE_ROOT} && "
         "export PATH=$PATH:/usr/local/bin:/home/Administrator1/.local/share/pnpm; "
         "echo \"       -> Running production npm install...\" && "

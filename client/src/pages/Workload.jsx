@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import PortalHeader from '../components/PortalHeader';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
+import { api } from '../services/api';
 import { 
   FiUser, FiGrid, FiTrash2, FiCheck, FiFileText, FiCalendar, FiAlertCircle, 
   FiAlertTriangle, FiBriefcase, FiList, FiLock, FiUnlock, FiBookOpen, FiBook, 
@@ -1720,7 +1721,6 @@ import {
   OFFICIAL_DESIGNATIONS,
   isSpecialProgramSubjectAllowed
 } from '../context/AppContext';
-import { api } from '../services/api';
 import { getActiveSubjectsForSchool } from './OrganizedClasses';
 
 const isAralSubject = (sub) => {
@@ -3560,7 +3560,8 @@ function WorkloadGanttScheduleView({
   selectedBlockIdx,
   setSelectedBlockIdx,
   handleSectionChangeForRow,
-  handleSaveChangesDirectly
+  handleSaveChangesDirectly,
+  sharedWorkloadRows = []
 }) {
   const { schoolInfo, showToast } = useApp();
   const activeSchoolSubjects = useMemo(() => getActiveSubjectsForSchool(schoolInfo), [schoolInfo]);
@@ -3876,14 +3877,18 @@ function WorkloadGanttScheduleView({
     hourLabels.push(h);
   }
 
-  // Calculate daily workload minutes per day (excludes Related Tasks & Admin Tasks; merges overlapping intervals)
+  // Calculate daily workload minutes per day (excludes Related Tasks & Admin Tasks; merges overlapping intervals; factors in partner school ghost slots)
   const dailyTotalMins = useMemo(() => {
     const map = {};
-    daysList.forEach(d => { map[d.code] = 0; });
+    daysList.forEach(d => { map[d.code] = { local: 0, shared: 0, total: 0 }; });
     const rows = currentPerson?.workloadRows || [];
+    const ghosts = sharedWorkloadRows || [];
 
     for (const d of daysList) {
-      const intervals = [];
+      const allIntervals = [];
+      const localIntervals = [];
+      const sharedIntervals = [];
+
       for (const r of rows) {
         if (!r.startTime || !r.endTime) continue;
         const rowDays = (Array.isArray(r.days) && r.days.length > 0)
@@ -3892,47 +3897,70 @@ function WorkloadGanttScheduleView({
         if (!rowDays.includes(d.code)) continue;
 
         const subUpper = String(r.subject || '').toUpperCase().trim();
-
-        // 1. DO NOT add Related Tasks and Admin Tasks in teaching workload computation
-        if (isNonTeachingTaskSubject(subUpper)) {
-          continue;
-        }
-
-        // 2. HGP is homeroom guidance (nested inside Advisory) — do not double-count if Advisory exists
-        if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) {
-          continue;
-        }
+        if (isNonTeachingTaskSubject(subUpper)) continue;
+        if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
 
         const sM = parseMins(r.startTime);
         const eM = parseMins(r.endTime);
         if (sM < 99999 && eM < 99999 && eM > sM) {
-          intervals.push([sM, eM]);
+          localIntervals.push([sM, eM]);
+          allIntervals.push([sM, eM]);
         }
       }
 
-      // Merge overlapping intervals so overlaps do not artificially inflate daily hours
-      if (intervals.length > 0) {
-        intervals.sort((a, b) => a[0] - b[0]);
-        let merged = [intervals[0]];
-        for (let i = 1; i < intervals.length; i++) {
-          const current = intervals[i];
-          const lastMerged = merged[merged.length - 1];
-          if (current[0] <= lastMerged[1]) {
-            lastMerged[1] = Math.max(lastMerged[1], current[1]);
+      for (const g of ghosts) {
+        const rawDays = (Array.isArray(g.days) && g.days.length > 0) ? g.days : (g.day ? [g.day] : ['M','T','W','TH','F']);
+        const normDays = rawDays.map(dayStr => {
+          if (!dayStr) return 'M';
+          const u = String(dayStr).trim().toUpperCase();
+          if (u === 'M' || u.startsWith('MON')) return 'M';
+          if (u === 'TH' || u.startsWith('THU')) return 'TH';
+          if (u === 'T' || u.startsWith('TUE')) return 'T';
+          if (u === 'W' || u.startsWith('WED')) return 'W';
+          if (u === 'F' || u.startsWith('FRI')) return 'F';
+          if (u === 'SAT' || u.startsWith('SAT')) return 'SAT';
+          if (u === 'SUN' || u.startsWith('SUN')) return 'SUN';
+          return u;
+        });
+        if (!normDays.includes(d.code)) continue;
+
+        const subUpper = String(g.subject || '').toUpperCase().trim();
+        if (isNonTeachingTaskSubject(subUpper)) continue;
+        if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+
+        const sM = parseMins(g.startTime || g.start_time);
+        const eM = parseMins(g.endTime || g.end_time);
+        if (sM < 99999 && eM < 99999 && eM > sM) {
+          sharedIntervals.push([sM, eM]);
+          allIntervals.push([sM, eM]);
+        }
+      }
+
+      const computeMerged = (intList) => {
+        if (intList.length === 0) return 0;
+        const sorted = [...intList].sort((a, b) => a[0] - b[0]);
+        const merged = [sorted[0]];
+        for (let i = 1; i < sorted.length; i++) {
+          const cur = sorted[i];
+          const last = merged[merged.length - 1];
+          if (cur[0] <= last[1]) {
+            last[1] = Math.max(last[1], cur[1]);
           } else {
-            merged.push(current);
+            merged.push(cur);
           }
         }
-        let totalDayM = 0;
-        for (const [start, end] of merged) {
-          totalDayM += (end - start);
-        }
-        map[d.code] = totalDayM;
-      }
+        return merged.reduce((acc, [st, en]) => acc + (en - st), 0);
+      };
+
+      map[d.code] = {
+        local: computeMerged(localIntervals),
+        shared: computeMerged(sharedIntervals),
+        total: computeMerged(allIntervals)
+      };
     }
 
     return map;
-  }, [currentPerson?.workloadRows, daysList]);
+  }, [currentPerson?.workloadRows, sharedWorkloadRows, daysList]);
 
   const columnRefs = useRef({});
 
@@ -4594,7 +4622,10 @@ function WorkloadGanttScheduleView({
               TIME
             </div>
             {daysList.map(d => {
-              const dayMins = dailyTotalMins[d.code] || 0;
+              const dayData = typeof dailyTotalMins[d.code] === 'object' 
+                ? dailyTotalMins[d.code] 
+                : { local: dailyTotalMins[d.code] || 0, shared: 0, total: dailyTotalMins[d.code] || 0 };
+              const dayMins = dayData.total;
               const dayHoursNum = dayMins / 60;
               const dayHours = dayHoursNum.toFixed(1);
               // Daily policy limit derives from the same 30 hrs/week regular teaching load cap used
@@ -4605,6 +4636,8 @@ function WorkloadGanttScheduleView({
               const statusColor = (!isCurrentEligible || dayHoursNum === 0) ? '#64748B' : dayHoursNum <= 4 ? '#10B981' : dayHoursNum <= 6 ? '#F59E0B' : '#F43F5E';
               const statusBg = (!isCurrentEligible || dayHoursNum === 0) ? '#F1F5F9' : dayHoursNum <= 4 ? '#ECFDF5' : dayHoursNum <= 6 ? '#FFFBEB' : '#FEF2F2';
               const statusLabel = (!isCurrentEligible || dayHoursNum === 0) ? null : dayHoursNum <= 4 ? 'Normal' : dayHoursNum <= 6 ? 'Full' : 'Overload';
+              const hasShared = dayData.shared > 0;
+
               return (
                 <div key={d.code} style={{ position: 'relative', padding: '10px 8px', textAlign: 'center', borderRight: '1px solid var(--line)', background: '#F8FAFC', overflow: 'hidden' }}>
                   <div
@@ -4613,8 +4646,12 @@ function WorkloadGanttScheduleView({
                   />
                   <div style={{ position: 'relative' }}>
                     <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)' }}>{d.full} ({d.code})</div>
-                    <div style={{ fontSize: '10px', fontWeight: '700', color: statusColor, background: statusBg, padding: '2px 6px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}>
-                      <FiClock size={11} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{dayHours} hrs ({dayMins}m){statusLabel ? ` · ${statusLabel}` : ''}
+                    <div 
+                      style={{ fontSize: '10px', fontWeight: '700', color: statusColor, background: statusBg, padding: '2px 6px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}
+                      title={hasShared ? `Combined: ${dayHours}h (${dayMins}m) [Local: ${(dayData.local / 60).toFixed(1)}h + Partner: ${(dayData.shared / 60).toFixed(1)}h]` : undefined}
+                    >
+                      <FiClock size={11} style={{ marginRight: '3px', verticalAlign: 'middle' }} />
+                      {dayHours} hrs ({dayMins}m){statusLabel ? ` · ${statusLabel}` : ''}
                     </div>
                   </div>
                 </div>
@@ -4718,6 +4755,76 @@ function WorkloadGanttScheduleView({
                   );
                 })()}
 
+                {/* Render Clustered Partner School Ghost Slots */}
+                {(sharedWorkloadRows || []).map((ghost, gIdx) => {
+                  const normalizeGhostDay = (dayStr) => {
+                    if (!dayStr) return 'M';
+                    const u = String(dayStr).trim().toUpperCase();
+                    if (u === 'M' || u.startsWith('MON')) return 'M';
+                    if (u === 'TH' || u.startsWith('THU')) return 'TH';
+                    if (u === 'T' || u.startsWith('TUE')) return 'T';
+                    if (u === 'W' || u.startsWith('WED')) return 'W';
+                    if (u === 'F' || u.startsWith('FRI')) return 'F';
+                    if (u === 'SAT' || u.startsWith('SAT')) return 'SAT';
+                    if (u === 'SUN' || u.startsWith('SUN')) return 'SUN';
+                    return u;
+                  };
+
+                  let rawDaysList = Array.isArray(ghost.days) && ghost.days.length > 0
+                    ? ghost.days
+                    : (ghost.day ? [ghost.day] : ['M','T','W','TH','F']);
+                  
+                  const gDays = rawDaysList.map(normalizeGhostDay);
+                  if (!gDays.includes(d.code)) return null;
+
+                  let sMins = parseMins(ghost.startTime || ghost.start_time || '08:00');
+                  let eMins = parseMins(ghost.endTime || ghost.end_time || '09:00');
+                  if (sMins >= 99999 || eMins >= 99999) return null;
+
+                  const top = (sMins - gridStartMins) * pxPerMin;
+                  const height = Math.max(32, (eMins - sMins) * pxPerMin);
+                  const diffMins = eMins - sMins;
+
+                  return (
+                    <div
+                      key={`ghost-${gIdx}-${d.code}`}
+                      style={{
+                        position: 'absolute',
+                        top: `${top}px`,
+                        left: '4px',
+                        right: '4px',
+                        height: `${height}px`,
+                        background: 'repeating-linear-gradient(45deg, #FEF3C7, #FEF3C7 10px, #FFFBEB 10px, #FFFBEB 20px)',
+                        border: '1.5px dashed #F59E0B',
+                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        boxSizing: 'border-box',
+                        cursor: 'not-allowed',
+                        zIndex: 4,
+                        color: '#92400E',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.04)'
+                      }}
+                      title={`🔒 Locked Ghost Slot: Assigned by ${ghost.schoolName || 'Partner School'} • ${ghost.subject || 'Class'} (${ghost.startTime}-${ghost.endTime})`}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <FiLock size={10} color="#D97706" /> {ghost.subject || 'Class'}
+                        </span>
+                        <span style={{ fontSize: '9px', fontWeight: '700', background: 'rgba(217, 119, 6, 0.15)', color: '#92400E', padding: '1px 4px', borderRadius: '4px' }}>
+                          {diffMins}m
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '9px', color: '#B45309', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        🏫 {ghost.schoolName || 'Partner Station'}
+                      </div>
+                    </div>
+                  );
+                })}
+
                 {/* Render Subject Blocks for this Day */}
                 {rawRows.map((row, rowIdx) => {
                   const isDraggingThisRow = dragState && dragState.rowIdx === rowIdx && (dragState.type === 'move' || dragState.type === 'resize-top' || dragState.type === 'resize-bottom' || dragState.type === 'extend-days');
@@ -4747,7 +4854,7 @@ function WorkloadGanttScheduleView({
                   const isHgp = subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
                   const canResize = !isAdv;
 
-                  // Validation errors
+                  // Validation errors (local overlap)
                   const hasConflict = rawRows.some((otherRow, otherIdx) => {
                     if (rowIdx === otherIdx) return false;
                     if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
@@ -4762,11 +4869,22 @@ function WorkloadGanttScheduleView({
                     return false;
                   });
 
+                  // Cross-school collision with Clustered Ghost Slots
+                  const hasCrossSchoolConflict = (sharedWorkloadRows || []).some(ghost => {
+                    const gDays = (Array.isArray(ghost.days) && ghost.days.length > 0)
+                      ? ghost.days
+                      : (ghost.day ? [ghost.day.toUpperCase().startsWith('M') && !ghost.day.toUpperCase().startsWith('T') ? 'M' : ghost.day.toUpperCase().startsWith('W') ? 'W' : ghost.day.toUpperCase().startsWith('TH') ? 'TH' : ghost.day.toUpperCase().startsWith('F') ? 'F' : 'T'] : ['M','T','W','TH','F']);
+                    if (!gDays.includes(d.code)) return false;
+                    const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
+                    const gs = parseMins(ghost.startTime || ghost.start_time), ge = parseMins(ghost.endTime || ghost.end_time);
+                    return ns < ge && ne > gs;
+                  });
+
                   const durationErr = getRowDurationError(row);
                   const matatagWarn = getMatatagRowWarning(row);
                   const duplicateSubErr = getDuplicateSectionSubjectError(row, rowIdx);
                   const hgpWeeklyErr = getHgpWeeklyError(row);
-                  const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
+                  const cardHasError = hasConflict || hasCrossSchoolConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
                   const isSelected = selectedBlockIdx === rowIdx;
 
                   const isSHS = isSHSRow(row);
@@ -5592,11 +5710,18 @@ export default function Workload() {
     copyTermData,
     setHasUnsavedChanges,
     completeNode,
-    setActiveView
+    setActiveView,
+    incomingRequests,
+    outgoingRequests,
+    requestHistory,
+    refreshRequests
   } = useApp();
 
   // Term Unlock / Copy Modal state
   const [showUnlockTermModal, setShowUnlockTermModal] = useState(null);
+
+  // Clustered Personnel Ghost Sync State
+  const [sharedWorkloadRows, setSharedWorkloadRows] = useState([]);
 
   // SHS Term Workload state
   const [selectedShsTerm, setSelectedShsTerm] = useState('1st');
@@ -6566,6 +6691,139 @@ export default function Workload() {
       handleFieldChange('teachingRelatedRows', updatedTR);
     }
   }, [currentPerson?.id, currentPerson?.designation, currentPerson?.designations]);
+
+  // Clustered Personnel: Comprehensive isClustered detector
+  const isClustered = useMemo(() => {
+    if (!currentPerson) return false;
+    if (
+      currentPerson.requestType === 'clustered_teacher' || 
+      currentPerson.deploymentStatus === 'CLUSTERED' || 
+      currentPerson.isClustered ||
+      currentPerson.isShared
+    ) {
+      return true;
+    }
+
+    const pId = String(currentPerson.id || '').toUpperCase();
+    const pPrn = String(currentPerson.prn || '').toUpperCase();
+    const pName = `${currentPerson.firstName || ''} ${currentPerson.lastName || ''}`.toUpperCase().trim();
+
+    const allReqs = [...(requestHistory || []), ...(outgoingRequests || []), ...(incomingRequests || [])];
+    return allReqs.some(r => {
+      const isReqClustered = String(r.requestType || r.request_type || '').toLowerCase().includes('cluster');
+      const isApproved = String(r.status || '').toLowerCase() === 'approved';
+      if (!isReqClustered || !isApproved) return false;
+      const reqPId = String(r.personnelId || r.personnel_id || '').toUpperCase();
+      const reqPName = String(r.personnelName || r.personnel_name || '').toUpperCase().trim();
+      return (reqPId && (reqPId === pId || reqPId === pPrn)) || (reqPName && pName && (reqPName.includes(pName) || pName.includes(reqPName)));
+    });
+  }, [currentPerson, requestHistory, outgoingRequests, incomingRequests]);
+
+  // Broadcast local slots for Clustered Teachers on demand
+  const broadcastClusteredSlots = useCallback((slotsToBroadcast) => {
+    if (!currentPerson || !schoolInfo?.schoolId) return;
+
+    const prn = currentPerson.prn || currentPerson.id || `${currentPerson.firstName} ${currentPerson.lastName}`;
+    const schId = String(schoolInfo.schoolId).replace('SCH-', '').trim();
+
+    api.broadcastClusteredGhostSlots(prn, {
+      authorSchoolId: schId,
+      authorSchoolName: schoolInfo.schoolName || `School ${schId}`,
+      slots: slotsToBroadcast !== undefined ? slotsToBroadcast : (currentPerson?.workloadRows || [])
+    }).then(data => {
+      if (data && data.success && Array.isArray(data.sharedSlots)) {
+        requestAnimationFrame(() => {
+          setSharedWorkloadRows(prev => {
+            const prevStr = JSON.stringify(prev);
+            const nextStr = JSON.stringify(data.sharedSlots);
+            return prevStr === nextStr ? prev : data.sharedSlots;
+          });
+        });
+      }
+    }).catch(err => console.error('[Clustered Sync Broadcast Error]:', err));
+  }, [
+    currentPerson?.prn, 
+    currentPerson?.id, 
+    currentPerson?.firstName, 
+    currentPerson?.lastName, 
+    currentPerson?.workloadRows, 
+    schoolInfo?.schoolId, 
+    schoolInfo?.schoolName
+  ]);
+
+  // 1. Reactive Auto-Broadcast: whenever currentPerson.workloadRows changes, broadcast live to partner station
+  useEffect(() => {
+    if (!currentPerson || !schoolInfo?.schoolId) return;
+    const prn = currentPerson.prn || currentPerson.id || `${currentPerson.firstName} ${currentPerson.lastName}`;
+    const schId = String(schoolInfo.schoolId).replace('SCH-', '').trim();
+    const mySlots = currentPerson.workloadRows || [];
+
+    const debounceTimer = setTimeout(() => {
+      api.broadcastClusteredGhostSlots(prn, {
+        authorSchoolId: schId,
+        authorSchoolName: schoolInfo.schoolName || `School ${schId}`,
+        slots: mySlots
+      }).then(data => {
+        if (data && data.success && Array.isArray(data.sharedSlots)) {
+          requestAnimationFrame(() => {
+            setSharedWorkloadRows(prev => {
+              const prevStr = JSON.stringify(prev);
+              const nextStr = JSON.stringify(data.sharedSlots);
+              return prevStr === nextStr ? prev : data.sharedSlots;
+            });
+          });
+        }
+      }).catch(err => console.warn('[Clustered Auto-Broadcast Error]:', err));
+    }, 250);
+
+    return () => clearTimeout(debounceTimer);
+  }, [
+    currentPerson?.id,
+    currentPerson?.prn,
+    currentPerson?.firstName,
+    currentPerson?.lastName,
+    currentPerson?.workloadRows,
+    schoolInfo?.schoolId,
+    schoolInfo?.schoolName
+  ]);
+
+  // 2. Continuous Polling: Poll partner school slots every 1200ms for instant real-time co-editing (Frame-rate smooth)
+  useEffect(() => {
+    if (!currentPerson || !schoolInfo?.schoolId) {
+      setSharedWorkloadRows([]);
+      return;
+    }
+
+    const prn = currentPerson.prn || currentPerson.id || `${currentPerson.firstName} ${currentPerson.lastName}`;
+    const schId = String(schoolInfo.schoolId).replace('SCH-', '').trim();
+
+    const fetchPartnerSlots = () => {
+      api.getClusteredGhostSlots(prn, schId)
+        .then(data => {
+          if (data && data.success && Array.isArray(data.sharedSlots)) {
+            requestAnimationFrame(() => {
+              setSharedWorkloadRows(prev => {
+                const prevStr = JSON.stringify(prev);
+                const nextStr = JSON.stringify(data.sharedSlots);
+                return prevStr === nextStr ? prev : data.sharedSlots;
+              });
+            });
+          }
+        })
+        .catch(err => console.warn('[Clustered Sync Polling Error]:', err));
+    };
+
+    fetchPartnerSlots();
+
+    const pollTimer = setInterval(fetchPartnerSlots, 1200);
+    return () => clearInterval(pollTimer);
+  }, [
+    activePersonnelId, 
+    currentPerson?.id, 
+    currentPerson?.prn, 
+    schoolInfo?.schoolId
+  ]);
+
 
 
 
@@ -7591,6 +7849,7 @@ export default function Workload() {
 
   const baseWeeklyTeachingMinutes = (() => {
     const rows = currentPerson?.workloadRows || [];
+    const ghosts = sharedWorkloadRows || [];
     const daysList = ['M', 'T', 'W', 'TH', 'F'];
     let totalMins = 0;
 
@@ -7614,6 +7873,32 @@ export default function Workload() {
             if (sM < 99999 && eM < 99999 && eM > sM) {
               intervals.push([sM, eM]);
             }
+          }
+        }
+      }
+
+      for (const g of ghosts) {
+        const rawDays = (Array.isArray(g.days) && g.days.length > 0) ? g.days : (g.day ? [g.day] : ['M','T','W','TH','F']);
+        const normDays = rawDays.map(dayStr => {
+          if (!dayStr) return 'M';
+          const u = String(dayStr).trim().toUpperCase();
+          if (u === 'M' || u.startsWith('MON')) return 'M';
+          if (u === 'TH' || u.startsWith('THU')) return 'TH';
+          if (u === 'T' || u.startsWith('TUE')) return 'T';
+          if (u === 'W' || u.startsWith('WED')) return 'W';
+          if (u === 'F' || u.startsWith('FRI')) return 'F';
+          if (u === 'SAT' || u.startsWith('SAT')) return 'SAT';
+          if (u === 'SUN' || u.startsWith('SUN')) return 'SUN';
+          return u;
+        });
+        if (normDays.includes(d)) {
+          const subUpper = String(g.subject || '').toUpperCase().trim();
+          if (isNonTeachingTaskSubject(subUpper)) continue;
+          if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+          const sM = parseMins(g.startTime || g.start_time);
+          const eM = parseMins(g.endTime || g.end_time);
+          if (sM < 99999 && eM < 99999 && eM > sM) {
+            intervals.push([sM, eM]);
           }
         }
       }
@@ -7930,9 +8215,29 @@ export default function Workload() {
       return;
     }
 
+    // Check for cross-school conflicts with Clustered Ghost Slots
+    const hasCrossSchoolConflict = (currentPerson.workloadRows || []).some(row => {
+      return (sharedWorkloadRows || []).some(ghost => {
+        const gDays = (Array.isArray(ghost.days) && ghost.days.length > 0)
+          ? ghost.days
+          : (ghost.day ? [ghost.day.toUpperCase().startsWith('M') && !ghost.day.toUpperCase().startsWith('T') ? 'M' : ghost.day.toUpperCase().startsWith('W') ? 'W' : ghost.day.toUpperCase().startsWith('TH') ? 'TH' : ghost.day.toUpperCase().startsWith('F') ? 'F' : 'T'] : ['M','T','W','TH','F']);
+        const daysOverlap = (row.days || []).some(d => gDays.includes(d));
+        if (!daysOverlap) return false;
+        const ns = parseTimeToMinutes(row.startTime), ne = parseTimeToMinutes(row.endTime);
+        const gs = parseTimeToMinutes(ghost.startTime || ghost.start_time), ge = parseTimeToMinutes(ghost.endTime || ghost.end_time);
+        return ns < ge && ne > gs;
+      });
+    });
+
+    if (hasCrossSchoolConflict) {
+      await showAlert("Cross-School Schedule Conflict", "Cannot save. Clustered personnel has overlapping schedule times with the partner station's ghost slots. Please adjust times to avoid double-booking.");
+      return;
+    }
+
     try {
       await savePersonnelChanges(currentPerson.id, currentPerson);
       localStorage.removeItem(`draft_workload_${currentPerson.id}`);
+      broadcastClusteredSlots(currentPerson.workloadRows);
       showToast("Workload changes saved locally.");
     } catch (err) {
       await showAlert("Error", "Failed to save workload changes: " + err.message);
@@ -9338,6 +9643,19 @@ export default function Workload() {
                                       Confirmed & Saved
                                     </span>
                                   )}
+                                  {(p.isClustered || p.deploymentStatus === 'CLUSTERED') && (
+                                    <span style={{
+                                      background: '#FEF3C7',
+                                      color: '#B45309',
+                                      border: '1px solid #FCD34D',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      fontSize: '8.5px',
+                                      fontWeight: '700'
+                                    }}>
+                                      Clustered
+                                    </span>
+                                  )}
                                   <span style={{
                                     background: p.type === 'teaching' ? '#e0f2fe' : p.type === 'teaching-related' ? '#fae8ff' : '#f1f5f9',
                                     color: p.type === 'teaching' ? '#0369a1' : p.type === 'teaching-related' ? '#a21caf' : '#475569',
@@ -9520,6 +9838,146 @@ export default function Workload() {
                         }}>
                           Discard Draft
                         </button>
+                      </div>
+                    )}
+
+                    {/* Reassigned Personnel (Mother School) Banner */}
+                    {(currentPerson?.requestType === 'reassigned_teacher' || currentPerson?.deploymentStatus === 'REASSIGNED' || currentPerson?.isReassignedOut) && !currentPerson?.isShared && (
+                      <div style={{
+                        background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+                        border: '1.5px solid #93C5FD',
+                        borderRadius: '12px',
+                        padding: '16px 20px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '14px',
+                        boxShadow: '0 2px 6px rgba(37, 99, 235, 0.08)'
+                      }}>
+                        <FiBriefcase size={28} color="#2563EB" />
+                        <div>
+                          <strong style={{ color: '#1E40AF', fontSize: '14px', display: 'block' }}>
+                            Reassigned Personnel (Mother Station)
+                          </strong>
+                          <span style={{ color: '#1E3A8A', fontSize: '12px' }}>
+                            {currentPerson.firstName} {currentPerson.lastName} is officially reassigned/deployed out to a partner school. Official master profile and plantilla appointment are retained at Mother Station with <strong>0.0 teaching workload hours</strong> (workload is assigned and certified at the host station).
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Clustered Teacher Dual-Station Sync Banner & Teaching Meter */}
+                    {isClustered && (
+                      <div style={{
+                        background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
+                        border: '1.5px solid #F59E0B',
+                        borderRadius: '12px',
+                        padding: '16px 20px',
+                        marginBottom: '20px',
+                        boxShadow: '0 2px 6px rgba(245, 158, 11, 0.12)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <FiClock size={26} color="#D97706" />
+                            <div>
+                              <strong style={{ color: '#92400E', fontSize: '14px', display: 'block' }}>
+                                Clustered Personnel — Dual-School Real-Time Workload Sync
+                              </strong>
+                              <span style={{ color: '#78350F', fontSize: '12px' }}>
+                                Teaching load is coordinated across both stations. Partner school assignments appear as locked ghost slots on the timetable.
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Combined Teaching Meter */}
+                          {(() => {
+                            const computeWeeklyMins = (slots) => {
+                              let total = 0;
+                              const daysList = ['M', 'T', 'W', 'TH', 'F'];
+                              for (const d of daysList) {
+                                const intervals = [];
+                                for (const r of (slots || [])) {
+                                  if (!r.startTime || !r.endTime) continue;
+                                  const rawDays = Array.isArray(r.days) && r.days.length > 0 ? r.days : (r.day ? [r.day] : ['M','T','W','TH','F']);
+                                  const normDays = rawDays.map(dayStr => {
+                                    if (!dayStr) return 'M';
+                                    const u = String(dayStr).trim().toUpperCase();
+                                    if (u === 'M' || u.startsWith('MON')) return 'M';
+                                    if (u === 'TH' || u.startsWith('THU')) return 'TH';
+                                    if (u === 'T' || u.startsWith('TUE')) return 'T';
+                                    if (u === 'W' || u.startsWith('WED')) return 'W';
+                                    if (u === 'F' || u.startsWith('FRI')) return 'F';
+                                    if (u === 'SAT' || u.startsWith('SAT')) return 'SAT';
+                                    if (u === 'SUN' || u.startsWith('SUN')) return 'SUN';
+                                    return u;
+                                  });
+                                  if (!normDays.includes(d)) continue;
+                                  const subUpper = String(r.subject || '').toUpperCase().trim();
+                                  if (isNonTeachingTaskSubject(subUpper) || subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+                                  const sM = parseMins(r.startTime || r.start_time);
+                                  const eM = parseMins(r.endTime || r.end_time);
+                                  if (sM < 99999 && eM < 99999 && eM > sM) {
+                                    intervals.push([sM, eM]);
+                                  }
+                                }
+                                if (intervals.length > 0) {
+                                  intervals.sort((a, b) => a[0] - b[0]);
+                                  let merged = [intervals[0]];
+                                  for (let i = 1; i < intervals.length; i++) {
+                                    const cur = intervals[i];
+                                    const last = merged[merged.length - 1];
+                                    if (cur[0] <= last[1]) {
+                                      last[1] = Math.max(last[1], cur[1]);
+                                    } else {
+                                      merged.push(cur);
+                                    }
+                                  }
+                                  for (const [st, en] of merged) {
+                                    total += (en - st);
+                                  }
+                                }
+                              }
+                              return total;
+                            };
+
+                            const myWeeklyMins = computeWeeklyMins(currentPerson.workloadRows);
+                            const sharedWeeklyMins = computeWeeklyMins(sharedWorkloadRows);
+                            const totalWeeklyMins = myWeeklyMins + sharedWeeklyMins;
+                            const totalWeeklyHrs = (totalWeeklyMins / 60).toFixed(1);
+                            const dailyAvgHrs = (Number(totalWeeklyHrs) / 5).toFixed(1);
+                            const isStandard = totalWeeklyMins <= (30 * 60);
+
+                            return (
+                              <div style={{
+                                background: 'white',
+                                border: '1.5px solid #FCD34D',
+                                borderRadius: '10px',
+                                padding: '8px 16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '14px',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.04)'
+                              }}>
+                                <div style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: '10px', color: '#92400E', fontWeight: 'bold', textTransform: 'uppercase' }}>This School</div>
+                                  <div style={{ fontSize: '13px', color: '#0284C7', fontWeight: '800' }}>{(myWeeklyMins / 60).toFixed(1)} hrs/wk</div>
+                                </div>
+                                <div style={{ fontSize: '16px', color: '#D97706', fontWeight: 'bold' }}>+</div>
+                                <div style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: '10px', color: '#92400E', fontWeight: 'bold', textTransform: 'uppercase' }}>Partner School</div>
+                                  <div style={{ fontSize: '13px', color: '#7C3AED', fontWeight: '800' }}>{(sharedWeeklyMins / 60).toFixed(1)} hrs/wk</div>
+                                </div>
+                                <div style={{ fontSize: '16px', color: '#D97706', fontWeight: 'bold' }}>=</div>
+                                <div style={{ textAlign: 'center' }}>
+                                  <div style={{ fontSize: '10px', color: '#92400E', fontWeight: 'bold', textTransform: 'uppercase' }}>Combined Total</div>
+                                  <div style={{ fontSize: '13px', color: isStandard ? '#16A34A' : '#DC2626', fontWeight: '800' }}>
+                                    {totalWeeklyHrs} hrs/wk ({dailyAvgHrs}h/day)
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     )}
 
@@ -9713,6 +10171,7 @@ export default function Workload() {
                             setSelectedBlockIdx={setSelectedBlockIdx}
                             handleSectionChangeForRow={handleSectionChangeForRow}
                             handleSaveChangesDirectly={handleSaveChangesDirectly}
+                            sharedWorkloadRows={sharedWorkloadRows}
                           />
                         ) : (
                           <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>

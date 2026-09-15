@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp, DEFAULT_PH_HOLIDAYS, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import PortalHeader from '../components/PortalHeader';
+import LoadingScreen from '../components/LoadingScreen';
 import { api } from '../services/api';
 import { 
   FiCalendar, 
@@ -737,6 +738,13 @@ export default function Overload() {
     if (!p || p.isDraft) return false;
     if (p.is_school_head || p.isSchoolHead) return false;
 
+    // DepEd Rule: Overload Pay is processed ONLY at the Mother School (Plantilla holder)
+    // Shared / Clustered personnel received from another school (isShared === true)
+    // are liquidated by their mother school and must NOT appear in this school's Overload Payroll.
+    if (p.isShared) {
+      return false;
+    }
+
     // Check position-based auto-categorization
     const autoType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
     const t = String(autoType).toLowerCase().trim();
@@ -958,10 +966,15 @@ export default function Overload() {
         return dateStr >= cleanStart && dateStr <= cleanEnd;
       });
 
-      // 1. Process base scheduled workload rows (regular timetable)
+      // 1. Process base scheduled workload rows (regular timetable + clustered partner school workload)
       let baseScheduledMinutes = 0;
       const currentSy = schoolInfo?.schoolYear || 'SY 26-27';
-      const currentYearWorkloads = (teacher.workloadRows || []).filter(row => {
+      const isTeacherClustered = teacher.isClustered || teacher.deploymentStatus === 'CLUSTERED';
+      const allRows = [
+        ...(teacher.workloadRows || []),
+        ...(isTeacherClustered && Array.isArray(teacher.sharedWorkloadRows) ? teacher.sharedWorkloadRows : [])
+      ];
+      const currentYearWorkloads = allRows.filter(row => {
         const rowSy = row.schoolYear || row.school_year;
         return !rowSy || rowSy === currentSy || (rowSy && currentSy && rowSy.replace(/\s+/g, '') === currentSy.replace(/\s+/g, ''));
       });
@@ -3165,10 +3178,7 @@ export default function Overload() {
             </div>
 
             {freshLoading && (
-              <div style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <FiRefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
-                <span style={{ fontSize: '14px', fontWeight: '600' }}>Loading teacher workload data from database...</span>
-              </div>
+              <LoadingScreen inline size="small" message="Loading teacher workload data from database..." />
             )}
             
             {!freshLoading && (

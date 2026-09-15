@@ -10,7 +10,21 @@
 - Client: React with Vite/Webpack, Topbar, Blueprint backgrounds, Custom CSS modules.
 - Server: Node.js Express server running background jobs, worker threads for report processing, PostgreSQL / SQLite database controllers.
 
-### Added 2026-09-08 (Organized Classes Multi-Grade Restriction)
+### Added 2026-09-15 (Reassigned vs Clustered Personnel Inter-School Architecture)
+- **Reassigned Personnel vs Clustered Personnel Rules**:
+  - **1. Reassigned Personnel (`request_type === 'reassigned_teacher'`)**:
+    - **Mother School** (`requester_school_id` / Original Plantilla School):
+      - Holds the **FULL profile / appointment / personal information** of the personnel.
+      - Has **ZERO WORKLOAD (`workloadRows: []`, 0 teaching minutes)** in Mother School.
+    - **Receiving / Host School B** (`target_school_id`):
+      - Holds the **FULL WORKLOAD** (all class programs, timetable slots, sections).
+      - Has minimal profile info (`isShared: true`, Name, PRN, Position).
+    - **Overlap Rule**: Reassigned personnel **NEVER** have schedule conflicts across schools because Mother School assigns 0 workload rows.
+  - **2. Clustered Personnel (`request_type === 'clustered_teacher'`)**:
+    - The **ONLY** personnel category that has **ACTIVE WORKLOAD in BOTH School A (Mother School) and School B (Host School)**.
+    - Both School A and School B assign timetable slots to the teacher.
+    - **Overlap Rule**: Schedule overlap conflict detection applies **EXCLUSIVELY to Clustered Personnel**.
+    - When School B schedules a clustered teacher, School A's slots must not overlap with School B's slots on the same day and time.
 - **Multi-Grade (MG) Elementary Isolation**:
   - In DepEd, Multi-Grade classes are strictly an Elementary curriculum feature (`Grade 1` to `Grade 6`).
   - Pure Secondary schools (Junior High School and Senior High School) without Elementary offerings (`!hasElementary`) have the **`Multi Grade` (`MULTIGRADE`)** option completely removed from the Class Type dropdown in both inline section creation and inline section editing.

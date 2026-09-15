@@ -836,42 +836,95 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // ALSO check for approved shared / reassigned / borrowed personnel targeting this school!
-    const sharedReqs = await db.query(
-      `SELECT * FROM esf7_requests 
-       WHERE (target_school_id = $1 OR target_school_id = $2)
-         AND status = 'approved'`,
+    // 4. ALSO link approved shared / clustered / reassigned requests for BOTH Mother School and Target School!
+    // A. Check for requests TARGETING this school (Host/Receiving School)
+    const targetReqs = await db.query(
+      `SELECT r.*, p.prn as master_prn, p.first_name as master_fn, p.last_name as master_ln, p.position as master_pos, p.raw_payload as master_raw
+       FROM esf7_requests r
+       LEFT JOIN esf7_personnel_profile p ON (r.personnel_id = p.id OR r.personnel_id = p.prn)
+       WHERE (r.target_school_id = $1 OR r.target_school_id = $2)
+         AND r.status = 'approved'`,
       [cleanSchoolId, `SCH-${cleanSchoolId}`]
     ).catch(() => ({ rows: [] }));
 
-    for (const reqRow of sharedReqs.rows) {
-      const targetPrn = reqRow.personnel_id || reqRow.raw_payload?.prn || reqRow.raw_payload?.personnelId;
-      const targetName = reqRow.personnel_name || reqRow.raw_payload?.personnelName || 'SHARED TEACHER';
+    for (const reqRow of targetReqs.rows) {
+      const targetPrn = reqRow.master_prn || reqRow.personnel_id || reqRow.raw_payload?.prn || reqRow.raw_payload?.personnelId;
+      const targetId = reqRow.personnel_id || reqRow.master_prn || `PER-${cleanSchoolId}-${targetPrn}`;
+      const targetName = reqRow.personnel_name || (reqRow.master_fn ? `${reqRow.master_fn} ${reqRow.master_ln}` : reqRow.raw_payload?.personnelName || 'SHARED TEACHER');
       const isClustered = String(reqRow.request_type || '').toLowerCase().includes('cluster');
       const depStatus = isClustered ? 'CLUSTERED' : 'BORROWED';
 
-      if (!mergedList.some(p => String(p.id).toUpperCase() === String(targetPrn).toUpperCase() || String(p.prn).toUpperCase() === String(targetPrn).toUpperCase())) {
+      const existingMatch = mergedList.find(p => 
+        String(p.id).toUpperCase() === String(targetId).toUpperCase() || 
+        String(p.prn).toUpperCase() === String(targetPrn).toUpperCase() ||
+        `${p.firstName} ${p.lastName}`.toUpperCase() === targetName.toUpperCase()
+      );
+
+      if (!existingMatch) {
         const pParts = String(targetName).split(' ');
+        const fName = reqRow.master_fn || pParts[0] || 'TEACHER';
+        const lName = reqRow.master_ln || pParts.slice(1).join(' ') || 'STAFF';
+
         mergedList.push({
-          id: String(targetPrn).replace('PRN-', 'PER-'),
-          prn: String(targetPrn).replace('PER-', 'PRN-'),
+          id: targetId,
+          prn: targetPrn,
           schoolId: cleanSchoolId,
           school_id: cleanSchoolId,
           schoolYear: '2026-2027',
           type: 'teaching',
           salutation: 'MR.',
-          firstName: pParts[0] || 'TEACHER',
-          first_name: pParts[0] || 'TEACHER',
+          firstName: fName,
+          first_name: fName,
           middleName: '',
-          lastName: pParts.slice(1).join(' ') || 'STAFF',
-          last_name: pParts.slice(1).join(' ') || 'STAFF',
-          position: 'TEACHER I',
+          lastName: lName,
+          last_name: lName,
+          position: reqRow.master_pos || 'TEACHER I',
           positionCategory: 'TEACHING',
           deploymentStatus: depStatus,
           deployment_status: depStatus,
+          requestType: reqRow.request_type,
+          partnerSchoolId: reqRow.requester_school_id,
+          isClustered: isClustered,
           isShared: true,
           workloadRows: []
         });
+      } else {
+        existingMatch.deploymentStatus = depStatus;
+        existingMatch.deployment_status = depStatus;
+        existingMatch.requestType = reqRow.request_type;
+        existingMatch.partnerSchoolId = reqRow.requester_school_id;
+        existingMatch.isClustered = isClustered;
+        existingMatch.isShared = true;
+      }
+    }
+
+    // B. Check for requests REQUESTED BY this school (Mother/Plantilla School)
+    const motherReqs = await db.query(
+      `SELECT * FROM esf7_requests 
+       WHERE (requester_school_id = $1 OR requester_school_id = $2)
+         AND status = 'approved'`,
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
+
+    for (const reqRow of motherReqs.rows) {
+      const pId = reqRow.personnel_id;
+      const pName = reqRow.personnel_name || '';
+      const isClustered = String(reqRow.request_type || '').toLowerCase().includes('cluster');
+      const depStatus = isClustered ? 'CLUSTERED' : 'REASSIGNED';
+
+      const match = mergedList.find(p => 
+        String(p.id).toUpperCase() === String(pId).toUpperCase() || 
+        String(p.prn).toUpperCase() === String(pId).toUpperCase() ||
+        `${p.firstName} ${p.lastName}`.toUpperCase() === pName.toUpperCase()
+      );
+
+      if (match) {
+        match.deploymentStatus = depStatus;
+        match.deployment_status = depStatus;
+        match.requestType = reqRow.request_type;
+        match.partnerSchoolId = reqRow.target_school_id;
+        match.isClustered = isClustered;
+        match.isReassigned = !isClustered;
       }
     }
 

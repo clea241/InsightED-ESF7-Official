@@ -317,4 +317,206 @@ router.post('/:id/respond', async (req, res) => {
   }
 });
 
+// Ensure PostgreSQL table for Clustered Ghost State Sync across all cluster workers
+let isGhostTableInitialized = false;
+async function ensureGhostSyncTable() {
+  if (isGhostTableInitialized) return;
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS esf7_clustered_ghost_sync (
+        room_key TEXT NOT NULL,
+        school_id TEXT NOT NULL,
+        school_name TEXT,
+        slots JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        PRIMARY KEY (room_key, school_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_clustered_ghost_room ON esf7_clustered_ghost_sync(room_key);
+    `);
+    isGhostTableInitialized = true;
+  } catch (err) {
+    console.warn('[ensureGhostSyncTable Warning]:', err.message);
+  }
+}
+
+// Helper to resolve canonical room key from any PRN, ID, or Name
+async function resolveCanonicalRoomKey(rawKey) {
+  if (!rawKey) return 'UNKNOWN';
+  const clean = String(rawKey).trim();
+  const cleanStripped = clean.replace(/^(PER-|PRN-)/i, '').trim();
+
+  try {
+    // 1. Check personnel profile table
+    const pRes = await db.query(
+      `SELECT id, prn, first_name, last_name FROM esf7_personnel_profile 
+       WHERE id = $1 OR prn = $1 OR id ILIKE $2 OR prn ILIKE $2 OR CONCAT(first_name, ' ', last_name) ILIKE $2
+       LIMIT 1`,
+      [clean, `%${cleanStripped}%`]
+    );
+
+    if (pRes.rows.length > 0) {
+      const p = pRes.rows[0];
+      const fn = (p.first_name || '').toUpperCase().trim();
+      const ln = (p.last_name || '').toUpperCase().trim();
+      return `ROOM_${fn}_${ln}`.replace(/[^A-Z0-9_]/g, '');
+    }
+
+    // 2. Check requests table
+    const reqRes = await db.query(
+      `SELECT personnel_id, personnel_name FROM esf7_requests 
+       WHERE personnel_id = $1 OR personnel_name ILIKE $2
+       LIMIT 1`,
+      [clean, `%${cleanStripped}%`]
+    );
+
+    if (reqRes.rows.length > 0) {
+      const r = reqRes.rows[0];
+      const name = (r.personnel_name || r.personnel_id || '').toUpperCase().trim();
+      return `ROOM_${name}`.replace(/[^A-Z0-9_]/g, '');
+    }
+  } catch (err) {
+    console.warn('[resolveCanonicalRoomKey Error]:', err.message);
+  }
+
+  return `ROOM_${cleanStripped.toUpperCase()}`.replace(/[^A-Z0-9_]/g, '');
+}
+
+// GET /api/requests/clustered/:prn/sync
+// Fetch active ghost slots from partner schools for a clustered teacher
+router.get('/clustered/:prn/sync', async (req, res) => {
+  const { prn } = req.params;
+  const requestingSchoolId = String(getSchoolIdFromRequest(req) || req.query.schoolId || req.query.school_id || '').replace('SCH-', '').trim();
+
+  try {
+    await ensureGhostSyncTable();
+    const roomKey = await resolveCanonicalRoomKey(prn);
+    const cleanStripped = String(prn).replace(/^(PER-|PRN-)/i, '').trim();
+
+    // Query partner school slots from PostgreSQL
+    const syncRes = await db.query(
+      `SELECT school_id, school_name, slots FROM esf7_clustered_ghost_sync 
+       WHERE room_key = $1 AND school_id != $2`,
+      [roomKey, requestingSchoolId]
+    );
+
+    let sharedSlots = [];
+
+    if (syncRes.rows.length > 0) {
+      syncRes.rows.forEach(row => {
+        const rowSlots = Array.isArray(row.slots) ? row.slots : [];
+        rowSlots.forEach(slot => {
+          sharedSlots.push({
+            ...slot,
+            schoolId: row.school_id,
+            schoolName: row.school_name || `School ${row.school_id}`
+          });
+        });
+      });
+    } else {
+      // If table has no partner entries yet, query active DB workloads
+      const dbSlots = await db.query(
+        `SELECT w.*, p.school_id, s.school_name, p.first_name, p.last_name 
+         FROM esf7_workload_rows w
+         JOIN esf7_personnel_profile p ON w.personnel_id = p.id
+         LEFT JOIN esf7_school_profile s ON p.school_id = s.school_id
+         WHERE (p.prn = $1 OR p.id = $1 OR p.id ILIKE $2 OR p.prn ILIKE $2 OR CONCAT(p.first_name, ' ', p.last_name) ILIKE $2)
+           AND p.school_id != $3
+         ORDER BY w.start_time ASC`,
+        [prn, `%${cleanStripped}%`, requestingSchoolId]
+      ).catch(() => ({ rows: [] }));
+
+      if (dbSlots.rows.length > 0) {
+        dbSlots.rows.forEach(row => {
+          const schId = String(row.school_id || '').replace('SCH-', '').trim();
+          const schName = row.school_name || `School ${schId}`;
+          sharedSlots.push({
+            day: row.days && Array.isArray(row.days) ? row.days[0] : (row.day || 'MONDAY'),
+            days: Array.isArray(row.days) && row.days.length > 0 ? row.days : [row.day || 'MONDAY'],
+            startTime: row.start_time,
+            endTime: row.end_time,
+            subject: row.subject,
+            gradeLevel: row.grade_level,
+            sectionName: row.section_name,
+            schoolId: schId,
+            schoolName: schName
+          });
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      prn,
+      roomKey,
+      sharedSlots,
+      count: sharedSlots.length
+    });
+  } catch (err) {
+    console.error('[Clustered Sync GET Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/requests/clustered/:prn/sync
+// Broadcast or update active school timetable slots for a clustered teacher
+router.post('/clustered/:prn/sync', async (req, res) => {
+  const { prn } = req.params;
+  const { authorSchoolId, authorSchoolName, slots } = req.body;
+
+  if (!prn || !authorSchoolId) {
+    return res.status(400).json({ error: 'prn and authorSchoolId are required.' });
+  }
+
+  const cleanAuthorSchoolId = String(authorSchoolId).replace('SCH-', '').trim();
+
+  try {
+    await ensureGhostSyncTable();
+    const roomKey = await resolveCanonicalRoomKey(prn);
+    const validSlots = Array.isArray(slots) ? slots : [];
+
+    // Atomically upsert slots into PostgreSQL (persists across all PM2 cluster instances)
+    await db.query(
+      `INSERT INTO esf7_clustered_ghost_sync (room_key, school_id, school_name, slots, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, NOW())
+       ON CONFLICT (room_key, school_id)
+       DO UPDATE SET 
+         school_name = EXCLUDED.school_name,
+         slots = EXCLUDED.slots,
+         updated_at = NOW()`,
+      [roomKey, cleanAuthorSchoolId, authorSchoolName || `School ${cleanAuthorSchoolId}`, JSON.stringify(validSlots)]
+    );
+
+    // Fetch and return the partner schools' latest slots
+    const syncRes = await db.query(
+      `SELECT school_id, school_name, slots FROM esf7_clustered_ghost_sync 
+       WHERE room_key = $1 AND school_id != $2`,
+      [roomKey, cleanAuthorSchoolId]
+    );
+
+    const sharedSlots = [];
+    syncRes.rows.forEach(row => {
+      const rowSlots = Array.isArray(row.slots) ? row.slots : [];
+      rowSlots.forEach(slot => {
+        sharedSlots.push({
+          ...slot,
+          schoolId: row.school_id,
+          schoolName: row.school_name || `School ${row.school_id}`
+        });
+      });
+    });
+
+    res.json({
+      success: true,
+      prn,
+      roomKey,
+      authorSchoolId: cleanAuthorSchoolId,
+      sharedSlots
+    });
+  } catch (err) {
+    console.error('[Clustered Sync POST Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+

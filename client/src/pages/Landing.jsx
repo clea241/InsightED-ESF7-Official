@@ -26,6 +26,9 @@ export default function Landing({ onGetStarted }) {
     }
   };
 
+  const rawBase = import.meta.env.BASE_URL || '/';
+  const baseUrl = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+
   return (
     <div className="esf7-landing-wrapper">
       <style>{`
@@ -52,8 +55,8 @@ export default function Landing({ onGetStarted }) {
           height: 108%;
           background-image: 
             linear-gradient(180deg, rgba(8, 49, 95, 0.10) 0%, rgba(8, 49, 95, 0.28) 100%),
-            url('/deped_campus_bg.jpg'),
-            url('/landingpage.jpg');
+            url('${baseUrl}deped_campus_bg.jpg'),
+            url('${baseUrl}landingpage.jpg');
           background-size: cover;
           background-position: center 46%;
           background-repeat: no-repeat;

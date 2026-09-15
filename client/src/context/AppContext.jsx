@@ -2670,12 +2670,63 @@ export const AppProvider = ({ children }) => {
     return "landing";
   });
 
-  const setActiveView = (view) => {
+  const syncUrlWithView = (view, pushHistory = true) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      if (view && view !== 'landing') {
+        url.searchParams.set('view', view);
+      } else {
+        url.searchParams.delete('view');
+      }
+      const newUrl = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+      const currentUrl = window.location.pathname + window.location.search + window.location.hash;
+      
+      if (currentUrl !== newUrl) {
+        if (pushHistory) {
+          window.history.pushState({ view }, '', newUrl);
+        } else {
+          window.history.replaceState({ view }, '', newUrl);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync URL with view:', e);
+    }
+  };
+
+  const setActiveView = (view, options = {}) => {
+    const { replace = false } = typeof options === 'boolean' ? { replace: options } : options;
     setActiveViewState(view);
     if (typeof localStorage !== 'undefined' && view) {
       localStorage.setItem('insighted_active_view', view);
     }
+    syncUrlWithView(view, !replace);
   };
+
+  // Sync initial URL on mount and handle Browser Back/Forward navigation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('view');
+    if (fromUrl && fromUrl !== activeView) {
+      setActiveViewState(fromUrl);
+    } else if (!fromUrl && activeView && activeView !== 'landing') {
+      syncUrlWithView(activeView, false);
+    }
+
+    const handlePopState = (event) => {
+      const currentParams = new URLSearchParams(window.location.search);
+      const viewFromUrl = currentParams.get('view');
+      const targetView = viewFromUrl || (event.state && event.state.view) || 'landing';
+      
+      setActiveViewState(targetView);
+      if (typeof localStorage !== 'undefined' && targetView) {
+        localStorage.setItem('insighted_active_view', targetView);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState(null);
@@ -4727,14 +4778,30 @@ export const AppProvider = ({ children }) => {
       }
 
       // Workload Rows & Schedule Verification
+      const isReassignedOut = (p.requestType === 'reassigned_teacher' || p.deploymentStatus === 'REASSIGNED' || p.isReassignedOut) && !p.isShared;
+
       if (p.type === "teaching") {
-        if (!p.workloadRows || p.workloadRows.length === 0) {
-          issues.push({ id: `${p.id}-workload-empty`, personId: p.id, type: "warn", category: "Workload", message: `${name}: Subject workload schedule rows are missing.` });
-        }
-        
-        const weeklyTeachingMins = computeWeeklyTeachingMinutes(p.workloadRows);
-        if (weeklyTeachingMins === 0) {
-          issues.push({ id: `${p.id}-teaching-zero`, personId: p.id, type: "error", category: "Workload", message: `${name}: Teaching staff has 0 minutes of teaching schedules.` });
+        if (isReassignedOut) {
+          // Reassigned Personnel in Mother School: STRICTLY 0 workload rows
+          if (p.workloadRows && p.workloadRows.length > 0) {
+            issues.push({
+              id: `${p.id}-reassigned-workload-invalid`,
+              personId: p.id,
+              type: "error",
+              category: "Workload",
+              message: `${name}: Reassigned Personnel is deployed to another station and must have 0 workload rows in Mother Station.`
+            });
+          }
+        } else {
+          // Standard Teaching & Clustered Personnel
+          if (!p.workloadRows || p.workloadRows.length === 0) {
+            issues.push({ id: `${p.id}-workload-empty`, personId: p.id, type: "warn", category: "Workload", message: `${name}: Subject workload schedule rows are missing.` });
+          }
+          
+          const weeklyTeachingMins = computeWeeklyTeachingMinutes(p.workloadRows);
+          if (weeklyTeachingMins === 0) {
+            issues.push({ id: `${p.id}-teaching-zero`, personId: p.id, type: "error", category: "Workload", message: `${name}: Teaching staff has 0 minutes of teaching schedules.` });
+          }
         }
       }
 

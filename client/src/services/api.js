@@ -1,6 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-const fetchWithAuth = async (url, options = {}) => {
+export const fetchWithAuth = async (url, options = {}) => {
   const token = localStorage.getItem('token');
   let activeSchoolId = localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
   if (!activeSchoolId && token) {
@@ -618,6 +618,56 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(transferData)
+    });
+    return res.json();
+  },
+
+  // Clustered Personnel Real-Time Ghost Timetable Sync
+  getClusteredGhostSlots: async (prn, schoolId) => {
+    const query = schoolId ? `?schoolId=${encodeURIComponent(schoolId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/requests/clustered/${encodeURIComponent(prn)}/sync${query}`);
+    return res.json();
+  },
+  broadcastClusteredGhostSlots: async (prn, data) => {
+    const res = await fetchWithAuth(`${API_BASE}/requests/clustered/${encodeURIComponent(prn)}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  // Harvester Upload & Status Endpoints
+  getHarvestStatus: async (schoolId) => {
+    const res = await fetchWithAuth(`${API_BASE}/esf7-upload/status/${encodeURIComponent(schoolId)}`);
+    return res.json();
+  },
+  checkHarvestStatus: async (schoolId) => {
+    const res = await fetchWithAuth(`${API_BASE}/esf7-upload/check/${encodeURIComponent(schoolId)}`);
+    return res.json();
+  },
+  uploadHarvestFile: async (formData) => {
+    const res = await fetchWithAuth(`${API_BASE}/esf7-upload`, {
+      method: 'POST',
+      body: formData
+    });
+    return res.json();
+  },
+  importConvertedHarvest: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/esf7-upload/import-converted`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
+  // Auth passcode login
+  passcodeLogin: async (data) => {
+    const res = await fetch(`${API_BASE}/auth/passcode-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     });
     return res.json();
   }

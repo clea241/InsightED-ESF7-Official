@@ -4,6 +4,7 @@ import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import PortalHeader from '../components/PortalHeader';
+import { api } from '../services/api';
 import { FiPlus, FiSave, FiTag, FiLink, FiUser, FiTrash2, FiInfo, FiX, FiUploadCloud, FiRefreshCw, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
 
@@ -30,8 +31,7 @@ export default function Roster() {
     const checkHarvest = async () => {
       try {
         setIsCheckingHarvest(true);
-        const res = await fetch(`/api/esf7-upload/status/${rawSchoolId}`);
-        const data = await res.json();
+        const data = await api.getHarvestStatus(rawSchoolId);
         if (!isMounted) return;
 
         if (data.status && data.status !== 'NOT_FOUND') {
@@ -39,8 +39,7 @@ export default function Roster() {
           // If status completed, trigger personnel reload from backend
           if (data.status === 'VERIFIED') {
             try {
-              const pRes = await fetch(`/api/personnel?school_id=${rawSchoolId}`);
-              const pData = await pRes.json();
+              const pData = await api.getPersonnel(rawSchoolId);
               if (Array.isArray(pData) && pData.length > 0 && isMounted) {
                 setPersonnel(pData);
                 if (showToast) showToast('Auto-populated faculty roster from harvested eSF7!', 'success');

@@ -25,6 +25,25 @@ import Landing from './pages/Landing';
 import LoadingScreen from './components/LoadingScreen';
 import { FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
 
+const VIEW_LABELS = {
+  dashboard: 'School Dashboard',
+  nodemap: 'eSF7 Process Map',
+  school: 'School Profile',
+  roster: 'Faculty & Staff Roster',
+  profile: 'Personnel Profiling',
+  designation: 'Personnel Designations',
+  designations: 'Personnel Designations',
+  classes: 'Organized Classes & Sections',
+  workload: 'Faculty Workload & Timetable',
+  deployment: 'Faculty Deployment',
+  overload: 'Teaching Overload & Payroll',
+  allowances: 'Personnel Allowances',
+  validation: 'eSF7 Validation & Integrity Center',
+  submission: 'Official eSF7 Submission',
+  'room-qr': 'Faculty Room QR Profiling',
+  requests: 'Inter-School Request Center'
+};
+
 function MainAppContent() {
   const urlParams = new URLSearchParams(window.location.search);
   const isRoomProfiling = urlParams.get('view') === 'room-profiling';
@@ -42,6 +61,10 @@ function MainAppContent() {
     isInitialized = false
   } = appState;
 
+  // Hooks must always be declared unconditionally at top
+  const [pageTransitionLoading, setPageTransitionLoading] = React.useState(false);
+  const prevViewRef = React.useRef(activeView);
+
   React.useEffect(() => {
     const coreRegistryViews = ['school', 'roster', 'profile', 'classes', 'designation', 'workload'];
     if (coreRegistryViews.includes(activeView) && isNodeUnlocked && !isNodeUnlocked(activeView)) {
@@ -58,6 +81,18 @@ function MainAppContent() {
       return () => clearTimeout(timer);
     }
   }, [toast, setToast]);
+
+  React.useEffect(() => {
+    if (user && isInitialized && prevViewRef.current !== activeView && activeView !== 'landing') {
+      prevViewRef.current = activeView;
+      setPageTransitionLoading(true);
+      const timer = setTimeout(() => {
+        setPageTransitionLoading(false);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+    prevViewRef.current = activeView;
+  }, [activeView, user, isInitialized]);
 
   // Public Faculty Room QR Profiling bypass (No Login Required)
   if (isRoomProfiling || activeView === 'room-profiling') {
@@ -95,6 +130,10 @@ function MainAppContent() {
           to { transform: scale(1); opacity: 1; }
         }
       `}</style>
+
+      {pageTransitionLoading && (
+        <LoadingScreen message={`Loading ${VIEW_LABELS[activeView] || 'Module'}...`} />
+      )}
 
       <div className="app">
         <main className="main" style={{ marginLeft: 0, width: '100%' }}>

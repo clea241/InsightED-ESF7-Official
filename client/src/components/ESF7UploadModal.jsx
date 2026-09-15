@@ -399,11 +399,8 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
           const targetSchoolId = (schoolInfo?.schoolId || parsedData.schoolId || 'UNKNOWN').replace(/^SCH-/i, '').trim();
           formData.append('school_id', targetSchoolId);
 
-          fetch('/api/esf7-upload', {
-            method: 'POST',
-            body: formData
-          }).then(res => res.json()).then(data => {
-            if (data.success) {
+          api.uploadHarvestFile(formData).then(data => {
+            if (data && data.success) {
               console.log('✅ [eSF7 Queue] File registered in national harvester queue:', data);
             }
           }).catch(uploadErr => {
@@ -499,16 +496,11 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
                 onClick={async () => {
                   setIsCloning(true);
                   try {
-                    const res = await fetch('/api/esf7-upload/import-converted', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        school_id: schoolInfo?.schoolId,
-                        old_school_id: pendingSchool.oldSchoolId
-                      })
+                    const data = await api.importConvertedHarvest({
+                      school_id: schoolInfo?.schoolId,
+                      old_school_id: pendingSchool.oldSchoolId
                     });
-                    const data = await res.json();
-                    if (data.success) {
+                    if (data && data.success) {
                       if (showToast) showToast(`Imported ${data.importedCount} faculty from previous Station ${pendingSchool.oldSchoolId}!`, 'success');
                       if (onImportSuccess) onImportSuccess({ success: true, count: data.importedCount });
                       onClose();

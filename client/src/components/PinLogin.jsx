@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 
 const PinLogin = ({ rememberedUser, onSwitchAccount, onUsePassword }) => {
   const [pin, setPin] = useState('');
@@ -29,19 +30,13 @@ const PinLogin = ({ rememberedUser, onSwitchAccount, onUsePassword }) => {
     const identifier = rememberedUser?.school_id || rememberedUser?.schoolId || rememberedUser?.email;
 
     try {
-      const response = await fetch('/api/auth/passcode-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          school_id: identifier,
-          passcode: completedPin,
-          pin: completedPin
-        })
+      const data = await api.passcodeLogin({
+        school_id: identifier,
+        passcode: completedPin,
+        pin: completedPin
       });
       
-      const data = await response.json();
-      
-      if (response.ok && data.success && data.user && data.token) {
+      if (data && data.success && data.user && data.token) {
         login(data.user, data.token);
       } else {
         setError(data.error || 'Incorrect Passcode');

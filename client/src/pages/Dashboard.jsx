@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import ForceLogoutNoticeModal from '../components/ForceLogoutNoticeModal';
+import LoadingScreen from '../components/LoadingScreen';
 import PortalHeader from '../components/PortalHeader';
 import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight, FiMap, FiSettings, FiAward, FiBarChart2, FiStar, FiBookOpen, FiUploadCloud, FiInbox } from 'react-icons/fi';
 import '../premium-dashboard.css';
@@ -60,8 +61,7 @@ export default function Dashboard() {
       if (!rawSchoolId) return;
 
       try {
-        const res = await fetch(`/api/esf7-upload/check/${rawSchoolId}`);
-        const data = await res.json();
+        const data = await api.checkHarvestStatus(rawSchoolId);
         if (isCancelled) return;
 
         if (data.pendingSchool) {
@@ -647,11 +647,7 @@ export default function Dashboard() {
 
       {/* CONTENT GRID */}
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{ height: '180px', borderRadius: '16px', background: '#E2E8F0', animation: 'pulse 1.5s infinite ease-in-out' }}></div>
-          ))}
-        </div>
+        <LoadingScreen inline size="medium" message="Loading School Dashboard Statistics..." />
       ) : (
         <>
           {/* TOP ROW: 3 STAT SUMMARY CARDS */}
