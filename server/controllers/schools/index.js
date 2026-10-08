@@ -578,15 +578,78 @@ const handleSaveDraft = async (req, res) => {
     const rawSchoolId = explicitId || req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '123456';
     schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
 
-    // Never let an empty roster replace a populated one.
+    // Fetch existing draft for merge protection
+    const existing = await db.query(
+      'SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2',
+      [schoolId, schoolYear]
+    );
+    const existingPayload = existing.rows[0] && existing.rows[0].payload;
+    const oldPersonnel = Array.isArray(existingPayload?.personnel) ? existingPayload.personnel : [];
+    const oldSections = Array.isArray(existingPayload?.classSections) ? existingPayload.classSections : (Array.isArray(existingPayload?.sections) ? existingPayload.sections : []);
+
     const finalPayload = { ...payload };
-    if (Array.isArray(payload.personnel) && payload.personnel.length === 0) {
-      const existing = await db.query(
-        'SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2',
-        [schoolId, schoolYear]
-      );
-      const old = existing.rows[0] && existing.rows[0].payload && existing.rows[0].payload.personnel;
-      if (Array.isArray(old) && old.length > 0) finalPayload.personnel = old;
+
+    // 1. Never let an empty roster replace a populated one.
+    if (Array.isArray(payload.personnel) && payload.personnel.length === 0 && oldPersonnel.length > 0) {
+      finalPayload.personnel = oldPersonnel;
+    }
+
+    // 2. Class Sections: Per-record upsert keyed by stable id and protection against accidental drops
+    const incomingSections = Array.isArray(payload.classSections) ? payload.classSections : (Array.isArray(payload.sections) ? payload.sections : null);
+    if (incomingSections !== null) {
+      if (oldSections.length > 0) {
+        const allowDeletion = Boolean(payload.allowSectionDeletion || req.body.allowSectionDeletion);
+        const deletedIds = Array.isArray(payload.deletedSectionIds) ? new Set(payload.deletedSectionIds.map(String)) : new Set();
+
+        // If incoming list is empty and deletion was not explicitly confirmed, preserve existing sections
+        if (incomingSections.length === 0 && !allowDeletion) {
+          console.warn(`[DraftSave] Prevented empty section array from overwriting ${oldSections.length} existing sections for school ${schoolId}`);
+          finalPayload.classSections = oldSections;
+        } else if (!allowDeletion && incomingSections.length < oldSections.length && deletedIds.size === 0) {
+          // Section count dropped without explicit deletion confirmation -> merge by stable ID to prevent data loss
+          console.warn(`[DraftSave] Merging sections by stable ID: incoming ${incomingSections.length} vs existing ${oldSections.length} for school ${schoolId}`);
+          const sectionMap = new Map();
+          oldSections.forEach(s => {
+            const sid = s.id ? String(s.id) : null;
+            const gl = String(s.gradeLevel || s.grade_level || '').trim().toUpperCase();
+            const sn = String(s.sectionName || s.section_name || '').trim().toUpperCase();
+            if (sid) sectionMap.set(sid, s);
+            if (gl && sn) sectionMap.set(`${gl}::${sn}`, s);
+          });
+
+          // Overlay incoming items
+          incomingSections.forEach(s => {
+            const sid = s.id ? String(s.id) : null;
+            const gl = String(s.gradeLevel || s.grade_level || '').trim().toUpperCase();
+            const sn = String(s.sectionName || s.section_name || '').trim().toUpperCase();
+            const matchKey = (sid && sectionMap.has(sid)) ? sid : ((gl && sn && sectionMap.has(`${gl}::${sn}`)) ? `${gl}::${sn}` : null);
+            if (matchKey) {
+              const prev = sectionMap.get(matchKey);
+              const merged = { ...prev, ...s };
+              // preserve existing learner counts if incoming is null/undefined
+              if ((s.numberOfLearners === null || s.numberOfLearners === undefined || s.numberOfLearners === '') && prev.numberOfLearners !== null && prev.numberOfLearners !== undefined) {
+                merged.numberOfLearners = prev.numberOfLearners;
+                merged.maleLearners = prev.maleLearners;
+                merged.femaleLearners = prev.femaleLearners;
+              }
+              sectionMap.set(matchKey, merged);
+            } else {
+              sectionMap.set(sid || `${gl}::${sn}`, s);
+            }
+          });
+
+          finalPayload.classSections = Array.from(new Set(sectionMap.values()));
+        } else {
+          // Normal save or explicit deletion: if deletedIds are provided, filter them out
+          if (deletedIds.size > 0) {
+            finalPayload.classSections = incomingSections.filter(s => !deletedIds.has(String(s.id)));
+          } else {
+            finalPayload.classSections = incomingSections;
+          }
+        }
+      } else {
+        finalPayload.classSections = incomingSections;
+      }
     }
 
     const withVersion = await hasDraftVersionColumn();

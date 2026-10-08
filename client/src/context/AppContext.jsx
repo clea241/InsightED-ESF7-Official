@@ -2909,6 +2909,7 @@ export const AppProvider = ({ children }) => {
   const [personnel, setPersonnel] = useState([]);
   const [deletedPersonnelIds, setDeletedPersonnelIds] = useState([]);
   const [classSections, setClassSections] = useState([]);
+  const [deletedSectionIds, setDeletedSectionIds] = useState([]);
   const [schoolEdited, setSchoolEdited] = useState(() => {
     return localStorage.getItem('esf7_school_edited') === 'true';
   });
@@ -3677,6 +3678,8 @@ export const AppProvider = ({ children }) => {
           const rawDeleted = activeDraft.deletedPersonnelIds || activeDraft.deleted_personnel_ids || [];
           const deletedSet = new Set(rawDeleted.map(k => String(k).trim().toLowerCase()).filter(Boolean));
           setDeletedPersonnelIds(rawDeleted);
+          const rawDeletedSecs = activeDraft.deletedSectionIds || activeDraft.deleted_section_ids || [];
+          setDeletedSectionIds(rawDeletedSecs);
 
           // Filter out deleted teachers from DB list
           const filteredDbList = dbList.filter(p => {
@@ -4120,6 +4123,7 @@ export const AppProvider = ({ children }) => {
           schoolInfo,
           personnel,
           classSections,
+          deletedSectionIds,
           workloadTransfers,
           absences,
           journey_state: journeyState,
@@ -4150,7 +4154,7 @@ export const AppProvider = ({ children }) => {
     }, 3500);
 
     return () => clearTimeout(debounceId);
-  }, [schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState]);
+  }, [schoolInfo, personnel, classSections, deletedSectionIds, workloadTransfers, absences, journeyState]);
 
   // ---- Server-health lock integration: protect local work, then re-sync on recovery ----
   const latestDraftRef = useRef(null);
@@ -4877,6 +4881,11 @@ export const AppProvider = ({ children }) => {
   };
 
   const addClassSection = async (gradeLevelOrObj, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null, maleLearners = null, femaleLearners = null) => {
+    if (!initialLoadCompleteRef.current || loadIncompleteRef.current) {
+      console.warn('[AppContext] addClassSection blocked: initial load is not complete.');
+      showToast('Please wait for your school data to finish loading.', 'warning');
+      return;
+    }
     let finalGradeLevel = gradeLevelOrObj;
     let finalSectionName = sectionName;
     let finalAdvisorId = advisorId;
@@ -5411,6 +5420,9 @@ export const AppProvider = ({ children }) => {
   const removeClassSection = async (id) => {
     const target = classSections.find(s => String(s.id) === String(id));
     setClassSections(prev => prev.filter(s => String(s.id) !== String(id)));
+    if (id) {
+      setDeletedSectionIds(prev => Array.from(new Set([...prev, String(id)])));
+    }
     if (target) {
       setPersonnel(prevPersonnel => {
         return prevPersonnel.map(p => {
@@ -6710,6 +6722,7 @@ export const AppProvider = ({ children }) => {
       commitDraftPersonnel,
       deletePersonnel,
       deletedPersonnelIds,
+      deletedSectionIds,
       resolveBorrowedPersonnel,
       discardLocalDraft: async () => {
         try {

@@ -92,3 +92,43 @@ test('an empty roster never replaces a populated one', async () => {
   assert.equal(res.status, 200);
   assert.equal(rows.get('302261|SY 26-27').payload.personnel.length, 1);
 });
+
+test('sections merge by stable ID when incoming count drops without explicit confirmation (44 + 2 = 46)', async () => {
+  // 1. Setup 44 sections in the draft
+  const initialSections = Array.from({ length: 44 }, (_, i) => ({
+    id: `sec-${i + 1}`,
+    gradeLevel: `Grade ${7 + (i % 3)}`,
+    sectionName: `Section ${i + 1}`,
+    numberOfLearners: 35
+  }));
+  await put({ schoolYear: 'SY 26-27', payload: { schoolInfo: { schoolId: '302261' }, personnel: [{ id: 'P1' }], classSections: initialSections }, baseVersion: 3 });
+  assert.equal(rows.get('302261|SY 26-27').payload.classSections.length, 44);
+
+  // 2. Incoming payload only sends 2 sections (user added 2 new sections or partial state)
+  const incomingTwo = [
+    { id: 'sec-new-1', gradeLevel: 'Grade 7', sectionName: 'New Sec 1', numberOfLearners: 30 },
+    { id: 'sec-new-2', gradeLevel: 'Grade 7', sectionName: 'New Sec 2', numberOfLearners: 32 }
+  ];
+  const res = await put({ schoolYear: 'SY 26-27', payload: { schoolInfo: { schoolId: '302261' }, personnel: [{ id: 'P1' }], classSections: incomingTwo }, baseVersion: 4 });
+  assert.equal(res.status, 200);
+
+  // 3. Merged result must retain all 44 original + 2 new = 46 sections! Zero data loss!
+  const savedSections = rows.get('302261|SY 26-27').payload.classSections;
+  assert.equal(savedSections.length, 46);
+  assert.ok(savedSections.some(s => s.id === 'sec-1'));
+  assert.ok(savedSections.some(s => s.id === 'sec-new-1'));
+  assert.ok(savedSections.some(s => s.id === 'sec-new-2'));
+});
+
+test('empty classSections never replaces populated classSections without explicit delete confirmation', async () => {
+  const res = await put({ schoolYear: 'SY 26-27', payload: { schoolInfo: { schoolId: '302261' }, personnel: [{ id: 'P1' }], classSections: [] }, baseVersion: 5 });
+  assert.equal(res.status, 200);
+  assert.equal(rows.get('302261|SY 26-27').payload.classSections.length, 46);
+});
+
+test('allowSectionDeletion allows clearing sections when user explicitly confirms', async () => {
+  const res = await put({ schoolYear: 'SY 26-27', payload: { schoolInfo: { schoolId: '302261' }, personnel: [{ id: 'P1' }], classSections: [], allowSectionDeletion: true }, baseVersion: 6 });
+  assert.equal(res.status, 200);
+  assert.equal(rows.get('302261|SY 26-27').payload.classSections.length, 0);
+});
+
