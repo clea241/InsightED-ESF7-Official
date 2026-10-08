@@ -73,7 +73,7 @@ export default function ServerHealthModal() {
       action: 'Server health check (app locked)',
       error: { name: err.name || 'ServerUnavailable', message: err.message || 'Server did not respond', stack: err.stack, url: err.url, status: err.status },
       timestamp: Date.now(),
-      count: 1
+      count: Math.max(1, health?.failureCount || 0)
     });
     if (await copyTextToClipboard(text)) {
       setCopied(true);

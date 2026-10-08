@@ -4,6 +4,7 @@ import { reportDraftError, clearDraftError, DRAFT_ACTIONS } from '../services/dr
 import { useAuth } from './AuthContext';
 import { markUnsynced, markSynced, hasUnsynced, onServerLock, onServerRecover } from '../services/serverHealth';
 import { chooseDraftSource } from '../services/draftSync';
+import { getSessionSchoolId, resolveSchoolId } from '../services/session';
 import { saveDraft, flushDrafts, markDraftDirty, registerSnapshotProvider, subscribeDraftSave, getSyncedVersion, setSyncedVersion, acceptServerVersion, retryNow, DraftConflictError } from '../services/draftSaver';
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
 
@@ -2887,15 +2888,16 @@ export const AppProvider = ({ children }) => {
   const [activePersonnelId, setActivePersonnelId] = useState("P-001");
   const [schoolInfo, setSchoolInfo] = useState(() => {
     const rememberedUser = localStorage.getItem('remembered_user');
-    let userSchoolId = localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || "";
+    // The session's school (token) wins over anything left in localStorage by a previous login.
+    let userSchoolId = getSessionSchoolId() || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || "";
     if (rememberedUser) {
       try {
         const parsed = JSON.parse(rememberedUser);
-        if (parsed.school_id || parsed.schoolId) userSchoolId = parsed.school_id || parsed.schoolId;
+        if (!getSessionSchoolId() && (parsed.school_id || parsed.schoolId)) userSchoolId = parsed.school_id || parsed.schoolId;
       } catch (e) {}
     }
     return {
-      schoolId: userSchoolId || "100093",
+      schoolId: userSchoolId, // empty until a session exists: never a made-up placeholder school
       schoolName: userSchoolId ? `School ${userSchoolId}` : "Loading School...",
       region: "",
       division: "",
@@ -3126,10 +3128,14 @@ export const AppProvider = ({ children }) => {
   const [requestHistory, setRequestHistory] = useState([]);
   const [districtSchools, setDistrictSchools] = useState([]);
 
+  // Set after a 401/403 so the poller stops; cleared at login and logout.
+  const requestsBlockedRef = useRef(false);
+
   const refreshRequests = async (targetId = null) => {
     try {
-      const activeId = targetId || schoolInfo?.schoolId || user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id');
-      const cleanId = activeId ? String(activeId).replace(/^SCH-/i, '').trim() : '';
+      // The school always comes from the verified session, never from component state captured earlier.
+      const cleanId = resolveSchoolId(targetId);
+      if (!cleanId || requestsBlockedRef.current) return true;
 
       const incoming = await api.getIncomingRequests(cleanId);
       if (Array.isArray(incoming)) setIncomingRequests(incoming);
@@ -3139,14 +3145,20 @@ export const AppProvider = ({ children }) => {
 
       const history = await api.getRequestHistory(cleanId);
       if (Array.isArray(history)) setRequestHistory(history);
+      clearDraftError();
+      return true;
     } catch (e) {
-      console.error('Failed to refresh requests:', e);
+      // 401/403 are access errors: retrying cannot fix them. Stop polling and show the shared notice once.
+      const status = /** @type {any} */ (e)?.status;
+      if (status === 401 || status === 403) requestsBlockedRef.current = true;
+      if (status !== 401) reportDraftError(DRAFT_ACTIONS.REQUESTS_REFRESH, e);
+      return false;
     }
   };
 
   const loadDistrictSchools = async (targetId = null, targetDivision = null) => {
     try {
-      const activeId = targetId || schoolInfo?.schoolId || user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id');
+      const activeId = resolveSchoolId(targetId);
       const activeDiv = targetDivision || schoolInfo?.division;
       const cleanId = activeId ? String(activeId).replace(/^SCH-/i, '').trim() : '';
       const schools = await api.getDistrictSchools(cleanId, activeDiv);
@@ -3308,7 +3320,7 @@ export const AppProvider = ({ children }) => {
 
   // Fetch and normalize personnel records (maps gradeLevelsTaught to assignedGradeLevels for frontend consistency)
   const fetchAndNormalizePersonnel = async (overrideSchoolId = null) => {
-    const activeSchoolId = overrideSchoolId || schoolInfo?.schoolId || user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || null;
+    const activeSchoolId = resolveSchoolId(overrideSchoolId) || user?.school_id || user?.schoolId || null;
     const list = await api.getPersonnel(activeSchoolId);
     if (!Array.isArray(list)) return [];
 
@@ -3437,7 +3449,8 @@ export const AppProvider = ({ children }) => {
       loadIncompleteRef.current = false;
       try {
         // 1. Fetch current school configuration
-        const activeSchoolId = user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || '100093';
+        const activeSchoolId = resolveSchoolId(null) || user?.school_id || user?.schoolId;
+        if (!activeSchoolId) throw new Error('No school is attached to this login session.');
         const school = await api.getSchool(activeSchoolId);
         let currentSchoolInfo = {
           schoolId: String(activeSchoolId),
@@ -4065,6 +4078,8 @@ export const AppProvider = ({ children }) => {
       setIncomingRequests([]);
       setOutgoingRequests([]);
       setDistrictSchools([]);
+      // Logout: forget whose school this was, so nothing from this session can leak into the next login.
+      setSchoolInfo(prev => ({ ...prev, schoolId: '', schoolName: 'Loading School...' }));
       initialLoadCompleteRef.current = false;
       setIsInitialized(false);
       setHasUnsavedChanges(false);
@@ -4098,13 +4113,25 @@ export const AppProvider = ({ children }) => {
     }
   }, [personnel, classSections]);
 
-  // Periodically poll requests every 10 seconds if logged in
+  // Poll requests every 10 seconds while logged in. Always calls the LATEST refreshRequests through a ref (a closure
+  // captured at login would keep using whatever school state existed then), stops after a 401/403, and backs off
+  // (10s -> 20s -> ... max 60s) while the server keeps failing.
+  const refreshRequestsRef = useRef(refreshRequests);
+  refreshRequestsRef.current = refreshRequests;
   useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => {
-      refreshRequests();
-    }, 10000);
-    return () => clearInterval(interval);
+    requestsBlockedRef.current = false; // a new login (or logout) starts clean
+    if (!user) return undefined;
+    let timer = null;
+    let delay = 10000;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped || requestsBlockedRef.current) return;
+      const ok = await refreshRequestsRef.current();
+      delay = ok ? 10000 : Math.min(60000, delay * 2);
+      if (!stopped && !requestsBlockedRef.current) timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, delay);
+    return () => { stopped = true; clearTimeout(timer); };
   }, [user]);
 
 
@@ -4788,7 +4815,7 @@ export const AppProvider = ({ children }) => {
 
     // Persist deleted state to IndexedDB and Cloud Draft
     try {
-      const draftKey = `draft_${schoolInfo?.schoolId || '100093'}_${schoolInfo?.schoolYear || 'SY 26-27'}`;
+      const draftKey = `draft_${schoolInfo?.schoolId || getSessionSchoolId()}_${schoolInfo?.schoolYear || 'SY 26-27'}`;
       const currentDraft = (await getLocalDraft(draftKey)) || {};
       const newDraftData = {
         ...currentDraft,

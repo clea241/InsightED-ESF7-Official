@@ -2,6 +2,13 @@
 // PUT /api/school/draft answers only after "committing", enforces baseVersion (409 on mismatch), GET returns the version.
 // Tests can make it slow, make it fail, or take it "down" (503 everywhere, including /api/health).
 
+// A decodable (unsigned) JWT-shaped token carrying the session school, like the real login token's payload.
+export const makeToken = (schoolId = '302261', tag = 'x') => {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ uid: `e2e-${tag}`, role: 'school', school_id: schoolId })}.${tag}-sig`;
+};
+export const SESSION_TOKEN = makeToken('302261', 'session');
+
 export function createFakeServer() {
   const server = {
     draft: { payload: null, version: 0, updatedAt: null },
@@ -13,6 +20,9 @@ export function createFakeServer() {
     requireToken: null,  // when set, any /api call (except health) without exactly this bearer token answers 401 (rotated JWT_SECRET)
     unauthorized: 0,     // how many calls were answered 401
     roster: null,        // optional personnel list to serve instead of the default single teacher
+    requestCalls: [],    // every /api/requests/* call: { path, schoolId } (the school id the app asked for)
+    requestsStatus: 200, // status answered for /api/requests/incoming (e.g. 403)
+    abortNextRequests: 0, // abort this many /api/requests/incoming calls at network level ("Failed to fetch")
     lateUndertime: []    // every accepted POST /api/overload-late-undertime body (Overload tardiness / DTR logs)
   };
   return server;
@@ -53,12 +63,12 @@ export async function installFakeApi(target, server) {
 
     if (server.down) return gatewayHtml(route, 503);
 
-    if (server.requireToken && p !== '/api/health' && req.headers()['authorization'] !== `Bearer ${server.requireToken}`) {
+    if (server.requireToken && !p.startsWith('/api/health') && req.headers()['authorization'] !== `Bearer ${server.requireToken}`) {
       server.unauthorized += 1;
       return json(route, { error: 'Authentication required: missing or invalid token.' }, 401);
     }
 
-    if (p === '/api/health') return json(route, { status: 'ok', db: 'up', queue: { mode: 'redis', redisReachable: true } });
+    if (p === '/api/health' || p === '/api/health/readiness') return json(route, { status: 'ok', db: 'up', queue: { mode: 'redis', redisReachable: true } });
 
     if (p === '/api/school/draft' && method === 'GET') {
       return json(route, { payload: server.draft.payload, updatedAt: server.draft.updatedAt, version: server.draft.version });
@@ -77,6 +87,14 @@ export async function installFakeApi(target, server) {
       return json(route, { success: true, version: server.draft.version, updatedAt: server.draft.updatedAt });
     }
 
+    if (p.startsWith('/api/requests/')) {
+      server.requestCalls.push({ path: p, schoolId: url.searchParams.get('schoolId') });
+      if (p === '/api/requests/incoming') {
+        if (server.abortNextRequests > 0) { server.abortNextRequests -= 1; return route.abort('failed'); }
+        if (server.requestsStatus === 403) return json(route, { error: 'You do not have access to this school.' }, 403);
+      }
+      return json(route, []);
+    }
     if (p === '/api/overload-late-undertime' && method === 'POST') {
       const body = JSON.parse(req.postData() || '{}');
       server.lateUndertime.push(body);
@@ -93,22 +111,23 @@ export async function installFakeApi(target, server) {
 }
 
 // Pre-authenticate: the app trusts localStorage for the session (no server round trip on load).
-export async function seedSession(page) {
-  await page.addInitScript(() => {
+export async function seedSession(page, token = SESSION_TOKEN, extra = {}) {
+  await page.addInitScript(([tok, more]) => {
     if (!localStorage.getItem('__e2e_seeded_once')) {
-      localStorage.setItem('token', 'e2e.fake.token');
+      localStorage.setItem('token', tok);
       localStorage.setItem('remembered_user', JSON.stringify({ id: 'e2e-user', school_id: '302261', role: 'school_head', pin: '123456', name: 'E2E School Head' }));
       localStorage.setItem('school_id', '302261');
       localStorage.setItem('schoolId', '302261');
       localStorage.setItem('activeSchoolId', '302261');
       localStorage.setItem('insighted_active_view', 'school');
+      for (const [k, v] of Object.entries(more)) localStorage.setItem(k, v); // e.g. a stale school id left by an earlier login
       localStorage.setItem('__e2e_seeded_once', '1'); // later reloads (e.g. after logout) must NOT silently log in again
     }
-  });
+  }, [token, extra]);
 }
 
 // Simulates logging in again (the real login screen needs the auth backend, which is outside this suite).
-export async function loginAgain(page, token = 'e2e.fake.token') {
+export async function loginAgain(page, token = SESSION_TOKEN) {
   await page.evaluate((tok) => {
     localStorage.setItem('token', tok);
     localStorage.setItem('remembered_user', JSON.stringify({ id: 'e2e-user', school_id: '302261', role: 'school_head', pin: '123456', name: 'E2E School Head' }));

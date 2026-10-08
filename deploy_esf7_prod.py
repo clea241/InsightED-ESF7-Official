@@ -122,7 +122,7 @@ def post_deploy_health_check(ssh_target):
         check_script = (
             f"curl -sf -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{PORT}/api/schools?schoolId=302261 || "
             f"curl -sf -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{PORT}/api/school?schoolId=199999 || "
-            f"curl -sf -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{PORT}/api/health || "
+            f"curl -sf -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{PORT}/api/health/readiness || "
             f"echo '0'"
         )
         cmd = ["ssh"] + SSH_OPTS + [ssh_target, check_script]
@@ -284,7 +284,7 @@ def post_deploy_smoke_test(ssh_target):
     script = (
         f"set -e; "
         f"TOKEN=$(cd {REMOTE_ROOT}/server && echo {token_b64} | base64 -d | node -); "
-        f"curl -sf {base}/health | grep -q '\"db\":\"up\"' && echo HEALTH_OK; "
+        f"curl -sf {base}/health/readiness | grep -q '\"db\":\"up\"' && echo HEALTH_OK; "
         f"test \"$(curl -s -o /dev/null -w '%{{http_code}}' -H 'x-school-id: 000000' '{base}/school/draft?schoolYear=SMOKE')\" = 401 && echo AUTH_OK; "
         f"curl -sf -X PUT {hdr} -d '{body}' {base}/school/draft | grep -q '\"success\":true' && echo SAVE_OK; "
         f"curl -sf {hdr} '{base}/school/draft?schoolYear=SMOKE' | grep -q '\"smoke\":true' && echo READ_OK; "

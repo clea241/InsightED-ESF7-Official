@@ -1,7 +1,7 @@
 // The production bug, as a browser test: edit, log out right away, log back in, and the edit must still be there.
 // Also: slow and failing networks, a server outage (blocking modal + replay), and two tabs editing at once.
 import { test, expect } from '@playwright/test';
-import { createFakeServer, installFakeApi, seedSession, loginAgain } from './fakeApi.mjs';
+import { createFakeServer, installFakeApi, seedSession, loginAgain, makeToken } from './fakeApi.mjs';
 
 const NEW_MODEL = 'Strengthened Senior High School Curriculum (Grade 12)';
 
@@ -177,8 +177,9 @@ test.describe('session expiry (401, e.g. JWT_SECRET rotated)', () => {
     expect(local.unsynced.length).toBeGreaterThan(0);
 
     // Log in again with a fresh token: the edit is still on screen and is replayed to the server.
-    server.requireToken = 'fresh.token.after.rotation';
-    await loginAgain(page, 'fresh.token.after.rotation');
+    const freshToken = makeToken('302261', 'fresh');
+    server.requireToken = freshToken;
+    await loginAgain(page, freshToken);
     await expect(page.getByText('School Profile & Registry')).toBeVisible();
     await expect(page.locator(`input[name="shsCurriculumModel"][value="${NEW_MODEL}"]`)).toBeChecked();
     await expect.poll(() => savedModel(server), { timeout: 30000 }).toBe(NEW_MODEL);

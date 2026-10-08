@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 2026-10-09 (lock only from readiness, one school id)
+- Lock: an ordinary failed request (network error, 502/503/504) is only a hint; it starts readiness probes (GET /api/health, 0.5s/1s backoff) and the app locks only after 3 consecutive failed probes. 4xx incl. 401/403 never count. Rollback: revert `services/serverHealth.js` (recordServerFailure/runProbes).
+- School id: root cause of `schoolId=100093`: (a) `schoolInfo` state defaulted to the placeholder "100093" before login, (b) the 10 s requests poller captured a stale `refreshRequests` closure from that time, (c) many API helpers fell back to `localStorage.activeSchoolId` left by earlier logins. Now `services/session.js` `resolveSchoolId()` (token payload) is the single source for every school-scoped call in api.js and AppContext; a different explicit id from a single-school account is replaced and recorded (`getSchoolIdMismatches`). Placeholder defaults removed; schoolInfo.schoolId cleared on logout.
+- Requests poller: uses a ref to the latest function, stops on 401/403, backs off 10s->60s on transient errors, shows the shared notice once (action "Requests refresh").
+- Copy-error report: title follows the action (Server Health Check / Draft Save / ...); school id from the session; tokens/secrets scrubbed (tested).
+- Tests: serverHealth rewritten for probe-based locking; sessionSchool, report-title and e2e (stale school id, single Failed to fetch, 403 no loop).
+
 ## 2026-10-09 (health split, 401 safety, API error audit, e2e flake)
 - Health: `/api/health` is readiness (PostgreSQL only; Redis shown as degraded in the body, never 503); new `/api/health/deep` fails when Redis is down (monitoring only). The Redis-strict version found in `server.js` was an uncommitted working-tree edit (HEAD has no health route), so git history cannot name an author. Smoke test and client tests updated. Rollback: revert the health block in `server/server.js`.
 - 401 / forced logout: `services/session.js` + `pauseForAuth`/`resumeAfterLogin` in `draftSaver.js`; `AuthContext` registers the handler. Drafts, localStorage and IndexedDB are never cleared; saves are queued and replayed after login; no server-error modal. Also fixed: restored unsynced changes were not sent until the next edit (now flushed right after a restore). Rollback: revert `session.js`, `draftSaver.js`, `AuthContext.jsx`, `api.js` (401 line), `AppContext.jsx` restore effect.

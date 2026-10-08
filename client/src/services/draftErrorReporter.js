@@ -1,11 +1,13 @@
 // Single shared place for draft-related failures (auto-save, journey-state save, personnel fetch).
 // Holds at most ONE current error, so repeated failures update the notice instead of stacking.
+import { getSessionSchoolId } from './session';
 
 export const DRAFT_ACTIONS = {
   AUTO_SAVE: 'Draft auto-save',
   JOURNEY_SAVE: 'Journey-state save',
   PERSONNEL_FETCH: 'Draft-sync personnel fetch',
-  INITIAL_LOAD: 'Initial data load'
+  INITIAL_LOAD: 'Initial data load',
+  REQUESTS_REFRESH: 'Requests refresh'
 };
 
 let current = null;
@@ -24,9 +26,10 @@ export const setDraftErrorContext = (ctx = {}) => {
   context = { ...context, ...ctx };
 };
 
+// The school of the logged-in session (token payload), the same id every API call uses.
 const getSchoolId = () => {
   try {
-    return localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || 'unknown';
+    return getSessionSchoolId() || 'unknown';
   } catch (e) {
     return 'unknown';
   }
@@ -48,10 +51,22 @@ const scrubUrl = (url) => {
   }
 };
 
+// The report title follows the failing action: a readiness-check lock is not a draft save.
+const reportKind = (action) => {
+  const a = String(action || '').toLowerCase();
+  if (a.includes('health')) return 'Server Health Check';
+  if (a.includes('personnel')) return 'Personnel Fetch';
+  if (a.includes('initial')) return 'Initial Load';
+  if (a.includes('requests')) return 'Requests Refresh';
+  if (a.includes('journey')) return 'Journey-State Save';
+  if (a.includes('draft') || a.includes('save')) return 'Draft Save';
+  return 'Application';
+};
+
 export const buildErrorReport = (entry) => {
   const err = entry.error || {};
   const lines = [
-    'InsightED eSF7 - Draft Error Report',
+    `InsightED eSF7 - ${reportKind(entry.action)} Error Report`,
     `Timestamp: ${new Date(entry.timestamp).toISOString()}`,
     `Failing action: ${entry.action}`,
     `Error: ${scrub(err.name || 'Error')}: ${scrub(err.message || 'Unknown error')}`,

@@ -61,12 +61,14 @@ const waitFor = async (fn, ms = 45000) => {
 try {
   // Readiness: 200 when the app and PostgreSQL are fine, even though no Redis runs here (queue falls back to PostgreSQL).
   let healthRes = null;
-  const health = await waitFor(async () => { healthRes = await fetch(`http://127.0.0.1:${serverPort}/api/health`); return healthRes.status === 200 ? healthRes.json() : null; });
-  check(!!health, 'GET /api/health (readiness) answers 200 without Redis');
+  const health = await waitFor(async () => { healthRes = await fetch(`http://127.0.0.1:${serverPort}/api/health/readiness`); return healthRes.status === 200 ? healthRes.json() : null; });
+  check(!!health, 'GET /api/health/readiness answers 200 without Redis');
   check(health?.db === 'up', 'readiness reports the database is up (it runs a real query)');
   check(health?.redis === 'degraded' && health?.queue?.mode === 'postgres-fallback', 'readiness reports Redis as degraded in the body, queue in postgres-fallback');
   const deep = await fetch(`http://127.0.0.1:${serverPort}/api/health/deep`);
   check(deep.status === 503, 'GET /api/health/deep (monitoring only) fails when Redis is down');
+  const strict = await fetch(`http://127.0.0.1:${serverPort}/api/health`);
+  check(strict.status === 503, 'GET /api/health (strict, for monitors) also fails when Redis is down: only /readiness may drive the lock');
 
   const put = await fetch(`http://127.0.0.1:${serverPort}/api/school/draft`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders },

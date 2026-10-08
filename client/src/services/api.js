@@ -1,6 +1,6 @@
 import { configureDraftSaver } from './draftSaver';
 import { configureHealth, waitUntilHealthy, recordServerFailure, recordServerSuccess, isServerFailureStatus } from './serverHealth';
-import { reportUnauthorized } from './session';
+import { reportUnauthorized, resolveSchoolId } from './session';
 
 export const getApiBase = () => {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
@@ -29,7 +29,9 @@ export const getApiBase = () => {
 };
 
 export const API_BASE = getApiBase();
-configureHealth({ url: `${API_BASE}/health` });
+// The server-health lock polls ONLY the readiness check (app + PostgreSQL). /health and /health/deep also require Redis
+// and are for monitoring; using them here would lock users out during a Redis outage.
+configureHealth({ url: `${API_BASE}/health/readiness` });
 
 const REQUEST_TIMEOUT_MS = 60000;
 
@@ -37,15 +39,7 @@ export const fetchWithAuth = async (url, options = {}) => {
   // While the server-health lock is on, new calls wait instead of firing and failing.
   await waitUntilHealthy();
   const token = localStorage.getItem('token');
-  let tokenSchoolId = null;
-  if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      tokenSchoolId = payload.school_id || payload.schoolId;
-    } catch (e) {}
-  }
-  const rawSchoolId = tokenSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
-  const activeSchoolId = rawSchoolId ? String(rawSchoolId).replace(/^SCH-/i, '').trim() : '';
+  const activeSchoolId = resolveSchoolId(null);
 
   const headers = {
     ...options.headers,
@@ -170,7 +164,7 @@ export const api = {
 
   // School Profile
   getSchool: async (targetSchoolId = null) => {
-    const activeId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const activeId = resolveSchoolId(targetSchoolId);
     const customHeaders = activeId ? { 'x-school-id': String(activeId) } : {};
     const query = activeId ? `?school_id=${encodeURIComponent(activeId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/school${query}`, { headers: customHeaders });
@@ -202,12 +196,16 @@ export const api = {
   },
 
   // Personnel Roster
+  /** @param {string | null} [targetSchoolId] */
   getPersonnel: async (targetSchoolId = null) => {
+    targetSchoolId = resolveSchoolId(targetSchoolId) || null;
     const customHeaders = targetSchoolId ? { 'x-school-id': targetSchoolId } : {};
     const query = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
     return await fetchJsonWithRetry(`${API_BASE}/personnel${query}`, { headers: customHeaders });
   },
+  /** @param {string | null} [targetSchoolId] */
   getAutofillTemplate: async (targetSchoolId = null) => {
+    targetSchoolId = resolveSchoolId(targetSchoolId) || null;
     const customHeaders = targetSchoolId ? { 'x-school-id': targetSchoolId } : {};
     const query = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/personnel/autofill-template${query}`, { headers: customHeaders });
@@ -759,7 +757,7 @@ export const api = {
     return parseJsonOrThrow(res);
   },
   getSchoolDraft: async (schoolYear = 'SY 26-27', targetSchoolId = null) => {
-    const rawId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(targetSchoolId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `&schoolId=${encodeURIComponent(cleanId)}` : '';
     const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
@@ -770,7 +768,7 @@ export const api = {
   // Resolves { success, version, updatedAt }, or { conflict: true, currentVersion } on HTTP 409.
   saveSchoolDraft: async (schoolYear, payload, baseVersion = null) => {
     const explicitId = payload?.schoolInfo && (payload.schoolInfo.schoolId || payload.schoolInfo.school_id);
-    const rawId = explicitId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(explicitId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
     const url = `${API_BASE}/school/draft`;
@@ -800,7 +798,7 @@ export const api = {
 
   // Node Status & Boolean Progress Tracking
   getNodeStatus: async (schoolYear = 'SY 26-27', targetSchoolId = null) => {
-    const rawId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(targetSchoolId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `&school_id=${encodeURIComponent(cleanId)}` : '';
     const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
@@ -829,28 +827,28 @@ export const api = {
     return parseJsonOrThrow(res);
   },
   getIncomingRequests: async (schoolId) => {
-    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(schoolId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/incoming${query}`);
     return parseJsonOrThrow(res);
   },
   getOutgoingRequests: async (schoolId) => {
-    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(schoolId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/outgoing${query}`);
     return parseJsonOrThrow(res);
   },
   getRequestHistory: async (schoolId) => {
-    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(schoolId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/history${query}`);
     return parseJsonOrThrow(res);
   },
   getDistrictSchools: async (schoolId, division) => {
-    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const rawId = resolveSchoolId(schoolId);
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const params = new URLSearchParams();
     if (cleanId) params.append('schoolId', cleanId);

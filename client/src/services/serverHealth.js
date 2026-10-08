@@ -1,9 +1,13 @@
-// App-wide server health lock. The central fetch layer (api.js) reports successes/failures here;
-// after repeated server failures the app locks, polls /health with backoff, and unlocks only after
-// several consecutive healthy checks. State is shared across tabs.
+// App-wide server health lock. The lock is decided ONLY by the dedicated readiness check (GET /api/health), never by
+// an ordinary API request failing:
+//  - the central fetch layer (api.js) reports 502/503/504 and network failures here as a hint;
+//  - a hint only starts a short series of readiness probes with backoff (0.5s, 1s between them);
+//  - the app locks only when PROBE_FAILURES_TO_LOCK consecutive readiness probes fail. One failed request, or a
+//    request that failed while readiness answers fine, never locks. 4xx (including 401/403) never even count as hints.
+// Once locked it polls readiness with backoff and unlocks only after several consecutive healthy checks. State is shared across tabs.
 
-const FAILURE_THRESHOLD = 2;        // consecutive server failures needed to lock
-const FAILURE_WINDOW_MS = 30000;    // failures older than this don't count toward the streak
+const PROBE_FAILURES_TO_LOCK = 3;   // consecutive failed readiness probes needed to lock
+const PROBE_BACKOFF_MS = 500;       // probe delay doubles: 0.5s, 1s
 const REQUIRED_HEALTHY_CHECKS = 3;  // consecutive OK checks needed to unlock
 const BASE_DELAY_MS = 2000;
 const MAX_DELAY_MS = 30000;
@@ -12,7 +16,7 @@ const CHANNEL_NAME = 'insighted-server-health';
 const LOCK_KEY = 'insighted_server_locked';
 const UNSYNCED_KEY = 'insighted_unsynced_draft';
 
-let healthUrl = '/api/health';
+let healthUrl = '/api/health/readiness';
 let state = {
   locked: false,
   recovering: false,
@@ -20,10 +24,11 @@ let state = {
   lastChecked: null,
   nextCheckAt: null,
   healthyStreak: 0,
+  failureCount: 0, // failed API requests reported since the last success (shown in the error report)
   lastError: null // { name, message, stack, url, status }
 };
-let failureStreak = 0;
-let lastFailureAt = 0;
+let probing = false;
+let pendingError = null;
 let pollTimer = null;
 let attempt = 0;
 let checking = false;
@@ -94,15 +99,31 @@ function flushWaiters() {
 // ---- failure / success reporting from the fetch layer ----
 export const isServerFailureStatus = (status) => status === 502 || status === 503 || status === 504;
 
+// A failed request is only a hint. It never locks by itself: it triggers readiness probes, and those decide.
 export const recordServerFailure = (error) => {
   if (state.locked) return;
-  const now = Date.now();
-  failureStreak = now - lastFailureAt > FAILURE_WINDOW_MS ? 1 : failureStreak + 1;
-  lastFailureAt = now;
-  if (failureStreak >= FAILURE_THRESHOLD) enterLock(error);
+  pendingError = error || pendingError;
+  setState({ failureCount: state.failureCount + 1 });
+  if (!probing) { probing = true; runProbes().catch(() => { probing = false; }); }
 };
 
-export const recordServerSuccess = () => { failureStreak = 0; };
+export const recordServerSuccess = () => { if (state.failureCount) setState({ failureCount: 0 }); };
+
+async function runProbes() {
+  let failures = 0;
+  while (!state.locked) {
+    const ok = await runHealthCheck();
+    if (ok) { probing = false; pendingError = null; setState({ failureCount: 0 }); return; }
+    failures += 1;
+    if (failures >= PROBE_FAILURES_TO_LOCK) {
+      probing = false;
+      enterLock(pendingError || { name: 'ServerUnavailable', message: 'The server readiness check failed repeatedly.' });
+      return;
+    }
+    await new Promise((r) => setTimeout(r, PROBE_BACKOFF_MS * 2 ** (failures - 1)));
+  }
+  probing = false;
+}
 
 function enterLock(error, { fromRemote = false } = {}) {
   if (state.locked) return;
@@ -128,8 +149,8 @@ function enterLock(error, { fromRemote = false } = {}) {
 
 function releaseLock({ fromRemote = false } = {}) {
   clearTimeout(pollTimer);
-  failureStreak = 0;
-  setState({ locked: false, recovering: false, backOnline: true, nextCheckAt: null, healthyStreak: 0 });
+  pendingError = null;
+  setState({ failureCount: 0, locked: false, recovering: false, backOnline: true, nextCheckAt: null, healthyStreak: 0 });
   flushWaiters();
   if (!fromRemote) broadcast('unlock');
   setTimeout(() => setState({ backOnline: false }), 3000);

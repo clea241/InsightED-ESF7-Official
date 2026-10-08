@@ -6,12 +6,40 @@ const FAKE_JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzY2hvb2xfaWQiOiIzMDIyNjEifQ.c2lnbmF0dX
 
 beforeEach(() => {
   globalThis.localStorage.clear();
-  globalThis.localStorage.setItem('activeSchoolId', '302261');
+  // The session school comes from the token payload (the same id every API call uses).
+  const b64 = (o) => btoa(JSON.stringify(o)).replace(/=+$/, '');
+  globalThis.localStorage.setItem('token', `${b64({ alg: 'HS256' })}.${b64({ uid: 'u', school_id: '302261' })}.sig`);
+  globalThis.localStorage.setItem('activeSchoolId', '100093'); // stale leftover from another login: must NOT be reported
   setDraftErrorContext({ userId: 'user-42', role: 'school_head' });
   clearDraftError();
 });
 
+const healthEntry = (error) => ({ action: 'Server health check (app locked)', error, timestamp: Date.UTC(2026, 9, 8, 3, 0, 0), count: 3 });
 const entryWith = (error) => ({ action: 'Draft auto-save', error, timestamp: Date.UTC(2026, 9, 8, 3, 0, 0), count: 2 });
+
+describe('report title follows the failing action', () => {
+  test('server health lock is titled as a health check, not a draft save', () => {
+    const r = buildErrorReport(healthEntry({ name: 'TypeError', message: 'Failed to fetch', url: '/api/requests/incoming?schoolId=302261' }));
+    expect(r.split(String.fromCharCode(10))[0]).toBe('InsightED eSF7 - Server Health Check Error Report');
+    expect(r).toContain('Failing action: Server health check (app locked)');
+    expect(r).not.toMatch(/Draft/);
+    expect(r).toContain('Occurrences since last success: 3');
+  });
+  test('draft actions keep the draft title, other actions get their own', () => {
+    expect(buildErrorReport(entryWith({ message: 'x' })).split(String.fromCharCode(10))[0]).toBe('InsightED eSF7 - Draft Save Error Report');
+    expect(buildErrorReport({ ...entryWith({ message: 'x' }), action: 'Requests refresh' }).split(String.fromCharCode(10))[0]).toBe('InsightED eSF7 - Requests Refresh Error Report');
+  });
+  test('the report uses the session school, never a stale localStorage value', () => {
+    const r = buildErrorReport(healthEntry({ message: 'x' }));
+    expect(r).toContain('School ID: 302261');
+    expect(r).not.toContain('100093');
+  });
+  test('a health report carries no token or secret', () => {
+    const r = buildErrorReport(healthEntry({ name: 'ApiError', message: `Authorization: Bearer ${FAKE_JWT}`, stack: `at x token=abc123secret ${FAKE_JWT}`, url: `/api/x?token=${FAKE_JWT}` }));
+    expect(r).not.toContain(FAKE_JWT);
+    expect(r).not.toContain('abc123secret');
+  });
+});
 
 describe('buildErrorReport', () => {
   test('includes error, stack, action, URL, status, school, user, version and timestamp', () => {

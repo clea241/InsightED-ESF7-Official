@@ -11,7 +11,7 @@
     "test:resilience": "npm run test:resilience --prefix server",
     "build": "node scripts/build-check.mjs",
     "build:client": "npm run build --prefix client",
-    "lint": "eslint client/src client/tests server/server.js server/queue_worker.js server/controllers server/services server/utils server/db server/migrations server/tests/unit server/tests/integration e2e scripts vitest.config.mjs vitest.integration.config.mjs playwright.config.mjs eslint.config.mjs --max-warnings 343",
+    "lint": "eslint client/src client/tests server/server.js server/queue_worker.js server/controllers server/services server/utils server/db server/migrations server/tests/unit server/tests/integration e2e scripts vitest.config.mjs vitest.integration.config.mjs playwright.config.mjs eslint.config.mjs --max-warnings 342",
     "lint:errors": "eslint --quiet --no-warn-ignored",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test:unit": "vitest run",
