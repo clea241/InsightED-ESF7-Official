@@ -9,6 +9,7 @@
     "dev": "nodemon server.js",
     "db:studio": "drizzle-kit studio --config=drizzle.config.js",
     "test:db": "node tests/master_db_verifier.js",
+    "test:resilience": "node tests/sync_resilience_verifier.js",
     "db:truncate": "node truncate_esf7_tables.js"
   },
   "dependencies": {

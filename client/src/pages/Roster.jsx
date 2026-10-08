@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp, POSITION_OPTIONS_BY_CATEGORY, detectPersonnelTypeFromPosition, isCanonicalPosition, getCategoryForCanonicalPosition, validateDepEdEmail } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
@@ -8,8 +8,438 @@ import { api } from '../services/api';
 import { FiPlus, FiSave, FiTag, FiLink, FiUser, FiTrash2, FiInfo, FiX, FiUploadCloud, FiRefreshCw, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
 
+export const getAge = (dobString) => {
+  if (!dobString) return null;
+  const cleanDob = typeof dobString === 'string' ? dobString.substring(0, 10) : '';
+  if (!cleanDob) return null;
+  const birth = new Date(cleanDob + "T00:00:00");
+  if (isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+};
+
+function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false }) {
+  const [showCalendar, setShowCalendar] = React.useState(false);
+  const [viewDate, setViewDate] = React.useState(new Date());
+  const containerRef = React.useRef(null);
+
+  const formatDate = (date) => {
+    if (!date) return '';
+    const d = (date instanceof Date) ? date : new Date(date);
+    if (isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const cleanValue = value ? (typeof value === 'string' ? value.substring(0, 10) : formatDate(value)) : '';
+  const maxDateStr = maxDate ? formatDate(maxDate) : '';
+  const minDateStr = minDate ? formatDate(minDate) : '';
+
+  const parsedMaxDate = maxDateStr ? new Date(maxDateStr + 'T00:00:00') : null;
+  const parsedMinDate = minDateStr ? new Date(minDateStr + 'T00:00:00') : null;
+
+  const handleOpenCalendar = () => {
+    if (disabled) return;
+    if (!showCalendar) {
+      if (cleanValue) {
+        const d = new Date(cleanValue + 'T00:00:00');
+        if (!isNaN(d.getTime())) setViewDate(d);
+      } else if (parsedMaxDate && new Date() > parsedMaxDate) {
+        setViewDate(parsedMaxDate);
+      } else if (parsedMinDate && new Date() < parsedMinDate) {
+        setViewDate(parsedMinDate);
+      } else {
+        setViewDate(new Date());
+      }
+    }
+    setShowCalendar(!showCalendar);
+  };
+
+  React.useEffect(() => {
+    if (!showCalendar && cleanValue) {
+      const d = new Date(cleanValue + 'T00:00:00');
+      if (!isNaN(d.getTime())) {
+        setViewDate(d);
+      }
+    }
+  }, [cleanValue, showCalendar]);
+
+  React.useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setShowCalendar(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const getDisplayDate = () => {
+    if (!cleanValue) return 'Select date...';
+    const d = new Date(cleanValue + 'T00:00:00');
+    if (isNaN(d.getTime())) return 'Select date...';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const currentMaxYear = parsedMaxDate ? parsedMaxDate.getFullYear() : new Date().getFullYear();
+  const currentMinYear = parsedMinDate ? parsedMinDate.getFullYear() : (currentMaxYear - 80);
+
+  const isPrevDisabled = Boolean(minDateStr && formatDate(new Date(year, month, 0)) < minDateStr.substring(0, 7) + '-01');
+  const isNextDisabled = Boolean(maxDateStr && formatDate(new Date(year, month + 1, 1)) > maxDateStr);
+
+  const handlePrevMonth = (e) => {
+    e.stopPropagation();
+    if (isPrevDisabled) return;
+    setViewDate(new Date(year, month - 1, 1));
+  };
+
+  const handleNextMonth = (e) => {
+    e.stopPropagation();
+    if (isNextDisabled) return;
+    setViewDate(new Date(year, month + 1, 1));
+  };
+
+  const firstDayOfMonth = new Date(year, month, 1);
+  let startDayIndex = firstDayOfMonth.getDay() - 1;
+  if (startDayIndex < 0) startDayIndex = 6;
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  const cells = [];
+  for (let i = startDayIndex - 1; i >= 0; i--) {
+    cells.push({
+      day: daysInPrevMonth - i,
+      monthOffset: -1,
+      date: new Date(year, month - 1, daysInPrevMonth - i)
+    });
+  }
+  for (let i = 1; i <= daysInMonth; i++) {
+    cells.push({
+      day: i,
+      monthOffset: 0,
+      date: new Date(year, month, i)
+    });
+  }
+  const totalCells = 42;
+  const nextPadding = totalCells - cells.length;
+  for (let i = 1; i <= nextPadding; i++) {
+    cells.push({
+      day: i,
+      monthOffset: 1,
+      date: new Date(year, month + 1, i)
+    });
+  }
+
+  const handleDaySelect = (cellDate, e) => {
+    e.stopPropagation();
+    if (disabled) return;
+
+    const cellStr = formatDate(cellDate);
+    if (maxDateStr && cellStr > maxDateStr) return;
+    if (minDateStr && cellStr < minDateStr) return;
+
+    if (typeof onChange === 'function') {
+      onChange(cellStr);
+    }
+    setShowCalendar(false);
+  };
+
+  const isSelected = (cellDate) => {
+    return cleanValue && formatDate(cellDate) === cleanValue;
+  };
+
+  const isDisabled = (cellDate) => {
+    const cellStr = formatDate(cellDate);
+    if (maxDateStr && cellStr > maxDateStr) return true;
+    if (minDateStr && cellStr < minDateStr) return true;
+    return false;
+  };
+
+  const isToday = (cellDate) => {
+    return formatDate(cellDate) === formatDate(new Date());
+  };
+
+  const isRed = required && !cleanValue;
+
+  const yearOptions = [];
+  for (let y = currentMaxYear; y >= currentMinYear; y--) {
+    yearOptions.push(y);
+  }
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <div
+        onClick={handleOpenCalendar}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          borderRadius: '12px',
+          border: disabled ? '1.5px solid #e2e8f0' : (isRed ? '1.5px solid #EF4444' : '1.5px solid var(--line, #cbd5e1)'),
+          background: disabled ? '#f1f5f9' : (isRed ? '#FEF2F2' : 'white'),
+          color: cleanValue ? 'var(--navy)' : '#94a3b8',
+          fontFamily: 'inherit',
+          fontSize: '13px',
+          minHeight: '44px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          boxSizing: 'border-box',
+          transition: 'all 0.2s ease',
+          userSelect: 'none'
+        }}
+      >
+        <span style={{ fontWeight: cleanValue ? '600' : 'normal' }}>{getDisplayDate()}</span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ color: 'var(--blue, #0284C7)', opacity: disabled ? 0.5 : 1 }}
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="16" y1="2" x2="16" y2="6"></line>
+          <line x1="8" y1="2" x2="8" y2="6"></line>
+          <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+      </div>
+
+      {showCalendar && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: '0',
+          marginTop: '8px',
+          width: '290px',
+          background: 'white',
+          border: '1.5px solid var(--line, #cbd5e1)',
+          borderRadius: '16px',
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.08)',
+          padding: '16px',
+          zIndex: 99999,
+          boxSizing: 'border-box'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '16px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: '#F1F5F9',
+              borderRadius: '20px',
+              padding: '6px 12px',
+              fontSize: '13px',
+              fontWeight: '600',
+              color: 'var(--navy)',
+              gap: '4px'
+            }}>
+              <select
+                value={month}
+                onChange={(e) => setViewDate(new Date(year, Number(e.target.value), 1))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: 'var(--navy)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  fontFamily: 'inherit'
+                }}
+              >
+                {monthNames.map((mName, idx) => {
+                  const isMonthDisabled = (parsedMaxDate && year === currentMaxYear && idx > parsedMaxDate.getMonth()) ||
+                                          (parsedMinDate && year === currentMinYear && idx < parsedMinDate.getMonth());
+                  return (
+                    <option key={idx} value={idx} disabled={isMonthDisabled}>
+                      {mName.toUpperCase()}
+                    </option>
+                  );
+                })}
+              </select>
+              <select
+                value={year}
+                onChange={(e) => {
+                  const newYear = Number(e.target.value);
+                  let newMonth = month;
+                  if (parsedMaxDate && newYear === currentMaxYear && newMonth > parsedMaxDate.getMonth()) {
+                    newMonth = parsedMaxDate.getMonth();
+                  }
+                  if (parsedMinDate && newYear === currentMinYear && newMonth < parsedMinDate.getMonth()) {
+                    newMonth = parsedMinDate.getMonth();
+                  }
+                  setViewDate(new Date(newYear, newMonth, 1));
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: 'var(--navy)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  fontFamily: 'inherit'
+                }}
+              >
+                {yearOptions.map((yVal) => (
+                  <option key={yVal} value={yVal}>{yVal}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                disabled={isPrevDisabled}
+                style={{
+                  background: isPrevDisabled ? '#F1F5F9' : '#F8FAFC',
+                  border: '1px solid var(--line, #cbd5e1)',
+                  borderRadius: '8px',
+                  width: '28px',
+                  height: '28px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: isPrevDisabled ? 'not-allowed' : 'pointer',
+                  color: isPrevDisabled ? '#CBD5E1' : 'var(--navy)',
+                  padding: 0
+                }}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                disabled={isNextDisabled}
+                style={{
+                  background: isNextDisabled ? '#F1F5F9' : '#F8FAFC',
+                  border: '1px solid var(--line, #cbd5e1)',
+                  borderRadius: '8px',
+                  width: '28px',
+                  height: '28px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: isNextDisabled ? 'not-allowed' : 'pointer',
+                  color: isNextDisabled ? '#CBD5E1' : 'var(--navy)',
+                  padding: 0
+                }}
+              >
+                ›
+              </button>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '6px',
+            textAlign: 'center',
+            marginBottom: '8px'
+          }}>
+            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => (
+              <span key={d} style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                color: '#64748b'
+              }}>
+                {d}
+              </span>
+            ))}
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '6px',
+            textAlign: 'center'
+          }}>
+            {cells.map((cell, idx) => {
+              const active = cell.monthOffset === 0;
+              const selected = isSelected(cell.date);
+              const disabledDay = isDisabled(cell.date);
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={disabledDay}
+                  onClick={(e) => handleDaySelect(cell.date, e)}
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '50%',
+                    background: selected
+                      ? '#2B3945'
+                      : isToday(cell.date)
+                        ? 'white'
+                        : disabledDay
+                          ? 'none'
+                          : '#E9EFF6',
+                    border: isToday(cell.date) && !selected
+                      ? '1.5px solid #2B3945'
+                      : 'none',
+                    color: selected
+                      ? 'white'
+                      : disabledDay
+                        ? '#E2E8F0'
+                        : active
+                          ? '#2B3945'
+                          : '#94A3B8',
+                    fontSize: '12px',
+                    fontWeight: selected ? '700' : 'normal',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: disabledDay ? 'not-allowed' : 'pointer',
+                    outline: 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!selected && !disabledDay) {
+                      e.currentTarget.style.background = '#CBD5E1';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!selected && !disabledDay) {
+                      e.currentTarget.style.background = isToday(cell.date) ? 'white' : '#E9EFF6';
+                    }
+                  }}
+                >
+                  {cell.day}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Roster() {
-  const { personnel, setPersonnel, schoolInfo, addPersonnel, deletePersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges, completeNode } = useApp();
+  const { personnel, setPersonnel, schoolInfo, addPersonnel, deletePersonnel, resolveBorrowedPersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges, completeNode, outgoingRequests, requestHistory } = useApp();
   
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,19 +502,35 @@ export default function Roster() {
     middleName: '',
     lastName: '',
     nameExtension: '',
+    birthdate: '',
     depedEmailLocal: '',
     type: 'teaching',
     position: POSITION_OPTIONS_BY_CATEGORY.teaching[0]
   });
 
-  // Real-time email validation for Add Personnel modal matching PersonnelProfile
-  const addModalEmail = newPerson.depedEmailLocal?.trim()
-    ? `${newPerson.depedEmailLocal.toLowerCase().trim()}@deped.gov.ph`
-    : '';
-  const addModalEmailVal = addModalEmail
-    ? validateDepEdEmail(addModalEmail, newPerson.firstName, newPerson.lastName, newPerson.middleName)
-    : { isValid: true, error: null };
-  const hasAddEmailError = Boolean(addModalEmail && !addModalEmailVal.isValid);
+  const maxBirthdate = useMemo(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 15);
+    return d;
+  }, []);
+
+  const newPersonAge = getAge(newPerson.birthdate);
+  let newPersonAgeStatusText = 'No birthdate';
+  let newPersonAgeStatusClass = 'badge info';
+  if (newPersonAge !== null) {
+    if (newPersonAge < 15) {
+      newPersonAgeStatusText = 'Underage (<15 yrs)';
+      newPersonAgeStatusClass = 'badge warn';
+    } else if (newPersonAge > 80) {
+      newPersonAgeStatusText = 'Questionable age (>80 yrs)';
+      newPersonAgeStatusClass = 'badge warn';
+    } else {
+      newPersonAgeStatusText = 'Age valid';
+      newPersonAgeStatusClass = 'badge ok';
+    }
+  }
+
+
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -96,7 +542,7 @@ export default function Roster() {
 
   const handleSaveAndContinue = async () => {
     // 1. DepEd eSF7 School Head Verification Gate
-    const currentHead = personnel.find(p => p.isSchoolHead === true);
+    const currentHead = personnel.find(p => p.isSchoolHead === true || p.is_school_head === true);
     if (!currentHead) {
       setIsHeadRequiredModalOpen(true);
       setHighlightHeadColumn(true);
@@ -134,45 +580,33 @@ export default function Roster() {
       alert('Please fill out First Name and Last Name');
       return;
     }
-    const checkIsHead = (pos, des) => {
-      const roleText = `${pos || ""} ${des || ""}`.toLowerCase();
-      if (roleText.includes("assistant")) return false;
-      return ["school principal", "principal", "teacher-in-charge", "officer-in-charge"].some(token => roleText.includes(token)) ||
-        /\b(tic|oic)\b/.test(roleText);
-    };
-
-    const isSchoolHeadPos = checkIsHead(newPerson.position, newPerson.designation);
-    if (isSchoolHeadPos) {
-      const otherHead = personnel.find(p => checkIsHead(p.position, p.designation));
-      if (otherHead) {
-        const otherName = `${otherHead.firstName} ${otherHead.lastName}`;
-        const otherRole = otherHead.position || otherHead.designation;
-        alert(`School head conflict: ${otherName} is already assigned as a school head (${otherRole}) for this school. Only one School Head (Principal, OIC, or TIC) is allowed per school.`);
-        return;
-      }
+    if (!newPerson.birthdate) {
+      alert('Please select a valid birthdate.');
+      return;
+    }
+    const personAge = getAge(newPerson.birthdate);
+    if (personAge !== null && personAge < 15) {
+      alert('Personnel must be at least 15 years old.');
+      return;
     }
 
-    const email = newPerson.depedEmailLocal.trim()
-      ? `${newPerson.depedEmailLocal.toLowerCase().trim()}@deped.gov.ph`
-      : null;
 
-    if (email) {
-      const emailVal = validateDepEdEmail(email, newPerson.firstName, newPerson.lastName, newPerson.middleName);
-      if (!emailVal.isValid) {
-        alert(`Invalid DepEd Email: ${emailVal.error}`);
-        return;
-      }
-    }
-
+    const isCook = String(newPerson.position || '').trim().toUpperCase() === 'COOK';
     const addedId = await addPersonnel({
       salutation: newPerson.salutation,
       firstName: newPerson.firstName.toUpperCase().trim(),
       middleName: newPerson.middleName ? newPerson.middleName.toUpperCase().trim() : 'N/A',
       lastName: newPerson.lastName.toUpperCase().trim(),
       nameExtension: newPerson.nameExtension ? newPerson.nameExtension.toUpperCase().trim() : '',
-      depedEmail: email,
+      birthdate: newPerson.birthdate || '',
+      depedEmail: '',
+      noDepedEmail: false,
+      no_deped_email: false,
       type: newPerson.type,
-      position: newPerson.position
+      position: newPerson.position,
+      natureOfAppointment: isCook ? 'CONTRACTUAL' : (newPerson.natureOfAppointment || 'REGULAR PERMANENT'),
+      hiringArrangement: isCook ? 'CONTRACTUAL' : (newPerson.hiringArrangement || 'REGULAR'),
+      fundSource: isCook ? 'SBFP' : (newPerson.fundSource || 'NATIONAL')
     });
 
     // Close modal & reset form
@@ -183,13 +617,12 @@ export default function Roster() {
       middleName: '',
       lastName: '',
       nameExtension: '',
-      depedEmailLocal: '',
+      birthdate: '',
       type: 'teaching',
       position: POSITION_OPTIONS_BY_CATEGORY.teaching[0]
     });
-    // Go to profiling to fill other details
-    setActivePersonnelId(addedId);
-    setActiveView('profile');
+    
+    showToast('Personnel successfully added to roster.');
   };
 
   // Filter & Search Logic
@@ -479,31 +912,80 @@ export default function Roster() {
                           Draft
                         </span>
                       )}
-                      {p.isShared && (
-                        <span style={{
-                          marginLeft: '6px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '2px 6px',
-                          background: String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#e0e7ff',
-                          color: String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#3730a3',
-                          border: String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #c7d2fe',
-                          borderRadius: '6px',
-                          fontSize: '10px',
-                          fontWeight: 'bold',
-                          textTransform: 'uppercase'
-                        }} title="Borrowed from Mother School">
-                          {String(p.deploymentStatus).toUpperCase() === 'BORROWED' ? (
-                            <>
-                              <FiTag size={10} style={{ marginRight: '3px' }} /> BORROWED
-                            </>
-                          ) : (
-                            <>
-                              <FiLink size={10} style={{ marginRight: '3px' }} /> SHARED
-                            </>
-                          )}
-                        </span>
-                      )}
+                      {(() => {
+                        const isRejected = (() => {
+                          if (p.reassignmentStatus === 'rejected' || p.requestStatus === 'rejected') return true;
+                          const depStatus = String(p.deploymentStatus || p.deployment_status || '').toUpperCase();
+                          if (depStatus.includes('REJECTED')) return true;
+
+                          const pId = String(p.id || '').replace(/^(PER-|PRN-)/i, '').trim();
+                          const prn = String(p.prn || p.profilingCode || '').replace(/^PRN-/i, '').trim();
+                          const pFn = String(p.firstName || p.first_name || '').trim().toUpperCase();
+                          const pLn = String(p.lastName || p.last_name || '').trim().toUpperCase();
+
+                          const allReqs = [...(outgoingRequests || []), ...(requestHistory || [])];
+                          const matched = allReqs.find(req => {
+                            const reqPId = String(req.personnel_id || req.personnelId || '').replace(/^(PER-|PRN-)/i, '').trim();
+                            if (pId && reqPId && (pId === reqPId || reqPId.endsWith(pId) || pId.endsWith(reqPId))) return true;
+                            if (prn && reqPId && (prn === reqPId || reqPId.endsWith(prn) || prn.endsWith(reqPId))) return true;
+                            const reqName = String(req.personnel_name || req.personnelName || '').toUpperCase();
+                            if (pLn && pFn && reqName && reqName.includes(pLn) && reqName.includes(pFn)) return true;
+                            return false;
+                          });
+
+                          return matched ? String(matched.status || '').toLowerCase() === 'rejected' : false;
+                        })();
+
+                        if (isRejected) {
+                          return (
+                            <span style={{
+                              marginLeft: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              padding: '2px 8px',
+                              background: '#FEE2E2',
+                              color: '#DC2626',
+                              border: '1px solid #F87171',
+                              borderRadius: '6px',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              textTransform: 'uppercase'
+                            }} title="Inter-School Reassignment Request Rejected by Target School">
+                              <FiAlertCircle size={10} style={{ marginRight: '3px' }} /> REJECTED
+                            </span>
+                          );
+                        }
+
+                        if (p.isShared || String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED')) {
+                          return (
+                            <span style={{
+                              marginLeft: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              padding: '2px 6px',
+                              background: String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') ? '#FEF3C7' : '#e0e7ff',
+                              color: String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') ? '#92400E' : '#3730a3',
+                              border: String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') ? '1px solid #FCD34D' : '1px solid #c7d2fe',
+                              borderRadius: '6px',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              textTransform: 'uppercase'
+                            }} title={String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') ? "Borrowed from Mother School" : "Shared Personnel"}>
+                              {String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') ? (
+                                <>
+                                  <FiTag size={10} style={{ marginRight: '3px' }} /> BORROWED
+                                </>
+                              ) : (
+                                <>
+                                  <FiLink size={10} style={{ marginRight: '3px' }} /> SHARED
+                                </>
+                              )}
+                            </span>
+                          );
+                        }
+
+                        return null;
+                      })()}
                     </td>
                     <td>{p.depedEmail}</td>
                     <td>
@@ -527,6 +1009,7 @@ export default function Roster() {
                        {(() => {
                          const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || '';
                          const isNonTeaching = pType === 'non-teaching';
+                         const isHead = Boolean(p.isSchoolHead === true || p.is_school_head === true);
                          return (
                            <label
                              className="switch"
@@ -538,11 +1021,11 @@ export default function Roster() {
                                opacity: isNonTeaching ? 0.4 : 1,
                                cursor: isNonTeaching ? 'not-allowed' : 'pointer'
                              }}
-                             title={isNonTeaching ? "Non-Teaching personnel cannot be designated as School Head" : (p.isSchoolHead ? "Remove School Head Designation" : "Designate as School Head")}
+                             title={isNonTeaching ? "Non-Teaching personnel cannot be designated as School Head" : (isHead ? "Remove School Head Designation" : "Designate as School Head")}
                            >
                              <input
                                type="checkbox"
-                               checked={p.isSchoolHead || false}
+                               checked={isHead}
                                disabled={isNonTeaching}
                                onChange={async (e) => {
                                  if (isNonTeaching) {
@@ -553,7 +1036,7 @@ export default function Roster() {
                                  if (val) {
                                    setHighlightHeadColumn(false);
                                    setIsHeadRequiredModalOpen(false);
-                                   const currentHead = personnel.find(x => x.isSchoolHead === true && x.id !== p.id);
+                                   const currentHead = personnel.find(x => (x.isSchoolHead === true || x.is_school_head === true) && String(x.id) !== String(p.id));
                                    if (currentHead) {
                                      const confirmed = await showConfirm(
                                        "Change School Head",
@@ -575,13 +1058,13 @@ export default function Roster() {
                                position: 'absolute',
                                cursor: isNonTeaching ? 'not-allowed' : 'pointer',
                                top: 0, left: 0, right: 0, bottom: 0,
-                               backgroundColor: p.isSchoolHead ? 'var(--blue)' : '#cbd5e1',
+                               backgroundColor: isHead ? 'var(--blue)' : '#cbd5e1',
                                transition: '0.3s', borderRadius: '20px'
                              }}
-                             className={highlightHeadColumn && !isNonTeaching && !p.isSchoolHead ? 'school-head-highlight-cell' : ''}
+                             className={highlightHeadColumn && !isNonTeaching && !isHead ? 'school-head-highlight-cell' : ''}
                              >
                                <span style={{
-                                 position: 'absolute', content: '""', height: '14px', width: '14px', left: p.isSchoolHead ? '18px' : '3px', bottom: '3px',
+                                 position: 'absolute', content: '""', height: '14px', width: '14px', left: isHead ? '18px' : '3px', bottom: '3px',
                                  backgroundColor: 'white', transition: '0.3s', borderRadius: '50%'
                                }} />
                              </span>
@@ -705,70 +1188,51 @@ export default function Roster() {
                     onChange={(e) => setNewPerson({ ...newPerson, nameExtension: e.target.value.toUpperCase().slice(0, 5) })}
                   />
                 </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <label style={{ margin: 0 }}>DepEd Email</label>
-                    <button
-                      type="button"
-                      onClick={() => setIsEmailInfoOpen(true)}
-                      title="DepEd Email Policy & Validation Notice"
-                      style={{
-                        background: '#E0F2FE',
-                        color: '#0284C7',
-                        border: '1px solid #BAE6FD',
-                        borderRadius: '50%',
-                        width: '18px',
-                        height: '18px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '11px',
-                        fontWeight: '800',
-                        cursor: 'pointer',
-                        lineHeight: 1,
-                        padding: 0
-                      }}
-                    >
-                      i
-                    </button>
-                  </div>
-                  <div 
-                    className="deped-email-field"
-                    style={{
-                      border: hasAddEmailError ? '2px solid #EF4444' : '1.5px solid var(--line, #BAE6FD)',
-                      background: hasAddEmailError ? '#FEF2F2' : 'white',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <input
-                      placeholder="firstname.lastname"
-                      value={newPerson.depedEmailLocal}
-                      onKeyDown={(e) => {
-                        if (e.key === '@') {
-                          e.preventDefault();
-                        }
-                      }}
-                      onChange={(e) => setNewPerson({ ...newPerson, depedEmailLocal: e.target.value.replace(/@/g, '').toLowerCase().replace(/[^a-z0-9.]/g, '') })}
+                <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1.6fr 1fr 1.2fr', gap: '14px', alignItems: 'flex-start' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '12px', color: 'var(--navy)' }}>
+                      Birthdate <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <DatePickerDropdowns
+                      value={newPerson.birthdate || ''}
+                      onChange={(val) => setNewPerson({ ...newPerson, birthdate: val })}
+                      maxDate={maxBirthdate}
                       required
-                      style={{
-                        color: hasAddEmailError ? '#B91C1C' : 'var(--text)'
-                      }}
                     />
-                    <span style={{
-                      background: hasAddEmailError ? '#FEE2E2' : 'var(--blue-50, #F0F9FF)',
-                      color: hasAddEmailError ? '#DC2626' : 'var(--blue, #0284C7)',
-                      borderLeft: hasAddEmailError ? '1px solid #FCA5A5' : '1px solid var(--line, #BAE6FD)',
-                      fontWeight: '700'
-                    }}>
-                      @deped.gov.ph
-                    </span>
                   </div>
-                  {hasAddEmailError && (
-                    <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#DC2626', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <FiAlertCircle size={14} color="#DC2626" /> {addModalEmailVal.error}
-                    </p>
-                  )}
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '12px', color: 'var(--navy)' }}>
+                      Computed Age
+                    </label>
+                    <input 
+                      value={newPersonAge === null ? '—' : `${newPersonAge} yrs`} 
+                      disabled 
+                      style={{ 
+                        background: '#f1f5f9', 
+                        color: '#334155', 
+                        fontWeight: '700', 
+                        cursor: 'not-allowed', 
+                        width: '100%', 
+                        minHeight: '44px', 
+                        borderRadius: '12px', 
+                        border: '1.5px solid var(--line, #cbd5e1)', 
+                        padding: '0 14px', 
+                        boxSizing: 'border-box' 
+                      }} 
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontWeight: '700', fontSize: '12px', color: 'var(--navy)' }}>
+                      Age Validation
+                    </label>
+                    <div style={{ minHeight: '44px', display: 'flex', alignItems: 'center' }}>
+                      <span className={newPersonAgeStatusClass} style={{ padding: '8px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        {newPersonAgeStatusText}
+                      </span>
+                    </div>
+                  </div>
                 </div>
+
 
                 <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
@@ -798,6 +1262,15 @@ export default function Roster() {
                       onChange={(val) => {
                         if (val === 'OTHERS') {
                           setNewPerson({ ...newPerson, position: 'OTHERS' });
+                        } else if (val === 'COOK') {
+                          setNewPerson({
+                            ...newPerson,
+                            position: 'COOK',
+                            type: 'non-teaching',
+                            natureOfAppointment: 'CONTRACTUAL',
+                            hiringArrangement: 'CONTRACTUAL',
+                            fundSource: 'SBFP'
+                          });
                         } else {
                           setNewPerson({ ...newPerson, position: val });
                         }
@@ -839,11 +1312,6 @@ export default function Roster() {
                 <button 
                   className="btn" 
                   type="submit"
-                  disabled={hasAddEmailError}
-                  style={{
-                    opacity: hasAddEmailError ? 0.6 : 1,
-                    cursor: hasAddEmailError ? 'not-allowed' : 'pointer'
-                  }}
                 >
                   Add Personnel
                 </button>

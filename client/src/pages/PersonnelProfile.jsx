@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import PortalHeader from '../components/PortalHeader';
@@ -26,7 +26,10 @@ import {
   FiCopy,
   FiLock,
   FiX,
-  FiMapPin
+  FiMapPin,
+  FiPlus,
+  FiTag,
+  FiShield
 } from 'react-icons/fi';
 
 import {
@@ -77,8 +80,122 @@ export const getAge = (dobString) => {
 // (BACCALAUREATE/MASTERS/DOCTORATE) and, for MASTERS/DOCTORATE, its own discipline field.
 // Old records may only have the legacy flat fields — synthesize an equivalent array from
 // them on the fly so nothing is lost, without requiring a destructive migration.
+export const getEffectiveCollegeDegrees = (p) => {
+  if (!p) return [];
+  if (Array.isArray(p.collegeDegrees) && p.collegeDegrees.length > 0) {
+    return p.collegeDegrees.map(d => typeof d === 'string' ? { collegeDegree: d, major: '', minor: '' } : d);
+  }
+  if (p.collegeDegree && !['NONE', 'N/A', ''].includes(String(p.collegeDegree).toUpperCase())) {
+    return [{
+      collegeDegree: p.collegeDegree,
+      major: p.major || '',
+      minor: p.minor || ''
+    }];
+  }
+  return [];
+};
+
+export const getEffectivePostGradDisciplines = (p) => {
+  if (!p) return { mastersWithUnits: [], mastersGraduated: [], doctorateWithUnits: [], doctorateGraduated: [] };
+  
+  let mastersWithUnits = Array.isArray(p.mastersWithUnitsDisciplines) ? p.mastersWithUnitsDisciplines : [];
+  let mastersGraduated = Array.isArray(p.mastersGraduatedDisciplines) ? p.mastersGraduatedDisciplines : [];
+  let doctorateWithUnits = Array.isArray(p.doctorateWithUnitsDisciplines) ? p.doctorateWithUnitsDisciplines : [];
+  let doctorateGraduated = Array.isArray(p.doctorateGraduatedDisciplines) ? p.doctorateGraduatedDisciplines : [];
+
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && doctorateWithUnits.length === 0 && doctorateGraduated.length === 0) {
+    const raw = p.postGraduateDiscipline || p.post_graduate_discipline || '';
+    if (raw) {
+      if (typeof raw === 'object' && raw !== null) {
+        mastersWithUnits = Array.isArray(raw.mastersWithUnits) ? raw.mastersWithUnits : [];
+        mastersGraduated = Array.isArray(raw.mastersGraduated) ? raw.mastersGraduated : [];
+        doctorateWithUnits = Array.isArray(raw.doctorateWithUnits) ? raw.doctorateWithUnits : [];
+        doctorateGraduated = Array.isArray(raw.doctorateGraduated) ? raw.doctorateGraduated : [];
+        if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && Array.isArray(raw.masters)) {
+          const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+          if (attainment.includes('WITH UNITS')) {
+            mastersWithUnits = raw.masters;
+          } else {
+            mastersGraduated = raw.masters;
+          }
+        }
+        if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && Array.isArray(raw.doctorate)) {
+          const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+          if (attainment.includes('WITH UNITS')) {
+            doctorateWithUnits = raw.doctorate;
+          } else {
+            doctorateGraduated = raw.doctorate;
+          }
+        }
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            mastersWithUnits = Array.isArray(parsed.mastersWithUnits) ? parsed.mastersWithUnits : [];
+            mastersGraduated = Array.isArray(parsed.mastersGraduated) ? parsed.mastersGraduated : [];
+            doctorateWithUnits = Array.isArray(parsed.doctorateWithUnits) ? parsed.doctorateWithUnits : [];
+            doctorateGraduated = Array.isArray(parsed.doctorateGraduated) ? parsed.doctorateGraduated : [];
+            if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && Array.isArray(parsed.masters)) {
+              const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+              if (attainment.includes('WITH UNITS')) {
+                mastersWithUnits = parsed.masters;
+              } else {
+                mastersGraduated = parsed.masters;
+              }
+            }
+            if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && Array.isArray(parsed.doctorate)) {
+              const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+              if (attainment.includes('WITH UNITS')) {
+                doctorateWithUnits = parsed.doctorate;
+              } else {
+                doctorateGraduated = parsed.doctorate;
+              }
+            }
+          } catch(e) {}
+        } else {
+          const split = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+          const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+          if (attainment.includes('DOCTOR')) {
+            if (attainment.includes('WITH UNITS')) doctorateWithUnits = split;
+            else doctorateGraduated = split;
+          } else {
+            if (attainment.includes('WITH UNITS')) mastersWithUnits = split;
+            else mastersGraduated = split;
+          }
+        }
+      }
+    }
+  }
+
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && p.mastersDiscipline) {
+    const list = String(p.mastersDiscipline).split(',').map(s => s.trim()).filter(Boolean);
+    const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+    if (attainment === "MASTER'S DEGREE (WITH UNITS)") mastersWithUnits = list;
+    else mastersGraduated = list;
+  }
+  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && p.doctorateDiscipline) {
+    const list = String(p.doctorateDiscipline).split(',').map(s => s.trim()).filter(Boolean);
+    const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
+    if (attainment === "DOCTORATE DEGREE (WITH UNITS)") doctorateWithUnits = list;
+    else doctorateGraduated = list;
+  }
+
+  return { mastersWithUnits, mastersGraduated, doctorateWithUnits, doctorateGraduated };
+};
+
 export const getEffectiveDegreeRows = (p) => {
   if (!p) return [];
+  const collegeList = getEffectiveCollegeDegrees(p);
+  if (collegeList.length > 0) {
+    return collegeList.map((d, idx) => ({
+      clientKey: `baccalaureate-${idx}`,
+      level: 'BACCALAUREATE',
+      collegeDegree: d.collegeDegree || '',
+      major: d.major || '',
+      minor: d.minor || ''
+    }));
+  }
   if (Array.isArray(p.degreeRows) && p.degreeRows.length > 0) return p.degreeRows;
 
   const rows = [];
@@ -90,6 +207,178 @@ export const getEffectiveDegreeRows = (p) => {
     rows.push({ clientKey: 'legacy-postgrad', level: legacyPostGradLevel, collegeDegree: p.postGraduateDegree, postGraduateDiscipline: p.postGraduateDiscipline || '' });
   }
   return rows;
+};
+
+export const PostGradDisciplineSection = ({
+  title,
+  levelLabel,
+  isRequired,
+  graduatedList = [],
+  withUnitsList = [],
+  defaultStatus = 'GRADUATED',
+  onAdd,
+  onRemove
+}) => {
+  const [selectedDisc, setSelectedDisc] = useState('');
+  const [status, setStatus] = useState(defaultStatus);
+
+  useEffect(() => {
+    setStatus(defaultStatus);
+  }, [defaultStatus]);
+
+  const handleAdd = () => {
+    if (!selectedDisc || !selectedDisc.trim()) return;
+    onAdd(selectedDisc.trim().toUpperCase(), status);
+    setSelectedDisc('');
+  };
+
+  const handleSelectDiscipline = (val) => {
+    if (val && val.trim()) {
+      onAdd(val.trim().toUpperCase(), status);
+      setSelectedDisc('');
+    } else {
+      setSelectedDisc('');
+    }
+  };
+
+  const totalCount = graduatedList.length + withUnitsList.length;
+
+  return (
+    <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy, #0F172A)', margin: 0 }}>
+          {title} {isRequired && <span style={{ color: '#EF4444' }}>*</span>}
+        </label>
+        {totalCount > 0 && (
+          <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--blue, #0284C7)', background: 'var(--blue-50, #EFF6FF)', padding: '2px 8px', borderRadius: '8px' }}>
+            {totalCount} {totalCount === 1 ? 'Discipline' : 'Disciplines'}
+          </span>
+        )}
+      </div>
+
+      <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {totalCount > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {graduatedList.map((disc, idx) => (
+              <div 
+                key={`grad-${idx}`} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  background: '#F0FDF4', 
+                  border: '1.5px solid #BBF7D0', 
+                  borderRadius: '12px', 
+                  padding: '6px 12px', 
+                  gap: '8px' 
+                }}
+              >
+                <span style={{ fontSize: '12px', color: '#14532D', fontWeight: 'bold' }}>{disc}</span>
+                <span style={{ fontSize: '10px', color: '#16A34A', background: '#DCFCE7', padding: '1px 6px', borderRadius: '6px', fontWeight: '700' }}>
+                  GRADUATED
+                </span>
+                <button
+                  type="button"
+                  style={{ background: 'transparent', border: 0, color: '#16A34A', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
+                  onClick={() => onRemove(disc, 'GRADUATED')}
+                  title="Remove discipline"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {withUnitsList.map((disc, idx) => (
+              <div 
+                key={`units-${idx}`} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  background: '#EFF6FF', 
+                  border: '1.5px solid #BAE6FD', 
+                  borderRadius: '12px', 
+                  padding: '6px 12px', 
+                  gap: '8px' 
+                }}
+              >
+                <span style={{ fontSize: '12px', color: '#0F172A', fontWeight: 'bold' }}>{disc}</span>
+                <span style={{ fontSize: '10px', color: '#0284C7', background: '#E0F2FE', padding: '1px 6px', borderRadius: '6px', fontWeight: '700' }}>
+                  WITH UNITS
+                </span>
+                <button
+                  type="button"
+                  style={{ background: 'transparent', border: 0, color: '#0284C7', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
+                  onClick={() => onRemove(disc, 'WITH UNITS')}
+                  title="Remove discipline"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+          <div style={{ flex: '1 1 260px', minWidth: '220px' }}>
+            <SearchableDropdown
+              options={DISCIPLINE_OPTIONS}
+              value={selectedDisc}
+              onChange={handleSelectDiscipline}
+              placeholder={`+ SELECT OR TYPE ${levelLabel.toUpperCase()} DISCIPLINE...`}
+              allowCustom={true}
+            />
+          </div>
+          
+          <div style={{ flex: '0 1 210px', minWidth: '180px' }}>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              style={{
+                width: '100%',
+                height: '42px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                border: '1.5px solid var(--line, #CBD5E1)',
+                background: '#FFFFFF',
+                fontSize: '12px',
+                fontWeight: '600',
+                color: 'var(--navy, #0F172A)',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="GRADUATED">GRADUATED (COMPLETED)</option>
+              <option value="WITH UNITS">WITH UNITS (ONGOING)</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!selectedDisc}
+            style={{
+              height: '42px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: selectedDisc ? '#0284C7' : '#E2E8F0',
+              color: selectedDisc ? '#FFFFFF' : '#94A3B8',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '0 16px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: selectedDisc ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <FiPlus size={14} /> Add Discipline
+          </button>
+        </div>
+        <p className="field-help" style={{ margin: 0, fontSize: '11px', color: '#64748B' }}>
+          Selecting or typing a discipline title automatically adds it as <strong>{status === 'GRADUATED' ? 'Graduated' : 'With Units'}</strong>. You can add multiple disciplines.
+        </p>
+      </div>
+    </div>
+  );
 };
 
 export const getPersonnelValidationChecklist = (p) => {
@@ -105,50 +394,66 @@ export const getPersonnelValidationChecklist = (p) => {
   };
 
   // 1. Names
-  check('firstName', "First Name", !!p.firstName?.trim(), "Identity", "identity");
-  check('middleName', "Middle Name", !!p.middleName?.trim(), "Identity", "identity");
-  check('lastName', "Last Name", !!p.lastName?.trim(), "Identity", "identity");
+  check('firstName', "First Name", !!(p.firstName?.trim() || p.first_name?.trim()), "Identity", "identity");
+  const hasMiddle = !!(p.middleName?.trim() || p.middle_name?.trim() || p.noMiddleName || p.no_middle_name || p.middleName === 'N/A' || p.middle_name === 'N/A');
+  check('middleName', "Middle Name", hasMiddle, "Identity", "identity");
+  check('lastName', "Last Name", !!(p.lastName?.trim() || p.last_name?.trim()), "Identity", "identity");
 
   // 2. Demographics & IDs
-  check('sexAtBirth', "Sex at Birth", !!(p.sexAtBirth || p.sex), "Personal", "personal");
-  check('civilStatus', "Civil Status", !!p.civilStatus, "Personal", "personal");
-  check('religion', "Religion", !!p.religion, "Personal", "personal");
-  check('ethnicGroup', "Ethnic Group", !!p.ethnicGroup, "Personal", "personal");
+  check('sexAtBirth', "Sex at Birth", !!(p.sexAtBirth || p.sex || p.sex_at_birth), "Personal", "personal");
+  check('civilStatus', "Civil Status", !!(p.civilStatus || p.civil_status), "Personal", "personal");
+  check('religion', "Religion", !!(p.religion || p.religion === 'N/A' || p.religion === 'NONE' || true), "Personal", "personal");
+  check('ethnicGroup', "Ethnic Group", !!(p.ethnicGroup || p.ethnic_group || p.ethnicGroup === 'N/A' || p.ethnic_group === 'N/A' || true), "Personal", "personal");
 
-  const hasBirthdate = !!(p.birthdate || p.birthDate);
-  const bdateStr = p.birthdate || p.birthDate;
+  const hasBirthdate = !!(p.birthdate || p.birthDate || p.birth_date);
+  const bdateStr = p.birthdate || p.birthDate || p.birth_date;
   const ageVal = hasBirthdate ? getAge(bdateStr) : null;
   const validAge = hasBirthdate && ageVal !== null && ageVal >= 15;
   check('birthdate', "Valid Birthdate (Must be at least 15 yrs old)", validAge, "Personal", "personal");
 
   const cleanPhilsys = String(p.philsysNo || p.philsys_no || '').replace(/\D/g, '');
   const hasValidPhilsys = !!(p.noPhilsys || p.no_philsys || cleanPhilsys.length === 16);
-  check('philsysNo', "PhilSys No. / National ID (16 digits or N/A)", hasValidPhilsys, "Personal", "personal");
-  check('depedEmail', "DepEd Official Email", !!(p.depedEmail?.trim() || p.email?.trim()), "Employment", "employment");
-  check('tin', "TIN Number", !!(p.noTin || p.tin?.trim()), "Personal", "personal");
+  const isPermAppt = String(p.natureOfAppointment || p.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
+  const hasDiscrepancyAllowed = Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy);
+  const hasValidDepedEmail = isPermAppt
+    ? (!!p.depedEmail?.trim() && p.depedEmail !== 'N/A' && !p.noDepedEmail && !p.no_deped_email && validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName, hasDiscrepancyAllowed).isValid)
+    : !!(p.noDepedEmail || p.no_deped_email || p.depedEmail === 'N/A' || p.deped_email === 'N/A' || (p.depedEmail?.trim() && validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName, hasDiscrepancyAllowed).isValid));
+  check('depedEmail', isPermAppt ? "DepEd Official Email (@deped.gov.ph)" : "DepEd Official Email (or N/A)", hasValidDepedEmail, "Employment", "employment");
+  check('tin', "TIN Number", !!(p.noTin || p.no_tin || p.tin?.trim()), "Personal", "personal");
 
   // 3. Employment
   check('position', "Plantilla Position", !!(p.position?.trim() || p.plantilla_position?.trim() || p.position_title?.trim()), "Employment", "employment");
-  check('fundSource', "Fund Source", !!p.fundSource, "Employment", "employment");
-  check('natureOfAppointment', "Nature of Appointment", !!p.natureOfAppointment, "Employment", "employment");
-  check('hiringArrangement', "Hiring Arrangement", !!p.hiringArrangement, "Employment", "employment");
-  check('deploymentStatus', "Status of Deployment", !!p.deploymentStatus, "Employment", "employment");
+  check('fundSource', "Fund Source", !!(p.fundSource || p.fund_source), "Employment", "employment");
+  check('natureOfAppointment', "Nature of Appointment", !!(p.natureOfAppointment || p.nature_of_appointment), "Employment", "employment");
+  check('hiringArrangement', "Hiring Arrangement", !!(p.hiringArrangement || p.hiring_arrangement), "Employment", "employment");
+  check('deploymentStatus', "Status of Deployment", !!(p.deploymentStatus || p.deployment_status), "Employment", "employment");
 
-  if (['Clustered', 'Reassigned', 'Borrowed', 'CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(p.deploymentStatus)) {
-    const hasOtherSchool = !!(p.clusteredSchools || (Array.isArray(p.assignedSchools) && p.assignedSchools.length > 0));
+  const depStatus = String(p.deploymentStatus || p.deployment_status || '').toUpperCase();
+  if (['CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(depStatus)) {
+    const hasOtherSchool = !!(p.clusteredSchools || (Array.isArray(p.assignedSchools) && p.assignedSchools.length > 0) || (Array.isArray(p.assigned_schools) && p.assigned_schools.length > 0));
     check('assignedSchools', "Other School Assignment", hasOtherSchool, "Employment", "employment");
   }
 
-  check('firstServiceDate', "Date of First Day of Service", !!p.firstServiceDate, "Employment", "employment");
-  check('lastPromotionDate', "Date of Last Promotion", !!p.lastPromotionDate, "Employment", "employment");
-  check('lastLateralMovementDate', "Date of Last Lateral Movement", !!p.lastLateralMovementDate, "Employment", "employment");
-  check('newStationDate', "Date of First Day in Current Station", !!p.newStationDate, "Employment", "employment");
+  const hasFirstService = !!(p.firstServiceDate || p.first_service_date);
+  check('firstServiceDate', "Date of First Day of Service", hasFirstService, "Employment", "employment");
+  
+  const hasLastPromotion = !!(p.lastPromotionDate || p.last_promotion_date || p.lastPromotionDate === 'N/A' || p.last_promotion_date === 'N/A' || hasFirstService);
+  check('lastPromotionDate', "Date of Last Promotion", hasLastPromotion, "Employment", "employment");
+
+  const hasLastLateral = !!(p.lastLateralMovementDate || p.last_lateral_movement_date || p.lastLateralMovementDate === 'N/A' || p.last_lateral_movement_date === 'N/A' || true);
+  check('lastLateralMovementDate', "Date of Last Lateral Movement", hasLastLateral, "Employment", "employment");
+
+  const hasNewStation = !!(p.newStationDate || p.new_station_date || p.newStationDate === 'N/A' || p.new_station_date === 'N/A' || hasFirstService);
+  check('newStationDate', "Date of First Day in Current Station", hasNewStation, "Employment", "employment");
+
+  const hasStepConfirmed = !!(p.stepIncrementConfirmed || p.step_increment_confirmed || (p.stepIncrement && Number(p.stepIncrement) >= 1) || (p.step_increment && Number(p.step_increment) >= 1));
+  check('stepIncrementConfirmed', "Salary Step Increment Confirmation", hasStepConfirmed, "Employment", "employment");
 
   // 4. Education / Qualifications
   const pType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
   const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
 
-  const attainment = p.highestEducationalAttainment || '';
+  const attainment = p.highestEducationalAttainment || p.highest_educational_attainment || '';
 
   if (!isNonTeaching) {
     check('highestEducationalAttainment', "Highest Educational Attainment", !!attainment, "Education", "education");
@@ -157,50 +462,74 @@ export const getPersonnelValidationChecklist = (p) => {
   const isSHS = attainment === 'SENIOR HIGH SCHOOL GRADUATE';
   const isVocational = attainment === 'VOCATIONAL / TECH-VOC COURSE';
   const isCollege = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE'].includes(attainment);
-  const isPostGrad = ["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
+  const isPostGrad = [
+    "MASTER'S DEGREE",
+    "DOCTORATE DEGREE",
+    "MASTER'S DEGREE (WITH UNITS)",
+    "MASTER'S DEGREE (GRADUATED)",
+    "DOCTORATE DEGREE (WITH UNITS)",
+    "DOCTORATE DEGREE (GRADUATED)"
+  ].includes(attainment) || attainment.includes("MASTER") || attainment.includes("DOCTOR");
 
   if (isSHS) {
-    check('shsTrack', "Senior High School Track", !!p.shsTrack, "Education", "education");
+    check('shsTrack', "Senior High School Track", !!(p.shsTrack || p.shs_track), "Education", "education");
   }
   if (isVocational) {
-    check('vocationalCourse', "Vocational / TESDA Course", !!p.vocationalCourse?.trim(), "Education", "education");
-    check('vocationalLevel', "NC Level / Qualification Level", !!p.vocationalLevel?.trim(), "Education", "education");
+    check('vocationalCourse', "Vocational / TESDA Course", !!(p.vocationalCourse?.trim() || p.vocational_course?.trim()), "Education", "education");
+    check('vocationalLevel', "NC Level / Qualification Level", !!(p.vocationalLevel?.trim() || p.vocational_level?.trim()), "Education", "education");
   }
   if (isCollege || isPostGrad || (!isNonTeaching && !isSHS && !isVocational)) {
-    check('collegeDegree', "College Degree / Baccalaureate", !!(p.collegeDegree?.trim() && p.collegeDegree !== 'NONE' && p.collegeDegree !== 'N/A'), "Education", "education");
-    const d = String(p.collegeDegree || '').toUpperCase();
-    const isEdu = p.collegeDegree && p.collegeDegree !== 'NONE' && p.collegeDegree !== 'N/A' && (
-      d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
-    );
-    if (isEdu) {
-      check('major', "Major in Education", !!p.major?.trim(), "Education", "education");
+    const degrees = getEffectiveCollegeDegrees(p);
+    const hasValidDegree = degrees.length > 0
+      ? degrees.some(d => d.collegeDegree?.trim() && d.collegeDegree !== 'NONE' && d.collegeDegree !== 'N/A')
+      : !!(p.collegeDegree?.trim() || p.college_degree?.trim());
+    check('collegeDegree', "College Degree / Baccalaureate", hasValidDegree, "Education", "education");
+
+    let allEduHaveMajors = true;
+    let hasAnyEdu = false;
+    if (degrees.length > 0) {
+      degrees.forEach(d => {
+        const str = String(d.collegeDegree || '').toUpperCase();
+        const isEdu = str && str !== 'NONE' && str !== 'N/A' && (
+          str.includes('EDUCATION') || str.includes('SPECIAL ED') || str.includes('KINDERGARTEN') || str.includes('EARLY CHILDHOOD')
+        );
+        if (isEdu) {
+          hasAnyEdu = true;
+          if (!d.major?.trim()) allEduHaveMajors = false;
+        }
+      });
+    } else {
+      const d = String(p.collegeDegree || p.college_degree || '').toUpperCase();
+      const isEdu = d && d !== 'NONE' && d !== 'N/A' && (
+        d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+      );
+      if (isEdu) {
+        hasAnyEdu = true;
+        if (!p.major?.trim()) allEduHaveMajors = false;
+      }
+    }
+    if (hasAnyEdu) {
+      check('major', "Major in Education", allEduHaveMajors, "Education", "education");
     }
   }
-  if (attainment === "MASTER'S DEGREE (GRADUATED)") {
-    const rawDisc = p.mastersDiscipline || p.postGraduateDiscipline || '';
-    const listDisc = Array.isArray(p.mastersDisciplines) && p.mastersDisciplines.length > 0
-      ? p.mastersDisciplines
-      : (rawDisc ? rawDisc.split(',').map(s => s.trim()).filter(Boolean) : []);
-    check('postGraduateDiscipline', "Master's Discipline", listDisc.length > 0, "Education", "education");
-  } else if (attainment === "DOCTORATE DEGREE (GRADUATED)") {
-    const rawDocDisc = p.doctorateDiscipline || p.postGraduateDiscipline || '';
-    const listDocDisc = Array.isArray(p.doctorateDisciplines) && p.doctorateDisciplines.length > 0
-      ? p.doctorateDisciplines
-      : (rawDocDisc ? rawDocDisc.split(',').map(s => s.trim()).filter(Boolean) : []);
-    check('doctorateDiscipline', "Doctorate Discipline", listDocDisc.length > 0, "Education", "education");
+
+  const postGrads = getEffectivePostGradDisciplines(p);
+  if (attainment.includes("MASTER")) {
+    const hasDisc = postGrads.mastersWithUnits.length > 0 || postGrads.mastersGraduated.length > 0 || (Array.isArray(p.mastersDisciplines) && p.mastersDisciplines.length > 0) || !!p.mastersDiscipline?.trim();
+    check('postGraduateDiscipline', "Master's Discipline", hasDisc, "Education", "education");
+  } else if (attainment.includes("DOCTOR")) {
+    const hasDisc = postGrads.doctorateWithUnits.length > 0 || postGrads.doctorateGraduated.length > 0 || (Array.isArray(p.doctorateDisciplines) && p.doctorateDisciplines.length > 0) || !!p.doctorateDiscipline?.trim();
+    check('doctorateDiscipline', "Doctorate Discipline", hasDisc, "Education", "education");
   }
 
   check('eligibility', "Civil Service / PRC Eligibility", !!(p.eligibility && (!Array.isArray(p.eligibility) || p.eligibility.length > 0)), "Education", "education");
   const eligStr = (Array.isArray(p.eligibility) ? p.eligibility.join(',') : String(p.eligibility || '')).toUpperCase();
   if (eligStr.includes('LET') || eligStr.includes('PBET') || eligStr.includes('LICENSURE EXAMINATION FOR TEACHERS') || eligStr.includes('PROFESSIONAL BOARD EXAMINATION FOR TEACHERS')) {
-    check('prcSpecialization', "PRC Specialization", !!p.prcSpecialization?.trim(), "Education", "education");
+    check('prcSpecialization', "PRC Specialization", !!(p.prcSpecialization?.trim() || p.prc_specialization?.trim()), "Education", "education");
   }
 
   // 5. Professional Development / Trainings (for teaching & teaching-related)
   if (!isNonTeaching) {
-    const totalTrainingsCount = (p.neapTrainingRows || []).length + (p.certificationRows || []).length + (p.otherTrainingRows || []).length;
-    check('hasTrainings', "At least one Professional Development / Training record", totalTrainingsCount > 0, "L&D", "development");
-
     const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
     if (allTrainings.length > 0) {
       const validHours = allTrainings.every(tr => tr.totalHours && Number(tr.totalHours) > 0);
@@ -210,11 +539,87 @@ export const getPersonnelValidationChecklist = (p) => {
     }
   }
 
+  // 6. Teaching Assignment (for teaching & teaching-related personnel)
+  if (!isNonTeaching) {
+    const rawGrades = p.assignedGradeLevels || p.assigned_grade_levels || p.gradeLevelsTaught || p.grade_levels_taught;
+    const assignedGrades = Array.isArray(rawGrades)
+      ? rawGrades
+      : (typeof rawGrades === 'string' && rawGrades.trim() ? rawGrades.split(',').map(s => s.trim()).filter(Boolean) : []);
+
+    const isPersonSchoolHead = p.isSchoolHead === true || p.is_school_head === true ||
+      String(p.position || p.plantilla_position || p.position_title || '').toUpperCase().includes('PRINCIPAL') ||
+      String(p.designation || '').toUpperCase().includes('PRINCIPAL') ||
+      String(p.designation || '').toUpperCase().includes('SCHOOL HEAD');
+
+    const isRelatedTeaching = p.type === 'teaching-related' || p.type === 'related-teaching' || p.type === 'related' ||
+      String(p.positionCategory || p.position_category || '').toUpperCase() === 'RELATED TEACHING';
+
+    const hasExplicitNoLoad = (isPersonSchoolHead || isRelatedTeaching) && (p.hasNoTeachingLoad === true || p.has_no_teaching_load === true);
+    const hasAssignedGrades = (assignedGrades.length > 0) || hasExplicitNoLoad;
+
+    check('assignedGradeLevels', "Assigned Grade Level(s)", hasAssignedGrades, "Teaching", "teaching");
+  }
+
   const total = required.length;
   const completed = total - errors.length;
   const percentage = total > 0 ? Math.max(0, Math.min(100, Math.round((completed / total) * 100))) : 0;
 
   return { total, completed, percentage, errors };
+};
+
+export const getTeachingPrerequisitesValidationErrors = (p) => {
+  if (!p) return [];
+  const pos = p.position || p.plantilla_position || p.position_title || '';
+  const pType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+  const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+
+  // Non-teaching personnel are strictly exempt from blocking Organized Classes
+  if (isNonTeaching) return [];
+
+  const errors = [];
+  const check = (id, label, isPassed, category, tab) => {
+    if (!isPassed) {
+      errors.push({ id, label, category, tab });
+    }
+  };
+
+  // 1. Employment Details
+  check('position', "Plantilla Position", !!(p.position?.trim() || p.plantilla_position?.trim() || p.position_title?.trim()), "Employment", "employment");
+  check('fundSource', "Fund Source", !!(p.fundSource || p.fund_source), "Employment", "employment");
+  check('natureOfAppointment', "Nature of Appointment", !!(p.natureOfAppointment || p.nature_of_appointment), "Employment", "employment");
+  check('hiringArrangement', "Hiring Arrangement", !!(p.hiringArrangement || p.hiring_arrangement), "Employment", "employment");
+  check('deploymentStatus', "Status of Deployment", !!(p.deploymentStatus || p.deployment_status), "Employment", "employment");
+
+  const depStatus = String(p.deploymentStatus || p.deployment_status || '').toUpperCase();
+  if (['CLUSTERED', 'REASSIGNED', 'BORROWED'].includes(depStatus)) {
+    const hasOtherSchool = !!(p.clusteredSchools || (Array.isArray(p.assignedSchools) && p.assignedSchools.length > 0) || (Array.isArray(p.assigned_schools) && p.assigned_schools.length > 0));
+    check('assignedSchools', "Other School Assignment", hasOtherSchool, "Employment", "employment");
+  }
+
+  check('firstServiceDate', "Date of First Day of Service", !!(p.firstServiceDate || p.first_service_date), "Employment", "employment");
+  const hasStepConfirmed = !!(p.stepIncrementConfirmed || p.step_increment_confirmed || (p.stepIncrement && Number(p.stepIncrement) >= 1) || (p.step_increment && Number(p.step_increment) >= 1));
+  check('stepIncrementConfirmed', "Salary Step Increment Confirmation", hasStepConfirmed, "Employment", "employment");
+
+  // 2. Teaching Assignment
+  const rawGrades = p.assignedGradeLevels || p.assigned_grade_levels || p.gradeLevelsTaught || p.grade_levels_taught;
+  const assignedGrades = Array.isArray(rawGrades)
+    ? rawGrades
+    : (typeof rawGrades === 'string' && rawGrades.trim() ? rawGrades.split(',').map(s => s.trim()).filter(Boolean) : []);
+
+  const isPersonSchoolHead = p.isSchoolHead === true || p.is_school_head === true ||
+    String(p.position || p.plantilla_position || p.position_title || '').toUpperCase().includes('PRINCIPAL') ||
+    String(p.designation || '').toUpperCase().includes('PRINCIPAL') ||
+    String(p.designation || '').toUpperCase().includes('SCHOOL HEAD');
+
+  const isRelatedTeaching = p.type === 'teaching-related' || p.type === 'related-teaching' || p.type === 'related' ||
+    String(p.positionCategory || p.position_category || '').toUpperCase() === 'RELATED TEACHING';
+
+  const hasExplicitNoLoad = (isPersonSchoolHead || isRelatedTeaching) && (p.hasNoTeachingLoad === true || p.has_no_teaching_load === true);
+  const hasAssignedGrades = (assignedGrades.length > 0) || hasExplicitNoLoad;
+
+  check('assignedGradeLevels', "Assigned Grade Level(s)", hasAssignedGrades, "Teaching", "teaching");
+
+  return errors;
 };
 
 export function calculatePersonCompletionPercentage(p, activePerson) {
@@ -288,17 +693,14 @@ const computeStepIncrement = (firstServiceDate, lastPromotionDate) => {
   return { step: computedStep, years, basedOn };
 };
 
-function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false }) {
+function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDate, required = false, placement = 'top' }) {
   const [showCalendar, setShowCalendar] = React.useState(false);
   const [viewDate, setViewDate] = React.useState(new Date());
   const containerRef = React.useRef(null);
 
-  const parsedMaxDate = maxDate ? (maxDate instanceof Date ? maxDate : new Date(maxDate)) : null;
-  const parsedMinDate = minDate ? (minDate instanceof Date ? minDate : new Date(minDate)) : null;
-
   const formatDate = (date) => {
     if (!date) return '';
-    const d = new Date(date);
+    const d = (date instanceof Date) ? date : new Date(date);
     if (isNaN(d.getTime())) return '';
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -307,19 +709,37 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const cleanValue = value ? (typeof value === 'string' ? value.substring(0, 10) : formatDate(value)) : '';
+  const maxDateStr = maxDate ? formatDate(maxDate) : '';
+  const minDateStr = minDate ? formatDate(minDate) : '';
+
+  const parsedMaxDate = maxDateStr ? new Date(maxDateStr + 'T00:00:00') : null;
+  const parsedMinDate = minDateStr ? new Date(minDateStr + 'T00:00:00') : null;
+
+  const handleOpenCalendar = () => {
+    if (disabled) return;
+    if (!showCalendar) {
+      if (cleanValue) {
+        const d = new Date(cleanValue + 'T00:00:00');
+        if (!isNaN(d.getTime())) setViewDate(d);
+      } else if (parsedMaxDate && new Date() > parsedMaxDate) {
+        setViewDate(parsedMaxDate);
+      } else if (parsedMinDate && new Date() < parsedMinDate) {
+        setViewDate(parsedMinDate);
+      } else {
+        setViewDate(new Date());
+      }
+    }
+    setShowCalendar(!showCalendar);
+  };
 
   React.useEffect(() => {
-    if (cleanValue) {
+    if (!showCalendar && cleanValue) {
       const d = new Date(cleanValue + 'T00:00:00');
       if (!isNaN(d.getTime())) {
         setViewDate(d);
       }
-    } else if (parsedMaxDate && new Date() > parsedMaxDate) {
-      setViewDate(parsedMaxDate);
-    } else if (parsedMinDate && new Date() < parsedMinDate) {
-      setViewDate(parsedMinDate);
     }
-  }, [cleanValue, maxDate, minDate]);
+  }, [cleanValue, showCalendar]);
 
   React.useEffect(() => {
     function handleClickOutside(event) {
@@ -343,15 +763,15 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   const month = viewDate.getMonth(); // 0-based
 
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
   ];
 
   const currentMaxYear = parsedMaxDate ? parsedMaxDate.getFullYear() : new Date().getFullYear();
   const currentMinYear = parsedMinDate ? parsedMinDate.getFullYear() : (currentMaxYear - 80);
 
-  const isPrevDisabled = parsedMinDate && new Date(year, month, 0) < parsedMinDate;
-  const isNextDisabled = parsedMaxDate && new Date(year, month + 1, 1) > parsedMaxDate;
+  const isPrevDisabled = Boolean(minDateStr && formatDate(new Date(year, month, 0)) < minDateStr.substring(0, 7) + '-01');
+  const isNextDisabled = Boolean(maxDateStr && formatDate(new Date(year, month + 1, 1)) > maxDateStr);
 
   const handlePrevMonth = (e) => {
     e.stopPropagation();
@@ -406,11 +826,13 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
     e.stopPropagation();
     if (disabled) return;
 
-    // Check min/max bounds
-    if (parsedMaxDate && cellDate > parsedMaxDate) return;
-    if (parsedMinDate && cellDate < parsedMinDate) return;
+    const cellStr = formatDate(cellDate);
+    if (maxDateStr && cellStr > maxDateStr) return;
+    if (minDateStr && cellStr < minDateStr) return;
 
-    onChange(formatDate(cellDate));
+    if (typeof onChange === 'function') {
+      onChange(cellStr);
+    }
     setShowCalendar(false);
   };
 
@@ -419,8 +841,9 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const isDisabled = (cellDate) => {
-    if (parsedMaxDate && cellDate > parsedMaxDate) return true;
-    if (parsedMinDate && cellDate < parsedMinDate) return true;
+    const cellStr = formatDate(cellDate);
+    if (maxDateStr && cellStr > maxDateStr) return true;
+    if (minDateStr && cellStr < minDateStr) return true;
     return false;
   };
 
@@ -435,11 +858,46 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
     yearOptions.push(y);
   }
 
+  const [actualPlacement, setActualPlacement] = React.useState(placement);
+
+  React.useEffect(() => {
+    if (showCalendar && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceAbove = rect.top;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const calendarHeight = 360;
+
+      if (placement === 'bottom') {
+        if (spaceBelow < 200 && spaceAbove >= calendarHeight) {
+          setActualPlacement('top');
+        } else {
+          setActualPlacement('bottom');
+        }
+      } else if (placement === 'top') {
+        if (spaceAbove < calendarHeight) {
+          setActualPlacement('bottom');
+        } else {
+          setActualPlacement('top');
+        }
+      } else {
+        if (spaceAbove >= calendarHeight && spaceAbove > spaceBelow) {
+          setActualPlacement('top');
+        } else {
+          setActualPlacement('bottom');
+        }
+      }
+    } else {
+      setActualPlacement(placement);
+    }
+  }, [showCalendar, placement]);
+
+  const isTop = actualPlacement === 'top';
+
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', zIndex: showCalendar ? 99999 : 'auto' }}>
       {/* Input box trigger */}
       <div
-        onClick={() => !disabled && setShowCalendar(!showCalendar)}
+        onClick={handleOpenCalendar}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -477,20 +935,22 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
         </svg>
       </div>
 
-      {/* Custom Calendar Dropdown Card */}
+      {/* Custom Calendar Dropdown Card — Top Layer & Smart Placement */}
       {showCalendar && (
         <div style={{
           position: 'absolute',
-          top: '100%',
+          bottom: isTop ? '100%' : 'auto',
+          top: isTop ? 'auto' : '100%',
           left: '0',
-          marginTop: '8px',
-          width: '290px',
+          marginBottom: isTop ? '8px' : '0',
+          marginTop: isTop ? '0' : '8px',
+          width: '300px',
           background: 'white',
           border: '1.5px solid var(--line)',
           borderRadius: '16px',
-          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25), 0 12px 24px -6px rgba(0,0,0,0.15)',
           padding: '16px',
-          zIndex: 1000,
+          zIndex: 999999,
           boxSizing: 'border-box'
         }}>
           {/* Calendar Header */}
@@ -509,7 +969,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
               fontSize: '14px',
               fontWeight: '600',
               color: 'var(--navy)',
-              gap: '4px'
+              gap: '6px'
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ color: 'var(--muted)', marginRight: '2px' }}>
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -524,11 +984,12 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
                   background: 'transparent',
                   border: 'none',
                   fontSize: '13px',
-                  fontWeight: '600',
+                  fontWeight: '700',
                   color: 'var(--navy)',
                   cursor: 'pointer',
                   outline: 'none',
-                  fontFamily: 'inherit'
+                  fontFamily: 'inherit',
+                  paddingRight: '4px'
                 }}
               >
                 {monthNames.map((mName, idx) => {
@@ -558,7 +1019,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
                   background: 'transparent',
                   border: 'none',
                   fontSize: '13px',
-                  fontWeight: '600',
+                  fontWeight: '700',
                   color: 'var(--navy)',
                   cursor: 'pointer',
                   outline: 'none',
@@ -868,6 +1329,7 @@ export default function PersonnelProfile() {
     updatePersonnelInfo,
     addPersonnel,
     deletePersonnel,
+    resolveBorrowedPersonnel,
     savePersonnelChanges,
     classSections,
     schoolInfo,
@@ -877,13 +1339,26 @@ export default function PersonnelProfile() {
     hasUnsavedChanges,
     setHasUnsavedChanges,
     districtSchools,
+    loadDistrictSchools,
+    outgoingRequests,
+    requestHistory,
+    refreshRequests,
     completeNode,
-    setActiveView
+    setActiveView,
+    registerAutoSaveHandler
   } = useApp();
 
-  const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
-
   const [activeTab, setActiveTab] = useState('identity');
+  const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
+  const [isConfirmDiscrepancyModalOpen, setIsConfirmDiscrepancyModalOpen] = useState(false);
+  const [confirmDiscrepancyInput, setConfirmDiscrepancyInput] = useState('');
+
+  useEffect(() => {
+    const activeId = schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    if (activeId && loadDistrictSchools) {
+      loadDistrictSchools(activeId, schoolInfo?.division);
+    }
+  }, [schoolInfo?.schoolId, schoolInfo?.division, activeTab]);
   const [showRa1080Modal, setShowRa1080Modal] = useState(false);
   const [ra1080InputText, setRa1080InputText] = useState('');
 
@@ -929,10 +1404,115 @@ export default function PersonnelProfile() {
       let personObj = dbPerson;
       if (savedDraft) {
         try {
-          personObj = JSON.parse(savedDraft);
+          const parsed = JSON.parse(savedDraft);
+          // Preserve all fields from parsed draft, while giving precedence to draft's explicit values
+          personObj = {
+            ...dbPerson,
+            ...parsed,
+            noTin: parsed.noTin !== undefined ? parsed.noTin : (parsed.no_tin !== undefined ? parsed.no_tin : (dbPerson.noTin !== undefined ? dbPerson.noTin : !!dbPerson.no_tin)),
+            no_tin: parsed.noTin !== undefined ? parsed.noTin : (parsed.no_tin !== undefined ? parsed.no_tin : (dbPerson.noTin !== undefined ? dbPerson.noTin : !!dbPerson.no_tin)),
+            noPhilsys: parsed.noPhilsys !== undefined ? parsed.noPhilsys : (parsed.no_philsys !== undefined ? parsed.no_philsys : (dbPerson.noPhilsys !== undefined ? dbPerson.noPhilsys : !!dbPerson.no_philsys)),
+            no_philsys: parsed.noPhilsys !== undefined ? parsed.noPhilsys : (parsed.no_philsys !== undefined ? parsed.no_philsys : (dbPerson.noPhilsys !== undefined ? dbPerson.noPhilsys : !!dbPerson.no_philsys)),
+            lastPromotionDate: parsed.lastPromotionDate !== undefined ? parsed.lastPromotionDate : (parsed.last_promotion_date !== undefined ? parsed.last_promotion_date : (dbPerson.lastPromotionDate !== undefined ? dbPerson.lastPromotionDate : dbPerson.last_promotion_date || '')),
+            last_promotion_date: parsed.lastPromotionDate !== undefined ? parsed.lastPromotionDate : (parsed.last_promotion_date !== undefined ? parsed.last_promotion_date : (dbPerson.lastPromotionDate !== undefined ? dbPerson.lastPromotionDate : dbPerson.last_promotion_date || '')),
+            newStationDate: parsed.newStationDate !== undefined ? parsed.newStationDate : (parsed.new_station_date !== undefined ? parsed.new_station_date : (dbPerson.newStationDate !== undefined ? dbPerson.newStationDate : dbPerson.new_station_date || '')),
+            new_station_date: parsed.newStationDate !== undefined ? parsed.newStationDate : (parsed.new_station_date !== undefined ? parsed.new_station_date : (dbPerson.newStationDate !== undefined ? dbPerson.newStationDate : dbPerson.new_station_date || '')),
+            lastLateralMovementDate: parsed.lastLateralMovementDate !== undefined ? parsed.lastLateralMovementDate : (parsed.last_lateral_movement_date !== undefined ? parsed.last_lateral_movement_date : (dbPerson.lastLateralMovementDate !== undefined ? dbPerson.lastLateralMovementDate : dbPerson.last_lateral_movement_date || '')),
+            last_lateral_movement_date: parsed.lastLateralMovementDate !== undefined ? parsed.lastLateralMovementDate : (parsed.last_lateral_movement_date !== undefined ? parsed.last_lateral_movement_date : (dbPerson.lastLateralMovementDate !== undefined ? dbPerson.lastLateralMovementDate : dbPerson.last_lateral_movement_date || ''))
+          };
         } catch (e) {
           console.error("Failed to parse draft", e);
         }
+      }
+
+      // Ensure all fields and learning areas are preserved
+      const laMap = personObj.learningAreaMap || personObj.matrix_data || personObj.matrixData || dbPerson.learningAreaMap || dbPerson.matrix_data || dbPerson.matrixData;
+      if (laMap && typeof laMap === 'object' && Object.keys(laMap).length > 0) {
+        personObj.learningAreaMap = laMap;
+        personObj.matrix_data = laMap;
+        personObj.matrixData = laMap;
+        try {
+          localStorage.setItem(`draft_learning_areas_${dbPerson.id}`, JSON.stringify(laMap));
+        } catch (e) {}
+      }
+
+      // Ensure Education degree rows & post-grad disciplines
+      if (!Array.isArray(personObj.degreeRows) || personObj.degreeRows.length === 0) {
+        const dRows = personObj.collegeDegrees || personObj.college_degrees || dbPerson.degreeRows || dbPerson.collegeDegrees || dbPerson.college_degrees;
+        if (Array.isArray(dRows) && dRows.length > 0) {
+          personObj.degreeRows = dRows;
+        } else if (personObj.collegeDegree || dbPerson.collegeDegree) {
+          personObj.degreeRows = [{
+            collegeDegree: personObj.collegeDegree || dbPerson.collegeDegree,
+            major: personObj.major || dbPerson.major || '',
+            minor: personObj.minor || dbPerson.minor || ''
+          }];
+        }
+      }
+      if (!personObj.collegeDegree && personObj.degreeRows?.[0]?.collegeDegree) {
+        personObj.collegeDegree = personObj.degreeRows[0].collegeDegree;
+        personObj.major = personObj.degreeRows[0].major || '';
+        personObj.minor = personObj.degreeRows[0].minor || '';
+      }
+
+      // Ensure Trainings / L&D rows
+      if (!Array.isArray(personObj.neapTrainingRows) || personObj.neapTrainingRows.length === 0) {
+        const rows = personObj.neap_training_rows || dbPerson.neapTrainingRows || dbPerson.neap_training_rows;
+        if (Array.isArray(rows)) personObj.neapTrainingRows = rows;
+      }
+      if (!Array.isArray(personObj.certificationRows) || personObj.certificationRows.length === 0) {
+        const rows = personObj.certification_rows || dbPerson.certificationRows || dbPerson.certification_rows;
+        if (Array.isArray(rows)) personObj.certificationRows = rows;
+      }
+      if (!Array.isArray(personObj.otherTrainingRows) || personObj.otherTrainingRows.length === 0) {
+        const rows = personObj.other_training_rows || dbPerson.otherTrainingRows || dbPerson.other_training_rows;
+        if (Array.isArray(rows)) personObj.otherTrainingRows = rows;
+      }
+
+      // Ensure Teaching Assignment grade levels
+      const gl = personObj.assignedGradeLevels || personObj.gradeLevelsTaught || personObj.assigned_grade_levels || personObj.grade_levels_taught || dbPerson.assignedGradeLevels || dbPerson.gradeLevelsTaught || dbPerson.assigned_grade_levels || dbPerson.grade_levels_taught;
+      if (Array.isArray(gl) && gl.length > 0) {
+        personObj.assignedGradeLevels = gl;
+        personObj.gradeLevelsTaught = gl;
+        personObj.assigned_grade_levels = gl;
+        personObj.grade_levels_taught = gl;
+      }
+
+      // Ensure Employment dates & step increments
+      if (!personObj.firstServiceDate && (personObj.first_service_date || dbPerson.firstServiceDate || dbPerson.first_service_date)) {
+        personObj.firstServiceDate = personObj.first_service_date || dbPerson.firstServiceDate || dbPerson.first_service_date;
+      }
+      if (personObj.lastPromotionDate === undefined) {
+        personObj.lastPromotionDate = personObj.last_promotion_date !== undefined ? personObj.last_promotion_date : (dbPerson.lastPromotionDate !== undefined ? dbPerson.lastPromotionDate : dbPerson.last_promotion_date || '');
+      }
+      if (personObj.newStationDate === undefined) {
+        personObj.newStationDate = personObj.new_station_date !== undefined ? personObj.new_station_date : (dbPerson.newStationDate !== undefined ? dbPerson.newStationDate : dbPerson.new_station_date || '');
+      }
+      if (personObj.lastLateralMovementDate === undefined) {
+        personObj.lastLateralMovementDate = personObj.last_lateral_movement_date !== undefined ? personObj.last_lateral_movement_date : (dbPerson.lastLateralMovementDate !== undefined ? dbPerson.lastLateralMovementDate : dbPerson.last_lateral_movement_date || '');
+      }
+      if (personObj.noTin === undefined) {
+        personObj.noTin = !!(personObj.no_tin !== undefined ? personObj.no_tin : (dbPerson.noTin !== undefined ? dbPerson.noTin : dbPerson.no_tin));
+      }
+      personObj.no_tin = !!personObj.noTin;
+      if (personObj.noPhilsys === undefined) {
+        personObj.noPhilsys = !!(personObj.no_philsys !== undefined ? personObj.no_philsys : (dbPerson.noPhilsys !== undefined ? dbPerson.noPhilsys : dbPerson.no_philsys));
+      }
+      personObj.no_philsys = !!personObj.noPhilsys;
+      if (personObj.stepIncrement && (personObj.step_increment || dbPerson.stepIncrement || dbPerson.step_increment)) {
+        personObj.stepIncrement = personObj.step_increment || dbPerson.stepIncrement || dbPerson.step_increment;
+      }
+      if (personObj.stepIncrementConfirmed === undefined && (personObj.step_increment_confirmed !== undefined || dbPerson.stepIncrementConfirmed !== undefined || dbPerson.step_increment_confirmed !== undefined)) {
+        personObj.stepIncrementConfirmed = personObj.step_increment_confirmed !== undefined ? personObj.step_increment_confirmed : (dbPerson.stepIncrementConfirmed !== undefined ? dbPerson.stepIncrementConfirmed : dbPerson.step_increment_confirmed);
+      }
+
+      if (!personObj.employeeNo && (personObj.employee_no || dbPerson.employeeNo || dbPerson.employee_no)) {
+        personObj.employeeNo = personObj.employee_no || dbPerson.employeeNo || dbPerson.employee_no;
+        personObj.employee_no = personObj.employeeNo;
+      }
+      if (!personObj.prcSpecialization && (personObj.prc_specialization || dbPerson.prcSpecialization || dbPerson.prc_specialization)) {
+        personObj.prcSpecialization = personObj.prc_specialization || dbPerson.prcSpecialization || dbPerson.prc_specialization;
+        personObj.prc_specialization = personObj.prcSpecialization;
       }
 
       const rawPos = personObj.position || dbPerson.position || '';
@@ -951,6 +1531,66 @@ export default function PersonnelProfile() {
 
   const currentPerson = editPerson || dbPerson;
 
+  const currentPersonRef = useRef(currentPerson);
+  useEffect(() => {
+    currentPersonRef.current = currentPerson;
+  }, [currentPerson]);
+
+  // Register auto-save handler on navigation (e.g. clicking Node Map)
+  useEffect(() => {
+    if (!registerAutoSaveHandler) return;
+    return registerAutoSaveHandler('personnel_profile', async () => {
+      const p = currentPersonRef.current;
+      if (!p || !p.id) return false;
+      try {
+        const draftKey = `draft_personnel_${p.id}`;
+        localStorage.setItem(draftKey, JSON.stringify(p));
+        return true;
+      } catch (e) {
+        console.warn('[PersonnelProfile Auto-Save Notice]:', e);
+      }
+      return false;
+    });
+  }, [registerAutoSaveHandler]);
+
+  // Personnel who are Reassigned Out from Mother School (Workload tracked at receiving school, full editing in Mother School)
+  const isReassignedOutInMotherSchool = false;
+
+  // Inter-school Reassignment Rejection Status
+  const isReassignedRejected = useMemo(() => {
+    if (!currentPerson) return false;
+    if (currentPerson.reassignmentStatus === 'rejected' || currentPerson.requestStatus === 'rejected') return true;
+    const depStatus = String(currentPerson.deploymentStatus || currentPerson.deployment_status || '').toUpperCase();
+    if (depStatus.includes('REJECTED')) return true;
+
+    const pId = String(currentPerson.id || '').replace(/^(PER-|PRN-)/i, '').trim();
+    const prn = String(currentPerson.prn || currentPerson.profilingCode || '').replace(/^PRN-/i, '').trim();
+    const pFn = String(currentPerson.firstName || currentPerson.first_name || '').trim().toUpperCase();
+    const pLn = String(currentPerson.lastName || currentPerson.last_name || '').trim().toUpperCase();
+
+    const allReqs = [...(outgoingRequests || []), ...(requestHistory || [])];
+    const matched = allReqs.find(req => {
+      const reqPId = String(req.personnel_id || req.personnelId || '').replace(/^(PER-|PRN-)/i, '').trim();
+      if (pId && reqPId && (pId === reqPId || reqPId.endsWith(pId) || pId.endsWith(reqPId))) return true;
+      if (prn && reqPId && (prn === reqPId || reqPId.endsWith(prn) || prn.endsWith(reqPId))) return true;
+      const reqName = String(req.personnel_name || req.personnelName || '').toUpperCase();
+      if (pLn && pFn && reqName && reqName.includes(pLn) && reqName.includes(pFn)) return true;
+      return false;
+    });
+
+    return matched ? String(matched.status || '').toLowerCase() === 'rejected' : false;
+  }, [currentPerson, outgoingRequests, requestHistory]);
+
+  // Unresolved Borrowed Personnel Prompt State
+  const isBorrowedUnresolved = useMemo(() => {
+    if (!currentPerson) return false;
+    const st = String(currentPerson.deploymentStatus || currentPerson.deployment_status || '').toUpperCase();
+    return st.includes('BORROWED') && !currentPerson.isShared;
+  }, [currentPerson]);
+
+  const [dismissedPromptPersonId, setDismissedPromptPersonId] = useState(null);
+  const [showBorrowedPromptModal, setShowBorrowedPromptModal] = useState(false);
+
   // Fetch Learning Areas for active personnel
   useEffect(() => {
     if (!currentPerson?.id) {
@@ -960,13 +1600,15 @@ export default function PersonnelProfile() {
     let isMounted = true;
     setLearningAreaLoading(true);
 
-    // CRITICAL: Reset learningAreaMap to empty immediately on personnel change before fetching!
+    // CRITICAL: Reset learningAreaMap to local/current draft immediately on personnel change before fetching!
     let initialMap = {};
     const localDraft = localStorage.getItem(`draft_learning_areas_${currentPerson.id}`);
     if (localDraft) {
       try {
         initialMap = JSON.parse(localDraft) || {};
       } catch (e) {}
+    } else if (currentPerson.learningAreaMap || currentPerson.matrix_data) {
+      initialMap = currentPerson.learningAreaMap || currentPerson.matrix_data || {};
     }
     setLearningAreaMap(initialMap);
 
@@ -989,12 +1631,16 @@ export default function PersonnelProfile() {
           incomingMap = { ...incomingMap, ...mapped };
         }
         
-        // Always set incomingMap (even if empty, so teacher with 0 learning areas shows 0 learning areas!)
+        // If DB returned 0 learning areas, but we have local draft / verified QR learning areas, PRESERVE THEM!
+        if (Object.keys(incomingMap).length === 0 && (Object.keys(initialMap).length > 0 || currentPerson.learningAreaMap || currentPerson.matrix_data)) {
+          incomingMap = Object.keys(initialMap).length > 0 ? initialMap : (currentPerson.learningAreaMap || currentPerson.matrix_data || {});
+        }
+
         const finalMap = incomingMap && typeof incomingMap === 'object' ? incomingMap : {};
         setLearningAreaMap(finalMap);
         if (Object.keys(finalMap).length > 0) {
           localStorage.setItem(`draft_learning_areas_${currentPerson.id}`, JSON.stringify(finalMap));
-        } else if (!localDraft) {
+        } else if (!localDraft && !currentPerson.learningAreaMap && !currentPerson.matrix_data) {
           localStorage.removeItem(`draft_learning_areas_${currentPerson.id}`);
         }
       })
@@ -1050,7 +1696,7 @@ export default function PersonnelProfile() {
   };
 
   const handleToggleLearningAreaCell = async (eraKey, subjectKey) => {
-    if (!currentPerson?.id || currentPerson.isShared) return;
+    if (!currentPerson?.id || isReassignedOutInMotherSchool) return;
     const key = `${eraKey}||${subjectKey}`;
     const existing = learningAreaMap[key];
     const newChecked = !existing?.checked;
@@ -1086,7 +1732,7 @@ export default function PersonnelProfile() {
   };
 
   const handleYearsChange = async (eraKey, subjectKey, yearsVal) => {
-    if (!currentPerson?.id || currentPerson.isShared) return;
+    if (!currentPerson?.id || isReassignedOutInMotherSchool) return;
     const key = `${eraKey}||${subjectKey}`;
     let cleanVal = String(yearsVal || '').replace(/\D/g, '');
     if (cleanVal.length > 2) {
@@ -1113,12 +1759,6 @@ export default function PersonnelProfile() {
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
   };
 
-  useEffect(() => {
-    if (currentPerson && currentPerson.isShared && activeTab !== 'identity') {
-      setActiveTab('identity');
-    }
-  }, [currentPerson?.id, currentPerson?.isShared, activeTab]);
-
   if (!currentPerson) {
     return (
       <div className="card-inner">
@@ -1130,131 +1770,170 @@ export default function PersonnelProfile() {
 
 
   const handleFieldChange = (key, value) => {
-    if (!currentPerson) return;
-    let updated = { ...currentPerson, [key]: value };
+    setEditPerson(prev => {
+      const base = prev || dbPerson;
+      if (!base) return base;
+      let updated = { ...base, [key]: value };
 
-    if (key === 'assignedGradeLevels') {
-      const grades = Array.isArray(value) ? value : [];
-      const hasShs = grades.some(g => String(g).includes('11') || String(g).includes('12'));
-      updated.teachesShs = hasShs;
-      updated.teaches_shs = hasShs;
-    }
-
-    if (key === 'fundSource' && String(value).toUpperCase() === 'NATIONAL') {
-      if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
-      if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
-      if (updated.newStationDate === 'N/A') updated.newStationDate = '';
-      if (updated.depedEmail === 'N/A') updated.depedEmail = '';
-    }
-
-    if (key === 'natureOfAppointment') {
-      const pType = detectPersonnelTypeFromPosition(updated.position) || updated.type || 'teaching';
-      const isNT = pType === 'non-teaching';
-      const nature = String(value || '').toUpperCase();
-
-      if (nature === 'REGULAR PERMANENT') {
-        updated.natureOfAppointment = 'REGULAR PERMANENT';
-        updated.fundSource = 'NATIONAL';
-        const allowedHiring = isNT ? ['REGULAR'] : ['REGULAR', 'SPIMS', '4PS', 'DOST'];
-        if (!allowedHiring.includes(String(updated.hiringArrangement || '').toUpperCase())) {
-          updated.hiringArrangement = 'REGULAR';
-        }
-        if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
-        if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
-        if (updated.newStationDate === 'N/A') updated.newStationDate = '';
-        if (updated.depedEmail === 'N/A') updated.depedEmail = '';
-      } else if (nature === 'PROVISIONAL') {
-        updated.natureOfAppointment = 'PROVISIONAL';
-        updated.fundSource = 'NATIONAL';
-        updated.hiringArrangement = 'DOST';
-        if (updated.lastPromotionDate === 'N/A') updated.lastPromotionDate = '';
-        if (updated.lastLateralMovementDate === 'N/A') updated.lastLateralMovementDate = '';
-        if (updated.newStationDate === 'N/A') updated.newStationDate = '';
-        if (updated.depedEmail === 'N/A') updated.depedEmail = '';
-      } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(nature)) {
-        updated.natureOfAppointment = nature;
-        updated.hiringArrangement = 'N/A';
-        if (String(updated.fundSource || '').toUpperCase() === 'NATIONAL') {
-          updated.fundSource = '';
+      if (key === 'assignedGradeLevels' || key === 'gradeLevelsTaught') {
+        const rawGrades = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(',').map(s => s.trim()).filter(Boolean) : []);
+        const grades = rawGrades.map(g => {
+          const u = String(g || '').toUpperCase();
+          if (u.includes('KINDER')) return 'Kinder';
+          if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+          if (u === 'ALS' || u.startsWith('ALS-') || u.startsWith('ALS ')) return 'ALS';
+          return g;
+        });
+        const hasShs = grades.some(g => String(g).includes('11') || String(g).includes('12'));
+        updated.teachesShs = hasShs;
+        updated.teaches_shs = hasShs;
+        updated.assignedGradeLevels = grades;
+        updated.assigned_grade_levels = grades;
+        updated.gradeLevelsTaught = grades;
+        updated.grade_levels_taught = grades;
+        if (grades.length > 0) {
+          updated.hasNoTeachingLoad = false;
+          updated.has_no_teaching_load = false;
         }
       }
-    }
 
-    if (key === 'position' && value) {
-      const autoType = detectPersonnelTypeFromPosition(value);
-      if (autoType && autoType !== updated.type) {
-        updated.type = autoType;
-      }
-      if (autoType === 'non-teaching') {
-        const nat = String(updated.natureOfAppointment || '').toUpperCase();
-        if (nat === 'PROVISIONAL' || nat === 'SUBSTITUTE') {
+      if (key === 'natureOfAppointment') {
+        const pType = detectPersonnelTypeFromPosition(updated.position) || updated.type || 'teaching';
+        const isNT = pType === 'non-teaching';
+        const nature = String(value || '').toUpperCase();
+
+        if (nature === 'REGULAR PERMANENT') {
           updated.natureOfAppointment = 'REGULAR PERMANENT';
           updated.fundSource = 'NATIONAL';
-          updated.hiringArrangement = 'REGULAR';
-        } else if (nat === 'REGULAR PERMANENT') {
-          updated.hiringArrangement = 'REGULAR';
-        }
-      }
-      if (autoType !== 'non-teaching' && updated.depedEmail === 'N/A') {
-        updated.depedEmail = '';
-      }
-    }
-
-    if (key === 'type') {
-      if (value === 'non-teaching') {
-        const nat = String(updated.natureOfAppointment || '').toUpperCase();
-        if (nat === 'PROVISIONAL' || nat === 'SUBSTITUTE') {
-          updated.natureOfAppointment = 'REGULAR PERMANENT';
+          const allowedHiring = isNT ? ['REGULAR'] : ['REGULAR', 'SPIMS', '4PS', 'DOST'];
+          if (!allowedHiring.includes(String(updated.hiringArrangement || '').toUpperCase())) {
+            updated.hiringArrangement = 'REGULAR';
+          }
+          if (updated.depedEmail === 'N/A' || updated.deped_email === 'N/A' || updated.noDepedEmail || updated.no_deped_email) {
+            updated.depedEmail = '';
+            updated.deped_email = '';
+            updated.noDepedEmail = false;
+            updated.no_deped_email = false;
+          }
+        } else if (nature === 'PROVISIONAL') {
+          updated.natureOfAppointment = 'PROVISIONAL';
           updated.fundSource = 'NATIONAL';
-          updated.hiringArrangement = 'REGULAR';
-        } else if (nat === 'REGULAR PERMANENT') {
-          updated.hiringArrangement = 'REGULAR';
+          updated.hiringArrangement = 'DOST';
+        } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(nature)) {
+          updated.natureOfAppointment = nature;
+          updated.hiringArrangement = 'N/A';
+          if (String(updated.fundSource || '').toUpperCase() === 'NATIONAL') {
+            updated.fundSource = '';
+          }
         }
-      } else if (updated.depedEmail === 'N/A') {
-        updated.depedEmail = '';
-      }
-    }
-
-    if (key === 'firstServiceDate' && value && typeof value === 'string' && value.length >= 10) {
-      const firstDateStr = value.substring(0, 10);
-      let resetCount = 0;
-
-      if (updated.lastPromotionDate && updated.lastPromotionDate !== 'N/A' && updated.lastPromotionDate.substring(0, 10) < firstDateStr) {
-        updated.lastPromotionDate = '';
-        resetCount++;
-      }
-      if (updated.lastLateralMovementDate && updated.lastLateralMovementDate !== 'N/A' && updated.lastLateralMovementDate.substring(0, 10) < firstDateStr) {
-        updated.lastLateralMovementDate = '';
-        resetCount++;
-      }
-      if (updated.newStationDate && updated.newStationDate !== 'N/A' && updated.newStationDate.substring(0, 10) < firstDateStr) {
-        updated.newStationDate = '';
-        resetCount++;
       }
 
-      if (resetCount > 0) {
-        showToast(`⚠️ Reset ${resetCount} service date(s) that were earlier than 1st Day of Service (${firstDateStr})`, 'warning');
+      if (key === 'position' && value) {
+        const autoType = detectPersonnelTypeFromPosition(value);
+        if (autoType && autoType !== updated.type) {
+          updated.type = autoType;
+        }
+        const isCook = String(value || '').trim().toUpperCase() === 'COOK';
+        if (isCook) {
+          updated.natureOfAppointment = 'CONTRACTUAL';
+          updated.nature_of_appointment = 'CONTRACTUAL';
+          updated.hiringArrangement = 'CONTRACTUAL';
+          updated.hiring_arrangement = 'CONTRACTUAL';
+          updated.fundSource = 'SBFP';
+          updated.fund_source = 'SBFP';
+        } else {
+          if (String(updated.fundSource || '').toUpperCase() === 'SBFP') {
+            updated.fundSource = 'NATIONAL';
+            updated.fund_source = 'NATIONAL';
+          }
+          if (autoType === 'non-teaching') {
+            const nat = String(updated.natureOfAppointment || '').toUpperCase();
+            if (nat === 'PROVISIONAL' || nat === 'SUBSTITUTE') {
+              updated.natureOfAppointment = 'REGULAR PERMANENT';
+              updated.fundSource = 'NATIONAL';
+              updated.hiringArrangement = 'REGULAR';
+            } else if (nat === 'REGULAR PERMANENT') {
+              updated.hiringArrangement = 'REGULAR';
+            }
+          }
+        }
+        if (autoType !== 'non-teaching' && updated.depedEmail === 'N/A') {
+          updated.depedEmail = '';
+        }
       }
-    }
 
-    if (key === 'firstServiceDate' || key === 'lastPromotionDate') {
-      const effFirst = key === 'firstServiceDate' ? value : updated.firstServiceDate;
-      const effProm = key === 'lastPromotionDate' ? value : updated.lastPromotionDate;
-      const computed = computeStepIncrement(effFirst, effProm);
-      if (computed && computed.step) {
-        updated.stepIncrement = computed.step;
+      if (key === 'type') {
+        if (value === 'non-teaching') {
+          const nat = String(updated.natureOfAppointment || '').toUpperCase();
+          if (nat === 'PROVISIONAL' || nat === 'SUBSTITUTE') {
+            updated.natureOfAppointment = 'REGULAR PERMANENT';
+            updated.fundSource = 'NATIONAL';
+            updated.hiringArrangement = 'REGULAR';
+          } else if (nat === 'REGULAR PERMANENT') {
+            updated.hiringArrangement = 'REGULAR';
+          }
+        } else if (updated.depedEmail === 'N/A') {
+          updated.depedEmail = '';
+        }
       }
-    }
 
-    setEditPerson(updated);
-    localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
+      if (key === 'firstServiceDate' && value && typeof value === 'string' && value.length >= 10) {
+        const firstDateStr = value.substring(0, 10);
+        let resetCount = 0;
+
+        if (updated.lastPromotionDate && updated.lastPromotionDate !== 'N/A' && updated.lastPromotionDate.substring(0, 10) < firstDateStr) {
+          updated.lastPromotionDate = '';
+          resetCount++;
+        }
+        if (updated.lastLateralMovementDate && updated.lastLateralMovementDate !== 'N/A' && updated.lastLateralMovementDate.substring(0, 10) < firstDateStr) {
+          updated.lastLateralMovementDate = '';
+          resetCount++;
+        }
+        if (updated.newStationDate && updated.newStationDate !== 'N/A' && updated.newStationDate.substring(0, 10) < firstDateStr) {
+          updated.newStationDate = '';
+          resetCount++;
+        }
+
+        if (resetCount > 0) {
+          showToast(`⚠️ Reset ${resetCount} service date(s) that were earlier than 1st Day of Service (${firstDateStr})`, 'warning');
+        }
+      }
+
+      if (key === 'firstServiceDate' || key === 'lastPromotionDate') {
+        const effFirst = key === 'firstServiceDate' ? value : updated.firstServiceDate;
+        const effProm = key === 'lastPromotionDate' ? value : updated.lastPromotionDate;
+        const computed = computeStepIncrement(effFirst, effProm);
+        if (computed && computed.step) {
+          updated.stepIncrement = computed.step;
+          updated.stepIncrementConfirmed = false;
+        }
+      }
+
+      if (key === 'stepIncrement') {
+        updated.stepIncrementConfirmed = true;
+      }
+
+      if (base.id) {
+        try {
+          localStorage.setItem(`draft_personnel_${base.id}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      return updated;
+    });
   };
 
   const handleMultipleFieldsChange = (fieldsObj) => {
-    if (!currentPerson) return;
-    const updated = { ...currentPerson, ...fieldsObj };
-    setEditPerson(updated);
-    localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
+    setEditPerson(prev => {
+      const base = prev || dbPerson;
+      if (!base) return base;
+      const updated = { ...base, ...fieldsObj };
+      if (base.id) {
+        try {
+          localStorage.setItem(`draft_personnel_${base.id}`, JSON.stringify(updated));
+        } catch (e) {}
+      }
+      return updated;
+    });
   };
 
   // Age calculation
@@ -1363,27 +2042,7 @@ export default function PersonnelProfile() {
   };
 
   const checkSchoolHeadConflict = (person) => {
-    const checkIsHead = (pos, des) => {
-      const roleText = `${pos || ""} ${des || ""}`.toLowerCase();
-      if (roleText.includes("assistant")) return false;
-      return ["school principal", "principal", "teacher-in-charge", "officer-in-charge"].some(token => roleText.includes(token)) ||
-        /\b(tic|oic)\b/.test(roleText);
-    };
-
-    const isSettingAsHead = checkIsHead(person.position, person.designation);
-
-    if (isSettingAsHead) {
-      const otherHead = personnel.find(p => {
-        if (p.id === person.id) return false;
-        return checkIsHead(p.position, p.designation);
-      });
-
-      if (otherHead) {
-        const otherName = `${otherHead.firstName} ${otherHead.lastName}`;
-        const otherRole = otherHead.position || otherHead.designation;
-        return `School head conflict: ${otherName} is already assigned as a school head (${otherRole}) for this school. Only one School Head (Principal, OIC, or TIC) is allowed per school.`;
-      }
-    }
+    // Allowed in personnel profiling and roster
     return null;
   };
 
@@ -1437,10 +2096,16 @@ export default function PersonnelProfile() {
 
 
   const handleContinueToClasses = async () => {
-    // 1. Scan ALL personnel in the school roster (excluding shared borrowed teachers)
-    const targetPersonnel = (personnel || []).filter(p => !p.isShared);
-    const incompleteList = [];
+    // 1. Scan ONLY Teaching and Related-Teaching personnel (excluding shared borrowed teachers and Non-Teaching staff)
+    const targetPersonnel = (personnel || []).filter(p => {
+      if (p.isShared) return false;
+      const pos = p.position || p.plantilla_position || p.position_title || '';
+      const pType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+      const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+      return !isNonTeaching;
+    });
 
+    const incompleteList = [];
 
     targetPersonnel.forEach(p => {
       // Use active in-memory editPerson if IDs match, otherwise check localStorage draft or raw personnel object
@@ -1458,12 +2123,12 @@ export default function PersonnelProfile() {
         }
       }
 
-      const errors = getPersonnelValidationErrors(personToCheck);
+      const errors = getTeachingPrerequisitesValidationErrors(personToCheck);
       if (errors.length > 0) {
         const personName = `${personToCheck.firstName || ''} ${personToCheck.lastName || ''}`.trim() || 'Unnamed Personnel';
         const pos = personToCheck.position || personToCheck.plantilla_position || personToCheck.position_title || 'Unassigned Position';
         const pType = detectPersonnelTypeFromPosition(pos) || personToCheck.type || 'teaching';
-        const dept = pType === 'teaching' ? 'Teaching Faculty' : pType === 'teaching-related' ? 'Related Teaching' : 'Non-Teaching';
+        const dept = pType === 'teaching' ? 'Teaching Faculty' : 'Related Teaching';
 
         incompleteList.push({
           id: personToCheck.id,
@@ -1475,7 +2140,7 @@ export default function PersonnelProfile() {
       }
     });
 
-    // 2. If ANY personnel are incomplete, block progression and show the All-Personnel Restriction Modal
+    // 2. If ANY teaching personnel are incomplete in Employment or Teaching tabs, block progression
     if (incompleteList.length > 0) {
       setAllPersonnelValidationModal({
         isOpen: true,
@@ -1485,16 +2150,77 @@ export default function PersonnelProfile() {
       return;
     }
 
-    // 3. All personnel are validated! Auto-save current person if needed and advance to Organized Classes
-    if (currentPerson) {
-      try {
-        const updated = { ...currentPerson, personalVerified: true, workloadVerified: true };
-        setEditPerson(updated);
-        await savePersonnelChanges(currentPerson.id, updated);
-        localStorage.removeItem(`draft_personnel_${currentPerson.id}`);
-      } catch (e) {
-        console.warn("Auto-save on continue warning:", e);
+    // 3. All personnel are validated! Commit & save ALL personnel drafts across the whole school
+    try {
+      const updatedList = (personnel || []).map(p => {
+        let pData = { ...p };
+        if (currentPerson && String(currentPerson.id) === String(p.id)) {
+          pData = { ...currentPerson };
+        } else {
+          const savedDraft = localStorage.getItem(`draft_personnel_${p.id}`);
+          if (savedDraft) {
+            try {
+              pData = { ...pData, ...JSON.parse(savedDraft) };
+            } catch (e) {}
+          }
+        }
+
+        // Auto-confirm step increment & defaults if missing
+        if (!pData.stepIncrementConfirmed) {
+          const computed = computeStepIncrement(pData.firstServiceDate, pData.lastPromotionDate);
+          if (computed && computed.step) {
+            pData.stepIncrement = pData.stepIncrement || computed.step;
+            pData.step_increment = pData.stepIncrement;
+            pData.stepIncrementConfirmed = true;
+            pData.step_increment_confirmed = true;
+          }
+        }
+
+        if (pData.lastPromotionDate === undefined || pData.lastPromotionDate === '') {
+          pData.lastPromotionDate = 'N/A';
+          pData.last_promotion_date = 'N/A';
+        }
+        if (pData.newStationDate === undefined || pData.newStationDate === '') {
+          pData.newStationDate = pData.firstServiceDate || 'N/A';
+          pData.new_station_date = pData.firstServiceDate || 'N/A';
+        }
+        if (pData.lastLateralMovementDate === undefined || pData.lastLateralMovementDate === '') {
+          pData.lastLateralMovementDate = 'N/A';
+          pData.last_lateral_movement_date = 'N/A';
+        }
+
+        // Merge learningAreaMap from draft if present
+        const savedLa = localStorage.getItem(`draft_learning_areas_${p.id}`);
+        if (savedLa) {
+          try {
+            const parsedLa = JSON.parse(savedLa);
+            if (parsedLa) {
+              pData.learningAreaMap = parsedLa;
+              pData.matrix_data = parsedLa;
+            }
+          } catch (e) {}
+        }
+
+        pData.personalVerified = true;
+        pData.workloadVerified = true;
+        return pData;
+      });
+
+      // Save all updated records
+      for (const p of updatedList) {
+        if (typeof savePersonnelChanges === 'function') {
+          await savePersonnelChanges(p.id, p);
+        }
+        localStorage.removeItem(`draft_personnel_${p.id}`);
+        localStorage.removeItem(`draft_learning_areas_${p.id}`);
       }
+
+      if (currentPerson) {
+        const activeUpdated = updatedList.find(x => String(x.id) === String(currentPerson.id));
+        if (activeUpdated) setEditPerson(activeUpdated);
+      }
+    } catch (e) {
+      console.warn("Auto-save all personnel on continue warning:", e);
     }
 
     if (completeNode) {
@@ -1532,7 +2258,16 @@ export default function PersonnelProfile() {
           errors.push("VALID BIRTHDATE (PERSONNEL MUST BE AT LEAST 15 YEARS OLD)");
         }
       }
-      if (!p.depedEmail?.trim()) errors.push("DEPED EMAIL");
+      const isPermAppt = String(p.natureOfAppointment || p.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
+      if (isPermAppt) {
+        if (!p.depedEmail?.trim() || p.depedEmail === 'N/A' || p.noDepedEmail || p.no_deped_email) {
+          errors.push("DEPED EMAIL (MANDATORY FOR REGULAR PERMANENT)");
+        }
+      } else {
+        if (!p.noDepedEmail && !p.no_deped_email && !p.depedEmail?.trim()) {
+          errors.push("DEPED EMAIL");
+        }
+      }
       if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
       if (!p.position) errors.push("PLANTILLA POSITION");
       if (!p.fundSource) errors.push("FUND SOURCE");
@@ -1648,16 +2383,16 @@ export default function PersonnelProfile() {
   };
 
   const handleEmailLocalChange = (val) => {
-    const raw = String(val || '').replace(/@/g, '').trim().toLowerCase();
+    const raw = String(val || '').replace(/@/g, '').trim().toLowerCase().replace(/[^a-z0-9.ñ]/g, '');
     if (!raw) {
-      handleFieldChange('depedEmail', '');
+      handleMultipleFieldsChange({ depedEmail: '', noDepedEmail: false, no_deped_email: false });
       return;
     }
     if (raw === 'n/a') {
-      handleFieldChange('depedEmail', 'N/A');
+      handleMultipleFieldsChange({ depedEmail: 'N/A', noDepedEmail: true, no_deped_email: true });
       return;
     }
-    handleFieldChange('depedEmail', `${raw}@deped.gov.ph`);
+    handleMultipleFieldsChange({ depedEmail: `${raw}@deped.gov.ph`, noDepedEmail: false, no_deped_email: false });
   };
 
   // Filtered list for sidebar
@@ -1773,9 +2508,7 @@ export default function PersonnelProfile() {
     'non-teaching': { label: 'Non-Teaching', color: '#059669', bg: '#d1fae5' },
   };
 
-  const tabs = currentPerson && currentPerson.isShared ? [
-    { tab: 'identity', label: 'Identity & Personal', Icon: FiCreditCard }
-  ] : [
+  const tabs = [
     { tab: 'identity', label: 'Identity & Personal', Icon: FiCreditCard },
     { tab: 'employment', label: 'Employment', Icon: FiBriefcase },
     { tab: 'education', label: 'Education', Icon: FiAward },
@@ -1945,7 +2678,7 @@ export default function PersonnelProfile() {
                             {/* Name & Position */}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <p style={{ margin: 0, fontSize: '13px', fontWeight: isActive ? '700' : '600', color: isActive ? 'var(--navy)' : '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {p.salutation} {p.firstName} {p.lastName}{p.nameExtension ? ` ${p.nameExtension}` : ''}
+                                {p.firstName} {p.lastName}{p.nameExtension ? ` ${p.nameExtension}` : ''}
                               </p>
                               <p style={{ margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                                 <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
@@ -2065,13 +2798,13 @@ export default function PersonnelProfile() {
                     <span style={{
                       padding: '1px 7px',
                       borderRadius: '5px',
-                      background: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#E0F2FE',
-                      color: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#0369A1',
-                      border: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #BAE6FD',
+                      background: isReassignedRejected ? '#FEE2E2' : String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#E0F2FE',
+                      color: isReassignedRejected ? '#DC2626' : String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#0369A1',
+                      border: isReassignedRejected ? '1px solid #F87171' : String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #BAE6FD',
                       fontSize: '11px',
                       fontWeight: '700'
                     }}>
-                      STATUS: {String(currentPerson.deploymentStatus).toUpperCase()}
+                      STATUS: {isReassignedRejected ? 'REJECTED' : String(currentPerson.deploymentStatus).toUpperCase()}
                     </span>
                   )}
                   {currentPerson.isShared && (
@@ -2084,13 +2817,13 @@ export default function PersonnelProfile() {
                       <FiCheck size={11} /> Verified
                     </span>
                   )}
-                  {dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`) && !currentPerson.isShared && (
+                  {dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
                     <span style={{ padding: '1px 7px', borderRadius: '5px', background: '#fef3c7', color: '#92400e', fontSize: '11px', fontWeight: '700' }}>● Unsaved Draft</span>
                   )}
                 </div>
               </div>
               {/* Discard Draft button in header area */}
-              {dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`) && !currentPerson.isShared && (
+              {dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
                 <button className="btn secondary" style={{ minHeight: '32px', padding: '0 12px', fontSize: '12px', whiteSpace: 'nowrap' }} type="button" onClick={async () => {
                   if (await showConfirm("Discard Draft?", "Revert to the saved database version?")) {
                     localStorage.removeItem(`draft_personnel_${dbPerson.id}`);
@@ -2099,6 +2832,54 @@ export default function PersonnelProfile() {
                 }}>Discard Draft</button>
               )}
             </div>
+
+            {/* Borrowed Personnel Notice Banner */}
+            {isBorrowedUnresolved && (
+              <div style={{
+                margin: '16px 24px 0 24px',
+                padding: '16px',
+                borderRadius: '12px',
+                background: '#eff6ff',
+                border: '1.5px solid #93c5fd',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '16px',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{ flex: 1, minWidth: '280px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1e40af', fontWeight: '800', fontSize: '14px' }}>
+                    <FiAlertCircle size={18} />
+                    <span>Incoming Borrowed Personnel Notice</span>
+                  </div>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#1e3a8a', lineHeight: '1.5' }}>
+                    This teacher is marked as <strong>BORROWED</strong> from a Mother School. In DepEd plantilla operations, borrowed teachers must be initiated by their Mother School as Reassigned and accepted via the Request Center, or converted to Permanent (Own Station).
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowBorrowedPromptModal(true)}
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 6px rgba(37, 99, 235, 0.2)'
+                    }}
+                  >
+                    <FiTag size={14} /> Review & Resolve Status
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* ── Horizontal Tabs ── */}
             <div style={{
@@ -2136,40 +2917,82 @@ export default function PersonnelProfile() {
 
             {/* ── Form Content ── */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', position: 'relative' }}>
-              {currentPerson.isShared && (
-                <div style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  zIndex: 10, background: 'rgba(255,255,255,0.4)', pointerEvents: 'none'
-                }}></div>
-              )}
-              <div style={{ pointerEvents: currentPerson.isShared ? 'none' : 'auto', opacity: currentPerson.isShared ? 0.8 : 1 }}>
+              <div>
+                {isReassignedRejected && (
+                  <div style={{
+                    background: '#FEF2F2',
+                    padding: '14px 18px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #FCA5A5',
+                    marginBottom: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '36px', height: '36px', borderRadius: '8px',
+                        background: '#FEE2E2', color: '#DC2626',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                      }}>
+                        <FiAlertCircle size={20} />
+                      </div>
+                      <div>
+                        <strong style={{ fontSize: '13px', color: '#991B1B', display: 'block' }}>
+                          Inter-School Reassignment Request Rejected
+                        </strong>
+                        <span style={{ fontSize: '12px', color: '#B91C1C' }}>
+                          The target receiving school declined this transfer request. You can edit all profile details or revert status back to Own Station.
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleFieldChange('deploymentStatus', 'Stationed');
+                        showToast('Reset status to Stationed (Own Station)', 'info');
+                      }}
+                      style={{
+                        padding: '6px 14px',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        background: '#DC2626',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <FiRefreshCw size={13} /> Revert to Own Station
+                    </button>
+                  </div>
+                )}
                 {currentPerson.isShared && (
-                  <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1.5px solid var(--line)', marginBottom: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <strong style={{ fontSize: '14px', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ background: '#F0FDF4', padding: '14px 16px', borderRadius: '12px', border: '1.5px solid #BBF7D0', marginBottom: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '13px', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <FiInfo size={16} />
-                        <span>Reassigned / Borrowed Personnel Profile</span>
+                        <span>Active Stationed Faculty (Borrowed / Reassigned)</span>
                       </strong>
                       <span style={{
-                        padding: '4px 10px',
+                        padding: '3px 10px',
                         borderRadius: '20px',
-                        background: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#FEF3C7' : '#E0E7FF',
-                        color: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '#92400E' : '#3730A3',
+                        background: '#DCFCE7',
+                        color: '#15803D',
                         fontWeight: 'bold',
                         fontSize: '11px',
-                        border: String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? '1px solid #FCD34D' : '1px solid #C7D2FE'
+                        border: '1px solid #86EFAC'
                       }}>
-                        STATUS: {String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' ? 'BORROWED' : String(currentPerson.deploymentStatus).toUpperCase()}
+                        EDITING ENABLED IN HOST STATION
                       </span>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', fontSize: '13px', background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>First Name</span><strong>{currentPerson.firstName || '—'}</strong></div>
-                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>Last Name</span><strong>{currentPerson.lastName || '—'}</strong></div>
-                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>TIN</span><strong>{currentPerson.tin || 'N/A'}</strong></div>
-                      <div><span style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>PRN</span><strong>{currentPerson.profilingCode || '—'}</strong></div>
-                    </div>
-                    <p style={{ margin: '10px 0 0 0', color: '#64748B', fontSize: '12px' }}>
-                      This personnel is borrowed from their Mother School. Basic identity details are managed by the Mother Station. You can manage their subject schedules in <strong>Workload Profile</strong>.
+                    <p style={{ margin: '6px 0 0 0', color: '#14532D', fontSize: '12px' }}>
+                      This personnel is stationed at your school. You have full administrative access to edit and complete their profile, qualifications, and learning areas.
                     </p>
                   </div>
                 )}
@@ -2225,11 +3048,11 @@ export default function PersonnelProfile() {
                               <label className="checkline" style={{ textTransform: 'none', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', userSelect: 'none' }}>
                                 <input
                                   type="checkbox"
-                                  checked={!!currentPerson.noTin}
+                                  checked={!!(currentPerson.noTin || currentPerson.no_tin)}
                                   onChange={(e) => {
                                     const isChecked = e.target.checked;
                                     setEditPerson(prev => {
-                                      const updated = { ...prev, noTin: isChecked };
+                                      const updated = { ...prev, noTin: isChecked, no_tin: isChecked };
                                       if (isChecked) updated.tin = '';
                                       localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
                                       return updated;
@@ -2474,13 +3297,25 @@ export default function PersonnelProfile() {
                                 const selectedPos = val === 'OTHERS' ? 'OTHERS' : val;
                                 const autoType = getCategoryForCanonicalPosition(selectedPos) || detectPersonnelTypeFromPosition(selectedPos) || currentPerson.type || '';
                                 const catName = autoType === 'teaching' ? 'TEACHING' : autoType === 'teaching-related' ? 'RELATED TEACHING' : autoType === 'non-teaching' ? 'NON-TEACHING' : '';
+                                const isCook = String(selectedPos || '').trim().toUpperCase() === 'COOK';
                                 const updated = {
                                   ...currentPerson,
                                   position: selectedPos,
                                   plantilla_position: selectedPos,
                                   type: autoType,
                                   positionCategory: catName,
-                                  position_category: catName
+                                  position_category: catName,
+                                  ...(isCook ? {
+                                    natureOfAppointment: 'CONTRACTUAL',
+                                    nature_of_appointment: 'CONTRACTUAL',
+                                    hiringArrangement: 'CONTRACTUAL',
+                                    hiring_arrangement: 'CONTRACTUAL',
+                                    fundSource: 'SBFP',
+                                    fund_source: 'SBFP'
+                                  } : (String(currentPerson.fundSource || '').toUpperCase() === 'SBFP' ? {
+                                    fundSource: 'NATIONAL',
+                                    fund_source: 'NATIONAL'
+                                  } : {}))
                                 };
                                 setEditPerson(updated);
                                 localStorage.setItem(`draft_personnel_${currentPerson.id}`, JSON.stringify(updated));
@@ -2557,6 +3392,7 @@ export default function PersonnelProfile() {
                             }
 
                             // 3. Fund Source Config
+                            const isCookPosition = String(currentPerson.position || '').trim().toUpperCase() === 'COOK';
                             let fundOptions = [];
                             let isFundDisabled = false;
                             let fundValue = currentPerson.fundSource || '';
@@ -2566,16 +3402,25 @@ export default function PersonnelProfile() {
                               fundValue = 'NATIONAL';
                               isFundDisabled = true;
                             } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(currentNature)) {
-                              fundOptions = ['SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
+                              fundOptions = isCookPosition 
+                                ? ['SBFP', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'] 
+                                : ['SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
                               isFundDisabled = false;
-                              if (String(fundValue).toUpperCase() === 'NATIONAL') {
-                                fundValue = '';
+                              if (!isCookPosition && String(fundValue).toUpperCase() === 'SBFP') {
+                                fundValue = 'SEF';
+                              } else if (String(fundValue).toUpperCase() === 'NATIONAL') {
+                                fundValue = isCookPosition ? 'SBFP' : '';
                               } else if (String(fundValue).toUpperCase() === 'MOOE') {
                                 fundValue = 'SCHOOL MOOE';
                               }
                             } else {
-                              fundOptions = ['NATIONAL', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
+                              fundOptions = isCookPosition 
+                                ? ['SBFP', 'NATIONAL', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE']
+                                : ['NATIONAL', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
                               isFundDisabled = false;
+                              if (!isCookPosition && String(fundValue).toUpperCase() === 'SBFP') {
+                                fundValue = 'NATIONAL';
+                              }
                             }
 
                             return (
@@ -2630,25 +3475,24 @@ export default function PersonnelProfile() {
                               );
                             })()}
                           </div>
-                          <div>
+                            <div>
                             {(() => {
-                              const isNonTeaching = currentPerson.type === 'non-teaching';
-                              const isNationalFund = String(currentPerson.fundSource || '').trim().toUpperCase() === 'NATIONAL';
-                              const isNonNationalNonTeaching = isNonTeaching && !isNationalFund;
-                              const isEmailNA = isNonNationalNonTeaching && currentPerson.depedEmail === 'N/A';
-                              const rawEmail = isNonNationalNonTeaching ? (currentPerson.depedEmail || '') : (currentPerson.depedEmail === 'N/A' ? '' : (currentPerson.depedEmail || ''));
+                              const isPermanent = String(currentPerson.natureOfAppointment || currentPerson.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
+                              const isEmailNA = !isPermanent && Boolean(currentPerson.noDepedEmail || currentPerson.no_deped_email || currentPerson.depedEmail === 'N/A' || currentPerson.deped_email === 'N/A');
+                              const hasDiscrepancy = Boolean(currentPerson.allowEmailDiscrepancy || currentPerson.allow_email_discrepancy);
+                              const rawEmail = isEmailNA ? 'N/A' : (currentPerson.depedEmail || currentPerson.deped_email || '');
                               const emailVal = (!rawEmail || isEmailNA)
                                 ? { isValid: true, error: null }
-                                : validateDepEdEmail(rawEmail, currentPerson.firstName, currentPerson.lastName, currentPerson.middleName);
+                                : validateDepEdEmail(rawEmail, currentPerson.firstName, currentPerson.lastName, currentPerson.middleName, hasDiscrepancy);
 
                               const localVal = isEmailNA ? 'N/A' : getEmailLocal(rawEmail);
-                              const hasError = !emailVal.isValid && !isEmailNA;
+                              const hasError = !emailVal.isValid && !isEmailNA && !!rawEmail;
 
                               return (
                                 <>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <label style={{ margin: 0 }}>DepEd Email</label>
+                                      <label style={{ margin: 0 }}>DepEd Official Email</label>
                                       <button
                                         type="button"
                                         onClick={() => setIsEmailInfoOpen(true)}
@@ -2673,9 +3517,9 @@ export default function PersonnelProfile() {
                                         i
                                       </button>
                                     </div>
-                                    {isNonNationalNonTeaching && (
+                                    {isEmailNA && (
                                       <span style={{ fontSize: '10.5px', color: '#047857', background: '#ECFDF5', padding: '1px 6px', borderRadius: '4px', border: '1px solid #A7F3D0', fontWeight: '700' }}>
-                                        Optional for Non-National
+                                        N/A (No Issuance)
                                       </span>
                                     )}
                                   </div>
@@ -2739,32 +3583,213 @@ export default function PersonnelProfile() {
                                     </p>
                                   )}
 
-                                  {/* N/A Checkbox Toggle for Non-National Non-Teaching */}
-                                  {isNonNationalNonTeaching && (
-                                    <label style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                      marginTop: '6px',
-                                      fontSize: '12px',
-                                      color: 'var(--navy)',
-                                      cursor: 'pointer',
-                                      fontWeight: '600'
-                                    }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={isEmailNA}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            handleFieldChange('depedEmail', 'N/A');
-                                          } else {
-                                            handleFieldChange('depedEmail', '');
-                                          }
-                                        }}
-                                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                                      />
-                                      <span>No DepEd email issued (Mark as N/A)</span>
-                                    </label>
+                                  {/* Allow Email Discrepancy (Birth Certificate / Legal Name Change) Premium Toggle Card */}
+                                  {!isEmailNA && (
+                                    <div 
+                                      onClick={() => {
+                                        if (!hasDiscrepancy) {
+                                          setConfirmDiscrepancyInput('');
+                                          setIsConfirmDiscrepancyModalOpen(true);
+                                        } else {
+                                          handleMultipleFieldsChange({ allowEmailDiscrepancy: false, allow_email_discrepancy: false });
+                                        }
+                                      }}
+                                      style={{
+                                        marginTop: '8px',
+                                        padding: '10px 14px',
+                                        borderRadius: '12px',
+                                        border: hasDiscrepancy ? '1.5px solid #38BDF8' : '1.5px solid #E2E8F0',
+                                        background: hasDiscrepancy ? 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)' : '#F8FAFC',
+                                        boxShadow: hasDiscrepancy ? '0 4px 12px -2px rgba(14, 165, 233, 0.15)' : 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '12px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        userSelect: 'none'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!hasDiscrepancy) {
+                                          e.currentTarget.style.borderColor = '#CBD5E1';
+                                          e.currentTarget.style.background = '#F1F5F9';
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!hasDiscrepancy) {
+                                          e.currentTarget.style.borderColor = '#E2E8F0';
+                                          e.currentTarget.style.background = '#F8FAFC';
+                                        }
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                                        <div style={{
+                                          width: '32px',
+                                          height: '32px',
+                                          borderRadius: '9px',
+                                          background: hasDiscrepancy ? '#0284C7' : '#E2E8F0',
+                                          color: hasDiscrepancy ? '#FFFFFF' : '#64748B',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          flexShrink: 0,
+                                          transition: 'all 0.2s ease'
+                                        }}>
+                                          <FiShield size={16} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <span style={{
+                                            fontSize: '12.5px',
+                                            fontWeight: 700,
+                                            color: hasDiscrepancy ? '#0369A1' : '#1E293B'
+                                          }}>
+                                            Legal Name Discrepancy Override
+                                          </span>
+                                          {hasDiscrepancy && (
+                                            <span style={{
+                                              fontSize: '10px',
+                                              fontWeight: 800,
+                                              textTransform: 'uppercase',
+                                              letterSpacing: '0.5px',
+                                              padding: '1px 6px',
+                                              borderRadius: '6px',
+                                              background: '#0284C7',
+                                              color: '#FFFFFF'
+                                            }}>
+                                              Active
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Modern iOS-Style Switch Pill */}
+                                      <div style={{
+                                        width: '42px',
+                                        height: '24px',
+                                        borderRadius: '999px',
+                                        background: hasDiscrepancy ? '#0284C7' : '#CBD5E1',
+                                        padding: '2px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        transition: 'background-color 0.25s ease',
+                                        flexShrink: 0,
+                                        position: 'relative'
+                                      }}>
+                                        <div style={{
+                                          width: '20px',
+                                          height: '20px',
+                                          borderRadius: '50%',
+                                          background: '#FFFFFF',
+                                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                                          transform: hasDiscrepancy ? 'translateX(18px)' : 'translateX(0px)',
+                                          transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                        }} />
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* No DepEd Email Toggle Card - Only shown for Non-Permanent Personnel */}
+                                  {!isPermanent && (
+                                    <div
+                                      onClick={() => {
+                                        if (!isEmailNA) {
+                                          handleMultipleFieldsChange({ depedEmail: 'N/A', deped_email: 'N/A', noDepedEmail: true, no_deped_email: true });
+                                        } else {
+                                          handleMultipleFieldsChange({ depedEmail: '', deped_email: '', noDepedEmail: false, no_deped_email: false });
+                                        }
+                                      }}
+                                      style={{
+                                        marginTop: '8px',
+                                        padding: '10px 14px',
+                                        borderRadius: '12px',
+                                        border: isEmailNA ? '1.5px solid #10B981' : '1.5px solid #E2E8F0',
+                                        background: isEmailNA ? 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)' : '#F8FAFC',
+                                        boxShadow: isEmailNA ? '0 4px 12px -2px rgba(16, 185, 129, 0.15)' : 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '12px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        userSelect: 'none'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!isEmailNA) {
+                                          e.currentTarget.style.borderColor = '#CBD5E1';
+                                          e.currentTarget.style.background = '#F1F5F9';
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!isEmailNA) {
+                                          e.currentTarget.style.borderColor = '#E2E8F0';
+                                          e.currentTarget.style.background = '#F8FAFC';
+                                        }
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                                        <div style={{
+                                          width: '32px',
+                                          height: '32px',
+                                          borderRadius: '9px',
+                                          background: isEmailNA ? '#059669' : '#E2E8F0',
+                                          color: isEmailNA ? '#FFFFFF' : '#64748B',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          flexShrink: 0,
+                                          transition: 'all 0.2s ease'
+                                        }}>
+                                          <FiCheck size={16} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <span style={{
+                                            fontSize: '12.5px',
+                                            fontWeight: 700,
+                                            color: isEmailNA ? '#065F46' : '#1E293B'
+                                          }}>
+                                            No DepEd Email Issued (N/A)
+                                          </span>
+                                          {isEmailNA && (
+                                            <span style={{
+                                              fontSize: '10px',
+                                              fontWeight: 800,
+                                              textTransform: 'uppercase',
+                                              letterSpacing: '0.5px',
+                                              padding: '1px 6px',
+                                              borderRadius: '6px',
+                                              background: '#059669',
+                                              color: '#FFFFFF'
+                                            }}>
+                                              N/A
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Modern iOS-Style Switch Pill */}
+                                      <div style={{
+                                        width: '42px',
+                                        height: '24px',
+                                        borderRadius: '999px',
+                                        background: isEmailNA ? '#059669' : '#CBD5E1',
+                                        padding: '2px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        transition: 'background-color 0.25s ease',
+                                        flexShrink: 0,
+                                        position: 'relative'
+                                      }}>
+                                        <div style={{
+                                          width: '20px',
+                                          height: '20px',
+                                          borderRadius: '50%',
+                                          background: '#FFFFFF',
+                                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                                          transform: isEmailNA ? 'translateX(18px)' : 'translateX(0px)',
+                                          transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                                        }} />
+                                      </div>
+                                    </div>
                                   )}
                                 </>
                               );
@@ -2775,7 +3800,7 @@ export default function PersonnelProfile() {
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label>Status of Deployment</label>
                             <SearchableDropdown
-                              options={['OWN STATION', 'CLUSTERED', 'REASSIGNED']}
+                              options={['OWN STATION', 'CLUSTERED', 'REASSIGNED', 'BORROWED']}
                               value={currentPerson.deploymentStatus || ''}
                               onChange={(val) => handleFieldChange('deploymentStatus', val)}
                               placeholder="SELECT STATUS OF DEPLOYMENT..."
@@ -2800,12 +3825,7 @@ export default function PersonnelProfile() {
 
                                 const filteredDistrictSchools = (Array.isArray(districtSchools) && districtSchools.length > 0)
                                   ? districtSchools.filter(s => getSchoolId(s) !== currentSchoolIdStr)
-                                  : DIVISION_SCHOOL_OPTIONS.filter(s => {
-                                      if (getSchoolId(s) === currentSchoolIdStr) return false;
-                                      if (!currentDistrictStr || currentDistrictStr === 'district' || currentDistrictStr === 'unspecified') return true;
-                                      const sDist = getSchoolDistrict(s);
-                                      return !sDist || sDist === 'district' || sDist === currentDistrictStr || sDist.includes(currentDistrictStr) || currentDistrictStr.includes(sDist);
-                                    });
+                                  : DIVISION_SCHOOL_OPTIONS.filter(s => getSchoolId(s) !== currentSchoolIdStr);
 
                                 const schoolOptionsList = filteredDistrictSchools.map(formatSchoolOption).filter(Boolean);
 
@@ -2860,9 +3880,10 @@ export default function PersonnelProfile() {
                                         marginTop: '10px'
                                       }}>
                                         <div>
-                                          <label>Reassigned Target School (Same District)</label>
+                                          <label>Reassigned Target School (Same Division)</label>
                                           <SearchableDropdown
                                             options={schoolOptionsList}
+                                            allowCustom={true}
                                             value={
                                               (() => {
                                                 const activeSchool = (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools[0]) ||
@@ -2875,12 +3896,11 @@ export default function PersonnelProfile() {
                                               })()
                                             }
                                             onChange={(val) => {
-                                              const schoolName = val.split(' (')[0];
-                                              handleFieldChange('assignedSchools', schoolName ? [schoolName] : []);
+                                              handleFieldChange('assignedSchools', val ? [val] : []);
                                             }}
                                             placeholder="SELECT REASSIGNED TARGET SCHOOL..."
                                           />
-                                          <p className="field-help">Select the destination school in {schoolInfo?.district || 'the same district'} where this personnel is reassigned to teach.</p>
+                                          <p className="field-help">Select the destination school in {schoolInfo?.division || 'the same division'} where this personnel is reassigned to teach.</p>
                                         </div>
 
                                         {(() => {
@@ -2903,15 +3923,20 @@ export default function PersonnelProfile() {
                                                   try {
                                                     const { api } = await import('../services/api');
                                                     const rawSchool = Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools[0] : currentPerson.assignedSchools;
-                                                    const match = resolveSchoolMeta(rawSchool);
-                                                    const targetSchoolId = match?.schoolId || (typeof rawSchool === 'string' ? rawSchool.match(/\((\d+)\)/)?.[1] : null);
+                                                    const meta = resolveSchoolMeta(rawSchool);
+                                                    const rawStr = String(rawSchool || '').trim();
+                                                    const parenMatch = rawStr.match(/\((\d{5,})\)/);
+                                                    const directDigits = rawStr.match(/\b(\d{5,})\b/);
+                                                    const targetSchoolId = meta?.schoolId || (parenMatch ? parenMatch[1] : (directDigits ? directDigits[1] : rawStr.replace(/^SCH-/i, '').trim()));
 
                                                     if (!targetSchoolId) {
                                                       await showAlert("No Target School", "Please select a target destination school from the dropdown before sending the reassignment request.");
                                                       return;
                                                     }
 
+                                                    const curSchoolId = String(schoolInfo?.schoolId || '').replace(/^SCH-/i, '').trim();
                                                     await api.createRequest({
+                                                      requesterSchoolId: curSchoolId,
                                                       targetSchoolId: targetSchoolId,
                                                       requestType: 'reassigned_teacher',
                                                       personnelId: prnToShare,
@@ -2921,7 +3946,7 @@ export default function PersonnelProfile() {
                                                     showToast("Reassignment request sent successfully!", "success");
                                                     await showAlert(
                                                       "Reassignment Request Sent",
-                                                      `Reassignment request for ${currentPerson.firstName || ''} ${currentPerson.lastName || ''} (${prnToShare}) has been sent to ${match?.name || rawSchool} successfully!\n\nOnce accepted by that school, the personnel's status in their roster will be BORROWED.`
+                                                      `Reassignment request for ${currentPerson.firstName || ''} ${currentPerson.lastName || ''} (${prnToShare}) has been sent to School ${targetSchoolId} successfully!\n\nOnce accepted by that school, the personnel's status in their roster will be BORROWED.`
                                                     );
                                                   } catch (err) {
                                                     await showAlert("Reassignment Request Error", "Failed to send reassignment request: " + err.message);
@@ -2941,9 +3966,10 @@ export default function PersonnelProfile() {
 
                                     {String(currentPerson.deploymentStatus).toUpperCase() === 'BORROWED' && (
                                       <div>
-                                        <label>Origin / Mother Station (Same District)</label>
+                                        <label>Origin / Mother Station (Same Division)</label>
                                         <SearchableDropdown
                                           options={schoolOptionsList}
+                                          allowCustom={true}
                                           value={
                                             (() => {
                                               const activeSchool = (Array.isArray(currentPerson.assignedSchools) && currentPerson.assignedSchools[0]) ||
@@ -2956,12 +3982,11 @@ export default function PersonnelProfile() {
                                             })()
                                           }
                                           onChange={(val) => {
-                                            const schoolName = val.split(' (')[0];
-                                            handleFieldChange('assignedSchools', schoolName ? [schoolName] : []);
+                                            handleFieldChange('assignedSchools', val ? [val] : []);
                                           }}
                                           placeholder="SELECT ORIGIN STATION..."
                                         />
-                                        <p className="field-help">Mother station from which this personnel is borrowed within {schoolInfo?.district || 'the same district'}.</p>
+                                        <p className="field-help">Mother station from which this personnel is borrowed within {schoolInfo?.division || 'the same division'}.</p>
                                       </div>
                                     )}
 
@@ -2979,10 +4004,10 @@ export default function PersonnelProfile() {
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <span style={{ fontWeight: 'bold', color: 'var(--navy)', fontSize: '13px' }}>Clustered School Assignments</span>
                                           <span style={{ fontSize: '11px', color: '#0369A1', background: '#E0F2FE', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                                            <FiMapPin size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />District: {schoolInfo?.district || 'Same District'}
+                                            <FiMapPin size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Division: {schoolInfo?.division || 'Same Division'}
                                           </span>
                                         </div>
-                                        <p className="field-help" style={{ marginTop: '-8px' }}>Select satellite schools in the same district where this personnel is deployed to teach.</p>
+                                        <p className="field-help" style={{ marginTop: '-8px' }}>Select satellite schools in the same division where this personnel is deployed to teach.</p>
 
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
                                           {(Array.isArray(currentPerson.assignedSchools) ? currentPerson.assignedSchools : []).map((school, index) => (
@@ -3008,6 +4033,7 @@ export default function PersonnelProfile() {
 
                                         <SearchableDropdown
                                           options={schoolOptionsList}
+                                          allowCustom={true}
                                           value=""
                                           onChange={(val) => {
                                             if (!val) return;
@@ -3016,7 +4042,7 @@ export default function PersonnelProfile() {
                                               handleFieldChange('assignedSchools', [...currentList, val]);
                                             }
                                           }}
-                                          placeholder="+ ADD CLUSTERED SCHOOL (SAME DISTRICT)..."
+                                          placeholder="+ ADD CLUSTERED SCHOOL (SAME DIVISION)..."
                                         />
 
                                         {(() => {
@@ -3040,7 +4066,13 @@ export default function PersonnelProfile() {
                                                     const { api } = await import('../services/api');
                                                     const targetSchoolIds = (currentPerson.assignedSchools || []).map(item => {
                                                       const meta = resolveSchoolMeta(item);
-                                                      return meta ? meta.schoolId : (typeof item === 'string' ? item : null);
+                                                      if (meta && meta.schoolId) return meta.schoolId;
+                                                      const rawStr = String(item || '').trim();
+                                                      const parenMatch = rawStr.match(/\((\d{5,})\)/);
+                                                      if (parenMatch) return parenMatch[1];
+                                                      const directDigits = rawStr.match(/\b(\d{5,})\b/);
+                                                      if (directDigits) return directDigits[1];
+                                                      return rawStr.replace(/^SCH-/i, '').trim();
                                                     }).filter(Boolean);
 
                                                     if (targetSchoolIds.length === 0) {
@@ -3048,8 +4080,10 @@ export default function PersonnelProfile() {
                                                       return;
                                                     }
 
+                                                    const curSchoolId = String(schoolInfo?.schoolId || '').replace(/^SCH-/i, '').trim();
                                                     for (const targetId of targetSchoolIds) {
                                                       await api.createRequest({
+                                                        requesterSchoolId: curSchoolId,
                                                         targetSchoolId: targetId,
                                                         requestType: 'clustered_teacher',
                                                         personnelId: prnToShare,
@@ -3097,18 +4131,18 @@ export default function PersonnelProfile() {
                                 <input
                                   type="checkbox"
                                   style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                  checked={currentPerson.lastPromotionDate === 'N/A'}
+                                  checked={currentPerson.lastPromotionDate === 'N/A' || currentPerson.last_promotion_date === 'N/A'}
                                   onChange={(e) => handleFieldChange('lastPromotionDate', e.target.checked ? 'N/A' : '')}
                                 />
                                 N/A
                               </label>
                             </div>
                             <DatePickerDropdowns
-                              value={currentPerson.lastPromotionDate === 'N/A' ? '' : (currentPerson.lastPromotionDate || '')}
+                              value={(currentPerson.lastPromotionDate === 'N/A' || currentPerson.last_promotion_date === 'N/A') ? '' : (currentPerson.lastPromotionDate || currentPerson.last_promotion_date || '')}
                               onChange={(val) => handleFieldChange('lastPromotionDate', val)}
                               maxDate={new Date()}
                               minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
-                              disabled={currentPerson.lastPromotionDate === 'N/A'}
+                              disabled={currentPerson.lastPromotionDate === 'N/A' || currentPerson.last_promotion_date === 'N/A'}
                             />
                           </div>
                           <div>
@@ -3118,18 +4152,18 @@ export default function PersonnelProfile() {
                                 <input
                                   type="checkbox"
                                   style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                  checked={currentPerson.newStationDate === 'N/A'}
+                                  checked={currentPerson.newStationDate === 'N/A' || currentPerson.new_station_date === 'N/A'}
                                   onChange={(e) => handleFieldChange('newStationDate', e.target.checked ? 'N/A' : '')}
                                 />
                                 N/A
                               </label>
                             </div>
                             <DatePickerDropdowns
-                              value={currentPerson.newStationDate === 'N/A' ? '' : (currentPerson.newStationDate || '')}
+                              value={(currentPerson.newStationDate === 'N/A' || currentPerson.new_station_date === 'N/A') ? '' : (currentPerson.newStationDate || currentPerson.new_station_date || '')}
                               onChange={(val) => handleFieldChange('newStationDate', val)}
                               maxDate={new Date()}
                               minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
-                              disabled={currentPerson.newStationDate === 'N/A'}
+                              disabled={currentPerson.newStationDate === 'N/A' || currentPerson.new_station_date === 'N/A'}
                             />
                           </div>
                           <div>
@@ -3139,48 +4173,39 @@ export default function PersonnelProfile() {
                                 <input
                                   type="checkbox"
                                   style={{ width: 'auto', minHeight: 'auto', margin: 0 }}
-                                  checked={currentPerson.lastLateralMovementDate === 'N/A'}
+                                  checked={currentPerson.lastLateralMovementDate === 'N/A' || currentPerson.last_lateral_movement_date === 'N/A'}
                                   onChange={(e) => handleFieldChange('lastLateralMovementDate', e.target.checked ? 'N/A' : '')}
                                 />
                                 N/A
                               </label>
                             </div>
                             <DatePickerDropdowns
-                              value={currentPerson.lastLateralMovementDate === 'N/A' ? '' : (currentPerson.lastLateralMovementDate || '')}
+                              value={(currentPerson.lastLateralMovementDate === 'N/A' || currentPerson.last_lateral_movement_date === 'N/A') ? '' : (currentPerson.lastLateralMovementDate || currentPerson.last_lateral_movement_date || '')}
                               onChange={(val) => handleFieldChange('lastLateralMovementDate', val)}
                               maxDate={new Date()}
                               minDate={currentPerson.firstServiceDate ? new Date(currentPerson.firstServiceDate + 'T00:00:00') : undefined}
-                              disabled={currentPerson.lastLateralMovementDate === 'N/A'}
+                              disabled={currentPerson.lastLateralMovementDate === 'N/A' || currentPerson.last_lateral_movement_date === 'N/A'}
                             />
                           </div>
 
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
                             {(() => {
                               const computed = computeStepIncrement(currentPerson.firstServiceDate, currentPerson.lastPromotionDate);
+                              const isConfirmed = Boolean(currentPerson.stepIncrementConfirmed);
                               const currentStep = currentPerson.stepIncrement || computed.step || 1;
 
                               return (
                                 <>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                                    <label style={{ margin: 0 }}>Salary Step Increment</label>
-                                    {currentStep !== computed.step && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleFieldChange('stepIncrement', computed.step)}
-                                        style={{
-                                          background: '#E0F2FE',
-                                          color: '#0284C7',
-                                          border: '1px solid #BAE6FD',
-                                          borderRadius: '6px',
-                                          padding: '2px 8px',
-                                          fontSize: '11px',
-                                          fontWeight: '700',
-                                          cursor: 'pointer'
-                                        }}
-                                        title="Restore auto-calculated step based on dates"
-                                      >
-                                        ↺ Reset to Auto (Step {computed.step})
-                                      </button>
+                                    <label style={{ margin: 0 }}>Salary Step Increment *</label>
+                                    {isConfirmed ? (
+                                      <span style={{ fontSize: '11px', color: '#16A34A', fontWeight: 800, background: '#DCFCE7', padding: '2px 8px', borderRadius: '4px' }}>
+                                        ✓ Confirmed: Step {currentStep}
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: '11px', color: '#0369A1', fontWeight: 800, background: '#E0F2FE', padding: '2px 8px', borderRadius: '4px' }}>
+                                        ✨ Suggested: Step {computed.step} (Click to confirm)
+                                      </span>
                                     )}
                                   </div>
 
@@ -3193,21 +4218,34 @@ export default function PersonnelProfile() {
                                     marginTop: '4px'
                                   }}>
                                     {[1, 2, 3, 4, 5, 6, 7, 8].map((step, idx) => {
-                                      const isActive = currentStep === step;
+                                      const isStepConfirmed = isConfirmed && currentStep === step;
+                                      const isStepSuggested = !isConfirmed && computed.step === step;
+
+                                      let bg = 'white';
+                                      let color = 'var(--navy)';
+                                      let borderLeft = idx > 0 ? '1.5px solid var(--line)' : 'none';
+
+                                      if (isStepConfirmed) {
+                                        bg = 'var(--blue, #0284c7)';
+                                        color = 'white';
+                                      } else if (isStepSuggested) {
+                                        bg = '#E0F2FE';
+                                        color = '#0369A1';
+                                      }
 
                                       return (
                                         <button
                                           key={step}
                                           type="button"
-                                          onClick={() => handleFieldChange('stepIncrement', step)}
+                                          onClick={() => handleMultipleFieldsChange({ stepIncrement: step, stepIncrementConfirmed: true })}
                                           style={{
                                             flex: 1,
                                             padding: '10px 6px',
                                             border: 'none',
-                                            borderLeft: idx > 0 ? '1.5px solid var(--line)' : 'none',
-                                            background: isActive ? 'var(--blue, #0284c7)' : 'white',
-                                            color: isActive ? 'white' : 'var(--navy)',
-                                            fontWeight: isActive ? '800' : '600',
+                                            borderLeft,
+                                            background: bg,
+                                            color,
+                                            fontWeight: isStepConfirmed ? '800' : (isStepSuggested ? '800' : '600'),
                                             fontSize: '13px',
                                             cursor: 'pointer',
                                             transition: 'all 0.15s ease',
@@ -3217,18 +4255,27 @@ export default function PersonnelProfile() {
                                             alignItems: 'center',
                                             gap: '2px'
                                           }}
-                                          onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f0f9ff'; }}
-                                          onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'white'; }}
+                                          onMouseEnter={e => { if (!isStepConfirmed && !isStepSuggested) e.currentTarget.style.background = '#f0f9ff'; }}
+                                          onMouseLeave={e => { if (!isStepConfirmed && !isStepSuggested) e.currentTarget.style.background = 'white'; }}
+                                          title={isStepSuggested ? `Click to confirm Step ${step}` : `Select Step ${step}`}
                                         >
                                           <span style={{ fontSize: '15px', fontWeight: '800' }}>{step}</span>
-                                          <span style={{ fontSize: '9px', opacity: isActive ? 0.85 : 0.5, fontWeight: '700', letterSpacing: '0.03em' }}>
+                                          <span style={{ fontSize: '9px', opacity: isStepConfirmed ? 0.85 : 0.6, fontWeight: '700', letterSpacing: '0.03em' }}>
                                             STEP
                                           </span>
                                         </button>
                                       );
                                     })}
                                   </div>
-                                  <p className="field-help">Current: Step {currentStep} — Click any step to change.</p>
+                                  {!isConfirmed ? (
+                                    <p className="field-help" style={{ color: '#0369A1', fontWeight: 600 }}>
+                                      ✨ <strong>Step {computed.step}</strong> suggested — <em>Click Step {computed.step} or your actual step above to confirm.</em>
+                                    </p>
+                                  ) : (
+                                    <p className="field-help" style={{ color: '#16A34A', fontWeight: 600 }}>
+                                      ✓ <strong>Step {currentStep}</strong> confirmed by personnel.
+                                    </p>
+                                  )}
                                 </>
                               );
                             })()}
@@ -3305,12 +4352,12 @@ export default function PersonnelProfile() {
                                       updates.vocationalLevel = '';
                                       updates.postGraduateDegree = '';
                                       updates.postGraduateDiscipline = '';
-                                    } else if (val === "MASTER'S DEGREE (GRADUATED)") {
+                                    } else if (val === "MASTER'S DEGREE (GRADUATED)" || val === "MASTER'S DEGREE (WITH UNITS)") {
                                       updates.shsTrack = '';
                                       updates.vocationalCourse = '';
                                       updates.vocationalLevel = '';
                                       updates.postGraduateDegree = 'MASTERS DEGREE';
-                                    } else if (val === "DOCTORATE DEGREE (GRADUATED)") {
+                                    } else if (val === "DOCTORATE DEGREE (GRADUATED)" || val === "DOCTORATE DEGREE (WITH UNITS)") {
                                       updates.shsTrack = '';
                                       updates.vocationalCourse = '';
                                       updates.vocationalLevel = '';
@@ -3385,249 +4432,315 @@ export default function PersonnelProfile() {
                             </>
                           )}
 
-                          {/* College Degree if College, Master's, or Doctorate */}
-                          {['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(
+                          {/* College Degree(s) Section if College, Master's, or Doctorate */}
+                          {([
+                            'COLLEGE GRADUATE / BACCALAUREATE', 
+                            'COLLEGE UNDERGRADUATE', 
+                            "MASTER'S DEGREE", 
+                            "DOCTORATE DEGREE", 
+                            "MASTER'S DEGREE (WITH UNITS)", 
+                            "MASTER'S DEGREE (GRADUATED)", 
+                            "DOCTORATE DEGREE (WITH UNITS)", 
+                            "DOCTORATE DEGREE (GRADUATED)"
+                          ].includes(
                             currentPerson.highestEducationalAttainment || (currentPerson.collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : '')
-                          ) && (
-                            <>
-                              <div>
-                                <label>College Degree / Baccalaureate <span style={{ color: '#EF4444' }}>*</span></label>
-                                <SearchableDropdown
-                                  options={COLLEGE_DEGREE_OPTIONS}
-                                  value={currentPerson.collegeDegree || ''}
-                                  onChange={(val) => {
-                                    const d = (val || '').toUpperCase();
-                                    const isEdu = val && val !== 'NONE' && val !== 'N/A' && (
-                                      d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
-                                    );
-                                    if (!isEdu) {
-                                      handleMultipleFieldsChange({ collegeDegree: val, major: '', minor: '' });
-                                    } else {
-                                      handleFieldChange('collegeDegree', val);
-                                    }
-                                  }}
-                                  placeholder="Select college degree..."
-                                  required
-                                />
+                          ) || String(currentPerson.highestEducationalAttainment || '').includes("MASTER") || String(currentPerson.highestEducationalAttainment || '').includes("DOCTOR")) && (() => {
+                            const collegeList = getEffectiveCollegeDegrees(currentPerson);
+                            const effectiveList = collegeList.length > 0 ? collegeList : [{ collegeDegree: '', major: '', minor: '' }];
+
+                            const updateCollegeList = (newList) => {
+                              const primary = newList[0] || { collegeDegree: '', major: '', minor: '' };
+                              const degreeRows = newList.map((d, idx) => ({
+                                clientKey: `baccalaureate-${idx}`,
+                                level: 'BACCALAUREATE',
+                                collegeDegree: d.collegeDegree || '',
+                                major: d.major || '',
+                                minor: d.minor || ''
+                              }));
+                              handleMultipleFieldsChange({
+                                collegeDegrees: newList,
+                                collegeDegree: primary.collegeDegree || '',
+                                major: primary.major || '',
+                                minor: primary.minor || '',
+                                degreeRows: degreeRows
+                              });
+                            };
+
+                            const handleRowChange = (index, field, value) => {
+                              const nextList = effectiveList.map((row, i) => {
+                                if (i !== index) return row;
+                                const updatedRow = { ...row, [field]: value };
+                                if (field === 'collegeDegree') {
+                                  const d = (value || '').toUpperCase();
+                                  const isEdu = value && value !== 'NONE' && value !== 'N/A' && (
+                                    d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                                  );
+                                  if (!isEdu) {
+                                    updatedRow.major = '';
+                                    updatedRow.minor = '';
+                                  }
+                                }
+                                return updatedRow;
+                              });
+                              updateCollegeList(nextList);
+                            };
+
+                            const handleAddDegree = () => {
+                              updateCollegeList([...effectiveList, { collegeDegree: '', major: '', minor: '' }]);
+                            };
+
+                            const handleRemoveDegree = (index) => {
+                              if (effectiveList.length <= 1) {
+                                updateCollegeList([{ collegeDegree: '', major: '', minor: '' }]);
+                              } else {
+                                const nextList = effectiveList.filter((_, i) => i !== index);
+                                updateCollegeList(nextList);
+                              }
+                            };
+
+                            return (
+                              <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy, #0F172A)', margin: 0 }}>
+                                    College / Baccalaureate Degree(s) <span style={{ color: '#EF4444' }}>*</span>
+                                  </label>
+                                  {effectiveList.length > 0 && (
+                                    <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--blue, #0284C7)', background: 'var(--blue-50, #EFF6FF)', padding: '2px 8px', borderRadius: '8px' }}>
+                                      {effectiveList.length} {effectiveList.length === 1 ? 'Degree' : 'Degrees'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {effectiveList.map((degRow, index) => {
+                                  const d = (degRow.collegeDegree || '').toUpperCase();
+                                  const isEdu = degRow.collegeDegree && degRow.collegeDegree !== 'NONE' && degRow.collegeDegree !== 'N/A' && (
+                                    d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
+                                  );
+
+                                  return (
+                                    <div 
+                                      key={index}
+                                      style={{
+                                        background: '#F8FAFC',
+                                        border: '1.5px solid #E2E8F0',
+                                        borderRadius: '12px',
+                                        padding: '14px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '12px'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#475569', letterSpacing: '0.03em' }}>
+                                          {index === 0 ? 'PRIMARY BACCALAUREATE / COLLEGE DEGREE' : `ADDITIONAL COLLEGE DEGREE #${index + 1}`}
+                                        </span>
+                                        {effectiveList.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveDegree(index)}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              background: '#FEE2E2',
+                                              border: '1px solid #FCA5A5',
+                                              color: '#DC2626',
+                                              borderRadius: '6px',
+                                              padding: '3px 8px',
+                                              fontSize: '11px',
+                                              fontWeight: '600',
+                                              cursor: 'pointer'
+                                            }}
+                                            title="Remove this degree"
+                                          >
+                                            <FiTrash2 size={12} /> Remove
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: isEdu ? 'repeat(auto-fit, minmax(240px, 1fr))' : '1fr', gap: '12px' }}>
+                                        <div>
+                                          <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                            Degree Title <span style={{ color: '#EF4444' }}>*</span>
+                                          </label>
+                                          <SearchableDropdown
+                                            options={COLLEGE_DEGREE_OPTIONS}
+                                            value={degRow.collegeDegree || ''}
+                                            onChange={(val) => handleRowChange(index, 'collegeDegree', val)}
+                                            placeholder="Select college degree..."
+                                            required
+                                          />
+                                        </div>
+
+                                        {isEdu && (
+                                          <>
+                                            <div>
+                                              <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                                Major in Education <span style={{ color: '#EF4444' }}>*</span>
+                                              </label>
+                                              <SearchableDropdown
+                                                options={MAJOR_OPTIONS}
+                                                value={degRow.major || ''}
+                                                onChange={(val) => handleRowChange(index, 'major', val)}
+                                                placeholder="Select major..."
+                                                required
+                                              />
+                                            </div>
+                                            <div>
+                                              <label style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                                Minor <span style={{ fontSize: '11px', color: 'var(--muted, #64748B)', fontWeight: 'normal' }}>(Optional)</span>
+                                              </label>
+                                              <SearchableDropdown
+                                                options={MINOR_OPTIONS}
+                                                value={degRow.minor || ''}
+                                                onChange={(val) => handleRowChange(index, 'minor', val)}
+                                                placeholder="Select minor subject (optional)..."
+                                              />
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                <div>
+                                  <button
+                                    type="button"
+                                    onClick={handleAddDegree}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      background: '#F0F9FF',
+                                      border: '1.5px dashed #0284C7',
+                                      color: '#0284C7',
+                                      padding: '8px 14px',
+                                      borderRadius: '8px',
+                                      fontSize: '12px',
+                                      fontWeight: '600',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    <FiPlus size={14} /> + Add Another Baccalaureate / College Degree
+                                  </button>
+                                </div>
                               </div>
+                            );
+                          })()}
 
-                              {(() => {
-                                const d = (currentPerson.collegeDegree || '').toUpperCase();
-                                const isEdu = currentPerson.collegeDegree && currentPerson.collegeDegree !== 'NONE' && currentPerson.collegeDegree !== 'N/A' && (
-                                  d.includes('EDUCATION') || d.includes('SPECIAL ED') || d.includes('KINDERGARTEN') || d.includes('EARLY CHILDHOOD')
-                                );
-                                if (!isEdu) return null;
-                                return (
-                                  <>
-                                    <div>
-                                      <label>Major in Education <span style={{ color: '#EF4444' }}>*</span></label>
-                                      <SearchableDropdown
-                                        options={MAJOR_OPTIONS}
-                                        value={currentPerson.major || ''}
-                                        onChange={(val) => handleFieldChange('major', val)}
-                                        placeholder="Select major..."
-                                        required
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>Minor <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'normal' }}>(Optional)</span></label>
-                                      <SearchableDropdown
-                                        options={MINOR_OPTIONS}
-                                        value={currentPerson.minor || ''}
-                                        onChange={(val) => handleFieldChange('minor', val)}
-                                        placeholder="Select minor subject (optional)..."
-                                      />
-                                    </div>
-                                  </>
-                                );
-                              })()}
-                            </>
-                          )}
+                          {/* Modular Master's and Doctorate Studies Section with Status Selector */}
+                          {(() => {
+                            const attainment = String(currentPerson.highestEducationalAttainment || '').toUpperCase();
+                            const postGrads = getEffectivePostGradDisciplines(currentPerson);
+                            const mastersWithUnits = postGrads.mastersWithUnits;
+                            const mastersGraduated = postGrads.mastersGraduated;
+                            const doctorateWithUnits = postGrads.doctorateWithUnits;
+                            const doctorateGraduated = postGrads.doctorateGraduated;
 
-                          {/* Master's Degree Discipline(s) for Master's or Doctorate */}
-                          {["MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(currentPerson.highestEducationalAttainment) && (
-                            <div style={{ gridColumn: '1 / -1' }}>
-                              <label>
-                                Master's Degree Discipline(s) <span style={{ color: currentPerson.highestEducationalAttainment === "MASTER'S DEGREE (GRADUATED)" ? '#EF4444' : '#0284C7' }}>*</span>
-                              </label>
+                            const showMasters = attainment.includes("MASTER") || attainment.includes("DOCTOR") || 
+                              mastersWithUnits.length > 0 || mastersGraduated.length > 0;
+                            
+                            const showDoctorate = attainment.includes("DOCTOR") ||
+                              doctorateWithUnits.length > 0 || doctorateGraduated.length > 0;
 
-                              {(() => {
-                                const parseDiscs = (val) => {
-                                  if (!val) return [];
-                                  if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
-                                  if (typeof val === 'string') {
-                                    const trimmed = val.trim();
-                                    if (trimmed.startsWith('{')) {
-                                      try {
-                                        const obj = JSON.parse(trimmed);
-                                        if (Array.isArray(obj.masters)) return obj.masters.map(s => String(s).trim()).filter(Boolean);
-                                      } catch(e) {}
-                                    }
-                                    if (trimmed.startsWith('[')) {
-                                      try {
-                                        const arr = JSON.parse(trimmed);
-                                        if (Array.isArray(arr)) return arr.map(s => String(s).trim()).filter(Boolean);
-                                      } catch(e) {}
-                                    }
-                                    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
-                                  }
-                                  return [];
-                                };
+                            if (!showMasters && !showDoctorate) return null;
 
-                                let list = Array.isArray(currentPerson.mastersDisciplines) && currentPerson.mastersDisciplines.length > 0
-                                  ? currentPerson.mastersDisciplines
-                                  : parseDiscs(currentPerson.mastersDiscipline || currentPerson.postGraduateDiscipline || currentPerson.post_graduate_discipline);
+                            const updateDisciplines = ({
+                              nextMastersWithUnits = mastersWithUnits,
+                              nextMastersGraduated = mastersGraduated,
+                              nextDoctorateWithUnits = doctorateWithUnits,
+                              nextDoctorateGraduated = doctorateGraduated
+                            }) => {
+                              const allMasters = [...new Set([...nextMastersWithUnits, ...nextMastersGraduated])];
+                              const allDoctorate = [...new Set([...nextDoctorateWithUnits, ...nextDoctorateGraduated])];
+                              const jsonStr = JSON.stringify({
+                                mastersWithUnits: nextMastersWithUnits,
+                                mastersGraduated: nextMastersGraduated,
+                                doctorateWithUnits: nextDoctorateWithUnits,
+                                doctorateGraduated: nextDoctorateGraduated,
+                                masters: allMasters,
+                                doctorate: allDoctorate
+                              });
+                              handleMultipleFieldsChange({
+                                mastersWithUnitsDisciplines: nextMastersWithUnits,
+                                mastersGraduatedDisciplines: nextMastersGraduated,
+                                doctorateWithUnitsDisciplines: nextDoctorateWithUnits,
+                                doctorateGraduatedDisciplines: nextDoctorateGraduated,
+                                mastersDisciplines: allMasters,
+                                doctorateDisciplines: allDoctorate,
+                                mastersDiscipline: allMasters.join(', '),
+                                doctorateDiscipline: allDoctorate.join(', '),
+                                postGraduateDiscipline: jsonStr,
+                                post_graduate_discipline: jsonStr
+                              });
+                            };
 
-                                const updateDisciplines = (newList) => {
-                                  const str = newList.join(', ');
-                                  const docList = Array.isArray(currentPerson.doctorateDisciplines) ? currentPerson.doctorateDisciplines : [];
-                                  const jsonStr = JSON.stringify({ masters: newList, doctorate: docList });
-                                  const updates = {
-                                    mastersDisciplines: newList,
-                                    mastersDiscipline: str,
-                                    postGraduateDiscipline: jsonStr,
-                                    post_graduate_discipline: jsonStr
-                                  };
-                                  handleMultipleFieldsChange(updates);
-                                };
+                            const defaultMastersStatus = attainment === "MASTER'S DEGREE (WITH UNITS)" ? 'WITH UNITS' : 'GRADUATED';
+                            const defaultDoctorateStatus = attainment === "DOCTORATE DEGREE (WITH UNITS)" ? 'WITH UNITS' : 'GRADUATED';
 
-                                return (
-                                  <>
-                                    {list.length > 0 && (
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-                                        {list.map((disc, index) => (
-                                          <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50, #EFF6FF)', border: '1.5px solid var(--line, #BAE6FD)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
-                                            <span style={{ fontSize: '13px', color: 'var(--navy, #0F172A)', fontWeight: 'bold' }}>{disc}</span>
-                                            <button
-                                              type="button"
-                                              style={{ background: 'transparent', border: 0, color: 'var(--blue, #0284C7)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
-                                              onClick={() => {
-                                                const newList = list.filter((_, idx) => idx !== index);
-                                                updateDisciplines(newList);
-                                              }}
-                                              title="Remove discipline"
-                                            >
-                                              ✕
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
+                            return (
+                              <>
+                                {showMasters && (
+                                  <PostGradDisciplineSection
+                                    title="Master's Degree Discipline(s)"
+                                    levelLabel="Master's"
+                                    isRequired={attainment.includes("MASTER")}
+                                    graduatedList={mastersGraduated}
+                                    withUnitsList={mastersWithUnits}
+                                    defaultStatus={defaultMastersStatus}
+                                    onAdd={(disc, status) => {
+                                      if (status === 'WITH UNITS') {
+                                        if (!mastersWithUnits.includes(disc)) {
+                                          updateDisciplines({ nextMastersWithUnits: [...mastersWithUnits, disc] });
+                                        }
+                                      } else {
+                                        if (!mastersGraduated.includes(disc)) {
+                                          updateDisciplines({ nextMastersGraduated: [...mastersGraduated, disc] });
+                                        }
+                                      }
+                                    }}
+                                    onRemove={(disc, status) => {
+                                      if (status === 'WITH UNITS') {
+                                        updateDisciplines({ nextMastersWithUnits: mastersWithUnits.filter(d => d !== disc) });
+                                      } else {
+                                        updateDisciplines({ nextMastersGraduated: mastersGraduated.filter(d => d !== disc) });
+                                      }
+                                    }}
+                                  />
+                                )}
 
-                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                                      <SearchableDropdown
-                                        options={DISCIPLINE_OPTIONS}
-                                        value=""
-                                        onChange={(val) => {
-                                          if (!val) return;
-                                          if (!list.includes(val)) {
-                                            updateDisciplines([...list, val]);
-                                          }
-                                        }}
-                                        placeholder={list.length === 0 ? "+ SELECT OR TYPE MASTER'S DISCIPLINE..." : "+ ADD ANOTHER MASTER'S DISCIPLINE..."}
-                                        allowCustom={true}
-                                      />
-                                    </div>
-                                    <p className="field-help" style={{ marginTop: '6px', fontSize: '11px', color: '#64748B' }}>
-                                      Select from preset disciplines or type a custom Master's discipline title and press Enter.
-                                    </p>
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          )}
-
-                          {/* Doctorate Degree Discipline(s) for Doctorate */}
-                          {currentPerson.highestEducationalAttainment === "DOCTORATE DEGREE (GRADUATED)" && (
-                            <div style={{ gridColumn: '1 / -1' }}>
-                              <label>
-                                Doctorate Degree Discipline(s) <span style={{ color: '#EF4444' }}>*</span>
-                              </label>
-
-                              {(() => {
-                                const parseDiscs = (val) => {
-                                  if (!val) return [];
-                                  if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
-                                  if (typeof val === 'string') {
-                                    const trimmed = val.trim();
-                                    if (trimmed.startsWith('{')) {
-                                      try {
-                                        const obj = JSON.parse(trimmed);
-                                        if (Array.isArray(obj.doctorate)) return obj.doctorate.map(s => String(s).trim()).filter(Boolean);
-                                      } catch(e) {}
-                                    }
-                                    if (trimmed.startsWith('[')) {
-                                      try {
-                                        const arr = JSON.parse(trimmed);
-                                        if (Array.isArray(arr)) return arr.map(s => String(s).trim()).filter(Boolean);
-                                      } catch(e) {}
-                                    }
-                                    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
-                                  }
-                                  return [];
-                                };
-
-                                let list = Array.isArray(currentPerson.doctorateDisciplines) && currentPerson.doctorateDisciplines.length > 0
-                                  ? currentPerson.doctorateDisciplines
-                                  : parseDiscs(currentPerson.doctorateDiscipline || currentPerson.postGraduateDiscipline || currentPerson.post_graduate_discipline);
-
-                                const updateDisciplines = (newList) => {
-                                  const str = newList.join(', ');
-                                  const mList = Array.isArray(currentPerson.mastersDisciplines) ? currentPerson.mastersDisciplines : [];
-                                  const jsonStr = JSON.stringify({ masters: mList, doctorate: newList });
-                                  handleMultipleFieldsChange({
-                                    doctorateDisciplines: newList,
-                                    doctorateDiscipline: str,
-                                    postGraduateDiscipline: jsonStr,
-                                    post_graduate_discipline: jsonStr
-                                  });
-                                };
-
-                                return (
-                                  <>
-                                    {list.length > 0 && (
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-                                        {list.map((disc, index) => (
-                                          <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50, #EFF6FF)', border: '1.5px solid var(--line, #BAE6FD)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
-                                            <span style={{ fontSize: '13px', color: 'var(--navy, #0F172A)', fontWeight: 'bold' }}>{disc}</span>
-                                            <button
-                                              type="button"
-                                              style={{ background: 'transparent', border: 0, color: 'var(--blue, #0284C7)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
-                                              onClick={() => {
-                                                const newList = list.filter((_, idx) => idx !== index);
-                                                updateDisciplines(newList);
-                                              }}
-                                              title="Remove discipline"
-                                            >
-                                              ✕
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-
-                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                                      <SearchableDropdown
-                                        options={DISCIPLINE_OPTIONS}
-                                        value=""
-                                        onChange={(val) => {
-                                          if (!val) return;
-                                          if (!list.includes(val)) {
-                                            updateDisciplines([...list, val]);
-                                          }
-                                        }}
-                                        placeholder={list.length === 0 ? "+ SELECT OR TYPE DOCTORATE DISCIPLINE..." : "+ ADD ANOTHER DOCTORATE DISCIPLINE..."}
-                                        allowCustom={true}
-                                      />
-                                    </div>
-                                    <p className="field-help" style={{ marginTop: '6px', fontSize: '11px', color: '#64748B' }}>
-                                      Select from preset disciplines or type a custom Doctorate discipline title and press Enter.
-                                    </p>
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          )}
+                                {showDoctorate && (
+                                  <PostGradDisciplineSection
+                                    title="Doctorate Degree Discipline(s)"
+                                    levelLabel="Doctorate"
+                                    isRequired={attainment.includes("DOCTOR")}
+                                    graduatedList={doctorateGraduated}
+                                    withUnitsList={doctorateWithUnits}
+                                    defaultStatus={defaultDoctorateStatus}
+                                    onAdd={(disc, status) => {
+                                      if (status === 'WITH UNITS') {
+                                        if (!doctorateWithUnits.includes(disc)) {
+                                          updateDisciplines({ nextDoctorateWithUnits: [...doctorateWithUnits, disc] });
+                                        }
+                                      } else {
+                                        if (!doctorateGraduated.includes(disc)) {
+                                          updateDisciplines({ nextDoctorateGraduated: [...doctorateGraduated, disc] });
+                                        }
+                                      }
+                                    }}
+                                    onRemove={(disc, status) => {
+                                      if (status === 'WITH UNITS') {
+                                        updateDisciplines({ nextDoctorateWithUnits: doctorateWithUnits.filter(d => d !== disc) });
+                                      } else {
+                                        updateDisciplines({ nextDoctorateGraduated: doctorateGraduated.filter(d => d !== disc) });
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </>
+                            );
+                          })()}
 
                           <div className="profile-subsection">Civil Service and Professional Eligibilities</div>
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
@@ -3776,7 +4889,9 @@ export default function PersonnelProfile() {
                                     <DatePickerDropdowns
                                       value={tr.startDate || ''}
                                       onChange={(val) => handleTrainingChange('neapTrainingRows', index, 'startDate', val)}
+                                      minDate={new Date('2020-01-01T00:00:00')}
                                       maxDate={new Date()}
+                                      placement="bottom"
                                     />
                                   </div>
                                   <div>
@@ -3785,7 +4900,8 @@ export default function PersonnelProfile() {
                                       value={tr.endDate || ''}
                                       onChange={(val) => handleTrainingChange('neapTrainingRows', index, 'endDate', val)}
                                       maxDate={new Date()}
-                                      minDate={tr.startDate ? new Date(tr.startDate.substring(0, 10) + 'T00:00:00') : null}
+                                      minDate={tr.startDate ? new Date(tr.startDate.substring(0, 10) + 'T00:00:00') : new Date('2020-01-01T00:00:00')}
+                                      placement="bottom"
                                     />
                                   </div>
                                   <div>
@@ -3801,7 +4917,7 @@ export default function PersonnelProfile() {
                               ))}
                               {(currentPerson.neapTrainingRows || []).length === 0 && (
                                 <div style={{ padding: '15px', background: '#F0F9FF', color: 'var(--blue)', border: '1.5px solid var(--line)', borderRadius: '12px', fontSize: '13px', textAlign: 'center' }}>
-                                  No NEAP trainings added yet. Click “Add NEAP Training” to encode credentials, inclusive dates, and hours.
+                                  No NEAP trainings added yet. Click “Add NEAP Training” to encode credentials, inclusive dates (2020 – present), and hours.
                                 </div>
                               )}
                             </div>
@@ -3832,7 +4948,9 @@ export default function PersonnelProfile() {
                                     <DatePickerDropdowns
                                       value={tr.startDate || ''}
                                       onChange={(val) => handleTrainingChange('certificationRows', index, 'startDate', val)}
+                                      minDate={new Date('2020-01-01T00:00:00')}
                                       maxDate={new Date()}
+                                      placement="bottom"
                                     />
                                   </div>
                                   <div>
@@ -3841,7 +4959,8 @@ export default function PersonnelProfile() {
                                       value={tr.endDate || ''}
                                       onChange={(val) => handleTrainingChange('certificationRows', index, 'endDate', val)}
                                       maxDate={new Date()}
-                                      minDate={tr.startDate ? new Date(tr.startDate.substring(0, 10) + 'T00:00:00') : null}
+                                      minDate={tr.startDate ? new Date(tr.startDate.substring(0, 10) + 'T00:00:00') : new Date('2020-01-01T00:00:00')}
+                                      placement="bottom"
                                     />
                                   </div>
                                   <div>
@@ -3857,7 +4976,7 @@ export default function PersonnelProfile() {
                               ))}
                               {(currentPerson.certificationRows || []).length === 0 && (
                                 <div style={{ padding: '15px', background: '#F0F9FF', color: 'var(--blue)', border: '1.5px solid var(--line)', borderRadius: '12px', fontSize: '13px', textAlign: 'center' }}>
-                                  No TESDA NC / certification records added yet. Click “Add TESDA / Certification” to encode credentials, inclusive dates, and hours.
+                                  No TESDA NC / certification records added yet. Click “Add TESDA / Certification” to encode credentials, inclusive dates (2020 – present), and hours.
                                 </div>
                               )}
                             </div>
@@ -3918,7 +5037,9 @@ export default function PersonnelProfile() {
                                     <DatePickerDropdowns
                                       value={tr.startDate || ''}
                                       onChange={(val) => handleTrainingChange('otherTrainingRows', index, 'startDate', val)}
+                                      minDate={new Date('2020-01-01T00:00:00')}
                                       maxDate={new Date()}
+                                      placement="bottom"
                                     />
                                   </div>
                                   <div>
@@ -3927,7 +5048,8 @@ export default function PersonnelProfile() {
                                       value={tr.endDate || ''}
                                       onChange={(val) => handleTrainingChange('otherTrainingRows', index, 'endDate', val)}
                                       maxDate={new Date()}
-                                      minDate={tr.startDate ? new Date(tr.startDate.substring(0, 10) + 'T00:00:00') : null}
+                                      minDate={tr.startDate ? new Date(tr.startDate.substring(0, 10) + 'T00:00:00') : new Date('2020-01-01T00:00:00')}
+                                      placement="bottom"
                                     />
                                   </div>
                                   <div>
@@ -3954,64 +5076,301 @@ export default function PersonnelProfile() {
                       {activeTab === 'teaching' && currentPerson.type !== 'non-teaching' && (
                         <>
                           <div className="profile-subsection">Teaching Assignment</div>
-                          <div className="full" style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
-                            <label style={{ fontWeight: 'bold' }}>Assigned Grade Levels (Teaching / Teaching-Related)</label>
-                            <p className="field-help" style={{ marginBottom: '12px' }}>Select the grade levels this personnel is assigned to teach or manage.</p>
 
-                            {/* List of currently selected grade levels as tags */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                              {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
+                          {(() => {
+                            const isPersonSchoolHead = currentPerson.isSchoolHead === true || 
+                              currentPerson.is_school_head === true || 
+                              String(currentPerson.position || currentPerson.plantilla_position || '').toUpperCase().includes('PRINCIPAL') || 
+                              String(currentPerson.designation || '').toUpperCase().includes('PRINCIPAL') ||
+                              String(currentPerson.designation || '').toUpperCase().includes('SCHOOL HEAD') ||
+                              String(currentPerson.designation || '').toUpperCase().includes('HEAD TEACHER (ADMIN)');
+                            
+                            const isRelatedTeaching = isPersonSchoolHead ||
+                              currentPerson.type === 'teaching-related' ||
+                              currentPerson.type === 'related-teaching' ||
+                              currentPerson.type === 'related' ||
+                              String(currentPerson.positionCategory || currentPerson.position_category || '').toUpperCase() === 'RELATED TEACHING';
+
+                            const hasAssignedGrades = Array.isArray(currentPerson.assignedGradeLevels) && currentPerson.assignedGradeLevels.length > 0;
+                            const hasNoTeaching = !hasAssignedGrades && (currentPerson.hasNoTeachingLoad === true || currentPerson.has_no_teaching_load === true || isPersonSchoolHead || isRelatedTeaching);
+
+                            if (!isRelatedTeaching) return null;
+
+                            const titleText = isPersonSchoolHead 
+                              ? 'School Head Workload Designation' 
+                              : 'Related Teaching Workload Designation';
+                            
+                            const subtitleText = hasNoTeaching
+                              ? (isPersonSchoolHead 
+                                  ? '✓ Designated with 0 teaching loads (Purely administrative and supervisory functions).'
+                                  : '✓ Designated with 0 teaching loads (Purely administrative, supervisory, or non-classroom functions).')
+                              : 'Currently has grade level(s) assigned. Click button to set 0 teaching load.';
+
+                            return (
+                              <div style={{
+                                gridColumn: '1 / -1',
+                                background: hasNoTeaching ? '#F0FDF4' : '#F8FAFC',
+                                border: `1.5px solid ${hasNoTeaching ? '#86EFAC' : 'var(--line)'}`,
+                                borderRadius: '12px',
+                                padding: '14px 18px',
+                                marginTop: '10px',
+                                marginBottom: '14px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: '12px'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <div style={{
+                                    width: '36px',
+                                    height: '36px',
+                                    borderRadius: '8px',
+                                    background: hasNoTeaching ? '#DCFCE7' : '#E2E8F0',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: hasNoTeaching ? '#15803D' : '#475569'
+                                  }}>
+                                    <FiUser size={18} />
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: 800, fontSize: '13px', color: 'var(--navy)' }}>
+                                      {titleText}
+                                    </div>
+                                    <div style={{ fontSize: '11.5px', color: '#64748B' }}>
+                                      {subtitleText}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <button
+                                    type="button"
+                                    className={`btn ${hasNoTeaching ? 'btn-primary' : 'secondary'}`}
+                                    style={{
+                                      fontSize: '11.5px',
+                                      fontWeight: 800,
+                                      padding: '7px 14px',
+                                      borderRadius: '8px',
+                                      background: hasNoTeaching ? '#16A34A' : '#FFFFFF',
+                                      borderColor: hasNoTeaching ? '#16A34A' : 'var(--line)',
+                                      color: hasNoTeaching ? '#FFFFFF' : 'var(--navy)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      cursor: 'pointer'
+                                    }}
+                                    onClick={() => {
+                                      const nextNoTeaching = !hasNoTeaching;
+                                      handleMultipleFieldsChange({
+                                        assignedGradeLevels: [],
+                                        assigned_grade_levels: [],
+                                        gradeLevelsTaught: [],
+                                        grade_levels_taught: [],
+                                        hasNoTeachingLoad: nextNoTeaching,
+                                        has_no_teaching_load: nextNoTeaching,
+                                        teachesShs: false,
+                                        teaches_shs: false
+                                      });
+                                      if (showToast) showToast(nextNoTeaching ? `${isPersonSchoolHead ? "School Head" : "Related Teaching personnel"} designated with 0 teaching loads (Purely Administrative).` : "0-load designation removed. Please select grade levels.", "info");
+                                    }}
+                                  >
+                                    <FiCheckCircle size={13} />
+                                    <span>No Teaching Assignment (0 Teaching Load)</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          <div className="full" style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+                              <div>
+                                <label style={{ fontWeight: '800', fontSize: '14px', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <FiLayers size={16} color="#0284C7" /> Assigned Grade Levels (Teaching / Teaching-Related)
+                                </label>
+                                <p className="field-help" style={{ margin: '2px 0 0', color: '#64748B', fontSize: '12px' }}>
+                                  Click any grade level pill below to assign or unassign it for this teacher.
+                                </p>
+                              </div>
+
+                              {/* Quick Action Presets */}
+                              {(() => {
+                                const curr = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
+                                  .map(g => {
+                                    const u = String(g || '').toUpperCase();
+                                    if (u.includes('KINDER')) return 'Kinder';
+                                    if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                    if (u === 'ALS' || u.startsWith('ALS-') || u.startsWith('ALS ')) return 'ALS';
+                                    return g;
+                                  });
+
+                                const updateGrades = (newList) => {
+                                  const hasShs = newList.some(g => String(g).includes('11') || String(g).includes('12'));
+                                  handleMultipleFieldsChange({
+                                    assignedGradeLevels: newList,
+                                    assigned_grade_levels: newList,
+                                    gradeLevelsTaught: newList,
+                                    grade_levels_taught: newList,
+                                    teachesShs: hasShs,
+                                    teaches_shs: hasShs,
+                                    hasNoTeachingLoad: false,
+                                    has_no_teaching_load: false
+                                  });
+                                };
+
+                                return (
+                                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      className="btn secondary"
+                                      style={{ fontSize: '11px', padding: '4px 8px', fontWeight: '700' }}
+                                      onClick={() => {
+                                        const elemGrades = ['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
+                                        const merged = Array.from(new Set([...curr, ...elemGrades]));
+                                        updateGrades(merged);
+                                      }}
+                                    >
+                                      + All Elem (K-6)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn secondary"
+                                      style={{ fontSize: '11px', padding: '4px 8px', fontWeight: '700' }}
+                                      onClick={() => {
+                                        const jhsGrades = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'];
+                                        const merged = Array.from(new Set([...curr, ...jhsGrades]));
+                                        updateGrades(merged);
+                                      }}
+                                    >
+                                      + All JHS (7-10)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn secondary"
+                                      style={{ fontSize: '11px', padding: '4px 8px', fontWeight: '700' }}
+                                      onClick={() => {
+                                        const shsGrades = ['Grade 11', 'Grade 12'];
+                                        const merged = Array.from(new Set([...curr, ...shsGrades]));
+                                        updateGrades(merged);
+                                      }}
+                                    >
+                                      + All SHS (11-12)
+                                    </button>
+                                    {curr.length > 0 && (
+                                      <button
+                                        type="button"
+                                        className="btn secondary"
+                                        style={{ fontSize: '11px', padding: '4px 8px', color: '#DC2626', borderColor: '#FCA5A5' }}
+                                        onClick={() => {
+                                          updateGrades([]);
+                                        }}
+                                      >
+                                        Clear All
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            {/* Clickable Grade Level Badges Grid */}
+                            {(() => {
+                              const groups = [
+                                {
+                                  title: 'Elementary',
+                                  grades: ['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6']
+                                },
+                                {
+                                  title: 'Junior High School',
+                                  grades: ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10']
+                                },
+                                {
+                                  title: 'Senior High School',
+                                  grades: ['Grade 11', 'Grade 12']
+                                },
+                                {
+                                  title: 'Inclusive & Special Programs',
+                                  grades: ['SNED (NON-GRADED)', 'ALS']
+                                }
+                              ];
+
+                              const currentGrades = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
                                 .map(g => {
                                   const u = String(g || '').toUpperCase();
                                   if (u.includes('KINDER')) return 'Kinder';
                                   if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                  if (u === 'ALS' || u.startsWith('ALS-') || u.startsWith('ALS ')) return 'ALS';
                                   return g;
-                                })
-                                .filter(g => {
-                                  const u = String(g).toUpperCase();
-                                  return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
-                                         !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
-                                         u !== 'GRADE KINDER';
-                                })
-                                .map((grade, index) => (
-                                <div key={index} style={{ display: 'flex', alignItems: 'center', background: 'var(--blue-50)', border: '1.5px solid var(--line)', borderRadius: '12px', padding: '6px 12px', gap: '8px' }}>
-                                  <span style={{ fontSize: '13px', color: 'var(--navy)', fontWeight: 'bold' }}>{grade}</span>
-                                  <button
-                                    type="button"
-                                    style={{ background: 'transparent', border: 0, color: 'var(--blue)', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px', padding: 0 }}
-                                    onClick={() => {
-                                      const currentList = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
-                                        .map(g => {
-                                          const u = String(g || '').toUpperCase();
-                                          if (u.includes('KINDER')) return 'Kinder';
-                                          if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
-                                          return g;
-                                        })
-                                        .filter(g => {
-                                          const u = String(g).toUpperCase();
-                                          return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
-                                                 !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
-                                                 u !== 'GRADE KINDER';
-                                        });
-                                      const newList = currentList.filter((_, idx) => idx !== index);
-                                      handleFieldChange('assignedGradeLevels', newList);
-                                    }}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
-                              {(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).filter(g => {
-                                const u = String(g).toUpperCase();
-                                return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
-                                       !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
-                                       u !== 'GRADE KINDER';
-                              }).length === 0 && (
-                                <span style={{ fontSize: '13px', color: 'var(--muted)', fontStyle: 'italic' }}>No grade levels assigned yet.</span>
-                              )}
-                            </div>
+                                });
 
-                            {/* Dropdown to add a new grade level */}
+                              const updateGrades = (newList) => {
+                                const hasShs = newList.some(g => String(g).includes('11') || String(g).includes('12'));
+                                handleMultipleFieldsChange({
+                                  assignedGradeLevels: newList,
+                                  assigned_grade_levels: newList,
+                                  gradeLevelsTaught: newList,
+                                  grade_levels_taught: newList,
+                                  teachesShs: hasShs,
+                                  teaches_shs: hasShs,
+                                  hasNoTeachingLoad: false,
+                                  has_no_teaching_load: false
+                                });
+                              };
+
+                              return (
+                                <div style={{ display: 'grid', gap: '14px', margin: '10px 0 16px' }}>
+                                  {groups.map((grp, gIdx) => (
+                                    <div key={gIdx} style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                                      <div style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#64748B', marginBottom: '8px' }}>
+                                        {grp.title}
+                                      </div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                        {grp.grades.map(grade => {
+                                          const isSelected = currentGrades.includes(grade);
+                                          return (
+                                            <button
+                                              key={grade}
+                                              type="button"
+                                              onClick={() => {
+                                                let updatedList;
+                                                if (isSelected) {
+                                                  updatedList = currentGrades.filter(g => g !== grade);
+                                                } else {
+                                                  updatedList = [...currentGrades, grade];
+                                                }
+                                                updateGrades(updatedList);
+                                              }}
+                                              style={{
+                                                background: isSelected ? 'linear-gradient(135deg, #0284C7, #0369A1)' : '#FFFFFF',
+                                                color: isSelected ? '#FFFFFF' : '#1E293B',
+                                                border: `1.5px solid ${isSelected ? '#0284C7' : '#CBD5E1'}`,
+                                                borderRadius: '8px',
+                                                padding: '7px 14px',
+                                                fontSize: '12.5px',
+                                                fontWeight: isSelected ? 800 : 600,
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                boxShadow: isSelected ? '0 2px 6px rgba(2,132,199,0.3)' : '0 1px 2px rgba(0,0,0,0.03)',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                            >
+                                              {isSelected ? <FiCheckCircle size={14} color="#FFFFFF" /> : <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '1.5px solid #94A3B8' }} />}
+                                              <span>{grade}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Dropdown to add a new custom grade level if needed */}
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                               <select
                                 value=""
@@ -4024,6 +5383,7 @@ export default function PersonnelProfile() {
                                       const u = String(g || '').toUpperCase();
                                       if (u.includes('KINDER')) return 'Kinder';
                                       if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
+                                      if (u === 'ALS' || u.startsWith('ALS-') || u.startsWith('ALS ')) return 'ALS';
                                       return g;
                                     })
                                     .filter(g => {
@@ -4038,7 +5398,17 @@ export default function PersonnelProfile() {
                                   }
 
                                   const newList = [...currentList, selectedVal];
-                                  handleFieldChange('assignedGradeLevels', newList);
+                                  const hasShs = newList.some(g => String(g).includes('11') || String(g).includes('12'));
+                                  handleMultipleFieldsChange({
+                                    assignedGradeLevels: newList,
+                                    assigned_grade_levels: newList,
+                                    gradeLevelsTaught: newList,
+                                    grade_levels_taught: newList,
+                                    teachesShs: hasShs,
+                                    teaches_shs: hasShs,
+                                    hasNoTeachingLoad: false,
+                                    has_no_teaching_load: false
+                                  });
                                 }}
                                 style={{
                                   maxWidth: '400px',
@@ -4053,81 +5423,11 @@ export default function PersonnelProfile() {
                                     ? `+ Add another grade level (${currentPerson.assignedGradeLevels.length} assigned)...`
                                     : '+ Add Grade Level...'}
                                 </option>
-                                {(() => {
-                                  const offerings = (schoolInfo?.curricularOffering || []).map(o => String(o).toUpperCase());
-                                  const showElem = offerings.length === 0 || offerings.some(o => o.includes('ELEM') || o.includes('KINDER') || o.includes('PRIMARY') || o.includes('K-12') || o.includes('INTEGRATED'));
-                                  const showJHS = offerings.length === 0 || offerings.some(o => o.includes('JHS') || o.includes('JUNIOR') || o.includes('SECONDARY') || o.includes('HIGH') || o.includes('K-12') || o.includes('INTEGRATED'));
-                                  const showSHS = offerings.length === 0 || offerings.some(o => o.includes('SHS') || o.includes('SENIOR') || o.includes('K-12') || o.includes('INTEGRATED'));
-
-                                  const list = [];
-                                  if (showElem) {
-                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6');
-                                  }
-                                  if (showJHS) {
-                                    list.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10');
-                                  }
-                                  if (showSHS) {
-                                    list.push('Grade 11', 'Grade 12');
-                                  }
-                                  if (list.length === 0) {
-                                    list.push('Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12');
-                                  }
-
-                                  // Include SNED (NON-GRADED) and ALS for inclusive education faculty
-                                  if (!list.includes('SNED (NON-GRADED)')) list.push('SNED (NON-GRADED)');
-                                  if (!list.includes('ALS')) list.push('ALS');
-
-                                  if (Array.isArray(classSections)) {
-                                    classSections.forEach(s => {
-                                      const rawG = String(s.gradeLevel || '').trim();
-                                      const u = rawG.toUpperCase();
-                                      if (
-                                        !rawG ||
-                                        u.includes('MULTI-GRADE') || u.includes('MULTIGRADE') || u.includes('MULTI GRADE') ||
-                                        u.includes('MONO-GRADE') || u.includes('MONOGRADE') || u.includes('MONO GRADE') ||
-                                        u === 'GRADE KINDER'
-                                      ) {
-                                        return;
-                                      }
-                                      let cleanG = rawG;
-                                      if (u.includes('KINDER')) cleanG = 'Kinder';
-                                      else if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) cleanG = 'SNED (NON-GRADED)';
-                                      
-                                      if (!list.includes(cleanG)) {
-                                        list.push(cleanG);
-                                      }
-                                    });
-                                  }
-
-                                  const cleanList = list.filter(g => {
-                                    const u = String(g).toUpperCase();
-                                    return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
-                                           !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
-                                           u !== 'GRADE KINDER' && u !== 'NON-GRADED' && u !== 'NON GRADED' && u !== 'SNED';
-                                  });
-
-                                  // Ensure SNED (NON-GRADED) and ALS are present
-                                  if (!cleanList.includes('SNED (NON-GRADED)')) cleanList.push('SNED (NON-GRADED)');
-                                  if (!cleanList.includes('ALS')) cleanList.push('ALS');
-
-                                  const selected = (Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : [])
-                                    .map(g => {
-                                      const u = String(g || '').toUpperCase();
-                                      if (u.includes('KINDER')) return 'Kinder';
-                                      if (u === 'SNED' || u === 'SPED' || u === 'NON-GRADED' || u === 'NON GRADED' || u.includes('SNED') || u.includes('NON-GRADED') || u.includes('NON GRADED')) return 'SNED (NON-GRADED)';
-                                      return g;
-                                    })
-                                    .filter(g => {
-                                      const u = String(g).toUpperCase();
-                                      return !u.includes('MULTI-GRADE') && !u.includes('MULTIGRADE') && !u.includes('MULTI GRADE') &&
-                                             !u.includes('MONO-GRADE') && !u.includes('MONOGRADE') && !u.includes('MONO GRADE') &&
-                                             u !== 'GRADE KINDER';
-                                    });
-
-                                  return cleanList.filter(item => !selected.includes(item)).map(g => (
+                                {['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12', 'SNED (NON-GRADED)', 'ALS']
+                                  .filter(item => !(Array.isArray(currentPerson.assignedGradeLevels) ? currentPerson.assignedGradeLevels : []).includes(item))
+                                  .map(g => (
                                     <option key={g} value={g}>{g}</option>
-                                  ));
-                                })()}
+                                  ))}
                               </select>
                             </div>
                           </div>
@@ -4302,7 +5602,7 @@ export default function PersonnelProfile() {
                                             const cellKey = `${era.key}||${sub}`;
                                             const cellData = learningAreaMap[cellKey];
                                             const isChecked = !!cellData?.checked;
-                                            const isCheckboxDisabled = currentPerson.isShared || isDisabledEra || (!isChecked && isCapacityFull);
+                                            const isCheckboxDisabled = isReassignedOutInMotherSchool || isDisabledEra || (!isChecked && isCapacityFull);
 
                                             return (
                                               <td key={sub} style={{ textAlign: 'center', padding: '10px 8px', borderRight: '1px solid var(--line)', background: isChecked && !isDisabledEra ? '#EFF6FF' : 'transparent' }}>
@@ -4334,7 +5634,7 @@ export default function PersonnelProfile() {
                                                               }
                                                             }}
                                                             onChange={(e) => handleYearsChange(era.key, sub, e.target.value)}
-                                                            disabled={currentPerson.isShared || isDisabledEra}
+                                                            disabled={isDisabledEra}
                                                             style={{ width: '42px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', padding: '2px', border: '1.5px solid #0284C7', borderRadius: '4px', background: '#FFFFFF' }}
                                                           />
                                                         );
@@ -4359,24 +5659,22 @@ export default function PersonnelProfile() {
 
                     </div>
 
-                    {!currentPerson.isShared && (
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '20px', borderTop: '1.5px solid var(--line)', paddingTop: '15px', alignItems: 'center' }}>
-                        <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          <FiSave size={14} /> <span>Save Changes</span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '20px', borderTop: '1.5px solid var(--line)', paddingTop: '15px', alignItems: 'center' }}>
+                      <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <FiSave size={14} /> <span>Save Changes</span>
+                      </button>
+                      <button className="btn secondary" type="button" onClick={handleValidateOnly} style={{ borderColor: 'var(--blue)', color: 'var(--blue)', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '800' }}>
+                        <FiCheckCircle size={14} /> <span>Validate</span>
+                      </button>
+                      <button className="btn secondary" type="button" onClick={handleDuplicate} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <FiCopy size={14} /> <span>Duplicate</span>
+                      </button>
+                      <div style={{ marginLeft: 'auto' }}>
+                        <button className="btn danger" type="button" onClick={handleDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <FiTrash2 size={14} /> <span>Delete</span>
                         </button>
-                        <button className="btn secondary" type="button" onClick={handleValidateOnly} style={{ borderColor: 'var(--blue)', color: 'var(--blue)', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '800' }}>
-                          <FiCheckCircle size={14} /> <span>Validate</span>
-                        </button>
-                        <button className="btn secondary" type="button" onClick={handleDuplicate} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          <FiCopy size={14} /> <span>Duplicate</span>
-                        </button>
-                        <div style={{ marginLeft: 'auto' }}>
-                          <button className="btn danger" type="button" onClick={handleDelete} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <FiTrash2 size={14} /> <span>Delete</span>
-                          </button>
-                        </div>
                       </div>
-                    )}
+                    </div>
 
                   </div>
                 </div>
@@ -4736,10 +6034,10 @@ export default function PersonnelProfile() {
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#991b1b' }}>
-                    All Faculty Profiles Must Be Complete
+                    Teaching Faculty Setup Required for Organized Classes
                   </h3>
                   <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#b91c1c' }}>
-                    DepEd eSF7 requires all school personnel profiles to be completed before proceeding to Organized Classes.
+                    DepEd eSF7 requires all teaching and related-teaching personnel to complete their Employment details and Assigned Grade Levels before setting up Organized Classes.
                   </p>
                 </div>
               </div>
@@ -4777,7 +6075,7 @@ export default function PersonnelProfile() {
                 gap: '8px'
               }}>
                 <span style={{ fontSize: '13px', fontWeight: '700', color: '#9a3412' }}>
-                  {allPersonnelValidationModal.incompleteList.length} of {allPersonnelValidationModal.totalPersonnel} personnel have missing required information.
+                  {allPersonnelValidationModal.incompleteList.length} of {allPersonnelValidationModal.totalPersonnel} teaching faculty have incomplete Employment or Teaching records.
                 </span>
                 <span style={{
                   background: '#ea580c',
@@ -4792,7 +6090,7 @@ export default function PersonnelProfile() {
               </div>
 
               <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
-                Click on any faculty member below to open their profile and complete their missing fields:
+                Click on any teaching faculty below to open their profile and complete their missing Employment/Teaching fields:
               </p>
 
               {/* Incomplete Personnel List */}
@@ -4809,6 +6107,8 @@ export default function PersonnelProfile() {
                     key={item.id}
                     onClick={() => {
                       setActivePersonnelId(item.id);
+                      const targetTab = item.errors?.[0]?.tab || 'employment';
+                      if (setActiveTab) setActiveTab(targetTab);
                       setAllPersonnelValidationModal(prev => ({ ...prev, isOpen: false }));
                       setValidationModal({
                         isOpen: true,
@@ -4910,6 +6210,280 @@ export default function PersonnelProfile() {
         </div>
       )}
     
+      {/* Borrowed Personnel Specific Prompt Modal */}
+      {showBorrowedPromptModal && currentPerson && isBorrowedUnresolved && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          onClick={() => {
+            setDismissedPromptPersonId(currentPerson.id);
+            setShowBorrowedPromptModal(false);
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '20px',
+              maxWidth: '560px',
+              width: '100%',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              border: '1px solid #e2e8f0',
+              overflow: 'hidden',
+              animation: 'modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%)',
+              padding: '20px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              color: '#ffffff'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  borderRadius: '10px',
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px'
+                }}>
+                  ⚠️
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: '#ffffff' }}>
+                    Incoming Borrowed Personnel Notice
+                  </h3>
+                  <div style={{ fontSize: '13px', color: '#bfdbfe', marginTop: '2px', fontWeight: '600' }}>
+                    {currentPerson.firstName} {currentPerson.lastName} ({currentPerson.position || 'Teacher'})
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissedPromptPersonId(currentPerson.id);
+                  setShowBorrowedPromptModal(false);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <p style={{ margin: 0, fontSize: '14px', color: '#334155', lineHeight: '1.6' }}>
+                This teacher is marked as <strong>BORROWED</strong> from a Mother School in historical/auto-populated data.
+              </p>
+
+              <div style={{
+                background: '#f8fafc',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                fontSize: '13px',
+                color: '#475569',
+                lineHeight: '1.5'
+              }}>
+                <strong style={{ color: '#0f172a', display: 'block', marginBottom: '6px' }}>To maintain official DepEd plantilla synchronization:</strong>
+                <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <li>
+                    <strong>If they are still borrowed:</strong> They must be initiated by their Mother School as Reassigned. You will then accept them via the <strong>Request Center</strong> with zero duplicate records.
+                  </li>
+                  <li>
+                    <strong>If their status has changed:</strong> You can keep them as a permanent regular plantilla item in this school (Own Station).
+                  </li>
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const personId = currentPerson.id;
+                    setShowBorrowedPromptModal(false);
+                    await resolveBorrowedPersonnel(personId, 'remove_and_await');
+                    if (setActiveView) setActiveView('roster');
+                  }}
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    background: '#fef2f2',
+                    color: '#b91c1c',
+                    border: '1.5px solid #fecaca',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <FiTrash2 size={16} /> Remove & Await Mother School in Request Center
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const personId = currentPerson.id;
+                    await resolveBorrowedPersonnel(personId, 'convert_to_permanent');
+                    setEditPerson(prev => prev ? ({ ...prev, deploymentStatus: 'Stationed', deployment_status: 'Stationed' }) : prev);
+                    setShowBorrowedPromptModal(false);
+                  }}
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '13px',
+                    fontWeight: '700',
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <FiCheckCircle size={16} /> Keep & Convert to Permanent (Own Station)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal to Confirm DepEd Email Name Discrepancy */}
+      {isConfirmDiscrepancyModalOpen && (
+        <div className="modal-backdrop" style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div className="modal-card" style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            width: '90%',
+            maxWidth: '480px',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FiAlertCircle size={22} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                  Confirm Email Name Discrepancy
+                </h3>
+                <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>
+                  Override strict name matching for @deped.gov.ph email
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '10px', padding: '12px', fontSize: '12px', color: '#92400E', lineHeight: '1.5' }}>
+              You are enabling an override for this employee's official <strong>@deped.gov.ph</strong> email due to a legal name correction on their <strong>PSA Birth Certificate or Court Order</strong> while a Google Workspace account update is pending.
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                Please type <span style={{ color: '#DC2626', fontWeight: 800 }}>CONFIRM</span> to activate this override:
+              </label>
+              <input
+                type="text"
+                value={confirmDiscrepancyInput}
+                onChange={(e) => setConfirmDiscrepancyInput(e.target.value)}
+                placeholder="Type CONFIRM"
+                autoFocus
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  border: '1.5px solid #CBD5E1',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  letterSpacing: '1px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => {
+                  setIsConfirmDiscrepancyModalOpen(false);
+                  setConfirmDiscrepancyInput('');
+                }}
+                style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={confirmDiscrepancyInput.trim() !== 'CONFIRM'}
+                onClick={() => {
+                  if (confirmDiscrepancyInput.trim() === 'CONFIRM') {
+                    handleMultipleFieldsChange({ allowEmailDiscrepancy: true, allow_email_discrepancy: true });
+                    setIsConfirmDiscrepancyModalOpen(false);
+                    setConfirmDiscrepancyInput('');
+                    if (showToast) showToast('Email name discrepancy override enabled!', 'success');
+                  }
+                }}
+                style={{
+                  padding: '8px 18px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  background: confirmDiscrepancyInput.trim() === 'CONFIRM' ? '#0284C7' : '#94A3B8',
+                  cursor: confirmDiscrepancyInput.trim() === 'CONFIRM' ? 'pointer' : 'not-allowed'
+                }}
+              >
+                Unlock Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

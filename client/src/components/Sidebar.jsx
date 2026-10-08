@@ -15,19 +15,20 @@ import {
   FiDollarSign, 
   FiShield, 
   FiLogOut,
-  FiChevronDown
+  FiChevronDown,
+  FiLock,
+  FiUnlock
 } from 'react-icons/fi';
 
 export default function Sidebar() {
-  const { activeView, setActiveView, incomingRequests } = useApp();
+  const { activeView, setActiveView, incomingRequests, bypassNodeLocks, setBypassNodeLocks } = useApp();
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   const [openSections, setOpenSections] = useState({
-    esf7: true,
-    portals: true,
-    overload: true,
-    others: true,
-    validation: true
+    general: true,
+    phase1: true,
+    phase2: true,
+    phase3: true
   });
 
   const toggleSection = (key) => {
@@ -36,46 +37,40 @@ export default function Sidebar() {
 
   const sections = [
     {
-      key: 'esf7',
-      title: 'ESF7 Core Registry',
+      key: 'general',
+      title: 'Navigation & Overview',
       items: [
         { view: 'landing', label: 'Welcome Page', Icon: FiHome },
-        { view: 'dashboard', label: 'Dashboard', Icon: FiGrid },
-        { view: 'school', label: 'School Profile', Icon: FiBookOpen },
-        { view: 'roster', label: 'Personnel Roster', Icon: FiUsers },
-        { view: 'profile', label: 'Personnel Profiling', Icon: FiUserCheck },
-        { view: 'classes', label: 'Organized Classes', Icon: FiGrid },
-        { view: 'designation', label: 'Designations', Icon: FiBookmark },
-        { view: 'workload', label: 'Workload', Icon: FiClock }
+        { view: 'dashboard', label: 'Dashboard', Icon: FiGrid }
       ]
     },
     {
-      key: 'portals',
-      title: 'Portals & Utilities',
+      key: 'phase1',
+      title: 'Phase 1: Setup & Profiling',
       items: [
-        { view: 'room-qr', label: 'Room QR Portal', Icon: FiMaximize },
-        { view: 'requests', label: 'Requests', Icon: FiMail, badge: incomingRequests.length > 0 ? incomingRequests.length : null }
+        { view: 'school', label: '01. School Profile', Icon: FiBookOpen },
+        { view: 'roster', label: '02. Personnel Roster', Icon: FiUsers },
+        { view: 'room-qr', label: '03. Room QR Portal', Icon: FiMaximize },
+        { view: 'profile', label: '04. Personnel Profiling', Icon: FiUserCheck }
       ]
     },
     {
-      key: 'overload',
-      title: 'Teaching Overload',
+      key: 'phase2',
+      title: 'Phase 2: Classes & Workload',
       items: [
-        { view: 'overload', label: 'Overload', Icon: FiRepeat }
+        { view: 'requests', label: '05. Request Center', Icon: FiMail, badge: incomingRequests?.length > 0 ? incomingRequests.length : null },
+        { view: 'classes', label: '06. Organized Classes', Icon: FiGrid },
+        { view: 'designation', label: '07. Designations', Icon: FiBookmark },
+        { view: 'workload', label: '08. Workload & Timetable', Icon: FiClock }
       ]
     },
     {
-      key: 'others',
-      title: 'Others',
+      key: 'phase3',
+      title: 'Phase 3: Benefits & Submission',
       items: [
-        { view: 'allowances', label: 'Allowances & Incentives', Icon: FiDollarSign }
-      ]
-    },
-    {
-      key: 'validation',
-      title: 'Quality Audit & Certification',
-      items: [
-        { view: 'validation', label: 'Validation Center', Icon: FiShield }
+        { view: 'allowances', label: '09. Allowances & Incentives', Icon: FiDollarSign, isLocked: !bypassNodeLocks },
+        { view: 'overload', label: '10. Overload Center', Icon: FiRepeat },
+        { view: 'validation', label: '11. Validation Center', Icon: FiShield }
       ]
     }
   ];
@@ -140,6 +135,22 @@ export default function Sidebar() {
                       >
                         {IconComponent && <IconComponent size={16} style={{ flexShrink: 0 }} />}
                         <span>{item.label}</span>
+                        {item.isLocked && (
+                          <span style={{
+                            marginLeft: 'auto',
+                            fontSize: '9px',
+                            fontWeight: '800',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: '#F1F5F9',
+                            color: '#64748B',
+                            border: '1px solid #CBD5E1',
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase'
+                          }}>
+                            Locked
+                          </span>
+                        )}
                         {item.badge && (
                           <span className="nav-badge">
                             {item.badge}

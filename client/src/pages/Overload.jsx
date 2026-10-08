@@ -52,7 +52,7 @@ const DAY_MAP = {
 };
 
 const ACADEMIC_TERMS = [
-  { id: 'Term 1', label: 'Term 1 (June – August)', months: ['June', 'July', 'August'], fyLabel: 'FY Q2 & FY Q3' },
+  { id: 'Term 1', label: 'Term 1 (June – August / Sept. 15)', months: ['June', 'July', 'August', 'September'], fyLabel: 'FY Q2 & FY Q3' },
   { id: 'Term 2', label: 'Term 2 (September – December)', months: ['September', 'October', 'November', 'December'], fyLabel: 'FY Q3 & FY Q4' },
   { id: 'Term 3', label: 'Term 3 (January – March)', months: ['January', 'February', 'March'], fyLabel: 'FY Q1' }
 ];
@@ -68,7 +68,7 @@ const MONTHS_LIST = [
   { name: 'June', quarter: 'Term 1', fy: 'FY Q2', index: 5 },
   { name: 'July', quarter: 'Term 1', fy: 'FY Q3', index: 6 },
   { name: 'August', quarter: 'Term 1', fy: 'FY Q3', index: 7 },
-  { name: 'September', quarter: 'Term 2', fy: 'FY Q3', index: 8 },
+  { name: 'September', quarter: 'Term 1 & 2', fy: 'FY Q3', index: 8 },
   { name: 'October', quarter: 'Term 2', fy: 'FY Q4', index: 9 },
   { name: 'November', quarter: 'Term 2', fy: 'FY Q4', index: 10 },
   { name: 'December', quarter: 'Term 2', fy: 'FY Q4', index: 11 },
@@ -301,9 +301,13 @@ export default function Overload() {
     }
   };
 
-  // Tardiness & Late Log form state (Step 2)
+  // Tardiness & Late Log form state (Step 3)
   const [tardinessTeacherId, setTardinessTeacherId] = useState('');
   const [tardinessMonth, setTardinessMonth] = useState('June');
+  const [selectedTardyDate, setSelectedTardyDate] = useState('');
+  const [tardyTimeIn, setTardyTimeIn] = useState('08:00');
+  const [tardyTimeOut, setTardyTimeOut] = useState('17:00');
+  const [tardyMissedSlotIds, setTardyMissedSlotIds] = useState([]);
 
   // Absences & Leave Log form state (Step 2)
   const [leaveType, setLeaveType] = useState('Sick Leave');
@@ -635,17 +639,35 @@ export default function Overload() {
     if (updated.length >= 1) {
       try {
         const sy = schoolInfo?.schoolYear || 'SY 26-27';
+        const teacherItem = (typeof overloadRoster !== 'undefined' ? overloadRoster : [])?.find(it => it.teacher.id === personnelId);
+        const overloadHours = Number(teacherItem?.totalStats?.net || teacherItem?.weeklyOverload || 0);
+        const overloadPay = Number(teacherItem?.overloadPay || 0);
+        const netTermPay = Number(teacherItem?.overloadPay || 0);
+
         await api.saveOverloadReasons({
           personnelId,
           schoolYear: sy,
           term: activeTermKey,
-          reasons: updated
+          month: selectedMonth || 'All',
+          reasons: updated,
+          overloadHours,
+          overloadPay,
+          netTermPay,
+          rawPayload: teacherItem ? {
+            teacherId: personnelId,
+            weeklyOverload: teacherItem.weeklyOverload,
+            monthlyStatsMap: teacherItem.monthlyStatsMap,
+            totalStats: teacherItem.totalStats,
+            phtr: teacherItem.phtr,
+            overloadPay: teacherItem.overloadPay
+          } : {}
         });
       } catch (e) {
         console.error('Failed to save overload reason:', e);
       }
     }
   };
+
 
   // === DIRECT API FETCH: get fresh personnel+workload from the server every time ===
   const [freshPersonnel, setFreshPersonnel] = useState([]);
@@ -805,8 +827,10 @@ export default function Overload() {
   });
 
   // Helper to get weekdays in a month for calculations
-  const getWeekdaysInMonth = (monthName, yearString = 'SY 26-27') => {
-    const monthObj = MONTHS_LIST.find(m => m.name === monthName);
+  // Helper to get weekdays in a month for calculations
+  const getWeekdaysInMonth = (monthName, yearString = 'SY 26-27', quarterCode = null) => {
+    const cleanMonthName = String(monthName || '').split(' ')[0].replace(/[\(\)]/g, '').trim();
+    const monthObj = MONTHS_LIST.find(m => m.name.toLowerCase() === cleanMonthName.toLowerCase());
     const monthIndex = monthObj ? monthObj.index : 5;
     
     // Extract any numbers from string (e.g. "SY 26-27" -> [26, 27], "2026-2027" -> [2026, 2027])
@@ -832,13 +856,90 @@ export default function Overload() {
     const date = new Date(year, monthIndex, 1);
     while (date.getMonth() === monthIndex) {
       const day = date.getDay();
+      const dayNum = date.getDate();
       // Monday = 1, Tuesday = 2, Wednesday = 3, Thursday = 4, Friday = 5
       if (day >= 1 && day <= 5) {
-        dates.push(new Date(date));
+        // Full month or Fiscal Year Q3: September is until September 30 (all weekdays included)
+        if (quarterCode === 'FULL_MONTH' || quarterCode === 'FY Q3' || (!quarterCode && filterMode === 'fy' && selectedFY === 'FY Q3')) {
+          dates.push(new Date(date));
+        }
+        // In Academic Term 1: September is strictly Sept. 1 - 15 (Term 1 cut-off)
+        else if ((quarterCode === 'Term 1' || (!quarterCode && filterMode === 'term' && selectedTerm === 'Term 1')) && cleanMonthName.toLowerCase() === 'september') {
+          if (dayNum <= 15) {
+            dates.push(new Date(date));
+          }
+        }
+        // In Academic Term 2: September is strictly Sept. 16 - 30 (Term 2 opening)
+        else if ((quarterCode === 'Term 2' || (!quarterCode && filterMode === 'term' && selectedTerm === 'Term 2')) && cleanMonthName.toLowerCase() === 'september') {
+          if (dayNum >= 16) {
+            dates.push(new Date(date));
+          }
+        } else {
+          dates.push(new Date(date));
+        }
       }
       date.setDate(date.getDate() + 1);
     }
     return dates;
+  };
+
+  // Helper to map month / date string to Term ('1st' | '2nd' | '3rd')
+  const getTermForDateOrMonth = (input) => {
+    if (!input) return '1st';
+    let monthName = '';
+    let day = null;
+    if (typeof input === 'string' && input.includes('-')) {
+      const parts = input.split('-');
+      if (parts.length >= 2) {
+        const mIdx = parseInt(parts[1], 10) - 1;
+        const found = MONTHS_LIST.find(m => m.index === mIdx);
+        if (found) monthName = found.name;
+      }
+      if (parts.length >= 3) {
+        day = parseInt(parts[2], 10);
+      }
+    } else if (typeof input === 'string') {
+      monthName = input;
+    }
+    const cleanMName = String(monthName || '').toLowerCase();
+    
+    // Official DepEd Calendar Term cut-off for September:
+    // Sept 1 - 15 = Term 1 (1st Term)
+    // Sept 16 - 30 = Term 2 (2nd Term)
+    if (cleanMName.includes('september')) {
+      if (day !== null && day <= 15) return '1st';
+      if (day !== null && day > 15) return '2nd';
+      return '1st';
+    }
+
+    const mObj = MONTHS_LIST.find(m => m.name.toLowerCase() === cleanMName || m.name.toLowerCase().startsWith(cleanMName));
+    if (mObj) {
+      if (mObj.quarter.includes('Term 1')) return '1st';
+      if (mObj.quarter.includes('Term 2')) return '2nd';
+      if (mObj.quarter.includes('Term 3')) return '3rd';
+    }
+    return '1st';
+  };
+
+  const normalizeRowTerm = (t) => {
+    if (!t) return '1st';
+    const s = String(t).toLowerCase().trim();
+    if (s.includes('1') || s.includes('first')) return '1st';
+    if (s.includes('2') || s.includes('second')) return '2nd';
+    if (s.includes('3') || s.includes('third')) return '3rd';
+    return '1st';
+  };
+
+  const getTeacherWorkloadForMonthOrTerm = (teacher, monthOrTerm) => {
+    if (!teacher) return [];
+    const targetTerm = getTermForDateOrMonth(monthOrTerm);
+    const isTeacherClustered = teacher.isClustered || teacher.deploymentStatus === 'CLUSTERED';
+    const allRows = [
+      ...(teacher.workloadRows || []),
+      ...(isTeacherClustered && Array.isArray(teacher.sharedWorkloadRows) ? teacher.sharedWorkloadRows : [])
+    ];
+    const hasExplicitTermRows = allRows.some(r => normalizeRowTerm(r.term || '1st') === targetTerm);
+    return allRows.filter(r => hasExplicitTermRows ? (normalizeRowTerm(r.term || '1st') === targetTerm) : true);
   };
 
   // Helper to get weekdays in a quarter or term
@@ -848,7 +949,7 @@ export default function Overload() {
     const monthNames = termObj ? termObj.months : (fyObj ? fyObj.months : ['June', 'July', 'August']);
     let allDates = [];
     monthNames.forEach(mName => {
-      allDates = [...allDates, ...getWeekdaysInMonth(mName, yearString)];
+      allDates = [...allDates, ...getWeekdaysInMonth(mName, yearString, code)];
     });
     return allDates;
   };
@@ -896,6 +997,191 @@ export default function Overload() {
     return daysArr.some(d => normalizeDay(d) === targetDayShort);
   };
 
+  // Helper to compute daily class schedule and exact minute-level tardiness / undertime impact
+  const computeDailyWorkloadImpact = (teacher, dateStr, dayShort, schoolYear, tardinessLog, allAbsences = [], curWorkloadTransfers = []) => {
+    if (!teacher) return { classes: [], totalScheduledMinutes: 0, missedTeachingMinutes: 0, actualRenderedMinutes: 0, earnedDailyOverloadMinutes: 0, grossScheduledOverloadMinutes: 0, deductionMinutes: 0, missedSlotDetails: [] };
+
+    const teacherIds = [
+      String(teacher.id || '').trim(),
+      String(teacher.prn || '').trim(),
+      String(teacher.personnelId || '').trim(),
+      String(teacher.personnel_id || '').trim(),
+      String(teacher.employeeNo || '').trim(),
+      String(teacher.employee_no || '').trim()
+    ].filter(Boolean);
+
+    // 1. Gather all class slots for this teacher on this day
+    const isTeacherClustered = teacher.isClustered || teacher.deploymentStatus === 'CLUSTERED';
+    const allRows = [
+      ...(teacher.workloadRows || []),
+      ...(isTeacherClustered && Array.isArray(teacher.sharedWorkloadRows) ? teacher.sharedWorkloadRows : [])
+    ];
+
+    const currentSy = schoolYear || 'SY 26-27';
+    const targetTerm = getTermForDateOrMonth(dateStr);
+    const classes = [];
+    let baseScheduledMinutes = 0;
+
+    const hasExplicitTermRows = allRows.some(r => normalizeRowTerm(r.term || '1st') === targetTerm);
+
+    allRows.filter(row => {
+      const rowSy = row.schoolYear || row.school_year;
+      const syMatch = !rowSy || rowSy === currentSy || (rowSy && currentSy && rowSy.replace(/\s+/g, '') === currentSy.replace(/\s+/g, ''));
+      const termMatch = hasExplicitTermRows ? (normalizeRowTerm(row.term || '1st') === targetTerm) : true;
+      return syMatch && termMatch;
+    }).forEach((row, idx) => {
+      if (matchesDay(row.days, dayShort)) {
+        const sTime = row.startTime || row.start_time;
+        const eTime = row.endTime || row.end_time;
+        const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
+        const secName = row.section || row.section_name || '';
+        
+        let duration = 0;
+        if (subName === 'HGP') {
+          duration = 0;
+        } else if (subName === 'ADVISORY') {
+          duration = 60;
+        } else {
+          duration = Math.max(0, timeToMins(eTime) - timeToMins(sTime));
+        }
+
+        if (duration > 0 || (sTime && eTime)) {
+          classes.push({
+            id: row.id || `row-${idx}`,
+            subject: subName || 'Class',
+            section: secName,
+            startTime: sTime,
+            endTime: eTime,
+            startMins: timeToMins(sTime),
+            endMins: timeToMins(eTime),
+            durationMins: duration,
+            type: 'regular'
+          });
+          baseScheduledMinutes += duration;
+        }
+      }
+    });
+
+    // 2. Add substitute teaching slots if any
+    let substituteMinutes = 0;
+    (curWorkloadTransfers || []).forEach((t, tIdx) => {
+      const subId = String(t.substituteTeacherId || t.substitute_personnel_id || t.substitute_teacher_id || '').trim();
+      const cleanStart = String(t.startDate || '').split('T')[0].trim();
+      const cleanEnd = String(t.endDate || cleanStart).split('T')[0].trim();
+
+      if (teacherIds.includes(subId) && t.status !== 'ended' && dateStr >= cleanStart && dateStr <= cleanEnd) {
+        (t.workloadRows || []).forEach((row, rIdx) => {
+          if (matchesDay(row.days, dayShort)) {
+            const sTime = row.startTime || row.start_time;
+            const eTime = row.endTime || row.end_time;
+            const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
+            let duration = 0;
+            if (subName === 'HGP') {
+              duration = 0;
+            } else if (subName === 'ADVISORY') {
+              duration = 60;
+            } else {
+              duration = Math.max(0, timeToMins(eTime) - timeToMins(sTime));
+            }
+
+            if (duration > 0 || (sTime && eTime)) {
+              classes.push({
+                id: row.id || `sub-${tIdx}-${rIdx}`,
+                subject: `(Sub) ${subName || 'Class'}`,
+                section: row.section || '',
+                startTime: sTime,
+                endTime: eTime,
+                startMins: timeToMins(sTime),
+                endMins: timeToMins(eTime),
+                durationMins: duration,
+                type: 'substitute'
+              });
+              substituteMinutes += duration;
+            }
+          }
+        });
+      }
+    });
+
+    const totalScheduledMinutes = baseScheduledMinutes + substituteMinutes;
+
+    // 3. Compute missed teaching minutes based on tardinessLog
+    let missedTeachingMinutes = 0;
+    const missedSlotDetails = [];
+
+    if (tardinessLog) {
+      const timeInMins = (tardinessLog.timeIn || tardinessLog.time_in) ? timeToMins(tardinessLog.timeIn || tardinessLog.time_in) : null;
+      const timeOutMins = (tardinessLog.timeOut || tardinessLog.time_out) ? timeToMins(tardinessLog.timeOut || tardinessLog.time_out) : null;
+      const manualMissedSlotIds = Array.isArray(tardinessLog.missedSlotIds || tardinessLog.missed_slot_ids) 
+        ? (tardinessLog.missedSlotIds || tardinessLog.missed_slot_ids) 
+        : [];
+
+      classes.forEach(c => {
+        let slotMissedMins = 0;
+        let reasons = [];
+
+        // Check if manually marked missed
+        if (manualMissedSlotIds.includes(c.id)) {
+          slotMissedMins = c.durationMins;
+          reasons.push('Marked Unattended');
+        } else {
+          // Late arrival overlap
+          if (timeInMins !== null && timeInMins > c.startMins) {
+            const lateOverlap = Math.max(0, Math.min(c.endMins, timeInMins) - c.startMins);
+            if (lateOverlap > 0) {
+              slotMissedMins += lateOverlap;
+              reasons.push(`Late arrival (In: ${tardinessLog.timeIn || tardinessLog.time_in})`);
+            }
+          }
+
+          // Undertime departure overlap
+          if (timeOutMins !== null && timeOutMins < c.endMins) {
+            const undertimeOverlap = Math.max(0, c.endMins - Math.max(c.startMins, timeOutMins));
+            if (undertimeOverlap > 0) {
+              slotMissedMins = Math.min(c.durationMins, slotMissedMins + undertimeOverlap);
+              reasons.push(`Early departure (Out: ${tardinessLog.timeOut || tardinessLog.time_out})`);
+            }
+          }
+        }
+
+        slotMissedMins = Math.min(c.durationMins, slotMissedMins);
+        if (slotMissedMins > 0) {
+          missedTeachingMinutes += slotMissedMins;
+          missedSlotDetails.push({
+            ...c,
+            missedMins: slotMissedMins,
+            reason: reasons.join(' · ')
+          });
+        }
+      });
+
+      // Fallback if legacy log without times has explicit missed_minutes
+      if (missedTeachingMinutes === 0 && (tardinessLog.missedMinutes || tardinessLog.missed_minutes)) {
+        missedTeachingMinutes = Number(tardinessLog.missedMinutes || tardinessLog.missed_minutes);
+      }
+    }
+
+    const actualRenderedMinutes = Math.max(0, totalScheduledMinutes - missedTeachingMinutes);
+    const earnedDailyOverloadMinutes = Math.max(0, actualRenderedMinutes - 360);
+    const grossScheduledOverloadMinutes = Math.max(0, totalScheduledMinutes - 360);
+    const deductionMinutes = Math.max(0, grossScheduledOverloadMinutes - earnedDailyOverloadMinutes);
+
+    return {
+      classes,
+      totalScheduledMinutes,
+      missedTeachingMinutes,
+      actualRenderedMinutes,
+      earnedDailyOverloadMinutes,
+      grossScheduledOverloadMinutes,
+      deductionMinutes,
+      missedSlotDetails,
+      isEligible: earnedDailyOverloadMinutes > 0,
+      earnedHours: Math.round((earnedDailyOverloadMinutes / 60) * 100) / 100,
+      grossHours: Math.round((grossScheduledOverloadMinutes / 60) * 100) / 100,
+      deductionHours: Math.round((deductionMinutes / 60) * 100) / 100
+    };
+  };
+
   // Main overload calculator logic
   const calculateOverloadForTeacher = (rawTeacher, dates) => {
     const teacher = getEffectiveTeacher(rawTeacher);
@@ -940,7 +1226,7 @@ export default function Overload() {
         if (!teacherIds.includes(targetPId)) return false;
 
         const lType = a.leaveType || a.leave_type || '';
-        if (lType.includes('Late') || lType.includes('Tardiness')) return false;
+        if (lType.includes('Late') || lType.includes('Tardiness') || lType.includes('Undertime')) return false;
 
         const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
         const eStr = a.endDate || a.end_date || sStr;
@@ -950,13 +1236,13 @@ export default function Overload() {
         return dateStr >= cleanStart && dateStr <= cleanEnd;
       });
 
-      // Check for tardiness / late on this date (ineligible for overload pay on late days)
-      const isLate = absences.some(a => {
+      // Find tardiness / undertime log on this date
+      const tardinessLog = absences.find(a => {
         const targetPId = String(a.personnelId || a.personnel_id || '').trim();
         if (!teacherIds.includes(targetPId)) return false;
 
         const lType = a.leaveType || a.leave_type || '';
-        if (!lType.includes('Late') && !lType.includes('Tardiness')) return false;
+        if (!lType.includes('Late') && !lType.includes('Tardiness') && !lType.includes('Undertime')) return false;
 
         const sStr = a.startDate || a.start_date || a.absenceDate || a.absence_date || '';
         const eStr = a.endDate || a.end_date || sStr;
@@ -966,91 +1252,39 @@ export default function Overload() {
         return dateStr >= cleanStart && dateStr <= cleanEnd;
       });
 
-      // 1. Process base scheduled workload rows (regular timetable + clustered partner school workload)
-      let baseScheduledMinutes = 0;
       const currentSy = schoolInfo?.schoolYear || 'SY 26-27';
-      const isTeacherClustered = teacher.isClustered || teacher.deploymentStatus === 'CLUSTERED';
-      const allRows = [
-        ...(teacher.workloadRows || []),
-        ...(isTeacherClustered && Array.isArray(teacher.sharedWorkloadRows) ? teacher.sharedWorkloadRows : [])
-      ];
-      const currentYearWorkloads = allRows.filter(row => {
-        const rowSy = row.schoolYear || row.school_year;
-        return !rowSy || rowSy === currentSy || (rowSy && currentSy && rowSy.replace(/\s+/g, '') === currentSy.replace(/\s+/g, ''));
-      });
+      const impact = computeDailyWorkloadImpact(teacher, dateStr, dayShort, currentSy, tardinessLog, absences, workloadTransfers);
 
-      currentYearWorkloads.forEach(row => {
-        if (matchesDay(row.days, dayShort)) {
-          const sTime = row.startTime || row.start_time;
-          const eTime = row.endTime || row.end_time;
-          const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
-
-          if (subName === 'HGP') {
-            // HGP is stored for tracking program duration only and does not add extra teaching load minutes
-          } else if (subName === 'ADVISORY') {
-            baseScheduledMinutes += 60;
-          } else {
-            baseScheduledMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
-          }
-        }
-      });
-
-      // Base daily scheduled hours and daily overload
-      const baseDailyHours = baseScheduledMinutes / 60;
-      const baseDailyOverload = Math.max(0, baseDailyHours - 6.0);
-
-      // 2. Extra minutes if this teacher served as a substitute for someone else on this date
-      let substituteMinutes = 0;
-      workloadTransfers.forEach(t => {
-        const subId = String(t.substituteTeacherId || t.substitute_personnel_id || t.substitute_teacher_id || '').trim();
-        const cleanStart = String(t.startDate || '').split('T')[0].trim();
-        const cleanEnd = String(t.endDate || cleanStart).split('T')[0].trim();
-
-        if (teacherIds.includes(subId) && t.status !== 'ended' && dateStr >= cleanStart && dateStr <= cleanEnd) {
-          (t.workloadRows || []).forEach(row => {
-            if (matchesDay(row.days, dayShort)) {
-              const sTime = row.startTime || row.start_time;
-              const eTime = row.endTime || row.end_time;
-              const subName = String(row.subject || row.subject_name || row.task || '').toUpperCase().trim();
-
-              if (subName === 'HGP') {
-                // HGP does not add extra teaching load minutes
-              } else if (subName === 'ADVISORY') {
-                substituteMinutes += 60;
-              } else {
-                substituteMinutes += Math.max(0, timeToMins(eTime) - timeToMins(sTime));
-              }
-            }
-          });
-        }
-      });
-
-      // 3. Process Work Immersion for this teacher on this date if recorded
+      // Process Work Immersion for SHS
       const immersionMins = (workImmersionTeacherId && teacherIds.includes(String(workImmersionTeacherId)) && workImmersionData[dateStr])
         ? workImmersionData[dateStr]
         : 0;
 
-      // If teacher is absent or late, their scheduled overload for this day is forfeited / deducted
-      if (baseDailyOverload > 0) {
-        grossOverloadTotal += baseDailyOverload;
-        if (isAbsent || isLate) {
-          deductionTotal += baseDailyOverload;
-          if (isAbsent) leaveDeductionTotal += baseDailyOverload;
-          if (isLate) lateDeductionTotal += baseDailyOverload;
-        } else {
-          netOverloadTotal += baseDailyOverload;
-        }
-      }
+      const baseDailyScheduledHours = impact.totalScheduledMinutes / 60;
+      const baseDailyGrossOverload = Math.max(0, baseDailyScheduledHours - 6.0);
 
-      // Add extra overload earned from substitute teaching or work immersion on this day (only if teacher wasn't absent)
-      if (!isAbsent) {
-        const extraHours = (substituteMinutes + immersionMins) / 60;
-        if (extraHours > 0) {
-          const effectiveExtraOverload = Math.max(0, ((baseScheduledMinutes + substituteMinutes + immersionMins) / 60) - 6.0) - baseDailyOverload;
-          if (effectiveExtraOverload > 0) {
-            grossOverloadTotal += effectiveExtraOverload;
-            netOverloadTotal += effectiveExtraOverload;
-          }
+      if (isAbsent) {
+        // Teacher is on approved leave / absent: entire daily overload is forfeited
+        if (baseDailyGrossOverload > 0) {
+          grossOverloadTotal += baseDailyGrossOverload;
+          deductionTotal += baseDailyGrossOverload;
+          leaveDeductionTotal += baseDailyGrossOverload;
+        }
+      } else {
+        // Teacher was present (with or without tardiness/undertime)
+        const effectiveRenderedMinutes = impact.actualRenderedMinutes + immersionMins;
+        const effectiveGrossMinutes = impact.totalScheduledMinutes + immersionMins;
+        
+        const effectiveGrossOverloadHours = Math.max(0, (effectiveGrossMinutes / 60) - 6.0);
+        const effectiveNetOverloadHours = Math.max(0, (effectiveRenderedMinutes / 60) - 6.0);
+        const effectiveLateDeductionHours = Math.max(0, effectiveGrossOverloadHours - effectiveNetOverloadHours);
+
+        grossOverloadTotal += effectiveGrossOverloadHours;
+        netOverloadTotal += effectiveNetOverloadHours;
+
+        if (effectiveLateDeductionHours > 0) {
+          deductionTotal += effectiveLateDeductionHours;
+          lateDeductionTotal += effectiveLateDeductionHours;
         }
       }
     });
@@ -1123,7 +1357,7 @@ export default function Overload() {
     let totalNet = 0;
 
     activeMonths.forEach(mName => {
-      const dates = getWeekdaysInMonth(mName, syYear);
+      const dates = getWeekdaysInMonth(mName, syYear, filterMode === 'term' ? selectedTerm : selectedFY);
       const stats = calculateOverloadForTeacher(teacher, dates);
       monthlyStatsMap[mName] = stats;
       totalGross += stats.gross;
@@ -1166,6 +1400,72 @@ export default function Overload() {
     const fullName = `${item.teacher.firstName} ${item.teacher.lastName}`.toLowerCase();
     return fullName.includes(teacherSearch.toLowerCase().trim());
   });
+
+  // List of strictly teaching personnel who have active teaching overload (used for Step 2 & Step 3)
+  const overloadTeachersList = React.useMemo(() => {
+    const idsWithOverload = new Set();
+    (overloadRoster || []).forEach(item => {
+      const hasOverload = Number(item.totalStats?.net || 0) > 0 || 
+                          Object.values(item.monthlyStatsMap || {}).some(s => Number(s.net || 0) > 0) || 
+                          Number(item.weeklyOverload || 0) > 0;
+      if (hasOverload && item.teacher?.id) {
+        idsWithOverload.add(String(item.teacher.id));
+      }
+    });
+    return activePersonnel.filter(p => idsWithOverload.has(String(p.id)));
+  }, [overloadRoster, activePersonnel]);
+
+  // Auto-sync computed overload hours & pay to database so overload_pay_and_reason always contains up-to-date non-zero numbers
+  const prevSyncedRef = useRef('');
+  useEffect(() => {
+    if (!filteredRoster || filteredRoster.length === 0) return;
+
+    const itemsToSync = filteredRoster.map(item => {
+      const pId = item.teacher.id;
+      const reasons = overloadReasonsMap[pId] || ['Teacher Shortage'];
+      const overloadHours = Number(item.totalStats?.net || item.weeklyOverload || 0);
+      const overloadPay = Number(item.overloadPay || 0);
+      return {
+        personnelId: pId,
+        schoolId: item.teacher.schoolId || item.teacher.school_id || schoolInfo?.schoolId || '108348',
+        schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
+        term: activeTermKey || 'Term 1',
+        month: 'All',
+        overloadHours,
+        overloadPay,
+        netTermPay: overloadPay,
+        reasons,
+        rawPayload: {
+          teacherId: pId,
+          weeklyOverload: item.weeklyOverload,
+          monthlyStatsMap: item.monthlyStatsMap,
+          totalStats: item.totalStats,
+          phtr: item.phtr,
+          overloadPay: item.overloadPay
+        }
+      };
+    });
+
+    try {
+      localStorage.setItem('insighted_overload_records', JSON.stringify(itemsToSync));
+    } catch (e) {}
+
+    const syncSignature = JSON.stringify(itemsToSync.map(i => ({ id: i.personnelId, h: i.overloadHours, p: i.overloadPay, r: i.reasons })));
+    if (syncSignature === prevSyncedRef.current) return;
+    prevSyncedRef.current = syncSignature;
+
+    const timeout = setTimeout(() => {
+      api.saveOverloadReasonsBatch({
+        items: itemsToSync,
+        schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
+        term: activeTermKey || 'Term 1'
+      }).catch(err => console.warn('[Overload AutoSync] Error:', err.message));
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [filteredRoster, overloadReasonsMap, activeTermKey, schoolInfo?.schoolYear, schoolInfo?.schoolId]);
+
+
 
   const handleAddTardinessSubmit = async (e) => {
     e.preventDefault();
@@ -1374,7 +1674,7 @@ export default function Overload() {
       let totalMinutes = 0;
       
       monthNames.forEach(mName => {
-        const mDates = getWeekdaysInMonth(mName, syYear);
+        const mDates = getWeekdaysInMonth(mName, syYear, filterMode === 'term' ? selectedTerm : selectedFY);
         let w1 = 0, w2 = 0, w3 = 0, w4 = 0;
         
         mDates.forEach(date => {
@@ -1616,7 +1916,7 @@ export default function Overload() {
                     </div>
                   ))}
                   {(() => {
-                    const monthDates = getWeekdaysInMonth(step1Month, 'SY 26-27');
+                    const monthDates = getWeekdaysInMonth(step1Month, 'SY 26-27', 'FULL_MONTH');
 
                     return monthDates.map((dateObj, idx) => {
                       const dateStr = getLocalDateString(dateObj);
@@ -1805,30 +2105,35 @@ export default function Overload() {
 
       {/* STEP 3: Tardiness & Late Log */}
       {activeStep === 3 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '420px 1fr', gap: '20px', alignItems: 'start' }}>
           {/* Interactive Calendar Selector Card */}
           <article className="card" style={{ height: 'fit-content' }}>
             <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>⏰ Interactive Tardiness Picker</h2>
+                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiClock size={16} /> Interactive Tardiness & DTR
+                </h2>
               </div>
-              <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>Select a teacher and click any weekday on the calendar below to toggle them as Tardy / Late on that day.</p>
+              <p style={{ fontSize: '12px', color: 'var(--muted)', margin: 0 }}>
+                Select a teacher and click any weekday to inspect their class timetable, enter Station Time In/Out, and preview exact overload impact.
+              </p>
 
               {/* Controls */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>1. SELECT TEACHER</label>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>1. SELECT TEACHER WITH OVERLOAD</label>
                   <SearchableDropdown 
-                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
-                    value={activePersonnel.find(p => p.id === tardinessTeacherId) ? (() => {
-                      const p = activePersonnel.find(p => p.id === tardinessTeacherId);
+                    options={overloadTeachersList.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
+                    value={overloadTeachersList.find(p => p.id === tardinessTeacherId) ? (() => {
+                      const p = overloadTeachersList.find(p => p.id === tardinessTeacherId);
                       return `${p.firstName} ${p.lastName} · ${p.position}`;
                     })() : ''}
                     onChange={(val) => {
-                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
+                      const p = overloadTeachersList.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
                       setTardinessTeacherId(p ? p.id : '');
+                      setSelectedTardyDate('');
                     }}
-                    placeholder="Select teacher to log tardiness..."
+                    placeholder={overloadTeachersList.length > 0 ? "Select teacher with overload to log tardiness..." : "No teachers with overload found"}
                   />
                 </div>
 
@@ -1836,7 +2141,10 @@ export default function Overload() {
                   <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>2. SELECT MONTH</label>
                   <select 
                     value={tardinessMonth}
-                    onChange={(e) => setTardinessMonth(e.target.value)}
+                    onChange={(e) => {
+                      setTardinessMonth(e.target.value);
+                      setSelectedTardyDate('');
+                    }}
                     style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '13px' }}
                   >
                     {MONTHS_LIST.map(m => (
@@ -1847,9 +2155,9 @@ export default function Overload() {
               </div>
 
               {/* Legend */}
-              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', gap: '10px', fontSize: '11px', background: '#F8FAFC', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b91c1c', fontWeight: 'bold' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> Tardy / Late
+                  <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fee2e2', border: '1px solid #fca5a5' }}></span> Tardy / DTR
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: 'bold' }}>
                   <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#fef3c7', border: '1px solid #fde68a' }}></span> Leave
@@ -1862,13 +2170,13 @@ export default function Overload() {
               {/* Interactive Calendar Grid */}
               {!tardinessTeacherId ? (
                 <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
-                  Please select a teacher above to enable the interactive calendar picker.
+                  Please select a teacher with overload above to inspect their teaching timetable and DTR.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>{tardinessMonth} 2026 Workdays Calendar</span>
-                    <small style={{ color: 'var(--muted)', fontWeight: 'normal' }}>Click date to toggle</small>
+                    <span>{tardinessMonth} 2026 Workdays</span>
+                    <small style={{ color: 'var(--muted)', fontWeight: 'normal' }}>Click date to inspect schedule</small>
                   </div>
 
                   {/* Calendar Grid (5 Weekdays) */}
@@ -1900,19 +2208,23 @@ export default function Overload() {
                           return dateStr >= cleanStart && dateStr <= cleanEnd;
                         });
                         const lType = existingLog?.leaveType || existingLog?.leave_type || '';
-                        const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness'));
+                        const isTardy = existingLog && (lType.includes('Late') || lType.includes('Tardiness') || lType.includes('Undertime'));
                         const isLeave = existingLog && !isTardy;
+                        const isSelected = selectedTardyDate === dateStr;
 
                         let bg = 'white';
                         let border = '1.5px solid var(--line)';
                         let color = 'var(--navy)';
                         let badgeText = '';
 
-                        if (isTardy) {
+                        if (isSelected) {
+                          border = '2px solid var(--blue, #2563eb)';
+                          bg = '#eff6ff';
+                        } else if (isTardy) {
                           bg = '#fee2e2';
                           border = '1.5px solid #fca5a5';
                           color = '#991b1b';
-                          badgeText = 'LATE';
+                          badgeText = 'TARDY';
                         } else if (isLeave) {
                           bg = '#fee2e2';
                           border = '2px solid #ef4444';
@@ -1927,24 +2239,23 @@ export default function Overload() {
                             onClick={async () => {
                               if (isLeave) {
                                 const leaveName = existingLog?.leaveType || existingLog?.leave_type || 'Leave';
-                                await showAlert("Action Blocked", `This teacher is already logged as ABSENT (${leaveName}) on ${dateStr} in Step 1. Tardiness cannot be logged for absent days.`);
+                                await showAlert("Action Blocked", `This teacher is already logged as ABSENT (${leaveName}) on ${dateStr} in Step 2. Tardiness / DTR is only applicable when the teacher was present.`);
                                 return;
                               }
+                              
+                              setSelectedTardyDate(dateStr);
                               if (isTardy) {
-                                if (await showConfirm("Remove Tardiness?", `Remove tardiness entry for ${dateStr}?`)) {
-                                  await removePersonnelAbsence(existingLog.id);
-                                }
+                                setTardyTimeIn(existingLog.timeIn || existingLog.time_in || '08:00');
+                                setTardyTimeOut(existingLog.timeOut || existingLog.time_out || '17:00');
+                                setTardyMissedSlotIds(Array.isArray(existingLog.missedSlotIds || existingLog.missed_slot_ids) ? (existingLog.missedSlotIds || existingLog.missed_slot_ids) : []);
                               } else {
-                                await addPersonnelAbsence({
-                                  personnelId: tardinessTeacherId,
-                                  startDate: dateStr,
-                                  endDate: dateStr,
-                                  leaveType: 'Tardiness / Late'
-                                });
+                                setTardyTimeIn('08:00');
+                                setTardyTimeOut('17:00');
+                                setTardyMissedSlotIds([]);
                               }
                             }}
                             style={{
-                              padding: '10px 4px',
+                            padding: '10px 4px',
                               borderRadius: '10px',
                               background: bg,
                               border: border,
@@ -1957,13 +2268,13 @@ export default function Overload() {
                               alignItems: 'center',
                               justifyContent: 'center',
                               minHeight: '52px',
-                              boxShadow: isTardy ? '0 2px 6px rgba(185, 28, 28, 0.15)' : 'none',
+                              boxShadow: isSelected ? '0 0 0 3px rgba(37, 99, 235, 0.2)' : (isTardy ? '0 2px 6px rgba(185, 28, 28, 0.15)' : 'none'),
                               transition: 'all 0.15s ease'
                             }}
                           >
                             <span style={{ fontSize: '15px' }}>{dayNum}</span>
                             <span style={{ fontSize: '9px', textTransform: 'uppercase', marginTop: '2px', fontWeight: '800' }}>
-                              {badgeText || 'Normal'}
+                              {badgeText || (isSelected ? 'SELECTED' : 'Normal')}
                             </span>
                           </button>
                         );
@@ -1975,80 +2286,407 @@ export default function Overload() {
             </div>
           </article>
 
-          {/* Tardiness Log List */}
-          <article className="card">
-            <div className="card-inner" style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Tardiness & Late Log History</h2>
-                <button 
-                  className="btn" 
-                  onClick={() => setActiveStep(4)}
-                  style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
-                >
-                  Proceed to Step 4: Workload Transfers →
-                </button>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date of Tardiness</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Record Type</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '80px' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {absences.filter(abs => {
-                      const lType = abs.leaveType || abs.leave_type || '';
-                      return lType.includes('Late') || lType.includes('Tardiness');
-                    }).map((abs, idx) => {
-                      const teacher = activePersonnel.find(p => String(p.id) === String(abs.personnelId || abs.personnel_id));
-                      const teacherName = teacher ? `${teacher.lastName}, ${teacher.firstName}` : (abs.lastName ? `${abs.lastName}, ${abs.firstName}` : 'Unknown Teacher');
-                      const aDate = abs.absenceDate || abs.absence_date || '';
+          {/* Right Panel: Active Date DTR & Timetable Breakdown + History */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {selectedTardyDate && tardinessTeacherId ? (() => {
+              const teacher = activePersonnel.find(p => p.id === tardinessTeacherId);
+              const dateObj = new Date(selectedTardyDate + 'T00:00:00');
+              const dayIndexMap = { 1: 'M', 2: 'T', 3: 'W', 4: 'TH', 5: 'F' };
+              const dayShort = dayIndexMap[dateObj.getDay()];
+              const currentSy = schoolInfo?.schoolYear || 'SY 26-27';
 
-                      return (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
-                          <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{teacherName}</td>
-                          <td style={{ padding: '12px 10px' }}>{aDate}</td>
-                          <td style={{ padding: '12px 10px' }}>
-                            <span style={{
-                              background: '#fee2e2',
-                              color: '#b91c1c',
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: 'bold'
-                            }}>
-                              ⏰ Tardiness / Late (Overload Pay Deduction)
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                            <button 
-                              className="btn danger"
-                              onClick={async () => {
-                                if (await showConfirm("Remove Log?", `Are you sure you want to remove this tardiness log for ${teacherName}?`)) {
-                                  await removePersonnelAbsence(abs.id);
-                                }
-                              }}
-                              style={{ padding: '4px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <FiTrash2 size={12} /> Remove
-                            </button>
+              const activeTardyLog = {
+                timeIn: tardyTimeIn,
+                timeOut: tardyTimeOut,
+                missedSlotIds: tardyMissedSlotIds
+              };
+
+              const impact = computeDailyWorkloadImpact(teacher, selectedTardyDate, dayShort, currentSy, activeTardyLog, absences, workloadTransfers);
+
+              // Check if already in DB
+              const existingRecord = absences.find(a => {
+                const pId = String(a.personnelId || a.personnel_id || '').trim();
+                const lType = a.leaveType || a.leave_type || '';
+                const sStr = (a.startDate || a.start_date || a.absenceDate || a.absence_date || '').split('T')[0].trim();
+                return pId === String(tardinessTeacherId).trim() && (lType.includes('Late') || lType.includes('Tardiness') || lType.includes('Undertime')) && sStr === selectedTardyDate;
+              });
+
+              return (
+                <article className="card" style={{ border: '2px solid var(--blue, #2563eb)', boxShadow: '0 4px 16px rgba(37,99,235,0.1)' }}>
+                  <div className="card-inner" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--blue)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          📅 Daily Workload & DTR Analysis
+                        </div>
+                        <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: '2px 0 0' }}>
+                          {teacher?.firstName} {teacher?.lastName} · {selectedTardyDate} ({dateObj.toLocaleDateString('en-US', { weekday: 'long' })})
+                        </h3>
+                      </div>
+                      <button 
+                        className="btn"
+                        onClick={() => setSelectedTardyDate('')}
+                        style={{ fontSize: '12px', padding: '4px 10px' }}
+                      >
+                        ✕ Close Editor
+                      </button>
+                    </div>
+
+                    {/* DTR Inputs (Arrival & Departure) */}
+                    <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FiClock size={14} /> Station Arrival & Departure Times (DTR)
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>TIME IN (Arrival)</label>
+                          <input 
+                            type="time"
+                            value={tardyTimeIn}
+                            onChange={(e) => setTardyTimeIn(e.target.value)}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '14px' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>TIME OUT (Departure)</label>
+                          <input 
+                            type="time"
+                            value={tardyTimeOut}
+                            onChange={(e) => setTardyTimeOut(e.target.value)}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', background: 'white', fontWeight: 'bold', fontSize: '14px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Class Schedule Table for this Day */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--navy)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Scheduled Classes on {dateObj.toLocaleDateString('en-US', { weekday: 'long' })} ({impact.classes.length} Total)</span>
+                        <small style={{ color: 'var(--muted)' }}>Uncheck any class if teacher did not conduct it</small>
+                      </div>
+
+                      {impact.classes.length === 0 ? (
+                        <div style={{ padding: '16px', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed var(--line)', textAlign: 'center', color: 'var(--muted)', fontSize: '12px' }}>
+                          No teaching classes scheduled for this day in Timetable setup.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {impact.classes.map((cls, cIdx) => {
+                            const isMissedManual = tardyMissedSlotIds.includes(cls.id);
+                            const missedDetail = impact.missedSlotDetails.find(d => d.id === cls.id);
+                            const isPartiallyMissed = missedDetail && missedDetail.missedMins > 0 && missedDetail.missedMins < cls.durationMins;
+                            const isFullyMissed = missedDetail && missedDetail.missedMins >= cls.durationMins;
+
+                            let statusBadge = (
+                              <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                                ✓ Attended ({cls.durationMins}m)
+                              </span>
+                            );
+
+                            if (isFullyMissed) {
+                              statusBadge = (
+                                <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                                  ✕ Missed ({cls.durationMins}m)
+                                </span>
+                              );
+                            } else if (isPartiallyMissed) {
+                              statusBadge = (
+                                <span style={{ background: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                                  ⚠️ Partial (-{missedDetail.missedMins}m missed)
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <div 
+                                key={cIdx} 
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '10px 14px',
+                                  borderRadius: '8px',
+                                  background: isFullyMissed ? '#fff1f2' : (isPartiallyMissed ? '#fffbeb' : 'white'),
+                                  border: `1.5px solid ${isFullyMissed ? '#fecdd3' : (isPartiallyMissed ? '#fde68a' : 'var(--line)')}`
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <input 
+                                    type="checkbox"
+                                    checked={!isMissedManual}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setTardyMissedSlotIds(prev => prev.filter(id => id !== cls.id));
+                                      } else {
+                                        setTardyMissedSlotIds(prev => [...prev, cls.id]);
+                                      }
+                                    }}
+                                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                    title="Uncheck to mark class as unattended"
+                                  />
+                                  <div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '13px', color: 'var(--navy)' }}>
+                                      {cls.subject} {cls.section ? `· ${cls.section}` : ''}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                                      {cls.startTime} - {cls.endTime} ({cls.durationMins} mins)
+                                      {missedDetail?.reason ? ` · ${missedDetail.reason}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div>{statusBadge}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Live Overload Impact Summary Box */}
+                    <div style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', padding: '16px', borderRadius: '12px', color: 'white', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        📊 DepEd Overload Pay Determination for {selectedTardyDate}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                        <div style={{ background: 'rgba(255,255,255,0.06)', padding: '10px', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '10px', color: '#94a3b8' }}>Scheduled Load</div>
+                          <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white' }}>
+                            {impact.totalScheduledMinutes}m <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#94a3b8' }}>({impact.totalScheduledMinutes / 60}h)</span>
+                          </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.06)', padding: '10px', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '10px', color: '#fca5a5' }}>Missed Contact</div>
+                          <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#fca5a5' }}>
+                            -{impact.missedTeachingMinutes}m <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#fca5a5' }}>({(impact.missedTeachingMinutes / 60).toFixed(1)}h)</span>
+                          </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.06)', padding: '10px', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '10px', color: '#86efac' }}>Actual Rendered</div>
+                          <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#86efac' }}>
+                            {impact.actualRenderedMinutes}m <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#86efac' }}>({(impact.actualRenderedMinutes / 60).toFixed(1)}h)</span>
+                          </div>
+                        </div>
+
+                        <div style={{ background: impact.earnedDailyOverloadMinutes > 0 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255,255,255,0.06)', padding: '10px', borderRadius: '8px', border: impact.earnedDailyOverloadMinutes > 0 ? '1px solid rgba(34, 197, 94, 0.4)' : 'none' }}>
+                          <div style={{ fontSize: '10px', color: impact.earnedDailyOverloadMinutes > 0 ? '#86efac' : '#94a3b8' }}>Overload Pay</div>
+                          <div style={{ fontSize: '15px', fontWeight: 'bold', color: impact.earnedDailyOverloadMinutes > 0 ? '#4ade80' : '#cbd5e1' }}>
+                            {impact.earnedDailyOverloadMinutes > 0 ? `+${impact.earnedHours} hrs` : '0.0 hrs'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                        {impact.earnedDailyOverloadMinutes > 0 ? (
+                          <span>⭐ <strong>Eligible for Overload Pay:</strong> Rendered <strong>{(impact.actualRenderedMinutes / 60).toFixed(2)} hours</strong> (exceeds 6.0h regular baseline by <strong>{impact.earnedHours} hrs</strong>).</span>
+                        ) : (
+                          <span>ℹ️ <strong>No Overload Pay:</strong> Rendered <strong>{(impact.actualRenderedMinutes / 60).toFixed(2)} hours</strong> (≤ 6.0h baseline required for regular salary).</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          className="btn"
+                          onClick={async () => {
+                            // If existing record exists, remove it first
+                            if (existingRecord) {
+                              await removePersonnelAbsence(existingRecord.id);
+                            }
+
+                            await addPersonnelAbsence({
+                              personnelId: tardinessTeacherId,
+                              startDate: selectedTardyDate,
+                              endDate: selectedTardyDate,
+                              leaveType: 'Tardiness / Late',
+                              timeIn: tardyTimeIn,
+                              timeOut: tardyTimeOut,
+                              time_in: tardyTimeIn,
+                              time_out: tardyTimeOut,
+                              missedSlotIds: tardyMissedSlotIds,
+                              missed_slot_ids: tardyMissedSlotIds,
+                              missedMinutes: impact.missedTeachingMinutes,
+                              missed_minutes: impact.missedTeachingMinutes,
+                              teachingImpactMinutes: impact.missedTeachingMinutes,
+                              teaching_impact_minutes: impact.missedTeachingMinutes,
+                              dailyRenderedMinutes: impact.actualRenderedMinutes,
+                              daily_rendered_minutes: impact.actualRenderedMinutes,
+                              dailyOverloadEarned: impact.earnedDailyOverloadMinutes,
+                              daily_overload_earned: impact.earnedDailyOverloadMinutes
+                            });
+
+                            showToast(`✓ DTR Log saved for ${selectedTardyDate}!`);
+                            setSelectedTardyDate('');
+                          }}
+                          style={{ background: 'var(--blue, #2563eb)', color: 'white', fontWeight: 'bold', fontSize: '13px', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <FiCheck size={14} /> Save DTR & Workload Impact
+                        </button>
+
+                        {existingRecord && (
+                          <button 
+                            className="btn danger"
+                            onClick={async () => {
+                              if (await showConfirm("Remove Log?", `Remove this DTR / tardiness entry for ${selectedTardyDate}?`)) {
+                                await removePersonnelAbsence(existingRecord.id);
+                                setSelectedTardyDate('');
+                              }
+                            }}
+                            style={{ fontSize: '13px', padding: '8px 14px' }}
+                          >
+                            <FiTrash2 size={14} /> Remove Entry
+                          </button>
+                        )}
+                      </div>
+
+                      <button 
+                        className="btn"
+                        onClick={() => setSelectedTardyDate('')}
+                        style={{ fontSize: '13px', padding: '8px 14px' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })() : null}
+
+            {/* Tardiness Log List */}
+            <article className="card">
+              <div className="card-inner" style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy)', margin: 0 }}>Tardiness & DTR Log History</h2>
+                    <p style={{ fontSize: '12px', color: 'var(--muted)', margin: '2px 0 0' }}>All recorded tardiness, early departure, and missed class logs for this term.</p>
+                  </div>
+                  <button 
+                    className="btn" 
+                    onClick={() => setActiveStep(4)}
+                    style={{ background: 'linear-gradient(180deg, var(--blue), var(--navy))', color: 'white', fontSize: '12px', padding: '6px 14px' }}
+                  >
+                    Proceed to Step 4: Workload Transfers →
+                  </button>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--line)', background: '#F8FAFC' }}>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Teacher Name</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Date</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Station DTR</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Workload Impact</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--navy)' }}>Overload Pay</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--navy)', width: '120px' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {absences.filter(abs => {
+                        const lType = abs.leaveType || abs.leave_type || '';
+                        return lType.includes('Late') || lType.includes('Tardiness') || lType.includes('Undertime');
+                      }).map((abs, idx) => {
+                        const teacher = activePersonnel.find(p => String(p.id) === String(abs.personnelId || abs.personnel_id));
+                        const teacherName = teacher ? `${teacher.lastName}, ${teacher.firstName}` : (abs.lastName ? `${abs.lastName}, ${abs.firstName}` : 'Unknown Teacher');
+                        const aDate = abs.absenceDate || abs.absence_date || abs.startDate || abs.start_date || '';
+                        const dateStr = aDate.split('T')[0].trim();
+                        const timeIn = abs.timeIn || abs.time_in;
+                        const timeOut = abs.timeOut || abs.time_out;
+
+                        // Recompute impact for this log
+                        const dateObj = new Date(dateStr + 'T00:00:00');
+                        const dayIndexMap = { 1: 'M', 2: 'T', 3: 'W', 4: 'TH', 5: 'F' };
+                        const dayShort = dayIndexMap[dateObj.getDay()];
+                        const currentSy = schoolInfo?.schoolYear || 'SY 26-27';
+                        const itemImpact = computeDailyWorkloadImpact(teacher, dateStr, dayShort, currentSy, abs, absences, workloadTransfers);
+
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                            <td style={{ padding: '12px 10px', fontWeight: 'bold', color: 'var(--navy)' }}>{teacherName}</td>
+                            <td style={{ padding: '12px 10px', whiteSpace: 'nowrap' }}>{dateStr}</td>
+                            <td style={{ padding: '12px 10px', fontSize: '12px' }}>
+                              {timeIn || timeOut ? (
+                                <span>{timeIn || '--:--'} - {timeOut || '--:--'}</span>
+                              ) : (
+                                <span style={{ color: 'var(--muted)' }}>Tardy Logged</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px 10px' }}>
+                              {itemImpact.missedTeachingMinutes > 0 ? (
+                                <span style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '12px' }}>
+                                  -{itemImpact.missedTeachingMinutes}m missed ({itemImpact.actualRenderedMinutes}m rendered)
+                                </span>
+                              ) : (
+                                <span style={{ color: '#15803d', fontWeight: 'bold', fontSize: '12px' }}>
+                                  ✓ All classes rendered ({itemImpact.actualRenderedMinutes}m)
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px 10px' }}>
+                              {itemImpact.earnedDailyOverloadMinutes > 0 ? (
+                                <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                                  ⭐ +{itemImpact.earnedHours} hrs Overload
+                                </span>
+                              ) : (
+                                <span style={{ background: '#f1f5f9', color: '#64748b', padding: '3px 8px', borderRadius: '6px', fontSize: '11px' }}>
+                                  0.0 hrs (≤ 6.0h)
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                <button 
+                                  className="btn"
+                                  onClick={() => {
+                                    setTardinessTeacherId(teacher ? teacher.id : (abs.personnelId || abs.personnel_id));
+                                    setSelectedTardyDate(dateStr);
+                                    setTardyTimeIn(timeIn || '08:00');
+                                    setTardyTimeOut(timeOut || '17:00');
+                                    setTardyMissedSlotIds(Array.isArray(abs.missedSlotIds || abs.missed_slot_ids) ? (abs.missedSlotIds || abs.missed_slot_ids) : []);
+                                  }}
+                                  style={{ padding: '4px 8px', fontSize: '11px' }}
+                                  title="Edit Station Times & Missed Slots"
+                                >
+                                  Edit
+                                </button>
+                                <button 
+                                  className="btn danger"
+                                  onClick={async () => {
+                                    if (await showConfirm("Remove Log?", `Are you sure you want to remove this tardiness log for ${teacherName}?`)) {
+                                      await removePersonnelAbsence(abs.id);
+                                    }
+                                  }}
+                                  style={{ padding: '4px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  <FiTrash2 size={12} /> Remove
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {absences.filter(abs => {
+                        const lType = abs.leaveType || abs.leave_type || '';
+                        return lType.includes('Late') || lType.includes('Tardiness') || lType.includes('Undertime');
+                      }).length === 0 && (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>
+                            No tardiness / DTR entries logged yet. Select a teacher and click calendar days to inspect schedule and log times.
                           </td>
                         </tr>
-                      );
-                    })}
-                    {absences.filter(abs => abs.leaveType?.includes('Late') || abs.leaveType?.includes('Tardiness')).length === 0 && (
-                      <tr>
-                        <td colSpan="4" style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--muted)' }}>No tardiness / late entries logged yet. Select a teacher on the left and click calendar days to log tardiness.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          </article>
+            </article>
+          </div>
         </div>
       )}
 
@@ -2083,20 +2721,20 @@ export default function Overload() {
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>2. SELECT TEACHER</label>
+                  <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '4px' }}>2. SELECT TEACHER WITH OVERLOAD</label>
                   <SearchableDropdown 
-                    options={activePersonnel.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
-                    value={activePersonnel.find(p => p.id === absentTeacherId) ? (() => {
-                      const p = activePersonnel.find(p => p.id === absentTeacherId);
+                    options={overloadTeachersList.map(p => `${p.firstName} ${p.lastName} · ${p.position}`)}
+                    value={overloadTeachersList.find(p => p.id === absentTeacherId) ? (() => {
+                      const p = overloadTeachersList.find(p => p.id === absentTeacherId);
                       return `${p.firstName} ${p.lastName} · ${p.position}`;
                     })() : ''}
                     onChange={(val) => {
-                      const p = activePersonnel.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
+                      const p = overloadTeachersList.find(p => `${p.firstName} ${p.lastName} · ${p.position}` === val);
                       setAbsentTeacherId(p ? p.id : '');
                       setRangeStartDate(null);
                       setRangeEndDate(null);
                     }}
-                    placeholder="Select absent teacher..."
+                    placeholder={overloadTeachersList.length > 0 ? "Select teacher with overload..." : "No teachers with overload found"}
                   />
                 </div>
 
@@ -2137,7 +2775,7 @@ export default function Overload() {
               {/* Interactive Calendar Range Grid */}
               {!absentTeacherId ? (
                 <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '12px', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: '13px' }}>
-                  Please select a teacher above to enable the interactive calendar range picker.
+                  Please select a teacher with overload above to enable the interactive calendar range picker.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -3305,11 +3943,25 @@ export default function Overload() {
                                           }));
                                           if (updated.length >= 1) {
                                             const sy = schoolInfo?.schoolYear || 'SY 26-27';
+                                            const overloadHours = Number(item.totalStats?.net || item.weeklyOverload || 0);
+                                            const overloadPay = Number(item.overloadPay || 0);
                                             api.saveOverloadReasons({
                                               personnelId: item.teacher.id,
                                               schoolYear: sy,
                                               term: activeTermKey,
-                                              reasons: updated
+                                              month: selectedMonth || 'All',
+                                              reasons: updated,
+                                              overloadHours,
+                                              overloadPay,
+                                              netTermPay: overloadPay,
+                                              rawPayload: {
+                                                teacherId: item.teacher.id,
+                                                weeklyOverload: item.weeklyOverload,
+                                                monthlyStatsMap: item.monthlyStatsMap,
+                                                totalStats: item.totalStats,
+                                                phtr: item.phtr,
+                                                overloadPay: item.overloadPay
+                                              }
                                             });
                                           }
                                         }}

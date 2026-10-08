@@ -1,9 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiPrinter, FiX, FiAlertTriangle, FiCheck } from 'react-icons/fi';
 import { detectPersonnelTypeFromPosition } from '../context/AppContext';
 
-export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount }) {
+export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount, selectedTerm = '1st' }) {
   if (!isOpen) return null;
+
+  const [activePrintTerm, setActivePrintTerm] = useState(selectedTerm || '1st');
+
+  useEffect(() => {
+    if (selectedTerm) setActivePrintTerm(selectedTerm);
+  }, [selectedTerm]);
 
   const schoolIdStr   = schoolInfo?.schoolId || schoolInfo?.school_id || '108348';
   const schoolNameStr = schoolInfo?.schoolName || schoolInfo?.school_name || 'MAJAYJAY ELEMENTARY SCHOOL';
@@ -12,16 +18,12 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
   const districtStr   = schoolInfo?.district || 'MAJAYJAY';
   const schoolYearStr = schoolInfo?.schoolYear || schoolInfo?.school_year || 'SY 2026-2027';
 
-  // Dynamic School Head Detection from Personnel Roster
-  const schoolHead = (personnel || []).find(p => 
-    p.isSchoolHead || 
-    p.is_school_head || 
-    (p.position || '').toUpperCase().includes('PRINCIPAL') || 
-    (p.position || '').toUpperCase().includes('SCHOOL HEAD') || 
-    (p.position || '').toUpperCase().includes('HEAD TEACHER') || 
-    (p.position || '').toUpperCase().includes('TIC') || 
-    (p.position || '').toUpperCase().includes('TEACHER-IN-CHARGE')
-  );
+  // Dynamic School Head Detection strictly following the toggle in Personnel Roster
+  const schoolHead = (personnel || []).find(p => p.isSchoolHead === true || p.is_school_head === true) ||
+    (personnel || []).find(p => {
+      const pos = (p.position || '').toUpperCase();
+      return pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('TIC') || pos.includes('TEACHER-IN-CHARGE');
+    });
 
   const middleInitial = schoolHead?.middleName && schoolHead.middleName !== 'N/A' && schoolHead.middleName !== 'NONE'
     ? ` ${schoolHead.middleName.charAt(0)}.`
@@ -188,12 +190,43 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
               eSF7 Printable Report & Class Program Preview
             </h3>
             <span style={{ fontSize: '12px', color: '#94A3B8' }}>
-              DepEd Official Format · Uses browser print formatting (Save as PDF supported)
+              DepEd Official Format · {activePrintTerm === '1st' ? '1st Term' : activePrintTerm === '2nd' ? '2nd Term' : '3rd Term'}
             </span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Term Selector in Print Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#334155', padding: '3px', borderRadius: '8px' }}>
+            {[
+              { id: '1st', label: '1st Term' },
+              { id: '2nd', label: '2nd Term' },
+              { id: '3rd', label: '3rd Term' }
+            ].map(t => {
+              const isSelected = activePrintTerm === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setActivePrintTerm(t.id)}
+                  style={{
+                    padding: '5px 12px',
+                    fontSize: '11.5px',
+                    fontWeight: isSelected ? '800' : '600',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: isSelected ? '#2563EB' : 'transparent',
+                    color: isSelected ? 'white' : '#94A3B8',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
           <button
             type="button"
             onClick={handlePrint}
@@ -308,8 +341,8 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>School Year</span>
-                    <div style={{ border: '1.5px solid #000', padding: '2px 14px', minWidth: '100px', textAlign: 'center', fontWeight: '800', background: 'white' }}>
-                      {schoolYearStr}
+                    <div style={{ border: '1.5px solid #000', padding: '2px 14px', minWidth: '130px', textAlign: 'center', fontWeight: '800', background: 'white' }}>
+                      {schoolYearStr} ({activePrintTerm === '1st' ? '1st Term' : activePrintTerm === '2nd' ? '2nd Term' : '3rd Term'})
                     </div>
                   </div>
                 </div>
@@ -320,106 +353,294 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
 
         {/* Official DepEd 3-Column Position Summary Table matching eSF7 Format */}
         {(() => {
+          const TEACHING_HIERARCHY = [
+            'SCHOOL PRINCIPAL IV', 'SCHOOL PRINCIPAL III', 'SCHOOL PRINCIPAL II', 'SCHOOL PRINCIPAL I', 'PRINCIPAL IV', 'PRINCIPAL III', 'PRINCIPAL II', 'PRINCIPAL I',
+            'ASSISTANT SCHOOL PRINCIPAL III', 'ASSISTANT SCHOOL PRINCIPAL II', 'ASSISTANT SCHOOL PRINCIPAL I', 'ASSISTANT PRINCIPAL II', 'ASSISTANT PRINCIPAL I',
+            'HEAD TEACHER VI', 'HEAD TEACHER V', 'HEAD TEACHER IV', 'HEAD TEACHER III', 'HEAD TEACHER II', 'HEAD TEACHER I',
+            'MASTER TEACHER V', 'MASTER TEACHER IV', 'MASTER TEACHER III', 'MASTER TEACHER II', 'MASTER TEACHER I',
+            'SPECIAL SCIENCE TEACHER I', 'SPECIAL EDUCATION TEACHER III', 'SPECIAL EDUCATION TEACHER II', 'SPECIAL EDUCATION TEACHER I', 'SPED TEACHER',
+            'TEACHER III', 'TEACHER II', 'TEACHER I',
+            'GUIDANCE COORDINATOR III', 'GUIDANCE COORDINATOR II', 'GUIDANCE COORDINATOR I', 'GUIDANCE COUNSELOR III', 'GUIDANCE COUNSELOR II', 'GUIDANCE COUNSELOR I', 'SCHOOL COUNSELOR ASSOCIATE I',
+            'VOCATIONAL INSTRUCTION SUPERVISOR', 'VOCATIONAL PLACEMENT COORDINATOR', 'INSTRUCTOR I'
+          ];
+
+          const NON_TEACHING_HIERARCHY = [
+            'ADMINISTRATIVE OFFICER V', 'ADMINISTRATIVE OFFICER IV', 'ADMINISTRATIVE OFFICER II', 'ADMINISTRATIVE OFFICER I', 'ADMINISTRATIVE OFFICER',
+            'ACCOUNTANT III', 'ACCOUNTANT II', 'ACCOUNTANT I',
+            'REGISTRAR III', 'REGISTRAR II', 'REGISTRAR I', 'REGISTRAR',
+            'SENIOR ADMINISTRATIVE ASSISTANT III', 'SENIOR ADMINISTRATIVE ASSISTANT II', 'SENIOR ADMINISTRATIVE ASSISTANT I',
+            'ADMINISTRATIVE ASSISTANT III', 'ADMINISTRATIVE ASSISTANT II', 'ADMINISTRATIVE ASSISTANT I', 'ADMINISTRATIVE ASSISTANT',
+            'ADMINISTRATIVE AIDE VI', 'ADMINISTRATIVE AIDE V', 'ADMINISTRATIVE AIDE IV', 'ADMINISTRATIVE AIDE III', 'ADMINISTRATIVE AIDE II', 'ADMINISTRATIVE AIDE I', 'ADMINISTRATIVE AIDE',
+            'SECURITY GUARD III', 'SECURITY GUARD II', 'SECURITY GUARD I', 'SECURITY GUARD',
+            'UTILITY WORKER II', 'UTILITY WORKER I', 'UTILITY WORKER', 'WATCHMAN', 'DRIVER'
+          ];
+
           const teachingMap = {};
           const nonTeachingMap = {};
-          const otherFundingRows = [];
-          let totalTeachingCount = 0;
-          let totalNonTeachingCount = 0;
+          const otherMap = {};
 
           (personnel || []).forEach(p => {
-            const fund = String(p.fundSource || p.fund_source || 'NATIONAL').trim().toUpperCase();
-            const pos = (p.position || p.position_title || 'TEACHER I').toUpperCase().trim();
-            const pType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
-            const isNonTeaching = pType === 'non-teaching';
+            const pos = (p.position || p.plantilla_position || p.position_title || 'TEACHER I').toUpperCase().trim();
+            const fund = String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase().trim();
+            const isNational = fund === 'NATIONAL';
+            const depStatus = String(p.deploymentStatus || p.deployment_status || 'OWN STATION').toUpperCase().trim();
 
-            if (fund === 'NATIONAL') {
+            let statusKey = 'os';
+            if (depStatus.includes('CLUSTERED')) statusKey = 'clustered';
+            else if (depStatus.includes('BORROWED')) statusKey = 'borrowed';
+            else if (depStatus.includes('REASSIGNED')) statusKey = 'reassigned';
+
+            const detectedType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+            const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
+
+            if (isNational) {
               if (isNonTeaching) {
-                nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
-                totalNonTeachingCount++;
+                if (!nonTeachingMap[pos]) nonTeachingMap[pos] = { os: 0, clustered: 0, borrowed: 0, reassigned: 0 };
+                nonTeachingMap[pos][statusKey] = (nonTeachingMap[pos][statusKey] || 0) + 1;
               } else {
-                teachingMap[pos] = (teachingMap[pos] || 0) + 1;
-                totalTeachingCount++;
+                if (!teachingMap[pos]) teachingMap[pos] = { os: 0, clustered: 0, borrowed: 0, reassigned: 0 };
+                teachingMap[pos][statusKey] = (teachingMap[pos][statusKey] || 0) + 1;
               }
             } else {
-              // (C) Other Appointments and Funding Source (MOOE, SEF, LGU, PTA, NGO, OTHERS)
-              otherFundingRows.push({
-                title: pos,
-                appointment: (p.natureOfAppointment || p.nature_of_appointment || p.hiringArrangement || 'JOB ORDER / COS').toUpperCase(),
-                fundSource: fund
-              });
+              // (C) Other Appointments and Funding Source (Non-National)
+              const appt = String(p.natureOfAppointment || p.nature_of_appointment || p.hiringArrangement || p.hiring_arrangement || 'CONTRACTUAL').toUpperCase().trim();
+              const groupKey = `${pos}||${appt}||${fund}`;
+              if (!otherMap[groupKey]) {
+                otherMap[groupKey] = {
+                  title: pos,
+                  appointment: appt,
+                  fundSource: fund,
+                  teaching: 0,
+                  nonTeaching: 0
+                };
+              }
+              if (isNonTeaching) {
+                otherMap[groupKey].nonTeaching++;
+              } else {
+                otherMap[groupKey].teaching++;
+              }
             }
           });
 
-          const activeTeachingRows = Object.keys(teachingMap).map(t => ({ title: t, count: teachingMap[t] }));
-          const activeNonTeachingRows = Object.keys(nonTeachingMap).map(t => ({ title: t, count: nonTeachingMap[t] }));
+          // Sort by DepEd Hierarchy
+          const sortWithHierarchy = (keys, hierarchy) => {
+            return keys.sort((a, b) => {
+              const idxA = hierarchy.indexOf(a);
+              const idxB = hierarchy.indexOf(b);
+              if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+              if (idxA !== -1) return -1;
+              if (idxB !== -1) return 1;
+              return a.localeCompare(b);
+            });
+          };
+
+          const activeTeachingRows = sortWithHierarchy(Object.keys(teachingMap), TEACHING_HIERARCHY).map(title => ({
+            title,
+            ...teachingMap[title]
+          }));
+
+          const activeNonTeachingRows = sortWithHierarchy(Object.keys(nonTeachingMap), NON_TEACHING_HIERARCHY).map(title => ({
+            title,
+            ...nonTeachingMap[title]
+          }));
+
+          const otherFundingRows = Object.values(otherMap);
           const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, otherFundingRows.length, 6);
 
-          return (
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '10px', border: '1.5px solid #000' }}>
-              <thead>
-                <tr style={{ background: '#F1F5F9', textAlign: 'center', fontWeight: '800' }}>
-                  <th colSpan="2" style={{ border: '1px solid #000', padding: '6px', width: '34%' }}>
-                    (A) Nationally-Funded Teaching & Teaching Related Items
-                  </th>
-                  <th colSpan="2" style={{ border: '1px solid #000', padding: '6px', width: '33%' }}>
-                    (B) Nationally-Funded Non Teaching Items
-                  </th>
-                  <th colSpan="3" style={{ border: '1px solid #000', padding: '6px', width: '33%' }}>
-                    (C) Other Appointments and Funding Source
-                  </th>
-                </tr>
-                <tr style={{ background: '#F8FAFC', fontSize: '9px', textAlign: 'center', fontWeight: '700' }}>
-                  <th style={{ border: '1px solid #000', padding: '4px' }}>Title of Plantilla Position</th>
-                  <th style={{ border: '1px solid #000', padding: '4px', width: '50px' }}>Number of Incumbent</th>
-                  <th style={{ border: '1px solid #000', padding: '4px' }}>Title of Plantilla Position</th>
-                  <th style={{ border: '1px solid #000', padding: '4px', width: '50px' }}>Number of Incumbent</th>
-                  <th style={{ border: '1px solid #000', padding: '4px' }}>Title of Position</th>
-                  <th style={{ border: '1px solid #000', padding: '4px' }}>Appointment</th>
-                  <th style={{ border: '1px solid #000', padding: '4px' }}>Fund Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: maxRows }).map((_, rIdx) => {
-                  const tItem = activeTeachingRows[rIdx];
-                  const ntItem = activeNonTeachingRows[rIdx];
-                  const otherItem = otherFundingRows[rIdx];
+          // Subtotals for (A) Teaching
+          const sumA = activeTeachingRows.reduce((acc, r) => ({
+            os: acc.os + (r.os || 0),
+            clustered: acc.clustered + (r.clustered || 0),
+            borrowed: acc.borrowed + (r.borrowed || 0),
+            reassigned: acc.reassigned + (r.reassigned || 0)
+          }), { os: 0, clustered: 0, borrowed: 0, reassigned: 0 });
 
-                  return (
-                    <tr key={rIdx} style={{ textAlign: 'left', height: '18px' }}>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', fontWeight: '600' }}>
-                        {tItem ? tItem.title : ''}
-                      </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', textAlign: 'center', fontWeight: '700' }}>
-                        {tItem ? tItem.count : ''}
-                      </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', fontWeight: '600' }}>
-                        {ntItem ? ntItem.title : ''}
-                      </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', textAlign: 'center', fontWeight: '700' }}>
-                        {ntItem ? ntItem.count : ''}
-                      </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', fontWeight: '600' }}>
-                        {otherItem ? otherItem.title : ''}
-                      </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', color: otherItem ? '#000' : '#64748B' }}>
-                        {otherItem ? otherItem.appointment : ''}
-                      </td>
-                      <td style={{ border: '1px solid #000', padding: '3px 6px', fontWeight: otherItem ? '700' : 'normal', color: otherItem ? '#000' : '#64748B' }}>
-                        {otherItem ? otherItem.fundSource : ''}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr style={{ fontWeight: '800', background: '#F1F5F9' }}>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>TOTAL</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{totalTeachingCount}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>TOTAL</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{totalNonTeachingCount}</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>TOTAL (OTHER)</td>
-                  <td colSpan="2" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>{otherFundingRows.length}</td>
-                </tr>
-              </tbody>
-            </table>
+          // Subtotals for (B) Non-Teaching
+          const sumB = activeNonTeachingRows.reduce((acc, r) => ({
+            os: acc.os + (r.os || 0),
+            clustered: acc.clustered + (r.clustered || 0),
+            borrowed: acc.borrowed + (r.borrowed || 0),
+            reassigned: acc.reassigned + (r.reassigned || 0)
+          }), { os: 0, clustered: 0, borrowed: 0, reassigned: 0 });
+
+          // Subtotals for (C) Other
+          const sumC = otherFundingRows.reduce((acc, r) => ({
+            teaching: acc.teaching + (r.teaching || 0),
+            nonTeaching: acc.nonTeaching + (r.nonTeaching || 0)
+          }), { teaching: 0, nonTeaching: 0 });
+          const totalC = sumC.teaching + sumC.nonTeaching;
+
+          // Official DepEd Math:
+          const totalSchoolPlantillaTeaching = sumA.os + sumA.clustered + sumA.reassigned;
+          const totalSchoolPlantillaNonTeaching = sumB.os + sumB.clustered + sumB.reassigned;
+          const totalSchoolPlantilla = totalSchoolPlantillaTeaching + totalSchoolPlantillaNonTeaching;
+
+          const totalWarmBodiesTeaching = sumA.os + sumA.clustered + sumA.borrowed;
+          const totalWarmBodiesNonTeaching = sumB.os + sumB.clustered + sumB.borrowed;
+          const totalWarmBodies = totalWarmBodiesTeaching + totalWarmBodiesNonTeaching + totalC;
+
+          return (
+            <div style={{ marginBottom: '20px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9.5px', border: '1.5px solid #000' }}>
+                <thead>
+                  <tr style={{ background: '#F1F5F9', textAlign: 'center', fontWeight: '800' }}>
+                    <th colSpan="5" style={{ border: '1px solid #000', padding: '5px', width: '37%' }}>
+                      (A) Nationally Funded Teaching & Related-Teaching Items
+                    </th>
+                    <th colSpan="5" style={{ border: '1px solid #000', padding: '5px', width: '37%' }}>
+                      (B) Nationally Funded Non-Teaching Items
+                    </th>
+                    <th colSpan="5" style={{ border: '1px solid #000', padding: '5px', width: '26%' }}>
+                      (C) Other Appointments and Funding Source
+                    </th>
+                  </tr>
+                  <tr style={{ background: '#F8FAFC', fontSize: '8.5px', textAlign: 'center', fontWeight: '700' }}>
+                    <th style={{ border: '1px solid #000', padding: '4px', width: '17%' }}>Title of Plantilla Position</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Own Station</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Clustered</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Borrowed</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Reassigned</th>
+
+                    <th style={{ border: '1px solid #000', padding: '4px', width: '17%' }}>Title of Plantilla Position</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Own Station</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Clustered</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Borrowed</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '5%' }}>Reassigned</th>
+
+                    <th style={{ border: '1px solid #000', padding: '4px', width: '10%' }}>Title of Position</th>
+                    <th style={{ border: '1px solid #000', padding: '4px', width: '8%' }}>Nature of Appointment</th>
+                    <th style={{ border: '1px solid #000', padding: '4px', width: '8%' }}>Other Fund Source</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '4%' }}>Teaching</th>
+                    <th style={{ border: '1px solid #000', padding: '3px', width: '4%' }}>Non-Teaching</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: maxRows }).map((_, rIdx) => {
+                    const tItem = activeTeachingRows[rIdx];
+                    const ntItem = activeNonTeachingRows[rIdx];
+                    const otherItem = otherFundingRows[rIdx];
+
+                    return (
+                      <tr key={rIdx} style={{ textAlign: 'left', height: '20px' }}>
+                        {/* Section A */}
+                        <td style={{ border: '1px solid #000', padding: '3px 5px', fontWeight: '600' }}>
+                          {tItem ? tItem.title : ''}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: tItem?.os ? '700' : 'normal' }}>
+                          {tItem?.os ? tItem.os : (tItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: tItem?.clustered ? '700' : 'normal' }}>
+                          {tItem?.clustered ? tItem.clustered : (tItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: tItem?.borrowed ? '700' : 'normal' }}>
+                          {tItem?.borrowed ? tItem.borrowed : (tItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: tItem?.reassigned ? '700' : 'normal' }}>
+                          {tItem?.reassigned ? tItem.reassigned : (tItem ? '-' : '')}
+                        </td>
+
+                        {/* Section B */}
+                        <td style={{ border: '1px solid #000', padding: '3px 5px', fontWeight: '600' }}>
+                          {ntItem ? ntItem.title : ''}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: ntItem?.os ? '700' : 'normal' }}>
+                          {ntItem?.os ? ntItem.os : (ntItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: ntItem?.clustered ? '700' : 'normal' }}>
+                          {ntItem?.clustered ? ntItem.clustered : (ntItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: ntItem?.borrowed ? '700' : 'normal' }}>
+                          {ntItem?.borrowed ? ntItem.borrowed : (ntItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: ntItem?.reassigned ? '700' : 'normal' }}>
+                          {ntItem?.reassigned ? ntItem.reassigned : (ntItem ? '-' : '')}
+                        </td>
+
+                        {/* Section C */}
+                        <td style={{ border: '1px solid #000', padding: '3px 5px', fontWeight: '600' }}>
+                          {otherItem ? otherItem.title : ''}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 5px', fontSize: '9px' }}>
+                          {otherItem ? otherItem.appointment : ''}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 5px', fontWeight: otherItem ? '700' : 'normal' }}>
+                          {otherItem ? otherItem.fundSource : ''}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: otherItem?.teaching ? '700' : 'normal' }}>
+                          {otherItem?.teaching ? otherItem.teaching : (otherItem ? '-' : '')}
+                        </td>
+                        <td style={{ border: '1px solid #000', padding: '3px 2px', textAlign: 'center', fontWeight: otherItem?.nonTeaching ? '700' : 'normal' }}>
+                          {otherItem?.nonTeaching ? otherItem.nonTeaching : (otherItem ? '-' : '')}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {/* Subtotal Row */}
+                  <tr style={{ fontWeight: '800', background: '#F8FAFC' }}>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>Total</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumA.os}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumA.clustered}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumA.borrowed}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumA.reassigned}</td>
+
+                    <td style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase' }}>Total</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumB.os}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumB.clustered}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumB.borrowed}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumB.reassigned}</td>
+
+                    <td colSpan="3" style={{ border: '1px solid #000', padding: '4px 6px', textTransform: 'uppercase', textAlign: 'right' }}>Total</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumC.teaching}</td>
+                    <td style={{ border: '1px solid #000', padding: '4px 2px', textAlign: 'center' }}>{sumC.nonTeaching}</td>
+                  </tr>
+
+                  {/* Total School Plantilla Items */}
+                  <tr style={{ fontWeight: '800', background: '#F1F5F9' }}>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>Total School Plantilla Items</td>
+                    <td colSpan="4" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
+                      {totalSchoolPlantillaTeaching} <span style={{ fontSize: '8.5px', fontWeight: 'normal' }}>(OS + Clustered + Reassigned)</span>
+                    </td>
+                    <td colSpan="5" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
+                      {totalSchoolPlantillaNonTeaching} <span style={{ fontSize: '8.5px', fontWeight: 'normal' }}>(OS + Clustered + Reassigned)</span>
+                    </td>
+                    <td colSpan="5" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center', background: '#E2E8F0' }}>
+                      Total Plantilla: <strong>{totalSchoolPlantilla}</strong>
+                    </td>
+                  </tr>
+
+                  {/* Total Warm Bodies */}
+                  <tr style={{ fontWeight: '800', background: '#E0F2FE' }}>
+                    <td style={{ border: '1px solid #000', padding: '4px 6px' }}>Total Warm Bodies <span style={{ fontSize: '8.5px', fontWeight: 'normal' }}>(OS, Clustered, B)</span></td>
+                    <td colSpan="4" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
+                      {totalWarmBodiesTeaching} <span style={{ fontSize: '8.5px', fontWeight: 'normal' }}>(Teaching)</span>
+                    </td>
+                    <td colSpan="5" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
+                      {totalWarmBodiesNonTeaching} <span style={{ fontSize: '8.5px', fontWeight: 'normal' }}>(Non-Teaching)</span>
+                    </td>
+                    <td colSpan="5" style={{ border: '1px solid #000', padding: '4px 6px', textAlign: 'center' }}>
+                      Total Warm Bodies: <strong>{totalWarmBodies}</strong>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Notes Legend */}
+              <div style={{
+                marginTop: '6px',
+                padding: '6px 10px',
+                border: '1px solid #000',
+                fontSize: '8.5px',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '4px 12px'
+              }}>
+                <div><strong>Own Station:</strong> Item and personnel are in the same school.</div>
+                <div><strong>Clustered:</strong> Personnel serves in two or more schools (counted under Total Plantilla Items).</div>
+                <div><strong>Reassigned:</strong> Item is in the school; personnel serves in another school.</div>
+                <div><strong>Borrowed:</strong> Personnel serves in the school; item is in another school.</div>
+              </div>
+            </div>
           );
         })()}
 
@@ -464,8 +685,10 @@ export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, 
               const major      = (p.major || p.major_specialization || 'GENERAL').toUpperCase();
               const minor      = (p.minor || 'N/A').toUpperCase();
 
-              const workloads  = p.workloadRows && p.workloadRows.length > 0 ? p.workloadRows : [
-                { subject: p.type === 'non-teaching' ? 'ADMINISTRATIVE' : 'TEACHING ASSIGNMENT', gradeLevel: p.type === 'non-teaching' ? 'NG' : '4', sectionName: '', days: ['MON','TUE','WED','THU','FRI'], startTime: '07:30', endTime: '08:15' }
+              const allWorkloads = p.workloadRows || [];
+              const termScopedWorkloads = allWorkloads.filter(w => (w.term || '1st') === activePrintTerm);
+              const workloads = termScopedWorkloads.length > 0 ? termScopedWorkloads : [
+                { subject: p.type === 'non-teaching' ? 'ADMINISTRATIVE' : `NO WORKLOAD (${activePrintTerm === '1st' ? '1st Term' : activePrintTerm === '2nd' ? '2nd Term' : '3rd Term'})`, gradeLevel: p.type === 'non-teaching' ? 'NG' : '4', sectionName: '', days: [], startTime: '', endTime: '', isEmptyRow: true }
               ];
 
               let teacherTotalMins = 0;

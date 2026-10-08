@@ -14,6 +14,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(require('./utils/devLogger'));
+app.use(db.dbMiddleware);
 
 // Routes wiring
 app.use('/api/auth', require('./controllers/auth'));
@@ -51,13 +52,17 @@ app.use('/api/shs-workloads', require('./controllers/shs_workload_rows/index.js'
 app.use('/api/shs-transfers', require('./controllers/shs_workload_transfers/index.js'));
 app.use('/api/workload-transfers', require('./controllers/shs_workload_transfers/index.js'));
 app.use('/api/absences', require('./controllers/absences/index.js'));
-app.use('/api/overload-absences', require('./controllers/absences/index.js'));
-app.use('/api/overload-late', require('./controllers/overload_late'));
-app.use('/api/tardiness', require('./controllers/overload_late'));
+app.use('/api/overload-late-undertime', require('./controllers/overload_late_undertime'));
+app.use('/api/overload-late', require('./controllers/overload_late_undertime'));
+app.use('/api/tardiness', require('./controllers/overload_late_undertime'));
 app.use('/api/overload-pay-and-reason', require('./controllers/overload_pay_and_reason'));
 app.use('/api/overload-pay', require('./controllers/overload_pay_and_reason'));
 app.use('/api/dashboard', require('./controllers/dashboard'));
+app.use('/api/validation', require('./controllers/validation'));
+app.use('/api/esf7-validation', require('./controllers/validation'));
 app.use('/api/dev', require('./controllers/dev_snapshot'));
+app.use('/api/node-status', require('./controllers/node_status'));
+app.use('/api/nodes', require('./controllers/node_status'));
 
 
 const queueWorker = require('./queue_worker');
@@ -128,12 +133,18 @@ const startServer = (port) => {
   const server = app.listen(port, async () => {
     console.log(`🚀 Express server running on port ${port}`);
     await initDB();
+
+
     
     if (process.env.START_LOCAL_WORKER !== 'false') {
       console.log('🌱 Starting local submissions queue worker thread...');
       queueWorker.startWorker();
     } else {
       console.log('ℹ️ Local queue worker thread disabled (VM/separate daemon execution mode).');
+    }
+
+    if (process.send) {
+      process.send('ready');
     }
   });
 
@@ -149,6 +160,19 @@ const startServer = (port) => {
     }
   });
 
+  const gracefulShutdown = () => {
+    console.log('🛑 Graceful shutdown signal received. Closing queue worker & active HTTP connections...');
+    try { queueWorker.stopWorker(); } catch(e) {}
+    server.close(() => {
+      console.log('✅ All connections closed cleanly.');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.warn('⚠️ Force exiting after timeout.');
+      process.exit(0);
+    }, 12000);
+  };
+
   process.once('SIGUSR2', () => {
     queueWorker.stopWorker();
     server.close(() => {
@@ -156,15 +180,8 @@ const startServer = (port) => {
     });
   });
 
-  process.on('SIGINT', () => {
-    queueWorker.stopWorker();
-    server.close(() => process.exit(0));
-  });
-
-  process.on('SIGTERM', () => {
-    queueWorker.stopWorker();
-    server.close(() => process.exit(0));
-  });
+  process.on('SIGINT', gracefulShutdown);
+  process.on('SIGTERM', gracefulShutdown);
 
   process.on('uncaughtException', (err) => {
     console.error('[Server Uncaught Exception (Handled)]:', err.message);

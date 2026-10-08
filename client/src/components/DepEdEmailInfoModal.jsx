@@ -95,6 +95,9 @@ export default function DepEdEmailInfoModal({ isOpen, onClose }) {
               DepEd emails must end in <code>@deped.gov.ph</code> and correspond to the personnel's official registered name (numbers like <code>0001</code> are accepted). <strong>Middle names and maiden surnames</strong> are fully accepted for married personnel (e.g. <code>firstname.middlename@deped.gov.ph</code> or <code>firstname.lastname@deped.gov.ph</code>).
             </li>
             <li>
+              <strong>Legal Name / PSA Correction:</strong> If an employee legally corrected their name on their PSA Birth Certificate or Court Order but their <code>@deped.gov.ph</code> username is still under their previous name while a Google Workspace account update is pending, toggle <strong>Allow Email Discrepancy</strong> and type <strong>CONFIRM</strong> to activate the valid override.
+            </li>
+            <li>
               DepEd Email is <strong>MANDATORY</strong> for all Teaching, Teaching-Related, and Nationally-Funded staff.
             </li>
             <li>

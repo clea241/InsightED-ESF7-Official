@@ -81,7 +81,7 @@ export default function RequestCenter() {
         <div className="card-inner">
           <h2>Request Center</h2>
           <p className="subtext">
-            Manage incoming teacher clustering requests and school mergers, or initiate integration requests to other schools.
+            Manage incoming teacher clustering requests and reassigned personnel data transfers.
           </p>
 
           <div style={{ display: 'flex', gap: '10px', marginTop: '20px', borderBottom: '1.5px solid var(--line)', paddingBottom: '1px' }}>
@@ -130,6 +130,7 @@ export default function RequestCenter() {
             >
               Request History ({requestHistory.length})
             </button>
+            {/* Initiate Integration/Merger commented out for now
             <button
               onClick={() => setActiveSubTab('merge')}
               style={{
@@ -145,6 +146,7 @@ export default function RequestCenter() {
             >
               Initiate Integration/Merger
             </button>
+            */}
           </div>
 
           <div style={{ marginTop: '20px' }}>
@@ -168,18 +170,18 @@ export default function RequestCenter() {
                     >
                       <div>
                         <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
-                          {req.request_type === 'school_merger'
+                          {(req.request_type || req.requestType) === 'school_merger'
                             ? 'Integration / School Merger Request'
-                            : req.request_type === 'reassigned_teacher'
+                            : (req.request_type || req.requestType) === 'reassigned_teacher'
                             ? 'Reassigned Personnel Request'
                             : 'Incoming Clustered Personnel'}
                         </strong>
                         <p style={{ fontSize: '13px', color: 'var(--muted)', margin: '4px 0 0 0' }}>
-                          {req.request_type === 'school_merger'
-                            ? `School ID ${req.requester_school_id} requested to merge and transfer all their personnel into your school.`
-                            : req.request_type === 'reassigned_teacher'
-                            ? `School ID ${req.requester_school_id} (Mother School) requested to reassign teacher "${req.personnel_name}" to your school. Upon approval, status in your roster will be BORROWED.`
-                            : `School ID ${req.requester_school_id} (Mother School) shared a clustered teacher "${req.personnel_name}" to your school.`}
+                          {(req.request_type || req.requestType) === 'school_merger'
+                            ? `School ID ${req.requester_school_id || req.requesterSchoolId} requested to merge and transfer all their personnel into your school.`
+                            : (req.request_type || req.requestType) === 'reassigned_teacher'
+                            ? `School ID ${req.requester_school_id || req.requesterSchoolId} (Mother School) requested to reassign teacher "${req.personnel_name || req.personnelName}" to your school. Upon approval, status in your roster will be BORROWED.`
+                            : `School ID ${req.requester_school_id || req.requesterSchoolId} (Mother School) shared a clustered teacher "${req.personnel_name || req.personnelName}" to your school.`}
                         </p>
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -224,18 +226,18 @@ export default function RequestCenter() {
                     >
                       <div>
                         <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
-                          {req.request_type === 'school_merger' 
+                          {(req.request_type || req.requestType) === 'school_merger' 
                             ? 'Integration / School Merger Request' 
-                            : req.request_type === 'reassigned_teacher' 
+                            : (req.request_type || req.requestType) === 'reassigned_teacher' 
                             ? 'Outgoing Reassigned Personnel'
                             : 'Outgoing Clustered Personnel'}
                         </strong>
                         <p style={{ fontSize: '13px', color: 'var(--muted)', margin: '4px 0 0 0' }}>
-                          {req.request_type === 'school_merger'
-                            ? `Requested merger into School ID ${req.target_school_id}`
-                            : req.request_type === 'reassigned_teacher'
-                            ? `Requested reassignment of teacher "${req.personnel_name}" to Target School ID ${req.target_school_id}`
-                            : `Shared clustered teacher "${req.personnel_name}" to Clustered School ID ${req.target_school_id}`}
+                          {(req.request_type || req.requestType) === 'school_merger'
+                            ? `Requested merger into School ID ${req.target_school_id || req.targetSchoolId}`
+                            : (req.request_type || req.requestType) === 'reassigned_teacher'
+                            ? `Requested reassignment of teacher "${req.personnel_name || req.personnelName}" to Target School ID ${req.target_school_id || req.targetSchoolId}`
+                            : `Shared clustered teacher "${req.personnel_name || req.personnelName}" to Clustered School ID ${req.target_school_id || req.targetSchoolId}`}
                         </p>
                       </div>
                       <div>
@@ -282,21 +284,21 @@ export default function RequestCenter() {
                     >
                       <div>
                         <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
-                          {req.request_type === 'school_merger'
+                          {(req.request_type || req.requestType) === 'school_merger'
                             ? 'Integration / School Merger Request'
-                            : req.request_type === 'reassigned_teacher'
+                            : (req.request_type || req.requestType) === 'reassigned_teacher'
                             ? 'Reassigned Personnel Request'
                             : 'Clustered Personnel Request'}
                         </strong>
                         <p style={{ fontSize: '13px', color: 'var(--muted)', margin: '4px 0 0 0' }}>
-                          {req.request_type === 'school_merger'
-                            ? `School Merger with School ID ${req.target_school_id}`
-                            : req.request_type === 'reassigned_teacher'
-                            ? `Reassigned Personnel "${req.personnel_name}" (Mother Station: ${req.requester_school_id} → Target: ${req.target_school_id})`
-                            : `Clustered Personnel "${req.personnel_name}" (Mother Station: ${req.requester_school_id} → Target: ${req.target_school_id})`}
+                          {(req.request_type || req.requestType) === 'school_merger'
+                            ? `School Merger with School ID ${req.target_school_id || req.targetSchoolId}`
+                            : (req.request_type || req.requestType) === 'reassigned_teacher'
+                            ? `Reassigned Personnel "${req.personnel_name || req.personnelName}" (Mother Station: ${req.requester_school_id || req.requesterSchoolId} → Target: ${req.target_school_id || req.targetSchoolId})`
+                            : `Clustered Personnel "${req.personnel_name || req.personnelName}" (Mother Station: ${req.requester_school_id || req.requesterSchoolId} → Target: ${req.target_school_id || req.targetSchoolId})`}
                         </p>
                         <span style={{ fontSize: '11px', color: '#64748B', display: 'block', marginTop: '4px' }}>
-                          Processed Date: {req.updated_at ? new Date(req.updated_at).toLocaleString() : 'N/A'}
+                          Processed Date: {req.updated_at || req.updatedAt ? new Date(req.updated_at || req.updatedAt).toLocaleString() : 'N/A'}
                         </span>
                       </div>
                       <div>
@@ -323,6 +325,7 @@ export default function RequestCenter() {
               </div>
             )}
 
+            {/* Initiate Integration/Merger panel commented out for now
             {activeSubTab === 'merge' && (
               <div
                 style={{
@@ -347,7 +350,11 @@ export default function RequestCenter() {
                       Select Target Host School (Within District)
                     </label>
                     <SearchableDropdown
-                      options={districtSchools.map(s => `${s.school_name.toUpperCase()} (${s.school_id})`)}
+                      options={(districtSchools || []).map(s => {
+                        const name = s?.schoolName || s?.school_name || (s?.schoolId ? `School ${s.schoolId}` : s?.school_id ? `School ${s.school_id}` : 'School');
+                        const id = s?.schoolId || s?.school_id || '';
+                        return id ? `${String(name).toUpperCase()} (${id})` : String(name).toUpperCase();
+                      })}
                       value={mergeTargetSchool}
                       onChange={(val) => setMergeTargetSchool(val)}
                       placeholder="Select target school..."
@@ -364,6 +371,7 @@ export default function RequestCenter() {
                 </form>
               </div>
             )}
+            */}
           </div>
         </div>
       </article>

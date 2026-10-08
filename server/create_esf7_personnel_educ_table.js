@@ -32,10 +32,11 @@ async function createEducationTable() {
           vocational_course TEXT,
           vocational_level TEXT,
           college_degree TEXT,
+          college_degrees JSONB DEFAULT '[]'::jsonb,
           major TEXT,
           minor TEXT,
           post_graduate_degree TEXT DEFAULT 'N/A',
-          post_graduate_discipline TEXT,
+          post_graduate_discipline JSONB DEFAULT '{}'::jsonb,
           
           eligibility JSONB DEFAULT '[]'::jsonb,
           prc_specialization TEXT,
@@ -51,9 +52,12 @@ async function createEducationTable() {
       ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS shs_track TEXT;
       ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS vocational_course TEXT;
       ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS vocational_level TEXT;
+      ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS college_degrees JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE esf7_perssonel_educ ALTER COLUMN college_degree DROP NOT NULL;
 
       CREATE INDEX IF NOT EXISTS idx_esf7_perssonel_educ_personnel ON esf7_perssonel_educ (personnel_id);
+      CREATE INDEX IF NOT EXISTS idx_esf7_perssonel_educ_college_degrees ON esf7_perssonel_educ USING gin (college_degrees);
+      CREATE INDEX IF NOT EXISTS idx_esf7_perssonel_educ_post_grad_disc ON esf7_perssonel_educ USING gin (post_graduate_discipline);
     `);
 
     console.log("Table 'esf7_perssonel_educ' created successfully!");

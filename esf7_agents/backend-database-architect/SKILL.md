@@ -22,7 +22,7 @@ Master architect for the `InsightED - ESF7 Official` backend server, API routing
 
 ---
 
-## 🗄 Core Database Table Surface (21 Tables)
+## 🗄 Core Database Table Surface (22 Tables)
 
 | # | Table Name | Key Storage Fields | Verification Focus |
 |---|------------|--------------------|-------------------|
@@ -47,6 +47,7 @@ Master architect for the `InsightED - ESF7 Official` backend server, API routing
 | 19 | `esf7_requests` | `requester_school_id`, `target_school_id`, `request_type`, `personnel_id`, `status` | Clustered/reassigned teacher workflows |
 | 20 | `esf7_school_profile` | `has_elem_special_programs`, `has_jhs_special_programs`, `jhs_special_programs` (JSONB), `shs_curriculum_model` | Curricular program flags & model |
 | 21 | `esf7_submission_queue` | `payload` (JSONB), `signature`, `certified_by`, `status`, `error_message` | Offline queue ingestion worker |
+| 22 | `esf7_clustered_ghost_sync` | `room_key`, `school_id`, `school_name`, `slots` (JSONB), `updated_at` | Atomic multi-worker timetable ghost sync |
 
 ---
 

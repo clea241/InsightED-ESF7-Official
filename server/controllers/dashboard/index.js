@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const cacheService = require('../../services/cacheService');
 
 // Helper to determine term block & overload eligibility for SY 2026-2027
 function getTermCalendarStatus(currentDateStr) {
@@ -67,56 +68,26 @@ function getTermCalendarStatus(currentDateStr) {
   };
 }
 
-let insightEdPoolInstance = null;
+const { insightEdPool } = require('../../db');
 function getInsightEdPool() {
-  if (!insightEdPoolInstance) {
-    const { Pool } = require('pg');
-    const poolString = process.env.DATABASE_URL
-      ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-      : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-    insightEdPoolInstance = new Pool({
-      connectionString: poolString,
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-      max: 5,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000
-    });
-    insightEdPoolInstance.on('error', (err) => {
-      console.warn('[InsightEd Pool Error]:', err.message);
-    });
-  }
-  return insightEdPoolInstance;
+  return insightEdPool;
 }
 
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 
-// Reused across requests — opening a fresh pg Pool (and tearing it down) on every
-// dashboard load added a full extra TCP+auth round trip to the response time.
-let insightEdPool = null;
-function getInsightEdPool() {
-  if (!insightEdPool) {
-    const { Pool } = require('pg');
-    const poolString = process.env.DATABASE_URL
-      ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-      : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-    insightEdPool = new Pool({
-      connectionString: poolString,
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-    });
-  }
-  return insightEdPool;
-}
-
 // GET /api/dashboard/stats
 router.get('/stats', async (req, res) => {
   const startTime = Date.now();
-  console.log('[Dashboard Stats] Request started');
   try {
     const schoolId = getSchoolIdFromRequest(req) || req.query.school_id || req.headers['x-school-id'] || '199999';
     const simulatedDate = req.query.simulated_date || null;
-
-    // Parallel optimized DB queries
     const cleanSchoolId = schoolId.replace('SCH-', '');
+
+    const cacheKey = `dashboard:stats:${cleanSchoolId}:${simulatedDate || 'default'}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, response_time_ms: Date.now() - startTime });
+    }
 
     const t0 = Date.now();
     // Parallel optimized DB queries from active esf7 tables
@@ -155,14 +126,32 @@ router.get('/stats', async (req, res) => {
       const t1 = Date.now();
       try {
         const insightEdPool = getInsightEdPool();
-        const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-        const masterPersonnelRes = await insightEdPool.query(
-          `SELECT sex, position FROM ${tableName} WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
-          [cleanSchoolId]
-        ).catch((err) => {
-          console.error('[Dashboard Master Fallback Error]:', err.message);
-          return { rows: [] };
-        });
+        const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
+        let masterPersonnelRes = { rows: [] };
+        if (isTest) {
+          masterPersonnelRes = await insightEdPool.query(
+            `SELECT sex, position FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+            [cleanSchoolId]
+          ).catch((err) => {
+            console.error('[Dashboard Master Fallback Error]:', err.message);
+            return { rows: [] };
+          });
+        } else {
+          masterPersonnelRes = await insightEdPool.query(
+            `SELECT sex, position FROM esf7_database WHERE school_id = $1`,
+            [cleanSchoolId]
+          ).catch((err) => {
+            console.error('[Dashboard Master Fallback Error]:', err.message);
+            return { rows: [] };
+          });
+          if (masterPersonnelRes.rows.length === 0) {
+            masterPersonnelRes = await insightEdPool.query(
+              `SELECT sex, position FROM esf7_database WHERE schoool_id = $1`,
+              [cleanSchoolId]
+            ).catch(() => ({ rows: [] }));
+          }
+        }
+
 
         if (masterPersonnelRes.rows.length > 0) {
           personnelList = masterPersonnelRes.rows.map(r => ({
@@ -320,6 +309,7 @@ router.get('/stats', async (req, res) => {
       response_time_ms: Date.now() - startTime
     };
 
+    await cacheService.set(cacheKey, responsePayload, 5);
     res.json(responsePayload);
   } catch (err) {
     console.error('Error computing dashboard stats:', err);

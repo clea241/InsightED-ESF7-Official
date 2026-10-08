@@ -46,14 +46,58 @@ export const isNonTeachingTaskSubject = (subject) => {
   if (!subject) return false;
   const subUpper = String(subject).toUpperCase().trim();
   if (
-    subUpper.startsWith('ADMIN TASK') ||
+    subUpper.startsWith('ADMIN') ||
+    subUpper.includes('ADMIN') ||
     subUpper.startsWith('ADMINISTRATIVE') ||
+    subUpper.includes('ADMINISTRATIVE') ||
     subUpper.startsWith('RELATED TASK') ||
     subUpper.startsWith('TR -') ||
     subUpper.startsWith('TR-') ||
     subUpper.startsWith('ANC -') ||
     subUpper.startsWith('ANCILLARY') ||
+    subUpper.includes('DUTY') ||
+    subUpper.includes('PERSONNEL') ||
+    subUpper.includes('RECORDS') ||
+    subUpper.includes('FACILITIES') ||
+    subUpper.includes('FINANCIAL') ||
     subUpper === 'COACHING AND MENTORING'
+  ) {
+    return true;
+  }
+  return false;
+};
+
+export const ADMIN_TASK_OPTIONS = [
+  'ADMIN TASK – PERSONNEL ADMINISTRATION',
+  'ADMIN TASK – PROPERTY/PHYSICAL FACILITIES CUSTODIANSHIP',
+  'ADMIN TASK – GENERAL ADMINISTRATIVE SUPPORT',
+  'ADMIN TASK – FINANCIAL MANAGEMENT',
+  'ADMIN TASK – RECORDS MANAGEMENT',
+  'ADMIN TASK – PROGRAM MANAGEMENT'
+];
+
+export const isAdminTaskRow = (row) => {
+  if (!row) return false;
+  if (row.is_admin_task || row.isAdminTask) return true;
+  const sub = String(row.subject || row.task || row.task_name || '').toUpperCase().trim();
+  return sub.startsWith('ADMIN') || sub.includes('ADMIN') || sub.startsWith('ADMINISTRATIVE') || sub.includes('ADMINISTRATIVE');
+};
+
+export const isNonTeachingPerson = (person) => {
+  if (!person) return false;
+  const autoType = (typeof detectPersonnelTypeFromPosition === 'function' ? detectPersonnelTypeFromPosition(person.position || person.plantilla_position || person.position_title || '') : null) || person.type || '';
+  const t = String(autoType).toLowerCase().trim();
+  const cat = String(person.positionCategory || person.category || '').toUpperCase().trim();
+  if (t === 'non-teaching' || cat === 'NON-TEACHING' || cat.includes('NON-TEACHING')) {
+    return true;
+  }
+  const pos = String(person.position || person.plantilla_position || person.position_title || '').toUpperCase().trim();
+  if (
+    pos.includes('ADMINISTRATIVE') || pos.includes('ADAS') || pos.includes('ADA ') || 
+    pos.includes('UTILITY') || pos.includes('CLERK') || pos.includes('GUARD') || 
+    pos.includes('NURSE') || pos.includes('DRIVER') || pos.includes('BOOKKEEPER') || 
+    pos.includes('DISBURSING') || pos.includes('SECURITY') || pos.includes('ACCOUNTANT') ||
+    pos.includes('AIDE')
   ) {
     return true;
   }
@@ -66,10 +110,119 @@ const isAdvisorySub = (sub) => {
   return s === 'ADVISORY' || s.includes('HOMEROOM GUIDANCE') || s.includes('HGP');
 };
 
+export const isSnedSectionRow = (row, classSections = []) => {
+  if (!row) return false;
+  const subUpper = String(row.subject || '').toUpperCase().trim();
+  if (subUpper === 'SNED MODIFIED SUBJECT' || subUpper === 'SNED' || subUpper === 'SPED MODIFIED SUBJECTS') return true;
+  const secName = String(row.sectionName || '').toUpperCase().trim();
+  const secId = String(row.sectionId || row.section_id || '');
+
+  const matchedSec = (classSections || []).find(s => (secId && String(s.id) === secId) || (secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName && (!row.gradeLevel || s.gradeLevel === row.gradeLevel)));
+  if (matchedSec) {
+    const sType = String(matchedSec.sectionType || matchedSec.section_type || '').toUpperCase().trim();
+    if (['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(sType)) return false;
+  }
+
+  const gUpper = String(row.gradeLevel || '').toUpperCase();
+  if (gUpper.includes('SNED') || gUpper.includes('NON-GRADED') || gUpper.includes('SPED')) return true;
+
+  return (classSections || []).some(s => {
+    const isThisSecSned = String(s.sectionType || '').toUpperCase().includes('SNED') ||
+                          String(s.gradeLevel || '').toUpperCase().includes('SNED') ||
+                          String(s.gradeLevel || '').toUpperCase().includes('NON-GRADED') ||
+                          String(s.gradeLevel || '').toUpperCase().includes('SPED');
+    if (!isThisSecSned) return false;
+    const sIdMatch = Boolean(secId && String(s.id) === secId);
+    const sNameMatch = Boolean(secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName);
+    return sIdMatch || (sNameMatch && (!row.gradeLevel || s.gradeLevel === row.gradeLevel));
+  });
+};
+
+export const isAlsSectionRow = (row, classSections = []) => {
+  if (!row) return false;
+  const subUpper = String(row.subject || '').toUpperCase().trim();
+  if (subUpper === 'ALS LEARNING STRAND' || subUpper === 'ALS' || subUpper.startsWith('LS 1') || subUpper.startsWith('LS 2') || subUpper.startsWith('LS 3') || subUpper.startsWith('LS 4') || subUpper.startsWith('LS 5') || subUpper.startsWith('LS 6') || subUpper.startsWith('LS:')) return true;
+  const secName = String(row.sectionName || '').toUpperCase().trim();
+  const secId = String(row.sectionId || row.section_id || '');
+
+  const matchedSec = (classSections || []).find(s => (secId && String(s.id) === secId) || (secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName && (!row.gradeLevel || s.gradeLevel === row.gradeLevel)));
+  if (matchedSec) {
+    const sType = String(matchedSec.sectionType || matchedSec.section_type || '').toUpperCase().trim();
+    if (['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(sType)) return false;
+  }
+
+  const gUpper = String(row.gradeLevel || '').toUpperCase();
+  if (gUpper.includes('ALS')) return true;
+
+  return (classSections || []).some(s => {
+    const isThisSecAls = String(s.sectionType || '').toUpperCase().includes('ALS') ||
+                          String(s.gradeLevel || '').toUpperCase().includes('ALS');
+    if (!isThisSecAls) return false;
+    const sIdMatch = Boolean(secId && String(s.id) === secId);
+    const sNameMatch = Boolean(secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName);
+    return sIdMatch || (sNameMatch && (!row.gradeLevel || s.gradeLevel === row.gradeLevel));
+  });
+};
+
+export const isAralSectionRow = (row, classSections = []) => {
+  if (!row) return false;
+  const subUpper = String(row.subject || '').toUpperCase().trim();
+  if (subUpper.startsWith('ARALING') || subUpper.includes('ARALING PANLIPUNAN')) return false;
+  if (subUpper === 'REMEDIATION' || subUpper.includes('REMEDIAL') || subUpper.includes('ENRICHMENT')) return false;
+  if (subUpper === 'ARAL' || subUpper.startsWith('ARAL -') || subUpper.startsWith('ARAL-') || subUpper.startsWith('ARAL ') || subUpper.includes('ARAL TUTORING') || subUpper.includes('ARAL PROGRAM')) return true;
+  const secName = String(row.sectionName || '').toUpperCase().trim();
+  const secId = String(row.sectionId || row.section_id || '');
+
+  const matchedSec = (classSections || []).find(s => (secId && String(s.id) === secId) || (secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName && (!row.gradeLevel || s.gradeLevel === row.gradeLevel)));
+  if (matchedSec) {
+    const sType = String(matchedSec.sectionType || matchedSec.section_type || '').toUpperCase().trim();
+    if (['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(sType)) return false;
+  }
+
+  const gUpper = String(row.gradeLevel || '').toUpperCase();
+  if ((gUpper.startsWith('ARAL') && !gUpper.startsWith('ARALING')) || gUpper.includes('ARAL') || (secName.startsWith('ARAL') && !secName.startsWith('ARALING')) || secName.includes('ARAL')) return true;
+
+  return (classSections || []).some(s => {
+    const isThisSecRemedial = s.sectionType === 'REMEDIAL' || s.sectionType === 'ENRICHMENT';
+    if (isThisSecRemedial) return false;
+    const isThisSecReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+    if (isThisSecReg) return false;
+
+    const isThisSecAral = String(s.sectionType || '').toUpperCase().includes('ARAL') ||
+                          String(s.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                          String(s.sectionName || '').toUpperCase().includes('ARAL') ||
+                          Boolean(s.aralBasis || s.aralToolKey || s.aralTool);
+    if (!isThisSecAral) return false;
+    const sIdMatch = Boolean(secId && String(s.id) === secId);
+    const sNameMatch = Boolean(secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName);
+    return sIdMatch || (sNameMatch && (!row.gradeLevel || s.gradeLevel === row.gradeLevel));
+  });
+};
+
+export const isRemedialSectionRow = (row, classSections = []) => {
+  if (!row) return false;
+  const secName = String(row.sectionName || '').toUpperCase().trim();
+  const secId = String(row.sectionId || row.section_id || '');
+
+  const matchedSec = (classSections || []).find(s => (secId && String(s.id) === secId) || (secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName && (!row.gradeLevel || s.gradeLevel === row.gradeLevel)));
+  if (matchedSec) {
+    const sType = String(matchedSec.sectionType || matchedSec.section_type || '').toUpperCase().trim();
+    return sType === 'REMEDIAL' || sType === 'ENRICHMENT';
+  }
+
+  return (classSections || []).some(s => {
+    const isThisSecRemedial = s.sectionType === 'REMEDIAL' || s.sectionType === 'ENRICHMENT';
+    if (!isThisSecRemedial) return false;
+    const sIdMatch = Boolean(secId && String(s.id) === secId);
+    const sNameMatch = Boolean(secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName);
+    return sIdMatch || (sNameMatch && (!row.gradeLevel || s.gradeLevel === row.gradeLevel));
+  });
+};
+
 const isRemediationSub = (sub) => {
   if (!sub) return false;
   const s = String(sub).toUpperCase();
-  return s === 'REMEDIATION' || s.includes('REMEDIAL') || s.includes('ENHANCEMENT');
+  return s === 'REMEDIATION' || s.includes('REMEDIAL') || s.includes('ENHANCEMENT') || s.includes('ENRICHMENT');
 };
 
 // Grade 1/2 MATATAG core subjects (DepEd Order No. 12, s. 2024) are locked to exactly 40 mins/day
@@ -97,12 +250,16 @@ export const isAdvisoryOrHgpPair = (rA, rB) => {
   if (!rA || !rB) return false;
   const normA = normalizeSubjectName(rA.subject || rA.task || '');
   const normB = normalizeSubjectName(rB.subject || rB.task || '');
-  const isAdvA = normA === 'ADVISORY';
-  const isAdvB = normB === 'ADVISORY';
-  const isHgpA = normA === 'HGP';
-  const isHgpB = normB === 'HGP';
-  // HGP can ONLY overlap with ADVISORY (and vice versa)
-  return (isAdvA && isHgpB) || (isAdvB && isHgpA);
+  const isAdvA = normA === 'ADVISORY' || String(rA.subject || '').toUpperCase().trim() === 'ADVISORY';
+  const isAdvB = normB === 'ADVISORY' || String(rB.subject || '').toUpperCase().trim() === 'ADVISORY';
+  const isHgpA = normA === 'HGP' || String(rA.subject || '').toUpperCase().trim() === 'HGP' || String(rA.subject || '').toUpperCase().includes('HOMEROOM GUIDANCE');
+  const isHgpB = normB === 'HGP' || String(rB.subject || '').toUpperCase().trim() === 'HGP' || String(rB.subject || '').toUpperCase().includes('HOMEROOM GUIDANCE');
+  
+  // ADVISORY is permitted to overlap with other subjects, tasks, and HGP
+  if (isAdvA || isAdvB) return true;
+  if (isHgpA && isHgpB) return false;
+  
+  return false;
 };
 
 function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSections, customSubjects, GRADE_LEVEL_SUBJECTS, REMEDIATION_FOCUS_BY_CATEGORY }) {
@@ -544,7 +701,6 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
           const chk = document.createElement('input');
           chk.type = 'checkbox';
           if ((row.days || []).includes(d)) chk.checked = true;
-          if (isLockedSub && subUpper === 'ADVISORY') chk.disabled = true;
           chk.onchange = function() { toggleDay(idx, d); };
           lbl.appendChild(chk);
           lbl.appendChild(document.createTextNode(d));
@@ -554,29 +710,21 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
         tr.appendChild(tdDays);
 
         // 4. Start & End Time Cells
-        if (subUpper === 'ADVISORY') {
-          const tdTime = document.createElement('td');
-          tdTime.colSpan = 2;
-          tdTime.style.textAlign = 'center';
-          tdTime.innerHTML = '<span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 4px 10px; border-radius: 6px; font-weight: bold;">60 Mins / Day (Fixed)</span>';
-          tr.appendChild(tdTime);
-        } else {
-          const tdStart = document.createElement('td');
-          const inpStart = document.createElement('input');
-          inpStart.type = 'time';
-          inpStart.value = row.startTime || '08:00';
-          inpStart.onchange = function() { updateRow(idx, 'startTime', this.value); };
-          tdStart.appendChild(inpStart);
-          tr.appendChild(tdStart);
+        const tdStart = document.createElement('td');
+        const inpStart = document.createElement('input');
+        inpStart.type = 'time';
+        inpStart.value = row.startTime || (isLockedSub ? '07:30' : '08:00');
+        inpStart.onchange = function() { updateRow(idx, 'startTime', this.value); };
+        tdStart.appendChild(inpStart);
+        tr.appendChild(tdStart);
 
-          const tdEnd = document.createElement('td');
-          const inpEnd = document.createElement('input');
-          inpEnd.type = 'time';
-          inpEnd.value = row.endTime || '09:00';
-          inpEnd.onchange = function() { updateRow(idx, 'endTime', this.value); };
-          tdEnd.appendChild(inpEnd);
-          tr.appendChild(tdEnd);
-        }
+        const tdEnd = document.createElement('td');
+        const inpEnd = document.createElement('input');
+        inpEnd.type = 'time';
+        inpEnd.value = row.endTime || (isLockedSub ? '08:30' : '09:00');
+        inpEnd.onchange = function() { updateRow(idx, 'endTime', this.value); };
+        tdEnd.appendChild(inpEnd);
+        tr.appendChild(tdEnd);
 
         // 6. Action Cell
         const tdAct = document.createElement('td');
@@ -696,6 +844,10 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
           const sub1Upper = String(r1.subject || '').toUpperCase().trim();
           const sub2Upper = String(r2.subject || '').toUpperCase().trim();
 
+          const isAdv1 = sub1Upper === 'ADVISORY' || isAdvisorySub(sub1Upper);
+          const isAdv2 = sub2Upper === 'ADVISORY' || isAdvisorySub(sub2Upper);
+          if (isAdv1 || isAdv2) continue;
+
           const isAdvHgpPair = (sub1Upper === 'ADVISORY' || sub1Upper === 'HGP' || sub1Upper.includes('HOMEROOM')) &&
                                (sub2Upper === 'ADVISORY' || sub2Upper === 'HGP' || sub2Upper.includes('HOMEROOM'));
           if (isAdvHgpPair) {
@@ -757,19 +909,7 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
             const endMins = eh * 60 + (em || 0);
             const diff = endMins - startMins;
 
-            const isSHS = String(row.gradeLevel || '').includes('11') || String(row.gradeLevel || '').includes('12') || String(row.category || '').includes('SHS');
-            const maxMins = isSHS ? 360 : 60;
-
-            if (diff > maxMins) {
-              const maxEndMins = startMins + maxMins;
-              const maxH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-              const maxM = String(maxEndMins % 60).padStart(2, '0');
-              row.endTime = maxH + ':' + maxM;
-              alert(isSHS 
-                ? "Senior High School (Grade 11 & 12) subject schedule cannot exceed 6 hours. Adjusted to 6 hours max."
-                : "A single subject period in workload cannot exceed 1 hour (60 minutes). Adjusted to 1 hour max."
-              );
-            } else if (diff < 0) {
+            if (diff < 0) {
               alert("Invalid Time Range: End time must be strictly after start time.");
             }
           }
@@ -789,18 +929,6 @@ function generateWorkloadDelegationHTML({ schoolInfo, selectedTeachers, classSec
       const t = data.teachers.find(x => x.id === activeTeacherId);
       if (t && t.workloadRows[idx]) {
         const row = t.workloadRows[idx];
-        const subUpper = String(row.subject || '').toUpperCase().trim();
-        if (subUpper === 'ADVISORY') {
-          return alert('Advisory days are fixed to Monday through Friday (M-F).');
-        }
-
-        if (subUpper === 'HGP') {
-          row.days = [day]; // HGP is strictly 1 day only
-          renderWorkloadRows();
-          renderTeacherList();
-          return;
-        }
-
         const days = row.days || [];
         if (days.includes(day)) {
           row.days = days.filter(d => d !== day);
@@ -1013,7 +1141,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
 
   const formatDate = (date) => {
     if (!date) return '';
-    const d = new Date(date);
+    const d = (date instanceof Date) ? date : new Date(date);
     if (isNaN(d.getTime())) return '';
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -1022,15 +1150,37 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const cleanValue = value ? (typeof value === 'string' ? value.substring(0, 10) : formatDate(value)) : '';
+  const maxDateStr = maxDate ? formatDate(maxDate) : '';
+  const minDateStr = minDate ? formatDate(minDate) : '';
+
+  const parsedMaxDate = maxDateStr ? new Date(maxDateStr + 'T00:00:00') : null;
+  const parsedMinDate = minDateStr ? new Date(minDateStr + 'T00:00:00') : null;
+
+  const handleOpenCalendar = () => {
+    if (disabled) return;
+    if (!showCalendar) {
+      if (cleanValue) {
+        const d = new Date(cleanValue + 'T00:00:00');
+        if (!isNaN(d.getTime())) setViewDate(d);
+      } else if (parsedMaxDate && new Date() > parsedMaxDate) {
+        setViewDate(parsedMaxDate);
+      } else if (parsedMinDate && new Date() < parsedMinDate) {
+        setViewDate(parsedMinDate);
+      } else {
+        setViewDate(new Date());
+      }
+    }
+    setShowCalendar(!showCalendar);
+  };
 
   React.useEffect(() => {
-    if (cleanValue) {
+    if (!showCalendar && cleanValue) {
       const d = new Date(cleanValue + 'T00:00:00');
       if (!isNaN(d.getTime())) {
         setViewDate(d);
       }
     }
-  }, [cleanValue]);
+  }, [cleanValue, showCalendar]);
 
   React.useEffect(() => {
     function handleClickOutside(event) {
@@ -1102,9 +1252,14 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   const handleDaySelect = (cellDate, e) => {
     e.stopPropagation();
     if (disabled) return;
-    if (maxDate && cellDate > maxDate) return;
-    if (minDate && cellDate < minDate) return;
-    onChange(formatDate(cellDate));
+
+    const cellStr = formatDate(cellDate);
+    if (maxDateStr && cellStr > maxDateStr) return;
+    if (minDateStr && cellStr < minDateStr) return;
+
+    if (typeof onChange === 'function') {
+      onChange(cellStr);
+    }
     setShowCalendar(false);
   };
 
@@ -1113,8 +1268,9 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   };
 
   const isDisabled = (cellDate) => {
-    if (maxDate && cellDate > maxDate) return true;
-    if (minDate && cellDate < minDate) return true;
+    const cellStr = formatDate(cellDate);
+    if (maxDateStr && cellStr > maxDateStr) return true;
+    if (minDateStr && cellStr < minDateStr) return true;
     return false;
   };
 
@@ -1123,7 +1279,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <div
-        onClick={() => !disabled && setShowCalendar(!showCalendar)}
+        onClick={handleOpenCalendar}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1746,6 +1902,7 @@ let GRADE_LEVEL_SUBJECTS = {
     'MAKABANSA',
     'MATHEMATICS',
     'GMRC',
+    'SPECIAL SCIENCE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
@@ -1770,6 +1927,7 @@ let GRADE_LEVEL_SUBJECTS = {
     'ENGLISH',
     'MATHEMATICS',
     'GMRC',
+    'SPECIAL SCIENCE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
@@ -1795,6 +1953,7 @@ let GRADE_LEVEL_SUBJECTS = {
     'MATHEMATICS',
     'SCIENCE',
     'GMRC',
+    'SPECIAL SCIENCE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
@@ -1823,6 +1982,7 @@ let GRADE_LEVEL_SUBJECTS = {
     'SCIENCE',
     'GMRC',
     'EPP/TLE',
+    'SPECIAL SCIENCE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
@@ -1851,6 +2011,7 @@ let GRADE_LEVEL_SUBJECTS = {
     'SCIENCE',
     'GMRC',
     'EPP/TLE',
+    'SPECIAL SCIENCE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
@@ -1879,6 +2040,7 @@ let GRADE_LEVEL_SUBJECTS = {
     'SCIENCE',
     'GMRC',
     'EPP/TLE',
+    'SPECIAL SCIENCE',
     'SPECIAL PROGRAM IN SCIENCE',
     'SPED MODIFIED SUBJECTS',
     'IP RELATED SUBJECT',
@@ -3489,12 +3651,174 @@ const formatMinutesTo12Hour = (mins) => {
 
 export const parseMins = (timeStr) => {
   if (!timeStr || typeof timeStr !== 'string') return 99999;
-  const parts = timeStr.trim().split(':').map(Number);
-  if (parts.length < 2 || isNaN(parts[0])) return 99999;
-  return parts[0] * 60 + (parts[1] || 0);
+  let str = timeStr.trim();
+  if (str.includes('-')) {
+    str = str.split('-')[0].trim();
+  }
+  const upperStr = str.toUpperCase();
+  const isPM = upperStr.includes('PM');
+  const isAM = upperStr.includes('AM');
+  const cleanStr = upperStr.replace(/[^\d:]/g, '');
+  const parts = cleanStr.split(':');
+  if (parts.length < 2 || isNaN(parseInt(parts[0], 10))) return 99999;
+
+  let hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+
+  if (isPM && hours < 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+
+  // DepEd school schedule context fallback: if neither AM nor PM is explicitly specified,
+  // school hours 1:00 through 5:59 are strictly afternoon (PM) sessions (13:00 to 17:59)
+  if (!isPM && !isAM && hours >= 1 && hours < 6) {
+    hours += 12;
+  }
+
+  return hours * 60 + minutes;
 };
 
-export const isSectionMatchingTeacherGrades = (sec, assignedGrades) => {
+export const getNormalizedRowDays = (row) => {
+  if (!row) return ['M', 'T', 'W', 'TH', 'F'];
+  const rawDays = (Array.isArray(row.days) && row.days.length > 0)
+    ? row.days
+    : (typeof row.days === 'string' && row.days.trim()
+        ? row.days.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean)
+        : (row.daySchedule ? String(row.daySchedule).split(/[,;\s]+/).map(s => s.trim()).filter(Boolean) : []));
+
+  if (rawDays.length === 0) return ['M', 'T', 'W', 'TH', 'F'];
+
+  const DAY_CODE_MAP = {
+    'M': 'M', 'MON': 'M', 'MONDAY': 'M',
+    'T': 'T', 'TUE': 'T', 'TUES': 'T', 'TUESDAY': 'T',
+    'W': 'W', 'WED': 'W', 'WEDNESDAY': 'W',
+    'TH': 'TH', 'THU': 'TH', 'THUR': 'TH', 'THURS': 'TH', 'THURSDAY': 'TH',
+    'F': 'F', 'FRI': 'F', 'FRIDAY': 'F',
+    'SAT': 'SAT', 'SATURDAY': 'SAT',
+    'SUN': 'SUN', 'SUNDAY': 'SUN'
+  };
+
+  const normalized = rawDays
+    .map(d => String(d).toUpperCase().trim())
+    .map(d => DAY_CODE_MAP[d] || d)
+    .filter(Boolean);
+
+  return normalized.length > 0 ? Array.from(new Set(normalized)) : ['M', 'T', 'W', 'TH', 'F'];
+};
+
+export const normalizeGhostDay = (dayStr) => {
+  if (!dayStr) return 'M';
+  const u = String(dayStr).trim().toUpperCase();
+  if (u === 'M' || u.startsWith('MON')) return 'M';
+  if (u === 'TH' || u.startsWith('THU')) return 'TH';
+  if (u === 'T' || u.startsWith('TUE')) return 'T';
+  if (u === 'W' || u.startsWith('WED')) return 'W';
+  if (u === 'F' || u.startsWith('FRI')) return 'F';
+  if (u === 'SAT' || u.startsWith('SAT')) return 'SAT';
+  if (u === 'SUN' || u.startsWith('SUN')) return 'SUN';
+  return u;
+};
+
+/**
+ * Computes effective ghost locks for a clustered teacher on a given day:
+ * 1. Individual ghost slots from partner school(s).
+ * 2. Sandwich gap transit lockouts (gap between partner classes on the same day <= maxGapMinutes, default 120 mins).
+ */
+export const getClusteredLocksForDay = (ghostRows = [], dayCode = 'M', maxGapMinutes = 120) => {
+  if (!Array.isArray(ghostRows) || ghostRows.length === 0) {
+    return { ghostSlots: [], transitGapSlots: [], allLockedIntervals: [] };
+  }
+
+  const dayGhosts = [];
+  ghostRows.forEach((g, idx) => {
+    const rawDays = Array.isArray(g.days) && g.days.length > 0
+      ? g.days
+      : (g.day ? [g.day] : ['M', 'T', 'W', 'TH', 'F']);
+    const normDays = rawDays.map(normalizeGhostDay);
+    if (!normDays.includes(dayCode)) return;
+
+    const sMins = parseMins(g.startTime || g.start_time || '');
+    const eMins = parseMins(g.endTime || g.end_time || '');
+    if (sMins < 99999 && eMins < 99999 && eMins > sMins) {
+      dayGhosts.push({
+        ...g,
+        idx,
+        sMins,
+        eMins,
+        diffMins: eMins - sMins,
+        isGhostSlot: true
+      });
+    }
+  });
+
+  dayGhosts.sort((a, b) => a.sMins - b.sMins || a.eMins - b.eMins);
+
+  const transitGapSlots = [];
+  for (let i = 0; i < dayGhosts.length - 1; i++) {
+    const cur = dayGhosts[i];
+    const next = dayGhosts[i + 1];
+
+    const gapStart = cur.eMins;
+    const gapEnd = next.sMins;
+    const gapMins = gapEnd - gapStart;
+
+    if (gapMins > 0 && gapMins <= maxGapMinutes) {
+      transitGapSlots.push({
+        isTransitGap: true,
+        sMins: gapStart,
+        eMins: gapEnd,
+        diffMins: gapMins,
+        schoolName: cur.schoolName || next.schoolName || 'Partner Station',
+        prevSubject: cur.subject || 'Class',
+        nextSubject: next.subject || 'Class'
+      });
+    }
+  }
+
+  const allLockedIntervals = [
+    ...dayGhosts.map(g => ({ sMins: g.sMins, eMins: g.eMins, type: 'ghost', item: g })),
+    ...transitGapSlots.map(t => ({ sMins: t.sMins, eMins: t.eMins, type: 'transit_gap', item: t }))
+  ];
+
+  return {
+    ghostSlots: dayGhosts,
+    transitGapSlots,
+    allLockedIntervals
+  };
+};
+
+/**
+ * Checks if a candidate slot on a set of days collides with any partner school ghost slots
+ * or transit sandwich gaps (<= 2 hrs / 120 mins).
+ */
+export const checkCrossSchoolConflict = (slot, ghostRows = [], maxGapMinutes = 120) => {
+  if (!slot || !slot.startTime || !slot.endTime || !Array.isArray(ghostRows) || ghostRows.length === 0) {
+    return false;
+  }
+  const sMins = parseMins(slot.startTime);
+  const eMins = parseMins(slot.endTime);
+  if (sMins >= 99999 || eMins >= 99999 || eMins <= sMins) return false;
+
+  const slotDays = Array.isArray(slot.days) && slot.days.length > 0
+    ? slot.days
+    : (slot.daySchedule ? String(slot.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+
+  for (const day of slotDays) {
+    const normDay = normalizeGhostDay(day);
+    const { allLockedIntervals } = getClusteredLocksForDay(ghostRows, normDay, maxGapMinutes);
+    const hasCollision = allLockedIntervals.some(lock => sMins < lock.eMins && eMins > lock.sMins);
+    if (hasCollision) return true;
+  }
+  return false;
+};
+
+export const isSectionMatchingTeacherGrades = (sec, assignedGrades, teacherId = null, teacherName = null) => {
+  if (teacherId && (String(sec?.adviserId || sec?.adviser_id || '') === String(teacherId))) {
+    return true; // Always match section where teacher is designated adviser
+  }
+  if (teacherName && String(sec?.adviser || sec?.adviserName || sec?.adviser_name || '').trim().toLowerCase() === String(teacherName).trim().toLowerCase()) {
+    return true; // Always match section where teacher is designated adviser
+  }
+
   if (!assignedGrades || !Array.isArray(assignedGrades) || assignedGrades.length === 0) {
     return true; // No assigned grade filter on teacher -> show all sections
   }
@@ -3544,6 +3868,8 @@ function WorkloadGanttScheduleView({
   getSubjectsForGrade,
   getAssignedGradeLevels,
   getSubjectAssignmentForSection,
+  getRequiredWeeklyMinutes,
+  getSubjectAllocationForSection,
   getRowDurationError,
   getMatatagRowWarning,
   getMatatagFixedDurationMins,
@@ -3559,17 +3885,23 @@ function WorkloadGanttScheduleView({
   activePersonnelId,
   selectedBlockIdx,
   setSelectedBlockIdx,
-  handleSectionChangeForRow,
   handleSaveChangesDirectly,
-  sharedWorkloadRows = []
+  sharedWorkloadRows = [],
+  activeTerm = '1st',
+  onCopyFirstTerm,
+  onClearTermWorkload
 }) {
-  const { schoolInfo, showToast } = useApp();
+  const { schoolInfo, showToast, personnel = [] } = useApp();
   const activeSchoolSubjects = useMemo(() => getActiveSubjectsForSchool(schoolInfo), [schoolInfo]);
 
-  // Teacher's assigned grade levels from Teaching Tab in Personnel Profiling
+  // Teacher's assigned grade levels from Teaching Tab in Personnel Profiling (checks both active person and dbPerson)
   const teacherAssignedGrades = useMemo(() => {
-    return typeof getAssignedGradeLevels === 'function' ? getAssignedGradeLevels(currentPerson) : (currentPerson?.assignedGradeLevels || []);
-  }, [currentPerson, getAssignedGradeLevels]);
+    const fromCurrent = typeof getAssignedGradeLevels === 'function' ? getAssignedGradeLevels(currentPerson) : [];
+    if (Array.isArray(fromCurrent) && fromCurrent.length > 0) return fromCurrent;
+    const fromDb = typeof getAssignedGradeLevels === 'function' ? getAssignedGradeLevels(dbPerson) : [];
+    if (Array.isArray(fromDb) && fromDb.length > 0) return fromDb;
+    return [];
+  }, [currentPerson, dbPerson, getAssignedGradeLevels]);
 
   // Section Clipboard state for Ctrl+C / Ctrl+V copy-paste workflow (copies section only, NOT subject)
   const [copiedSection, setCopiedSection] = useState(null);
@@ -3578,11 +3910,290 @@ function WorkloadGanttScheduleView({
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
 
-  // Reset undo/redo stack on teacher switch
+  // Multi-cell selection state for Ctrl+Click / Cmd+Click
+  const [selectedCellKeys, setSelectedCellKeys] = useState(new Set());
+
+  // Reset undo/redo stack and multi-selection on teacher switch
   useEffect(() => {
     setUndoStack([]);
     setRedoStack([]);
+    setSelectedCellKeys(new Set());
   }, [currentPerson?.id, activePersonnelId]);
+
+  // Auto-heal SNED, ALS, ARAL, Remedial/Enrichment, and Regular ADVISORY workloads & deduplicate
+  useEffect(() => {
+    if (!currentPerson || !Array.isArray(currentPerson.workloadRows) || currentPerson.workloadRows.length === 0 || isNonTeachingPerson(currentPerson)) return;
+    let modified = false;
+
+    // Helper to check if a teacher is assigned as adviser/tutor/teacher of a section
+    const isTeacherAssignedToSection = (personObj, sec) => {
+      if (!personObj || !sec) return false;
+      const pIds = [
+        String(personObj.id || ''),
+        String(personObj._id || '')
+      ].filter(Boolean);
+      const sIds = [
+        String(sec.advisorId || ''),
+        String(sec.advisor_id || ''),
+        String(sec.adviserId || ''),
+        String(sec.adviser_id || ''),
+        String(sec.tutorId || ''),
+        String(sec.tutor_id || ''),
+        String(sec.teacherId || ''),
+        String(sec.teacher_id || ''),
+        String(sec.advisor || ''),
+        String(sec.tutor || '')
+      ].filter(id => Boolean(id) && id !== 'null' && id !== 'undefined');
+
+      // 1. Direct ID match
+      if (pIds.some(pId => sIds.includes(pId))) return true;
+
+      // If section has explicit ID assignment that belongs to another teacher in personnel, it cannot belong to personObj
+      if (sIds.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
+        const isAssignedToOther = personnel.some(p => {
+          const otherId = String(p.id || p._id || '');
+          return !pIds.includes(otherId) && sIds.includes(otherId);
+        });
+        if (isAssignedToOther) return false;
+      }
+
+      // 2. Full Name match fallback (only when no explicit ID match is possible)
+      const pFn = String(personObj.firstName || '').toLowerCase().trim();
+      const pLn = String(personObj.lastName || '').toLowerCase().trim();
+      const fullName = `${pFn} ${pLn}`.trim();
+      const reverseFullName = `${pLn}, ${pFn}`.trim();
+      const reverseFullNameNoComma = `${pLn} ${pFn}`.trim();
+
+      const sNames = [
+        String(sec.advisorName || ''),
+        String(sec.advisor_name || ''),
+        String(sec.adviserName || ''),
+        String(sec.adviser_name || ''),
+        String(sec.tutorName || ''),
+        String(sec.tutor_name || ''),
+        String(sec.teacherName || ''),
+        String(sec.teacher_name || '')
+      ].map(n => n.toLowerCase().trim()).filter(Boolean);
+
+      if (fullName && sNames.length > 0) {
+        return sNames.some(name =>
+          name === fullName ||
+          name === reverseFullName ||
+          name === reverseFullNameNoComma ||
+          (pFn && pLn && name.includes(pFn) && name.includes(pLn))
+        );
+      }
+
+      return false;
+    };
+
+    // Track seen sections to deduplicate to strictly 1 row per section per term
+    const seenAdvisorySecs = new Set();
+    const seenHgpSecs = new Set();
+    const seenSnedSecs = new Set();
+    const seenAlsSecs = new Set();
+    const seenAralSecs = new Set();
+    const seenRemSecs = new Set();
+
+    const cleanedAndHealedRows = [];
+
+    currentPerson.workloadRows.forEach(r => {
+      const isSned = isSnedSectionRow(r, classSections);
+      const isAls = isAlsSectionRow(r, classSections);
+      const isAral = isAralSectionRow(r, classSections);
+      const isRem = isRemedialSectionRow(r, classSections);
+      const subUpper = String(r.subject || '').toUpperCase().trim();
+      const secId = String(r.sectionId || r.section_id || '');
+      const secName = String(r.sectionName || '').toUpperCase().trim();
+      const rTerm = r.term || '1st';
+      const secKey = `${rTerm}__${secId || secName || `row_${r.id || Math.random()}`}`;
+
+      // Matched section in classSections
+      let matchedSec = (classSections || []).find(s =>
+        (secId && String(s.id) === secId) ||
+        (secName && s.sectionName && String(s.sectionName).trim().toUpperCase() === secName && (!r.gradeLevel || s.gradeLevel === r.gradeLevel))
+      );
+
+      // Fallback matching by program type if teacher is assigned in classSections
+      if (!matchedSec && isAral) {
+        matchedSec = (classSections || []).find(s => {
+          const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+          if (isReg) return false;
+          const isA = String(s.sectionType || '').toUpperCase().includes('ARAL') ||
+                      String(s.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                      String(s.sectionName || '').toUpperCase().includes('ARAL') ||
+                      Boolean(s.aralBasis || s.aralToolKey || s.aralTool);
+          return isA && isTeacherAssignedToSection(currentPerson, s);
+        });
+      }
+      if (!matchedSec && isAls) {
+        matchedSec = (classSections || []).find(s => {
+          const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+          if (isReg) return false;
+          return String(s.sectionType || s.gradeLevel || '').toUpperCase().includes('ALS') && isTeacherAssignedToSection(currentPerson, s);
+        });
+      }
+      if (!matchedSec && isSned) {
+        matchedSec = (classSections || []).find(s => {
+          const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+          if (isReg) return false;
+          return String(s.sectionType || s.gradeLevel || '').toUpperCase().includes('SNED') && isTeacherAssignedToSection(currentPerson, s);
+        });
+      }
+      if (!matchedSec && isRem) {
+        matchedSec = (classSections || []).find(s => {
+          const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+          if (isReg) return false;
+          return (s.sectionType === 'REMEDIAL' || s.sectionType === 'ENRICHMENT') && isTeacherAssignedToSection(currentPerson, s);
+        });
+      }
+
+      // 1. Drop ANY HGP or obsolete ADVISORY row attached to SNED, ALS, ARAL, or Remedial/Enrichment
+      if ((isSned || isAls || isAral || isRem) && (subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE'))) {
+        modified = true;
+        return; // Drop this HGP row
+      }
+
+      // 2. SNED Section Deduplication, Ownership & Subject Healing
+      if (isSned) {
+        const isOwnSned = matchedSec && isTeacherAssignedToSection(currentPerson, matchedSec);
+        if (matchedSec && !isOwnSned) {
+          modified = true;
+          return; // Drop unassigned SNED row
+        }
+        if (seenSnedSecs.has(secKey)) {
+          modified = true;
+          return; // Drop duplicate row for this SNED section in this term
+        }
+        seenSnedSecs.add(secKey);
+        if (subUpper !== 'SNED MODIFIED SUBJECT') {
+          modified = true;
+          cleanedAndHealedRows.push({ ...r, subject: 'SNED MODIFIED SUBJECT', subjectName: 'SNED MODIFIED SUBJECT' });
+        } else {
+          cleanedAndHealedRows.push(r);
+        }
+        return;
+      }
+
+      // 3. ALS Section Deduplication, Ownership & Subject Healing
+      if (isAls) {
+        const isOwnAls = matchedSec && isTeacherAssignedToSection(currentPerson, matchedSec);
+        if (matchedSec && !isOwnAls) {
+          modified = true;
+          return; // Drop unassigned ALS row
+        }
+        const alsSlotKey = `${secKey}__${subUpper}__${r.startTime || ''}__${r.endTime || ''}__${getNormalizedRowDays(r).sort().join(',')}`;
+        if (seenAlsSecs.has(alsSlotKey)) {
+          modified = true;
+          return; // Drop duplicate slot for this ALS section/subject/time in this term
+        }
+        seenAlsSecs.add(alsSlotKey);
+        cleanedAndHealedRows.push(r);
+        return;
+      }
+
+      // 4. ARAL Section Deduplication, Ownership & Subject Healing
+      if (isAral) {
+        const isOwnAral = matchedSec && isTeacherAssignedToSection(currentPerson, matchedSec);
+        if (matchedSec && !isOwnAral) {
+          modified = true;
+          return; // Drop unassigned ARAL row
+        }
+        if (seenAralSecs.has(secKey)) {
+          modified = true;
+          return; // Drop duplicate row for this ARAL section in this term
+        }
+        seenAralSecs.add(secKey);
+        if (subUpper !== 'ARAL TUTORING' && subUpper !== 'ARAL') {
+          modified = true;
+          cleanedAndHealedRows.push({ ...r, subject: 'ARAL TUTORING', subjectName: 'ARAL TUTORING' });
+        } else {
+          cleanedAndHealedRows.push(r);
+        }
+        return;
+      }
+
+      // 5. Remedial / Enrichment Section Deduplication, Ownership & Subject Healing
+      if (isRem) {
+        const remSlotKey = `${secKey}__${r.startTime || ''}__${r.endTime || ''}__${getNormalizedRowDays(r).sort().join(',')}`;
+        if (seenRemSecs.has(remSlotKey)) {
+          modified = true;
+          return; // Drop duplicate slot for this Remedial section in this term
+        }
+        seenRemSecs.add(remSlotKey);
+        cleanedAndHealedRows.push(r);
+        return;
+      }
+
+      // 6. Regular Section Advisory / HGP Ownership Healing & Deduplication (Scoped per term)
+      const isAdviserOfSec = matchedSec && isTeacherAssignedToSection(currentPerson, matchedSec);
+      if (subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE')) {
+        const isRegAdvisorySec = matchedSec && !isSned && !isAls && !isAral && !isRem && matchedSec.sectionType !== 'REMEDIAL' && matchedSec.sectionType !== 'ENRICHMENT' && isAdviserOfSec;
+        if (!isRegAdvisorySec) {
+          modified = true;
+          return; // Drop orphaned advisory/HGP row
+        }
+        if (subUpper === 'ADVISORY') {
+          const advSlotKey = `${secKey}__${r.startTime || ''}__${r.endTime || ''}__${getNormalizedRowDays(r).sort().join(',')}`;
+          if (seenAdvisorySecs.has(advSlotKey)) {
+            modified = true;
+            return; // Drop duplicate ADVISORY for same section/time/days in this term
+          }
+          seenAdvisorySecs.add(advSlotKey);
+        } else {
+          if (seenHgpSecs.has(secKey)) {
+            modified = true;
+            return; // Drop duplicate HGP for same section in this term
+          }
+          seenHgpSecs.add(secKey);
+        }
+      }
+
+      if ((subUpper === 'SNED' || subUpper === 'SNED MODIFIED SUBJECT' || subUpper === 'ALS' || subUpper === 'ARAL' || subUpper === 'ARAL TUTORING') && isAdviserOfSec && !isSned && !isAls && !isAral && !isRem) {
+        modified = true;
+        cleanedAndHealedRows.push({ ...r, subject: 'ADVISORY', subjectName: 'ADVISORY' });
+        return;
+      }
+
+      // 7. General subject deduplication & day merging (same term, subject, section, time)
+      if (subUpper && (secId || secName)) {
+        const curStart = parseMins(r.startTime);
+        const curEnd = parseMins(r.endTime);
+        const curDays = getNormalizedRowDays(r);
+
+        const existingMatchIdx = cleanedAndHealedRows.findIndex(existing => {
+          const exTerm = existing.term || '1st';
+          const exSub = String(existing.subject || '').toUpperCase().trim();
+          const exSecId = String(existing.sectionId || existing.section_id || '');
+          const exSecName = String(existing.sectionName || '').toUpperCase().trim();
+          if (exTerm !== rTerm || exSub !== subUpper) return false;
+          if (!((exSecId && secId && exSecId === secId) || (exSecName && secName && exSecName === secName))) return false;
+
+          const exStart = parseMins(existing.startTime);
+          const exEnd = parseMins(existing.endTime);
+          return exStart === curStart && exEnd === curEnd;
+        });
+
+        if (existingMatchIdx !== -1) {
+          const existingRow = cleanedAndHealedRows[existingMatchIdx];
+          const exDays = getNormalizedRowDays(existingRow);
+          const mergedDays = Array.from(new Set([...exDays, ...curDays]));
+          cleanedAndHealedRows[existingMatchIdx] = {
+            ...existingRow,
+            days: mergedDays
+          };
+          modified = true;
+          return; // Merged into existing row!
+        }
+      }
+
+      cleanedAndHealedRows.push(r);
+    });
+
+    if (modified && typeof handleFieldChange === 'function') {
+      handleFieldChange('workloadRows', cleanedAndHealedRows);
+    }
+  }, [currentPerson?.id, classSections]);
 
   // Record a snapshot of workloadRows before any mutation
   const recordUndoSnapshot = useCallback((customCurrentRows = null) => {
@@ -3640,18 +4251,88 @@ function WorkloadGanttScheduleView({
 
   const updateWorkloadRowWithHistory = useCallback((rowIdx, updates) => {
     recordUndoSnapshot();
+    const rawRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
+    const targetRow = rawRows[rowIdx];
+    const allRows = [...(currentPerson?.workloadRows || [])];
+    const matchIdx = targetRow ? allRows.findIndex(r => (r.id && r.id === targetRow.id) || r === targetRow) : -1;
+
+    const rowToUpdate = matchIdx !== -1 ? allRows[matchIdx] : (rawRows[rowIdx] || targetRow);
+    if (!rowToUpdate) return;
+
     if (typeof updateWorkloadRowFields === 'function') {
-      updateWorkloadRowFields(rowIdx, updates);
+      updateWorkloadRowFields(rowToUpdate, updates);
     } else {
-      const rows = [...(currentPerson?.workloadRows || [])];
-      if (rows[rowIdx]) {
-        rows[rowIdx] = { ...rows[rowIdx], ...updates };
+      if (matchIdx !== -1) {
+        allRows[matchIdx] = { ...allRows[matchIdx], ...updates };
         if (typeof handleFieldChange === 'function') {
-          handleFieldChange('workloadRows', rows);
+          handleFieldChange('workloadRows', allRows);
         }
       }
     }
-  }, [recordUndoSnapshot, updateWorkloadRowFields, currentPerson?.workloadRows, handleFieldChange]);
+  }, [recordUndoSnapshot, updateWorkloadRowFields, currentPerson?.workloadRows, activeTerm, handleFieldChange]);
+
+  const handleSectionChangeForRow = useCallback((rowIdx, newSectionId) => {
+    const rawRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
+    const targetRow = rawRows[rowIdx];
+    if (!targetRow) return;
+
+    const chosenSec = (classSections || []).find(s => String(s.id) === String(newSectionId));
+    if (!chosenSec) {
+      updateWorkloadRowWithHistory(rowIdx, {
+        sectionId: '',
+        sectionName: '',
+        gradeLevel: ''
+      });
+      return;
+    }
+
+    const secGrade = chosenSec.gradeLevel || chosenSec.grade_level || '';
+    const secName = chosenSec.sectionName || chosenSec.section_name || '';
+    const secType = String(chosenSec.sectionType || chosenSec.section_type || '').toUpperCase();
+
+    const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(secType);
+    const isSned = !isReg && (secGrade.toUpperCase().includes('SNED') || secGrade.toUpperCase().includes('NON-GRADED') || secType.includes('SNED') || secType.includes('NON-GRADED') || secType.includes('SPED'));
+    const isAls = !isReg && (secGrade.toUpperCase().includes('ALS') || secType.includes('ALS') || secName.toUpperCase().includes('ALS'));
+    const isAral = !isReg && (secType.startsWith('ARAL') || secName.toUpperCase().includes('ARAL') || secGrade.toUpperCase().includes('ARAL') || Boolean(chosenSec.aralBasis || chosenSec.aralToolKey || chosenSec.aralTool));
+    const isShs = (secGrade.includes('11') || secGrade.includes('12') || secGrade.toUpperCase().includes('SHS') || (typeof isSHSRow === 'function' && isSHSRow(chosenSec)));
+
+    let updates = {
+      sectionId: chosenSec.id,
+      sectionName: secName,
+      gradeLevel: secGrade,
+      trackStrand: chosenSec.trackStrand || chosenSec.track_strand || ''
+    };
+
+    if (isSned) {
+      updates.subject = 'SNED MODIFIED SUBJECT';
+      updates.subjectName = 'SNED MODIFIED SUBJECT';
+    } else if (isAls) {
+      updates.subject = 'ALS';
+      updates.subjectName = 'ALS';
+    } else if (isAral) {
+      if (!isAralSubject(targetRow.subject)) {
+        updates.subject = 'ARAL - READING';
+        updates.subjectName = 'ARAL - READING';
+      }
+    } else {
+      if (isShs) {
+        updates.category = chosenSec.category || targetRow.category || 'SHS-CORE SUBJECTS';
+        const validSubjects = typeof getSubjectsForGrade === 'function' ? getSubjectsForGrade(secGrade, updates.category) : [];
+        if (targetRow.subject && validSubjects.length > 0 && !validSubjects.includes(targetRow.subject)) {
+          updates.subject = '';
+          updates.subjectName = '';
+        }
+      } else {
+        const validSubjects = typeof getSubjectsForGrade === 'function' ? getSubjectsForGrade(secGrade) : [];
+        if (targetRow.subject && validSubjects.length > 0 && !validSubjects.includes(targetRow.subject)) {
+          updates.subject = '';
+          updates.subjectName = '';
+        }
+      }
+    }
+
+    updateWorkloadRowWithHistory(rowIdx, updates);
+  }, [currentPerson?.workloadRows, activeTerm, classSections, updateWorkloadRowWithHistory, isSHSRow, getSubjectsForGrade]);
 
   // Subject-first creation: pick a subject in the sidebar, then click/drag an empty Gantt
   // slot to create a block pre-filled with it (Flow 1). Left null for the plain drag-first
@@ -3733,6 +4414,10 @@ function WorkloadGanttScheduleView({
           : 'ARAL — Grade Level';
       } else if (sectionType === 'REMEDIAL' || sectionType === 'ENRICHMENT') {
         typeLabel = sectionType === 'ENRICHMENT' ? 'Enrichment' : 'Remedial';
+      } else if (sectionType.includes('SNED') || sectionType.includes('NON-GRADED') || gradeLevel.includes('SNED') || gradeLevel.includes('NON-GRADED')) {
+        typeLabel = `SNED (Non-Graded) · ${gradeLevel}`;
+      } else if (sectionType.includes('ALS') || gradeLevel.includes('ALS')) {
+        typeLabel = `ALS · ${gradeLevel}`;
       } else if (String(gradeLevel).includes(' - ') || sectionType === 'MULTIGRADE') {
         typeLabel = `Multi Grade · ${gradeLevel}`;
       } else {
@@ -3748,10 +4433,12 @@ function WorkloadGanttScheduleView({
       };
     });
 
-    return allSections
-      .filter(sec => isSectionMatchingTeacherGrades(sec.rawSec || sec, teacherAssignedGrades))
+    const teacherId = currentPerson?.id || dbPerson?.id || null;
+    const teacherName = `${currentPerson?.firstName || dbPerson?.firstName || ''} ${currentPerson?.lastName || dbPerson?.lastName || ''}`.trim();
+    const matching = allSections.filter(sec => isSectionMatchingTeacherGrades(sec.rawSec || sec, teacherAssignedGrades, teacherId, teacherName));
+    return (matching.length > 0 ? matching : allSections)
       .sort((a, b) => a.sectionName.localeCompare(b.sectionName));
-  }, [classSections, teacherAssignedGrades]);
+  }, [classSections, teacherAssignedGrades, currentPerson?.id, currentPerson?.firstName, currentPerson?.lastName, dbPerson?.id, dbPerson?.firstName, dbPerson?.lastName]);
 
   const daysList = showWeekend
     ? [
@@ -3779,7 +4466,7 @@ function WorkloadGanttScheduleView({
       const saved = localStorage.getItem(`insighted_timetable_hours_${currentPerson?.id || activePersonnelId || 'default'}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed.startHour === 'number' && parsed.startHour >= 5 && parsed.startHour <= 18) {
+        if (typeof parsed.startHour === 'number' && parsed.startHour >= 5 && parsed.startHour <= 19) {
           return parsed.startHour;
         }
       }
@@ -3792,7 +4479,7 @@ function WorkloadGanttScheduleView({
       const saved = localStorage.getItem(`insighted_timetable_hours_${currentPerson?.id || activePersonnelId || 'default'}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed.endHour === 'number' && parsed.endHour >= 6 && parsed.endHour <= 19) {
+        if (typeof parsed.endHour === 'number' && parsed.endHour >= 6 && parsed.endHour <= 20) {
           return parsed.endHour;
         }
       }
@@ -3807,14 +4494,14 @@ function WorkloadGanttScheduleView({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (typeof parsed.startHour === 'number' && typeof parsed.endHour === 'number') {
-          setCustomStartHour(Math.max(5, Math.min(18, parsed.startHour)));
-          setCustomEndHour(Math.max(6, Math.min(19, parsed.endHour)));
+          setCustomStartHour(Math.max(5, Math.min(19, parsed.startHour)));
+          setCustomEndHour(Math.max(6, Math.min(20, parsed.endHour)));
           return;
         }
       }
     } catch (e) {}
     let s = 7, e = 18;
-    const rows = currentPerson?.workloadRows || [];
+    const rows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
     rows.forEach(r => {
       if (r.startTime) {
         const sM = parseMins(r.startTime);
@@ -3825,13 +4512,13 @@ function WorkloadGanttScheduleView({
         if (eM < 99999) e = Math.max(e, Math.ceil(eM / 60));
       }
     });
-    setCustomStartHour(Math.max(5, Math.min(18, s)));
-    setCustomEndHour(Math.max(6, Math.min(19, e)));
-  }, [personnelId, storedHoursKey]);
+    setCustomStartHour(Math.max(5, Math.min(19, s)));
+    setCustomEndHour(Math.max(6, Math.min(20, e)));
+  }, [personnelId, storedHoursKey, activeTerm]);
 
   const handleUpdateScheduleHours = (newStart, newEnd) => {
-    const validStart = Math.max(5, Math.min(18, newStart));
-    const validEnd = Math.max(validStart + 1, Math.min(19, newEnd));
+    const validStart = Math.max(5, Math.min(19, newStart));
+    const validEnd = Math.max(validStart + 1, Math.min(20, newEnd));
     setCustomStartHour(validStart);
     setCustomEndHour(validEnd);
     try {
@@ -3849,7 +4536,7 @@ function WorkloadGanttScheduleView({
   const gridBounds = useMemo(() => {
     let minHour = customStartHour;
     let maxHour = customEndHour;
-    const rows = currentPerson?.workloadRows || [];
+    const rows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
     rows.forEach(r => {
       if (r.startTime) {
         const sM = parseMins(r.startTime);
@@ -3862,9 +4549,9 @@ function WorkloadGanttScheduleView({
     });
     return {
       startHour: Math.max(5, minHour),
-      endHour: Math.min(19, Math.max(minHour + 1, maxHour))
+      endHour: Math.min(20, Math.max(minHour + 1, maxHour))
     };
-  }, [customStartHour, customEndHour, currentPerson?.workloadRows]);
+  }, [customStartHour, customEndHour, currentPerson?.workloadRows, activeTerm]);
 
   const { startHour, endHour } = gridBounds;
   const gridStartMins = startHour * 60;
@@ -3877,12 +4564,13 @@ function WorkloadGanttScheduleView({
     hourLabels.push(h);
   }
 
-  // Calculate daily workload minutes per day (excludes Related Tasks & Admin Tasks; merges overlapping intervals; factors in partner school ghost slots)
+  // Calculate daily workload minutes per day (for Teaching: excludes non-teaching tasks & HGP; for Non-Teaching: sums administrative duty tasks; merges overlapping intervals; factors in partner school ghost slots)
   const dailyTotalMins = useMemo(() => {
     const map = {};
     daysList.forEach(d => { map[d.code] = { local: 0, shared: 0, total: 0 }; });
-    const rows = currentPerson?.workloadRows || [];
+    const rows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
     const ghosts = sharedWorkloadRows || [];
+    const isNT = isNonTeachingPerson(currentPerson);
 
     for (const d of daysList) {
       const allIntervals = [];
@@ -3897,8 +4585,10 @@ function WorkloadGanttScheduleView({
         if (!rowDays.includes(d.code)) continue;
 
         const subUpper = String(r.subject || '').toUpperCase().trim();
-        if (isNonTeachingTaskSubject(subUpper)) continue;
-        if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+        if (!isNT) {
+          if (isNonTeachingTaskSubject(subUpper)) continue;
+          if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+        }
 
         const sM = parseMins(r.startTime);
         const eM = parseMins(r.endTime);
@@ -3925,8 +4615,10 @@ function WorkloadGanttScheduleView({
         if (!normDays.includes(d.code)) continue;
 
         const subUpper = String(g.subject || '').toUpperCase().trim();
-        if (isNonTeachingTaskSubject(subUpper)) continue;
-        if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+        if (!isNT) {
+          if (isNonTeachingTaskSubject(subUpper)) continue;
+          if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) continue;
+        }
 
         const sM = parseMins(g.startTime || g.start_time);
         const eM = parseMins(g.endTime || g.end_time);
@@ -4088,20 +4780,12 @@ function WorkloadGanttScheduleView({
           }
         }
 
-        let updatedDays = isAdv ? ['M', 'T', 'W', 'TH', 'F'] : cur.initialDays;
-        if (!isAdv && targetDay !== cur.day) {
-          if (cur.initialDays.length <= 1) {
-            updatedDays = [targetDay];
-          } else {
-            updatedDays = cur.initialDays.map(d => d === cur.day ? targetDay : d);
-          }
-        }
-
         setDragState(prev => prev ? {
           ...prev,
           currentStartMins: newStartMins,
           currentEndMins: newEndMins,
-          currentDays: Array.from(new Set(updatedDays))
+          targetDay: targetDay,
+          currentDays: [targetDay]
         } : null);
       } else if (cur.type === 'resize-top') {
         let newStartMins = cur.initialStartMins + deltaMins;
@@ -4151,16 +4835,25 @@ function WorkloadGanttScheduleView({
           return 'Elementary';
         };
 
-        if (presetSection) {
+        const isPresetAdmin = isAdminTaskRow({ subject: presetSubject }) || (isNonTeachingPerson(currentPerson) && !presetSection);
+        if (isPresetAdmin) {
+          chosenSubject = presetSubject || ADMIN_TASK_OPTIONS[0];
+          initialSectionId = '';
+          initialSectionName = '';
+          initialGrade = '';
+          initialCategory = '';
+        } else if (presetSection) {
           // Section-first (Organized Classes sidebar): use the exact section/grade picked.
           initialSectionId = presetSection.sectionId;
           initialSectionName = presetSection.sectionName;
           initialGrade = presetSection.gradeLevel;
           initialCategory = presetSection.category || categoryForGrade(presetSection.gradeLevel);
+          if (presetSubject) chosenSubject = presetSubject;
         } else if (presetSubject) {
           // Flow 1 (subject-first): a subject was picked from the "Subjects Taught" sidebar
           // before clicking/dragging the slot. Best-effort match a class section/grade so the
           // inspector opens with sensible defaults, but the subject itself is exactly what was chosen.
+          chosenSubject = presetSubject;
           const assignedGrades = getAssignedGradeLevels(currentPerson);
           let matchedSec = null;
           if (Array.isArray(classSections) && classSections.length > 0) {
@@ -4178,13 +4871,6 @@ function WorkloadGanttScheduleView({
             }
           }
         }
-        // Flow 2 (drag-first, nothing preselected): leave Class Section/Grade Level blank so the
-        // Block Inspector requires the user to pick them explicitly instead of assuming defaults.
-
-        if (presetSubject) {
-          chosenSubject = presetSubject;
-        }
-        // If only a section was preselected (no subject), Subject stays blank — required in the inspector.
 
         const rows = [...(currentPerson?.workloadRows || [])];
         const newId = `new-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -4197,7 +4883,8 @@ function WorkloadGanttScheduleView({
           sectionName: initialSectionName,
           startTime: formatMinutesToTime(sMins),
           endTime: formatMinutesToTime(eMins),
-          days: activeDays
+          days: activeDays,
+          term: activeTerm
         };
         rows.unshift(newRow);
         if (typeof handleFieldChange === 'function') {
@@ -4206,28 +4893,79 @@ function WorkloadGanttScheduleView({
         setPendingCreateSubject(null);
         setPendingCreateSection(null);
         setSelectedBlockIdx(0);
-      } else if (cur.type === 'move') {
+      } else if (cur.type === 'move' || cur.type === 'resize-top' || cur.type === 'resize-bottom') {
         const finalStart = cur.currentStartMins !== undefined ? cur.currentStartMins : cur.initialStartMins;
         const finalEnd = cur.currentEndMins !== undefined ? cur.currentEndMins : cur.initialEndMins;
-        const finalDays = cur.currentDays !== undefined ? cur.currentDays : cur.initialDays;
-        updateWorkloadRowFields(cur.rowIdx, {
-          startTime: formatMinutesToTime(finalStart),
-          endTime: formatMinutesToTime(finalEnd),
-          days: Array.from(new Set(finalDays))
-        });
-      } else if (cur.type === 'resize-top') {
-        const finalStart = cur.currentStartMins !== undefined ? cur.currentStartMins : cur.initialStartMins;
-        updateWorkloadRowFields(cur.rowIdx, {
-          startTime: formatMinutesToTime(finalStart)
-        });
-      } else if (cur.type === 'resize-bottom') {
-        const finalEnd = cur.currentEndMins !== undefined ? cur.currentEndMins : cur.initialEndMins;
-        updateWorkloadRowFields(cur.rowIdx, {
-          endTime: formatMinutesToTime(finalEnd)
-        });
+        const targetDay = (cur.type === 'move' && cur.targetDay) ? cur.targetDay : cur.day;
+
+        const rawRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
+        const targetRow = rawRows[cur.rowIdx];
+        if (targetRow) {
+          const rowDays = (Array.isArray(targetRow.days) && targetRow.days.length > 0)
+            ? [...targetRow.days]
+            : (targetRow.daySchedule ? String(targetRow.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
+
+          recordUndoSnapshot();
+          const allRows = [...(currentPerson?.workloadRows || [])];
+          const matchIdx = allRows.findIndex(r => (r.id && r.id === targetRow.id) || r === targetRow);
+          const subUpper = String(targetRow.subject || '').toUpperCase().trim();
+          const isSpecialSingletonRow = ['HGP', 'SNED MODIFIED SUBJECT', 'ALS LEARNING STRAND'].includes(subUpper) || isSnedSectionRow(targetRow, classSections);
+
+          if (isSpecialSingletonRow || rowDays.length <= 1) {
+            // Row is a singleton special slot (HGP/SNED/ALS) or single-day cell — update it directly in-place
+            const updatedRow = {
+              ...targetRow,
+              startTime: formatMinutesToTime(finalStart),
+              endTime: formatMinutesToTime(finalEnd),
+              days: isSpecialSingletonRow ? rowDays : [targetDay]
+            };
+            if (matchIdx !== -1) {
+              allRows[matchIdx] = updatedRow;
+            } else {
+              allRows[cur.rowIdx] = updatedRow;
+            }
+            if (typeof handleFieldChange === 'function') {
+              handleFieldChange('workloadRows', allRows);
+            }
+          } else {
+            // Row spanned multiple days: split the single dragged cell into its own independent row
+            const remainingDays = rowDays.filter(d => d !== cur.day);
+            const updatedOriginalRow = {
+              ...targetRow,
+              days: remainingDays
+            };
+            
+            const newSingleCellRow = {
+              ...targetRow,
+              id: `workload-cell-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              startTime: formatMinutesToTime(finalStart),
+              endTime: formatMinutesToTime(finalEnd),
+              days: [targetDay],
+              term: activeTerm
+            };
+
+            if (matchIdx !== -1) {
+              allRows[matchIdx] = updatedOriginalRow;
+              allRows.splice(matchIdx + 1, 0, newSingleCellRow);
+            } else {
+              allRows[cur.rowIdx] = updatedOriginalRow;
+              allRows.splice(cur.rowIdx + 1, 0, newSingleCellRow);
+            }
+
+            if (typeof handleFieldChange === 'function') {
+              handleFieldChange('workloadRows', allRows);
+            }
+
+            const newRawRows = allRows.filter(r => (r.term || '1st') === activeTerm);
+            const newSelectedIdx = newRawRows.findIndex(r => r.id === newSingleCellRow.id);
+            if (newSelectedIdx !== -1) {
+              setSelectedBlockIdx(newSelectedIdx);
+            }
+          }
+        }
       } else if (cur.type === 'extend-days') {
         const finalDays = cur.currentDays !== undefined ? cur.currentDays : cur.initialDays;
-        updateWorkloadRowFields(cur.rowIdx, {
+        updateWorkloadRowWithHistory(cur.rowIdx, {
           days: Array.from(new Set(finalDays))
         });
       }
@@ -4253,48 +4991,45 @@ function WorkloadGanttScheduleView({
 
   const handleStartDrag = (e, rowIdx, row, dayCode, type) => {
     if (e.button !== 0) return; // Left mouse button only
-    e.preventDefault();
-    e.stopPropagation();
-    const subUpper = String(row.subject || '').toUpperCase().trim();
-    if (subUpper === 'ADVISORY') {
-      // ADVISORY duration is fixed at 60 mins: resize handles are disabled, only move is permitted
-      if (type === 'resize-top' || type === 'resize-bottom') return;
-    }
-    if ((type === 'resize-top' || type === 'resize-bottom') && typeof getMatatagFixedDurationMins === 'function' && getMatatagFixedDurationMins(row) != null) {
-      // MATATAG-mandated exact-duration subject (e.g. Grade 1/2 core subjects): resizing would
-      // desync the block from its required minutes/day, so only move (which preserves duration) is allowed.
+    const isMac = typeof navigator !== 'undefined' && navigator.platform && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+    if (isCmdOrCtrl) {
+      // If user is holding Ctrl/Cmd, do not start dragging — let the user toggle selection!
       return;
     }
-
+    e.preventDefault();
+    e.stopPropagation();
     recordUndoSnapshot();
 
     const initialStartMins = parseMins(row.startTime || '07:30');
-    const initialEndMins = subUpper === 'ADVISORY'
-      ? initialStartMins + 60
-      : parseMins(row.endTime || '08:30');
-    const rowDays = subUpper === 'ADVISORY'
-      ? ['M', 'T', 'W', 'TH', 'F']
-      : ((Array.isArray(row.days) && row.days.length > 0)
-        ? row.days
-        : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']));
+    const initialEndMins = parseMins(row.endTime || '08:30');
+    const rowDays = (Array.isArray(row.days) && row.days.length > 0)
+      ? row.days
+      : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
 
     setDragState({
       type,
       rowIdx,
       day: dayCode,
+      targetDay: dayCode,
       initialMouseY: e.clientY,
       initialStartMins,
       initialEndMins,
       initialDays: rowDays,
       currentStartMins: initialStartMins,
       currentEndMins: initialEndMins,
-      currentDays: rowDays
+      currentDays: [dayCode]
     });
     setSelectedBlockIdx(rowIdx);
   };
 
   const handleGridMouseDown = (e, dayCode) => {
     if (e.target.closest('.gantt-block-card')) return;
+    const isMac = typeof navigator !== 'undefined' && navigator.platform && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+    if (!isCmdOrCtrl) {
+      setSelectedCellKeys(new Set());
+    }
     if (e.button !== 0) return; // Left mouse button only
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
@@ -4313,17 +5048,19 @@ function WorkloadGanttScheduleView({
     });
   };
 
-  const rawRows = currentPerson?.workloadRows || [];
+  const rawRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
   const selectedRow = (selectedBlockIdx !== null && rawRows[selectedBlockIdx]) ? rawRows[selectedBlockIdx] : null;
 
-  // Copy Section Only (Ctrl+C): Copies sectionId, sectionName, gradeLevel, category, days — SUBJECT IS LEFT BLANK
+  // Copy Section Only (Ctrl+C): Copies sectionId, sectionName, gradeLevel, category, days (and preserves ADVISORY if copying Advisory)
   const handleCopySelectedSection = useCallback(() => {
     if (!selectedRow) return;
+    const isAdv = String(selectedRow.subject || '').toUpperCase().trim() === 'ADVISORY';
     const secData = {
       sectionId: selectedRow.sectionId || selectedRow.section_id || '',
       sectionName: selectedRow.sectionName || selectedRow.section_name || '',
       gradeLevel: selectedRow.gradeLevel || selectedRow.grade_level || '',
       category: selectedRow.category || '',
+      subject: isAdv ? 'ADVISORY' : '',
       days: (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? [...selectedRow.days] : ['M', 'T', 'W', 'TH', 'F'],
       startTime: selectedRow.startTime || '07:30',
       endTime: selectedRow.endTime || '08:30'
@@ -4335,13 +5072,63 @@ function WorkloadGanttScheduleView({
       gradeLevel: secData.gradeLevel,
       category: secData.category
     });
-    setPendingCreateSubject(null);
+    setPendingCreateSubject(isAdv ? 'ADVISORY' : null);
     if (showToast) {
-      showToast(`📋 Copied section "${secData.sectionName || 'Section'}" (${secData.gradeLevel || 'Grade'}). Press Ctrl+V or click an empty slot to place.`, 'info');
+      if (isAdv) {
+        showToast(`📋 Copied Advisory slot for "${secData.sectionName || 'Section'}". Press Ctrl+V or click an empty slot to place 2nd Advisory.`, 'info');
+      } else {
+        showToast(`📋 Copied section "${secData.sectionName || 'Section'}" (${secData.gradeLevel || 'Grade'}). Press Ctrl+V or click an empty slot to place.`, 'info');
+      }
     }
   }, [selectedRow, showToast]);
 
-  // Paste Section (Ctrl+V): Creates a new schedule block with the copied section, WITHOUT the subject
+  // Duplicate Advisory Slot: Creates an instant 2nd 30-min Advisory slot for the same section
+  const handleDuplicateAdvisorySlot = useCallback(() => {
+    if (!selectedRow) return;
+    const isAdv = String(selectedRow.subject || '').toUpperCase().trim() === 'ADVISORY';
+    if (!isAdv) return;
+
+    recordUndoSnapshot();
+
+    const allRows = [...(currentPerson?.workloadRows || [])];
+    const sMins = parseMins(selectedRow.startTime || '07:30');
+    const eMins = parseMins(selectedRow.endTime || '08:00');
+    let dur = (eMins > sMins && eMins < 99999) ? (eMins - sMins) : 30;
+    if (dur > 60 || dur <= 0) dur = 30;
+
+    // Default afternoon slot: 4:30 PM (16:30) or opposite session
+    let newStartMins = 16 * 60 + 30;
+    if (sMins >= 16 * 60) {
+      newStartMins = 7 * 60 + 30;
+    }
+    const maxEndMins = (customEndHour || 18) * 60;
+    if (newStartMins + dur > maxEndMins) {
+      newStartMins = Math.max(7 * 60, maxEndMins - dur);
+    }
+
+    const newId = `advisory-slot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newAdvRow = {
+      ...selectedRow,
+      id: newId,
+      subject: 'ADVISORY',
+      subjectName: 'ADVISORY',
+      startTime: formatMinutesToTime(newStartMins),
+      endTime: formatMinutesToTime(newStartMins + dur),
+      days: (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? [...selectedRow.days] : ['M', 'T', 'W', 'TH', 'F'],
+      term: activeTerm
+    };
+
+    allRows.unshift(newAdvRow);
+    if (typeof handleFieldChange === 'function') {
+      handleFieldChange('workloadRows', allRows);
+    }
+    setSelectedBlockIdx(0);
+    if (showToast) {
+      showToast(`📋 Created 2nd Advisory slot (${dur} mins) at ${formatMinutesToTime(newStartMins)} – ${formatMinutesToTime(newStartMins + dur)}! Drag or adjust its time.`, 'success');
+    }
+  }, [selectedRow, currentPerson?.workloadRows, customEndHour, activeTerm, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
+
+  // Paste Section (Ctrl+V): Creates a new schedule block with the copied section, WITHOUT the subject (or with ADVISORY if copying Advisory)
   const handlePasteSection = useCallback(() => {
     const secToUse = copiedSection || pendingCreateSection;
     if (!secToUse || (!secToUse.gradeLevel && !secToUse.sectionName)) {
@@ -4353,27 +5140,29 @@ function WorkloadGanttScheduleView({
 
     recordUndoSnapshot();
 
+    const isAdv = String(secToUse.subject || '').toUpperCase().trim() === 'ADVISORY';
+
     // Determine default start and end times for new block
-    let newStartMins = 8 * 60; // 08:00 AM default
-    let durationMins = 60;
+    let newStartMins = isAdv ? (16 * 60 + 30) : (8 * 60);
+    let durationMins = isAdv ? 30 : 60;
 
     if (selectedRow && selectedRow.endTime) {
       const sM = parseMins(selectedRow.startTime || '07:30');
       const eM = parseMins(selectedRow.endTime);
-      durationMins = (eM > sM && eM < 99999) ? (eM - sM) : 60;
-      newStartMins = eM < 99999 ? eM : 8 * 60;
+      durationMins = (eM > sM && eM < 99999) ? (eM - sM) : (isAdv ? 30 : 60);
+      newStartMins = eM < 99999 ? eM : (isAdv ? 16 * 60 + 30 : 8 * 60);
     } else if (secToUse.startTime && secToUse.endTime) {
       const sM = parseMins(secToUse.startTime);
       const eM = parseMins(secToUse.endTime);
-      durationMins = (eM > sM && eM < 99999) ? (eM - sM) : 60;
-      newStartMins = sM < 99999 ? sM : 8 * 60;
+      durationMins = (eM > sM && eM < 99999) ? (eM - sM) : (isAdv ? 30 : 60);
+      newStartMins = sM < 99999 ? sM : (isAdv ? 16 * 60 + 30 : 8 * 60);
     }
 
     // Clamp within shift bounds
     const maxEndMins = (customEndHour || 18) * 60;
     const minStartMins = (customStartHour || 7) * 60;
     if (newStartMins + durationMins > maxEndMins) {
-      newStartMins = minStartMins;
+      newStartMins = Math.max(minStartMins, maxEndMins - durationMins);
     }
 
     const newStart = formatMinutesToTime(newStartMins);
@@ -4389,11 +5178,12 @@ function WorkloadGanttScheduleView({
       sectionName: secToUse.sectionName || '',
       gradeLevel: secToUse.gradeLevel || '',
       category: secToUse.category || '',
-      subject: '', // SUBJECT IS INTENTIONALLY NOT COPIED — ONLY SECTION!
+      subject: isAdv ? 'ADVISORY' : '', // If Advisory, keep ADVISORY
       remediationSubject: '',
       startTime: newStart,
       endTime: newEnd,
-      days: daysToUse
+      days: daysToUse,
+      term: activeTerm
     };
 
     const rows = [newRow, ...(currentPerson?.workloadRows || [])];
@@ -4402,9 +5192,24 @@ function WorkloadGanttScheduleView({
     }
     setSelectedBlockIdx(0);
     if (showToast) {
-      showToast(`📋 Pasted section "${secToUse.sectionName}"! Select the subject for this block.`, 'success');
+      if (isAdv) {
+        showToast(`📋 Pasted Advisory slot (${durationMins} mins) for "${secToUse.sectionName}"! Drag or adjust its time.`, 'success');
+      } else {
+        showToast(`📋 Pasted section "${secToUse.sectionName}"! Select the subject for this block.`, 'success');
+      }
     }
   }, [copiedSection, pendingCreateSection, selectedRow, customStartHour, customEndHour, currentPerson?.workloadRows, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
+
+  const handleRemoveRow = useCallback((rowIdx) => {
+    recordUndoSnapshot();
+    const rawRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
+    const targetRow = rawRows[rowIdx];
+    if (!targetRow) return;
+    if (typeof removeWorkloadRow === 'function') {
+      removeWorkloadRow(targetRow);
+    }
+    setSelectedBlockIdx(null);
+  }, [recordUndoSnapshot, currentPerson?.workloadRows, activeTerm, removeWorkloadRow]);
 
   // Global keyboard shortcuts: Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo), Ctrl+C (copy section), Ctrl+V (paste section), Del/Backspace (delete block)
   useEffect(() => {
@@ -4437,39 +5242,36 @@ function WorkloadGanttScheduleView({
           e.preventDefault();
           handlePasteSection();
         }
+      } else if (e.key === 'Escape') {
+        setSelectedCellKeys(new Set());
+        setSelectedBlockIdx(null);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedBlockIdx !== null && selectedRow) {
-          const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
-          const isLocked = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
-          if (!isLocked) {
-            e.preventDefault();
-            recordUndoSnapshot();
-            removeWorkloadRow(selectedBlockIdx);
-            setSelectedBlockIdx(null);
-          }
+          e.preventDefault();
+          handleRemoveRow(selectedBlockIdx);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedBlockIdx, selectedRow, dragState, removeWorkloadRow, setSelectedBlockIdx, handleCopySelectedSection, handlePasteSection, copiedSection, pendingCreateSection, handleUndo, handleRedo, recordUndoSnapshot]);
+  }, [selectedBlockIdx, selectedRow, dragState, handleRemoveRow, handleCopySelectedSection, handlePasteSection, copiedSection, pendingCreateSection, handleUndo, handleRedo]);
 
-  // Snap duration to the MATATAG-mandated length as soon as a block's subject/grade/section
-  // resolves into a fixed-duration policy (e.g. subject picked/changed via the dropdown), not
-  // only when the user subsequently edits Start Time.
+  // Default duration to MATATAG-mandated length for new blocks without an explicit endTime,
+  // while allowing teachers to freely customize and split sessions without forced reversion.
   useEffect(() => {
     if (selectedBlockIdx === null || !selectedRow || typeof getMatatagFixedDurationMins !== 'function') return;
     const fixedDurationMins = getMatatagFixedDurationMins(selectedRow);
     if (fixedDurationMins == null || !selectedRow.startTime) return;
 
-    const [h, m] = selectedRow.startTime.split(':').map(Number);
-    if (Number.isNaN(h) || Number.isNaN(m)) return;
-    const correctEndTime = formatMinutesToTime((h * 60 + m) + fixedDurationMins);
-    if (selectedRow.endTime !== correctEndTime) {
-      updateWorkloadRowFields(selectedBlockIdx, { endTime: correctEndTime });
+    if (!selectedRow.endTime) {
+      const [h, m] = selectedRow.startTime.split(':').map(Number);
+      if (!Number.isNaN(h) && !Number.isNaN(m)) {
+        const correctEndTime = formatMinutesToTime((h * 60 + m) + fixedDurationMins);
+        updateWorkloadRowWithHistory(selectedBlockIdx, { endTime: correctEndTime });
+      }
     }
-  }, [selectedBlockIdx, selectedRow?.subject, selectedRow?.gradeLevel, selectedRow?.sectionId, selectedRow?.startTime, selectedRow?.endTime, getMatatagFixedDurationMins, updateWorkloadRowFields]);
+  }, [selectedBlockIdx, selectedRow?.subject, selectedRow?.gradeLevel, selectedRow?.sectionId, selectedRow?.startTime, selectedRow?.endTime, getMatatagFixedDurationMins, updateWorkloadRowWithHistory]);
 
   return (
     <div className="gantt-schedule-container" style={{ background: '#F8FAFC', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
@@ -4545,7 +5347,7 @@ function WorkloadGanttScheduleView({
               style={{ border: '1px solid #CBD5E1', borderRadius: '5px', padding: '2px 4px', fontSize: '11px', fontWeight: '700', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
               title="Timetable Earliest Start Hour (Earliest: 5:00 AM)"
             >
-              {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(h => (
+              {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map(h => (
                 <option key={h} value={h}>{formatHourOption(h)}</option>
               ))}
             </select>
@@ -4557,37 +5359,14 @@ function WorkloadGanttScheduleView({
                 handleUpdateScheduleHours(Math.min(customStartHour, endH - 1), endH);
               }}
               style={{ border: '1px solid #CBD5E1', borderRadius: '5px', padding: '2px 4px', fontSize: '11px', fontWeight: '700', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
-              title="Timetable Latest End Hour (Latest: 7:00 PM)"
+              title="Timetable Latest End Hour (Latest: 8:00 PM)"
             >
-              {[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].filter(h => h > customStartHour).map(h => (
+              {[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].filter(h => h > customStartHour).map(h => (
                 <option key={h} value={h}>{formatHourOption(h)}</option>
               ))}
             </select>
           </div>
 
-          {typeof handleSaveChangesDirectly === 'function' && (
-            <button
-              type="button"
-              onClick={handleSaveChangesDirectly}
-              style={{
-                padding: '7px 14px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 4px rgba(2,132,199,0.25)'
-              }}
-              title="Save current workload schedule to database"
-            >
-              <FiSave size={14} /> Save Workload
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setShowWeekend(!showWeekend)}
@@ -4607,8 +5386,130 @@ function WorkloadGanttScheduleView({
           >
             <FiCalendar size={14} /> {showWeekend ? 'Mon - Fri Only' : 'Show Weekend (Sat/Sun)'}
           </button>
+
+          {/* Add Admin Task Button for Teaching & Teaching-Related Personnel */}
+          {!isNonTeachingPerson(currentPerson) && (
+            <button
+              type="button"
+              onClick={() => {
+                setPendingCreateSection(null);
+                setPendingCreateSubject(ADMIN_TASK_OPTIONS[0]);
+                if (showToast) {
+                  showToast('💼 Administrative Task selected! Click or drag any empty slot on the timetable to schedule administrative duties.', 'info');
+                }
+              }}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: pendingCreateSubject && pendingCreateSubject.startsWith('ADMIN TASK') ? '1.5px solid #0F172A' : '1.5px solid #334155',
+                background: pendingCreateSubject && pendingCreateSubject.startsWith('ADMIN TASK') ? '#0F172A' : '#1E293B',
+                color: '#FFFFFF',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 4px rgba(15, 23, 42, 0.2)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Add Administrative or Ancillary Task to schedule (No section required)"
+            >
+              <FiBriefcase size={14} color="#38BDF8" /> + Add Admin Task
+            </button>
+          )}
         </div>
       </div>
+
+      {/* 2nd Term Blank / Copy 1st Term Prompt Banner */}
+      {activeTerm === '2nd' && rawRows.length === 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)',
+          border: '1.5px dashed #0284C7',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '14px',
+          boxShadow: '0 2px 8px rgba(2, 132, 199, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: '#0284C7',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)'
+            }}>
+              <FiCopy size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '800', color: '#0369A1', fontSize: '13.5px', letterSpacing: '-0.01em' }}>
+                2nd Term Timetable is currently Blank
+              </div>
+              <div style={{ color: '#475569', fontSize: '12px', marginTop: '2px' }}>
+                You can build a new schedule from scratch, or duplicate the complete 1st Term workload setup.
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {typeof onCopyFirstTerm === 'function' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onCopyFirstTerm('CURRENT')}
+                  style={{
+                    background: '#0284C7',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 4px rgba(2, 132, 199, 0.25)',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Copy 1st Term workload for this teacher"
+                >
+                  <FiCopy size={13} /> Copy 1st Term (This Teacher)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCopyFirstTerm('ALL')}
+                  style={{
+                    background: '#FFFFFF',
+                    color: '#0369A1',
+                    border: '1.5px solid #0284C7',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Copy 1st Term workload for all teachers across the school"
+                >
+                  <FiCopy size={13} /> Copy All Teachers
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Split View: Gantt Grid (left) + fixed "browse" sidebar (right) — the block-editing
           panel below floats separately once a block is clicked, but this browse sidebar (Select a
@@ -4628,14 +5529,23 @@ function WorkloadGanttScheduleView({
               const dayMins = dayData.total;
               const dayHoursNum = dayMins / 60;
               const dayHours = dayHoursNum.toFixed(1);
-              // Daily policy limit derives from the same 30 hrs/week regular teaching load cap used
-              // for overload computation elsewhere on this page (see teachingOverloadHours), spread evenly across the 5 weekdays.
-              const dailyLimitHrs = 30 / 5;
-              const fillPct = Math.min(100, (dayHoursNum / dailyLimitHrs) * 100);
+              const isNT = isNonTeachingPerson(currentPerson);
               const isCurrentEligible = isEligibleForTeachingOverload(currentPerson);
-              const statusColor = (!isCurrentEligible || dayHoursNum === 0) ? '#64748B' : dayHoursNum <= 4 ? '#10B981' : dayHoursNum <= 6 ? '#F59E0B' : '#F43F5E';
-              const statusBg = (!isCurrentEligible || dayHoursNum === 0) ? '#F1F5F9' : dayHoursNum <= 4 ? '#ECFDF5' : dayHoursNum <= 6 ? '#FFFBEB' : '#FEF2F2';
-              const statusLabel = (!isCurrentEligible || dayHoursNum === 0) ? null : dayHoursNum <= 4 ? 'Normal' : dayHoursNum <= 6 ? 'Full' : 'Overload';
+
+              // Daily policy limit: 8.0 hrs/day for Non-Teaching (40 hrs/wk), 6.0 hrs/day for Teaching (30 hrs/wk)
+              const dailyLimitHrs = isNT ? 8.0 : (30 / 5);
+              const fillPct = Math.min(100, (dayHoursNum / dailyLimitHrs) * 100);
+
+              let statusColor, statusBg, statusLabel;
+              if (isNT) {
+                statusColor = dayHoursNum === 0 ? '#64748B' : dayHoursNum < 8 ? '#0284C7' : dayHoursNum === 8 ? '#10B981' : '#F43F5E';
+                statusBg = dayHoursNum === 0 ? '#F1F5F9' : dayHoursNum < 8 ? '#EFF6FF' : dayHoursNum === 8 ? '#ECFDF5' : '#FEF2F2';
+                statusLabel = dayHoursNum === 0 ? null : dayHoursNum < 8 ? 'Partial' : dayHoursNum === 8 ? 'Target (8h)' : 'Extended';
+              } else {
+                statusColor = (!isCurrentEligible || dayHoursNum === 0) ? '#64748B' : dayHoursNum <= 4 ? '#10B981' : dayHoursNum <= 6 ? '#F59E0B' : '#F43F5E';
+                statusBg = (!isCurrentEligible || dayHoursNum === 0) ? '#F1F5F9' : dayHoursNum <= 4 ? '#ECFDF5' : dayHoursNum <= 6 ? '#FFFBEB' : '#FEF2F2';
+                statusLabel = (!isCurrentEligible || dayHoursNum === 0) ? null : dayHoursNum <= 4 ? 'Normal' : dayHoursNum <= 6 ? 'Full' : 'Overload';
+              }
               const hasShared = dayData.shared > 0;
 
               return (
@@ -4755,113 +5665,183 @@ function WorkloadGanttScheduleView({
                   );
                 })()}
 
-                {/* Render Clustered Partner School Ghost Slots */}
-                {(sharedWorkloadRows || []).map((ghost, gIdx) => {
-                  const normalizeGhostDay = (dayStr) => {
-                    if (!dayStr) return 'M';
-                    const u = String(dayStr).trim().toUpperCase();
-                    if (u === 'M' || u.startsWith('MON')) return 'M';
-                    if (u === 'TH' || u.startsWith('THU')) return 'TH';
-                    if (u === 'T' || u.startsWith('TUE')) return 'T';
-                    if (u === 'W' || u.startsWith('WED')) return 'W';
-                    if (u === 'F' || u.startsWith('FRI')) return 'F';
-                    if (u === 'SAT' || u.startsWith('SAT')) return 'SAT';
-                    if (u === 'SUN' || u.startsWith('SUN')) return 'SUN';
-                    return u;
-                  };
-
-                  let rawDaysList = Array.isArray(ghost.days) && ghost.days.length > 0
-                    ? ghost.days
-                    : (ghost.day ? [ghost.day] : ['M','T','W','TH','F']);
-                  
-                  const gDays = rawDaysList.map(normalizeGhostDay);
-                  if (!gDays.includes(d.code)) return null;
-
-                  let sMins = parseMins(ghost.startTime || ghost.start_time || '08:00');
-                  let eMins = parseMins(ghost.endTime || ghost.end_time || '09:00');
-                  if (sMins >= 99999 || eMins >= 99999) return null;
-
-                  const top = (sMins - gridStartMins) * pxPerMin;
-                  const height = Math.max(32, (eMins - sMins) * pxPerMin);
-                  const diffMins = eMins - sMins;
+                {/* Render Clustered Partner School Ghost Slots & Transit Lockout Gap Zones */}
+                {(() => {
+                  const { ghostSlots, transitGapSlots } = getClusteredLocksForDay(sharedWorkloadRows, d.code, 120);
 
                   return (
-                    <div
-                      key={`ghost-${gIdx}-${d.code}`}
-                      style={{
-                        position: 'absolute',
-                        top: `${top}px`,
-                        left: '4px',
-                        right: '4px',
-                        height: `${height}px`,
-                        background: 'repeating-linear-gradient(45deg, #FEF3C7, #FEF3C7 10px, #FFFBEB 10px, #FFFBEB 20px)',
-                        border: '1.5px dashed #F59E0B',
-                        borderRadius: '8px',
-                        padding: '4px 6px',
-                        boxSizing: 'border-box',
-                        cursor: 'not-allowed',
-                        zIndex: 4,
-                        color: '#92400E',
-                        overflow: 'hidden',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.04)'
-                      }}
-                      title={`🔒 Locked Ghost Slot: Assigned by ${ghost.schoolName || 'Partner School'} • ${ghost.subject || 'Class'} (${ghost.startTime}-${ghost.endTime})`}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <FiLock size={10} color="#D97706" /> {ghost.subject || 'Class'}
-                        </span>
-                        <span style={{ fontSize: '9px', fontWeight: '700', background: 'rgba(217, 119, 6, 0.15)', color: '#92400E', padding: '1px 4px', borderRadius: '4px' }}>
-                          {diffMins}m
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '9px', color: '#B45309', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        🏫 {ghost.schoolName || 'Partner Station'}
-                      </div>
-                    </div>
+                    <>
+                      {/* 1. Ghost Slots (Partner School Classes) */}
+                      {ghostSlots.map((ghost, gIdx) => {
+                        const top = (ghost.sMins - gridStartMins) * pxPerMin;
+                        const height = Math.max(32, ghost.diffMins * pxPerMin);
+
+                        return (
+                          <div
+                            key={`ghost-${gIdx}-${d.code}`}
+                            style={{
+                              position: 'absolute',
+                              top: `${top}px`,
+                              left: '4px',
+                              right: '4px',
+                              height: `${height}px`,
+                              background: 'repeating-linear-gradient(45deg, #FEF3C7, #FEF3C7 10px, #FFFBEB 10px, #FFFBEB 20px)',
+                              border: '1.5px dashed #F59E0B',
+                              borderRadius: '8px',
+                              padding: '4px 6px',
+                              boxSizing: 'border-box',
+                              cursor: 'not-allowed',
+                              zIndex: 4,
+                              color: '#92400E',
+                              overflow: 'hidden',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.04)'
+                            }}
+                            title={`🔒 Locked Ghost Slot: Assigned by ${ghost.schoolName || 'Partner School'} • ${ghost.subject || 'Class'} (${ghost.startTime}-${ghost.endTime})`}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <FiLock size={10} color="#D97706" /> {ghost.subject || 'Class'}
+                              </span>
+                              <span style={{ fontSize: '9px', fontWeight: '700', background: 'rgba(217, 119, 6, 0.15)', color: '#92400E', padding: '1px 4px', borderRadius: '4px' }}>
+                                {ghost.diffMins}m
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '9px', color: '#B45309', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              🏫 {ghost.schoolName || 'Partner Station'}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* 2. Transit Lockout Zones (Sandwich Gaps <= 2 hours between partner classes) */}
+                      {transitGapSlots.map((gap, tIdx) => {
+                        const top = (gap.sMins - gridStartMins) * pxPerMin;
+                        const height = Math.max(26, gap.diffMins * pxPerMin);
+
+                        return (
+                          <div
+                            key={`transit-gap-${tIdx}-${d.code}`}
+                            style={{
+                              position: 'absolute',
+                              top: `${top}px`,
+                              left: '4px',
+                              right: '4px',
+                              height: `${height}px`,
+                              background: 'repeating-linear-gradient(45deg, #FEF9C3, #FEF9C3 8px, #FEF08A 8px, #FEF08A 16px)',
+                              border: '1.5px dashed #CA8A04',
+                              borderRadius: '8px',
+                              padding: '3px 6px',
+                              boxSizing: 'border-box',
+                              cursor: 'not-allowed',
+                              zIndex: 3,
+                              color: '#854D0E',
+                              overflow: 'hidden',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'center',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                            }}
+                            title={`🔒 Transit Lockout: Clustered personnel is stationed at ${gap.schoolName} (${gap.diffMins}m gap ≤ 2h between ${gap.prevSubject} and ${gap.nextSubject}). Campus transit restriction applies.`}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ fontSize: '9.5px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <FiLock size={9} color="#CA8A04" /> Transit Lockout ({gap.diffMins}m)
+                              </span>
+                              <span style={{ fontSize: '8.5px', fontWeight: '700', background: 'rgba(202, 138, 4, 0.18)', color: '#854D0E', padding: '1px 3px', borderRadius: '3px' }}>
+                                ≤ 2h Gap
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '8.5px', color: '#A16207', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              🚗 Stationed @ {gap.schoolName}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
                   );
-                })}
+                })()}
 
                 {/* Render Subject Blocks for this Day */}
                 {rawRows.map((row, rowIdx) => {
-                  const isDraggingThisRow = dragState && dragState.rowIdx === rowIdx && (dragState.type === 'move' || dragState.type === 'resize-top' || dragState.type === 'resize-bottom' || dragState.type === 'extend-days');
+                  let rowDays = getNormalizedRowDays(row);
 
-                  let rowDays = (Array.isArray(row.days) && row.days.length > 0)
-                    ? row.days
-                    : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M','T','W','TH','F']);
-                  if (isDraggingThisRow && dragState.currentDays) {
-                    rowDays = dragState.currentDays;
+                  const isDraggingActive = dragState && dragState.rowIdx === rowIdx;
+                  let isThisCellDragged = false;
+                  let shouldRenderCellOnThisDay = false;
+
+                  if (isDraggingActive) {
+                    if (dragState.type === 'move') {
+                      const targetDay = dragState.targetDay || dragState.day;
+                      if (d.code === targetDay) {
+                        isThisCellDragged = true;
+                        shouldRenderCellOnThisDay = true;
+                      } else if (d.code === dragState.day) {
+                        shouldRenderCellOnThisDay = false;
+                      } else if (rowDays.includes(d.code)) {
+                        shouldRenderCellOnThisDay = true;
+                      }
+                    } else if (dragState.type === 'resize-top' || dragState.type === 'resize-bottom') {
+                      if (d.code === dragState.day) {
+                        isThisCellDragged = true;
+                        shouldRenderCellOnThisDay = true;
+                      } else if (rowDays.includes(d.code)) {
+                        shouldRenderCellOnThisDay = true;
+                      }
+                    } else if (dragState.type === 'extend-days') {
+                      const effDays = dragState.currentDays || rowDays;
+                      shouldRenderCellOnThisDay = effDays.includes(d.code);
+                      isThisCellDragged = d.code === dragState.day;
+                    }
+                  } else {
+                    shouldRenderCellOnThisDay = rowDays.includes(d.code);
                   }
-                  if (!rowDays.includes(d.code)) return null;
+
+                  if (!shouldRenderCellOnThisDay) return null;
 
                   let sMins = parseMins(row.startTime || '07:30');
                   let eMins = parseMins(row.endTime || '08:30');
-                  if (isDraggingThisRow) {
+                  if (isThisCellDragged) {
                     if (dragState.currentStartMins !== undefined) sMins = dragState.currentStartMins;
                     if (dragState.currentEndMins !== undefined) eMins = dragState.currentEndMins;
                   }
                   if (sMins >= 99999 || eMins >= 99999) return null;
+
+                  const isDraggingThisRow = isThisCellDragged;
 
                   const top = (sMins - gridStartMins) * pxPerMin;
                   const height = Math.max(32, (eMins - sMins) * pxPerMin);
                   const diffMins = eMins - sMins;
 
                   const subUpper = String(row.subject || '').toUpperCase().trim();
-                  const isAdv = subUpper === 'ADVISORY';
-                  const isHgp = subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
-                  const canResize = !isAdv;
+                  const isAdmin = isAdminTaskRow(row);
+                  const isSnedSec = !isAdmin && isSnedSectionRow(row, classSections);
+                  const isAlsSec = !isAdmin && isAlsSectionRow(row, classSections);
+                  const isAralSec = !isAdmin && isAralSectionRow(row, classSections);
+                  const isRemSec = !isAdmin && isRemedialSectionRow(row, classSections);
+                  const isAdv = !isAdmin && !isSnedSec && !isAlsSec && !isAralSec && !isRemSec && subUpper === 'ADVISORY';
+                  const isHgp = !isAdmin && !isSnedSec && !isAlsSec && !isAralSec && !isRemSec && (subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE'));
+                  const isSned = !isAdmin && (isSnedSec || subUpper === 'SNED MODIFIED SUBJECT' || subUpper === 'SNED' || subUpper === 'SPED MODIFIED SUBJECTS');
+                  const isAls = !isAdmin && (isAlsSec || subUpper === 'ALS LEARNING STRAND' || subUpper === 'ALS');
+                  const isAral = !isAdmin && (isAralSec || isAralSubject(subUpper) || subUpper === 'ARAL TUTORING' || subUpper === 'ARAL' || (subUpper.startsWith('ARAL') && !subUpper.startsWith('ARALING')));
+                  const isRem = !isAdmin && (isRemSec || subUpper === 'REMEDIATION' || subUpper === 'ENRICHMENT' || isRemediationSub(subUpper));
+                  const canResize = true;
 
                   // Validation errors (local overlap)
+                  const normalizedRowDays = getNormalizedRowDays(row);
                   const hasConflict = rawRows.some((otherRow, otherIdx) => {
                     if (rowIdx === otherIdx) return false;
+                    if (row.id && otherRow.id && String(row.id) === String(otherRow.id)) return false;
+                    if ((otherRow.term || '1st') !== (row.term || '1st')) return false;
                     if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
-                    const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0) ? otherRow.days : ['M','T','W','TH','F'];
-                    if (!otherDays.includes(d.code)) return false;
+                    const otherDays = getNormalizedRowDays(otherRow);
+                    if (!otherDays.includes(d.code) || !normalizedRowDays.includes(d.code)) return false;
                     const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
                     const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
+                    if (ns >= 99999 || ne >= 99999 || rs >= 99999 || re >= 99999) return false;
+                    if (ns >= ne || rs >= re) return false;
                     if (ns < re && ne > rs) {
                       if (isAdvisoryOrHgpPair(row, otherRow)) return false;
                       return true;
@@ -4869,23 +5849,27 @@ function WorkloadGanttScheduleView({
                     return false;
                   });
 
-                  // Cross-school collision with Clustered Ghost Slots
-                  const hasCrossSchoolConflict = (sharedWorkloadRows || []).some(ghost => {
-                    const gDays = (Array.isArray(ghost.days) && ghost.days.length > 0)
-                      ? ghost.days
-                      : (ghost.day ? [ghost.day.toUpperCase().startsWith('M') && !ghost.day.toUpperCase().startsWith('T') ? 'M' : ghost.day.toUpperCase().startsWith('W') ? 'W' : ghost.day.toUpperCase().startsWith('TH') ? 'TH' : ghost.day.toUpperCase().startsWith('F') ? 'F' : 'T'] : ['M','T','W','TH','F']);
-                    if (!gDays.includes(d.code)) return false;
-                    const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
-                    const gs = parseMins(ghost.startTime || ghost.start_time), ge = parseMins(ghost.endTime || ghost.end_time);
-                    return ns < ge && ne > gs;
-                  });
+                  // Cross-school collision with Clustered Ghost Slots & 2h Transit Sandwich Gaps
+                  const rowToCheck = isDraggingThisRow
+                    ? {
+                        ...row,
+                        startTime: `${Math.floor(sMins / 60).toString().padStart(2, '0')}:${(sMins % 60).toString().padStart(2, '0')}`,
+                        endTime: `${Math.floor(eMins / 60).toString().padStart(2, '0')}:${(eMins % 60).toString().padStart(2, '0')}`,
+                        days: rowDays
+                      }
+                    : row;
+                  const hasCrossSchoolConflict = checkCrossSchoolConflict(rowToCheck, sharedWorkloadRows, 120);
+
+                  const blockKey = `${row.id || rowIdx}_${d.code}`;
+                  const isMultiSelected = selectedCellKeys.has(blockKey);
+                  const isSingleSelected = selectedBlockIdx === rowIdx && selectedCellKeys.size <= 1;
+                  const isSelected = isMultiSelected || isSingleSelected;
 
                   const durationErr = getRowDurationError(row);
                   const matatagWarn = getMatatagRowWarning(row);
-                  const duplicateSubErr = getDuplicateSectionSubjectError(row, rowIdx);
+                  const duplicateSubErr = getDuplicateSectionSubjectError(row, row);
                   const hgpWeeklyErr = getHgpWeeklyError(row);
                   const cardHasError = hasConflict || hasCrossSchoolConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
-                  const isSelected = selectedBlockIdx === rowIdx;
 
                   const isSHS = isSHSRow(row);
 
@@ -4893,13 +5877,33 @@ function WorkloadGanttScheduleView({
                   let blockBorder = isSelected ? '2px solid #0284C7' : '1.5px solid #CBD5E1';
                   let textColor = '#0F172A';
 
-                  if (isAdv) {
+                  if (isAdmin) {
+                    blockBg = 'linear-gradient(135deg, #1E293B 0%, #334155 100%)';
+                    blockBorder = isSelected ? '2px solid #38BDF8' : '1.5px solid #475569';
+                    textColor = '#FFFFFF';
+                  } else if (isAdv) {
                     blockBg = 'linear-gradient(135deg, #0284c7 0%, #1e40af 100%)';
                     blockBorder = '1.5px solid #1d4ed8';
                     textColor = '#FFFFFF';
                   } else if (isHgp) {
                     blockBg = 'linear-gradient(135deg, #06b6d4 0%, #0e7490 100%)';
                     blockBorder = '1.5px solid #0891b2';
+                    textColor = '#FFFFFF';
+                  } else if (isSned) {
+                    blockBg = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
+                    blockBorder = isSelected ? '2px solid #10B981' : '1.5px solid #047857';
+                    textColor = '#FFFFFF';
+                  } else if (isAls) {
+                    blockBg = 'linear-gradient(135deg, #7e22ce 0%, #6b21a8 100%)';
+                    blockBorder = isSelected ? '2px solid #c084fc' : '1.5px solid #7e22ce';
+                    textColor = '#FFFFFF';
+                  } else if (isAral) {
+                    blockBg = 'linear-gradient(135deg, #EAB308 0%, #CA8A04 100%)';
+                    blockBorder = isSelected ? '2px solid #FEF08A' : '1.5px solid #A16207';
+                    textColor = '#FFFFFF';
+                  } else if (isRem) {
+                    blockBg = 'linear-gradient(135deg, #854D0E 0%, #78350F 100%)';
+                    blockBorder = isSelected ? '2px solid #FDE68A' : '1.5px solid #78350F';
                     textColor = '#FFFFFF';
                   } else if (cardHasError) {
                     blockBg = 'linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%)';
@@ -4915,13 +5919,43 @@ function WorkloadGanttScheduleView({
                     textColor = '#14532D';
                   }
 
-                  const blockKey = `${row.id || rowIdx}-${d.code}`;
+                  const displaySubject = isAdmin
+                    ? (row.subject || 'ADMIN TASK')
+                    : (isSned
+                      ? 'SNED MODIFIED SUBJECT'
+                      : (isAls
+                        ? 'ALS LEARNING STRAND'
+                        : (isAral
+                          ? (row.subject || 'ARAL TUTORING')
+                          : (isRem
+                            ? (row.subject || 'REMEDIATION')
+                            : (row.subject || 'Select Subject')))));
 
                   return (
                     <div
                       key={blockKey}
                       className="gantt-block-card"
-                      onClick={(e) => { e.stopPropagation(); setSelectedBlockIdx(rowIdx); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const isMac = typeof navigator !== 'undefined' && navigator.platform && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                        const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+                        if (isCmdOrCtrl) {
+                          setSelectedCellKeys(prev => {
+                            const next = new Set(prev);
+                            if (next.has(blockKey)) {
+                              next.delete(blockKey);
+                            } else {
+                              next.add(blockKey);
+                            }
+                            return next;
+                          });
+                          setSelectedBlockIdx(rowIdx);
+                        } else {
+                          setSelectedCellKeys(new Set([blockKey]));
+                          setSelectedBlockIdx(rowIdx);
+                        }
+                      }}
                       onMouseDown={(e) => handleStartDrag(e, rowIdx, row, d.code, 'move')}
                       style={{
                         position: 'absolute',
@@ -4939,7 +5973,7 @@ function WorkloadGanttScheduleView({
                         opacity: isDraggingThisRow ? 0.88 : 1,
                         boxShadow: isDraggingThisRow
                           ? '0 10px 25px rgba(2, 132, 199, 0.4), 0 0 0 2px #0284C7'
-                          : (isSelected ? '0 0 0 3px rgba(2, 132, 199, 0.3), 0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.04)'),
+                          : (isSelected ? '0 0 0 3px rgba(2, 132, 199, 0.35), 0 4px 12px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.04)'),
                         color: textColor,
                         overflow: 'hidden',
                         display: 'flex',
@@ -4948,7 +5982,7 @@ function WorkloadGanttScheduleView({
                         pointerEvents: dragState ? (isDraggingThisRow ? 'auto' : 'none') : 'auto',
                         transition: isDraggingThisRow ? 'none' : 'box-shadow 0.15s ease'
                       }}
-                      title={`${row.subject || 'Subject'} (${row.sectionName || 'Section'}) • ${row.startTime} - ${row.endTime}`}
+                      title={`${displaySubject} (${isAdmin ? 'Administrative Duty' : (row.sectionName || 'Section')}) • ${row.startTime} - ${row.endTime}`}
                     >
                       {/* Top Resize Handle (disabled for ADVISORY fixed 60m) */}
                       {canResize && (
@@ -4972,8 +6006,26 @@ function WorkloadGanttScheduleView({
                       <div style={{ pointerEvents: 'none' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
                           <span style={{ fontSize: '11px', fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            {row.subject || 'Select Subject'} {isAdv && <span title="Fixed 60 mins • Moveable" style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px' }}>⏱️ 60m</span>}
+                            {selectedCellKeys.size > 1 && isMultiSelected && (
+                              <span style={{
+                                fontSize: '8px',
+                                fontWeight: '900',
+                                background: '#0284C7',
+                                color: 'white',
+                                borderRadius: '50%',
+                                width: '13px',
+                                height: '13px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                              }}>
+                                ✓
+                              </span>
+                            )}
+                            {displaySubject}{row.remediationSubject ? `: ${row.remediationSubject}` : ''} {isAdv && <span style={{ fontSize: '9px', opacity: 0.85, marginLeft: '4px' }}>⏱️ {diffMins}m</span>}
                             {isSHS && <span title="Senior High School" style={{ fontSize: '8px', fontWeight: '800', background: '#16A34A', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>SHS</span>}
+                            {isAdmin && <span title="Administrative Duty" style={{ fontSize: '8px', fontWeight: '800', background: '#0284C7', color: 'white', padding: '1px 3px', borderRadius: '3px' }}>ADMIN</span>}
                           </span>
                           <span style={{ fontSize: '9px', fontWeight: '700', opacity: 0.85, background: 'rgba(0,0,0,0.08)', padding: '1px 4px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
                             {diffMins}m
@@ -4982,7 +6034,7 @@ function WorkloadGanttScheduleView({
 
                         {height >= 40 && (
                           <div style={{ fontSize: '10px', fontWeight: '600', opacity: 0.9, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            [{row.gradeLevel ? `${row.gradeLevel} • ` : ''}{row.sectionName || 'Section'}]
+                            {isAdmin ? '[Administrative Duty]' : `[${row.gradeLevel ? `${row.gradeLevel} • ` : ''}${row.sectionName || 'Section'}]`}
                           </div>
                         )}
 
@@ -4997,7 +6049,7 @@ function WorkloadGanttScheduleView({
                           <div style={{ marginTop: '2px', display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
                             {hasConflict && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertCircle size={9} /> Overlap</span>}
                             {hgpWeeklyErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertCircle size={9} /> HGP (60m)</span>}
-                            {duplicateSubErr && <span style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertCircle size={9} /> Duplicate</span>}
+                            {duplicateSubErr && <span title={duplicateSubErr} style={{ fontSize: '8px', fontWeight: '800', background: '#EF4444', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px', cursor: 'help' }}><FiAlertCircle size={9} /> Duplicate</span>}
                             {matatagWarn && <span style={{ fontSize: '8px', fontWeight: '800', background: matatagWarn.type === 'error' ? '#EF4444' : '#F59E0B', color: 'white', padding: '1px 4px', borderRadius: '3px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}><FiAlertTriangle size={9} /> MATATAG</span>}
                           </div>
                         )}
@@ -5028,256 +6080,386 @@ function WorkloadGanttScheduleView({
           </div>
         </div>
 
-        {/* Fixed "Browse" Sidebar — Subjects Taught + Organized Classes for subject-first /
-            section-first block creation. Stays docked in the layout (not floating). */}
+        {/* Fixed "Browse" Sidebar — Administrative Tasks for Non-Teaching, or Organized Classes + Subjects Taught + Admin Tasks for Teaching. Stays docked in the layout (not floating). */}
         <div style={{ background: 'white', borderRadius: '14px', border: '1.5px solid var(--line)', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ padding: '4px 0' }}>
             <div style={{ textAlign: 'center', color: '#94a3b8', marginBottom: '16px' }}>
-              <div style={{ marginBottom: '8px' }}><FiCalendar size={32} color="#94A3B8" /></div>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>Select a Schedule Block</div>
-              <div style={{ fontSize: '11px', marginTop: '4px' }}>Click any block on the Gantt chart or drag across empty time slots to create and edit.</div>
-            </div>
-            {/* 1. Organized Classes at This School (Filtered by Teacher's Assigned Grades) */}
-            <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
-                  1. Organized Classes ({organizedClassesList.length}{teacherAssignedGrades.length > 0 ? ` for ${teacherAssignedGrades.join(', ')}` : ''})
-                </div>
-                {pendingCreateSection && (
-                  <button
-                    type="button"
-                    onClick={() => setPendingCreateSection(null)}
-                    style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
-                  >
-                    Clear
-                  </button>
-                )}
+              <div style={{ marginBottom: '8px' }}><FiCalendar size={32} color="#0284C7" /></div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>
+                {isNonTeachingPerson(currentPerson) ? 'Schedule Administrative Duties' : 'Select a Schedule Block'}
               </div>
-              {pendingCreateSection ? (
-                <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
-                  "{pendingCreateSection.sectionName}" ({pendingCreateSection.gradeLevel}) selected — subjects below filtered. Click/drag an empty slot to place.
+              <div style={{ fontSize: '11px', marginTop: '4px' }}>
+                {isNonTeachingPerson(currentPerson)
+                  ? 'Pick an Administrative Duty below, then click or drag empty time slots on the Gantt chart to assign.'
+                  : 'Click any block on the Gantt chart or drag across empty time slots to create and edit.'}
+              </div>
+            </div>
+
+            {isNonTeachingPerson(currentPerson) ? (
+              /* Non-Teaching Personnel Sidebar: 6 Canonical DepEd Admin Tasks */
+              <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: '800', color: '#0284C7', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <FiBriefcase size={12} /> Administrative Tasks ({ADMIN_TASK_OPTIONS.length})
+                  </div>
+                  {pendingCreateSubject && (
+                    <button
+                      type="button"
+                      onClick={() => setPendingCreateSubject(null)}
+                      style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
-              ) : (
-                <div style={{ fontSize: '10.5px', color: '#94a3b8', marginBottom: '8px' }}>
-                  {teacherAssignedGrades.length > 0
-                    ? `Showing sections for ${currentPerson?.firstName || 'teacher'}'s assigned grades (${teacherAssignedGrades.join(', ')}).`
-                    : `Pick a class/section first to automatically filter subjects below.`}
-                </div>
-              )}
-              {organizedClassesList.length === 0 ? (
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                  {teacherAssignedGrades.length > 0
-                    ? `No organized classes match assigned grades (${teacherAssignedGrades.join(', ')}). Configure them in Organized Classes Setup.`
-                    : `No organized classes configured yet. Set them up in Organized Classes Setup.`}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '230px', overflowY: 'auto' }}>
-                  {organizedClassesList.map((sec) => {
-                    const isSelected = pendingCreateSection?.sectionId === sec.id;
+                {pendingCreateSubject ? (
+                  <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
+                    "{pendingCreateSubject}" selected — click or drag an empty slot on the Gantt chart to place it.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '8px' }}>
+                    Select a task preset below, then click or drag an empty slot on the Gantt chart (Target: 8.0 hrs/day • 40.0 hrs/wk).
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '380px', overflowY: 'auto' }}>
+                  {ADMIN_TASK_OPTIONS.map((taskName) => {
+                    const isSelected = pendingCreateSubject === taskName;
+                    const cleanLabel = taskName.replace(/^ADMIN TASK\s*[\u2013\u2014-]\s*/i, '');
                     return (
                       <button
-                        key={sec.id}
+                        key={taskName}
                         type="button"
-                        onClick={() => {
-                          const nextSec = isSelected ? null : {
-                            sectionId: sec.id,
-                            sectionName: sec.sectionName,
-                            gradeLevel: sec.gradeLevel,
-                            category: sec.category
-                          };
-                          setPendingCreateSection(nextSec);
-                          // If a subject was already picked but is NOT valid for this new section, clear it
-                          if (nextSec && pendingCreateSubject) {
-                            const categoryForGrade = (gradeLevel) => {
-                              const g = String(gradeLevel || '').toUpperCase();
-                              if (g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR')) return 'SHS';
-                              if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10') || g.includes('JHS') || g.includes('JUNIOR')) return 'JHS';
-                              return 'Elementary';
-                            };
-                            const validSubs = (getSubjectsForGrade(nextSec.gradeLevel, nextSec.category || categoryForGrade(nextSec.gradeLevel)) || []).map(s => String(s).toUpperCase().trim());
-                            if (!validSubs.includes(String(pendingCreateSubject).toUpperCase().trim())) {
-                              setPendingCreateSubject(null);
-                            }
-                          }
-                        }}
+                        onClick={() => setPendingCreateSubject(isSelected ? null : taskName)}
                         style={{
                           display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          gap: '2px',
                           textAlign: 'left',
                           fontSize: '11px',
                           fontWeight: isSelected ? '800' : '600',
-                          color: isSelected ? 'white' : '#334155',
-                          background: isSelected ? 'var(--blue)' : '#F8FAFC',
-                          border: isSelected ? '1px solid var(--blue)' : '1px solid var(--line)',
-                          borderRadius: '6px',
-                          padding: '6px 8px',
-                          cursor: 'pointer'
+                          color: isSelected ? 'white' : '#1E293B',
+                          background: isSelected ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : '#F8FAFC',
+                          border: isSelected ? '1.5px solid #0284C7' : '1px solid var(--line)',
+                          borderRadius: '8px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isSelected ? '0 2px 8px rgba(2, 132, 199, 0.25)' : 'none'
                         }}
                       >
-                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sectionName}</span>
-                        <span style={{
-                          fontSize: '8.5px',
-                          fontWeight: '800',
-                          padding: '1px 5px',
-                          borderRadius: '4px',
-                          background: isSelected ? 'rgba(255,255,255,0.25)' : '#F0FDF4',
-                          color: isSelected ? 'white' : '#15803D',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0
-                        }}>
-                          {sec.typeLabel}
+                        <span style={{ fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', color: isSelected ? 'rgba(255,255,255,0.85)' : '#64748B', letterSpacing: '0.3px' }}>
+                          ADMIN TASK
+                        </span>
+                        <span style={{ width: '100%', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'normal', lineHeight: '1.3' }}>
+                          {cleanLabel}
                         </span>
                       </button>
                     );
                   })}
                 </div>
-              )}
-            </div>
-
-            {/* 2. Subjects Taught (Filtered by Teacher's Assigned Grades / Selected Section) */}
-            <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px', marginTop: '16px' }}>
-              {(() => {
-                const categoryForGrade = (gradeLevel) => {
-                  const g = String(gradeLevel || '').toUpperCase();
-                  if (g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR')) return 'SHS';
-                  if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10') || g.includes('JHS') || g.includes('JUNIOR')) return 'JHS';
-                  return 'Elementary';
-                };
-
-                let visibleSubjects = activeSchoolSubjects;
-                if (pendingCreateSection) {
-                  const secGrade = pendingCreateSection.gradeLevel;
-                  const secCat = pendingCreateSection.category || categoryForGrade(secGrade);
-                  const validSubs = (getSubjectsForGrade(secGrade, secCat) || []).map(s => String(s).toUpperCase().trim());
-                  visibleSubjects = activeSchoolSubjects.filter(({ name: subj }) => {
-                    const u = String(subj).toUpperCase().trim();
-                    return validSubs.includes(u) || validSubs.some(vs => vs.includes(u) || u.includes(vs));
-                  });
-                } else if (teacherAssignedGrades && teacherAssignedGrades.length > 0) {
-                  // Filter by teacher's assigned grade levels (e.g. Kinder, Grade 1, Grade 2)
-                  const allowedSubjectSet = new Set();
-                  teacherAssignedGrades.forEach(grade => {
-                    const gUpper = String(grade || '').toUpperCase().trim();
-                    let cat = 'Elementary';
-                    if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS') || gUpper.includes('SENIOR')) cat = 'SHS';
-                    else if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10') || gUpper.includes('JHS') || gUpper.includes('JUNIOR')) cat = 'JHS';
-                    
-                    const subs = getSubjectsForGrade(grade, cat) || [];
-                    subs.forEach(s => allowedSubjectSet.add(String(s).toUpperCase().trim()));
-                  });
-
-                  visibleSubjects = activeSchoolSubjects.filter(({ name: subj }) => {
-                    const u = String(subj).toUpperCase().trim();
-                    return allowedSubjectSet.has(u) || Array.from(allowedSubjectSet).some(vs => vs.includes(u) || u.includes(vs));
-                  });
-                }
-
-                return (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
-                        2. Subjects Taught {pendingCreateSection ? `(${visibleSubjects.length} for ${pendingCreateSection.sectionName})` : (teacherAssignedGrades && teacherAssignedGrades.length > 0 ? `(${visibleSubjects.length} for ${teacherAssignedGrades.join(', ')})` : `(${activeSchoolSubjects.length})`)}
-                      </div>
-                      {pendingCreateSubject && (
-                        <button
-                          type="button"
-                          onClick={() => setPendingCreateSubject(null)}
-                          style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
-                        >
-                          Clear
-                        </button>
-                      )}
+              </div>
+            ) : (
+              /* Teaching Personnel Sidebar */
+              <>
+                {/* 1. Organized Classes at This School (Filtered by Teacher's Assigned Grades) */}
+                <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
+                      1. Organized Classes ({organizedClassesList.length}{teacherAssignedGrades.length > 0 ? ` for ${teacherAssignedGrades.join(', ')}` : ''})
                     </div>
-                    {pendingCreateSubject ? (
-                      <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
-                        "{pendingCreateSubject}" selected — click or drag an empty slot on the Gantt chart to place it.
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '10.5px', color: '#94a3b8', marginBottom: '8px' }}>
-                        {pendingCreateSection
-                          ? `Pick a subject below for ${pendingCreateSection.sectionName}, then drag to place.`
-                          : (teacherAssignedGrades && teacherAssignedGrades.length > 0
-                              ? `Showing subjects for ${currentPerson?.firstName || 'teacher'}'s assigned grades (${teacherAssignedGrades.join(', ')}).`
-                              : `Pick a class section above to filter subjects by grade level, or pick a subject directly.`)}
-                      </div>
+                    {pendingCreateSection && (
+                      <button
+                        type="button"
+                        onClick={() => setPendingCreateSection(null)}
+                        style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
+                      >
+                        Clear
+                      </button>
                     )}
-                    {visibleSubjects.length === 0 ? (
-                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                        {activeSchoolSubjects.length === 0
-                          ? 'No active subjects configured yet. Set them up in Curriculum & Subjects Taught.'
-                          : (pendingCreateSection
-                              ? `No subjects available for ${pendingCreateSection.sectionName} (${pendingCreateSection.gradeLevel}).`
-                              : (teacherAssignedGrades && teacherAssignedGrades.length > 0
-                                  ? `No subjects found for assigned grades (${teacherAssignedGrades.join(', ')}).`
-                                  : 'No subjects available.'))}
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '230px', overflowY: 'auto' }}>
-                        {visibleSubjects.map(({ name: subj, tag }) => {
-                          const isSelected = pendingCreateSubject === subj;
-                          const isFixed40 = isMatatagFixed40Subject(subj);
-                          return (
+                  </div>
+                  {pendingCreateSection ? (
+                    <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
+                      "{pendingCreateSection.sectionName}" ({pendingCreateSection.gradeLevel}) selected — subjects below filtered. Click/drag an empty slot to place.
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '10.5px', color: '#94a3b8', marginBottom: '8px' }}>
+                      {teacherAssignedGrades.length > 0
+                        ? `Showing sections for ${currentPerson?.firstName || 'teacher'}'s assigned grades (${teacherAssignedGrades.join(', ')}).`
+                        : `Pick a class/section first to automatically filter subjects below.`}
+                    </div>
+                  )}
+                  {organizedClassesList.length === 0 ? (
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      {teacherAssignedGrades.length > 0
+                        ? `No organized classes match assigned grades (${teacherAssignedGrades.join(', ')}). Configure them in Organized Classes Setup.`
+                        : `No organized classes configured yet. Set them up in Organized Classes Setup.`}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto' }}>
+                      {organizedClassesList.map((sec) => {
+                        const isSelected = pendingCreateSection?.sectionId === sec.id;
+                        return (
+                          <button
+                            key={sec.id}
+                            type="button"
+                            onClick={() => {
+                              const nextSec = isSelected ? null : {
+                                sectionId: sec.id,
+                                sectionName: sec.sectionName,
+                                gradeLevel: sec.gradeLevel,
+                                category: sec.category
+                              };
+                              setPendingCreateSection(nextSec);
+                              // If a subject was already picked but is NOT valid for this new section, clear it
+                              if (nextSec && pendingCreateSubject) {
+                                const categoryForGrade = (gradeLevel) => {
+                                  const g = String(gradeLevel || '').toUpperCase();
+                                  if (g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR')) return 'SHS';
+                                  if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10') || g.includes('JHS') || g.includes('JUNIOR')) return 'JHS';
+                                  return 'Elementary';
+                                };
+                                const validSubs = (getSubjectsForGrade(nextSec.gradeLevel, nextSec.category || categoryForGrade(nextSec.gradeLevel)) || []).map(s => String(s).toUpperCase().trim());
+                                if (!validSubs.includes(String(pendingCreateSubject).toUpperCase().trim())) {
+                                  setPendingCreateSubject(null);
+                                }
+                              }
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              textAlign: 'left',
+                              fontSize: '11px',
+                              fontWeight: isSelected ? '800' : '600',
+                              color: isSelected ? 'white' : '#334155',
+                              background: isSelected ? 'var(--blue)' : '#F8FAFC',
+                              border: isSelected ? '1px solid var(--blue)' : '1px solid var(--line)',
+                              borderRadius: '6px',
+                              padding: '6px 8px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sec.sectionName}</span>
+                            <span style={{
+                              fontSize: '8.5px',
+                              fontWeight: '800',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              background: isSelected ? 'rgba(255,255,255,0.25)' : '#F0FDF4',
+                              color: isSelected ? 'white' : '#15803D',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0
+                            }}>
+                              {sec.typeLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Subjects Taught (Filtered by Teacher's Assigned Grades / Selected Section) */}
+                <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px', marginTop: '14px' }}>
+                  {(() => {
+                    const categoryForGrade = (gradeLevel) => {
+                      const g = String(gradeLevel || '').toUpperCase();
+                      if (g.includes('11') || g.includes('12') || g.includes('SHS') || g.includes('SENIOR')) return 'SHS';
+                      if (g.includes('7') || g.includes('8') || g.includes('9') || g.includes('10') || g.includes('JHS') || g.includes('JUNIOR')) return 'JHS';
+                      return 'Elementary';
+                    };
+
+                    let visibleSubjects = activeSchoolSubjects;
+                    if (pendingCreateSection) {
+                      const secGrade = pendingCreateSection.gradeLevel;
+                      const secCat = pendingCreateSection.category || categoryForGrade(secGrade);
+                      const validSubs = (getSubjectsForGrade(secGrade, secCat) || []).map(s => String(s).toUpperCase().trim());
+                      visibleSubjects = activeSchoolSubjects.filter(({ name: subj }) => {
+                        const u = String(subj).toUpperCase().trim();
+                        return validSubs.includes(u) || validSubs.some(vs => vs.includes(u) || u.includes(vs));
+                      });
+                    } else if (teacherAssignedGrades && teacherAssignedGrades.length > 0) {
+                      // Filter by teacher's assigned grade levels (e.g. Kinder, Grade 1, Grade 2)
+                      const allowedSubjectSet = new Set();
+                      teacherAssignedGrades.forEach(grade => {
+                        const gUpper = String(grade || '').toUpperCase().trim();
+                        let cat = 'Elementary';
+                        if (gUpper.includes('11') || gUpper.includes('12') || gUpper.includes('SHS') || gUpper.includes('SENIOR')) cat = 'SHS';
+                        else if (gUpper.includes('7') || gUpper.includes('8') || gUpper.includes('9') || gUpper.includes('10') || gUpper.includes('JHS') || gUpper.includes('JUNIOR')) cat = 'JHS';
+                        
+                        const subs = getSubjectsForGrade(grade, cat) || [];
+                        subs.forEach(s => allowedSubjectSet.add(String(s).toUpperCase().trim()));
+                      });
+
+                      visibleSubjects = activeSchoolSubjects.filter(({ name: subj }) => {
+                        const u = String(subj).toUpperCase().trim();
+                        return allowedSubjectSet.has(u) || Array.from(allowedSubjectSet).some(vs => vs.includes(u) || u.includes(vs));
+                      });
+                    }
+
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
+                            2. Subjects Taught {pendingCreateSection ? `(${visibleSubjects.length} for ${pendingCreateSection.sectionName})` : (teacherAssignedGrades && teacherAssignedGrades.length > 0 ? `(${visibleSubjects.length} for ${teacherAssignedGrades.join(', ')})` : `(${activeSchoolSubjects.length})`)}
+                          </div>
+                          {pendingCreateSubject && (
                             <button
-                              key={subj}
                               type="button"
-                              onClick={() => setPendingCreateSubject(isSelected ? null : subj)}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                textAlign: 'left',
-                                fontSize: '11px',
-                                fontWeight: isSelected ? '800' : '600',
-                                color: isSelected ? 'white' : '#334155',
-                                background: isSelected ? 'var(--blue)' : '#F8FAFC',
-                                border: isSelected ? '1px solid var(--blue)' : '1px solid var(--line)',
-                                borderRadius: '6px',
-                                padding: '6px 8px',
-                                cursor: 'pointer'
-                              }}
+                              onClick={() => setPendingCreateSubject(null)}
+                              style={{ border: 'none', background: 'none', color: '#0284C7', fontSize: '10px', fontWeight: '800', cursor: 'pointer', padding: 0 }}
                             >
-                              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subj}</span>
-                              {isFixed40 && (
-                                <span
-                                  title="MATATAG Policy: locked to exactly 40 mins/day at Grade 1/2 (DepEd Order No. 12, s. 2024)"
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        {pendingCreateSubject ? (
+                          <div style={{ fontSize: '10.5px', color: '#0284C7', fontWeight: '700', marginBottom: '8px' }}>
+                            "{pendingCreateSubject}" selected — click or drag an empty slot on the Gantt chart to place it.
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '10.5px', color: '#94a3b8', marginBottom: '8px' }}>
+                            {pendingCreateSection
+                              ? `Pick a subject below for ${pendingCreateSection.sectionName}, then drag to place.`
+                              : (teacherAssignedGrades && teacherAssignedGrades.length > 0
+                                  ? `Showing subjects for ${currentPerson?.firstName || 'teacher'}'s assigned grades (${teacherAssignedGrades.join(', ')}).`
+                                  : `Pick a class section above to filter subjects by grade level, or pick a subject directly.`)}
+                          </div>
+                        )}
+                        {visibleSubjects.length === 0 ? (
+                          <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                            {activeSchoolSubjects.length === 0
+                              ? 'No active subjects configured yet. Set them up in Curriculum & Subjects Taught.'
+                              : (pendingCreateSection
+                                  ? `No subjects available for ${pendingCreateSection.sectionName} (${pendingCreateSection.gradeLevel}).`
+                                  : (teacherAssignedGrades && teacherAssignedGrades.length > 0
+                                      ? `No subjects found for assigned grades (${teacherAssignedGrades.join(', ')}).`
+                                      : 'No subjects available.'))}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '180px', overflowY: 'auto' }}>
+                            {visibleSubjects.map(({ name: subj, tag }) => {
+                              const isSelected = pendingCreateSubject === subj;
+                              const isFixed40 = isMatatagFixed40Subject(subj);
+                              return (
+                                <button
+                                  key={subj}
+                                  type="button"
+                                  onClick={() => setPendingCreateSubject(isSelected ? null : subj)}
                                   style={{
-                                    fontSize: '8.5px',
-                                    fontWeight: '800',
-                                    padding: '1px 5px',
-                                    borderRadius: '4px',
-                                    background: isSelected ? 'rgba(255,255,255,0.25)' : '#FEF2F2',
-                                    color: isSelected ? 'white' : '#DC2626',
-                                    whiteSpace: 'nowrap',
-                                    flexShrink: 0
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    textAlign: 'left',
+                                    fontSize: '11px',
+                                    fontWeight: isSelected ? '800' : '600',
+                                    color: isSelected ? 'white' : '#334155',
+                                    background: isSelected ? 'var(--blue)' : '#F8FAFC',
+                                    border: isSelected ? '1px solid var(--blue)' : '1px solid var(--line)',
+                                    borderRadius: '6px',
+                                    padding: '6px 8px',
+                                    cursor: 'pointer'
                                   }}
                                 >
-                                  🔒 40m
-                                </span>
-                              )}
-                              {tag && (
-                                <span style={{
-                                  fontSize: '8.5px',
-                                  fontWeight: '800',
-                                  padding: '1px 5px',
-                                  borderRadius: '4px',
-                                  background: isSelected ? 'rgba(255,255,255,0.25)' : '#eef2ff',
-                                  color: isSelected ? 'white' : '#4338ca',
-                                  whiteSpace: 'nowrap',
-                                  flexShrink: 0
-                                }}>
-                                  {tag}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
+                                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subj}</span>
+                                  {isFixed40 && (
+                                    <span
+                                      title="MATATAG Policy: locked to exactly 40 mins/day at Grade 1/2 (DepEd Order No. 12, s. 2024)"
+                                      style={{
+                                        fontSize: '8.5px',
+                                        fontWeight: '800',
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        background: isSelected ? 'rgba(255,255,255,0.25)' : '#FEF2F2',
+                                        color: isSelected ? 'white' : '#DC2626',
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0
+                                      }}
+                                    >
+                                      🔒 40m
+                                    </span>
+                                  )}
+                                  {tag && (
+                                    <span style={{
+                                      fontSize: '8.5px',
+                                      fontWeight: '800',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      background: isSelected ? 'rgba(255,255,255,0.25)' : '#eef2ff',
+                                      color: isSelected ? 'white' : '#4338ca',
+                                      whiteSpace: 'nowrap',
+                                      flexShrink: 0
+                                    }}>
+                                      {tag}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* 3. Administrative Tasks (Canonical DepEd Tasks) */}
+                <div style={{ borderTop: '1.5px solid var(--line)', paddingTop: '12px', marginTop: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <FiBriefcase size={12} /> 3. Administrative Tasks ({ADMIN_TASK_OPTIONS.length})
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+                    {ADMIN_TASK_OPTIONS.map((taskName) => {
+                      const isSelected = pendingCreateSubject === taskName;
+                      const cleanLabel = taskName.replace(/^ADMIN TASK\s*[\u2013\u2014-]\s*/i, '');
+                      return (
+                        <button
+                          key={taskName}
+                          type="button"
+                          onClick={() => {
+                            setPendingCreateSection(null);
+                            setPendingCreateSubject(isSelected ? null : taskName);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            textAlign: 'left',
+                            fontSize: '11px',
+                            fontWeight: isSelected ? '800' : '600',
+                            color: isSelected ? 'white' : '#334155',
+                            background: isSelected ? '#1E293B' : '#F8FAFC',
+                            border: isSelected ? '1px solid #1E293B' : '1px solid var(--line)',
+                            borderRadius: '6px',
+                            padding: '6px 8px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {cleanLabel}
+                          </span>
+                          <span style={{
+                            fontSize: '8.5px',
+                            fontWeight: '800',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            background: isSelected ? 'rgba(255,255,255,0.25)' : '#F1F5F9',
+                            color: isSelected ? 'white' : '#475569',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0
+                          }}>
+                            Admin
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -5337,90 +6519,165 @@ function WorkloadGanttScheduleView({
           {(() => {
             const idx = selectedBlockIdx;
             const subUpper = String(selectedRow.subject || '').toUpperCase().trim();
-            const isLockedSub = subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE');
+            const gUpper = String(selectedRow.gradeLevel || '').toUpperCase();
+            const secName = String(selectedRow.sectionName || '').toUpperCase();
+            const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
+            const currentSub = selectedRow.subject || selectedRow.subject_name || '';
+            const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (selectedRow.sectionName && s.sectionName === selectedRow.sectionName));
+
+            const isRegLinked = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(linkedSec?.sectionType || '').toUpperCase().trim());
+
+            const isSnedSec = !isRegLinked && Boolean(
+              gUpper.includes('SNED') || gUpper.includes('NON-GRADED') || gUpper.includes('SPED') ||
+              subUpper === 'SNED MODIFIED SUBJECT' || subUpper === 'SNED' || subUpper === 'SPED MODIFIED SUBJECTS' ||
+              (linkedSec && (String(linkedSec.sectionType || '').toUpperCase().includes('SNED') || String(linkedSec.gradeLevel || '').toUpperCase().includes('SNED') || String(linkedSec.gradeLevel || '').toUpperCase().includes('NON-GRADED') || String(linkedSec.gradeLevel || '').toUpperCase().includes('SPED')))
+            );
+
+            const isAlsSec = !isRegLinked && Boolean(
+              gUpper.includes('ALS') ||
+              subUpper === 'ALS LEARNING STRAND' || subUpper === 'ALS' ||
+              (linkedSec && (String(linkedSec.sectionType || '').toUpperCase().includes('ALS') || String(linkedSec.gradeLevel || '').toUpperCase().includes('ALS')))
+            );
+
+            const isAralSection = !isRegLinked && Boolean(
+              (linkedSec && (
+                String(linkedSec.sectionType || '').startsWith('ARAL') ||
+                String(linkedSec.sectionType || '').toUpperCase().includes('ARAL') ||
+                String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
+                String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                Boolean(linkedSec.aralBasis || linkedSec.aralToolKey || linkedSec.aralTool)
+              )) ||
+              isAralSubject(subUpper) || subUpper === 'ARAL TUTORING' || subUpper === 'ARAL' || (subUpper.startsWith('ARAL') && !subUpper.startsWith('ARALING'))
+            );
+
+            const isRemSec = !isRegLinked && Boolean(
+              (linkedSec && (linkedSec.sectionType === 'REMEDIAL' || linkedSec.sectionType === 'ENRICHMENT'))
+            );
+
+            const isSpecialProgram = Boolean(
+              isSnedSec ||
+              isAralSection ||
+              isRemSec ||
+              subUpper === 'SNED MODIFIED SUBJECT' ||
+              subUpper === 'SNED' ||
+              subUpper === 'ARAL TUTORING' ||
+              subUpper === 'ARAL' ||
+              subUpper === 'REMEDIATION' ||
+              subUpper === 'ENRICHMENT'
+            );
+            const isAdvisoryOrHgp = Boolean(subUpper === 'ADVISORY' || subUpper === 'HGP' || subUpper.includes('HOMEROOM GUIDANCE'));
+            const isLockedSectionAndSubject = isSpecialProgram || isAdvisoryOrHgp;
+            const isLockedSub = isAdvisoryOrHgp;
 
             const durationErr = getRowDurationError(selectedRow);
             const matatagWarn = getMatatagRowWarning(selectedRow);
-            const duplicateSubErr = getDuplicateSectionSubjectError(selectedRow, idx);
+            const duplicateSubErr = getDuplicateSectionSubjectError(selectedRow, selectedRow);
             const hgpWeeklyErr = getHgpWeeklyError(selectedRow);
             const hasConflict = rawRows.some((otherRow, otherIdx) => {
               if (idx === otherIdx) return false;
+              if (selectedRow.id && otherRow.id && String(selectedRow.id) === String(otherRow.id)) return false;
+              if ((otherRow.term || '1st') !== (selectedRow.term || '1st')) return false;
               if (!selectedRow.startTime || !selectedRow.endTime || !otherRow.startTime || !otherRow.endTime) return false;
-              const selDays = (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? selectedRow.days : ['M','T','W','TH','F'];
-              const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0) ? otherRow.days : ['M','T','W','TH','F'];
+              const selDays = getNormalizedRowDays(selectedRow);
+              const otherDays = getNormalizedRowDays(otherRow);
               const daysOverlap = selDays.some(d => otherDays.includes(d));
               if (!daysOverlap) return false;
               const ns = parseMins(selectedRow.startTime), ne = parseMins(selectedRow.endTime);
               const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
+              if (ns >= 99999 || ne >= 99999 || rs >= 99999 || re >= 99999) return false;
+              if (ns >= ne || rs >= re) return false;
               if (ns < re && ne > rs) {
                 if (isAdvisoryOrHgpPair(selectedRow, otherRow)) return false;
                 return true;
               }
               return false;
             });
+            const hasCrossSchoolConflict = checkCrossSchoolConflict(selectedRow, sharedWorkloadRows, 120);
 
-            const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
-            const currentSub = selectedRow.subject || selectedRow.subject_name || '';
-            const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (selectedRow.sectionName && s.sectionName === selectedRow.sectionName));
-            const isAralSection = Boolean(
-              (linkedSec && (
-                String(linkedSec.sectionType || '').startsWith('ARAL') ||
-                String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
-                String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL')
-              )) ||
-              String(selectedRow.gradeLevel || '').toUpperCase().includes('ARAL') ||
-              String(selectedRow.sectionName || '').toUpperCase().includes('ARAL')
-            );
             const isShsCategory = isSHSRow(selectedRow) || (selectedRow.gradeLevel && (String(selectedRow.gradeLevel).includes('11') || String(selectedRow.gradeLevel).includes('12') || String(selectedRow.gradeLevel).toUpperCase().includes('SHS')));
             const effectiveCategory = isShsCategory ? (selectedRow.category && selectedRow.category.includes('SHS') ? selectedRow.category : 'SHS-CORE SUBJECTS') : (selectedRow.category || 'Elementary');
+
+            const effectiveSubjectVal = isSnedSec
+              ? 'SNED MODIFIED SUBJECT'
+              : (isAlsSec
+                ? 'ALS LEARNING STRAND'
+                : (isAralSection
+                  ? (currentSub || 'ARAL TUTORING')
+                  : (isRemSec
+                    ? (currentSub || (linkedSec?.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : 'REMEDIATION'))
+                    : currentSub)));
+
+            const displayHeaderTitle = effectiveSubjectVal || 'Edit Schedule Slot';
 
             return (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--line)', paddingBottom: '10px' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
-                      {selectedRow.subject || 'Edit Schedule Slot'} {isLockedSub && <FiLock size={13} style={{ marginLeft: '6px', verticalAlign: 'middle' }} />}
+                      {displayHeaderTitle} {isLockedSectionAndSubject && <FiLock size={13} style={{ marginLeft: '6px', verticalAlign: 'middle' }} />}
                     </h4>
                     <span style={{ fontSize: '11px', color: '#64748b' }}>Block Inspector & Settings</span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={handleCopySelectedSection}
-                      style={{
-                        background: '#EFF6FF',
-                        color: '#1D4ED8',
-                        border: '1px solid #BFDBFE',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      title="Copy Section Only (Ctrl+C)"
-                    >
-                      <FiCopy size={12} /> Copy Section
-                    </button>
-                    {!isLockedSub && (
+                    {String(selectedRow?.subject || '').toUpperCase().trim() === 'ADVISORY' ? (
                       <button
                         type="button"
-                        onClick={() => { removeWorkloadRow(idx); setSelectedBlockIdx(null); }}
-                        style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FCA5A5', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        title="Remove Block (Delete)"
+                        onClick={handleDuplicateAdvisorySlot}
+                        style={{
+                          background: '#EFF6FF',
+                          color: '#1D4ED8',
+                          border: '1px solid #BFDBFE',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Duplicate this Advisory slot (e.g. for a 2nd 30-min afternoon advisory session)"
                       >
-                        <FiTrash2 size={12} /> Delete
+                        <FiCopy size={12} /> Duplicate Advisory (30m)
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleCopySelectedSection}
+                        style={{
+                          background: '#EFF6FF',
+                          color: '#1D4ED8',
+                          border: '1px solid #BFDBFE',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Copy Section Only (Ctrl+C)"
+                      >
+                        <FiCopy size={12} /> Copy Section
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRow(idx)}
+                      style={{ background: '#FEF2F2', color: '#EF4444', border: '1px solid #FCA5A5', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      title="Remove Block (Delete)"
+                    >
+                      <FiTrash2 size={12} /> Delete
+                    </button>
                   </div>
                 </div>
 
                 {/* Validation Warnings Callout */}
-                {(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || !!matatagWarn) && (
-                  <div style={{ background: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FEF2F2' : '#FFFBEB', color: (hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#991B1B' : '#92400E', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FCA5A5' : '#FCD34D'}`, fontSize: '11px', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {(hasConflict || hasCrossSchoolConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || !!matatagWarn) && (
+                  <div style={{ background: (hasConflict || hasCrossSchoolConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FEF2F2' : '#FFFBEB', color: (hasConflict || hasCrossSchoolConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#991B1B' : '#92400E', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${(hasConflict || hasCrossSchoolConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error')) ? '#FCA5A5' : '#FCD34D'}`, fontSize: '11px', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {hasConflict && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> Schedule Overlap Conflict: Overlaps with another subject or task on selected days.</div>}
+                    {hasCrossSchoolConflict && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> Cross-School Conflict: Overlaps with partner station's schedule or transit lockout (≤2h gap).</div>}
                     {durationErr && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> {durationErr}</div>}
                     {duplicateSubErr && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> {duplicateSubErr}</div>}
                     {hgpWeeklyErr && <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertCircle size={14} color="#EF4444" /> {hgpWeeklyErr}</div>}
@@ -5428,141 +6685,239 @@ function WorkloadGanttScheduleView({
                   </div>
                 )}
 
-                {/* 1. Class Section & Grade Level Select (FIRST - Filtered by Teacher's Assigned Grades) */}
-                <div>
-                  <label style={{ fontSize: '10px', fontWeight: '800', color: !selectedRow.gradeLevel ? '#DC2626' : '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>
-                    Class Section &amp; Grade Level {!selectedRow.gradeLevel && <span title="Required">*</span>}
-                  </label>
-                  {(() => {
-                    let matchingSections = (classSections || []).filter(s => isSectionMatchingTeacherGrades(s, teacherAssignedGrades));
-                    const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
-                    if (currentSecId && !matchingSections.some(s => String(s.id) === currentSecId)) {
-                      const matchInAll = (classSections || []).find(s => String(s.id) === currentSecId);
-                      if (matchInAll) matchingSections.push(matchInAll);
+                {/* 1. Class Section & Subject (for Teaching) vs Administrative Task Type (for Non-Teaching / Admin Tasks) */}
+                {(() => {
+                  const isRowAdmin = isAdminTaskRow(selectedRow) || isNonTeachingPerson(currentPerson);
+                  if (isRowAdmin) {
+                    const currentVal = selectedRow.subject || ADMIN_TASK_OPTIONS[0];
+                    const adminOptions = ADMIN_TASK_OPTIONS.map(opt => ({
+                      value: opt,
+                      label: opt
+                    }));
+                    if (currentVal && !ADMIN_TASK_OPTIONS.includes(currentVal)) {
+                      adminOptions.unshift({ value: currentVal, label: currentVal });
                     }
 
-                    const sectionOptions = matchingSections.map(s => {
-                      const trackInfo = s.trackStrand ? ` - ${s.trackStrand}` : '';
-                      return {
-                        value: String(s.id),
-                        label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'}${trackInfo})`
-                      };
-                    });
                     return (
-                      <SearchableSelect
-                        disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
-                        value={selectedRow.sectionId}
-                        onChange={(e) => {
-                          recordUndoSnapshot();
-                          handleSectionChangeForRow(idx, e.target.value);
-                        }}
-                        options={sectionOptions}
-                        placeholder={matchingSections.length === 0 ? "No sections for assigned grades…" : "Select section…"}
-                      />
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <FiBriefcase size={12} color="#0284C7" /> Administrative Task Type <span title="Required" style={{ color: '#DC2626' }}>*</span>
+                        </label>
+                        <SearchableSelect
+                          value={currentVal}
+                          onChange={(e) => {
+                            recordUndoSnapshot();
+                            updateWorkloadRowWithHistory(idx, {
+                              subject: e.target.value,
+                              sectionId: '',
+                              sectionName: '',
+                              gradeLevel: '',
+                              category: ''
+                            });
+                          }}
+                          options={adminOptions}
+                          placeholder="Select Administrative Task..."
+                        />
+                        <div style={{ fontSize: '9.5px', color: '#0284C7', fontWeight: '600', marginTop: '4px' }}>
+                          Official DepEd Non-Teaching / Ancillary Duty (No class section required)
+                        </div>
+                      </div>
                     );
-                  })()}
-                  {!selectedRow.gradeLevel && (
-                    <div style={{ fontSize: '10px', color: '#DC2626', fontWeight: '700', marginTop: '4px' }}>Required — select a class section to set the grade level.</div>
-                  )}
-                  {teacherAssignedGrades && teacherAssignedGrades.length > 0 && (
-                    <div style={{ fontSize: '9.5px', color: '#64748b', marginTop: '3px' }}>
-                      Filtered by teacher's assigned grades ({teacherAssignedGrades.join(', ')})
-                    </div>
-                  )}
-                </div>
+                  }
 
-                {/* SHS Category Selector if SHS Section or SHS Row */}
-                {isShsCategory && (
-                  <div>
-                    <label style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <FiBook size={12} color="#16A34A" /> SHS Learning Category
-                    </label>
-                    <SearchableSelect
-                      disabled={selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
-                      value={selectedRow.category || 'SHS-CORE SUBJECTS'}
-                      onChange={(e) => {
-                        const newCat = e.target.value;
-                        const newSubjects = getSubjectsForGrade(selectedRow.gradeLevel || 'Grade 11', newCat);
-                        updateWorkloadRowWithHistory(idx, {
-                          category: newCat,
-                          subject: (newSubjects || []).includes(selectedRow.subject) ? selectedRow.subject : ''
-                        });
-                      }}
-                      options={[
-                        { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
-                        { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
-                        { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
-                        { value: 'SSHS-CORE', label: 'SSHS-CORE' },
-                        { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
-                        { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
-                        { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
-                      ]}
-                      placeholder="Select SHS category…"
-                    />
-                  </div>
-                )}
+                  return (
+                    <>
+                      {/* 1. Class Section & Grade Level Select (FIRST - Filtered by Teacher's Assigned Grades) */}
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: '800', color: !selectedRow.gradeLevel ? '#DC2626' : '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>
+                          Class Section &amp; Grade Level {!selectedRow.gradeLevel && <span title="Required">*</span>}
+                        </label>
+                        {(() => {
+                          const teacherId = currentPerson?.id || dbPerson?.id || null;
+                          const teacherName = `${currentPerson?.firstName || dbPerson?.firstName || ''} ${currentPerson?.lastName || dbPerson?.lastName || ''}`.trim();
+                          let matchingSections = (classSections || []).filter(s => isSectionMatchingTeacherGrades(s, teacherAssignedGrades, teacherId, teacherName));
+                          const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
+                          if (currentSecId && !matchingSections.some(s => String(s.id) === currentSecId)) {
+                            const matchInAll = (classSections || []).find(s => String(s.id) === currentSecId);
+                            if (matchInAll) matchingSections.push(matchInAll);
+                          }
 
-                {/* 2. Subject Select (SECOND - Disabled until Section is chosen, Filtered by Selected Section's Grade Level) */}
-                <div>
-                  <label style={{
-                    fontSize: '10px',
-                    fontWeight: '800',
-                    color: (!selectedRow.sectionId || !selectedRow.gradeLevel) ? '#94A3B8' : (!selectedRow.subject ? '#DC2626' : '#64748b'),
-                    textTransform: 'uppercase',
-                    marginBottom: '4px',
-                    display: 'block'
-                  }}>
-                    Subject {!selectedRow.subject && (selectedRow.sectionId && selectedRow.gradeLevel) && <span title="Required">*</span>}
-                  </label>
-                  {(() => {
-                    const isSectionSelected = Boolean(selectedRow.sectionId && selectedRow.gradeLevel);
-                    const subjectList = (() => {
-                      if (!isSectionSelected) return [];
-                      if (isAralSection) {
-                        return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
-                      }
-                      let rawList = [];
-                      if (selectedRow.gradeLevel) {
-                        rawList = getSubjectsForGrade(selectedRow.gradeLevel, effectiveCategory);
-                      } else {
-                        rawList = activeSchoolSubjects && activeSchoolSubjects.length > 0
-                          ? activeSchoolSubjects.map(s => s.name)
-                          : SUBJECT_OPTIONS;
-                      }
-                      return (rawList || []).filter(s => !isAralSubject(s));
-                    })();
+                          // If no section matched filter or if assigned grades empty, show all classSections so teacher is never blocked
+                          if (matchingSections.length === 0) {
+                            matchingSections = classSections || [];
+                          }
 
-                    const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
-                    const subjectOptions = [
-                      ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY', disabled: false }] : []),
-                      ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP', disabled: false }] : []),
-                      ...(isCustom ? [{ value: currentSub, label: currentSub, disabled: false }] : []),
-                      ...subjectList.map(sub => {
-                        const isSelfCurrent = (sub === currentSub);
-                        const assignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, selectedRow.sectionName, sub, isSHSRow(selectedRow) ? (selectedRow.term || '1st') : null, idx) : null;
-                        if (assignment && assignment.assigned) {
-                          return { value: sub, label: `${sub} [Locked: ${assignment.teacherName}]`, disabled: true };
-                        }
-                        return { value: sub, label: sub, disabled: false };
-                      })
-                    ];
+                          const sectionOptions = matchingSections.map(s => {
+                            const trackInfo = s.trackStrand ? ` - ${s.trackStrand}` : '';
+                            return {
+                              value: String(s.id),
+                              label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'}${trackInfo})`
+                            };
+                          });
 
-                    return (
-                      <SearchableSelect
-                        disabled={!isSectionSelected || selectedRow.subject === 'ADVISORY' || selectedRow.subject === 'HGP'}
-                        value={currentSub}
-                        onChange={(e) => updateWorkloadRowWithHistory(idx, { subject: e.target.value })}
-                        options={subjectOptions}
-                        placeholder={!isSectionSelected ? "Select class section above first…" : "Select subject…"}
-                      />
-                    );
-                  })()}
-                  {!selectedRow.subject && (
-                    <div style={{ fontSize: '10px', color: (!selectedRow.sectionId || !selectedRow.gradeLevel) ? '#94A3B8' : '#DC2626', fontWeight: '700', marginTop: '4px' }}>
-                      {!selectedRow.gradeLevel ? 'Please select a class section above to filter available subjects.' : 'Required — select the subject for this block.'}
-                    </div>
-                  )}
-                </div>
+                          return (
+                            <SearchableSelect
+                              disabled={isLockedSectionAndSubject}
+                              value={selectedRow.sectionId}
+                              onChange={(e) => {
+                                recordUndoSnapshot();
+                                handleSectionChangeForRow(idx, e.target.value);
+                              }}
+                              options={sectionOptions}
+                              placeholder={sectionOptions.length === 0 ? "No sections configured in Organized Classes…" : "Select section…"}
+                            />
+                          );
+                        })()}
+                        {!selectedRow.gradeLevel && (
+                          <div style={{ fontSize: '10px', color: '#DC2626', fontWeight: '700', marginTop: '4px' }}>Required — select a class section to set the grade level.</div>
+                        )}
+                        {teacherAssignedGrades && teacherAssignedGrades.length > 0 && (
+                          <div style={{ fontSize: '9.5px', color: '#64748b', marginTop: '3px' }}>
+                            Filtered by teacher's assigned grades ({teacherAssignedGrades.join(', ')})
+                          </div>
+                        )}
+                      </div>
+
+                      {/* SHS Category Selector if SHS Section or SHS Row */}
+                      {isShsCategory && (
+                        <div>
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <FiBook size={12} color="#16A34A" /> SHS Learning Category
+                          </label>
+                          <SearchableSelect
+                            disabled={isLockedSectionAndSubject}
+                            value={selectedRow.category || 'SHS-CORE SUBJECTS'}
+                            onChange={(e) => {
+                              const newCat = e.target.value;
+                              const newSubjects = getSubjectsForGrade(selectedRow.gradeLevel || 'Grade 11', newCat);
+                              updateWorkloadRowWithHistory(idx, {
+                                category: newCat,
+                                subject: (newSubjects || []).includes(selectedRow.subject) ? selectedRow.subject : ''
+                              });
+                            }}
+                            options={[
+                              { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
+                              { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
+                              { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
+                              { value: 'SSHS-CORE', label: 'SSHS-CORE' },
+                              { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
+                              { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
+                              { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
+                            ]}
+                            placeholder="Select SHS category…"
+                          />
+                        </div>
+                      )}
+
+                      {/* 2. Subject Select (SECOND - Disabled until Section is chosen, Filtered by Selected Section's Grade Level) */}
+                      <div>
+                        <label style={{
+                          fontSize: '10px',
+                          fontWeight: '800',
+                          color: (!selectedRow.sectionId || !selectedRow.gradeLevel) ? '#94A3B8' : (!effectiveSubjectVal ? '#DC2626' : '#64748b'),
+                          textTransform: 'uppercase',
+                          marginBottom: '4px',
+                          display: 'block'
+                        }}>
+                          Subject {!effectiveSubjectVal && (selectedRow.sectionId && selectedRow.gradeLevel) && <span title="Required">*</span>}
+                        </label>
+                        {(() => {
+                          const isSectionSelected = Boolean(selectedRow.sectionId && selectedRow.gradeLevel);
+                          const subjectList = (() => {
+                            if (!isSectionSelected) return [];
+                            if (isSnedSec) {
+                              return ['SNED MODIFIED SUBJECT'];
+                            }
+                            if (isAlsSec) {
+                              return [
+                                'LS 1: Communication Skills',
+                                'LS 2: Scientific Literacy and Critical Thinking',
+                                'LS 3: Mathematical and Problem Solving Skills',
+                                'LS 4: Life and Career Skills',
+                                'LS 5: Understanding the Self and Society',
+                                'LS 6: Digital Citizenship'
+                              ];
+                            }
+                            if (isAralSection) {
+                              return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
+                            }
+                            if (isRemSec) {
+                              return [linkedSec?.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : 'REMEDIATION'];
+                            }
+                            let rawList = [];
+                            if (selectedRow.gradeLevel) {
+                              rawList = getSubjectsForGrade(selectedRow.gradeLevel, effectiveCategory);
+                            } else {
+                              rawList = activeSchoolSubjects && activeSchoolSubjects.length > 0
+                                ? activeSchoolSubjects.map(s => s.name)
+                                : SUBJECT_OPTIONS;
+                            }
+                            return (rawList || []).filter(s => !isAralSubject(s) && s !== 'ADVISORY' && s !== 'HGP');
+                          })();
+
+                          const isCustom = effectiveSubjectVal && !subjectList.includes(effectiveSubjectVal) && !isSnedSec && !isAlsSec && !isAralSection && !isRemSec && effectiveSubjectVal !== 'ADVISORY' && effectiveSubjectVal !== 'HGP';
+                          const subjectOptions = [
+                            ...(isLockedSectionAndSubject && effectiveSubjectVal === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY', disabled: false }] : []),
+                            ...(isLockedSectionAndSubject && effectiveSubjectVal === 'HGP' ? [{ value: 'HGP', label: 'HGP', disabled: false }] : []),
+                            ...(isLockedSectionAndSubject && (isSnedSec || subUpper.includes('SNED')) ? [{ value: 'SNED MODIFIED SUBJECT', label: 'SNED MODIFIED SUBJECT', disabled: false }] : []),
+                            ...(isLockedSectionAndSubject && (isAralSection || (subUpper.includes('ARAL') && !subUpper.startsWith('ARALING'))) ? [{ value: effectiveSubjectVal || 'ARAL TUTORING', label: effectiveSubjectVal || 'ARAL TUTORING', disabled: false }] : []),
+                            ...(isLockedSectionAndSubject && (isRemSec || subUpper.includes('REMEDIAL') || subUpper.includes('ENRICHMENT') || subUpper === 'REMEDIATION') ? [{ value: effectiveSubjectVal || 'REMEDIATION', label: effectiveSubjectVal || 'REMEDIATION', disabled: false }] : []),
+                            ...(isCustom ? [{ value: effectiveSubjectVal, label: effectiveSubjectVal, disabled: false }] : []),
+                            ...subjectList.map(sub => {
+                              const isSelfCurrent = (sub === effectiveSubjectVal);
+                              const otherTeacherAssignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, selectedRow.sectionName, sub, isSHSRow(selectedRow) ? (selectedRow.term || '1st') : null, idx, selectedRow.gradeLevel) : null;
+
+                              if (otherTeacherAssignment && otherTeacherAssignment.assigned && otherTeacherAssignment.isOtherTeacher) {
+                                return { value: sub, label: `${sub} (${otherTeacherAssignment.teacherName})`, disabled: false };
+                              }
+
+                              return { value: sub, label: sub, disabled: false };
+                            })
+                          ];
+
+                          return (
+                            <SearchableSelect
+                              disabled={!isSectionSelected || isLockedSectionAndSubject}
+                              value={effectiveSubjectVal}
+                              onChange={(e) => updateWorkloadRowWithHistory(idx, { subject: e.target.value })}
+                              options={subjectOptions}
+                              placeholder={!isSectionSelected ? "Select class section above first…" : "Select subject…"}
+                            />
+                          );
+                        })()}
+                        {!effectiveSubjectVal && (
+                          <div style={{ fontSize: '10px', color: (!selectedRow.sectionId || !selectedRow.gradeLevel) ? '#94A3B8' : '#DC2626', fontWeight: '700', marginTop: '4px' }}>
+                            {!selectedRow.gradeLevel ? 'Please select a class section above to filter available subjects.' : 'Required — select the subject for this block.'}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Remediation / Enrichment Focus Subject Selector */}
+                      {isRemSec && (
+                        <div>
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: '#78350F', textTransform: 'uppercase', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <FiBookOpen size={12} color="#78350F" /> Remediation Focus Subject
+                          </label>
+                          <SearchableSelect
+                            value={selectedRow.remediationSubject || ''}
+                            onChange={(e) => {
+                              updateWorkloadRowWithHistory(idx, {
+                                remediationSubject: e.target.value
+                              });
+                            }}
+                            options={(getSubjectsForGrade(selectedRow.gradeLevel || 'Grade 2', selectedRow.category || 'Elementary') || [])
+                              .filter(s => !isAralSubject(s) && s !== 'ADVISORY' && s !== 'HGP')
+                              .map(s => ({ value: s, label: s }))}
+                            placeholder="Select Focus Subject (e.g. English, Math, Filipino)…"
+                          />
+                          <div style={{ fontSize: '9.5px', color: '#78350F', opacity: 0.8, marginTop: '3px' }}>
+                            Specific subject or learning area covered during remediation
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* Usual Days Toggles */}
                 <div>
@@ -5570,7 +6925,6 @@ function WorkloadGanttScheduleView({
                     <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', margin: 0 }}>Usual Days</label>
                     <button
                       type="button"
-                      disabled={selectedRow.subject === 'ADVISORY'}
                       onClick={() => {
                         updateWorkloadRowWithHistory(idx, { days: ['M', 'T', 'W', 'TH', 'F'] });
                       }}
@@ -5582,7 +6936,7 @@ function WorkloadGanttScheduleView({
                         border: '1px solid #93C5FD',
                         background: '#EFF6FF',
                         color: '#1D4ED8',
-                        cursor: selectedRow.subject === 'ADVISORY' ? 'not-allowed' : 'pointer',
+                        cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px'
@@ -5594,15 +6948,13 @@ function WorkloadGanttScheduleView({
                   </div>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(dayCode => {
-                      const rowDays = (Array.isArray(selectedRow.days) && selectedRow.days.length > 0) ? selectedRow.days : ['M','T','W','TH','F'];
+                      const rowDays = getNormalizedRowDays(selectedRow);
                       const isSel = rowDays.includes(dayCode);
                       return (
                         <button
                           key={dayCode}
                           type="button"
-                          disabled={selectedRow.subject === 'ADVISORY'}
                           onClick={() => {
-                            if (selectedRow.subject === 'ADVISORY') return;
                             const newDays = isSel ? rowDays.filter(d => d !== dayCode) : [...rowDays, dayCode];
                             updateWorkloadRowWithHistory(idx, { days: newDays });
                           }}
@@ -5614,7 +6966,7 @@ function WorkloadGanttScheduleView({
                             border: 'none',
                             background: isSel ? 'var(--navy)' : '#F1F5F9',
                             color: isSel ? 'white' : '#64748b',
-                            cursor: selectedRow.subject === 'ADVISORY' ? 'not-allowed' : 'pointer'
+                            cursor: 'pointer'
                           }}
                         >
                           {dayCode}
@@ -5628,7 +6980,6 @@ function WorkloadGanttScheduleView({
                 {(() => {
                   const fixedDurationMins = typeof getMatatagFixedDurationMins === 'function' ? getMatatagFixedDurationMins(selectedRow) : null;
                   const isFixedDuration = fixedDurationMins != null;
-                  const isEndLocked = selectedRow.subject === 'ADVISORY' || isFixedDuration;
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <div>
@@ -5638,34 +6989,25 @@ function WorkloadGanttScheduleView({
                           value={selectedRow.startTime || '07:30'}
                           onChange={(e) => {
                             const newStart = e.target.value;
-                            if (selectedRow.subject === 'ADVISORY') {
-                              updateWorkloadRowWithHistory(idx, { startTime: newStart, endTime: add60MinutesToTime(newStart) });
-                            } else if (isFixedDuration) {
-                              const [h, m] = newStart.split(':').map(Number);
-                              updateWorkloadRowWithHistory(idx, { startTime: newStart, endTime: formatMinutesToTime((h * 60 + m) + fixedDurationMins) });
-                            } else {
-                              updateWorkloadRowWithHistory(idx, { startTime: newStart });
-                            }
+                            updateWorkloadRowWithHistory(idx, { startTime: newStart });
                           }}
                           style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px' }}
                         />
                       </div>
                       <div>
                         <label style={{ fontSize: '10px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>
-                          End Time {selectedRow.subject === 'ADVISORY' && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}>(Fixed 60m)</span>}
-                          {isFixedDuration && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}>(MATATAG: Fixed {fixedDurationMins}m)</span>}
+                          End Time
+                          {isFixedDuration && <span style={{ textTransform: 'none', fontWeight: 'normal', color: '#0284c7' }}> (MATATAG Standard: {fixedDurationMins}m total)</span>}
                         </label>
                         <input
                           type="time"
-                          disabled={isEndLocked}
                           value={selectedRow.endTime || '08:30'}
                           onChange={(e) => updateWorkloadRowWithHistory(idx, { endTime: e.target.value })}
-                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px', opacity: isEndLocked ? 0.75 : 1, background: isEndLocked ? '#F8FAFC' : 'white' }}
-                          title={selectedRow.subject === 'ADVISORY' ? 'Advisory duration is fixed at 60 minutes' : isFixedDuration ? `MATATAG Policy locks this subject/grade to exactly ${fixedDurationMins} minutes/day` : undefined}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '12px', background: 'white' }}
                         />
                         {isFixedDuration && (
                           <div style={{ fontSize: '10px', color: '#0284C7', fontWeight: '600', marginTop: '4px' }}>
-                            MATATAG Policy: {selectedRow.subject} is fixed at {fixedDurationMins} mins/day under DepEd Order No. 12, s. 2024 — End Time auto-adjusts with Start Time.
+                            MATATAG Standard: {selectedRow.subject} is {fixedDurationMins} mins/day total under DO 12, s. 2024. Split sessions are supported.
                           </div>
                         )}
                       </div>
@@ -5708,14 +7050,16 @@ export default function Workload() {
     unlockTerm,
     lockTerm,
     copyTermData,
-    setHasUnsavedChanges,
     completeNode,
     setActiveView,
+    registerAutoSaveHandler,
     incomingRequests,
     outgoingRequests,
     requestHistory,
     refreshRequests
   } = useApp();
+
+
 
   // Term Unlock / Copy Modal state
   const [showUnlockTermModal, setShowUnlockTermModal] = useState(null);
@@ -5952,16 +7296,21 @@ export default function Workload() {
         } catch (e) {}
       }
 
-      // Check if this teacher has duration or overlap blocking errors
+      // Check if this teacher has duration or overlap blocking errors (term-isolated)
       const hasErrors = tRows.some((r, rIdx) => {
         if (getRowDurationError(r)) return true;
+        const rTerm = r.term || '1st';
+        const rDays = getNormalizedRowDays(r);
         return tRows.some((otherR, oIdx) => {
           if (rIdx === oIdx) return false;
+          if (r.id && otherR.id && String(r.id) === String(otherR.id)) return false;
+          if ((otherR.term || '1st') !== rTerm) return false; // Term isolation
           if (!r.startTime || !r.endTime || !otherR.startTime || !otherR.endTime) return false;
-          const daysOverlap = (r.days || []).some(d => (otherR.days || []).includes(d));
+          const otherDays = getNormalizedRowDays(otherR);
+          const daysOverlap = rDays.some(d => otherDays.includes(d));
           if (!daysOverlap) return false;
-          const ns = parseTimeToMinutes(r.startTime), ne = parseTimeToMinutes(r.endTime);
-          const rs = parseTimeToMinutes(otherR.startTime), re = parseTimeToMinutes(otherR.endTime);
+          const ns = parseMins(r.startTime), ne = parseMins(r.endTime);
+          const rs = parseMins(otherR.startTime), re = parseMins(otherR.endTime);
           if (ns < re && ne > rs) {
             if (isAdvisoryOrHgpPair(r, otherR)) return false;
             return true;
@@ -6028,11 +7377,14 @@ export default function Workload() {
   const handleClearCurrentTeacherWorkload = async () => {
     if (!currentPerson) return;
     const teacherName = `${currentPerson.firstName || ''} ${currentPerson.lastName || ''}`.trim() || 'this teacher';
-    const totalSlots = (currentPerson.workloadRows || []).length;
+    const allRows = Array.isArray(currentPerson.workloadRows) ? currentPerson.workloadRows : [];
+    const termRows = allRows.filter(r => (r.term || '1st') === activeTerm);
+    const otherTermRows = allRows.filter(r => (r.term || '1st') !== activeTerm);
+    const totalSlots = termRows.length;
 
     const confirmed = await showConfirm(
-      "Clear This Teacher's Workload?",
-      `Are you sure you want to remove all ${totalSlots} workload schedule periods for ${teacherName}? This will reset their timetable to empty.`
+      `Clear ${activeTerm} Term Workload?`,
+      `Are you sure you want to remove all ${totalSlots} workload schedule periods for ${teacherName} in ${activeTerm} Term? Other terms will remain completely intact.`
     );
     if (!confirmed) return;
 
@@ -6043,7 +7395,7 @@ export default function Workload() {
       if (typeof setEditPerson === 'function') {
         setEditPerson(prev => (prev ? {
           ...prev,
-          workloadRows: [],
+          workloadRows: otherTermRows,
           workloadVerified: false,
           needsTimeReview: false
         } : null));
@@ -6052,23 +7404,32 @@ export default function Workload() {
       // 2. Update in AppContext with ONLY the workload delta so all profiling fields are preserved
       if (typeof savePersonnelChanges === 'function') {
         await savePersonnelChanges(activePersonId, {
-          workloadRows: [],
+          workloadRows: otherTermRows,
           workloadVerified: false,
           needsTimeReview: false
         });
       }
 
-      // 3. Clear local storage workload draft only
-      localStorage.removeItem(`draft_workload_${activePersonId}`);
+      // 3. Update local storage workload draft only
+      const draftKey = `draft_workload_${activePersonId}`;
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed) {
+            localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: otherTermRows }));
+          }
+        } catch (e) {}
+      }
 
-      // 4. Clear SHS map for this teacher
+      // 4. Clear SHS map for this teacher and term
       setShsWorkloadMap(prev => ({
         ...prev,
-        [activePersonId]: { '1st': [], '2nd': [], '3rd': [] }
+        [activePersonId]: { ...(prev[activePersonId] || {}), [activeTerm]: [] }
       }));
 
       if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-      if (showToast) showToast(`Workload for ${teacherName} cleared in local draft.`);
+      if (showToast) showToast(`✓ ${activeTerm} Term workload for ${teacherName} cleared.`);
     } catch (err) {
       if (showAlert) await showAlert("Error", "Failed to clear workload: " + err.message);
     }
@@ -6077,18 +7438,29 @@ export default function Workload() {
   const handleClearAllTeachersWorkload = async () => {
     const totalTeachers = (personnel || []).filter(p => p.type === 'teaching').length || (personnel || []).length;
     const confirmed = await showConfirm(
-      "Clear All Teachers' Workload?",
-      `Are you sure you want to clear all workload schedule periods across ALL ${totalTeachers} teachers in the school? This will reset all teachers to blank in your local draft.`
+      `Clear ${activeTerm} Term Workload (All Teachers)?`,
+      `Are you sure you want to clear all ${activeTerm} Term workload schedule periods across ALL ${totalTeachers} teachers in the school? Other terms will remain intact.`
     );
     if (!confirmed) return;
 
     try {
-      // 1. Update in AppContext & remove local teacher workload drafts while strictly preserving all teacher profile fields
+      // 1. Update in AppContext & remove local teacher workload drafts while strictly preserving other terms and profile fields
       const updatedList = (personnel || []).map(p => {
-        localStorage.removeItem(`draft_workload_${p.id}`);
+        const pRows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
+        const preservedRows = pRows.filter(r => (r.term || '1st') !== activeTerm);
+        const draftKey = `draft_workload_${p.id}`;
+        const savedDraft = localStorage.getItem(draftKey);
+        if (savedDraft) {
+          try {
+            const parsed = JSON.parse(savedDraft);
+            if (parsed) {
+              localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: preservedRows }));
+            }
+          } catch (e) {}
+        }
         return {
           ...p,
-          workloadRows: [],
+          workloadRows: preservedRows,
           workloadVerified: false,
           needsTimeReview: false
         };
@@ -6096,19 +7468,20 @@ export default function Workload() {
 
       if (typeof setPersonnel === 'function') setPersonnel(updatedList);
       if (typeof setEditPerson === 'function') {
-        setEditPerson(prev => (prev ? {
-          ...prev,
-          workloadRows: [],
-          workloadVerified: false,
-          needsTimeReview: false
-        } : null));
+        setEditPerson(prev => {
+          if (!prev) return null;
+          const pRows = Array.isArray(prev.workloadRows) ? prev.workloadRows : [];
+          return {
+            ...prev,
+            workloadRows: pRows.filter(r => (r.term || '1st') !== activeTerm),
+            workloadVerified: false,
+            needsTimeReview: false
+          };
+        });
       }
 
-      // 2. Clear SHS map
-      setShsWorkloadMap({});
-
       if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
-      if (showToast) showToast("All teachers' workloads have been cleared in local draft.");
+      if (showToast) showToast(`✓ All teachers' ${activeTerm} Term workloads have been cleared.`);
     } catch (err) {
       if (showAlert) await showAlert("Error", "Failed to clear all workloads: " + err.message);
     }
@@ -6120,11 +7493,7 @@ export default function Workload() {
   const [positionFilter, setPositionFilter] = useState('all');
   const [teacherSearch, setTeacherSearch] = useState('');
   const [sidebarPage, setSidebarPage] = useState(1);
-  const [layoutType, setLayoutType] = useState('gantt'); // 'gantt' | 'card' | 'list'
   const [selectedBlockIdx, setSelectedBlockIdx] = useState(null);
-  const [timeSortOrder, setTimeSortOrder] = useState('desc'); // 'added' | 'asc' | 'desc'
-  const [newlyAddedWorkloadId, setNewlyAddedWorkloadId] = useState(null);
-  const workloadCardRefs = React.useRef({});
 
   useEffect(() => {
     setSidebarPage(1);
@@ -6257,50 +7626,28 @@ export default function Workload() {
     showToast(`Successfully merged workloads for ${mergedCount} teachers locally!`, 'success');
   };
 
-  useEffect(() => {
-    if (newlyAddedWorkloadId && workloadCardRefs.current[newlyAddedWorkloadId]) {
-      const el = workloadCardRefs.current[newlyAddedWorkloadId];
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-      }
-      const timer = setTimeout(() => {
-        setNewlyAddedWorkloadId(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [newlyAddedWorkloadId]);
 
-  useEffect(() => {
-    setNewlyAddedWorkloadId(null);
-  }, [activePersonnelId]);
 
   const parseTimeToMinutes = (timeStr) => {
-    if (!timeStr || typeof timeStr !== 'string') return 99999;
-    let str = timeStr.trim();
-    if (str.includes('-')) {
-      str = str.split('-')[0].trim();
-    }
-    const upperStr = str.toUpperCase();
-    const isPM = upperStr.includes('PM');
-    const isAM = upperStr.includes('AM');
-    const cleanStr = upperStr.replace(/[^\d:]/g, '');
-    const parts = cleanStr.split(':');
-    if (parts.length < 2) return 99999;
-
-    let hours = parseInt(parts[0], 10) || 0;
-    const minutes = parseInt(parts[1], 10) || 0;
-
-    if (isPM && hours < 12) hours += 12;
-    if (isAM && hours === 12) hours = 0;
-
-    return hours * 60 + minutes;
+    return parseMins(timeStr);
   };
 
   // add60MinutesToTime is exported at module level (top of file)
 
   const getAssignedGradeLevels = (p) => {
     if (!p) return [];
-    return Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
+    let raw = p.assignedGradeLevels || p.assigned_grade_levels || p.gradeLevelsTaught || p.grade_levels_taught;
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw);
+      } catch (e) {
+        raw = raw.split(',').map(s => s.trim());
+      }
+    }
+    if (Array.isArray(raw)) {
+      return raw.filter(Boolean);
+    }
+    return [];
   };
 
   // Filter people list based on search query, grade level, and category (teaching / teaching-related)
@@ -6343,34 +7690,28 @@ export default function Workload() {
         try {
           const parsed = JSON.parse(savedDraft);
           if (parsed) {
-            person = parsed;
+            person = {
+              ...dbPerson,
+              ...parsed,
+              assignedGradeLevels: (Array.isArray(dbPerson.assignedGradeLevels) && dbPerson.assignedGradeLevels.length > 0) ? dbPerson.assignedGradeLevels : (parsed.assignedGradeLevels || []),
+              assigned_grade_levels: (Array.isArray(dbPerson.assigned_grade_levels) && dbPerson.assigned_grade_levels.length > 0) ? dbPerson.assigned_grade_levels : (parsed.assigned_grade_levels || []),
+              gradeLevelsTaught: (Array.isArray(dbPerson.gradeLevelsTaught) && dbPerson.gradeLevelsTaught.length > 0) ? dbPerson.gradeLevelsTaught : (parsed.gradeLevelsTaught || []),
+              grade_levels_taught: (Array.isArray(dbPerson.grade_levels_taught) && dbPerson.grade_levels_taught.length > 0) ? dbPerson.grade_levels_taught : (parsed.grade_levels_taught || [])
+            };
           }
         } catch (e) {
           console.error("Failed to parse draft", e);
         }
       }
 
-      const isNonTeachingPerson = (person.type === 'non-teaching') || (
-        String(person.position || '').toUpperCase().includes('ADMINISTRATIVE') ||
-        String(person.position || '').toUpperCase().includes('ADAS') ||
-        String(person.position || '').toUpperCase().includes('BOOKKEEPER') ||
-        String(person.position || '').toUpperCase().includes('SECURITY') ||
-        String(person.position || '').toUpperCase().includes('UTILITY') ||
-        String(person.position || '').toUpperCase().includes('NURSE') ||
-        String(person.position || '').toUpperCase().includes('DRIVER') ||
-        String(person.position || '').toUpperCase().includes('AIDE') ||
-        String(person.position || '').toUpperCase().includes('ACCOUNTANT') ||
-        String(person.position || '').toUpperCase().includes('DISBURSING')
-      );
+      const isNT = isNonTeachingPerson(person);
 
-      if (isNonTeachingPerson && person.workloadRows && person.workloadRows.length > 0) {
-        person = {
-          ...person,
-          workloadRows: []
-        };
+      if (isNT) {
+        setEditPerson(person);
+        return;
       }
 
-      let updatedRows = (isNonTeachingPerson) ? [] : (person.workloadRows || []).map(r => {
+      let updatedRows = (person.workloadRows || []).map(r => {
         let normSecId = (r.sectionId !== undefined && r.sectionId !== null && r.sectionId !== '')
           ? String(r.sectionId)
           : ((r.section_id !== undefined && r.section_id !== null && r.section_id !== '') ? String(r.section_id) : '');
@@ -6399,30 +7740,209 @@ export default function Workload() {
           sectionId: normSecId,
           subject: String(normSub || '').toUpperCase().trim(),
           gradeLevel: normGrade,
-          category: normCat || 'Elementary'
+          category: normCat || (isAdminTaskRow(r) ? 'Administrative' : 'Elementary')
         };
       });
       let rowsChanged = false;
 
+      // Project any existing administrativeRows into updatedRows if not already on the timetable
+      const existingAdminSource = (Array.isArray(person.administrativeRows) && person.administrativeRows.length > 0)
+        ? person.administrativeRows
+        : ((Array.isArray(dbPerson?.administrativeRows) && dbPerson.administrativeRows.length > 0) ? dbPerson.administrativeRows : []);
+
+      if (existingAdminSource.length > 0) {
+        existingAdminSource.forEach(adm => {
+          const admTask = adm.task || adm.task_name || adm.subject || ADMIN_TASK_OPTIONS[0];
+          const hasAlready = updatedRows.some(r => isAdminTaskRow(r) && String(r.subject || r.task || '').toUpperCase() === String(admTask).toUpperCase());
+          if (!hasAlready) {
+            const newAdmId = `admin-row-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+            updatedRows.push({
+              id: newAdmId,
+              sectionId: '',
+              sectionName: '',
+              gradeLevel: '',
+              category: 'Administrative',
+              subject: admTask,
+              startTime: adm.startTime || adm.start_time || '13:00',
+              endTime: adm.endTime || adm.end_time || (adm.hours ? formatMinutesToTime(13 * 60 + Math.round(Number(adm.hours) * 60)) : '14:00'),
+              days: Array.isArray(adm.days) && adm.days.length > 0 ? adm.days : ['M', 'T', 'W', 'TH', 'F'],
+              term: adm.term || '1st'
+            });
+            rowsChanged = true;
+          }
+        });
+      }
+
       const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId);
-      const advisorySections = (classSections || []).filter(s => {
-        const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
-        const advName = String(s.advisorName || s.advisor_name || '').toLowerCase().trim();
-        const pFn = String(dbPerson?.firstName || currentPerson?.firstName || '').toLowerCase().trim();
-        const pLn = String(dbPerson?.lastName || currentPerson?.lastName || '').toLowerCase().trim();
+      const isSecOwnedByActivePerson = (s) => {
+        if (!s) return false;
+        const pIds = [
+          String(person?.id || ''),
+          String(person?._id || ''),
+          String(dbPerson?.id || ''),
+          String(dbPerson?._id || ''),
+          String(activePersonnelId || '')
+        ].filter(Boolean);
+        const sIds = [
+          String(s.advisorId || ''),
+          String(s.advisor_id || ''),
+          String(s.adviserId || ''),
+          String(s.adviser_id || ''),
+          String(s.tutorId || ''),
+          String(s.tutor_id || ''),
+          String(s.teacherId || ''),
+          String(s.teacher_id || ''),
+          String(s.advisor || ''),
+          String(s.tutor || '')
+        ].filter(id => Boolean(id) && id !== 'null' && id !== 'undefined');
+
+        // 1. Direct ID match
+        if (pIds.some(pId => sIds.includes(pId))) return true;
+
+        // If section has explicit ID assignment that belongs to another teacher in personnel, it cannot belong to active person
+        if (sIds.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
+          const isAssignedToOther = personnel.some(p => {
+            const otherId = String(p.id || p._id || '');
+            return !pIds.includes(otherId) && sIds.includes(otherId);
+          });
+          if (isAssignedToOther) return false;
+        }
+
+        // 2. Full Name match fallback
+        const pFn = String(person?.firstName || dbPerson?.firstName || '').toLowerCase().trim();
+        const pLn = String(person?.lastName || dbPerson?.lastName || '').toLowerCase().trim();
         const fullName = `${pFn} ${pLn}`.trim();
-        return (advId && advId === activePersonIdToMatch) || (advName && fullName && (advName.includes(pLn) || fullName.includes(advName)));
+        const reverseFullName = `${pLn}, ${pFn}`.trim();
+        const reverseFullNameNoComma = `${pLn} ${pFn}`.trim();
+
+        const sNames = [
+          String(s.advisorName || ''),
+          String(s.advisor_name || ''),
+          String(s.adviserName || ''),
+          String(s.adviser_name || ''),
+          String(s.tutorName || ''),
+          String(s.tutor_name || ''),
+          String(s.teacherName || ''),
+          String(s.teacher_name || '')
+        ].map(n => n.toLowerCase().trim()).filter(Boolean);
+
+        if (fullName && sNames.length > 0) {
+          return sNames.some(name =>
+            name === fullName ||
+            name === reverseFullName ||
+            name === reverseFullNameNoComma ||
+            (pFn && pLn && name.includes(pFn) && name.includes(pLn))
+          );
+        }
+
+        return false;
+      };
+
+      const isSecAdvisedByActivePerson = (s) => {
+        if (!s) return false;
+        const pIds = [
+          String(person?.id || ''),
+          String(person?._id || ''),
+          String(dbPerson?.id || ''),
+          String(dbPerson?._id || ''),
+          String(activePersonnelId || '')
+        ].filter(Boolean);
+        const sAdvIds = [
+          String(s.advisorId || ''),
+          String(s.advisor_id || ''),
+          String(s.adviserId || ''),
+          String(s.adviser_id || ''),
+          String(s.advisor || '')
+        ].filter(id => Boolean(id) && id !== 'null' && id !== 'undefined');
+
+        if (pIds.some(pId => sAdvIds.includes(pId))) return true;
+
+        if (sAdvIds.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
+          const isAssignedToOther = personnel.some(p => {
+            const otherId = String(p.id || p._id || '');
+            return !pIds.includes(otherId) && sAdvIds.includes(otherId);
+          });
+          if (isAssignedToOther) return false;
+        }
+
+        const pFn = String(person?.firstName || dbPerson?.firstName || '').toLowerCase().trim();
+        const pLn = String(person?.lastName || dbPerson?.lastName || '').toLowerCase().trim();
+        const fullName = `${pFn} ${pLn}`.trim();
+        const reverseFullName = `${pLn}, ${pFn}`.trim();
+        const reverseFullNameNoComma = `${pLn} ${pFn}`.trim();
+
+        const sAdvNames = [
+          String(s.advisorName || ''),
+          String(s.advisor_name || ''),
+          String(s.adviserName || ''),
+          String(s.adviser_name || '')
+        ].map(n => n.toLowerCase().trim()).filter(Boolean);
+
+        if (fullName && sAdvNames.length > 0) {
+          return sAdvNames.some(name =>
+            name === fullName ||
+            name === reverseFullName ||
+            name === reverseFullNameNoComma ||
+            (pFn && pLn && name.includes(pFn) && name.includes(pLn))
+          );
+        }
+
+        return false;
+      };
+
+      const advisorySections = (classSections || []).filter(s => {
+        const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+        if (isReg) return isSecAdvisedByActivePerson(s);
+        return false;
+      });
+      const snedSections = (classSections || []).filter(s => {
+        const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+        if (isReg) return false;
+        const isSned = String(s.sectionType || '').toUpperCase().includes('SNED') ||
+                       String(s.gradeLevel || '').toUpperCase().includes('SNED') ||
+                       String(s.gradeLevel || '').toUpperCase().includes('NON-GRADED') ||
+                       String(s.gradeLevel || '').toUpperCase().includes('SPED');
+        if (!isSned) return false;
+        return isSecOwnedByActivePerson(s);
+      });
+      const alsSections = (classSections || []).filter(s => {
+        const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+        if (isReg) return false;
+        const isAls = String(s.sectionType || '').toUpperCase().includes('ALS') ||
+                      String(s.gradeLevel || '').toUpperCase().includes('ALS');
+        if (!isAls) return false;
+        return isSecOwnedByActivePerson(s);
+      });
+      const aralSections = (classSections || []).filter(s => {
+        const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(s.sectionType || '').toUpperCase().trim());
+        if (isReg) return false;
+        const isAral = String(s.sectionType || '').toUpperCase().includes('ARAL') ||
+                       String(s.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                       String(s.sectionName || '').toUpperCase().includes('ARAL') ||
+                       Boolean(s.aralBasis || s.aralToolKey || s.aralTool);
+        if (!isAral) return false;
+        return isSecOwnedByActivePerson(s);
+      });
+      const remedialSections = (classSections || []).filter(s => {
+        const isRem = s.sectionType === 'REMEDIAL' || s.sectionType === 'ENRICHMENT';
+        if (!isRem) return false;
+        return isSecOwnedByActivePerson(s);
       });
       const defaultAdvSecId = advisorySections.length > 0 ? String(advisorySections[0].id) : '';
 
-      // Keep ADVISORY and HGP rows strictly for active advisory sections, clean up obsolete rows
-      const seenAdvisorySecs = new Set();
-      const seenHgpSecs = new Set();
-      let cleanedRows = [];
+      // Keep ADVISORY and HGP rows strictly 1 per active advisory section, clean up obsolete / duplicate rows (scoped per term)
+      const seenAdvisorySecs = new Map();
+      const seenHgpSecs = new Map();
+      const seenSnedSecs = new Map();
+      const seenAlsSecs = new Map();
+      const seenAralSecs = new Map();
+      const seenRemSecs = new Map();
+      let otherCleanedRows = [];
       let didClean = false;
 
       updatedRows.forEach(r => {
         let subUpper = String(r.subject || '').toUpperCase().trim();
+        const rTerm = r.term || '1st';
         if (subUpper === 'CUSTOM' || subUpper.startsWith('CUSTOM (')) {
           didClean = true;
           return;
@@ -6431,52 +7951,170 @@ export default function Workload() {
           r.subject = 'HGP';
           subUpper = 'HGP';
         }
+        const isSnedRow = isSnedSectionRow(r, classSections) || subUpper === 'SNED MODIFIED SUBJECT' || subUpper === 'SNED' || subUpper === 'SPED MODIFIED SUBJECTS';
+        const isAlsRow = isAlsSectionRow(r, classSections) || subUpper === 'ALS LEARNING STRAND' || subUpper === 'ALS';
+        const isAralRow = isAralSectionRow(r, classSections) || isAralSubject(subUpper) || subUpper === 'ARAL TUTORING' || subUpper === 'ARAL' || (subUpper.startsWith('ARAL') && !subUpper.startsWith('ARALING'));
+        const isRemRow = isRemedialSectionRow(r, classSections);
+
         if (subUpper === 'ADVISORY') {
-          // Verify this advisory section actually belongs to this teacher in advisorySections
-          const isOwnAdvisory = advisorySections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase()));
-          if (!isOwnAdvisory) {
+          if (isSnedRow || isAlsRow || isAralRow || isRemRow) {
             didClean = true;
             return;
           }
-          let secKey = String(r.sectionId || r.section_id || defaultAdvSecId || 'GLOBAL_ADV');
+          // Verify this advisory section actually belongs to this teacher in advisorySections
+          const matchingAdvSec = advisorySections.find(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || (advisorySections.length === 1 ? advisorySections[0] : null);
+          if (!matchingAdvSec) {
+            didClean = true;
+            return;
+          }
+          const secIdToUse = String(matchingAdvSec.id);
+          const secKey = `${rTerm}__${secIdToUse}`;
           if (!seenAdvisorySecs.has(secKey)) {
-            seenAdvisorySecs.add(secKey);
-            cleanedRows.push({ ...r, subject: 'ADVISORY', sectionId: r.sectionId || defaultAdvSecId || '' });
+            seenAdvisorySecs.set(secKey, {
+              ...r,
+              subject: 'ADVISORY',
+              sectionId: secIdToUse,
+              sectionName: matchingAdvSec.sectionName,
+              gradeLevel: matchingAdvSec.gradeLevel,
+              term: rTerm
+            });
           } else {
+            // Deduplicate multiple advisory rows for this section: merge days into single row
+            const existingAdv = seenAdvisorySecs.get(secKey);
+            const rDays = Array.isArray(r.days) && r.days.length > 0 ? r.days : ['M'];
+            const mergedDays = Array.from(new Set([...(existingAdv.days || []), ...rDays]));
+            existingAdv.days = mergedDays;
             didClean = true;
           }
         } else if (subUpper === 'HGP') {
-          // Verify this HGP section actually belongs to this teacher in advisorySections
-          const isOwnAdvisory = advisorySections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase()));
-          if (!isOwnAdvisory) {
+          // Verify this HGP section actually belongs to this teacher in advisorySections (never SNED, ALS, ARAL, or Remedial)
+          if (isSnedRow || isAlsRow || isAralRow || isRemRow) {
+            didClean = true;
+            return; // No HGP for SNED, ALS, ARAL, or Remedial
+          }
+          const matchingAdvSec = advisorySections.find(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || (advisorySections.length === 1 ? advisorySections[0] : null);
+          if (!matchingAdvSec) {
             didClean = true;
             return;
           }
-          let secKey = String(r.sectionId || r.section_id || defaultAdvSecId || 'GLOBAL_HGP');
+          const secIdToUse = String(matchingAdvSec.id);
+          const secKey = `${rTerm}__PRIMARY_HGP`;
           if (!seenHgpSecs.has(secKey)) {
-            seenHgpSecs.add(secKey);
-            cleanedRows.push({ ...r, subject: 'HGP', sectionId: r.sectionId || defaultAdvSecId || '' });
+            seenHgpSecs.set(secKey, {
+              ...r,
+              subject: 'HGP',
+              sectionId: secIdToUse,
+              sectionName: matchingAdvSec.sectionName,
+              gradeLevel: matchingAdvSec.gradeLevel,
+              term: rTerm
+            });
+          } else {
+            didClean = true;
+          }
+        } else if (isSnedRow) {
+          const isOwn = snedSections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || snedSections.length > 0;
+          if (!isOwn) {
+            didClean = true;
+            return;
+          }
+          const targetSec = snedSections.find(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || snedSections[0];
+          const secKey = `${rTerm}__${String(targetSec?.id || r.sectionId || r.section_id || r.sectionName || 'GLOBAL_SNED')}`;
+          if (!seenSnedSecs.has(secKey)) {
+            seenSnedSecs.set(secKey, {
+              ...r,
+              sectionId: targetSec ? String(targetSec.id) : (r.sectionId || ''),
+              sectionName: targetSec?.sectionName || r.sectionName || 'SNED',
+              gradeLevel: targetSec?.gradeLevel || r.gradeLevel || 'SNED (NON-GRADED)',
+              subject: 'SNED MODIFIED SUBJECT',
+              subjectName: 'SNED MODIFIED SUBJECT',
+              term: rTerm
+            });
+          } else {
+            didClean = true;
+          }
+        } else if (isAlsRow) {
+          const isOwn = alsSections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || alsSections.length > 0;
+          if (!isOwn) {
+            didClean = true;
+            return;
+          }
+          const targetSec = alsSections.find(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || alsSections[0];
+          const secKey = `${rTerm}__${String(targetSec?.id || r.sectionId || r.section_id || r.sectionName || 'GLOBAL_ALS')}`;
+          if (!seenAlsSecs.has(secKey)) {
+            seenAlsSecs.set(secKey, {
+              ...r,
+              sectionId: targetSec ? String(targetSec.id) : (r.sectionId || ''),
+              sectionName: targetSec?.sectionName || r.sectionName || 'ALS',
+              gradeLevel: targetSec?.gradeLevel || r.gradeLevel || 'ALS',
+              subject: 'ALS LEARNING STRAND',
+              subjectName: 'ALS LEARNING STRAND',
+              term: rTerm
+            });
+          } else {
+            didClean = true;
+          }
+        } else if (isAralRow) {
+          const isOwn = aralSections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || aralSections.length > 0;
+          if (!isOwn) {
+            didClean = true;
+            return;
+          }
+          const targetSec = aralSections.find(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) || aralSections[0];
+          const secKey = `${rTerm}__${String(targetSec?.id || r.sectionId || r.section_id || r.sectionName || 'GLOBAL_ARAL')}`;
+          if (!seenAralSecs.has(secKey)) {
+            seenAralSecs.set(secKey, {
+              ...r,
+              sectionId: targetSec ? String(targetSec.id) : (r.sectionId || ''),
+              sectionName: targetSec?.sectionName || r.sectionName || 'ARAL',
+              gradeLevel: targetSec?.gradeLevel || r.gradeLevel || 'Grade 3',
+              subject: 'ARAL TUTORING',
+              subjectName: 'ARAL TUTORING',
+              term: rTerm
+            });
+          } else {
+            didClean = true;
+          }
+        } else if (isRemRow) {
+          const targetSec = remedialSections.find(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())) ||
+            (classSections || []).find(sec => (sec.sectionType === 'REMEDIAL' || sec.sectionType === 'ENRICHMENT') && (String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase())));
+
+          const remSlotKey = `${rTerm}__${String(targetSec?.id || r.sectionId || r.section_id || r.sectionName || 'GLOBAL_REM')}__${r.startTime || ''}__${r.endTime || ''}__${getNormalizedRowDays(r).sort().join(',')}`;
+          if (!seenRemSecs.has(remSlotKey)) {
+            const expectedSub = targetSec?.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : (r.subject || 'REMEDIATION');
+            seenRemSecs.set(remSlotKey, {
+              ...r,
+              sectionId: targetSec ? String(targetSec.id) : (r.sectionId || ''),
+              sectionName: targetSec?.sectionName || r.sectionName || 'Remedial',
+              gradeLevel: targetSec?.gradeLevel || r.gradeLevel || 'Grade 2',
+              subject: expectedSub,
+              subjectName: expectedSub,
+              term: rTerm
+            });
           } else {
             didClean = true;
           }
         } else {
-          // Check if subject is enabled and valid for the grade level / category
-          const availableForGrade = getSubjectsForGrade(r.gradeLevel, r.category);
-          const isAllowed = availableForGrade.some(s => String(s).toUpperCase().trim() === subUpper);
-          if (isAllowed) {
-            cleanedRows.push(r);
-          } else {
-            didClean = true;
-          }
+          // Keep all assigned workload rows intact (including admin duties, immersion, and standard/custom subjects)
+          otherCleanedRows.push(r);
         }
       });
+
+      const cleanedRows = [
+        ...Array.from(seenAdvisorySecs.values()),
+        ...Array.from(seenHgpSecs.values()),
+        ...Array.from(seenSnedSecs.values()),
+        ...Array.from(seenAlsSecs.values()),
+        ...Array.from(seenAralSecs.values()),
+        ...Array.from(seenRemSecs.values()),
+        ...otherCleanedRows
+      ];
 
       if (didClean) {
         updatedRows = cleanedRows;
         rowsChanged = true;
       }
 
-      // effectiveAdvisorySections is strictly derived from classSections where this teacher is assigned Class Adviser
+      // effectiveAdvisorySections is strictly derived from regular classSections where this teacher is assigned Class Adviser
       const effectiveAdvisorySections = advisorySections;
 
       if (effectiveAdvisorySections.length === 0) {
@@ -6484,100 +8122,173 @@ export default function Workload() {
         updatedRows = updatedRows.filter(r => r.subject !== 'ADVISORY' && r.subject !== 'HGP' && r.subject !== 'HOMEROOM GUIDANCE');
         if (updatedRows.length !== initialLen) rowsChanged = true;
       } else {
-        effectiveAdvisorySections.forEach(sec => {
-          // 1. Check if ADVISORY exists for this section
-          let advisoryIdx = updatedRows.findIndex(r => r.subject === 'ADVISORY' && (String(r.sectionId) === String(sec.id) || !r.sectionId || String(r.sectionName || '').toUpperCase() === String(sec.sectionName || '').toUpperCase()));
-          if (advisoryIdx === -1) {
-            const newAdv = {
-              id: `local-work-adv-${sec.id}-${Date.now()}`,
-              sectionId: String(sec.id),
-              sectionName: sec.sectionName,
-              gradeLevel: sec.gradeLevel,
-              subject: 'ADVISORY',
-              startTime: '07:30',
-              endTime: '08:30',
-              days: ['M', 'T', 'W', 'TH', 'F']
+        const primarySec = effectiveAdvisorySections[0];
+        const secIdStr = String(primarySec.id);
+
+        let advisoryIdx = updatedRows.findIndex(r => (r.term || '1st') === '1st' && r.subject === 'ADVISORY');
+        if (advisoryIdx === -1) {
+          const newAdv = {
+            id: `local-work-adv-${primarySec.id}-1st-${Date.now()}`,
+            sectionId: secIdStr,
+            sectionName: primarySec.sectionName,
+            gradeLevel: primarySec.gradeLevel,
+            subject: 'ADVISORY',
+            startTime: '07:30',
+            endTime: '08:30',
+            days: ['M', 'T', 'W', 'TH', 'F'],
+            term: '1st'
+          };
+          updatedRows.push(newAdv);
+          advisoryIdx = updatedRows.length - 1;
+          rowsChanged = true;
+        } else {
+          const existing = updatedRows[advisoryIdx];
+          if (String(existing.sectionId) !== secIdStr || existing.gradeLevel !== primarySec.gradeLevel || existing.sectionName !== primarySec.sectionName) {
+            updatedRows[advisoryIdx] = {
+              ...existing,
+              sectionId: secIdStr,
+              sectionName: primarySec.sectionName,
+              gradeLevel: primarySec.gradeLevel
             };
-            updatedRows.push(newAdv);
-            advisoryIdx = updatedRows.length - 1;
             rowsChanged = true;
-          } else {
-            const existing = updatedRows[advisoryIdx];
-            if (String(existing.sectionId) !== String(sec.id) || existing.gradeLevel !== sec.gradeLevel || existing.sectionName !== sec.sectionName) {
-              updatedRows[advisoryIdx] = {
-                ...existing,
-                sectionId: String(sec.id),
-                sectionName: sec.sectionName,
-                gradeLevel: sec.gradeLevel
-              };
-              rowsChanged = true;
-            }
           }
+        }
 
-          // 2. Check if HGP exists for this section
-          let hgpIdx = updatedRows.findIndex(r => r.subject === 'HGP' && (String(r.sectionId) === String(sec.id) || !r.sectionId || String(r.sectionName || '').toUpperCase() === String(sec.sectionName || '').toUpperCase()));
-          const advRow = updatedRows[advisoryIdx];
-          const startTime = advRow?.startTime || '07:30';
-          const endTime = advRow?.endTime || '08:30';
+        let hgpIdx = updatedRows.findIndex(r => (r.term || '1st') === '1st' && r.subject === 'HGP');
+        const advRow = updatedRows[advisoryIdx];
+        const defaultStartTime = advRow?.startTime || '07:30';
+        const defaultEndTime = advRow?.endTime || '08:30';
 
-          if (hgpIdx === -1) {
-            updatedRows.push({
-              id: `local-work-hgp-${sec.id}-${Date.now() + 1}`,
+        if (hgpIdx === -1) {
+          updatedRows.push({
+            id: `local-work-hgp-${primarySec.id}-1st-${Date.now() + 1}`,
+            sectionId: secIdStr,
+            sectionName: primarySec.sectionName,
+            gradeLevel: primarySec.gradeLevel,
+            subject: 'HGP',
+            startTime: defaultStartTime,
+            endTime: defaultEndTime,
+            days: ['F'],
+            term: '1st'
+          });
+          rowsChanged = true;
+        } else {
+          const existingHgp = updatedRows[hgpIdx];
+          if (String(existingHgp.sectionId) !== secIdStr || existingHgp.gradeLevel !== primarySec.gradeLevel || existingHgp.sectionName !== primarySec.sectionName) {
+            updatedRows[hgpIdx] = {
+              ...existingHgp,
+              sectionId: secIdStr,
+              sectionName: primarySec.sectionName,
+              gradeLevel: primarySec.gradeLevel
+            };
+            rowsChanged = true;
+          }
+        }
+      }
+
+      // Synchronize existing SNED sections if present on timetable
+      snedSections.forEach(sec => {
+        let snedIdx = updatedRows.findIndex(r => (r.term || '1st') === '1st' && (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subject === 'SPED MODIFIED SUBJECTS') && (String(r.sectionId) === String(sec.id) || !r.sectionId || String(r.sectionName || '').toUpperCase() === String(sec.sectionName || '').toUpperCase()));
+        if (snedIdx !== -1) {
+          const existing = updatedRows[snedIdx];
+          if (existing.subject !== 'SNED MODIFIED SUBJECT' || String(existing.sectionId) !== String(sec.id) || existing.gradeLevel !== sec.gradeLevel || existing.sectionName !== sec.sectionName) {
+            updatedRows[snedIdx] = {
+              ...existing,
               sectionId: String(sec.id),
               sectionName: sec.sectionName,
-              gradeLevel: sec.gradeLevel,
-              subject: 'HGP',
-              startTime,
-              endTime,
-              days: ['F']
-            });
+              gradeLevel: sec.gradeLevel || 'SNED (NON-GRADED)',
+              subject: 'SNED MODIFIED SUBJECT',
+              subjectName: 'SNED MODIFIED SUBJECT'
+            };
             rowsChanged = true;
-          } else {
-            const existingHgp = updatedRows[hgpIdx];
-            if (existingHgp.subject !== 'HGP' || String(existingHgp.sectionId) !== String(sec.id) || existingHgp.gradeLevel !== sec.gradeLevel || existingHgp.sectionName !== sec.sectionName) {
-              updatedRows[hgpIdx] = {
-                ...existingHgp,
-                sectionId: String(sec.id),
+          }
+        }
+      });
+
+      // Synchronize existing ALS sections if present on timetable
+      alsSections.forEach(sec => {
+        let alsIdx = updatedRows.findIndex(r => (r.term || '1st') === '1st' && (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS') && (String(r.sectionId) === String(sec.id) || !r.sectionId || String(r.sectionName || '').toUpperCase() === String(sec.sectionName || '').toUpperCase()));
+        if (alsIdx !== -1) {
+          const existing = updatedRows[alsIdx];
+          if (existing.subject !== 'ALS LEARNING STRAND' || String(existing.sectionId) !== String(sec.id) || existing.gradeLevel !== sec.gradeLevel || existing.sectionName !== sec.sectionName) {
+            updatedRows[alsIdx] = {
+              ...existing,
+              sectionId: String(sec.id),
+              sectionName: sec.sectionName,
+              gradeLevel: sec.gradeLevel || 'ALS',
+              subject: 'ALS LEARNING STRAND',
+              subjectName: 'ALS LEARNING STRAND'
+            };
+            rowsChanged = true;
+          }
+        }
+      });
+
+      // Synchronize existing ARAL sections if present on timetable
+      aralSections.forEach(sec => {
+        let aralIdx = updatedRows.findIndex(r => (r.term || '1st') === '1st' && (r.subject === 'ARAL TUTORING' || r.subject === 'ARAL' || (String(r.subject || '').startsWith('ARAL') && !String(r.subject || '').startsWith('ARALING'))) && (String(r.sectionId) === String(sec.id) || !r.sectionId || String(r.sectionName || '').toUpperCase() === String(sec.sectionName || '').toUpperCase()));
+        if (aralIdx !== -1) {
+          const existing = updatedRows[aralIdx];
+          if (String(existing.sectionId) !== String(sec.id) || existing.gradeLevel !== sec.gradeLevel || existing.sectionName !== sec.sectionName) {
+            updatedRows[aralIdx] = {
+              ...existing,
+              sectionId: String(sec.id),
+              sectionName: sec.sectionName,
+              gradeLevel: sec.gradeLevel || existing.gradeLevel
+            };
+            rowsChanged = true;
+          }
+        }
+      });
+
+      // Synchronize existing Remedial / Enrichment sections if present on timetable
+      remedialSections.forEach(sec => {
+        updatedRows.forEach((r, idx) => {
+          if ((r.term || '1st') === '1st' && String(r.sectionId) === String(sec.id)) {
+            if (r.gradeLevel !== sec.gradeLevel || r.sectionName !== sec.sectionName) {
+              updatedRows[idx] = {
+                ...r,
                 sectionName: sec.sectionName,
-                gradeLevel: sec.gradeLevel,
-                startTime: existingHgp.startTime || startTime,
-                endTime: existingHgp.endTime || endTime
+                gradeLevel: sec.gradeLevel || r.gradeLevel
               };
               rowsChanged = true;
             }
           }
         });
-      }
+      });
 
-      // Post-sanitization: Enforce maximum ONE ADVISORY row and ONE HGP row per section, and remove any orphaned advisory/HGP
+      // Post-sanitization: Enforce maximum ONE ADVISORY row and ONE HGP row per section per term, and remove any orphaned advisory/HGP
       const finalSanitizedRows = [];
       const seenAdvFinal = new Set();
       const seenHgpFinal = new Set();
 
       updatedRows.forEach(r => {
         const subUpper = String(r.subject || '').toUpperCase().trim();
+        const rTerm = r.term || '1st';
         if (subUpper === 'ADVISORY') {
           const isOwn = effectiveAdvisorySections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase()));
           if (!isOwn) {
             rowsChanged = true;
             return;
           }
-          if (seenAdvFinal.has(r.sectionId || 'ADVISORY_SINGLETON')) {
+          const finalKey = `${rTerm}__${r.sectionId || 'ADVISORY_SINGLETON'}`;
+          if (seenAdvFinal.has(finalKey)) {
             rowsChanged = true;
             return;
           }
-          seenAdvFinal.add(r.sectionId || 'ADVISORY_SINGLETON');
+          seenAdvFinal.add(finalKey);
         } else if (subUpper === 'HGP') {
           const isOwn = effectiveAdvisorySections.some(sec => String(sec.id) === String(r.sectionId) || (r.sectionName && String(sec.sectionName).toUpperCase() === String(r.sectionName).toUpperCase()));
           if (!isOwn) {
             rowsChanged = true;
             return;
           }
-          if (seenHgpFinal.has(r.sectionId || 'HGP_SINGLETON')) {
+          const finalKey = `${rTerm}__${r.sectionId || 'HGP_SINGLETON'}`;
+          if (seenHgpFinal.has(finalKey)) {
             rowsChanged = true;
             return;
           }
-          seenHgpFinal.add(r.sectionId || 'HGP_SINGLETON');
+          seenHgpFinal.add(finalKey);
         }
         finalSanitizedRows.push(r);
       });
@@ -6611,13 +8322,112 @@ export default function Workload() {
 
   const currentPerson = editPerson || dbPerson;
 
+  const currentPersonRef = useRef(currentPerson);
   useEffect(() => {
-    if (currentPerson && currentPerson.workloadVerified === false && !verifiedModalDismissedMap.current[currentPerson.id]) {
-      setShowAttentionModal(true);
-    } else {
-      setShowAttentionModal(false);
+    currentPersonRef.current = currentPerson;
+  }, [currentPerson]);
+
+  // Register auto-save handler on navigation (e.g. clicking Node Map)
+  useEffect(() => {
+    if (!registerAutoSaveHandler) return;
+    return registerAutoSaveHandler('workload', async () => {
+      const p = currentPersonRef.current;
+      if (!p || !p.id) return false;
+      try {
+        const draftKey = `draft_personnel_${p.id}`;
+        localStorage.setItem(draftKey, JSON.stringify(p));
+        localStorage.removeItem(`draft_workload_${p.id}`);
+        return true;
+      } catch (e) {
+        console.warn('[Workload Auto-Save Notice]:', e);
+      }
+      return false;
+    });
+  }, [registerAutoSaveHandler]);
+
+  const [validatedTeacherMap, setValidatedTeacherMap] = useState(() => {
+    try {
+      const activeId = schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || 'default';
+      const saved = localStorage.getItem(`insighted_validated_workloads_${activeId}`);
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
     }
-  }, [currentPerson?.id, currentPerson?.workloadVerified]);
+  });
+
+  const markTeacherValidated = useCallback((personId, isValidated = true) => {
+    if (!personId) return;
+    setValidatedTeacherMap(prev => {
+      const next = { ...prev, [personId]: isValidated };
+      try {
+        const activeId = schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || 'default';
+        localStorage.setItem(`insighted_validated_workloads_${activeId}`, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  }, [schoolInfo?.schoolId]);
+
+  const handleFieldChangeForPerson = (personId, key, value) => {
+    if (!personId) return;
+    const baseP = personnel.find(p => p.id === personId);
+    if (!baseP) return;
+
+    markTeacherValidated(personId, false);
+
+    const draftKey = `draft_workload_${personId}`;
+    let targetPerson = baseP;
+    if (editPerson && editPerson.id === personId) {
+      targetPerson = editPerson;
+    } else {
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed) targetPerson = parsed;
+        } catch (e) {}
+      }
+    }
+
+    const updated = { ...targetPerson, [key]: value, workloadValidated: false };
+    if (currentPerson && currentPerson.id === personId) {
+      setEditPerson(updated);
+    }
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const handleFieldChange = (key, value) => {
+    if (!currentPerson) return;
+    handleFieldChangeForPerson(currentPerson.id, key, value);
+  };
+
+  const handleCopyFirstTermToSecondTerm = useCallback(async (targetScope = 'CURRENT') => {
+    if (targetScope === 'ALL') {
+      if (window.confirm("Are you sure you want to copy the 1st Term workload setup to 2nd Term for ALL teachers in the school? Any existing 2nd Term schedules will be replaced with a fresh copy.")) {
+        await copyTermData('1st', '2nd');
+      }
+    } else {
+      if (!currentPerson) return;
+      const rows = Array.isArray(currentPerson.workloadRows) ? [...currentPerson.workloadRows] : [];
+      const firstTermRows = rows.filter(r => (r.term || '1st') === '1st');
+      if (firstTermRows.length === 0) {
+        if (showToast) showToast('No 1st Term schedule found to copy for this teacher.', 'warning');
+        return;
+      }
+      const otherTermRows = rows.filter(r => (r.term || '1st') !== '2nd');
+      const clonedRows = firstTermRows.map((r, idx) => ({
+        ...r,
+        id: `r-term-2nd-${currentPerson.id}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        term: '2nd'
+      }));
+      const updatedRows = [...otherTermRows, ...clonedRows];
+      handleFieldChange('workloadRows', updatedRows);
+      if (showToast) showToast(`✓ Copied 1st Term workload (${firstTermRows.length} classes) to 2nd Term for ${currentPerson.firstName || 'this teacher'}.`, 'success');
+    }
+  }, [copyTermData, currentPerson, handleFieldChange, showToast]);
+
+  // Attention modal auto-popup disabled
 
   const allTeachingRelatedOptions = useMemo(() => {
     const list = new Set(TEACHING_RELATED_TASK_OPTIONS);
@@ -6629,6 +8439,8 @@ export default function Workload() {
     });
     return Array.from(list);
   }, []);
+
+  const personDesigSignature = `${currentPerson?.id || ''}_${currentPerson?.designation || ''}_${JSON.stringify(currentPerson?.designations || [])}`;
 
   useEffect(() => {
     if (!currentPerson) return;
@@ -6690,7 +8502,7 @@ export default function Workload() {
     if (hasDiff) {
       handleFieldChange('teachingRelatedRows', updatedTR);
     }
-  }, [currentPerson?.id, currentPerson?.designation, currentPerson?.designations]);
+  }, [personDesigSignature]);
 
   // Clustered Personnel: Comprehensive isClustered detector
   const isClustered = useMemo(() => {
@@ -6721,7 +8533,7 @@ export default function Workload() {
 
   // Broadcast local slots for Clustered Teachers on demand
   const broadcastClusteredSlots = useCallback((slotsToBroadcast) => {
-    if (!currentPerson || !schoolInfo?.schoolId) return;
+    if (!isClustered || !currentPerson || !schoolInfo?.schoolId) return;
 
     const prn = currentPerson.prn || currentPerson.id || `${currentPerson.firstName} ${currentPerson.lastName}`;
     const schId = String(schoolInfo.schoolId).replace('SCH-', '').trim();
@@ -6742,6 +8554,7 @@ export default function Workload() {
       }
     }).catch(err => console.error('[Clustered Sync Broadcast Error]:', err));
   }, [
+    isClustered,
     currentPerson?.prn, 
     currentPerson?.id, 
     currentPerson?.firstName, 
@@ -6753,7 +8566,7 @@ export default function Workload() {
 
   // 1. Reactive Auto-Broadcast: whenever currentPerson.workloadRows changes, broadcast live to partner station
   useEffect(() => {
-    if (!currentPerson || !schoolInfo?.schoolId) return;
+    if (!isClustered || !currentPerson || !schoolInfo?.schoolId) return;
     const prn = currentPerson.prn || currentPerson.id || `${currentPerson.firstName} ${currentPerson.lastName}`;
     const schId = String(schoolInfo.schoolId).replace('SCH-', '').trim();
     const mySlots = currentPerson.workloadRows || [];
@@ -6778,6 +8591,7 @@ export default function Workload() {
 
     return () => clearTimeout(debounceTimer);
   }, [
+    isClustered,
     currentPerson?.id,
     currentPerson?.prn,
     currentPerson?.firstName,
@@ -6787,9 +8601,9 @@ export default function Workload() {
     schoolInfo?.schoolName
   ]);
 
-  // 2. Continuous Polling: Poll partner school slots every 1200ms for instant real-time co-editing (Frame-rate smooth)
+  // 2. Continuous Polling: Poll partner school slots strictly for clustered/reassigned personnel
   useEffect(() => {
-    if (!currentPerson || !schoolInfo?.schoolId) {
+    if (!isClustered || !currentPerson || !schoolInfo?.schoolId) {
       setSharedWorkloadRows([]);
       return;
     }
@@ -6815,76 +8629,40 @@ export default function Workload() {
 
     fetchPartnerSlots();
 
-    const pollTimer = setInterval(fetchPartnerSlots, 1200);
+    const pollTimer = setInterval(fetchPartnerSlots, 10000);
     return () => clearInterval(pollTimer);
   }, [
+    isClustered,
     activePersonnelId, 
     currentPerson?.id, 
     currentPerson?.prn, 
+    currentPerson?.deploymentStatus,
+    currentPerson?.deployment_status,
+    currentPerson?.clusteredSchools,
     schoolInfo?.schoolId
   ]);
 
 
 
 
-  const handleFieldChangeForPerson = (personId, key, value) => {
-    if (!personId) return;
-    const baseP = personnel.find(p => p.id === personId);
-    if (!baseP) return;
-
-    const draftKey = `draft_workload_${personId}`;
-    const savedDraft = localStorage.getItem(draftKey);
-    let targetPerson = baseP;
-    if (savedDraft) {
-      try {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed) targetPerson = parsed;
-      } catch (e) {}
-    }
-
-    const updated = { ...targetPerson, [key]: value };
-    if (currentPerson && currentPerson.id === personId) {
-      setEditPerson(updated);
-    }
-    localStorage.setItem(draftKey, JSON.stringify(updated));
-  };
-
-  const handleFieldChange = (key, value) => {
-    if (!currentPerson) return;
-    handleFieldChangeForPerson(currentPerson.id, key, value);
-  };
-
   const getSubjectsForGrade = (grade, category = 'Elementary') => {
     const normGrade = grade ? String(grade).replace(/\s*[\u2013\u2014-]\s*/g, ' - ').trim() : '';
 
-    // 1. SNED Rule: If section is SNED, return strictly SPED MODIFIED SUBJECTS ONLY
-    if (normGrade.toUpperCase() === 'SNED' || normGrade.toUpperCase().includes('SNED')) {
-      return ['SPED MODIFIED SUBJECTS'];
+    // 1. SNED Rule: If section is SNED, return strictly SNED MODIFIED SUBJECT
+    if (normGrade.toUpperCase() === 'SNED' || normGrade.toUpperCase().includes('SNED') || normGrade.toUpperCase().includes('NON-GRADED') || normGrade.toUpperCase().includes('SPED')) {
+      return ['SNED MODIFIED SUBJECT'];
     }
 
-    // 2. ALS Rule: If section is ALS, return regular Grade 7-10 subjects (or regular elementary)
-    if (normGrade.toUpperCase() === 'ALS' || normGrade.toUpperCase().includes('ALS')) {
-      const catUpper = String(category || '').toUpperCase();
-      const isJHS = catUpper.includes('JHS') || catUpper.includes('JUNIOR');
-      const alsBase = isJHS ? (GRADE_LEVEL_SUBJECTS['Grade 7'] || JHS_SUBJECTS) : (GRADE_LEVEL_SUBJECTS['Grade 6'] || ELEMENTARY_MONO_GRADE_SUBJECTS);
-      const disabledMap = (() => {
-        try {
-          return schoolInfo?.subjectsConfig?.disabledMap || (localStorage.getItem('school_disabled_subjects') ? JSON.parse(localStorage.getItem('school_disabled_subjects')) : {});
-        } catch (e) {
-          return {};
-        }
-      })();
-      const subjects = (alsBase || []).filter(subName => {
-        const u = String(subName || '').toUpperCase().trim();
-        if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE')) return false;
-        if (isAralSubject(u)) return false;
-        if (u !== 'ARALING PANLIPUNAN' && disabledMap[subName] === true) return false;
-        return true;
-      });
-      if (!subjects.includes('ALS LEARNING STRAND')) {
-        subjects.unshift('ALS LEARNING STRAND');
-      }
-      return subjects;
+    // 2. ALS Rule: If section is ALS, return strictly ALS Learning Strands (LS 1 to LS 6)
+    if (normGrade.toUpperCase() === 'ALS' || normGrade.toUpperCase().includes('ALS') || String(category || '').toUpperCase().includes('ALS')) {
+      return [
+        'LS 1: Communication Skills',
+        'LS 2: Scientific Literacy and Critical Thinking',
+        'LS 3: Mathematical and Problem Solving Skills',
+        'LS 4: Life and Career Skills',
+        'LS 5: Understanding the Self and Society',
+        'LS 6: Digital Citizenship'
+      ];
     }
 
     // 3. ARAL Rule: If section or grade is ARAL, return strictly ARAL subjects ONLY
@@ -6973,6 +8751,7 @@ export default function Workload() {
       const u = String(subName || '').toUpperCase().trim();
       if (u === 'ADVISORY' || u === 'HGP' || u.includes('HOMEROOM GUIDANCE')) return false; 
       if (isAralSubject(u)) return false; // ARAL only in ARAL sections
+      if (!isSpecialProgramSubjectAllowed(subName, normGrade || category, schoolInfo)) return false;
       if (u !== 'ARALING PANLIPUNAN' && disabledMap[subName] === true) return false;
       return true;
     });
@@ -6989,6 +8768,48 @@ export default function Workload() {
     if (isGrade4To10 && !filtered.some(s => String(s).toUpperCase() === 'ARALING PANLIPUNAN')) {
       filtered.push('ARALING PANLIPUNAN');
     }
+
+    // Read and include custom subjects added in Organized Classes / School Subjects
+    const customSubjects = (() => {
+      try {
+        if (Array.isArray(schoolInfo?.subjectsConfig?.customSubjects) && schoolInfo.subjectsConfig.customSubjects.length > 0) {
+          return schoolInfo.subjectsConfig.customSubjects;
+        }
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('school_custom_subjects') : null;
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    })();
+
+    (customSubjects || []).forEach(cs => {
+      if (!cs || !cs.name) return;
+      const csName = String(cs.name).trim().toUpperCase();
+      if (!csName || csName === 'ADVISORY' || csName === 'HGP' || csName.includes('HOMEROOM GUIDANCE') || csName.includes('MOTHER TONGUE')) return;
+      if (disabledMap[cs.name] === true || disabledMap[csName] === true) return;
+
+      const csBand = String(cs.band || '').toUpperCase().trim();
+      const csGrade = String(cs.gradeLevel || '').toUpperCase().trim();
+      const uGrade = String(normGrade || grade || '').toUpperCase().trim();
+      const uCat = String(category || '').toUpperCase().trim();
+
+      const isJHS = uGrade.includes('7') || uGrade.includes('8') || uGrade.includes('9') || uGrade.includes('10') || uGrade.includes('JHS') || uCat.includes('JHS') || uCat.includes('JUNIOR');
+      const isSHS = uGrade.includes('11') || uGrade.includes('12') || uGrade.includes('SHS') || uCat.includes('SHS') || uCat.includes('SENIOR');
+      const isElem = !isJHS && !isSHS;
+
+      let matches = false;
+      if (csGrade === 'ALL' || !csGrade || csGrade === uGrade) {
+        if (isJHS && (csBand.includes('JHS') || csBand.includes('JUNIOR') || !csBand)) matches = true;
+        else if (isSHS && (csBand.includes('SHS') || csBand.includes('SENIOR') || !csBand)) matches = true;
+        else if (isElem && (csBand.includes('ELEM') || !csBand)) matches = true;
+      } else if (csGrade === uGrade) {
+        matches = true;
+      }
+
+      if (matches && !filtered.some(s => String(s).toUpperCase() === csName)) {
+        filtered.push(cs.name);
+      }
+    });
 
     return filtered;
   };
@@ -7123,7 +8944,8 @@ export default function Workload() {
       sectionId: '',
       startTime: nextStart,
       endTime: nextEnd,
-      days: nextDays
+      days: nextDays,
+      term: activeTerm
     };
     rows.unshift(newRow);
     setNewlyAddedWorkloadId(newId);
@@ -7131,13 +8953,26 @@ export default function Workload() {
     handleFieldChange('workloadRows', rows);
   };
 
-  const removeWorkloadRow = (index) => {
-    const row = (currentPerson.workloadRows || [])[index];
-    if (row && isAdvisorySub(row.subject)) {
-      return;
+  const removeWorkloadRow = (targetRowOrIndex) => {
+    const allRows = currentPerson.workloadRows || [];
+    let index = -1;
+    if (typeof targetRowOrIndex === 'number') {
+      index = targetRowOrIndex;
+    } else if (typeof targetRowOrIndex === 'object' && targetRowOrIndex) {
+      index = allRows.findIndex(r => (r.id && targetRowOrIndex.id && String(r.id) === String(targetRowOrIndex.id)) || r === targetRowOrIndex);
+    } else if (typeof targetRowOrIndex === 'string') {
+      index = allRows.findIndex(r => String(r.id) === String(targetRowOrIndex));
     }
-    const rows = [...(currentPerson.workloadRows || [])].filter((_, idx) => idx !== index);
+    if (index === -1 || index >= allRows.length) return;
+    const removedRow = allRows[index];
+    const rows = [...allRows].filter((_, idx) => idx !== index);
     handleFieldChange('workloadRows', rows);
+
+    if (removedRow && removedRow.id && !String(removedRow.id).startsWith('new-') && !String(removedRow.id).startsWith('wk-') && !String(removedRow.id).startsWith('local-')) {
+      if (typeof api !== 'undefined' && api.deleteWorkloadRow) {
+        api.deleteWorkloadRow(removedRow.id).catch(e => console.warn('Background delete error:', e));
+      }
+    }
   };
 
   const isSHSRow = (row) => {
@@ -7170,183 +9005,10 @@ export default function Workload() {
     if (!row || !row.startTime || !row.endTime) return null;
     const diffMins = getTimeDiffMins(row.startTime, row.endTime);
     if (diffMins <= 0) return "End time must be after start time";
-
-    const subStr = String(row.subject || row.task || '').toUpperCase();
-    const gStr = String(row.gradeLevel || '').toUpperCase();
-    
-    // KINDER BLOCKS OF TIME: 4 Hours Max (240 mins)
-    const isKinder = subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER');
-    if (isKinder) {
-      if (diffMins > 240) {
-        return `Exceeds max 4 hours (240 mins) for Kinder (Current: ${diffMins} mins)`;
-      }
-      return null;
-    }
-
-    const isSHS = isSHSRow(row);
-    if (isSHS && diffMins > 360) {
-      return `Exceeds max 6 hours (360 mins) for SHS (Current: ${diffMins} mins)`;
-    }
     return null;
   };
 
   const getMatatagRowWarning = (row) => {
-    if (!row || !row.startTime || !row.endTime) return null;
-    const diffMins = getTimeDiffMins(row.startTime, row.endTime);
-    if (diffMins <= 0) return null;
-
-    const gStr = String(row.gradeLevel || '').trim().toUpperCase();
-    const subStr = String(row.subject || row.task || '').trim().toUpperCase();
-
-    // Match class section
-    const matchedSec = (classSections || []).find(s => String(s.id) === String(row.sectionId) || (s.sectionName === row.sectionName && (s.gradeLevel === row.gradeLevel || !row.gradeLevel)));
-    let secGLevel = String(matchedSec?.gradeLevel || gStr).trim().toUpperCase();
-    if (secGLevel === 'GRADE 1 - MATATAG') secGLevel = 'GRADE 1';
-    if (secGLevel === 'GRADE 2 - MATATAG') secGLevel = 'GRADE 2';
-
-    const isMulti = (matchedSec && (matchedSec.sectionType === 'MULTIGRADE' || String(matchedSec.sectionType).includes('MULTI') || String(matchedSec.gradeLevel).includes(' - '))) ||
-                    gStr.includes(' - ') || gStr.includes('MULTI');
-
-    // GRADE 1 (MATATAG Monograde)
-    if (secGLevel === 'GRADE 1' && !isMulti) {
-      const G1_MATATAG_CORE = [
-        'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'MAKABANSA', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'
-      ];
-      const isCoreMatatag = G1_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `));
-
-      if (isCoreMatatag) {
-        if (diffMins !== 40) {
-          return { type: 'error', message: `MATATAG Policy: Grade 1 ${row.subject} requires exactly 40 mins/day under DepEd Order No. 12, s. 2024 (Current: ${diffMins} mins/day).` };
-        }
-        const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-          ? row.days
-          : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-        if (rowDays.length < 5) {
-          return { type: 'error', message: `MATATAG Policy: Grade 1 ${row.subject} must be scheduled from Monday to Friday (5 days/week).` };
-        }
-      } else if (['ENGLISH', 'FILIPINO', 'SCIENCE'].includes(subStr)) {
-        return { type: 'error', message: `MATATAG Policy: "${row.subject}" is not part of the Grade 1 MATATAG curriculum under DepEd Order No. 12, s. 2024.` };
-      }
-    }
-
-    // GRADE 2 (MATATAG Monograde)
-    if (secGLevel === 'GRADE 2' && !isMulti) {
-      const G2_MATATAG_CORE = [
-        'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'
-      ];
-      const isCoreMatatag = G2_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `));
-
-      if (isCoreMatatag) {
-        if (diffMins !== 40) {
-          return { type: 'error', message: `MATATAG Policy: Grade 2 ${row.subject} requires exactly 40 mins/day under DepEd Order No. 12, s. 2024 (Current: ${diffMins} mins/day).` };
-        }
-        const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-          ? row.days
-          : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-        if (rowDays.length < 5) {
-          return { type: 'error', message: `MATATAG Policy: Grade 2 ${row.subject} must be scheduled from Monday to Friday (5 days/week).` };
-        }
-      } else if (['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'SCIENCE'].includes(subStr)) {
-        return { type: 'error', message: `MATATAG Policy: "${row.subject}" is not part of the Grade 2 MATATAG curriculum under DepEd Order No. 12, s. 2024.` };
-      }
-    }
-
-    // GRADE 3 (MATATAG Monograde)
-    if (secGLevel === 'GRADE 3' && !isMulti) {
-      const G3_MATATAG_CORE = [
-        'MAKABANSA', 'FILIPINO', 'ENGLISH', 'MATHEMATICS', 'MATH', 'SCIENCE', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT'
-      ];
-      const isCoreMatatag = G3_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `));
-
-      if (isCoreMatatag) {
-        const allowedBaseMins = [45, 50, 55, 60];
-        if (!allowedBaseMins.includes(diffMins)) {
-          return { type: 'error', message: `MATATAG Policy: Grade 3 ${row.subject} duration must be 45, 50, 55, or 60 mins/day under DepEd Order No. 12, s. 2024 (Current: ${diffMins} mins/day).` };
-        }
-
-        const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-          ? row.days
-          : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-        const weeklyM = diffMins * rowDays.length;
-        const isMakabansaOrFilipino = subStr.includes('MAKABANSA') || subStr === 'FILIPINO' || subStr.startsWith('FILIPINO ');
-
-        if (isMakabansaOrFilipino) {
-          if (weeklyM < 200) {
-            return { type: 'error', message: `MATATAG Policy: Grade 3 ${row.subject} weekly total cannot be less than 200 mins/week under DepEd Order No. 12, s. 2024 (Current: ${weeklyM} mins/week across ${rowDays.length} days).` };
-          }
-          if (diffMins === 45 && rowDays.length < 5) {
-            return { type: 'error', message: `MATATAG Policy: Grade 3 ${row.subject} (45 mins/day) must be scheduled from Monday to Friday (5 days/week).` };
-          }
-          if ([50, 55, 60].includes(diffMins) && rowDays.length < 4) {
-            return { type: 'error', message: `MATATAG Policy: Grade 3 ${row.subject} (${diffMins} mins/day) must be scheduled for at least 4 days/week.` };
-          }
-        } else {
-          // English, Mathematics, Science, GMRC
-          if (weeklyM < 225) {
-            return { type: 'error', message: `MATATAG Policy: Grade 3 ${row.subject} weekly total cannot be less than 225 mins/week under DepEd Order No. 12, s. 2024 (Current: ${weeklyM} mins/week across ${rowDays.length} days).` };
-          }
-          if (rowDays.length < 5) {
-            return { type: 'error', message: `MATATAG Policy: Grade 3 ${row.subject} must be scheduled from Monday to Friday (5 days/week).` };
-          }
-        }
-      } else if (['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY'].includes(subStr)) {
-        return { type: 'error', message: `MATATAG Policy: "${row.subject}" is not part of the Grade 3 MATATAG curriculum under DepEd Order No. 12, s. 2024 (Grade 1 only).` };
-      }
-    }
-
-    // GRADES 4, 5, 6, 7, 8, 9, & 10 (MATATAG Monograde)
-    if (['GRADE 4', 'GRADE 5', 'GRADE 6', 'GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10'].includes(secGLevel) && !isMulti) {
-      const gNum = secGLevel.replace('GRADE ', 'Grade ');
-      const G4to10_MATATAG_CORE = [
-        'EPP', 'TLE', 'EPP/TLE', 'EPP / TLE', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN', 'TECHNOLOGY AND LIVELIHOOD EDUCATION',
-        'MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION',
-        'ARALING PANLIPUNAN', 'AP',
-        'FILIPINO', 'FIL',
-        'ENGLISH', 'ENG',
-        'MATHEMATICS', 'MATH',
-        'SCIENCE', 'SCI',
-        'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'VALUES ED', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'
-      ];
-      const isCoreMatatag = G4to10_MATATAG_CORE.some(c => subStr === c || subStr.startsWith(`${c} `) || subStr.startsWith(`${c}-`));
-
-      if (isCoreMatatag) {
-        const allowedBaseMins = [45, 50, 55, 60];
-        if (!allowedBaseMins.includes(diffMins)) {
-          return { type: 'error', message: `MATATAG Policy: ${gNum} ${row.subject} duration must be 45, 50, 55, or 60 mins/day under DepEd Order No. 12, s. 2024 (Current: ${diffMins} mins/day).` };
-        }
-
-        const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-          ? row.days
-          : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-        const weeklyM = diffMins * rowDays.length;
-        const isGroup1 = subStr.includes('EPP') || subStr.includes('TLE') || subStr.includes('MAPEH') || subStr.includes('ARALING') || subStr === 'AP' || subStr === 'FILIPINO' || subStr.startsWith('FILIPINO ');
-
-        if (isGroup1) {
-          if (weeklyM < 200) {
-            return { type: 'error', message: `MATATAG Policy: ${gNum} ${row.subject} weekly total cannot be less than 200 mins/week under DepEd Order No. 12, s. 2024 (Current: ${weeklyM} mins/week across ${rowDays.length} days).` };
-          }
-          if (diffMins === 45 && rowDays.length < 5) {
-            return { type: 'error', message: `MATATAG Policy: ${gNum} ${row.subject} (45 mins/day) must be scheduled from Monday to Friday (5 days/week).` };
-          }
-          if ([50, 55, 60].includes(diffMins) && rowDays.length < 4) {
-            return { type: 'error', message: `MATATAG Policy: ${gNum} ${row.subject} (${diffMins} mins/day) must be scheduled for at least 4 days/week.` };
-          }
-        } else {
-          // English, Mathematics, Science, Values Education / GMRC
-          if (weeklyM < 225) {
-            return { type: 'error', message: `MATATAG Policy: ${gNum} ${row.subject} weekly total cannot be less than 225 mins/week under DepEd Order No. 12, s. 2024 (Current: ${weeklyM} mins/week across ${rowDays.length} days).` };
-          }
-          if (rowDays.length < 5) {
-            return { type: 'error', message: `MATATAG Policy: ${gNum} ${row.subject} must be scheduled from Monday to Friday (5 days/week).` };
-          }
-        }
-      } else if (subStr.includes('MAKABANSA')) {
-        return { type: 'error', message: `MATATAG Policy: "Makabansa" is not part of the ${gNum} MATATAG curriculum under DepEd Order No. 12, s. 2024 (Replaced by Araling Panlipunan, MAPEH, and TLE).` };
-      } else if (['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY'].includes(subStr)) {
-        return { type: 'error', message: `MATATAG Policy: "${row.subject}" is not part of the ${gNum} MATATAG curriculum under DepEd Order No. 12, s. 2024 (Grade 1 only).` };
-      }
-    }
-
     return null;
   };
 
@@ -7379,79 +9041,160 @@ export default function Workload() {
     return null;
   };
 
-  // Helper: Find who is currently assigned to a subject in a specific section across all personnel & this workload
-  const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowIdx = null) => {
+  // Helper: Get standard DepEd required weekly minutes for a grade level and subject
+  const getRequiredWeeklyMinutes = (gradeLevel, subjectName) => {
+    if (!gradeLevel || !subjectName) return null;
+    const g = String(gradeLevel).trim().toUpperCase();
+    const sub = String(subjectName).trim().toUpperCase();
+
+    // Grade 1 & Grade 2 Core Subjects (40 mins/day * 5 days = 200 mins/week)
+    if (g.includes('GRADE 1') || g.includes('GRADE 2')) {
+      const g1g2Core = ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'MAKABANSA', 'MATHEMATICS', 'MATH', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'FILIPINO', 'ENGLISH'];
+      if (g1g2Core.some(c => sub === c || sub.startsWith(`${c} `))) return 200;
+    }
+
+    // Grade 3
+    if (g.includes('GRADE 3')) {
+      if (sub.includes('MAKABANSA') || sub.includes('FILIPINO')) return 200;
+      if (sub.includes('ENGLISH') || sub.includes('MATH') || sub.includes('SCIENCE') || sub.includes('GMRC') || sub.includes('GOOD MORAL')) return 225;
+    }
+
+    // Grades 4 - 10 (JHS & Intermediate)
+    if (g.match(/GRADE\s*(4|5|6|7|8|9|10)\b/)) {
+      if (sub.includes('EPP') || sub.includes('TLE') || sub.includes('MAPEH') || sub.includes('ARALING PANLIPUNAN') || sub.includes('AP') || sub.includes('FILIPINO')) return 200;
+      if (sub.includes('ENGLISH') || sub.includes('MATH') || sub.includes('SCIENCE') || sub.includes('VALUES') || sub.includes('ESP') || sub.includes('GMRC')) return 225;
+    }
+
+    // SHS (Grades 11 - 12)
+    if (g.includes('GRADE 11') || g.includes('GRADE 12')) {
+      return 240;
+    }
+
+    return null;
+  };
+
+  // Helper: Total scheduled minutes and days for a section + subject across the school in the active term
+  const getSubjectAllocationForSection = (sectionId, sectionName, subjectName, term = null, excludeRowOrId = null, gradeLevel = null) => {
+    if ((!sectionId && !sectionName) || !subjectName) return { scheduledMins: 0, scheduledDays: [], teachers: [] };
+    const normSub = String(subjectName).trim().toUpperCase();
+    const secIdStr = String(sectionId || '');
+    const secNameStr = String(sectionName || '').trim().toUpperCase();
+    const targetGrade = String(gradeLevel || '').trim().toUpperCase();
+    const targetTerm = term || activeTerm || '1st';
+
+    let totalMins = 0;
+    const daysSet = new Set();
+    const teacherSet = new Set();
+
+    const checkRow = (r, tName, pId) => {
+      if (!r || !r.subject) return;
+      if (excludeRowOrId != null) {
+        if (typeof excludeRowOrId === 'object' && (r === excludeRowOrId || (r.id && excludeRowOrId.id && String(r.id) === String(excludeRowOrId.id)))) return;
+        if (typeof excludeRowOrId === 'string' && r.id && String(r.id) === excludeRowOrId) return;
+        if (typeof excludeRowOrId === 'number' && (currentPerson?.workloadRows || [])[excludeRowOrId] === r) return;
+      }
+      const rSecId = String(r.sectionId || r.section_id || '');
+      const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+      const rGrade = String(r.gradeLevel || r.grade_level || '').trim().toUpperCase();
+
+      const matchSec = (secIdStr && rSecId && secIdStr === rSecId) || 
+                       (secNameStr && rSecName && secNameStr === rSecName && (!targetGrade || !rGrade || targetGrade === rGrade));
+      if (!matchSec) return;
+
+      const rTerm = r.term || r.semester || '1st';
+      if (rTerm !== targetTerm) return;
+
+      const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+      if (rSub === normSub) {
+        const rDays = (Array.isArray(r.days) && r.days.length > 0)
+          ? r.days
+          : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+        const diffMins = (r.startTime && r.endTime) ? getTimeDiffMins(r.startTime, r.endTime) : (Number(r.minutesPerDay) || 0);
+        totalMins += (diffMins * rDays.length);
+        rDays.forEach(d => daysSet.add(d));
+        if (tName) teacherSet.add(tName);
+      }
+    };
+
+    for (const p of (personnel || [])) {
+      if (p.isDraft || !Array.isArray(p.workloadRows)) continue;
+      const tName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Teacher';
+      for (const r of p.workloadRows) {
+        checkRow(r, tName, p.id);
+      }
+    }
+
+    return {
+      scheduledMins: totalMins,
+      scheduledDays: Array.from(daysSet),
+      teachers: Array.from(teacherSet)
+    };
+  };
+
+  // Helper: Find who is currently assigned to a subject in a specific section across all personnel (term-isolated)
+  const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowOrId = null, gradeLevel = null) => {
     if ((!sectionId && !sectionName) || !subjectName) return null;
     const normSub = String(subjectName).trim().toUpperCase();
     if (normSub === 'ADVISORY') return null;
 
     const secIdStr = String(sectionId || '');
     const secNameStr = String(sectionName || '').trim().toUpperCase();
+    const targetGrade = String(gradeLevel || '').trim().toUpperCase();
+    const targetTerm = term || activeTerm || '1st';
 
-    // 1. Scan other personnel in the school
+    const currentRowId = (typeof currentRowOrId === 'object' && currentRowOrId) ? String(currentRowOrId.id || '') : (typeof currentRowOrId === 'string' ? currentRowOrId : null);
+    const currentRowObj = (typeof currentRowOrId === 'object') ? currentRowOrId : null;
+    const currentDays = (currentRowObj && Array.isArray(currentRowObj.days) && currentRowObj.days.length > 0)
+      ? currentRowObj.days
+      : (currentRowObj?.daySchedule ? String(currentRowObj.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+
+    // Scan other personnel in the school
     for (const p of (personnel || [])) {
       if (String(p.id) === String(currentPerson?.id)) continue;
       if (p.isDraft || !Array.isArray(p.workloadRows)) continue;
 
       for (const r of p.workloadRows) {
+        if (!r || !r.subject) continue;
+        if (currentRowId && r.id && String(r.id) === currentRowId) continue;
+        if (currentRowObj && r === currentRowObj) continue;
+
         const rSecId = String(r.sectionId || r.section_id || '');
         const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+        const rGrade = String(r.gradeLevel || r.grade_level || '').trim().toUpperCase();
         const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
 
-        const matchSec = (secIdStr && rSecId && secIdStr === rSecId) || (secNameStr && rSecName && secNameStr === rSecName);
+        const matchSec = (secIdStr && rSecId && secIdStr === rSecId) || 
+                         (secNameStr && rSecName && secNameStr === rSecName && (!targetGrade || !rGrade || targetGrade === rGrade));
         if (!matchSec) continue;
 
-        // Check semester/term for SHS
-        if (term && isSHSRow(r)) {
-          const rTerm = r.term || r.semester || '1st';
-          if (rTerm !== term) continue;
-        }
+        // Check term
+        const rTerm = r.term || r.semester || '1st';
+        if (rTerm !== targetTerm) continue;
 
         if (rSub === normSub) {
-          const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Another Teacher';
-          return {
-            assigned: true,
-            teacherName,
-            isOtherTeacher: true,
-            teacherId: p.id
-          };
+          const rDays = (Array.isArray(r.days) && r.days.length > 0)
+            ? r.days
+            : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+          const hasDayOverlap = currentDays.some(d => rDays.includes(d));
+          if (hasDayOverlap) {
+            const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Another Teacher';
+            return {
+              assigned: true,
+              teacherName,
+              isOtherTeacher: true,
+              teacherId: p.id
+            };
+          }
         }
-      }
-    }
-
-    // 2. Scan current person's other workload rows
-    const myRows = currentPerson?.workloadRows || [];
-    for (let rIdx = 0; rIdx < myRows.length; rIdx++) {
-      if (currentRowIdx !== null && rIdx === currentRowIdx) continue;
-      const r = myRows[rIdx];
-      const rSecId = String(r.sectionId || r.section_id || '');
-      const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-      const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
-
-      const matchSec = (secIdStr && rSecId && secIdStr === rSecId) || (secNameStr && rSecName && secNameStr === rSecName);
-      if (!matchSec) continue;
-
-      // Check semester/term for SHS
-      if (term && isSHSRow(r)) {
-        const rTerm = r.term || r.semester || '1st';
-        if (rTerm !== term) continue;
-      }
-
-      if (rSub === normSub) {
-        return {
-          assigned: true,
-          teacherName: 'This Workload (Another Slot)',
-          isOtherTeacher: false,
-          teacherId: currentPerson?.id
-        };
       }
     }
 
     return null;
   };
 
-  const getDuplicateSectionSubjectError = (row, rowIdx) => {
+  const getDuplicateSectionSubjectError = (row, rowRefOrIdx = null) => {
     if (!row || !row.subject) return null;
+    if (isAdminTaskRow(row) || isNonTeachingTaskSubject(row.subject)) return null;
     const normSub = String(row.subject).trim().toUpperCase();
     if (normSub === 'ADVISORY') return null;
 
@@ -7459,14 +9202,16 @@ export default function Workload() {
     const secName = String(row.sectionName || row.section_name || '').trim().toUpperCase();
     if (!secId && !secName) return null;
 
-    const term = isSHSRow(row) ? (row.term || row.semester || '1st') : null;
-    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowIdx);
+    const term = row.term || row.semester || activeTerm || '1st';
+    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowRefOrIdx || row);
 
-    if (assignment && assignment.assigned) {
-      const targetSec = (classSections || []).find(s => String(s.id) === secId || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secName));
-      const displaySecName = targetSec?.sectionName || row.sectionName || 'this section';
-      return `Duplicate Subject Assignment: Section "${displaySecName}" already has "${row.subject}" assigned to ${assignment.teacherName}. Only 1 assignment per subject is permitted per section.`;
+    const targetSec = (classSections || []).find(s => String(s.id) === secId || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secName));
+    const displaySecName = targetSec?.sectionName || row.sectionName || 'this section';
+
+    if (assignment && assignment.assigned && assignment.isOtherTeacher) {
+      return `Duplicate Subject Assignment: Section "${displaySecName}" already has "${row.subject}" assigned to Teacher ${assignment.teacherName} in ${term} Term.`;
     }
+
     return null;
   };
 
@@ -7506,32 +9251,7 @@ export default function Workload() {
       const eTime = updatedRow.endTime;
       if (sTime && eTime) {
         const diff = getTimeDiffMins(sTime, eTime);
-        const subStr = String(updatedRow.subject || '').toUpperCase();
-        const gStr = String(updatedRow.gradeLevel || '').toUpperCase();
-        const isKinder = subStr.includes('KINDER') || gStr.includes('KINDER');
-        if (isKinder && diff > 240) {
-          const [sh, sm] = sTime.split(':').map(Number);
-          const maxEndMins = sh * 60 + sm + 240;
-          const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-          const maxEndM = String(maxEndMins % 60).padStart(2, '0');
-          updatedRow.endTime = `${maxEndH}:${maxEndM}`;
-
-          await showAlert(
-            "Maximum Duration 4 Hours",
-            "Kindergarten Blocks of Time schedule cannot exceed 4 hours (240 minutes). The end time has been adjusted to 4 hours max."
-          );
-        } else if (isSHS && diff > 360) {
-          const [sh, sm] = sTime.split(':').map(Number);
-          const maxEndMins = sh * 60 + sm + 360;
-          const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-          const maxEndM = String(maxEndMins % 60).padStart(2, '0');
-          updatedRow.endTime = `${maxEndH}:${maxEndM}`;
-
-          await showAlert(
-            "Maximum Duration 6 Hours",
-            "Senior High School (Grade 11 & Grade 12) subject schedule cannot exceed 6 hours. The end time has been adjusted to 6 hours max."
-          );
-        } else if (diff < 0) {
+        if (diff < 0) {
           await showAlert(
             "Invalid Time Range",
             "End time must be after start time."
@@ -7552,50 +9272,66 @@ export default function Workload() {
     handleFieldChange('workloadRows', rows);
   };
 
-  const updateWorkloadRowFields = async (index, fieldValues) => {
+  const updateWorkloadRowFields = async (targetRowOrIndex, fieldValues) => {
     const rows = [...(currentPerson.workloadRows || [])];
+    let index = -1;
+    if (typeof targetRowOrIndex === 'number') {
+      index = targetRowOrIndex;
+    } else if (typeof targetRowOrIndex === 'object' && targetRowOrIndex) {
+      index = rows.findIndex(r => (r.id && targetRowOrIndex.id && String(r.id) === String(targetRowOrIndex.id)) || r === targetRowOrIndex);
+    } else if (typeof targetRowOrIndex === 'string') {
+      index = rows.findIndex(r => String(r.id) === String(targetRowOrIndex));
+    }
+    if (index === -1 || index >= rows.length) return;
     let updatedRow = { ...rows[index], ...fieldValues };
 
     const isAdv = String(updatedRow.subject || '').toUpperCase().trim() === 'ADVISORY';
     if (isAdv) {
-      if (fieldValues.startTime) {
+      if (fieldValues.startTime && !fieldValues.endTime && !updatedRow.endTime) {
         updatedRow.endTime = add60MinutesToTime(fieldValues.startTime);
       }
-      updatedRow.days = ['M', 'T', 'W', 'TH', 'F'];
     }
 
-    if (fieldValues.startTime || fieldValues.endTime || fieldValues.gradeLevel || fieldValues.category || fieldValues.subject) {
-      const sTime = updatedRow.startTime;
-      const eTime = updatedRow.endTime;
-      if (sTime && eTime) {
-        const diff = getTimeDiffMins(sTime, eTime);
-        const subStr = String(updatedRow.subject || '').toUpperCase();
-        const gStr = String(updatedRow.gradeLevel || '').toUpperCase();
-        const isKinder = subStr.includes('KINDER') || gStr.includes('KINDER');
-        const isSHS = isSHSRow(updatedRow);
+    const curTerm = updatedRow.term || '1st';
+    const curSub = String(updatedRow.subject || '').toUpperCase().trim();
+    const curSecId = String(updatedRow.sectionId || updatedRow.section_id || '');
+    const curSecName = String(updatedRow.sectionName || '').toUpperCase().trim();
+    const curDays = getNormalizedRowDays(updatedRow);
 
-        if (isKinder && diff > 240) {
-          const [sh, sm] = sTime.split(':').map(Number);
-          const maxEndMins = sh * 60 + sm + 240;
-          const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-          const maxEndM = String(maxEndMins % 60).padStart(2, '0');
-          updatedRow.endTime = `${maxEndH}:${maxEndM}`;
+    // If updating days or subject/section, ensure other fragment rows of same section & subject do not create day collisions
+    if (curSub && (curSecId || curSecName)) {
+      const curStart = parseMins(updatedRow.startTime);
+      const curEnd = parseMins(updatedRow.endTime);
 
-          await showAlert(
-            "Maximum Duration 4 Hours",
-            "Kindergarten Blocks of Time schedule cannot exceed 4 hours (240 minutes). The end time has been adjusted to 4 hours max."
-          );
-        } else if (isSHS && diff > 360) {
-          const [sh, sm] = sTime.split(':').map(Number);
-          const maxEndMins = sh * 60 + sm + 360;
-          const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-          const maxEndM = String(maxEndMins % 60).padStart(2, '0');
-          updatedRow.endTime = `${maxEndH}:${maxEndM}`;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (i === index) continue;
+        const other = rows[i];
+        const oTerm = other.term || '1st';
+        const oSub = String(other.subject || '').toUpperCase().trim();
+        const oSecId = String(other.sectionId || other.section_id || '');
+        const oSecName = String(other.sectionName || '').toUpperCase().trim();
 
-          await showAlert(
-            "Maximum Duration 6 Hours",
-            "Senior High School (Grade 11 & Grade 12) subject schedule cannot exceed 6 hours. The end time has been adjusted to 6 hours max."
-          );
+        if (oTerm === curTerm && oSub === curSub && ((curSecId && oSecId && curSecId === oSecId) || (curSecName && oSecName && curSecName === oSecName))) {
+          const oStart = parseMins(other.startTime);
+          const oEnd = parseMins(other.endTime);
+
+          if (oStart === curStart && oEnd === curEnd) {
+            // Same time -> merge days into updatedRow and delete redundant other row
+            const oDays = getNormalizedRowDays(other);
+            updatedRow.days = Array.from(new Set([...curDays, ...oDays]));
+            rows.splice(i, 1);
+            if (i < index) index--;
+          } else if (fieldValues.days && curSub !== 'ADVISORY') {
+            // Different time (for non-advisory subjects) -> remove newly claimed days from other row to avoid day overlap collision
+            const oDays = getNormalizedRowDays(other);
+            const remainingODays = oDays.filter(d => !curDays.includes(d));
+            if (remainingODays.length === 0) {
+              rows.splice(i, 1);
+              if (i < index) index--;
+            } else {
+              rows[i] = { ...other, days: remainingODays };
+            }
+          }
         }
       }
     }
@@ -7625,19 +9361,41 @@ export default function Workload() {
         }
       }
 
-      const isAral = Boolean(
-        String(section.sectionType || '').startsWith('ARAL') ||
-        String(section.sectionName || '').toUpperCase().includes('ARAL') ||
-        String(section.gradeLevel || '').toUpperCase().includes('ARAL')
+      const isSned = Boolean(
+        secGradeUpper.includes('SNED') || secGradeUpper.includes('NON-GRADED') || secGradeUpper.includes('SPED') ||
+        String(section.sectionType || '').toUpperCase().includes('SNED') ||
+        String(section.gradeLevel || '').toUpperCase().includes('SNED')
       );
-      const newSubjects = isAral
-        ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
-        : getSubjectsForGrade(section.gradeLevel, resolvedCategory);
+      const isAls = Boolean(
+        secGradeUpper.includes('ALS') || String(section.sectionType || '').toUpperCase().includes('ALS') ||
+        String(section.gradeLevel || '').toUpperCase().includes('ALS')
+      );
+      const isAral = Boolean(
+        String(section.sectionType || '').toUpperCase().includes('ARAL') ||
+        String(section.sectionName || '').toUpperCase().includes('ARAL') ||
+        String(section.gradeLevel || '').toUpperCase().includes('ARAL') ||
+        Boolean(section.aralBasis || section.aralToolKey || section.aralTool) ||
+        ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(t =>
+          String(section.gradeLevel || '').toUpperCase().includes(t) ||
+          String(section.sectionType || '').toUpperCase().includes(t) ||
+          String(section.sectionName || '').toUpperCase().includes(t)
+        )
+      );
+      const newSubjects = isSned
+        ? ['SNED MODIFIED SUBJECT']
+        : (isAls
+          ? ['ALS LEARNING STRAND']
+          : (isAral
+            ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
+            : getSubjectsForGrade(section.gradeLevel, resolvedCategory)));
       const isCurrentValid = (newSubjects || []).includes(rows[index].subject);
+      let nextSubject = isCurrentValid ? rows[index].subject : '';
+      if (!nextSubject && isSned) nextSubject = 'SNED MODIFIED SUBJECT';
+      if (!nextSubject && isAls) nextSubject = 'ALS LEARNING STRAND';
 
       // Automatically set 60 minutes duration for Grade 3 to Grade 10 sections
       const isGrade3To10 = (() => {
-        if (secGradeUpper.includes('KINDER') || secGradeUpper.includes('11') || secGradeUpper.includes('12')) return false;
+        if (secGradeUpper.includes('KINDER') || secGradeUpper.includes('11') || secGradeUpper.includes('12') || isSned || isAls) return false;
         if (secGradeUpper === 'GRADE 1' || secGradeUpper === 'GRADE 2' || secGradeUpper === 'G1' || secGradeUpper === 'G2') return false;
         if (secGradeUpper.includes('3') || secGradeUpper.includes('4') || secGradeUpper.includes('5') || secGradeUpper.includes('6') ||
             secGradeUpper.includes('7') || secGradeUpper.includes('8') || secGradeUpper.includes('9') || secGradeUpper.includes('10') ||
@@ -7659,7 +9417,8 @@ export default function Workload() {
         sectionName: section.sectionName,
         gradeLevel: section.gradeLevel,
         category: resolvedCategory,
-        subject: isCurrentValid ? rows[index].subject : '',
+        subject: nextSubject,
+        subjectName: nextSubject,
         remediationSubject: isCurrentValid ? rows[index].remediationSubject : '',
         startTime: curStart,
         endTime: curEnd
@@ -7725,16 +9484,26 @@ export default function Workload() {
     handleFieldChange(key, rows);
   };
 
-  const updateTaskField = (key, index, field, value) => {
-    const rows = [...(currentPerson[key] || [])];
-    if (field === 'startTime') {
-      const sTime = value;
-      const eTime = rows[index].endTime || add60MinutesToTime(sTime);
-      rows[index] = { ...rows[index], startTime: sTime, endTime: eTime };
-    } else {
-      rows[index] = { ...rows[index], [field]: value };
+  const updateTaskFields = (key, index, fieldsObject) => {
+    const rows = [...((currentPerson && currentPerson[key]) || [])];
+    if (rows[index]) {
+      rows[index] = { ...rows[index], ...fieldsObject };
+      handleFieldChange(key, rows);
     }
-    handleFieldChange(key, rows);
+  };
+
+  const updateTaskField = (key, index, field, value) => {
+    const rows = [...((currentPerson && currentPerson[key]) || [])];
+    if (rows[index]) {
+      if (field === 'startTime') {
+        const sTime = value;
+        const eTime = rows[index].endTime || add60MinutesToTime(sTime);
+        rows[index] = { ...rows[index], startTime: sTime, endTime: eTime };
+      } else {
+        rows[index] = { ...rows[index], [field]: value };
+      }
+      handleFieldChange(key, rows);
+    }
   };
 
 
@@ -7933,8 +9702,18 @@ export default function Workload() {
   const dailyOverloadHours = isCurrentEligibleForOverload ? (Number(teachingOverloadHours) / 5).toFixed(1) : '0.0';
 
   const baseWeeklyRelatedHours = ((currentPerson?.teachingRelatedRows) || []).reduce((total, row) => {
-    const daysCount = Array.isArray(row.days) ? row.days.length : 0;
-    return total + ((Number(row.hours) || 0) * daysCount);
+    const cadence = row.cadence || row.frequency || (Array.isArray(row.days) && row.days.length > 0 ? 'custom' : 'weekly');
+    const durMins = row.duration_minutes !== undefined ? Number(row.duration_minutes) : (row.hours !== undefined && row.hours !== '' ? Math.round(Number(row.hours) * 60) : 60);
+    const hrs = durMins / 60;
+    if (cadence === 'daily') {
+      return total + (hrs * 5);
+    } else if (cadence === 'monthly') {
+      return total + (hrs / 4);
+    } else if (cadence === 'custom' && Array.isArray(row.days)) {
+      return total + (hrs * row.days.length);
+    } else {
+      return total + hrs;
+    }
   }, 0);
   const totalWeeklyRelatedHours = baseWeeklyRelatedHours + coverageRelatedHours;
   const weeklyRelatedHours = totalWeeklyRelatedHours.toFixed(1);
@@ -7970,6 +9749,7 @@ export default function Workload() {
       }
 
       (activeP.workloadRows || []).forEach((row, rowIdx) => {
+        if ((row.term || '1st') !== activeTerm) return;
         let isMatch = false;
         if (row.sectionId && String(row.sectionId) === String(selectedSectionId)) {
           isMatch = true;
@@ -8001,7 +9781,7 @@ export default function Workload() {
       const bTime = parseTimeToMinutes(b.startTime || '00:00');
       return aTime - bTime;
     });
-  }, [selectedSectionId, selectedSection, personnel, classSections]);
+  }, [selectedSectionId, selectedSection, personnel, classSections, activeTerm]);
 
   const checkConflict = (teacherId, sectionId, startTime, endTime, days) => {
     if (!startTime || !endTime || !days || !days.length) return null;
@@ -8051,7 +9831,7 @@ export default function Workload() {
         }
 
         const allRows = [
-          ...(activeTeacher.workloadRows || []),
+          ...(activeTeacher.workloadRows || []).filter(r => (r.term || '1st') === activeTerm),
           ...(activeTeacher.teachingRelatedRows || []).map(r => ({ startTime: r.startTime, endTime: r.endTime, days: r.days || ['M', 'T', 'W', 'TH', 'F'], subject: r.task })),
           ...(activeTeacher.administrativeRows || []).map(r => ({ startTime: r.startTime, endTime: r.endTime, days: r.days || ['M', 'T', 'W', 'TH', 'F'], subject: r.task }))
         ];
@@ -8070,6 +9850,20 @@ export default function Workload() {
               startTime: row.startTime,
               endTime: row.endTime,
               days: row.days
+            };
+          }
+        }
+        if (teacher.sharedWorkloadRows && Array.isArray(teacher.sharedWorkloadRows)) {
+          const crossConflict = checkCrossSchoolConflict({ startTime, endTime, days }, teacher.sharedWorkloadRows, 120);
+          if (crossConflict) {
+            return {
+              type: 'invalid_time',
+              subject: 'Partner Station Clustered Schedule',
+              teacherName: `${teacher.firstName} ${teacher.lastName}`,
+              startTime,
+              endTime,
+              days,
+              message: `Cross-School Conflict: ${teacher.firstName} ${teacher.lastName} is stationed at a partner school or transit restriction (gap ≤ 2h).`
             };
           }
         }
@@ -8112,7 +9906,8 @@ export default function Workload() {
       sectionName: sec?.sectionName || '',
       startTime: newSlot.startTime,
       endTime: newSlot.endTime,
-      days: newSlot.days
+      days: newSlot.days,
+      term: activeTerm
     };
 
     const targetTeacher = personnel.find(p => p.id === newSlot.teacherId);
@@ -8187,21 +9982,29 @@ export default function Workload() {
   const handleSaveChangesDirectly = async () => {
     if (!currentPerson) return;
 
-    const hasIncompleteBlock = (currentPerson.workloadRows || []).some(row => !row.subject || !row.gradeLevel);
+    const hasIncompleteBlock = (currentPerson.workloadRows || []).some(row => {
+      if (!row.subject) return true;
+      if (isAdminTaskRow(row) || isNonTeachingTaskSubject(row.subject) || isNonTeachingPerson(currentPerson)) return false;
+      return !row.gradeLevel;
+    });
     if (hasIncompleteBlock) {
       await showAlert("Incomplete Schedule Block", "Cannot save. One or more schedule blocks are missing a Subject or Class Section/Grade Level. Please complete them first.");
       return;
     }
 
-    // Check for workload conflicts
-    const hasAnyConflict = (currentPerson.workloadRows || []).some((row, idx) => {
-      return (currentPerson.workloadRows || []).some((otherRow, otherIdx) => {
+    // Check for workload conflicts (isolated per term)
+    const currentTermRows = (currentPerson.workloadRows || []).filter(row => (row.term || '1st') === activeTerm);
+    const hasAnyConflict = currentTermRows.some((row, idx) => {
+      const rowDays = getNormalizedRowDays(row);
+      return currentTermRows.some((otherRow, otherIdx) => {
         if (idx === otherIdx) return false;
+        if (row.id && otherRow.id && String(row.id) === String(otherRow.id)) return false;
         if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
-        const daysOverlap = (row.days || []).some(d => (otherRow.days || []).includes(d));
+        const otherDays = getNormalizedRowDays(otherRow);
+        const daysOverlap = rowDays.some(d => otherDays.includes(d));
         if (!daysOverlap) return false;
-        const ns = parseTimeToMinutes(row.startTime), ne = parseTimeToMinutes(row.endTime);
-        const rs = parseTimeToMinutes(otherRow.startTime), re = parseTimeToMinutes(otherRow.endTime);
+        const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
+        const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
         if (ns < re && ne > rs) {
           if (isAdvisoryOrHgpPair(row, otherRow)) return false;
           return true;
@@ -8211,26 +10014,17 @@ export default function Workload() {
     });
 
     if (hasAnyConflict) {
-      await showAlert("Schedule Conflict", "Cannot save. There are overlapping schedule times in the workload rows. Please resolve them first.");
+      await showAlert("Schedule Conflict", `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`);
       return;
     }
 
-    // Check for cross-school conflicts with Clustered Ghost Slots
-    const hasCrossSchoolConflict = (currentPerson.workloadRows || []).some(row => {
-      return (sharedWorkloadRows || []).some(ghost => {
-        const gDays = (Array.isArray(ghost.days) && ghost.days.length > 0)
-          ? ghost.days
-          : (ghost.day ? [ghost.day.toUpperCase().startsWith('M') && !ghost.day.toUpperCase().startsWith('T') ? 'M' : ghost.day.toUpperCase().startsWith('W') ? 'W' : ghost.day.toUpperCase().startsWith('TH') ? 'TH' : ghost.day.toUpperCase().startsWith('F') ? 'F' : 'T'] : ['M','T','W','TH','F']);
-        const daysOverlap = (row.days || []).some(d => gDays.includes(d));
-        if (!daysOverlap) return false;
-        const ns = parseTimeToMinutes(row.startTime), ne = parseTimeToMinutes(row.endTime);
-        const gs = parseTimeToMinutes(ghost.startTime || ghost.start_time), ge = parseTimeToMinutes(ghost.endTime || ghost.end_time);
-        return ns < ge && ne > gs;
-      });
+    // Check for cross-school conflicts with Clustered Ghost Slots & Transit Sandwich Gaps (<= 2h)
+    const hasCrossSchoolConflict = currentTermRows.some(row => {
+      return checkCrossSchoolConflict(row, sharedWorkloadRows, 120);
     });
 
     if (hasCrossSchoolConflict) {
-      await showAlert("Cross-School Schedule Conflict", "Cannot save. Clustered personnel has overlapping schedule times with the partner station's ghost slots. Please adjust times to avoid double-booking.");
+      await showAlert("Cross-School Schedule Conflict", `Cannot save. Clustered personnel has a schedule collision or transit restriction (gap ≤ 2h between partner station classes) in ${activeTerm} Term. Please adjust times to avoid double-booking.`);
       return;
     }
 
@@ -8247,15 +10041,19 @@ export default function Workload() {
   const handleSaveValidate = async () => {
     if (!currentPerson) return;
 
-    // Check for workload conflicts
-    const hasAnyConflict = (currentPerson.workloadRows || []).some((row, idx) => {
-      return (currentPerson.workloadRows || []).some((otherRow, otherIdx) => {
+    // Check for workload conflicts (isolated per term)
+    const currentTermRows = (currentPerson.workloadRows || []).filter(row => (row.term || '1st') === activeTerm);
+    const hasAnyConflict = currentTermRows.some((row, idx) => {
+      const rowDays = getNormalizedRowDays(row);
+      return currentTermRows.some((otherRow, otherIdx) => {
         if (idx === otherIdx) return false;
+        if (row.id && otherRow.id && String(row.id) === String(otherRow.id)) return false;
         if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
-        const daysOverlap = (row.days || []).some(d => (otherRow.days || []).includes(d));
+        const otherDays = getNormalizedRowDays(otherRow);
+        const daysOverlap = rowDays.some(d => otherDays.includes(d));
         if (!daysOverlap) return false;
-        const ns = parseTimeToMinutes(row.startTime), ne = parseTimeToMinutes(row.endTime);
-        const rs = parseTimeToMinutes(otherRow.startTime), re = parseTimeToMinutes(otherRow.endTime);
+        const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
+        const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
         if (ns < re && ne > rs) {
           if (isAdvisoryOrHgpPair(row, otherRow)) return false;
           return true;
@@ -8265,18 +10063,30 @@ export default function Workload() {
     });
 
     if (hasAnyConflict) {
-      await showAlert("Schedule Conflict", "Cannot save. There are overlapping schedule times in the workload rows. Please resolve them first.");
+      await showAlert("Schedule Conflict", `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`);
       return;
     }
 
     try {
-      const updated = { ...currentPerson, workloadVerified: true };
+      const updated = { ...currentPerson, workloadVerified: true, workloadValidated: true };
       setEditPerson(updated);
 
       // Update local state and draft
       await savePersonnelChanges(currentPerson.id, updated);
+      if (typeof api !== 'undefined' && api.saveWorkloadBatch) {
+        await api.saveWorkloadBatch({
+          personnel_id: currentPerson.id,
+          workloadRows: updated.workloadRows || [],
+          teachingRelatedRows: updated.teachingRelatedRows || updated.teaching_related_rows || [],
+          administrativeRows: updated.administrativeRows || updated.administrative_rows || [],
+          school_id: schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || '108348',
+          school_year: schoolInfo?.schoolYear || '2026-2027',
+          term: activeTerm || '1st'
+        }).catch(err => console.warn('Save workload batch error:', err));
+      }
       localStorage.removeItem(`draft_workload_${currentPerson.id}`);
-      showToast("Workload verified and saved locally!");
+      markTeacherValidated(currentPerson.id, true);
+      showToast("Workload verified and saved to database!");
     } catch (err) {
       await showAlert("Error", "Failed to save and validate workload: " + err.message);
     }
@@ -8324,6 +10134,10 @@ export default function Workload() {
         <option value="17:00" />
         <option value="17:30" />
         <option value="18:00" />
+        <option value="18:30" />
+        <option value="19:00" />
+        <option value="19:30" />
+        <option value="20:00" />
       </datalist>
       <article className="card">
         <div className="card-inner">
@@ -8400,6 +10214,37 @@ export default function Workload() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              {activeTerm === '2nd' && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyFirstTermToSecondTerm('ALL')}
+                  style={{
+                    background: '#EFF6FF',
+                    color: '#0284C7',
+                    border: '1.5px solid #BAE6FD',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#DBEAFE';
+                    e.currentTarget.style.borderColor = '#0284C7';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#EFF6FF';
+                    e.currentTarget.style.borderColor = '#BAE6FD';
+                  }}
+                  title="Copy 1st Term workload setup to 2nd Term for all teachers"
+                >
+                  <FiCopy size={13} /> Copy 1st Term Workload (All)
+                </button>
+              )}
               <button
                 type="button"
                 className="btn secondary"
@@ -8428,31 +10273,35 @@ export default function Workload() {
                   e.currentTarget.style.color = '#334155';
                   e.currentTarget.style.borderColor = '#CBD5E1';
                 }}
-                title="Clear all workload schedules across all teachers in the school"
+                title={`Clear all workload schedules for ${activeTerm} Term across all teachers`}
               >
-                <FiTrash2 size={13} /> Clear All Teachers' Workload
+                <FiTrash2 size={13} /> Clear All Teachers ({activeTerm} Term)
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={handleConfirmAllAndSave}
-                style={{
-                  background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
-                  color: 'white',
-                  fontWeight: 'bold',
-                  borderRadius: '8px',
-                  padding: '8px 16px',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
-                  cursor: 'pointer'
-                }}
-                title="Confirm and save timetable schedules for all personnel"
-              >
-                <FiCheck size={14} /> Confirm All & Save
-              </button>
+              {currentPerson && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={handleSaveValidate}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                    color: 'white',
+                    fontWeight: '800',
+                    borderRadius: '8px',
+                    padding: '8px 18px',
+                    fontSize: '12.5px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    boxShadow: '0 2px 6px rgba(2, 132, 199, 0.3)',
+                    cursor: 'pointer',
+                    border: 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Validate and save workload changes for active teacher"
+                >
+                  <FiCheckCircle size={15} /> Save & Validate Teacher Workload
+                </button>
+              )}
               {/* Temporarily hidden: Delegation Package (HTML) & Import Batch (.json) */}
               <input
                 type="file"
@@ -9332,9 +11181,15 @@ export default function Workload() {
                               <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--navy)', display: 'block', marginBottom: '6px' }}>SUBJECT</label>
                               {(() => {
                                 const isAral = Boolean(
-                                  String(sec.sectionType || '').startsWith('ARAL') ||
+                                  String(sec.sectionType || '').toUpperCase().includes('ARAL') ||
                                   String(sec.sectionName || '').toUpperCase().includes('ARAL') ||
-                                  String(sec.gradeLevel || '').toUpperCase().includes('ARAL')
+                                  String(sec.gradeLevel || '').toUpperCase().includes('ARAL') ||
+                                  Boolean(sec.aralBasis || sec.aralToolKey || sec.aralTool) ||
+                                  ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(t =>
+                                    String(sec.gradeLevel || '').toUpperCase().includes(t) ||
+                                    String(sec.sectionType || '').toUpperCase().includes(t) ||
+                                    String(sec.sectionName || '').toUpperCase().includes(t)
+                                  )
                                 );
                                 const rawSubjects = isAral
                                   ? ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE']
@@ -9582,6 +11437,11 @@ export default function Workload() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, minHeight: '600px' }}>
                         {paginatedPeople.map((p) => {
                           const isActive = currentPerson && p.id === currentPerson.id;
+                          const hasSavedWorkload = Boolean(
+                            validatedTeacherMap[p.id] &&
+                            ((Array.isArray(p.workloadRows) && p.workloadRows.length > 0) ||
+                             (currentPerson && currentPerson.id === p.id && Array.isArray(currentPerson.workloadRows) && currentPerson.workloadRows.length > 0))
+                          );
                           return (
                             <div
                               key={p.id}
@@ -9630,7 +11490,7 @@ export default function Workload() {
                                       Time Review
                                     </span>
                                   )}
-                                  {p.workloadVerified === true && (
+                                  {hasSavedWorkload && (
                                     <span style={{
                                       background: '#DCFCE7',
                                       color: '#15803D',
@@ -9640,7 +11500,7 @@ export default function Workload() {
                                       fontSize: '8.5px',
                                       fontWeight: '700'
                                     }}>
-                                      Confirmed & Saved
+                                      Saved
                                     </span>
                                   )}
                                   {(p.isClustered || p.deploymentStatus === 'CLUSTERED') && (
@@ -9738,16 +11598,19 @@ export default function Workload() {
                 <div style={{ minWidth: 0 }}>
                     {/* Schedule Time Verification Banner */}
                     {(() => {
-                      const currentTeacherRows = currentPerson?.workloadRows || [];
+                      const currentTeacherRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
                       const hasBlockingErrors = currentTeacherRows.some((r, rIdx) => {
                         if (getRowDurationError(r)) return true;
+                        const rDays = getNormalizedRowDays(r);
                         return currentTeacherRows.some((otherR, oIdx) => {
                           if (rIdx === oIdx) return false;
+                          if (r.id && otherR.id && String(r.id) === String(otherR.id)) return false;
                           if (!r.startTime || !r.endTime || !otherR.startTime || !otherR.endTime) return false;
-                          const daysOverlap = (r.days || []).some(d => (otherR.days || []).includes(d));
+                          const otherDays = getNormalizedRowDays(otherR);
+                          const daysOverlap = rDays.some(d => otherDays.includes(d));
                           if (!daysOverlap) return false;
-                          const ns = parseTimeToMinutes(r.startTime), ne = parseTimeToMinutes(r.endTime);
-                          const rs = parseTimeToMinutes(otherR.startTime), re = parseTimeToMinutes(otherR.endTime);
+                          const ns = parseMins(r.startTime), ne = parseMins(r.endTime);
+                          const rs = parseMins(otherR.startTime), re = parseMins(otherR.endTime);
                           if (ns < re && ne > rs) {
                             if (isAdvisoryOrHgpPair(r, otherR)) return false;
                             return true;
@@ -9820,7 +11683,7 @@ export default function Workload() {
                             Non-Teaching Personnel
                           </strong>
                           <span style={{ color: '#475569', fontSize: '12px' }}>
-                            {currentPerson.firstName} {currentPerson.lastName} ({currentPerson.position || 'Non-Teaching'}) is classified as non-teaching and automatically has <strong>0.0 teaching workload hours</strong>.
+                            {currentPerson.firstName} {currentPerson.lastName} ({currentPerson.position || 'Non-Teaching'}) is classified as non-teaching with <strong>0.0 teaching workload hours</strong>. Administrative duty assignments and daily 8.0-hour schedule (40.0 hrs/week target) are configured in the timetable below.
                           </span>
                         </div>
                       </div>
@@ -9980,938 +11843,42 @@ export default function Workload() {
                         </div>
                       </div>
                     )}
-
-                    {/* Subject schedule panel */}
-                    {currentPerson.type === 'teaching' && (
-                      <div className="workload-section-panel">
-                        <div className="workload-section-title">
-                          <div>
-                            <h3>Teaching Workload Rows</h3>
-                            <p className="subtext">
-                              Classroom subject periods assigned to this teacher.
-                              {getAssignedGradeLevels(currentPerson).length > 0 ? (
-                                <span style={{ marginLeft: '8px', color: 'var(--blue)', fontWeight: 'bold' }}>
-                                  (Assigned Grades: {getAssignedGradeLevels(currentPerson).join(', ')})
-                                </span>
-                              ) : (
-                                <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>
-                                  (No pre-assigned grade levels - showing all options)
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                            {/* Time Sort Select Dropdown */}
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: '600' }}>Sort Time:</span>
-                              <select
-                                value={timeSortOrder}
-                                onChange={(e) => setTimeSortOrder(e.target.value)}
-                                style={{
-                                  padding: '6px 10px',
-                                  borderRadius: '8px',
-                                  border: '1.5px solid var(--line)',
-                                  fontSize: '12px',
-                                  background: 'white',
-                                  color: '#334155',
-                                  fontWeight: '600',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                <option value="added">Newest First (Added)</option>
-                                <option value="asc">Earliest First (Asc)</option>
-                                <option value="desc">Latest First (Desc)</option>
-                              </select>
-                            </div>
-
-                            {/* View Mode Toggle Segmented Control */}
-                            <div style={{ display: 'flex', border: '1.5px solid var(--line)', borderRadius: '8px', overflow: 'hidden' }}>
-                              <button
-                                type="button"
-                                onClick={() => setLayoutType('gantt')}
-                                style={{
-                                  padding: '8px 12px',
-                                  background: layoutType === 'gantt' ? '#f1f5f9' : 'white',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontSize: '13px',
-                                  fontWeight: layoutType === 'gantt' ? 'bold' : 'normal',
-                                  color: layoutType === 'gantt' ? 'var(--blue)' : 'var(--muted)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
-                                title="Gantt Weekly Schedule View"
-                              >
-                                <FiBarChart2 size={13} /> Weekly Gantt
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setLayoutType('card')}
-                                style={{
-                                  padding: '8px 12px',
-                                  background: layoutType === 'card' ? '#f1f5f9' : 'white',
-                                  border: 'none',
-                                  borderLeft: '1.5px solid var(--line)',
-                                  cursor: 'pointer',
-                                  fontSize: '13px',
-                                  fontWeight: layoutType === 'card' ? 'bold' : 'normal',
-                                  color: layoutType === 'card' ? 'var(--blue)' : 'var(--muted)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
-                                title="Grid/Cards View"
-                              >
-                                <FiGrid size={13} /> Cards
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setLayoutType('list')}
-                                style={{
-                                  padding: '8px 12px',
-                                  background: layoutType === 'list' ? '#f1f5f9' : 'white',
-                                  border: 'none',
-                                  borderLeft: '1.5px solid var(--line)',
-                                  cursor: 'pointer',
-                                  fontSize: '13px',
-                                  fontWeight: layoutType === 'list' ? 'bold' : 'normal',
-                                  color: layoutType === 'list' ? 'var(--blue)' : 'var(--muted)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
-                                title="List View"
-                              >
-                                <FiList size={13} /> List
-                              </button>
-                            </div>
-                            <button
-                              className="btn secondary"
-                              type="button"
-                              onClick={handleClearCurrentTeacherWorkload}
-                              style={{
-                                background: '#F8FAFC',
-                                color: '#334155',
-                                border: '1.5px solid #CBD5E1',
-                                padding: '8px 14px',
-                                borderRadius: '8px',
-                                fontSize: '12px',
-                                fontWeight: '700',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = '#F1F5F9';
-                                e.currentTarget.style.color = '#0F172A';
-                                e.currentTarget.style.borderColor = '#94A3B8';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = '#F8FAFC';
-                                e.currentTarget.style.color = '#334155';
-                                e.currentTarget.style.borderColor = '#CBD5E1';
-                              }}
-                              title={`Clear all workload rows for ${currentPerson?.firstName || 'this'} ${currentPerson?.lastName || 'teacher'}`}
-                            >
-                              <FiTrash2 size={13} /> Clear This Teacher's Workload
-                            </button>
-                            <button className="btn secondary" type="button" onClick={addWorkloadRow}>+ Add subject schedule</button>
-                            <button
-                              type="button"
-                              onClick={handleSaveChangesDirectly}
-                              style={{
-                                background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-                                color: 'white',
-                                border: 'none',
-                                padding: '8px 16px',
-                                borderRadius: '8px',
-                                fontSize: '12px',
-                                fontWeight: '800',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                cursor: 'pointer',
-                                boxShadow: '0 2px 4px rgba(2,132,199,0.25)'
-                              }}
-                              title="Save workload to database"
-                            >
-                              <FiSave size={14} /> Save Workload
-                            </button>
-                          </div>
-                        </div>
-
-                        {layoutType === 'gantt' ? (
-                          <WorkloadGanttScheduleView
-                            currentPerson={currentPerson}
-                            classSections={classSections}
-                            updateWorkloadRowFields={updateWorkloadRowFields}
-                            removeWorkloadRow={removeWorkloadRow}
-                            addWorkloadRow={addWorkloadRow}
-                            handleFieldChange={handleFieldChange}
-                            getSubjectsForGrade={getSubjectsForGrade}
-                            getAssignedGradeLevels={getAssignedGradeLevels}
-                            getSubjectAssignmentForSection={getSubjectAssignmentForSection}
-                            getRowDurationError={getRowDurationError}
-                            getMatatagRowWarning={getMatatagRowWarning}
-                            getMatatagFixedDurationMins={getMatatagFixedDurationMins}
-                            getDuplicateSectionSubjectError={getDuplicateSectionSubjectError}
-                            getHgpWeeklyError={getHgpWeeklyError}
-                            isAdvisoryOrHgpPair={isAdvisoryOrHgpPair}
-                            isSHSRow={isSHSRow}
-                            GRADE_LEVELS_BY_CATEGORY={GRADE_LEVELS_BY_CATEGORY}
-                            SUBJECT_OPTIONS={SUBJECT_OPTIONS}
-                            REMEDIATION_FOCUS_BY_CATEGORY={REMEDIATION_FOCUS_BY_CATEGORY}
-                            GRADE_LEVEL_SUBJECTS={GRADE_LEVEL_SUBJECTS}
-                            dbPerson={dbPerson}
-                            activePersonnelId={activePersonnelId}
-                            selectedBlockIdx={selectedBlockIdx}
-                            setSelectedBlockIdx={setSelectedBlockIdx}
-                            handleSectionChangeForRow={handleSectionChangeForRow}
-                            handleSaveChangesDirectly={handleSaveChangesDirectly}
-                            sharedWorkloadRows={sharedWorkloadRows}
-                          />
-                        ) : (
-                          <div className="workload-builder" style={layoutType === 'list' ? { display: 'block', background: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px' } : {}}>
-                          {layoutType === 'list' && (currentPerson.workloadRows || []).length > 0 && (
-                            <div style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'minmax(180px, 1.1fr) minmax(180px, 1.2fr) 150px 195px 36px',
-                              gap: '12px',
-                              alignItems: 'center',
-                              padding: '8px 16px',
-                              fontWeight: '800',
-                              fontSize: '11px',
-                              color: '#64748b',
-                              textTransform: 'uppercase',
-                              borderBottom: '1.5px solid var(--line)',
-                              marginBottom: '8px'
-                            }}>
-                              <div>Section</div>
-                              <div>Subject</div>
-                              <div>Schedule Time</div>
-                              <div>Usual Days</div>
-                              <div></div>
-                            </div>
-                          )}
-
-                          {(() => {
-                            const rawRows = (currentPerson.workloadRows || []);
-                            const indexedRows = rawRows.map((r, originalIdx) => ({ ...r, originalIdx }));
-                            let sortedRows = [...indexedRows];
-
-                            sortedRows.sort((a, b) => {
-                              const getPriority = (row) => {
-                                const sub = String(row.subject || '').toUpperCase().trim();
-                                if (sub === 'ADVISORY') return 0;
-                                if (sub === 'HGP' || sub.includes('HOMEROOM')) return 1;
-                                return 2;
-                              };
-                              const prioA = getPriority(a);
-                              const prioB = getPriority(b);
-                              if (prioA !== prioB) return prioA - prioB;
-
-                              if (timeSortOrder === 'asc') {
-                                const minA = parseTimeToMinutes(a.startTime);
-                                const minB = parseTimeToMinutes(b.startTime);
-                                if (minA !== minB) return minA - minB;
-                                const endMinA = parseTimeToMinutes(a.endTime);
-                                const endMinB = parseTimeToMinutes(b.endTime);
-                                if (endMinA !== endMinB) return endMinA - endMinB;
-                              } else if (timeSortOrder === 'desc') {
-                                const minA = parseTimeToMinutes(a.startTime);
-                                const minB = parseTimeToMinutes(b.startTime);
-                                if (minA !== minB) return minB - minA;
-                                const endMinA = parseTimeToMinutes(a.endTime);
-                                const endMinB = parseTimeToMinutes(b.endTime);
-                                if (endMinA !== endMinB) return endMinB - endMinA;
-                              }
-                              return a.originalIdx - b.originalIdx;
-                            });
-
-
-                            const renderWorkloadRowCardItem = (row) => {
-                              const idx = row.originalIdx !== undefined ? row.originalIdx : (currentPerson.workloadRows || []).indexOf(row);
-                              const advisorySec = (classSections || []).find(s => s.advisorId && dbPerson?.id && String(s.advisorId) === String(dbPerson.id));
-                              if (isAdvisorySub(row.subject) && advisorySec && !row.sectionId) {
-                                row.sectionId = String(advisorySec.id);
-                                row.gradeLevel = advisorySec.gradeLevel;
-                              }
-                              const hasConflict = (currentPerson.workloadRows || []).some((otherRow, otherIdx) => {
-                                if (idx === otherIdx) return false;
-                                if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
-                                const daysOverlap = (row.days || []).some(d => (otherRow.days || []).includes(d));
-                                if (!daysOverlap) return false;
-                                const ns = parseTimeToMinutes(row.startTime), ne = parseTimeToMinutes(row.endTime);
-                                const rs = parseTimeToMinutes(otherRow.startTime), re = parseTimeToMinutes(otherRow.endTime);
-
-                                if (ns < re && ne > rs) {
-                                  if (isAdvisoryOrHgpPair(row, otherRow)) return false;
-                                  return true;
-                                }
-                                return false;
-                              });
-
-                              const cardRowId = row.id || `workload-row-${idx}`;
-                              const isNewlyAdded = newlyAddedWorkloadId && (String(row.id) === String(newlyAddedWorkloadId) || String(cardRowId) === String(newlyAddedWorkloadId));
-
-                              const durationErr = getRowDurationError(row);
-                              const matatagWarn = getMatatagRowWarning(row);
-                              const duplicateSubErr = getDuplicateSectionSubjectError(row, idx);
-                              const hgpWeeklyErr = getHgpWeeklyError(row);
-                              const cardHasError = hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr || (matatagWarn && matatagWarn.type === 'error');
-
-                              return (
-                                <div
-                                  key={idx}
-                                  ref={(el) => {
-                                    if (row.id) workloadCardRefs.current[row.id] = el;
-                                    workloadCardRefs.current[cardRowId] = el;
-                                  }}
-                                  className={`${layoutType === 'card' ? 'workload-row' : ''} ${isNewlyAdded ? 'workload-card-newly-added' : ''}`}
-                                  style={{
-                                    ...(layoutType === 'list'
-                                      ? {
-                                          padding: '10px 16px',
-                                          borderBottom: '1px solid var(--line)',
-                                          background: cardHasError ? '#FEF2F2' : (matatagWarn ? '#FFFBEB' : 'white'),
-                                          borderLeft: cardHasError ? '4px solid #EF4444' : (matatagWarn ? '4px solid #F59E0B' : 'none')
-                                        }
-                                      : (cardHasError ? { border: '1.5px solid #EF4444', background: '#FEF2F2', padding: '16px', borderRadius: '12px' } : (matatagWarn ? { border: '1.5px solid #FCD34D', background: '#FFFBEB', padding: '16px', borderRadius: '12px' } : {}))),
-                                    position: 'relative'
-                                  }}
-                                >
-                                  {isNewlyAdded && (
-                                    <span className="badge-new-item">Just Added</span>
-                                  )}
-
-                                  {(hasConflict || !!durationErr || !!duplicateSubErr || !!hgpWeeklyErr) && (
-                                    <div style={{
-                                      background: '#FEF2F2',
-                                      color: '#B91C1C',
-                                      fontSize: '11px',
-                                      fontWeight: '700',
-                                      padding: '4px 10px',
-                                      borderRadius: '6px',
-                                      border: '1px solid #FCA5A5',
-                                      marginBottom: '8px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px'
-                                    }}>
-                                      <FiAlertCircle size={14} color="#EF4444" style={{ marginRight: '6px', flexShrink: 0 }} /> {hgpWeeklyErr || duplicateSubErr || durationErr || 'Schedule Overlap Conflict: Time slot overlaps with another subject or task.'}
-                                    </div>
-                                  )}
-
-                                  {matatagWarn && (
-                                    <div style={{
-                                      background: matatagWarn.type === 'error' ? '#FEF2F2' : '#FFFBEB',
-                                      color: matatagWarn.type === 'error' ? '#B91C1C' : '#B45309',
-                                      fontSize: '11px',
-                                      fontWeight: '700',
-                                      padding: '4px 10px',
-                                      borderRadius: '6px',
-                                      border: `1px solid ${matatagWarn.type === 'error' ? '#FCA5A5' : '#FCD34D'}`,
-                                      marginBottom: '8px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px'
-                                    }}>
-                                      {matatagWarn.type === 'error' ? <FiAlertCircle size={14} color="#EF4444" style={{ marginRight: '6px', flexShrink: 0 }} /> : <FiAlertTriangle size={14} color="#F59E0B" style={{ marginRight: '6px', flexShrink: 0 }} />} {matatagWarn.message}
-                                    </div>
-                                  )}
-
-                                  {layoutType === 'list' ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1.1fr) minmax(180px, 1.2fr) 150px 195px 36px', gap: '12px', alignItems: 'center', width: '100%' }}>
-                                      {/* Section */}
-                                      <div>
-                                        {(() => {
-                                          const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                          const filteredSections = [...(classSections || [])].filter(s => isSectionMatchingTeacherGrades(s, assignedGrades));
-                                          const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
-                                          const advisorySec = (classSections || []).find(s => {
-                                            const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
-                                            const advName = String(s.advisorName || s.advisor_name || '').toLowerCase().trim();
-                                            const pFn = String(dbPerson?.firstName || currentPerson?.firstName || '').toLowerCase().trim();
-                                            const pLn = String(dbPerson?.lastName || currentPerson?.lastName || '').toLowerCase().trim();
-                                            const fullName = `${pFn} ${pLn}`.trim();
-                                            return (advId && advId === activePersonIdToMatch) || (advName && fullName && (advName.includes(pLn) || fullName.includes(advName)));
-                                          }) || (classSections || []).find(s => s.gradeLevel === row.gradeLevel) || (classSections || [])[0];
-
-                                          const matchingAdvRow = (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (r.sectionId || r.section_id));
-                                          const matchedSecByName = (classSections || []).find(s => 
-                                            s.sectionName && (row.sectionName || row.section_name) &&
-                                            String(s.sectionName).trim().toLowerCase() === String(row.sectionName || row.section_name).trim().toLowerCase()
-                                          );
-                                          const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
-                                          const resolvedSecVal = (row.subject === 'ADVISORY' || row.subject === 'HGP')
-                                            ? (currentSecId || (matchingAdvRow ? String(matchingAdvRow.sectionId || matchingAdvRow.section_id) : '') || (advisorySec ? String(advisorySec.id) : '') || (classSections && classSections[0] ? String(classSections[0].id) : ''))
-                                            : currentSecId;
-
-                                          if (resolvedSecVal && !row.sectionId) {
-                                            row.sectionId = resolvedSecVal;
-                                          }
-
-                                          if (resolvedSecVal && !filteredSections.some(s => String(s.id) === String(resolvedSecVal))) {
-                                            const matchInAll = (classSections || []).find(s => String(s.id) === String(resolvedSecVal));
-                                            if (matchInAll) {
-                                              filteredSections.push(matchInAll);
-                                            } else {
-                                              filteredSections.push({
-                                                id: resolvedSecVal,
-                                                sectionName: row.sectionName || row.section_name || 'APPLE',
-                                                gradeLevel: row.gradeLevel || 'Grade 1'
-                                              });
-                                            }
-                                          }
-
-                                          const sectionOptions = filteredSections.map(s => ({
-                                            value: String(s.id),
-                                            label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'})`
-                                          }));
-                                          return (
-                                            <SearchableSelect
-                                              disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
-                                              value={resolvedSecVal}
-                                              onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
-                                              options={sectionOptions}
-                                              placeholder="Select section…"
-                                            />
-                                          );
-                                        })()}
-                                      </div>
-
-                                      {/* Subject */}
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {row.sectionId && isSHSRow(row) && (
-                                          <div style={{ marginBottom: '2px' }}>
-                                            <SearchableSelect
-                                              disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
-                                              value={row.category || 'SHS-CORE SUBJECTS'}
-                                              onChange={(e) => {
-                                                const newCat = e.target.value;
-                                                const newSubjects = getSubjectsForGrade(row.gradeLevel, newCat);
-                                                updateWorkloadRowFields(idx, { category: newCat, subject: newSubjects.includes(row.subject) ? row.subject : (newSubjects.find(s => s !== 'ADVISORY') || '') });
-                                              }}
-                                              options={[
-                                                { value: 'SHS-CORE SUBJECTS', label: 'SHS-CORE SUBJECTS' },
-                                                { value: 'SHS-APPLIED SUBJECTS', label: 'SHS-APPLIED SUBJECTS' },
-                                                { value: 'SHS-SPECIALIZED SUBJECTS', label: 'SHS-SPECIALIZED SUBJECTS' },
-                                                { value: 'SSHS-CORE', label: 'SSHS-CORE' },
-                                                { value: 'SSHS-ACADEMIC', label: 'SSHS-ACADEMIC' },
-                                                { value: 'SSHS-TECHPRO', label: 'SSHS-TECHPRO' },
-                                                { value: 'SHS', label: 'SHS (ALL SUBJECTS)' }
-                                              ]}
-                                              placeholder="Select SHS category…"
-                                            />
-                                          </div>
-                                        )}
-                                        {(() => {
-                                          const currentSecId = String(row.sectionId || row.section_id || '');
-                                          const currentSub = row.subject || row.subject_name || '';
-                                          const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (row.sectionName && s.sectionName === row.sectionName));
-                                          const isAralSection = Boolean(
-                                            (linkedSec && (
-                                              String(linkedSec.sectionType || '').startsWith('ARAL') ||
-                                              String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
-                                              String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL')
-                                            )) ||
-                                            String(row.gradeLevel || '').toUpperCase().includes('ARAL') ||
-                                            String(row.sectionName || '').toUpperCase().includes('ARAL')
-                                          );
-                                          const subjectList = (() => {
-                                            if (isAralSection) {
-                                              return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
-                                            }
-                                            if (!currentSecId && !currentSub) return [];
-                                            const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                            let rawList = [];
-                                            if (row.gradeLevel) {
-                                              rawList = getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
-                                            } else if (assignedGrades.length > 0) {
-                                              const unionSubjects = new Set();
-                                              assignedGrades.forEach(g => {
-                                                let resolvedCategory = 'Elementary';
-                                                for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
-                                                  if (grades.includes(g)) {
-                                                    resolvedCategory = cat;
-                                                    break;
-                                                  }
-                                                }
-                                                getSubjectsForGrade(g, resolvedCategory).forEach(sub => unionSubjects.add(sub));
-                                              });
-                                              rawList = Array.from(unionSubjects);
-                                            } else {
-                                              rawList = SUBJECT_OPTIONS;
-                                            }
-                                            return (rawList || []).filter(s => !isAralSubject(s));
-                                          })();
-
-                                          const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
-                                          const subjectOptions = [
-                                            ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY', disabled: false }] : []),
-                                            ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP', disabled: false }] : []),
-                                            ...(isCustom ? [{ value: currentSub, label: currentSub, disabled: false }] : []),
-                                            ...subjectList.map(sub => {
-                                              const isSelfCurrent = (sub === currentSub);
-                                              const assignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, row.sectionName, sub, isSHSRow(row) ? (row.term || '1st') : null, idx) : null;
-                                              if (assignment && assignment.assigned) {
-                                                return {
-                                                  value: sub,
-                                                  label: `${sub} [Locked: ${assignment.teacherName}]`,
-                                                  disabled: true
-                                                };
-                                              }
-                                              return { value: sub, label: sub, disabled: false };
-                                            })
-                                          ];
-
-                                          return (
-                                            <SearchableSelect
-                                              disabled={!row.sectionId || !row.gradeLevel || row.subject === 'HGP'}
-                                              value={currentSub}
-                                              onChange={(e) => {
-                                                const newSub = e.target.value;
-                                                if (!newSub) return;
-                                                updateWorkloadRowFields(idx, { subject: newSub });
-                                              }}
-                                              options={subjectOptions}
-                                              placeholder={!row.sectionId || !row.gradeLevel ? "Select section first…" : "Select subject…"}
-                                            />
-                                          );
-                                        })()}
-                                      </div>
-
-                                      {/* Start Time & End Time (Vertical) */}
-                                      {row.subject === 'ADVISORY' ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontSize: '9px', fontWeight: '800', color: '#0284c7', width: '32px' }}>START</span>
-                                            <input
-                                              type="time"
-                                              list="school-times"
-                                              value={row.startTime || '07:30'}
-                                              onChange={(e) => {
-                                                const sTime = e.target.value;
-                                                const eTime = add60MinutesToTime(sTime);
-                                                updateWorkloadRowFields(idx, { startTime: sTime, endTime: eTime });
-                                              }}
-                                              style={{ flex: 1, padding: '3px 6px', borderRadius: '6px', border: '1.5px solid #bae6fd', fontSize: '11px', background: '#f0f9ff' }}
-                                            />
-                                          </div>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontSize: '9px', fontWeight: '800', color: '#64748b', width: '32px' }}>END</span>
-                                            <span style={{ flex: 1, padding: '3px 6px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', color: '#64748b', background: '#f8fafc' }}>
-                                              {row.endTime || add60MinutesToTime(row.startTime || '07:30')} (60m)
-                                            </span>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                          {/* Start Time */}
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontSize: '9px', fontWeight: '800', color: '#64748b', width: '32px' }}>START</span>
-                                            <input
-                                              type="time"
-                                              list="school-times"
-                                              value={row.startTime || '07:30'}
-                                              onChange={(e) => {
-                                                const sTime = e.target.value;
-                                                const eTime = add60MinutesToTime(sTime);
-                                                updateWorkloadRowFields(idx, { startTime: sTime, endTime: eTime });
-                                              }}
-                                              style={{ flex: 1, padding: '3px 6px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '11px' }}
-                                            />
-                                          </div>
-
-                                          {/* End Time */}
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontSize: '9px', fontWeight: '800', color: '#64748b', width: '32px' }}>END</span>
-                                            <input
-                                              type="time"
-                                              list="school-times"
-                                              value={row.endTime || '08:30'}
-                                              onChange={(e) => updateWorkloadRowFields(idx, { endTime: e.target.value })}
-                                              style={{ flex: 1, padding: '3px 6px', borderRadius: '6px', border: '1.5px solid var(--line)', fontSize: '11px' }}
-                                            />
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Usual Days & Minutes */}
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                                        {row.subject === 'ADVISORY' ? (
-                                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#0284c7', background: '#e0f2fe', padding: '4px 10px', borderRadius: '6px', display: 'inline-block', border: '1px solid #bae6fd' }}>
-                                            FIXED MONDAY to FRIDAY
-                                          </span>
-                                        ) : (
-                                          <div style={{ display: 'flex', gap: '3px', flexWrap: 'nowrap', alignItems: 'center' }}>
-                                            {['M', 'T', 'W', 'TH', 'F', 'SAT', 'SUN'].map(day => {
-                                              const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-                                                ? row.days
-                                                : (row.daySchedule || row.day_schedule)
-                                                  ? String(row.daySchedule || row.day_schedule).split(',').map(s => s.trim())
-                                                  : ['M', 'T', 'W', 'TH', 'F'];
-                                              const isSelected = rowDays.some(d => {
-                                                const s = String(d).toUpperCase().trim();
-                                                if (day === 'M') return s === 'M' || s.startsWith('MON');
-                                                if (day === 'T') return s === 'T' || s.startsWith('TUE');
-                                                if (day === 'W') return s === 'W' || s.startsWith('WED');
-                                                if (day === 'TH') return s === 'TH' || s.startsWith('THU');
-                                                if (day === 'F') return s === 'F' || s.startsWith('FRI');
-                                                if (day === 'SAT') return s === 'SAT';
-                                                if (day === 'SUN') return s === 'SUN';
-                                                return false;
-                                              });
-                                              return (
-                                                <button
-                                                  key={day}
-                                                  type="button"
-                                                  disabled={row.subject === 'ADVISORY'}
-                                                  onClick={() => {
-                                                     if (row.subject === 'ADVISORY') return;
-                                                     const newDays = isSelected ? rowDays.filter(x => x !== day) : [...rowDays, day];
-                                                     updateWorkloadRowFields(idx, { days: newDays });
-                                                  }}
-                                                  style={{
-                                                    padding: '2px 5px',
-                                                    fontSize: '10px',
-                                                    fontWeight: '800',
-                                                    borderRadius: '4px',
-                                                    border: 'none',
-                                                    background: isSelected ? 'var(--navy)' : '#f1f5f9',
-                                                    color: isSelected ? 'white' : '#64748b',
-                                                    cursor: row.subject === 'ADVISORY' ? 'not-allowed' : 'pointer'
-                                                  }}
-                                                >
-                                                  {day}
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-
-                                        {/* Live Minutes Badge (Mins Per Day Only) */}
-                                        {(() => {
-                                          const isHgp = String(row.subject || '').toUpperCase().trim() === 'HGP' || String(row.subject || '').toUpperCase().trim().includes('HOMEROOM GUIDANCE');
-                                          const isAdv = row.subject === 'ADVISORY';
-                                          const diffM = (!row.startTime || !row.endTime) ? (isAdv ? 60 : 0) : getTimeDiffMins(row.startTime, row.endTime);
-
-                                          if (isHgp) {
-                                            const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-                                              ? row.days
-                                              : (row.daySchedule || row.day_schedule)
-                                                ? String(row.daySchedule || row.day_schedule).split(',').map(s => s.trim())
-                                                : ['M', 'T', 'W', 'TH', 'F'];
-                                            const weeklyM = diffM * rowDays.length;
-                                            const isExact60 = weeklyM === 60;
-                                            return (
-                                              <span style={{
-                                                fontSize: '10px',
-                                                fontWeight: '800',
-                                                color: isExact60 ? '#0369a1' : '#b91c1c',
-                                                background: isExact60 ? '#f0f9ff' : '#fef2f2',
-                                                padding: '2px 8px',
-                                                borderRadius: '4px',
-                                                border: `1px solid ${isExact60 ? '#bae6fd' : '#fca5a5'}`,
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '3px'
-                                              }}>
-                                                <FiClock size={12} style={{ marginRight: '4px' }} />{diffM}m/day × {rowDays.length}d = {weeklyM} mins/wk {isExact60 ? '(Verified)' : '(Must be 60m)'}
-                                              </span>
-                                            );
-                                          }
-                                          if (isAdv) {
-                                            return (
-                                              <span style={{ fontSize: '10px', fontWeight: '800', color: '#0369a1', background: '#e0f2fe', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bae6fd', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                                <FiClock size={12} style={{ marginRight: '4px' }} /> 60 mins / day
-                                              </span>
-                                            );
-                                          }
-                                          if (diffM > 0) {
-                                            return (
-                                              <span style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', background: '#f0fdf4', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                                <FiClock size={12} style={{ marginRight: '4px' }} /> {diffM} mins / day
-                                              </span>
-                                            );
-                                          }
-                                          return (
-                                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8' }}>
-                                              <FiClock size={12} style={{ marginRight: '4px' }} /> 0 mins
-                                            </span>
-                                          );
-                                        })()}
-                                      </div>
-
-                                      {/* Actions */}
-                                      <div style={{ display: 'flex', justifyContent: 'center' }}>
-                                        {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
-                                          <span style={{ fontSize: '12px', color: '#94a3b8', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Advisory/HGP is tied to class section"><FiLock size={12} /></span>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => removeWorkloadRow(idx)}
-                                            style={{
-                                              width: '30px',
-                                              height: '30px',
-                                              minWidth: '30px',
-                                              padding: 0,
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'center',
-                                              background: 'transparent',
-                                              color: '#94A3B8',
-                                              border: '1px solid transparent',
-                                              borderRadius: '8px',
-                                              fontSize: '15px',
-                                              fontWeight: 'bold',
-                                              cursor: 'pointer',
-                                              transition: 'all 0.15s ease'
-                                            }}
-                                            onMouseEnter={(e) => {
-                                              e.currentTarget.style.background = '#FEE2E2';
-                                              e.currentTarget.style.color = '#EF4444';
-                                              e.currentTarget.style.borderColor = '#FCA5A5';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              e.currentTarget.style.background = 'transparent';
-                                              e.currentTarget.style.color = '#94A3B8';
-                                              e.currentTarget.style.borderColor = 'transparent';
-                                            }}
-                                            title="Remove Schedule Slot"
-                                          ><FiX size={14} /></button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    /* Cards Layout */
-                                    <div>
-                                      {row.subject === 'ADVISORY' || row.subject === 'HGP' ? (
-                                        <span style={{ position: 'absolute', top: '12px', right: '14px', fontSize: '10px', color: '#94a3b8', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiLock size={11} /> Locked</span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => removeWorkloadRow(idx)}
-                                          style={{ position: 'absolute', top: '10px', right: '14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', color: '#ef4444', opacity: 0.6, transition: 'opacity 0.15s', lineHeight: 1 }}
-                                          onMouseEnter={(e) => e.target.style.opacity = 1}
-                                          onMouseLeave={(e) => e.target.style.opacity = 0.6}
-                                          title="Remove Schedule"
-                                        ><FiX size={14} /></button>
-                                      )}
-
-                                      {/* Badges row */}
-                                      {(() => {
-                                        let bgBadge = '#f0f9ff', clrBadge = '#0369a1';
-                                        if (String(row.gradeLevel).toLowerCase().includes('kinder')) { bgBadge = '#fdf2f8'; clrBadge = '#be185d'; }
-                                        else if (String(row.gradeLevel).toLowerCase().includes('grade 11') || String(row.gradeLevel).toLowerCase().includes('grade 12')) { bgBadge = '#faf5ff'; clrBadge = '#6b21a8'; }
-                                        else if (String(row.gradeLevel).toLowerCase().includes('grade 7') || String(row.gradeLevel).toLowerCase().includes('grade 8') || String(row.gradeLevel).toLowerCase().includes('grade 9') || String(row.gradeLevel).toLowerCase().includes('grade 10')) { bgBadge = '#eff6ff'; clrBadge = '#1d4ed8'; }
-                                        const linkedSec = (classSections || []).find(s => String(s.id) === String(row.sectionId || row.section_id || ''));
-                                        return (
-                                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginRight: '50px' }}>
-                                            <span style={{ background: bgBadge, color: clrBadge, padding: '3px 10px', borderRadius: '20px', fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.02em' }}>{row.gradeLevel || 'No Grade'}</span>
-                                            {linkedSec && (
-                                              <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '3px 10px', borderRadius: '20px', fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.02em' }}>
-                                                [{linkedSec.gradeLevel} - {linkedSec.sectionName}]
-                                              </span>
-                                            )}
-                                            {(row.sectionId || row.section_id) && (
-                                              <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '20px', fontSize: '9px', fontWeight: 'bold', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Section Adviser</span>
-                                            )}
-                                            {row.category && (
-                                              <span style={{ background: row.category === 'Elementary' ? '#f0fdf4' : '#fffbeb', color: row.category === 'Elementary' ? '#15803d' : '#b45309', padding: '3px 10px', borderRadius: '20px', fontSize: '9px', fontWeight: 'bold', letterSpacing: '0.02em', textTransform: 'uppercase' }}>{row.category}</span>
-                                            )}
-                                          </div>
-                                        );
-                                      })()}
-                                      {/* Subject Title */}
-                                      <h4 style={{ margin: '2px 0 0', fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>{row.subject || 'Select Subject'}</h4>
-                                      <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '2px 0 4px' }} />
-
-                                      {/* Compact fields grid */}
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
-                                        <div>
-                                          <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Section</label>
-                                          {(() => {
-                                            const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                            const filteredSections = [...(classSections || [])].filter(s => isSectionMatchingTeacherGrades(s, assignedGrades));
-                                            const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId || '');
-                                            const advisorySec = (classSections || []).find(s => {
-                                              const advId = String(s.advisorId || s.advisor_id || s.advisor || '');
-                                              const advName = String(s.advisorName || s.advisor_name || '').toLowerCase().trim();
-                                              const pFn = String(dbPerson?.firstName || currentPerson?.firstName || '').toLowerCase().trim();
-                                              const pLn = String(dbPerson?.lastName || currentPerson?.lastName || '').toLowerCase().trim();
-                                              const fullName = `${pFn} ${pLn}`.trim();
-                                              return (advId && advId === activePersonIdToMatch) || (advName && fullName && (advName.includes(pLn) || fullName.includes(advName)));
-                                            }) || (classSections || []).find(s => s.gradeLevel === row.gradeLevel) || (classSections || [])[0];
-
-                                            const matchingAdvRow = (currentPerson.workloadRows || []).find(r => r.subject === 'ADVISORY' && (r.sectionId || r.section_id));
-                                            const matchedSecByName = (classSections || []).find(s => 
-                                              s.sectionName && (row.sectionName || row.section_name) &&
-                                              String(s.sectionName).trim().toLowerCase() === String(row.sectionName || row.section_name).trim().toLowerCase()
-                                            );
-                                            const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
-                                            const resolvedSecVal = (row.subject === 'ADVISORY' || row.subject === 'HGP')
-                                              ? (currentSecId || (matchingAdvRow ? String(matchingAdvRow.sectionId || matchingAdvRow.section_id) : '') || (advisorySec ? String(advisorySec.id) : '') || (classSections && classSections[0] ? String(classSections[0].id) : ''))
-                                              : currentSecId;
-
-                                            if (resolvedSecVal && !row.sectionId) {
-                                              row.sectionId = resolvedSecVal;
-                                            }
-
-                                            if (resolvedSecVal && !filteredSections.some(s => String(s.id) === String(resolvedSecVal))) {
-                                              const matchInAll = (classSections || []).find(s => String(s.id) === String(resolvedSecVal));
-                                              if (matchInAll) {
-                                                filteredSections.push(matchInAll);
-                                              } else {
-                                                filteredSections.push({
-                                                  id: resolvedSecVal,
-                                                  sectionName: row.sectionName || row.section_name || 'APPLE',
-                                                  gradeLevel: row.gradeLevel || 'Grade 1'
-                                                });
-                                              }
-                                            }
-
-                                            const sectionOptions = filteredSections.map(s => ({
-                                              value: String(s.id),
-                                              label: `${s.sectionName || s.section_name || 'Section'} (${s.gradeLevel || s.grade_level || 'Grade'})`
-                                            }));
-                                            return (
-                                              <SearchableSelect
-                                                disabled={row.subject === 'ADVISORY' || row.subject === 'HGP'}
-                                                value={resolvedSecVal}
-                                                onChange={(e) => handleSectionChangeForRow(idx, e.target.value)}
-                                                options={sectionOptions}
-                                                placeholder="Select section…"
-                                              />
-                                            );
-                                          })()}
-                                        </div>
-                                        <div>
-                                          <label style={{ fontSize: '9px', fontWeight: '700', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: '2px', display: 'block' }}>Subject</label>
-                                          {(() => {
-                                            const matchedSecByName = (classSections || []).find(s => 
-                                              s.sectionName && (row.sectionName || row.section_name) &&
-                                              String(s.sectionName).trim().toLowerCase() === String(row.sectionName || row.section_name).trim().toLowerCase()
-                                            );
-                                            const currentSecId = String(row.sectionId || row.section_id || matchedSecByName?.id || '');
-                                            const currentSub = row.subject || row.subjectName || row.subject_name || '';
-                                            const linkedSec = (classSections || []).find(s => String(s.id) === currentSecId || (row.sectionName && s.sectionName === row.sectionName));
-                                            const isAralSection = Boolean(
-                                              (linkedSec && (
-                                                String(linkedSec.sectionType || '').startsWith('ARAL') ||
-                                                String(linkedSec.sectionName || '').toUpperCase().includes('ARAL') ||
-                                                String(linkedSec.gradeLevel || '').toUpperCase().includes('ARAL')
-                                              )) ||
-                                              String(row.gradeLevel || '').toUpperCase().includes('ARAL') ||
-                                              String(row.sectionName || '').toUpperCase().includes('ARAL')
-                                            );
-                                            const effectiveGrade = String(row.gradeLevel || linkedSec?.gradeLevel || '').toLowerCase();
-
-                                            const subjectList = (() => {
-                                              if (isAralSection) {
-                                                return ['ARAL - READING', 'ARAL - MATH', 'ARAL - SCIENCE'];
-                                              }
-                                              if (!currentSecId && !currentSub) return [];
-                                              if (effectiveGrade.includes('kinder')) {
-                                                return ['KINDER BLOCKS OF TIME'];
-                                              }
-                                              const assignedGrades = getAssignedGradeLevels(currentPerson);
-                                              let rawList = [];
-                                              if (row.gradeLevel) {
-                                                rawList = getSubjectsForGrade(row.gradeLevel, row.category || 'Elementary');
-                                              } else if (assignedGrades.length > 0) {
-                                                const unionSubjects = new Set();
-                                                assignedGrades.forEach(g => {
-                                                  let resolvedCategory = 'Elementary';
-                                                  for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
-                                                    if (grades.includes(g)) {
-                                                      resolvedCategory = cat;
-                                                      break;
-                                                    }
-                                                  }
-                                                  getSubjectsForGrade(g, resolvedCategory).forEach(sub => unionSubjects.add(sub));
-                                                });
-                                                rawList = Array.from(unionSubjects);
-                                              } else {
-                                                rawList = SUBJECT_OPTIONS;
-                                              }
-                                              return (rawList || []).filter(s => !isAralSubject(s));
-                                            })();
-
-                                            const isCustom = currentSub && !subjectList.includes(currentSub) && currentSub !== 'ADVISORY' && currentSub !== 'HGP';
-                                            const subjectOptions = [
-                                              ...(currentSub === 'ADVISORY' ? [{ value: 'ADVISORY', label: 'ADVISORY', disabled: false }] : []),
-                                              ...(currentSub === 'HGP' ? [{ value: 'HGP', label: 'HGP', disabled: false }] : []),
-                                              ...(isCustom ? [{ value: currentSub, label: currentSub, disabled: false }] : []),
-                                              ...subjectList.map(sub => {
-                                                const isSelfCurrent = (sub === currentSub);
-                                                const assignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, row.sectionName, sub, isSHSRow(row) ? (row.term || '1st') : null, idx) : null;
-                                                if (assignment && assignment.assigned) {
-                                                  return {
-                                                    value: sub,
-                                                    label: `${sub} [Locked: ${assignment.teacherName}]`,
-                                                    disabled: true
-                                                  };
-                                                }
-                                                return { value: sub, label: sub, disabled: false };
-                                              })
-                                            ];
-
-                                            return (
-                                              <SearchableSelect
-                                                disabled={!row.sectionId || !row.gradeLevel || isAdvisorySub(row.subject)}
-                                                value={currentSub}
-                                                onChange={(e) => {
-                                                  const newSub = e.target.value;
-                                                  if (!newSub) return;
-                                                  const isSHS = isSHSRow({ ...row, subject: newSub });
-                                                  const maxMins = isSHS ? 360 : 60;
-                                                  let newStart = row.startTime || '07:30';
-                                                  let newEnd = row.endTime || '08:30';
-                                                  if (newStart && newEnd) {
-                                                    const diff = getTimeDiffMins(newStart, newEnd);
-                                                    if (diff > maxMins) {
-                                                      const [sh, sm] = newStart.split(':').map(Number);
-                                                      const maxEndMins = sh * 60 + sm + maxMins;
-                                                      const maxEndH = String(Math.floor(maxEndMins / 60) % 24).padStart(2, '0');
-                                                      const maxEndM = String(maxEndMins % 60).padStart(2, '0');
-                                                      newEnd = `${maxEndH}:${maxEndM}`;
-                                                    }
-                                                  }
-                                                  updateWorkloadRowFields(idx, { subject: newSub, startTime: newStart, endTime: newEnd });
-                                                }}
-                                                options={subjectOptions}
-                                                placeholder={!row.sectionId || !row.gradeLevel ? "Select section first…" : "Select subject…" }
-                                              />
-                                            );
-                                          })()}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            };
-
-                            return (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {sortedRows.length === 0 ? (
-                                  <div style={{ padding: '24px', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', color: '#64748B', fontSize: '13px', textAlign: 'center' }}>
-                                    No workload schedule rows added yet. Click <strong>"+ Add Schedule Row"</strong> above to add teaching subjects or special assignments.
-                                  </div>
-                                ) : (
-                                  sortedRows.map(row => renderWorkloadRowCardItem(row))
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        )}
-                      </div>
-                    )}
+                    {/* Workload Schedule (Gantt Timetable View) */}
+                    <div style={{ marginBottom: '24px' }}>
+                      <WorkloadGanttScheduleView
+                        currentPerson={currentPerson}
+                        classSections={classSections}
+                        updateWorkloadRowFields={updateWorkloadRowFields}
+                        removeWorkloadRow={removeWorkloadRow}
+                        addWorkloadRow={addWorkloadRow}
+                        handleFieldChange={handleFieldChange}
+                        getSubjectsForGrade={getSubjectsForGrade}
+                        getAssignedGradeLevels={getAssignedGradeLevels}
+                        getSubjectAssignmentForSection={getSubjectAssignmentForSection}
+                        getRequiredWeeklyMinutes={getRequiredWeeklyMinutes}
+                        getSubjectAllocationForSection={getSubjectAllocationForSection}
+                        getRowDurationError={getRowDurationError}
+                        getMatatagRowWarning={getMatatagRowWarning}
+                        getMatatagFixedDurationMins={getMatatagFixedDurationMins}
+                        getDuplicateSectionSubjectError={getDuplicateSectionSubjectError}
+                        getHgpWeeklyError={getHgpWeeklyError}
+                        isAdvisoryOrHgpPair={isAdvisoryOrHgpPair}
+                        isSHSRow={isSHSRow}
+                        GRADE_LEVELS_BY_CATEGORY={GRADE_LEVELS_BY_CATEGORY}
+                        SUBJECT_OPTIONS={SUBJECT_OPTIONS}
+                        REMEDIATION_FOCUS_BY_CATEGORY={REMEDIATION_FOCUS_BY_CATEGORY}
+                        GRADE_LEVEL_SUBJECTS={GRADE_LEVEL_SUBJECTS}
+                        dbPerson={dbPerson}
+                        activePersonnelId={activePersonnelId}
+                        selectedBlockIdx={selectedBlockIdx}
+                        setSelectedBlockIdx={setSelectedBlockIdx}
+                        handleSaveChangesDirectly={handleSaveChangesDirectly}
+                        sharedWorkloadRows={sharedWorkloadRows}
+                        activeTerm={activeTerm}
+                        onCopyFirstTerm={(scope) => handleCopyFirstTermToSecondTerm(scope || 'CURRENT')}
+                        onClearTermWorkload={handleClearCurrentTeacherWorkload}
+                      />
+                    </div>
 
                     {/* ── WORK IMMERSION MONTHLY CALENDAR & OVERLOAD INTEGRATION ── */}
                     {(() => {
@@ -11073,8 +12040,10 @@ export default function Workload() {
                                               key={cOpt.id}
                                               type="button"
                                               onClick={() => {
-                                                updateTaskField('teachingRelatedRows', idx, 'cadence', cOpt.id);
-                                                updateTaskField('teachingRelatedRows', idx, 'frequency', cOpt.id);
+                                                updateTaskFields('teachingRelatedRows', idx, {
+                                                  cadence: cOpt.id,
+                                                  frequency: cOpt.id
+                                                });
                                               }}
                                               style={{
                                                 padding: '8px 10px',
@@ -11108,10 +12077,32 @@ export default function Workload() {
                                           max="40"
                                           value={row.hours !== undefined ? row.hours : (durMins / 60)}
                                           onChange={(e) => {
-                                            const val = parseFloat(e.target.value) || 0.5;
-                                            updateTaskField('teachingRelatedRows', idx, 'hours', val);
-                                            updateTaskField('teachingRelatedRows', idx, 'duration_minutes', Math.round(val * 60));
-                                            updateTaskField('teachingRelatedRows', idx, 'durationMinutes', Math.round(val * 60));
+                                            const inputVal = e.target.value;
+                                            if (inputVal === '') {
+                                              updateTaskFields('teachingRelatedRows', idx, {
+                                                hours: '',
+                                                duration_minutes: 0,
+                                                durationMinutes: 0
+                                              });
+                                              return;
+                                            }
+                                            const val = parseFloat(inputVal);
+                                            if (!isNaN(val)) {
+                                              updateTaskFields('teachingRelatedRows', idx, {
+                                                hours: val,
+                                                duration_minutes: Math.round(val * 60),
+                                                durationMinutes: Math.round(val * 60)
+                                              });
+                                            }
+                                          }}
+                                          onBlur={(e) => {
+                                            const val = parseFloat(e.target.value);
+                                            const finalVal = (!val || isNaN(val) || val <= 0) ? 0.5 : val;
+                                            updateTaskFields('teachingRelatedRows', idx, {
+                                              hours: finalVal,
+                                              duration_minutes: Math.round(finalVal * 60),
+                                              durationMinutes: Math.round(finalVal * 60)
+                                            });
                                           }}
                                           style={{
                                             width: '100px',
@@ -11147,86 +12138,214 @@ export default function Workload() {
                           </div>
                         </div>
 
-                        {/* Administrative tasks */}
+                        {/* Administrative Tasks (Ancillary Duties) */}
                         <div className="multi-task-panel">
-                          <div className="multi-task-panel-head">
-                            <label>Administrative Tasks</label>
-                            <button className="btn secondary" type="button" onClick={() => addTaskRow('administrativeRows', ADMINISTRATIVE_TASK_OPTIONS)}>
-                              + Add task
+                          <div className="multi-task-panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <label style={{ fontSize: '14px', fontWeight: '800', color: 'var(--navy)' }}>Administrative Tasks (Ancillary Duties)</label>
+                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748B' }}>
+                                Scheduled directly on the unified Gantt chart timetable above.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn sm"
+                              onClick={() => {
+                                const newId = `admin-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+                                const newRow = {
+                                  id: newId,
+                                  sectionId: '',
+                                  sectionName: '',
+                                  gradeLevel: '',
+                                  category: '',
+                                  subject: ADMIN_TASK_OPTIONS[0],
+                                  startTime: '13:00',
+                                  endTime: '14:00',
+                                  days: ['M', 'T', 'W', 'TH', 'F'],
+                                  term: activeTerm
+                                };
+                                const updated = [newRow, ...(currentPerson.workloadRows || [])];
+                                if (typeof handleFieldChange === 'function') {
+                                  handleFieldChange('workloadRows', updated);
+                                }
+                                setSelectedBlockIdx(0);
+                                if (showToast) {
+                                  showToast('💼 Added Administrative Task to timetable! Adjust hours or days in the inspector.', 'success');
+                                }
+                                const el = document.querySelector('.gantt-schedule-container');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              style={{
+                                background: 'linear-gradient(135deg, #1E293B 0%, #334155 100%)',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                boxShadow: '0 2px 4px rgba(15, 23, 42, 0.2)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <FiBriefcase size={13} color="#38BDF8" /> + Add Admin Task
                             </button>
                           </div>
-                          <div className="multi-task-rows">
-                            {(currentPerson.administrativeRows || []).map((row, idx) => {
-                              const curMins = row.duration_minutes !== undefined ? row.duration_minutes : (row.minutes !== undefined ? row.minutes : (row.hours !== undefined ? Math.round(Number(row.hours) * 60) : 60));
 
+                          {/* List of currently assigned Admin Tasks on timetable */}
+                          {(() => {
+                            const adminRows = (currentPerson.workloadRows || []).filter(r => (r.term || '1st') === activeTerm && isAdminTaskRow(r));
+                            if (adminRows.length === 0) {
                               return (
-                                <div key={idx} className="multi-task-row" style={{ display: 'grid', gridTemplateColumns: '1.4fr 260px 160px 44px', gap: '12px', alignItems: 'center', background: 'white', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--line)', marginBottom: '8px' }}>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold' }}>Task Type</label>
-                                    <SearchableSelect
-                                      value={row.task}
-                                      onChange={(e) => updateTaskField('administrativeRows', idx, 'task', e.target.value)}
-                                      options={ADMINISTRATIVE_TASK_OPTIONS.map(opt => ({ value: opt, label: opt }))}
-                                    />
+                                <div style={{ background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '12px', padding: '24px 16px', textAlign: 'center', margin: '14px 0' }}>
+                                  <FiBriefcase size={28} color="#94A3B8" style={{ marginBottom: '6px' }} />
+                                  <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--navy)' }}>No Administrative Tasks Scheduled</div>
+                                  <div style={{ fontSize: '11px', color: '#64748B', maxWidth: '420px', margin: '4px auto 12px', lineHeight: '1.5' }}>
+                                    If this teacher performs school-level administrative duties (Personnel Administration, Property Custodianship, Financial Management, etc.), click <strong>+ Add Admin Task</strong> to schedule on the Gantt chart.
                                   </div>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Calendar Dates</label>
-                                    <MultiDatePickerDropdown
-                                      value={row.dates || (row.taskDate ? [row.taskDate] : [])}
-                                      onChange={(newDates) => updateTaskField('administrativeRows', idx, 'dates', newDates)}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label style={{ fontSize: '11px', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Duration (Mins)</label>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <input
-                                        type="number"
-                                        step="15"
-                                        min="15"
-                                        max="480"
-                                        value={curMins}
-                                        onChange={(e) => {
-                                          const mins = parseInt(e.target.value, 10) || 15;
-                                          updateTaskField('administrativeRows', idx, 'duration_minutes', mins);
-                                          updateTaskField('administrativeRows', idx, 'durationMinutes', mins);
-                                          updateTaskField('administrativeRows', idx, 'minutes', mins);
-                                          updateTaskField('administrativeRows', idx, 'hours', parseFloat((mins / 60).toFixed(2)));
-                                        }}
-                                        style={{ width: '100%', padding: '6px 8px', fontSize: '12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontWeight: '700', color: 'var(--navy)' }}
-                                      />
-                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', whiteSpace: 'nowrap' }}>mins</span>
-                                    </div>
-                                  </div>
-                                  <div style={{ textAlign: 'center' }}>
-                                    <button className="btn danger sm" type="button" onClick={() => removeTaskRow('administrativeRows', idx)} style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px', borderRadius: '6px' }} title="Remove Task"><FiX size={14} /></button>
-                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn sm"
+                                    onClick={() => {
+                                      const newId = `admin-workload-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+                                      const newRow = {
+                                        id: newId,
+                                        sectionId: '',
+                                        sectionName: '',
+                                        gradeLevel: '',
+                                        category: '',
+                                        subject: ADMIN_TASK_OPTIONS[0],
+                                        startTime: '13:00',
+                                        endTime: '14:00',
+                                        days: ['M', 'T', 'W', 'TH', 'F'],
+                                        term: activeTerm
+                                      };
+                                      const updated = [newRow, ...(currentPerson.workloadRows || [])];
+                                      if (typeof handleFieldChange === 'function') {
+                                        handleFieldChange('workloadRows', updated);
+                                      }
+                                      setSelectedBlockIdx(0);
+                                      if (showToast) {
+                                        showToast('💼 Added Administrative Task to timetable! Adjust hours or days in the inspector.', 'success');
+                                      }
+                                      const el = document.querySelector('.gantt-schedule-container');
+                                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                                    }}
+                                    style={{
+                                      background: 'linear-gradient(135deg, #1E293B 0%, #334155 100%)',
+                                      color: '#FFFFFF',
+                                      border: 'none',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      padding: '7px 16px',
+                                      borderRadius: '8px',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    <FiPlus size={12} /> + Add Admin Task to Timetable
+                                  </button>
                                 </div>
                               );
-                            })}
-                          </div>
+                            }
+
+                            return (
+                              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {adminRows.map((r, rIdx) => {
+                                  const sDays = (Array.isArray(r.days) && r.days.length > 0) ? r.days.join(', ') : 'M-F';
+                                  const diffMins = getTimeDiffMins(r.startTime, r.endTime);
+                                  const hrs = (diffMins / 60).toFixed(1);
+                                  return (
+                                    <div
+                                      key={r.id || rIdx}
+                                      style={{
+                                        background: '#F8FAFC',
+                                        border: '1.5px solid #CBD5E1',
+                                        borderRadius: '10px',
+                                        padding: '12px 14px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        gap: '12px'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{ background: '#1E293B', color: '#38BDF8', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                          <FiBriefcase size={16} />
+                                        </div>
+                                        <div>
+                                          <div style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>
+                                            {r.subject || 'Administrative Duty'}
+                                          </div>
+                                          <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', gap: '8px', marginTop: '2px' }}>
+                                            <span><strong>Time:</strong> {r.startTime} – {r.endTime} ({hrs} hrs/day)</span>
+                                            <span>•</span>
+                                            <span><strong>Days:</strong> {sDays}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const globalIdx = (currentPerson.workloadRows || []).filter(row => (row.term || '1st') === activeTerm).findIndex(row => row.id === r.id);
+                                            if (globalIdx !== -1) {
+                                              setSelectedBlockIdx(globalIdx);
+                                              const el = document.querySelector('.gantt-schedule-container');
+                                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                                            }
+                                          }}
+                                          style={{
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            border: '1px solid #CBD5E1',
+                                            background: '#FFFFFF',
+                                            color: '#0F172A',
+                                            fontSize: '11px',
+                                            fontWeight: '700',
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          Edit Slot
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const globalIdx = (currentPerson.workloadRows || []).filter(row => (row.term || '1st') === activeTerm).findIndex(row => row.id === r.id);
+                                            if (globalIdx !== -1) {
+                                              removeWorkloadRow(globalIdx);
+                                            }
+                                          }}
+                                          style={{
+                                            padding: '4px 8px',
+                                            borderRadius: '6px',
+                                            border: '1px solid #FCA5A5',
+                                            background: '#FEF2F2',
+                                            color: '#EF4444',
+                                            fontSize: '11px',
+                                            fontWeight: '700',
+                                            cursor: 'pointer'
+                                          }}
+                                          title="Remove Admin Task"
+                                        >
+                                          <FiTrash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
 
-                    {/* Bottom Save Action Controls */}
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '24px', borderTop: '1.5px solid var(--line)', paddingTop: '18px', alignItems: 'center' }}>
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={handleSaveChangesDirectly}
-                        style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', borderColor: '#0284c7', color: 'white', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <FiSave size={15} /> Save Changes
-                      </button>
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={handleSaveValidate}
-                        style={{ borderColor: 'var(--blue)', color: 'var(--blue)', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <FiCheckCircle size={15} /> Save & Validate Workload
-                      </button>
-                    </div>
+
                   </div>
                 )}
               </div>
@@ -11520,90 +12639,7 @@ export default function Workload() {
         </div>
       )}
 
-      {/* ── ATTENTION TIMETABLE VERIFICATION MODAL ── */}
-      {showAttentionModal && currentPerson && (
-        <div className="modal-backdrop" style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(15, 23, 42, 0.65)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
-          backdropFilter: 'blur(4px)'
-        }}>
-          <div style={{
-            background: '#FFFFFF', borderRadius: '16px', padding: '28px',
-            maxWidth: '540px', width: '90%', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-            border: '2.5px solid #F59E0B'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
-              <div style={{
-                background: '#FEF3C7', color: '#D97706', borderRadius: '50%',
-                width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)'
-              }}>
-                <FiAlertCircle size={24} color="#D97706" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px', color: '#78350F', fontWeight: '800' }}>
-                  ATTENTION: Timetable Verification Required
-                </h3>
-                <span style={{ fontSize: '12.5px', color: '#B45309', fontWeight: '700', textTransform: 'uppercase' }}>
-                  {currentPerson.firstName} {currentPerson.lastName} ({currentPerson.position || 'Teacher'})
-                </span>
-              </div>
-            </div>
 
-            <div style={{
-              background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '10px',
-              padding: '14px 16px', marginBottom: '20px', fontSize: '13px', color: '#92400E', lineHeight: '1.6'
-            }}>
-              <strong style={{ display: 'block', marginBottom: '4px', color: '#78350F' }}>
-                Auto-Populated Schedules Notice:
-              </strong>
-              This teacher's timetable schedule was auto-populated from an uploaded eSF7 file. Please inspect the <strong>Start Time</strong>, <strong>End Time</strong>, and <strong>Usual Days</strong> for all subject periods to ensure accuracy.
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  verifiedModalDismissedMap.current[currentPerson.id] = true;
-                  setShowAttentionModal(false);
-                }}
-                style={{
-                  background: '#F1F5F9',
-                  color: '#334155',
-                  border: '1.5px solid #CBD5E1',
-                  borderRadius: '10px',
-                  padding: '12px 20px',
-                  fontSize: '13px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  flex: 1
-                }}
-              >
-                Inspect Schedule
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmAllAndSave}
-                style={{
-                  background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '12px 20px',
-                  fontSize: '13px',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  flex: 1,
-                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.3)'
-                }}
-              >
-                Confirm All & Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── MULTI-DATE CALENDAR SELECTOR MODAL ── */}
       {calendarModalConfig && (

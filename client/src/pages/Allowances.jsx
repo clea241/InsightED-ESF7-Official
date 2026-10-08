@@ -1,12 +1,32 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import PageTransition from '../components/PageTransition';
 import PortalHeader from '../components/PortalHeader';
-import { FiCheck, FiMap, FiArrowRight } from 'react-icons/fi';
+import { 
+  FiCheck, FiMap, FiCheckSquare, FiSquare, FiMinusSquare, 
+  FiFilter, FiUsers, FiSearch, FiCheckCircle, FiXCircle, 
+  FiBriefcase, FiUserCheck, FiLayers, FiLock, FiAlertCircle
+} from 'react-icons/fi';
 
 export default function Allowances() {
-  const { personnel, showToast, allowancesMap, toggleAllowance, fetchAllowances, schoolInfo, setActiveView } = useApp();
+  const { 
+    personnel, 
+    showToast, 
+    allowancesMap, 
+    toggleAllowance, 
+    bulkToggleAllowances, 
+    fetchAllowances, 
+    schoolInfo, 
+    setActiveView,
+    bypassNodeLocks
+  } = useApp();
+
+  const isLocked = false; // Node 09 (Allowances & Incentives) is fixed as UNLOCKED
+  
   const currentSchoolYear = schoolInfo?.schoolYear || 'SY 26-27';
+
+  const [activeCategory, setActiveCategory] = useState('all'); // 'all' | 'teaching' | 'teaching-related' | 'non-teaching'
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (fetchAllowances) {
@@ -14,19 +34,89 @@ export default function Allowances() {
     }
   }, [currentSchoolYear]);
 
-  // Configured Allowance Items (Boolean tracking per teacher)
+  // Configured Allowance Items (Boolean tracking per personnel - PERA removed)
   const allowanceConfig = [
-    { key: 'pera', label: 'PERA (₱2,000 / mo)', desc: 'Personal Economic Relief Allowance' },
     { key: 'uniform', label: 'Uniform Allowance', desc: 'Clothing & Uniform Allowance' },
-    { key: 'supplies', label: 'Teaching Supplies', desc: 'Cash Allowance for Teaching Supplies' },
+    { key: 'supplies', label: 'Teaching Supplies', desc: 'Cash Allowance for Teaching Supplies (Teaching Only)' },
     { key: 'medical', label: 'Medical Allowance', desc: 'Fixed Medical Allowance (₱7,000)' },
     { key: 'hardship', label: 'Special Hardship', desc: 'Special Hardship Allowance' }
   ];
 
-  // Active personnel (exclude draft and shared personnel from main grid if applicable)
-  const activePersonnelList = personnel.filter(p => !p.isDraft && !p.isShared);
+  // Helper to normalize and categorize personnel
+  const getPersonnelCategory = (p) => {
+    const rawType = p.type || p.personnelType || '';
+    const t = String(rawType).toLowerCase().trim();
+    if (t.includes('related') || t === 'teaching-related') return 'teaching-related';
+    if (t.includes('non') || t === 'non-teaching') return 'non-teaching';
+    
+    const pos = String(p.position || p.plantilla_position || p.position_title || '').toUpperCase();
+    if (pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('HT ') || pos.includes('SUPERVISOR')) {
+      return 'teaching-related';
+    }
+    if (
+      pos.includes('ADMINISTRATIVE') || pos.includes('ADAS') || pos.includes('BOOKKEEPER') ||
+      pos.includes('SECURITY') || pos.includes('UTILITY') || pos.includes('NURSE') ||
+      pos.includes('DRIVER') || pos.includes('AIDE') || pos.includes('ACCOUNTANT') ||
+      pos.includes('DISBURSING') || pos.includes('CLERK')
+    ) {
+      return 'non-teaching';
+    }
+    return 'teaching';
+  };
 
-  const handleCheckboxToggle = async (personId, name, conf) => {
+  // Active personnel (exclude draft and shared personnel)
+  const activePersonnelList = useMemo(() => {
+    return (personnel || []).filter(p => !p.isDraft && !p.isShared);
+  }, [personnel]);
+
+  // Personnel counts by category
+  const categoryCounts = useMemo(() => {
+    let teaching = 0;
+    let related = 0;
+    let nonTeaching = 0;
+
+    activePersonnelList.forEach(p => {
+      const cat = getPersonnelCategory(p);
+      if (cat === 'teaching') teaching++;
+      else if (cat === 'teaching-related') related++;
+      else if (cat === 'non-teaching') nonTeaching++;
+    });
+
+    return {
+      all: activePersonnelList.length,
+      teaching,
+      'teaching-related': related,
+      'non-teaching': nonTeaching
+    };
+  }, [activePersonnelList]);
+
+  // Filtered personnel based on category and search
+  const filteredPersonnel = useMemo(() => {
+    return activePersonnelList.filter(p => {
+      const cat = getPersonnelCategory(p);
+      if (activeCategory !== 'all' && cat !== activeCategory) {
+        return false;
+      }
+      if (searchTerm.trim()) {
+        const query = searchTerm.toLowerCase();
+        const fullName = `${p.lastName} ${p.firstName} ${p.middleName || ''}`.toLowerCase();
+        const pos = String(p.position || '').toLowerCase();
+        return fullName.includes(query) || pos.includes(query);
+      }
+      return true;
+    });
+  }, [activePersonnelList, activeCategory, searchTerm]);
+
+  // Single Checkbox Toggle
+  const handleCheckboxToggle = async (personId, name, conf, category) => {
+    if (isLocked) {
+      return showToast('The Allowances module is currently locked for policy alignment.', 'warning');
+    }
+
+    if (conf.key === 'supplies' && category === 'non-teaching') {
+      return showToast('Non-Teaching personnel are not eligible for Teaching Supplies Allowance.', 'warning');
+    }
+
     const personAllowances = allowancesMap[personId] || {};
     const currentlyGranted = Boolean(personAllowances[conf.key]);
     const nextGranted = !currentlyGranted;
@@ -43,6 +133,92 @@ export default function Allowances() {
     }
   };
 
+  // Bulk toggle for a specific column across all currently filtered personnel
+  const handleColumnBulkToggle = async (confKey, confLabel, targetState) => {
+    if (isLocked) {
+      return showToast('The Allowances module is currently locked for policy alignment.', 'warning');
+    }
+
+    let eligiblePersonnel = filteredPersonnel;
+    if (confKey === 'supplies') {
+      eligiblePersonnel = filteredPersonnel.filter(p => getPersonnelCategory(p) !== 'non-teaching');
+    }
+
+    const targetIds = eligiblePersonnel.map(p => p.id);
+    if (targetIds.length === 0) {
+      if (confKey === 'supplies' && activeCategory === 'non-teaching') {
+        return showToast('Non-Teaching personnel are not eligible for Teaching Supplies Allowance.', 'warning');
+      }
+      return;
+    }
+
+    const categoryLabel = activeCategory === 'all' ? 'Eligible Personnel' : activeCategory === 'teaching' ? 'Teaching Staff' : activeCategory === 'teaching-related' ? 'Teaching-Related Staff' : 'Non-Teaching Staff';
+
+    if (bulkToggleAllowances) {
+      await bulkToggleAllowances(targetIds, [confKey], targetState, currentSchoolYear);
+    } else {
+      for (const id of targetIds) {
+        await toggleAllowance(id, confKey, targetState, currentSchoolYear);
+      }
+    }
+
+    showToast(
+      targetState 
+        ? `Granted ${confLabel} to ${targetIds.length} ${categoryLabel}.` 
+        : `Removed ${confLabel} from ${targetIds.length} ${categoryLabel}.`
+    );
+  };
+
+  // Bulk toggle for ALL allowance columns across all currently filtered personnel
+  const handleAllAllowancesBulkToggle = async (targetState) => {
+    if (isLocked) {
+      return showToast('The Allowances module is currently locked for policy alignment.', 'warning');
+    }
+
+    if (filteredPersonnel.length === 0) return;
+
+    for (const p of filteredPersonnel) {
+      const cat = getPersonnelCategory(p);
+      const keys = cat === 'non-teaching' 
+        ? allowanceConfig.filter(c => c.key !== 'supplies').map(c => c.key)
+        : allowanceConfig.map(c => c.key);
+
+      if (bulkToggleAllowances) {
+        await bulkToggleAllowances([p.id], keys, targetState, currentSchoolYear);
+      } else {
+        for (const k of keys) {
+          await toggleAllowance(p.id, k, targetState, currentSchoolYear);
+        }
+      }
+    }
+
+    const categoryLabel = activeCategory === 'all' ? 'All Personnel' : activeCategory === 'teaching' ? 'Teaching Staff' : activeCategory === 'teaching-related' ? 'Teaching-Related Staff' : 'Non-Teaching Staff';
+
+    showToast(
+      targetState 
+        ? `Granted all eligible allowances to ${filteredPersonnel.length} ${categoryLabel}.` 
+        : `Cleared all allowances for ${filteredPersonnel.length} ${categoryLabel}.`
+    );
+  };
+
+  // Helper for column header master checkbox status: 'checked' | 'unchecked' | 'indeterminate'
+  const getColumnCheckStatus = (confKey) => {
+    const eligiblePersonnel = confKey === 'supplies'
+      ? filteredPersonnel.filter(p => getPersonnelCategory(p) !== 'non-teaching')
+      : filteredPersonnel;
+
+    if (eligiblePersonnel.length === 0) return 'unchecked';
+    let grantedCount = 0;
+    eligiblePersonnel.forEach(p => {
+      const personAllowances = allowancesMap[p.id] || {};
+      if (personAllowances[confKey]) grantedCount++;
+    });
+
+    if (grantedCount === 0) return 'unchecked';
+    if (grantedCount === eligiblePersonnel.length) return 'checked';
+    return 'indeterminate';
+  };
+
   return (
     <PageTransition>
       <div style={{ padding: '30px', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -54,50 +230,241 @@ export default function Allowances() {
           onBack={() => setActiveView('nodemap')}
         />
 
-        {/* Excel style Table Container */}
+        {/* LOCKED BANNER NOTICE */}
+        {isLocked && (
+          <div style={{
+            background: 'linear-gradient(135deg, #FEF2F2 0%, #FFF1F2 100%)',
+            borderRadius: '16px',
+            border: '1.5px solid #FECDD3',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.06)'
+          }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: '#FEE2E2',
+              color: '#DC2626',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <FiLock size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '800', fontSize: '13.5px', color: '#991B1B', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                ALLOWANCES MODULE LOCKED
+                <span style={{ fontSize: '9.5px', fontWeight: '800', padding: '2px 7px', borderRadius: '4px', background: '#FEE2E2', color: '#B91C1C', letterSpacing: '0.04em' }}>
+                  POLICY BENCHMARK
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#7F1D1D', marginTop: '2px', lineHeight: '1.4' }}>
+                The Allowances &amp; Incentives module is currently locked for policy alignment. All records are currently in read-only audit mode.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TOP FILTER & BULK CONTROLS TOOLBAR */}
         <div style={{
-          background: 'white',
+          background: '#ffffff',
+          borderRadius: '16px',
+          border: '1.5px solid var(--line, #e2e8f0)',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '16px',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+        }}>
+          
+          {/* Category Filter Pills */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', marginRight: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <FiFilter size={13} /> Filter:
+            </span>
+
+            {[
+              { id: 'all', label: 'All Personnel', count: categoryCounts.all, icon: FiUsers, color: '#3B82F6' },
+              { id: 'teaching', label: 'Teaching', count: categoryCounts.teaching, icon: FiUserCheck, color: '#0284C7' },
+              { id: 'teaching-related', label: 'Related Teaching', count: categoryCounts['teaching-related'], icon: FiBriefcase, color: '#8B5CF6' },
+              { id: 'non-teaching', label: 'Non-Teaching', count: categoryCounts['non-teaching'], icon: FiLayers, color: '#F59E0B' }
+            ].map(cat => {
+              const isActive = activeCategory === cat.id;
+              const Icon = cat.icon;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setActiveCategory(cat.id)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: isActive ? '800' : '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    background: isActive ? cat.color : '#F8FAFC',
+                    color: isActive ? '#FFFFFF' : '#475569',
+                    border: `1.5px solid ${isActive ? cat.color : '#E2E8F0'}`,
+                    boxShadow: isActive ? `0 4px 12px ${cat.color}33` : 'none'
+                  }}
+                >
+                  <Icon size={14} />
+                  <span>{cat.label}</span>
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: '800',
+                    padding: '1px 6px',
+                    borderRadius: '12px',
+                    background: isActive ? 'rgba(255, 255, 255, 0.25)' : '#E2E8F0',
+                    color: isActive ? '#FFFFFF' : '#64748B'
+                  }}>
+                    {cat.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search Box & Master Bulk Actions */}
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            
+            {/* Search Input */}
+            <div style={{ position: 'relative', width: '240px' }}>
+              <FiSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} size={14} />
+              <input
+                type="text"
+                placeholder="Search staff name / position..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px 8px 34px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #E2E8F0',
+                  fontSize: '12px',
+                  color: '#1e293b',
+                  outline: 'none',
+                  background: '#F8FAFC'
+                }}
+              />
+            </div>
+
+            {/* Grant All Allowances to Filtered */}
+            <button
+              type="button"
+              onClick={() => handleAllAllowancesBulkToggle(true)}
+              disabled={isLocked || filteredPersonnel.length === 0}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: (isLocked || filteredPersonnel.length === 0) ? 'not-allowed' : 'pointer',
+                background: isLocked ? '#F1F5F9' : '#ECFDF5',
+                color: isLocked ? '#94A3B8' : '#059669',
+                border: isLocked ? '1px solid #CBD5E1' : '1.5px solid #A7F3D0'
+              }}
+              title={isLocked ? 'Module is locked' : 'Grant all configured allowances to currently filtered personnel'}
+            >
+              <FiCheckCircle size={14} />
+              <span>Grant All to Filtered</span>
+            </button>
+
+            {/* Clear All Allowances for Filtered */}
+            <button
+              type="button"
+              onClick={() => handleAllAllowancesBulkToggle(false)}
+              disabled={isLocked || filteredPersonnel.length === 0}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: (isLocked || filteredPersonnel.length === 0) ? 'not-allowed' : 'pointer',
+                background: isLocked ? '#F1F5F9' : '#FEF2F2',
+                color: isLocked ? '#94A3B8' : '#DC2626',
+                border: isLocked ? '1px solid #CBD5E1' : '1.5px solid #FECDD3'
+              }}
+              title={isLocked ? 'Module is locked' : 'Clear all allowances for currently filtered personnel'}
+            >
+              <FiXCircle size={14} />
+              <span>Clear Filtered</span>
+            </button>
+
+          </div>
+
+        </div>
+
+        {/* ALLOWANCE MATRIX TABLE */}
+        <div style={{
+          background: '#ffffff',
           borderRadius: '16px',
           border: '1.5px solid var(--line, #e2e8f0)',
           overflow: 'hidden',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.00)'
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
         }}>
           
-          <div style={{ display: 'flex', overflowX: 'auto', position: 'relative' }}>
+          <div style={{ display: 'flex', width: '100%', overflow: 'hidden' }}>
             
-            {/* LEFT SIDE: FROZEN TEACHER NAME COLUMN */}
+            {/* LEFT SIDE: FIXED PERSONNEL INFO COLUMN */}
             <div style={{
+              width: '320px',
               flexShrink: 0,
-              width: '280px',
               borderRight: '2px solid var(--line, #cbd5e1)',
-              background: '#f8fafc',
-              zIndex: 10
+              background: '#ffffff',
+              zIndex: 2
             }}>
               {/* Header */}
               <div style={{
-                height: '52px',
+                height: '64px',
                 padding: '0 20px',
                 display: 'flex',
-                alignItems: 'center',
-                fontWeight: '800',
-                fontSize: '11px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                color: '#475569',
+                flexDirection: 'column',
+                justifyContent: 'center',
                 borderBottom: '2px solid var(--line, #cbd5e1)',
                 background: '#f8fafc'
               }}>
-                Personnel / Teacher Name
+                <div style={{ fontWeight: '800', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FiUsers size={13} /> Personnel List ({filteredPersonnel.length})
+                </div>
+                <div style={{ fontSize: '9.5px', color: '#94a3b8', textTransform: 'none', fontWeight: 'normal', marginTop: '2px' }}>
+                  Registered School Plantilla &amp; Staff
+                </div>
               </div>
 
               {/* Rows */}
-              {activePersonnelList.length === 0 ? (
-                <div style={{ padding: '20px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
-                  No personnel registered yet.
+              {filteredPersonnel.length === 0 ? (
+                <div style={{ padding: '30px 20px', color: '#94a3b8', fontSize: '13px', textAlign: 'center' }}>
+                  No personnel found in this category.
                 </div>
               ) : (
-                activePersonnelList.map(p => {
+                filteredPersonnel.map(p => {
                   const fullName = `${p.lastName}, ${p.firstName}`.toUpperCase();
+                  const cat = getPersonnelCategory(p);
+                  const catBadgeStyle = cat === 'teaching' 
+                    ? { bg: '#E0F2FE', color: '#0369A1', label: 'Teaching' }
+                    : cat === 'teaching-related'
+                      ? { bg: '#EDE9FE', color: '#6D28D9', label: 'Related' }
+                      : { bg: '#FEF3C7', color: '#B45309', label: 'Non-Teaching' };
+
                   return (
                     <div
                       key={p.id}
@@ -111,11 +478,24 @@ export default function Allowances() {
                         background: '#ffffff'
                       }}
                     >
-                      <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--navy, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {fullName}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--navy, #0f172a)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {fullName}
+                        </div>
+                        <span style={{
+                          fontSize: '9px',
+                          fontWeight: '800',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background: catBadgeStyle.bg,
+                          color: catBadgeStyle.color,
+                          flexShrink: 0
+                        }}>
+                          {catBadgeStyle.label}
+                        </span>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#64748b' }}>
-                        {p.position || 'Teacher'}
+                      <div style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {p.position || 'Staff'}
                       </div>
                     </div>
                   );
@@ -126,41 +506,114 @@ export default function Allowances() {
             {/* RIGHT SIDE: SCROLLABLE ALLOWANCE CHECKBOX COLUMNS */}
             <div style={{ flexGrow: 1, overflowX: 'auto' }}>
               
-              {/* Headers */}
-              <div style={{ display: 'flex', height: '52px', borderBottom: '2px solid var(--line, #cbd5e1)', background: '#f8fafc' }}>
-                {allowanceConfig.map(conf => (
-                  <div 
-                    key={conf.key} 
-                    style={{
-                      flex: 1,
-                      minWidth: '180px',
-                      padding: '0 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      fontWeight: '800',
-                      fontSize: '11px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      color: '#475569',
-                      borderRight: '1px solid var(--line, #cbd5e1)'
-                    }}
-                  >
-                    <div>
-                      <div>{conf.label}</div>
-                      <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '2px', textTransform: 'none', fontWeight: 'normal' }}>
-                        {conf.desc}
+              {/* Headers with Master Select All / Unselect All */}
+              <div style={{ display: 'flex', height: '64px', borderBottom: '2px solid var(--line, #cbd5e1)', background: '#f8fafc' }}>
+                {allowanceConfig.map(conf => {
+                  const checkStatus = getColumnCheckStatus(conf.key);
+                  const isAllChecked = checkStatus === 'checked';
+                  const isIndeterminate = checkStatus === 'indeterminate';
+
+                  return (
+                    <div 
+                      key={conf.key} 
+                      style={{
+                        flex: 1,
+                        minWidth: '220px',
+                        padding: '8px 16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        borderRight: '1px solid var(--line, #cbd5e1)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontWeight: '800', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#1E293B' }}>
+                            {conf.label}
+                          </div>
+                          <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'none', fontWeight: 'normal', marginTop: '1px' }}>
+                            {conf.desc}
+                          </div>
+                        </div>
+
+                        {/* Master Header Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => handleColumnBulkToggle(conf.key, conf.label, !isAllChecked)}
+                          disabled={isLocked || filteredPersonnel.length === 0}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: (isLocked || filteredPersonnel.length === 0) ? 'not-allowed' : 'pointer',
+                            color: isAllChecked ? '#10B981' : isIndeterminate ? '#F59E0B' : '#94A3B8',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title={isLocked ? 'Module is locked' : isAllChecked ? `Unselect all for ${conf.label}` : `Select all for ${conf.label}`}
+                        >
+                          {isAllChecked ? (
+                            <FiCheckSquare size={17} color={isLocked ? '#94A3B8' : '#10B981'} />
+                          ) : isIndeterminate ? (
+                            <FiMinusSquare size={17} color={isLocked ? '#94A3B8' : '#F59E0B'} />
+                          ) : (
+                            <FiSquare size={17} color="#94A3B8" />
+                          )}
+                        </button>
                       </div>
+
+                      {/* Header Quick Select / Clear Links */}
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '2px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleColumnBulkToggle(conf.key, conf.label, true)}
+                          disabled={isLocked || filteredPersonnel.length === 0 || isAllChecked}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            fontSize: '9.5px',
+                            fontWeight: '700',
+                            color: (isLocked || isAllChecked) ? '#94A3B8' : '#0284C7',
+                            cursor: (isLocked || isAllChecked) ? 'default' : 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          Select All
+                        </button>
+                        <span style={{ fontSize: '9px', color: '#CBD5E1' }}>•</span>
+                        <button
+                          type="button"
+                          onClick={() => handleColumnBulkToggle(conf.key, conf.label, false)}
+                          disabled={isLocked || filteredPersonnel.length === 0 || checkStatus === 'unchecked'}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            fontSize: '9.5px',
+                            fontWeight: '700',
+                            color: (isLocked || checkStatus === 'unchecked') ? '#94A3B8' : '#DC2626',
+                            cursor: (isLocked || checkStatus === 'unchecked') ? 'default' : 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          Unselect All
+                        </button>
+                      </div>
+
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Rows */}
-              {activePersonnelList.length === 0 ? (
+              {filteredPersonnel.length === 0 ? (
                 <div style={{ height: '60px', borderBottom: '1px solid var(--line, #e2e8f0)' }}></div>
               ) : (
-                activePersonnelList.map(p => {
+                filteredPersonnel.map(p => {
                   const fullName = `${p.lastName}, ${p.firstName}`.toUpperCase();
+                  const cat = getPersonnelCategory(p);
                   const personAllowances = allowancesMap[p.id] || {};
 
                   return (
@@ -176,14 +629,16 @@ export default function Allowances() {
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
                       {allowanceConfig.map(conf => {
-                        const isChecked = Boolean(personAllowances[conf.key]);
-                        
+                        const isNonTeachingSupplies = conf.key === 'supplies' && cat === 'non-teaching';
+                        const isChecked = !isNonTeachingSupplies && Boolean(personAllowances[conf.key]);
+                        const isInputDisabled = isLocked || isNonTeachingSupplies;
+
                         return (
                           <div 
                             key={conf.key} 
                             style={{
                               flex: 1,
-                              minWidth: '180px',
+                              minWidth: '220px',
                               padding: '0 16px',
                               display: 'flex',
                               alignItems: 'center',
@@ -191,46 +646,66 @@ export default function Allowances() {
                               borderRight: '1px solid var(--line, #e2e8f0)'
                             }}
                           >
-                            <input
-                              type="checkbox"
-                              style={{
-                                width: '18px',
-                                height: '18px',
-                                minHeight: 'auto',
-                                padding: '0',
-                                margin: '0',
-                                border: 'none',
-                                background: 'none',
-                                cursor: 'pointer',
-                                appearance: 'checkbox',
-                                WebkitAppearance: 'checkbox'
-                              }}
-                              checked={isChecked}
-                              onChange={() => handleCheckboxToggle(p.id, fullName, conf)}
-                            />
-                            
-                            <span 
-                              style={{ 
-                                fontSize: '11px', 
-                                fontWeight: 'bold', 
-                                padding: '3px 8px', 
-                                borderRadius: '6px',
-                                background: isChecked ? '#dcfce7' : '#f1f5f9',
-                                color: isChecked ? '#15803d' : '#94a3b8',
-                                border: isChecked ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                            >
-                              {isChecked ? (
-                                <>
-                                  <FiCheck size={11} /> GRANTED
-                                </>
-                              ) : (
-                                'OFF'
-                              )}
-                            </span>
+                            {isNonTeachingSupplies ? (
+                              <span 
+                                style={{ 
+                                  fontSize: '10px', 
+                                  fontWeight: '800', 
+                                  padding: '3px 8px', 
+                                  borderRadius: '6px',
+                                  background: '#F8FAFC',
+                                  color: '#94A3B8',
+                                  border: '1px solid #E2E8F0',
+                                  letterSpacing: '0.04em'
+                                }}
+                              >
+                                N/A (NON-TEACHING)
+                              </span>
+                            ) : (
+                              <>
+                                <input
+                                  type="checkbox"
+                                  disabled={isInputDisabled}
+                                  style={{
+                                    width: '18px',
+                                    height: '18px',
+                                    minHeight: 'auto',
+                                    padding: '0',
+                                    margin: '0',
+                                    border: 'none',
+                                    background: 'none',
+                                    cursor: isInputDisabled ? 'not-allowed' : 'pointer',
+                                    appearance: 'checkbox',
+                                    WebkitAppearance: 'checkbox'
+                                  }}
+                                  checked={isChecked}
+                                  onChange={() => handleCheckboxToggle(p.id, fullName, conf, cat)}
+                                />
+                                
+                                <span 
+                                  style={{ 
+                                    fontSize: '11px', 
+                                    fontWeight: 'bold', 
+                                    padding: '3px 8px', 
+                                    borderRadius: '6px',
+                                    background: isChecked ? '#dcfce7' : '#f1f5f9',
+                                    color: isChecked ? '#15803d' : '#94a3b8',
+                                    border: isChecked ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  {isChecked ? (
+                                    <>
+                                      <FiCheck size={11} /> GRANTED
+                                    </>
+                                  ) : (
+                                    'OFF'
+                                  )}
+                                </span>
+                              </>
+                            )}
                           </div>
                         );
                       })}
@@ -250,16 +725,28 @@ export default function Allowances() {
           background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
           borderRadius: '16px',
           display: 'flex',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           alignItems: 'center',
           boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.3)'
         }}>
           <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC' }}>
-              Allowances & Incentives Configured
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#F8FAFC', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Allowances &amp; Incentives {isLocked ? '(Read-Only)' : '(Active)'}
+              <span style={{ 
+                fontSize: '10px', 
+                fontWeight: '800', 
+                padding: '2px 6px', 
+                borderRadius: '4px', 
+                background: isLocked ? 'rgba(255, 255, 255, 0.15)' : '#059669', 
+                color: '#FFFFFF' 
+              }}>
+                {isLocked ? 'LOCKED' : 'DEV UNLOCKED'}
+              </span>
             </h4>
             <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8' }}>
-              Proceed to Node 11 (Validation Center) for final quality checks & eSF7 report generation.
+              {isLocked 
+                ? 'Module is locked for policy alignment. Proceed to Node 11 (Validation Center) for quality audits & submission.'
+                : 'DEV mode active: Allowances can be audited and edited for testing.'}
             </p>
           </div>
 
@@ -302,7 +789,7 @@ export default function Allowances() {
                 gap: '8px'
               }}
             >
-              <span>Save & Proceed to Validation Center ➔</span>
+              <span>Proceed to Validation Center ➔</span>
             </button>
           </div>
         </div>

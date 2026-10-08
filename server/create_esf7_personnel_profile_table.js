@@ -51,6 +51,7 @@ async function createPersonnelProfileTable() {
           no_philsys BOOLEAN NOT NULL DEFAULT FALSE,
           employee_no TEXT,
           deped_email TEXT,
+          no_deped_email BOOLEAN NOT NULL DEFAULT FALSE,
           is_school_head BOOLEAN NOT NULL DEFAULT FALSE,
           
           -- FLEXIBLE DATA STORAGE (JSONB)

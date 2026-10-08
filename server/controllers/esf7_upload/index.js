@@ -3,18 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { Pool } = require('pg');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-
-// Connection pool to 'insightEd' database containing esf7_link and esf7_database
-const poolString = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-  : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-
-const pool = new Pool({
-  connectionString: poolString,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-});
+const { insightEdPool: pool } = require('../../db');
 
 // Configure draft directory
 const VM_DRAFT_DIR = '/mnt/esf7_draft';
@@ -63,12 +52,26 @@ router.get('/check/:schoolId', async (req, res) => {
   const cleanSchoolId = String(req.params.schoolId).replace(/^SCH-/i, '').trim();
 
   try {
-    // 1. Check active operational database (insighted_esf7)
     const mainDb = require('../../db');
+
+    // 0. Test accounts exemption
+    if (mainDb.isDivisionOrTestAccount && mainDb.isDivisionOrTestAccount(cleanSchoolId)) {
+      return res.json({
+        hasData: true,
+        dataCount: 8,
+        sourceTable: 'esf7_database_dummy',
+        queueStatus: null,
+        requiresForceUpload: false,
+        isExempted: true
+      });
+    }
+
+    // 1. Check active operational database (insighted_esf7)
     const activeRes = await mainDb.query(
       'SELECT count(*) FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2',
       [cleanSchoolId, `SCH-${cleanSchoolId}`]
     ).catch(() => ({ rows: [{ count: '0' }] }));
+
 
     const activeCount = parseInt(activeRes.rows[0]?.count || '0', 10);
     if (activeCount > 0) {
@@ -299,16 +302,17 @@ router.post('/import-converted', async (req, res) => {
 
     // Verify source records in esf7_database or dummy
     let sourceRes = await pool.query(
-      `SELECT * FROM esf7_database WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
+      `SELECT * FROM esf7_database WHERE schoool_id = $1 OR school_id = $1`,
       [sourceOldId]
     );
 
     if (sourceRes.rows.length === 0) {
       sourceRes = await pool.query(
-        `SELECT * FROM esf7_database_dummy WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
+        `SELECT * FROM esf7_database_dummy WHERE schoool_id = $1 OR school_id = $1`,
         [sourceOldId]
       );
     }
+
 
     if (sourceRes.rows.length === 0) {
       return res.status(404).json({ error: `No historical personnel records found under previous School ID [${sourceOldId}].` });

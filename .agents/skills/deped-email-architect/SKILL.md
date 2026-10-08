@@ -25,7 +25,7 @@ Master specification, policy, and validation agent for **DepEd Official Google W
 ## 📜 Official DepEd Email Validation Logic Contract
 
 ```javascript
-validateDepEdEmail(email, firstName = '', lastName = '', middleName = '')
+validateDepEdEmail(email, firstName = '', lastName = '', middleName = '', allowEmailDiscrepancy = false)
 ```
 
 ### Return Signature
@@ -37,7 +37,10 @@ validateDepEdEmail(email, firstName = '', lastName = '', middleName = '')
 2. **Domain Checks**:
    - Must strictly end with `@deped.gov.ph`.
    - Reject multiple `@` or duplicate `@deped.gov.ph` substrings.
-3. **Local Part Matching**:
+   - Local part cannot be empty.
+3. **Legal Name / PSA Correction Override (`allowEmailDiscrepancy = true`)**:
+   - When enabled (verified by user typing `CONFIRM`), bypasses name token comparison while maintaining strict `@deped.gov.ph` syntax & domain checks.
+4. **Local Part Matching (`allowEmailDiscrepancy = false`)**:
    - `firstName` match: Local part must contain at least one token from `firstName` (handles multi-word first names like "Mary Jane" -> "mary" or "jane").
    - `surname` match: Surnames accept **EITHER**:
      - The legal `lastName` (e.g. "Reyes") OR

@@ -311,6 +311,14 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
             collegeDegree: p.degree || existing.collegeDegree,
             major: p.major || existing.major,
             minor: p.minor || existing.minor,
+            postGraduateDegree: p.postGraduateDegree || existing.postGraduateDegree || 'N/A',
+            employeeNo: p.employeeNo || existing.employeeNo || '',
+            civilStatus: p.civilStatus || existing.civilStatus || 'Single',
+            birthdate: p.birthdate || existing.birthdate || '',
+            newStationDate: p.newStationDate || existing.newStationDate || '',
+            eligibility: (p.eligibility && p.eligibility.length > 0) ? p.eligibility : (existing.eligibility || []),
+            philsysNo: p.philsysNo || existing.philsysNo || '',
+            deploymentStatus: p.deploymentStatus || existing.deploymentStatus || 'Stationed',
             type: p.type || existing.type || 'teaching',
             assignedGradeLevels: mergedGrades.length > 0 ? mergedGrades : (existing.assignedGradeLevels || ['Grade 1']),
             gradeLevelsTaught: mergedGrades.length > 0 ? mergedGrades : (existing.gradeLevelsTaught || ['Grade 1']),
@@ -320,6 +328,7 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
           };
         } else {
           // Create new local personnel object
+          const generatedEmail = `${(p.firstName || 'teacher').toLowerCase().replace(/[^a-z0-9]/g,'')}.${(p.lastName || 'deped').toLowerCase().replace(/[^a-z0-9]/g,'')}@deped.gov.ph`;
           updatedPersonnel.push({
             id: targetPersonId,
             prn: p.tin ? `PRN-${p.tin}` : `PRN-HARVEST-${Date.now()}-${pIdx}`,
@@ -328,7 +337,12 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
             lastName: p.lastName,
             salutation: p.sex === 'Male' ? 'Mr.' : 'Ms.',
             sexAtBirth: p.sex || 'Male',
-            civilStatus: 'Single',
+            civilStatus: p.civilStatus || 'Single',
+            birthdate: p.birthdate || '',
+            newStationDate: p.newStationDate || '',
+            employeeNo: p.employeeNo || '',
+            philsysNo: p.philsysNo || '',
+            eligibility: p.eligibility || [],
             tin: p.tin || '',
             noTin: !p.tin,
             position: p.position || 'TEACHER I',
@@ -337,11 +351,12 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
             collegeDegree: p.degree || 'BACHELOR',
             major: p.major || 'GENERAL EDUCATION',
             minor: p.minor || 'N/A',
+            postGraduateDegree: p.postGraduateDegree || 'N/A',
             type: p.type || 'teaching',
             assignedGradeLevels: assignedGradesArr.length > 0 ? assignedGradesArr : ['Grade 1'],
             gradeLevelsTaught: assignedGradesArr.length > 0 ? assignedGradesArr : ['Grade 1'],
-            depedEmail: `${(p.firstName || 'teacher').toLowerCase().replace(/[^a-z0-9]/g,'')}.${(p.lastName || 'deped').toLowerCase().replace(/[^a-z0-9]/g,'')}@deped.gov.ph`,
-            deploymentStatus: 'Stationed',
+            depedEmail: p.depedEmail || generatedEmail,
+            deploymentStatus: p.deploymentStatus || 'Stationed',
             personalVerified: true,
             workloadVerified: false,
             needsTimeReview: true,
@@ -357,15 +372,13 @@ export default function ESF7UploadModal({ isOpen, onClose, onImportSuccess, isFo
         listToImport.flatMap(p => (p.workloads || []).map(w => (w.sectionName || '').toLowerCase().trim())).filter(name => name && !isNonClassSection(name))
       );
 
+      const SPREADSHEET_PLACEHOLDERS = ['MULTI-GRADE', 'MULTIGRADE', 'MULTI GRADE', 'MONO-GRADE', 'MONOGRADE', 'MONO GRADE'];
       const isInvalidSec = (s) => {
         const g = String(s.gradeLevel || s.grade_level || '').toUpperCase().trim();
         const n = String(s.sectionName || s.section_name || '').toUpperCase().trim();
-        return (
-          g.includes('MULTI-GRADE') || g.includes('MULTIGRADE') || g.includes('MULTI GRADE') ||
-          g.includes('MONO-GRADE') || g.includes('MONOGRADE') || g.includes('MONO GRADE') ||
-          n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
-          n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
-        );
+        const isPlaceholderGrade = !g || SPREADSHEET_PLACEHOLDERS.includes(g);
+        const isPlaceholderName = !n || SPREADSHEET_PLACEHOLDERS.includes(n);
+        return isPlaceholderGrade && isPlaceholderName;
       };
 
       let finalSections = updatedSections.filter(s => !isInvalidSec(s)).filter(s => {

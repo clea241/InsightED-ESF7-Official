@@ -32,8 +32,9 @@ const VIEW_LABELS = {
   roster: 'Faculty & Staff Roster',
   profile: 'Personnel Profiling',
   designation: 'Personnel Designations',
-  designations: 'Personnel Designations',
   classes: 'Organized Classes & Sections',
+  organized_classes: 'Organized Classes & Sections',
+  'organized-classes': 'Organized Classes & Sections',
   workload: 'Faculty Workload & Timetable',
   deployment: 'Faculty Deployment',
   overload: 'Teaching Overload & Payroll',
@@ -65,13 +66,7 @@ function MainAppContent() {
   const [pageTransitionLoading, setPageTransitionLoading] = React.useState(false);
   const prevViewRef = React.useRef(activeView);
 
-  React.useEffect(() => {
-    const coreRegistryViews = ['school', 'roster', 'profile', 'classes', 'designation', 'workload'];
-    if (coreRegistryViews.includes(activeView) && isNodeUnlocked && !isNodeUnlocked(activeView)) {
-      showToast('This step is locked. Complete the preceding steps in the ESF7 Core Registry first.', 'error');
-      setActiveView('nodemap');
-    }
-  }, [activeView, isNodeUnlocked, setActiveView, showToast]);
+
 
   React.useEffect(() => {
     if (toast) {
@@ -145,7 +140,7 @@ function MainAppContent() {
           {activeView === 'roster' && <Roster />}
           {activeView === 'profile' && <PersonnelProfile />}
           {(activeView === 'designation' || activeView === 'designations') && <Designations />}
-          {activeView === 'classes' && <OrganizedClasses />}
+          {(activeView === 'classes' || activeView === 'organized_classes' || activeView === 'organized-classes') && <OrganizedClasses />}
           {activeView === 'workload' && <Workload />}
           {activeView === 'deployment' && <Deployment />}
           {activeView === 'overload' && <Overload />}

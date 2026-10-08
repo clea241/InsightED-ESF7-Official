@@ -115,7 +115,7 @@ export default function Dashboard() {
       id: 'school',
       nodeNumber: '01',
       title: 'School Profile',
-      subtitle: 'School identity, shift configuration & offerings',
+      subtitle: 'School identity & curricular offerings',
       icon: 'school',
       view: 'school',
       summary: schoolInfo?.schoolId ? `School ID: ${schoolInfo.schoolId}` : 'Configure school identity'
@@ -710,7 +710,7 @@ export default function Dashboard() {
             {/* CARD 2: ORGANIZED CLASSES SUMMARY */}
             <div 
               className="card" 
-              onClick={() => setActiveView('organized_classes')} 
+              onClick={() => setActiveView('classes')} 
               style={{ cursor: 'pointer', background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid var(--line)', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}
               title="Click to open Organized Classes"
             >
@@ -803,9 +803,9 @@ export default function Dashboard() {
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#1E293B' }}>
                         From School ID: <span style={{ color: '#2563EB' }}>{pendingIncomingList[0].requester_school_id}</span>
                       </div>
-                      {pendingIncomingList[0].teacher_name && (
+                      {(pendingIncomingList[0].personnel_name || pendingIncomingList[0].personnelName || pendingIncomingList[0].teacher_name) && (
                         <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                          Target: <strong>{pendingIncomingList[0].teacher_name}</strong>
+                          Target: <strong>{pendingIncomingList[0].personnel_name || pendingIncomingList[0].personnelName || pendingIncomingList[0].teacher_name}</strong>
                         </div>
                       )}
                     </div>

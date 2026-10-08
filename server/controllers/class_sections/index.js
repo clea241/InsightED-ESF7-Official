@@ -25,7 +25,6 @@ function formatRegularRecord(row) {
   let cleanGrade = row.grade_level;
   const upperG = String(cleanGrade || '').toUpperCase().trim();
   if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
-  else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
 
   return {
     ...raw,
@@ -40,6 +39,84 @@ function formatRegularRecord(row) {
     section_name: row.section_name,
     sectionType: row.section_type || 'MONO GRADE',
     section_type: row.section_type || 'MONO GRADE',
+    adviserId: row.adviser_id ? String(row.adviser_id) : null,
+    adviser_id: row.adviser_id ? String(row.adviser_id) : null,
+    advisorId: row.adviser_id ? String(row.adviser_id) : null,
+    advisor_id: row.adviser_id ? String(row.adviser_id) : null,
+    maleLearners: m,
+    male_learners: m,
+    femaleLearners: f,
+    female_learners: f,
+    numberOfLearners: total,
+    number_of_learners: total,
+    sizeStatus: row.size_status || 'WITHIN STANDARD',
+    size_status: row.size_status || 'WITHIN STANDARD',
+    rawPayload: raw
+  };
+}
+
+function formatSnedRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  const m = Number(row.male_learners || 0);
+  const f = Number(row.female_learners || 0);
+  const total = row.number_of_learners !== null && row.number_of_learners !== undefined ? Number(row.number_of_learners) : (m + f);
+
+  return {
+    ...raw,
+    id: row.id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    gradeLevel: 'SNED (NON-GRADED)',
+    grade_level: 'SNED (NON-GRADED)',
+    sectionName: row.section_name,
+    section_name: row.section_name,
+    sectionType: 'SNED (NON-GRADED)',
+    section_type: 'SNED (NON-GRADED)',
+    programType: row.program_type || null,
+    program_type: row.program_type || null,
+    adviserId: row.adviser_id ? String(row.adviser_id) : null,
+    adviser_id: row.adviser_id ? String(row.adviser_id) : null,
+    advisorId: row.adviser_id ? String(row.adviser_id) : null,
+    advisor_id: row.adviser_id ? String(row.adviser_id) : null,
+    maleLearners: m,
+    male_learners: m,
+    femaleLearners: f,
+    female_learners: f,
+    numberOfLearners: total,
+    number_of_learners: total,
+    sizeStatus: row.size_status || 'WITHIN STANDARD',
+    size_status: row.size_status || 'WITHIN STANDARD',
+    rawPayload: raw
+  };
+}
+
+function formatAlsRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  const m = Number(row.male_learners || 0);
+  const f = Number(row.female_learners || 0);
+  const total = row.number_of_learners !== null && row.number_of_learners !== undefined ? Number(row.number_of_learners) : (m + f);
+
+  return {
+    ...raw,
+    id: row.id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    gradeLevel: row.grade_level || 'ALS',
+    grade_level: row.grade_level || 'ALS',
+    sectionName: row.section_name,
+    section_name: row.section_name,
+    sectionType: 'ALS',
+    section_type: 'ALS',
+    deliveryMode: row.delivery_mode || null,
+    delivery_mode: row.delivery_mode || null,
+    clcName: row.clc_name || null,
+    clc_name: row.clc_name || null,
     adviserId: row.adviser_id ? String(row.adviser_id) : null,
     adviser_id: row.adviser_id ? String(row.adviser_id) : null,
     advisorId: row.adviser_id ? String(row.adviser_id) : null,
@@ -130,29 +207,41 @@ function formatRemedialRecord(row) {
   };
 }
 
-// GET all sections across 3 tables
+// GET all sections across all 5 tables
 router.get('/', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || '108348';
     const cleanSchoolId = schoolId.replace('SCH-', '');
 
-    const [regRes, aralRes, remRes] = await Promise.all([
+    const [regRes, snedRes, alsRes, aralRes, remRes] = await Promise.all([
       db.query(`SELECT * FROM esf7_regular_sections WHERE school_id = $1 OR school_id = $2 ORDER BY grade_level ASC, section_name ASC`, [schoolId, cleanSchoolId]),
+      db.query(`SELECT * FROM esf7_sned_sections WHERE school_id = $1 OR school_id = $2 ORDER BY section_name ASC`, [schoolId, cleanSchoolId]),
+      db.query(`SELECT * FROM esf7_als_sections WHERE school_id = $1 OR school_id = $2 ORDER BY grade_level ASC, section_name ASC`, [schoolId, cleanSchoolId]),
       db.query(`SELECT * FROM esf7_aral_sections WHERE school_id = $1 OR school_id = $2 ORDER BY grade_level ASC, section_name ASC`, [schoolId, cleanSchoolId]),
       db.query(`SELECT * FROM esf7_remedial_enrichment_sections WHERE school_id = $1 OR school_id = $2 ORDER BY grade_level ASC, section_name ASC`, [schoolId, cleanSchoolId])
     ]);
 
     const regularSections = regRes.rows.map(formatRegularRecord).filter(Boolean);
+    const snedSections = snedRes.rows.map(formatSnedRecord).filter(Boolean);
+    const alsSections = alsRes.rows.map(formatAlsRecord).filter(Boolean);
     const aralSections = aralRes.rows.map(formatAralRecord).filter(Boolean);
     const remedialEnrichmentSections = remRes.rows.map(formatRemedialRecord).filter(Boolean);
 
     res.json({
       success: true,
       regularSections,
+      snedSections,
+      alsSections,
       aralSections,
       remedialEnrichmentSections,
-      // Flat list for backward compatibility
-      allSections: [...regularSections, ...aralSections, ...remedialEnrichmentSections]
+      // Flat list for backward compatibility across all modules
+      allSections: [
+        ...regularSections,
+        ...snedSections,
+        ...alsSections,
+        ...aralSections,
+        ...remedialEnrichmentSections
+      ]
     });
   } catch (err) {
     console.error('Error fetching section tables:', err);
@@ -271,6 +360,136 @@ router.post('/regular', async (req, res) => {
     res.status(201).json(formatRegularRecord(result.rows[0]));
   } catch (err) {
     console.error('Error inserting esf7_regular_sections:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /sned - Insert/Update SNED Section
+router.post('/sned', async (req, res) => {
+  const {
+    id, school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
+    grade_level, gradeLevel, section_name, sectionName, program_type, programType,
+    adviser_id, advisor_id, advisorId, adviserId,
+    male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners,
+    size_status, sizeStatus
+  } = req.body;
+
+  const targetSchoolId = school_id || bodySchoolId || '108348';
+  const targetSchoolYear = school_year || bodySchoolYear || '2026-2027';
+  const targetGradeLevel = grade_level || gradeLevel || 'SNED (NON-GRADED)';
+  const targetSectionName = (section_name || sectionName || 'SNED SECTION 1').toUpperCase().trim();
+  const targetProgramType = program_type || programType || null;
+  const targetAdviserId = adviser_id || advisor_id || advisorId || adviserId || null;
+
+  const mVal = Number(male_learners || maleLearners || 0);
+  const fVal = Number(female_learners || femaleLearners || 0);
+  const rawTotal = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
+  const totalLearners = rawTotal !== undefined && rawTotal !== null && rawTotal !== '' ? Number(rawTotal) : (mVal + fVal);
+  const targetSizeStatus = size_status || sizeStatus || calculateSizeStatus('SNED', totalLearners, 'SNED (NON-GRADED)');
+
+  try {
+    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_sned_sections WHERE school_id = $1`, [targetSchoolId]);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const secId = id || `SNED-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+
+    let validAdviserId = null;
+    if (targetAdviserId) {
+      const pCheck = await db.query(`SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`, [targetAdviserId]);
+      if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
+    }
+
+    const query = `
+      INSERT INTO esf7_sned_sections (
+        id, school_id, school_year, grade_level, section_name, program_type,
+        adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+      ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+        grade_level = EXCLUDED.grade_level,
+        program_type = EXCLUDED.program_type,
+        adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_sned_sections.adviser_id),
+        male_learners = EXCLUDED.male_learners,
+        female_learners = EXCLUDED.female_learners,
+        number_of_learners = EXCLUDED.number_of_learners,
+        size_status = EXCLUDED.size_status,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+      RETURNING *;
+    `;
+
+    const result = await db.query(query, [
+      secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetProgramType,
+      validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, JSON.stringify(req.body)
+    ]);
+    res.status(201).json(formatSnedRecord(result.rows[0]));
+  } catch (err) {
+    console.error('Error inserting esf7_sned_sections:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /als - Insert/Update ALS Section
+router.post('/als', async (req, res) => {
+  const {
+    id, school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
+    grade_level, gradeLevel, section_name, sectionName, delivery_mode, deliveryMode, clc_name, clcName,
+    adviser_id, advisor_id, advisorId, adviserId,
+    male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners,
+    size_status, sizeStatus
+  } = req.body;
+
+  const targetSchoolId = school_id || bodySchoolId || '108348';
+  const targetSchoolYear = school_year || bodySchoolYear || '2026-2027';
+  const targetGradeLevel = grade_level || gradeLevel || 'ALS';
+  const targetSectionName = (section_name || sectionName || 'ALS SECTION 1').toUpperCase().trim();
+  const targetDeliveryMode = delivery_mode || deliveryMode || null;
+  const targetClcName = clc_name || clcName || null;
+  const targetAdviserId = adviser_id || advisor_id || advisorId || adviserId || null;
+
+  const mVal = Number(male_learners || maleLearners || 0);
+  const fVal = Number(female_learners || femaleLearners || 0);
+  const rawTotal = number_of_learners !== undefined ? number_of_learners : numberOfLearners;
+  const totalLearners = rawTotal !== undefined && rawTotal !== null && rawTotal !== '' ? Number(rawTotal) : (mVal + fVal);
+  const targetSizeStatus = size_status || sizeStatus || calculateSizeStatus('ALS', totalLearners, 'ALS');
+
+  try {
+    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_als_sections WHERE school_id = $1`, [targetSchoolId]);
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+    const secId = id || `ALS-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+
+    let validAdviserId = null;
+    if (targetAdviserId) {
+      const pCheck = await db.query(`SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`, [targetAdviserId]);
+      if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
+    }
+
+    const query = `
+      INSERT INTO esf7_als_sections (
+        id, school_id, school_year, grade_level, section_name, delivery_mode, clc_name,
+        adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+        grade_level = EXCLUDED.grade_level,
+        delivery_mode = EXCLUDED.delivery_mode,
+        clc_name = EXCLUDED.clc_name,
+        adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_als_sections.adviser_id),
+        male_learners = EXCLUDED.male_learners,
+        female_learners = EXCLUDED.female_learners,
+        number_of_learners = EXCLUDED.number_of_learners,
+        size_status = EXCLUDED.size_status,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+      RETURNING *;
+    `;
+
+    const result = await db.query(query, [
+      secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetDeliveryMode, targetClcName,
+      validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, JSON.stringify(req.body)
+    ]);
+    res.status(201).json(formatAlsRecord(result.rows[0]));
+  } catch (err) {
+    console.error('Error inserting esf7_als_sections:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -414,6 +633,24 @@ router.delete('/regular/:id', async (req, res) => {
   }
 });
 
+router.delete('/sned/:id', async (req, res) => {
+  try {
+    await db.query(`DELETE FROM esf7_sned_sections WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `SNED section ${req.params.id} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/als/:id', async (req, res) => {
+  try {
+    await db.query(`DELETE FROM esf7_als_sections WHERE id = $1`, [req.params.id]);
+    res.json({ success: true, message: `ALS section ${req.params.id} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/aral/:id', async (req, res) => {
   try {
     await db.query(`DELETE FROM esf7_aral_sections WHERE id = $1`, [req.params.id]);
@@ -440,6 +677,8 @@ router.delete('/clear-all', async (req, res) => {
 
     await Promise.all([
       db.query(`DELETE FROM esf7_regular_sections WHERE school_id = $1 OR school_id = $2`, [schoolId, cleanSchoolId]).catch(() => {}),
+      db.query(`DELETE FROM esf7_sned_sections WHERE school_id = $1 OR school_id = $2`, [schoolId, cleanSchoolId]).catch(() => {}),
+      db.query(`DELETE FROM esf7_als_sections WHERE school_id = $1 OR school_id = $2`, [schoolId, cleanSchoolId]).catch(() => {}),
       db.query(`DELETE FROM esf7_aral_sections WHERE school_id = $1 OR school_id = $2`, [schoolId, cleanSchoolId]).catch(() => {}),
       db.query(`DELETE FROM esf7_remedial_enrichment_sections WHERE school_id = $1 OR school_id = $2`, [schoolId, cleanSchoolId]).catch(() => {}),
       db.query(`DELETE FROM esf7_class_sections WHERE school_id = $1 OR school_id = $2`, [schoolId, cleanSchoolId]).catch(() => {}),
@@ -453,12 +692,14 @@ router.delete('/clear-all', async (req, res) => {
   }
 });
 
-// Generic DELETE endpoint (checks all section tables)
+// Generic DELETE endpoint (checks all 5 section tables)
 router.delete('/:id', async (req, res) => {
   try {
     const id = req.params.id;
     await Promise.all([
       db.query(`DELETE FROM esf7_regular_sections WHERE id = $1`, [id]).catch(() => {}),
+      db.query(`DELETE FROM esf7_sned_sections WHERE id = $1`, [id]).catch(() => {}),
+      db.query(`DELETE FROM esf7_als_sections WHERE id = $1`, [id]).catch(() => {}),
       db.query(`DELETE FROM esf7_aral_sections WHERE id = $1`, [id]).catch(() => {}),
       db.query(`DELETE FROM esf7_remedial_enrichment_sections WHERE id = $1`, [id]).catch(() => {}),
       db.query(`DELETE FROM esf7_class_sections WHERE id = $1`, [id]).catch(() => {}),

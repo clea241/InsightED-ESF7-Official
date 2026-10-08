@@ -9,7 +9,11 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
 
   if (
     upper.includes('MULTI-GRADE') || upper.includes('MULTIGRADE') || upper.includes('MULTI GRADE') ||
-    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE')
+    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE') ||
+    upper.includes('PHIL-IRI') || upper.includes('PHIL IRI') ||
+    upper.includes('CRLA') || upper.includes('RMA') ||
+    upper === 'ARAL' || upper.startsWith('ARAL ') ||
+    upper.includes('INDEPENDENT') || upper.includes('INSTRUCTIONAL') || upper.includes('FRUSTRATION')
   ) {
     if (secName) {
       const secMatch = String(secName).match(/(?:Grade\s*|G)(\d{1,2})/i);
@@ -21,13 +25,13 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
     return null;
   }
 
-  if (upper.includes('KINDER')) return 'Kinder';
+  if (upper.includes('KINDER') || upper === 'K') return 'Kinder';
   if (upper === 'SNED' || upper === 'SPED' || upper === 'NON-GRADED' || upper === 'NON GRADED' || upper.includes('SNED') || upper.includes('NON-GRADED') || upper.includes('NON GRADED')) {
     return 'SNED (NON-GRADED)';
   }
-  if (upper === 'ALS') return 'ALS';
+  if (upper === 'ALS' || upper.startsWith('ALS-') || upper.startsWith('ALS ')) return 'ALS';
 
-  const numMatch = str.match(/(?:Grade\s*|G|^)(\d{1,2})$/i) || str.match(/(\d{1,2})/);
+  const numMatch = str.match(/^(?:Grade\s*|G\s*)?(\d{1,2})$/i);
   if (numMatch) {
     const num = parseInt(numMatch[1], 10);
     if (num >= 1 && num <= 12) return `Grade ${num}`;
@@ -38,10 +42,15 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
     if (rest.toUpperCase().includes('KINDER')) return 'Kinder';
     if (rest.toUpperCase().includes('MULTI') || rest.toUpperCase().includes('MONO')) return null;
     if (rest.toUpperCase().includes('SNED') || rest.toUpperCase().includes('NON-GRADED') || rest.toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
-    return `Grade ${rest}`;
+    const subMatch = rest.match(/^(\d{1,2})$/);
+    if (subMatch) {
+      const num = parseInt(subMatch[1], 10);
+      if (num >= 1 && num <= 12) return `Grade ${num}`;
+    }
+    return null;
   }
 
-  return str || null;
+  return null;
 };
 
 const sanitizeGradeArray = (arr) => {

@@ -202,6 +202,7 @@ CREATE TABLE esf7_personnel_designations (
     personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
     
     designation_name TEXT NOT NULL,
+    key_stage VARCHAR(20),
     grade_level TEXT,
     subject_area TEXT,
     track TEXT,
@@ -216,6 +217,7 @@ CREATE TABLE esf7_personnel_designations (
 );
 
 CREATE INDEX idx_esf7_personnel_designations_personnel ON esf7_personnel_designations (personnel_id);
+CREATE INDEX idx_esf7_personnel_designations_key_stage ON esf7_personnel_designations (key_stage);
 ```
 
 ---
@@ -690,3 +692,23 @@ CREATE TABLE esf7_submission_queue (
 CREATE INDEX idx_esf7_submission_queue_status_id ON esf7_submission_queue (status, id ASC);
 CREATE INDEX idx_esf7_submission_queue_school_sy ON esf7_submission_queue (school_id, school_year);
 ```
+
+---
+
+## 22. `esf7_clustered_ghost_sync`
+* **Purpose**: Atomic Real-Time Clustered Teacher Timetable Ghost Sync across PM2 Multi-Worker Clusters.
+* **Primary Key**: `room_key` (`VARCHAR(255)`) - Format: `'clustered_10029384'` or `'clustered_PER-108348-001'`
+
+```sql
+CREATE TABLE esf7_clustered_ghost_sync (
+    room_key VARCHAR(255) PRIMARY KEY,
+    school_id VARCHAR(50),
+    school_name VARCHAR(255),
+    slots JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_esf7_clustered_ghost_sync_updated ON esf7_clustered_ghost_sync (updated_at DESC);
+CREATE INDEX idx_esf7_clustered_ghost_sync_school ON esf7_clustered_ghost_sync (school_id);
+```
+

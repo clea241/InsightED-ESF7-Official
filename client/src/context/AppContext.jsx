@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
 import { useAuth } from './AuthContext';
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
@@ -58,10 +58,16 @@ export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections
     // 1. Time Slot Duration Limits (>60 mins elem/JHS or >360 mins SHS)
     if (sMins !== null && eMins !== null && eMins > sMins) {
       const diffMins = eMins - sMins;
-      const gStr = String(row.gradeLevel || '').toUpperCase();
-      const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
-      const maxMins = isSHS ? 360 : 60;
-      if (diffMins > maxMins) return true;
+      const subStr = String(row.subject || row.task || '').toUpperCase();
+      const isAdminOrNonTeaching = subStr.startsWith('ADMIN') || subStr.includes('ADMIN') || subStr.includes('ADMINISTRATIVE') || Boolean(row.is_admin_task || row.isAdminTask);
+      const isKinder = subStr.includes('KINDER');
+
+      if (!isKinder && !isAdminOrNonTeaching) {
+        const gStr = String(row.gradeLevel || '').toUpperCase();
+        const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
+        const maxMins = isSHS ? 360 : 60;
+        if (diffMins > maxMins) return true;
+      }
     }
 
     // 2. Schedule Conflict (Overlap on same day for same person)
@@ -555,6 +561,8 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "MASTER TEACHER II",
     "MASTER TEACHER III",
     "MASTER TEACHER IV",
+    "MASTER TEACHER V",
+    "LEARNER SUPPORT AIDE",
     "ALIVE TEACHER"
   ],
   "teaching-related": [
@@ -586,6 +594,7 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "GUIDANCE COUNSELOR I",
     "GUIDANCE COUNSELOR II",
     "GUIDANCE COUNSELOR III",
+    "SCHOOL COUNSELOR ASSOCIATE I",
     "HEAD TEACHER I",
     "HEAD TEACHER II",
     "HEAD TEACHER III",
@@ -683,7 +692,6 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "UTILITY WORKER",
     "VOCATIONAL PLACEMENT COORDINATOR",
     "WATCHMAN",
-    "LEARNING SUPPORT AIDE",
     "INTERN",
     "OTHERS"
   ]
@@ -799,8 +807,8 @@ export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "N
 // control in the Educational Attainment section (see DEGREE_LEVEL_OPTIONS). This list only covers
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS = [
   "COLLEGE GRADUATE / BACCALAUREATE",
-  "MASTER'S DEGREE (GRADUATED)",
-  "DOCTORATE DEGREE (GRADUATED)"
+  "MASTER'S DEGREE",
+  "DOCTORATE DEGREE"
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
@@ -811,8 +819,8 @@ export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
   "VOCATIONAL / TECH-VOC COURSE",
   "COLLEGE UNDERGRADUATE",
   "COLLEGE GRADUATE / BACCALAUREATE",
-  "MASTER'S DEGREE (GRADUATED)",
-  "DOCTORATE DEGREE (GRADUATED)"
+  "MASTER'S DEGREE",
+  "DOCTORATE DEGREE"
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS = HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
@@ -1933,9 +1941,9 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   const getMergedConfig = () => {
     let progs = Array.isArray(schoolInfo?.specialPrograms) ? [...schoolInfo.specialPrograms] : [];
     let jhsProgs = Array.isArray(schoolInfo?.jhsSpecialPrograms) ? [...schoolInfo.jhsSpecialPrograms] : [];
-    let hasElem = schoolInfo?.hasElemSpecialPrograms === true || schoolInfo?.hasElemSpecialPrograms === 'yes';
-    let elemProg = Boolean(schoolInfo?.elemSpecialProgram);
-    let hasJhs = schoolInfo?.hasJhsSpecialPrograms === true || schoolInfo?.hasJhsSpecialPrograms === 'yes';
+    let hasElem = schoolInfo?.hasElemSpecialPrograms === true || schoolInfo?.hasElemSpecialPrograms === 'yes' || (Array.isArray(schoolInfo?.specialPrograms) && schoolInfo.specialPrograms.some(p => String(p).toUpperCase().includes('SCIENCE')));
+    let elemProg = Boolean(schoolInfo?.elemSpecialProgram) || (Array.isArray(schoolInfo?.specialPrograms) && schoolInfo.specialPrograms.some(p => String(p).toUpperCase().includes('SCIENCE')));
+    let hasJhs = schoolInfo?.hasJhsSpecialPrograms === true || schoolInfo?.hasJhsSpecialPrograms === 'yes' || jhsProgs.length > 0 || progs.some(p => p !== 'SPECIAL SCIENCE ELEMENTARY SCHOOL');
 
     let inclusivePrograms = Array.isArray(schoolInfo?.inclusivePrograms) ? [...schoolInfo.inclusivePrograms] : [];
 
@@ -1948,6 +1956,8 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
           if (parsed.hasElemSpecialPrograms !== undefined) hasElem = parsed.hasElemSpecialPrograms === true || parsed.hasElemSpecialPrograms === 'yes';
           if (parsed.elemSpecialProgram !== undefined) elemProg = Boolean(parsed.elemSpecialProgram);
           if (parsed.hasJhsSpecialPrograms !== undefined) hasJhs = parsed.hasJhsSpecialPrograms === true || parsed.hasJhsSpecialPrograms === 'yes';
+          else if (Array.isArray(parsed.jhsSpecialPrograms) && parsed.jhsSpecialPrograms.length > 0) hasJhs = true;
+          else if (Array.isArray(parsed.specialPrograms) && parsed.specialPrograms.some(p => p !== 'SPECIAL SCIENCE ELEMENTARY SCHOOL')) hasJhs = true;
           if (Array.isArray(parsed.jhsSpecialPrograms)) jhsProgs = [...new Set([...jhsProgs, ...parsed.jhsSpecialPrograms])];
           if (Array.isArray(parsed.specialPrograms)) progs = [...new Set([...progs, ...parsed.specialPrograms])];
           if (Array.isArray(parsed.inclusivePrograms)) inclusivePrograms = [...new Set([...inclusivePrograms, ...parsed.inclusivePrograms])];
@@ -1959,13 +1969,18 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
 
   const config = getMergedConfig();
 
-  // 1. Elementary check: SPECIAL PROGRAM IN SCIENCE
+  // 1. Elementary check: SPECIAL PROGRAM IN SCIENCE / SPECIAL SCIENCE
   const isElem = ['KINDER', 'GRADE 1', 'GRADE 2', 'GRADE 3', 'GRADE 4', 'GRADE 5', 'GRADE 6', 'ELEMENTARY', '1', '2', '3', '4', '5', '6', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'].some(g => gradeStr === g || gradeStr.includes(g));
 
-  if (sub === 'SPECIAL PROGRAM IN SCIENCE' || sub.includes('SPECIAL PROGRAM IN SCIENCE')) {
+  if (
+    sub === 'SPECIAL SCIENCE' ||
+    sub === 'SPECIAL PROGRAM IN SCIENCE' ||
+    sub.includes('SPECIAL SCIENCE') ||
+    sub.includes('SPECIAL PROGRAM IN SCIENCE')
+  ) {
     if (isElem) {
       const isElemScienceActive = config.hasElem && (config.elemProg || config.progs.some(p => String(p).toUpperCase().includes('SCIENCE')));
-      return isElemScienceActive;
+      return Boolean(isElemScienceActive);
     }
   }
 
@@ -1973,22 +1988,37 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   const isJHS = ['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '7', '8', '9', '10', 'G7', 'G8', 'G9', 'G10', 'JUNIOR HIGH SCHOOL', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g));
 
   const JHS_SPECIAL_PROGRAM_MAP = {
-    'SPECIAL PROGRAM IN THE ARTS (SPA)': ['SPA', 'SPECIAL PROGRAM IN THE ARTS'],
-    'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)': ['SPFL', 'SPECIAL PROGRAM IN FOREIGN LANGUAGE'],
-    'SPECIAL PROGRAM IN JOURNALISM (SPJ)': ['SPJ', 'SPECIAL PROGRAM IN JOURNALISM'],
-    'SPECIAL PROGRAM IN SPORTS (SPS)': ['SPS', 'SPECIAL PROGRAM IN SPORTS'],
-    'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM': ['STE', 'SCIENCE, TECHNOLOGY, AND ENGINEERING'],
-    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL'],
-    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL  EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL'],
-    'SPECIAL PROGRAM IN SCIENCE': ['SPECIAL PROGRAM IN SCIENCE', 'SPECIAL SCIENCE']
+    'SPECIAL PROGRAM IN THE ARTS (SPA)': ['SPA', 'SPECIAL PROGRAM IN THE ARTS', 'ARTS (SPA)', 'ARTS'],
+    'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)': ['SPFL', 'SPECIAL PROGRAM IN FOREIGN LANGUAGE', 'FOREIGN LANGUAGE (SPFL)', 'FOREIGN LANGUAGE'],
+    'SPECIAL PROGRAM IN JOURNALISM (SPJ)': ['SPJ', 'SPECIAL PROGRAM IN JOURNALISM', 'JOURNALISM (SPJ)', 'JOURNALISM'],
+    'SPECIAL PROGRAM IN SPORTS (SPS)': ['SPS', 'SPECIAL PROGRAM IN SPORTS', 'SPORTS (SPS)', 'SPORTS'],
+    'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM': ['STE', 'SCIENCE, TECHNOLOGY, AND ENGINEERING', 'ENGINEERING (STE)', 'STE PROGRAM', 'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM'],
+    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL EDUCATION', 'TECHNICAL-VOCATIONAL', 'VOCATIONAL EDUCATION (SPTVE)', 'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)'],
+    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL  EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL EDUCATION', 'TECHNICAL-VOCATIONAL', 'VOCATIONAL EDUCATION (SPTVE)'],
+    'SPECIAL PROGRAM IN SCIENCE': ['SPECIAL PROGRAM IN SCIENCE', 'SPECIAL SCIENCE', 'SCIENCE PROGRAM', 'SPECIAL SCIENCE ELEMENTARY SCHOOL', 'SSES', 'SCIENCE']
   };
 
   for (const [canonicalSubject, keywords] of Object.entries(JHS_SPECIAL_PROGRAM_MAP)) {
-    if (sub === canonicalSubject || keywords.some(k => sub === k || (sub.startsWith('SPECIAL PROGRAM') && sub.includes(k)) || (sub.includes('STE') && sub.includes('ENGINEERING')))) {
-      if (isJHS) {
+    const isThisProgSubject = sub === canonicalSubject || keywords.some(k => sub === k || (sub.startsWith('SPECIAL PROGRAM') && sub.includes(k)) || (sub.includes('STE') && sub.includes('ENGINEERING')));
+    if (isThisProgSubject) {
+      if (isElem) {
+        if (canonicalSubject === 'SPECIAL PROGRAM IN SCIENCE') {
+          const isElemScienceActive = config.hasElem && (config.elemProg || config.progs.some(p => String(p).toUpperCase().includes('SCIENCE')));
+          return isElemScienceActive;
+        }
+        return false;
+      }
+      if (isJHS || !gradeStr || gradeStr === 'ALL') {
         if (!config.hasJhs) return false;
-        const allJhsActive = [...config.progs, ...config.jhsProgs].map(p => String(p).toUpperCase());
-        const isMatch = allJhsActive.some(p => keywords.some(k => p.includes(k)));
+        const allJhsActive = [...config.progs, ...config.jhsProgs].map(p => String(p).toUpperCase().trim());
+        const isMatch = allJhsActive.some(p => {
+          if (!p) return false;
+          if (p === canonicalSubject || p === sub) return true;
+          return keywords.some(k => {
+            const cleanK = String(k).toUpperCase().trim();
+            return p === cleanK || p.includes(cleanK) || cleanK.includes(p);
+          });
+        });
         return isMatch;
       }
     }
@@ -2005,14 +2035,14 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
     if (!hasMadrasah) return false;
   }
 
-  if (sub === 'SPED MODIFIED SUBJECTS' || sub.includes('SPED MODIFIED')) {
-    const isSNED = gradeStr.includes('SNED');
+  if (sub === 'SPED MODIFIED SUBJECTS' || sub === 'SNED MODIFIED SUBJECT' || sub.includes('SPED MODIFIED') || sub.includes('SNED MODIFIED')) {
+    const isSNED = gradeStr.includes('SNED') || gradeStr.includes('NON-GRADED') || gradeStr.includes('SPED');
     if (!isSNED) return false;
   }
 
   // 4. ARAL Program Check: ARAL subjects are strictly for ARAL sections (never match ARALING PANLIPUNAN)
   if (sub !== 'ARALING PANLIPUNAN' && !sub.startsWith('ARALING') && (sub === 'ARAL' || sub.startsWith('ARAL -') || sub.startsWith('ARAL-') || sub.startsWith('ARAL ') || sub.includes('ARAL TUTORING') || sub.includes('ARAL PROGRAM'))) {
-    const isAral = gradeStr === 'ARAL' || gradeStr.includes('ARAL');
+    const isAral = gradeStr === 'ARAL' || gradeStr.includes('ARAL') || ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(t => gradeStr.toUpperCase().includes(t));
     if (!isAral) return false;
   }
 
@@ -2020,9 +2050,9 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   return true;
 };
 
-export const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '') => {
+export const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '', allowEmailDiscrepancy = false) => {
   if (!email || email === 'N/A') return { isValid: true, error: null };
-  const rawEmail = String(email).trim().toLowerCase();
+  const rawEmail = String(email).trim().toLowerCase().replace(/[\u00f1\u00d1]/g, 'n');
 
   // 1. Check for duplicate @deped.gov.ph or multiple '@'
   const atCount = (rawEmail.match(/@/g) || []).length;
@@ -2051,28 +2081,59 @@ export const validateDepEdEmail = (email, firstName = '', lastName = '', middleN
     };
   }
 
-  // 4. Validate First Name and Last/Middle Name matching (letters and numbers only)
-  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  // If legal name discrepancy override is allowed (e.g. PSA Birth Certificate correction / legacy email), bypass name token checking
+  if (allowEmailDiscrepancy) {
+    return { isValid: true, error: null };
+  }
+
+  // 4. Validate First Name and Last/Middle Name matching (letters and numbers only, converting ñ/Ñ -> n)
+  const cleanStr = (s) => String(s || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, '');
+
   const cleanFn = cleanStr(firstName);
   const cleanLn = cleanStr(lastName);
   const cleanMn = cleanStr(middleName);
   const cleanLocal = cleanStr(localPart);
 
-  // Multi-word first names (e.g. Mary Jane -> check 'mary' or 'jane' or 'maryjane')
-  const fnTokens = String(firstName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  // Multi-word first names (e.g. Mary Jane -> check 'mary' or 'jane' or 'maryjane', Iñigo -> inigo)
+  const fnTokens = String(firstName || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/)
+    .map(cleanStr)
+    .filter(Boolean);
+
   const fnMatches = fnTokens.length > 0
     ? fnTokens.some(t => cleanLocal.includes(t)) || (cleanFn && cleanLocal.includes(cleanFn))
     : true;
 
-  // Last name matching (e.g. 'reyes' or multi-word 'delacruz' -> 'dela', 'cruz')
-  const lnTokens = String(lastName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  // Last name matching (e.g. 'reyes' or multi-word 'delacruz' -> 'dela', 'cruz', 'peña' -> 'pena')
+  const lnTokens = String(lastName || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/)
+    .map(cleanStr)
+    .filter(Boolean);
+
   const lnMatches = cleanLn
     ? (cleanLocal.includes(cleanLn) || lnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
     : true;
 
-  // Middle name / Maiden surname matching (e.g. 'santos' or middle initial)
+  // Middle name / Maiden surname matching (e.g. 'santos', 'peña' -> 'pena' or middle initial)
   // In DepEd, married women often retain their maiden surname in their DepEd email, which is stored as middleName in eSF7.
-  const mnTokens = String(middleName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const mnTokens = String(middleName || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/)
+    .map(cleanStr)
+    .filter(Boolean);
+
   const mnMatches = cleanMn && cleanMn !== 'na'
     ? (cleanLocal.includes(cleanMn) || mnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
     : false;
@@ -2694,8 +2755,49 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const setActiveView = (view, options = {}) => {
-    const { replace = false } = typeof options === 'boolean' ? { replace: options } : options;
+  // Global auto-save registry: modules register save callbacks that run on navigation (e.g. clicking Node Map)
+  const autoSaveHandlersRef = useRef(new Map());
+
+  const registerAutoSaveHandler = useCallback((id, handler) => {
+    if (!id || typeof handler !== 'function') return () => {};
+    autoSaveHandlersRef.current.set(id, handler);
+    return () => {
+      autoSaveHandlersRef.current.delete(id);
+    };
+  }, []);
+
+  const triggerAutoSave = useCallback(async (targetView = null) => {
+    let savedAny = false;
+    for (const [id, handler] of autoSaveHandlersRef.current.entries()) {
+      try {
+        if (typeof handler === 'function') {
+          const res = await handler(targetView);
+          if (res !== false) savedAny = true;
+        }
+      } catch (e) {
+        console.warn(`[Auto-Save Notice] Handler "${id}":`, e);
+      }
+    }
+    return savedAny;
+  }, []);
+
+  const setActiveView = async (view, options = {}) => {
+    const { replace = false, skipAutoSave = false } = typeof options === 'boolean' ? { replace: options } : options;
+    
+    // Auto-save active module changes whenever navigating
+    if (!skipAutoSave && activeView && activeView !== view && view) {
+      try {
+        const didSave = await triggerAutoSave(view);
+        if (view === 'nodemap') {
+          showToast('✓ Auto-saved your changes to Node Map', 'success');
+        } else if (didSave) {
+          showToast('✓ Auto-saved changes', 'success');
+        }
+      } catch (e) {
+        console.warn('[Auto-Save Navigation Notice]:', e);
+      }
+    }
+
     setActiveViewState(view);
     if (typeof localStorage !== 'undefined' && view) {
       localStorage.setItem('insighted_active_view', view);
@@ -2732,7 +2834,7 @@ export const AppProvider = ({ children }) => {
   const [submissionStatus, setSubmissionStatus] = useState(null);
   const [scannedRoom, setScannedRoom] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('room') ? decodeURIComponent(params.get('room')) : "Faculty Room 1";
+    return params.get('room') ? decodeURIComponent(params.get('room')) : "ROOM-01";
   });
   const [activePersonnelId, setActivePersonnelId] = useState("P-001");
   const [schoolInfo, setSchoolInfo] = useState(() => {
@@ -2757,6 +2859,7 @@ export const AppProvider = ({ children }) => {
   });
 
   const [personnel, setPersonnel] = useState([]);
+  const [deletedPersonnelIds, setDeletedPersonnelIds] = useState([]);
   const [classSections, setClassSections] = useState([]);
   const [schoolEdited, setSchoolEdited] = useState(() => {
     return localStorage.getItem('esf7_school_edited') === 'true';
@@ -2771,7 +2874,7 @@ export const AppProvider = ({ children }) => {
   const [activeTerm, setActiveTerm] = useState('1st');
   const [termStatuses, setTermStatuses] = useState({
     '1st': 'OPEN',
-    '2nd': 'LOCKED',
+    '2nd': 'OPEN',
     '3rd': 'LOCKED'
   });
 
@@ -2799,25 +2902,80 @@ export const AppProvider = ({ children }) => {
     try {
       setPersonnel(prev => prev.map(p => {
         const rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
+        const sourceRows = rows.filter(r => (r.term || '1st') === fromTerm);
+        const otherRows = rows.filter(r => (r.term || '1st') !== toTerm);
+        const clonedRows = sourceRows.map((r, idx) => ({
+          ...r,
+          id: `r-term-${toTerm}-${p.id}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          term: toTerm
+        }));
+        const updatedRows = [...otherRows, ...clonedRows];
+
+        // Also update local storage draft if present
+        try {
+          const draftKey = `esf7_workload_draft_${p.id}`;
+          const localDraft = localStorage.getItem(draftKey);
+          if (localDraft) {
+            const parsed = JSON.parse(localDraft);
+            localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: updatedRows }));
+          }
+        } catch (err) {
+          // ignore draft storage error
+        }
+
         return {
           ...p,
-          workloadRows: rows.map(r => ({
-            ...r,
-            term: toTerm
-          }))
+          workloadRows: updatedRows
         };
       }));
-      if (showToast) showToast(`✓ Copied timetable setup from ${fromTerm} Term to ${toTerm} Term.`);
+      if (showToast) showToast(`✓ Copied timetable setup from ${fromTerm} Term to ${toTerm} Term across all teachers.`);
     } catch (e) {
       console.error('Error copying term data:', e);
       if (showAlert) showAlert('Copy Failed', 'Unable to duplicate term data: ' + e.message);
     }
   };
 
-  const CORE_REGISTRY_NODES = ['school', 'roster', 'profile', 'classes', 'designation', 'workload'];
+  // Nodes 1 - 9 and Node 11 are fixed as UNLOCKED. Only Node 10 (overload) is locked by default.
+  const ALWAYS_UNLOCKED_NODES = [
+    'school',       // Node 01
+    'roster',       // Node 02
+    'room-qr',      // Node 03
+    'profile',      // Node 04
+    'requests',     // Node 05
+    'classes',      // Node 06
+    'designation',  // Node 07
+    'workload',     // Node 08
+    'allowances',   // Node 09
+    'validation'    // Node 11
+  ];
+
+  const CORE_REGISTRY_NODES = [
+    'school', 
+    'roster', 
+    'room-qr',
+    'profile', 
+    'requests',
+    'classes', 
+    'designation', 
+    'workload', 
+    'allowances',
+    'overload',
+    'validation'
+  ];
 
   const [journeyState, setJourneyState] = useState({
-    unlockedNodes: ['school'],
+    unlockedNodes: [
+      'school', 
+      'roster', 
+      'room-qr', 
+      'profile', 
+      'requests', 
+      'classes', 
+      'designation', 
+      'workload', 
+      'allowances', 
+      'validation'
+    ],
     completedNodes: [],
     currentNode: 'school'
   });
@@ -2826,11 +2984,10 @@ export const AppProvider = ({ children }) => {
 
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
+    if (nodeId === 'overload') return false; // Node 10 (overload) is locked by default unless DEV locks are bypassed
     if (!nodeId) return true;
-    // ESF7 Core Registry & Operations is the ONLY section that can be locked
-    // All other nodes (Room QR, Requests, Overload, Allowances, Validation, etc.) are permanently UNLOCKED
-    if (!CORE_REGISTRY_NODES.includes(nodeId)) return true;
-    return (journeyState?.unlockedNodes || ['school']).includes(nodeId);
+    if (ALWAYS_UNLOCKED_NODES.includes(nodeId)) return true;
+    return true;
   };
 
   const isNodeCompleted = (nodeId) => {
@@ -2852,9 +3009,21 @@ export const AppProvider = ({ children }) => {
     if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
       const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
       const timestamp = new Date().toISOString();
+
+      // Guard: Preserve existing draft personnel if current personnel state is temporarily empty
+      let personnelToSave = personnel;
+      if (!personnelToSave || personnelToSave.length === 0) {
+        try {
+          const existingLocal = await getLocalDraft(draftKey);
+          if (existingLocal && Array.isArray(existingLocal.personnel) && existingLocal.personnel.length > 0) {
+            personnelToSave = existingLocal.personnel;
+          }
+        } catch (e) {}
+      }
+
       const draftData = {
         schoolInfo,
-        personnel,
+        personnel: personnelToSave,
         classSections,
         workloadTransfers,
         absences,
@@ -2864,6 +3033,24 @@ export const AppProvider = ({ children }) => {
       try {
         await setLocalDraft(draftKey, draftData);
         await api.saveSchoolDraft(schoolInfo.schoolYear, draftData);
+
+        // Milestone Sync to esf7_school_node_status
+        const nodeMap = {
+          'school': { key: 'node_01_school', payload: { status: 'COMPLETED', school_name: schoolInfo.schoolName, curricular_offering: schoolInfo.curricularOffering, number_of_shifts: schoolInfo.numberOfShifts, region: schoolInfo.region, division: schoolInfo.division, district: schoolInfo.district } },
+          'roster': { key: 'node_02_roster', payload: { status: 'COMPLETED', total_personnel: personnel.length, teaching: personnel.filter(p => p.type === 'teaching').length, related_teaching: personnel.filter(p => p.type === 'teaching-related').length, non_teaching: personnel.filter(p => p.type === 'non-teaching').length } },
+          'requests': { key: 'node_05_requests', payload: { status: 'COMPLETED', incoming_count: incomingRequests.length, outgoing_count: outgoingRequests.length } },
+          'classes': { key: 'node_06_classes', payload: { status: 'COMPLETED', total_sections: classSections.length, sections: classSections } },
+          'overload': { key: 'node_10_overload', payload: { status: 'COMPLETED', completed_at: timestamp } },
+          'validation': { key: 'node_11_validation', payload: { status: 'COMPLETED', certified_by: schoolInfo.certifiedBy, certified_at: schoolInfo.certifiedAt } }
+        };
+
+        const target = nodeMap[nodeId];
+        if (target) {
+          const overallPct = Math.round((updatedCompleted.length / 11) * 100);
+          api.saveSchoolNode(target.key, target.payload, schoolInfo.schoolYear, updatedCompleted.length >= 11 ? 'COMPLETED' : 'IN_PROGRESS', overallPct).catch(err => {
+            console.warn('[NodeStatus Sync Warning]:', err.message);
+          });
+        }
       } catch (err) {
         console.error('Failed to save journey state in draft:', err);
       }
@@ -2888,24 +3075,30 @@ export const AppProvider = ({ children }) => {
   const [requestHistory, setRequestHistory] = useState([]);
   const [districtSchools, setDistrictSchools] = useState([]);
 
-  const refreshRequests = async () => {
+  const refreshRequests = async (targetId = null) => {
     try {
-      const incoming = await api.getIncomingRequests();
+      const activeId = targetId || schoolInfo?.schoolId || user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id');
+      const cleanId = activeId ? String(activeId).replace(/^SCH-/i, '').trim() : '';
+
+      const incoming = await api.getIncomingRequests(cleanId);
       if (Array.isArray(incoming)) setIncomingRequests(incoming);
       
-      const outgoing = await api.getOutgoingRequests();
+      const outgoing = await api.getOutgoingRequests(cleanId);
       if (Array.isArray(outgoing)) setOutgoingRequests(outgoing);
 
-      const history = await api.getRequestHistory();
+      const history = await api.getRequestHistory(cleanId);
       if (Array.isArray(history)) setRequestHistory(history);
     } catch (e) {
       console.error('Failed to refresh requests:', e);
     }
   };
 
-  const loadDistrictSchools = async () => {
+  const loadDistrictSchools = async (targetId = null, targetDivision = null) => {
     try {
-      const schools = await api.getDistrictSchools();
+      const activeId = targetId || schoolInfo?.schoolId || user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id');
+      const activeDiv = targetDivision || schoolInfo?.division;
+      const cleanId = activeId ? String(activeId).replace(/^SCH-/i, '').trim() : '';
+      const schools = await api.getDistrictSchools(cleanId, activeDiv);
       if (Array.isArray(schools)) setDistrictSchools(schools);
     } catch (e) {
       console.error('Failed to load district schools:', e);
@@ -2930,7 +3123,7 @@ export const AppProvider = ({ children }) => {
     setAllowancesMap(prev => ({
       ...prev,
       [personnelId]: {
-        ...(prev[personnelId] || { pera: false, uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
+        ...(prev[personnelId] || { uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
         [allowanceKey]: grantedBool
       }
     }));
@@ -2940,6 +3133,41 @@ export const AppProvider = ({ children }) => {
       return res;
     } catch (e) {
       console.error('[AppContext] Failed to toggle allowance:', e);
+      fetchAllowances(schoolYear);
+      return { success: false, error: e.message };
+    }
+  };
+
+  const bulkToggleAllowances = async (personnelIds = [], allowanceKeys = [], isGranted = true, schoolYear = 'SY 26-27') => {
+    if (!Array.isArray(personnelIds) || personnelIds.length === 0) return { success: true };
+    const keys = Array.isArray(allowanceKeys) ? allowanceKeys : [allowanceKeys];
+    const grantedBool = Boolean(isGranted);
+
+    // Optimistically update allowancesMap in local state
+    setAllowancesMap(prev => {
+      const next = { ...prev };
+      personnelIds.forEach(id => {
+        next[id] = {
+          ...(next[id] || { uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
+        };
+        keys.forEach(k => {
+          next[id][k] = grantedBool;
+        });
+      });
+      return next;
+    });
+
+    try {
+      const tasks = [];
+      for (const id of personnelIds) {
+        for (const k of keys) {
+          tasks.push(api.togglePersonnelAllowance(id, k, grantedBool, schoolYear));
+        }
+      }
+      await Promise.allSettled(tasks);
+      return { success: true };
+    } catch (e) {
+      console.error('[AppContext] Failed bulkToggleAllowances:', e);
       fetchAllowances(schoolYear);
       return { success: false, error: e.message };
     }
@@ -3028,8 +3256,9 @@ export const AppProvider = ({ children }) => {
   };
 
   // Fetch and normalize personnel records (maps gradeLevelsTaught to assignedGradeLevels for frontend consistency)
-  const fetchAndNormalizePersonnel = async () => {
-    const list = await api.getPersonnel();
+  const fetchAndNormalizePersonnel = async (overrideSchoolId = null) => {
+    const activeSchoolId = overrideSchoolId || schoolInfo?.schoolId || user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || null;
+    const list = await api.getPersonnel(activeSchoolId);
     if (!Array.isArray(list)) return [];
 
     const gradeToCategory = {
@@ -3060,6 +3289,11 @@ export const AppProvider = ({ children }) => {
 
       const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
       const computedAttainment = p.highestEducationalAttainment || (() => {
+        if (Array.isArray(p.doctorateGraduatedDisciplines) && p.doctorateGraduatedDisciplines.length > 0) return 'DOCTORATE DEGREE (GRADUATED)';
+        if (Array.isArray(p.doctorateWithUnitsDisciplines) && p.doctorateWithUnitsDisciplines.length > 0) return 'DOCTORATE DEGREE (WITH UNITS)';
+        if (Array.isArray(p.mastersGraduatedDisciplines) && p.mastersGraduatedDisciplines.length > 0) return "MASTER'S DEGREE (GRADUATED)";
+        if (Array.isArray(p.mastersWithUnitsDisciplines) && p.mastersWithUnitsDisciplines.length > 0) return "MASTER'S DEGREE (WITH UNITS)";
+
         if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
           return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
             ? 'DOCTORATE DEGREE (GRADUATED)'
@@ -3091,6 +3325,14 @@ export const AppProvider = ({ children }) => {
         highestEducationalAttainment: computedAttainment,
         major: cleanMajor,
         minor: cleanMinor,
+        collegeDegree: primaryDegree.collegeDegree || p.collegeDegree || '',
+        college_degree: primaryDegree.collegeDegree || p.collegeDegree || '',
+        collegeDegrees: p.collegeDegrees || (primaryDegree.collegeDegree ? [{ collegeDegree: primaryDegree.collegeDegree, major: cleanMajor, minor: cleanMinor }] : []),
+        degreeRows: p.degreeRows || (primaryDegree.collegeDegree ? [{ clientKey: 'deg-0', level: 'BACCALAUREATE', collegeDegree: primaryDegree.collegeDegree, major: cleanMajor, minor: cleanMinor }] : []),
+        mastersWithUnitsDisciplines: p.mastersWithUnitsDisciplines || [],
+        mastersGraduatedDisciplines: p.mastersGraduatedDisciplines || [],
+        doctorateWithUnitsDisciplines: p.doctorateWithUnitsDisciplines || [],
+        doctorateGraduatedDisciplines: p.doctorateGraduatedDisciplines || [],
         prcSpecialization: cleanPrc,
         prc_specialization: cleanPrc,
         assignedGradeLevels: p.assignedGradeLevels || p.gradeLevelsTaught || [],
@@ -3106,10 +3348,22 @@ export const AppProvider = ({ children }) => {
     try {
       const res = await fetchAndNormalizePersonnel();
       if (Array.isArray(res)) {
+        const deletedSet = new Set(deletedPersonnelIds.map(k => String(k).trim().toLowerCase()).filter(Boolean));
         setPersonnel(prev => {
           const currentList = Array.isArray(prev) ? prev : [];
-          const currentPrns = new Set(currentList.map(p => p.employeeReferenceId || p.profilingCode || p.id).filter(Boolean));
-          const newItems = res.filter(p => !currentPrns.has(p.employeeReferenceId || p.profilingCode || p.id));
+          const currentKeys = new Set(
+            currentList.flatMap(p => [
+              String(p.id || '').trim().toLowerCase(),
+              String(p.prn || '').trim().toLowerCase(),
+              `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
+            ]).filter(Boolean)
+          );
+          const newItems = res.filter(p => {
+            const idKey = String(p.id || '').trim().toLowerCase();
+            const prnKey = String(p.prn || '').trim().toLowerCase();
+            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+            return !currentKeys.has(idKey) && !currentKeys.has(prnKey) && !currentKeys.has(nameKey) && !deletedSet.has(idKey) && !deletedSet.has(prnKey);
+          });
           return [...currentList, ...newItems];
         });
       }
@@ -3196,6 +3450,18 @@ export const AppProvider = ({ children }) => {
           console.error('Failed to load cloud draft from backend:', e);
         }
 
+        // 3b. Fetch PostgreSQL Milestone Node Status (esf7_school_node_status)
+        let schoolNodeStatus = null;
+        try {
+          const nodeRes = await api.getNodeStatus(currentSchoolInfo.schoolYear);
+          if (nodeRes && nodeRes.exists) {
+            schoolNodeStatus = nodeRes;
+            console.log('[NodeStatus Sync] Fetched PostgreSQL school node status for', currentSchoolInfo.schoolId);
+          }
+        } catch (err) {
+          console.warn('[NodeStatus Sync] Could not fetch school node status:', err.message);
+        }
+
         // 4. Compare timestamps and load the newest
         let activeDraft = null;
         if (localDraft && cloudDraft) {
@@ -3272,16 +3538,14 @@ export const AppProvider = ({ children }) => {
         };
 
         // Helper: Check if section is invalid (multi-grade/mono-grade artifacts from spreadsheet scanning)
+        const SPREADSHEET_PLACEHOLDERS = ['MULTI-GRADE', 'MULTIGRADE', 'MULTI GRADE', 'MONO-GRADE', 'MONOGRADE', 'MONO GRADE'];
         const isInvalidClassSection = (sec) => {
           if (!sec) return true;
           const g = String(sec.gradeLevel || sec.grade_level || '').toUpperCase().trim();
           const n = String(sec.sectionName || sec.section_name || '').toUpperCase().trim();
-          return (
-            g.includes('MULTI-GRADE') || g.includes('MULTIGRADE') || g.includes('MULTI GRADE') ||
-            g.includes('MONO-GRADE') || g.includes('MONOGRADE') || g.includes('MONO GRADE') ||
-            n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
-            n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
-          );
+          const isPlaceholderGrade = !g || SPREADSHEET_PLACEHOLDERS.includes(g);
+          const isPlaceholderName = !n || SPREADSHEET_PLACEHOLDERS.includes(n);
+          return isPlaceholderGrade && isPlaceholderName;
         };
 
         const sanitizeClassSectionList = (list) => {
@@ -3291,11 +3555,28 @@ export const AppProvider = ({ children }) => {
             const upperG = String(cleanGrade).toUpperCase().trim();
             if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
             else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
-            return {
+
+            const rawType = String(sec.sectionType || sec.section_type || '').toUpperCase().trim();
+            const isRegType = rawType === 'MONO GRADE' || rawType === 'MONOGRADE' || rawType === 'MULTIGRADE' || rawType === 'MULTI GRADE';
+
+            const sanitized = {
               ...sec,
               gradeLevel: cleanGrade,
               grade_level: cleanGrade
             };
+
+            if (isRegType) {
+              delete sanitized.aralBasis;
+              delete sanitized.aralGrade;
+              delete sanitized.aralToolKey;
+              delete sanitized.aralTool;
+              delete sanitized.aralProfileLevel;
+              delete sanitized.aralLearners;
+              delete sanitized.interventionCategory;
+              delete sanitized.interventionType;
+            }
+
+            return sanitized;
           });
         };
 
@@ -3356,30 +3637,53 @@ export const AppProvider = ({ children }) => {
           // Fetch DB personnel to restore draft personnel or merge newly approved shared personnel
           let dbList = [];
           try {
-            const res = await fetchAndNormalizePersonnel();
+            const res = await fetchAndNormalizePersonnel(currentSchoolInfo.schoolId);
             if (Array.isArray(res)) dbList = res;
           } catch(e) {
             console.error('Failed to fetch DB personnel for draft sync', e);
           }
 
-          let draftPersonnel = activeDraft.personnel || [];
-          const totalDraftWorkloads = draftPersonnel.reduce((acc, p) => acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0), 0);
-          const totalDbWorkloads = dbList.reduce((acc, p) => acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0), 0);
+          const rawDeleted = activeDraft.deletedPersonnelIds || activeDraft.deleted_personnel_ids || [];
+          const deletedSet = new Set(rawDeleted.map(k => String(k).trim().toLowerCase()).filter(Boolean));
+          setDeletedPersonnelIds(rawDeleted);
 
-          if ((draftPersonnel.length === 0 || draftPersonnel.length < dbList.length || totalDraftWorkloads < totalDbWorkloads) && dbList.length > 0) {
-            console.log(`[Draft Sync] Updating cached draft personnel with fresh master list & workloads (${dbList.length} personnel, ${totalDbWorkloads} workloads)...`);
-            draftPersonnel = dbList;
+          // Filter out deleted teachers from DB list
+          const filteredDbList = dbList.filter(p => {
+            const idKey = String(p.id || '').trim().toLowerCase();
+            const prnKey = String(p.prn || '').trim().toLowerCase();
+            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+            return !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey);
+          });
+
+          let draftPersonnel = (activeDraft.personnel || []).filter(p => {
+            const idKey = String(p.id || '').trim().toLowerCase();
+            const prnKey = String(p.prn || '').trim().toLowerCase();
+            return !deletedSet.has(idKey) && !deletedSet.has(prnKey);
+          });
+
+          // Only initialize from DB list if the draft is empty
+          if (draftPersonnel.length === 0 && filteredDbList.length > 0) {
+            console.log(`[Draft Sync] Initializing draft personnel from master list (${filteredDbList.length} personnel)...`);
+            draftPersonnel = filteredDbList;
             activeDraft.personnel = draftPersonnel;
-          } else if (dbList.length > 0) {
-            const dbSharedPersonnel = dbList.filter(p => p.isShared);
-            if (dbSharedPersonnel.length > 0) {
-              const draftPrns = new Set(draftPersonnel.map(p => p.employeeReferenceId).filter(Boolean));
-              const newShared = dbSharedPersonnel.filter(p => !draftPrns.has(p.employeeReferenceId));
-              if (newShared.length > 0) {
-                console.log('[Draft Sync] Injecting new shared personnel into draft:', newShared);
-                draftPersonnel = [...draftPersonnel, ...newShared];
-                activeDraft.personnel = draftPersonnel;
-              }
+          } else if (filteredDbList.length > 0) {
+            const draftKeys = new Set(
+              draftPersonnel.flatMap(p => [
+                String(p.id || '').trim().toLowerCase(),
+                String(p.prn || '').trim().toLowerCase(),
+                `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
+              ]).filter(Boolean)
+            );
+            const missingMasterPersonnel = filteredDbList.filter(p => {
+              const idKey = String(p.id || '').trim().toLowerCase();
+              const prnKey = String(p.prn || '').trim().toLowerCase();
+              const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+              return !draftKeys.has(idKey) && !draftKeys.has(prnKey) && !draftKeys.has(nameKey) && !deletedSet.has(idKey) && !deletedSet.has(prnKey);
+            });
+            if (missingMasterPersonnel.length > 0) {
+              console.log(`[Draft Sync] Merging ${missingMasterPersonnel.length} master personnel from official database into draft...`);
+              draftPersonnel = [...draftPersonnel, ...missingMasterPersonnel];
+              activeDraft.personnel = draftPersonnel;
             }
           }
 
@@ -3417,6 +3721,12 @@ export const AppProvider = ({ children }) => {
             loadedDraftSecs = extractedSecs;
           }
 
+          // Restore class sections from PostgreSQL node status if draft has 0 sections
+          if (loadedDraftSecs.length === 0 && Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) && schoolNodeStatus.nodes.node_06_classes.sections.length > 0) {
+            console.log('[NodeStatus Sync] Restoring', schoolNodeStatus.nodes.node_06_classes.sections.length, 'class sections from PostgreSQL node status');
+            loadedDraftSecs = schoolNodeStatus.nodes.node_06_classes.sections;
+          }
+
           // Sanitize legacy 35 hardcoded default value if male/female were not entered
           loadedDraftSecs.forEach(sec => {
             if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
@@ -3443,17 +3753,33 @@ export const AppProvider = ({ children }) => {
             }
           });
 
+          let mergedSchoolInfo = { ...currentSchoolInfo };
+          if (schoolNodeStatus?.nodes?.node_01_school) {
+            const node01 = schoolNodeStatus.nodes.node_01_school;
+            mergedSchoolInfo = {
+              ...mergedSchoolInfo,
+              schoolName: node01.school_name || mergedSchoolInfo.schoolName,
+              region: node01.region || mergedSchoolInfo.region,
+              division: node01.division || mergedSchoolInfo.division,
+              district: node01.district || mergedSchoolInfo.district,
+              numberOfShifts: String(node01.number_of_shifts || mergedSchoolInfo.numberOfShifts || '1'),
+              curricularOffering: (Array.isArray(node01.curricular_offering) && node01.curricular_offering.length > 0)
+                ? node01.curricular_offering
+                : mergedSchoolInfo.curricularOffering
+            };
+          }
+
           if (activeDraft.schoolInfo && String(activeDraft.schoolInfo.schoolId) === String(currentSchoolInfo.schoolId)) {
             setSchoolInfo({
-              ...currentSchoolInfo,
-              certifiedBy: activeDraft.schoolInfo.certifiedBy || currentSchoolInfo.certifiedBy,
-              certifiedSignature: activeDraft.schoolInfo.certifiedSignature || currentSchoolInfo.certifiedSignature,
-              certifiedAt: activeDraft.schoolInfo.certifiedAt || currentSchoolInfo.certifiedAt,
-              specialPrograms: activeDraft.schoolInfo.specialPrograms || currentSchoolInfo.specialPrograms,
-              shsCurriculumModel: activeDraft.schoolInfo.shsCurriculumModel || currentSchoolInfo.shsCurriculumModel
+              ...mergedSchoolInfo,
+              certifiedBy: activeDraft.schoolInfo.certifiedBy || mergedSchoolInfo.certifiedBy,
+              certifiedSignature: activeDraft.schoolInfo.certifiedSignature || mergedSchoolInfo.certifiedSignature,
+              certifiedAt: activeDraft.schoolInfo.certifiedAt || mergedSchoolInfo.certifiedAt,
+              specialPrograms: activeDraft.schoolInfo.specialPrograms || mergedSchoolInfo.specialPrograms,
+              shsCurriculumModel: activeDraft.schoolInfo.shsCurriculumModel || mergedSchoolInfo.shsCurriculumModel
             });
           } else {
-            setSchoolInfo(currentSchoolInfo);
+            setSchoolInfo(mergedSchoolInfo);
           }
           draftPersonnel = draftPersonnel.map(p => {
             const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
@@ -3506,25 +3832,71 @@ export const AppProvider = ({ children }) => {
           if (activeDraft.allowancesMap) {
             setAllowancesMap(activeDraft.allowancesMap);
           }
-          if (activeDraft.journey_state || activeDraft.journeyState) {
-            const jState = activeDraft.journey_state || activeDraft.journeyState;
-            setJourneyState({
-              unlockedNodes: Array.from(new Set(['school', ...(jState.unlockedNodes || [])])),
-              completedNodes: jState.completedNodes || [],
-              currentNode: jState.currentNode || 'school'
-            });
-          }
+
+          // Merge completed milestone nodes from PostgreSQL
+          const allKnownNodes = ['school', 'roster', 'room-qr', 'profile', 'requests', 'classes', 'designation', 'workload', 'allowances', 'overload', 'validation'];
+          const completedFromDb = [];
+          if (schoolNodeStatus?.nodes?.node_01_school?.status === 'COMPLETED') completedFromDb.push('school');
+          if (schoolNodeStatus?.nodes?.node_02_roster?.status === 'COMPLETED') completedFromDb.push('roster');
+          if (schoolNodeStatus?.nodes?.node_05_requests?.status === 'COMPLETED') completedFromDb.push('requests');
+          if (schoolNodeStatus?.nodes?.node_06_classes?.status === 'COMPLETED') completedFromDb.push('classes');
+          if (schoolNodeStatus?.nodes?.node_10_overload?.status === 'COMPLETED') completedFromDb.push('overload');
+          if (schoolNodeStatus?.nodes?.node_11_validation?.status === 'COMPLETED') completedFromDb.push('validation');
+
+          const jState = activeDraft.journey_state || activeDraft.journeyState || {};
+          const draftCompleted = Array.isArray(jState.completedNodes) ? jState.completedNodes : [];
+          const finalCompleted = Array.from(new Set([...draftCompleted, ...completedFromDb]));
+          const finalUnlocked = new Set(['school', ...(Array.isArray(jState.unlockedNodes) ? jState.unlockedNodes : [])]);
+          finalCompleted.forEach(c => {
+            finalUnlocked.add(c);
+            const idx = allKnownNodes.indexOf(c);
+            if (idx !== -1 && idx + 1 < allKnownNodes.length) {
+              finalUnlocked.add(allKnownNodes[idx + 1]);
+            }
+          });
+
+          setJourneyState({
+            unlockedNodes: Array.from(finalUnlocked),
+            completedNodes: finalCompleted,
+            currentNode: jState.currentNode || 'school'
+          });
+
           if (draftPersonnel.length > 0) {
             setActivePersonnelId(draftPersonnel[0].id);
           }
           // Make sure local IndexedDB is synced with the loaded draft
-          await setLocalDraft(draftKey, { ...activeDraft, personnel: draftPersonnel, classSections: cleanDraftSecs });
+          await setLocalDraft(draftKey, { 
+            ...activeDraft, 
+            schoolInfo: mergedSchoolInfo,
+            personnel: draftPersonnel, 
+            classSections: cleanDraftSecs,
+            journey_state: {
+              unlockedNodes: Array.from(finalUnlocked),
+              completedNodes: finalCompleted,
+              currentNode: jState.currentNode || 'school'
+            }
+          });
           setHasUnsavedChanges(true);
         } else {
           // Initialize from official PostgreSQL DB
-          setSchoolInfo(currentSchoolInfo);
+          let mergedSchoolInfo = { ...currentSchoolInfo };
+          if (schoolNodeStatus?.nodes?.node_01_school) {
+            const node01 = schoolNodeStatus.nodes.node_01_school;
+            mergedSchoolInfo = {
+              ...mergedSchoolInfo,
+              schoolName: node01.school_name || mergedSchoolInfo.schoolName,
+              region: node01.region || mergedSchoolInfo.region,
+              division: node01.division || mergedSchoolInfo.division,
+              district: node01.district || mergedSchoolInfo.district,
+              numberOfShifts: String(node01.number_of_shifts || mergedSchoolInfo.numberOfShifts || '1'),
+              curricularOffering: (Array.isArray(node01.curricular_offering) && node01.curricular_offering.length > 0)
+                ? node01.curricular_offering
+                : mergedSchoolInfo.curricularOffering
+            };
+          }
+          setSchoolInfo(mergedSchoolInfo);
 
-          const list = await fetchAndNormalizePersonnel();
+          const list = await fetchAndNormalizePersonnel(currentSchoolInfo.schoolId);
           let loadedPersonnel = [];
           if (Array.isArray(list) && list.length > 0) {
             loadedPersonnel = list;
@@ -3537,7 +3909,11 @@ export const AppProvider = ({ children }) => {
 
           const rawSections = await api.getSections();
           let loadedSections = Array.isArray(rawSections) ? rawSections : (rawSections && Array.isArray(rawSections.allSections) ? rawSections.allSections : []);
-          const extractedFallbackSecs = extractClassSectionsFromPersonnel(loadedPersonnel, currentSchoolInfo);
+          if (loadedSections.length === 0 && Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) && schoolNodeStatus.nodes.node_06_classes.sections.length > 0) {
+            console.log('[NodeStatus Sync] Restoring', schoolNodeStatus.nodes.node_06_classes.sections.length, 'class sections from PostgreSQL node status');
+            loadedSections = schoolNodeStatus.nodes.node_06_classes.sections;
+          }
+          const extractedFallbackSecs = extractClassSectionsFromPersonnel(loadedPersonnel, mergedSchoolInfo);
           if (loadedSections.length === 0 && !activeDraft?.sectionsCleared && extractedFallbackSecs.length > 0) {
             loadedSections = extractedFallbackSecs;
           }
@@ -3558,6 +3934,31 @@ export const AppProvider = ({ children }) => {
           const absData = await api.getAbsences();
           const loadedAbs = Array.isArray(absData) ? absData : [];
 
+          // Merge completed milestone nodes from PostgreSQL
+          const allKnownNodes = ['school', 'roster', 'room-qr', 'profile', 'requests', 'classes', 'designation', 'workload', 'allowances', 'overload', 'validation'];
+          const completedFromDb = [];
+          if (schoolNodeStatus?.nodes?.node_01_school?.status === 'COMPLETED') completedFromDb.push('school');
+          if (schoolNodeStatus?.nodes?.node_02_roster?.status === 'COMPLETED') completedFromDb.push('roster');
+          if (schoolNodeStatus?.nodes?.node_05_requests?.status === 'COMPLETED') completedFromDb.push('requests');
+          if (schoolNodeStatus?.nodes?.node_06_classes?.status === 'COMPLETED') completedFromDb.push('classes');
+          if (schoolNodeStatus?.nodes?.node_10_overload?.status === 'COMPLETED') completedFromDb.push('overload');
+          if (schoolNodeStatus?.nodes?.node_11_validation?.status === 'COMPLETED') completedFromDb.push('validation');
+
+          const finalUnlocked = new Set(['school']);
+          completedFromDb.forEach(c => {
+            finalUnlocked.add(c);
+            const idx = allKnownNodes.indexOf(c);
+            if (idx !== -1 && idx + 1 < allKnownNodes.length) {
+              finalUnlocked.add(allKnownNodes[idx + 1]);
+            }
+          });
+
+          setJourneyState({
+            unlockedNodes: Array.from(finalUnlocked),
+            completedNodes: completedFromDb,
+            currentNode: 'school'
+          });
+
           setPersonnel(loadedPersonnel);
           if (loadedPersonnel.length > 0) {
             setActivePersonnelId(loadedPersonnel[0].id);
@@ -3568,11 +3969,16 @@ export const AppProvider = ({ children }) => {
 
           // Write initial database state as local IndexedDB draft base
           const initialDraft = {
-            schoolInfo: currentSchoolInfo,
+            schoolInfo: mergedSchoolInfo,
             personnel: loadedPersonnel,
             classSections: loadedSections,
             workloadTransfers: loadedTransfers,
             absences: loadedAbs,
+            journey_state: {
+              unlockedNodes: Array.from(finalUnlocked),
+              completedNodes: completedFromDb,
+              currentNode: 'school'
+            },
             lastUpdated: new Date().toISOString()
           };
           await setLocalDraft(draftKey, initialDraft);
@@ -3594,8 +4000,8 @@ export const AppProvider = ({ children }) => {
         }
 
         initialLoadCompleteRef.current = true;
-        refreshRequests();
-        loadDistrictSchools();
+        refreshRequests(currentSchoolInfo.schoolId);
+        loadDistrictSchools(currentSchoolInfo.schoolId);
         fetchAllowances(currentSchoolInfo.schoolYear);
         try {
           const matrix = await api.getSalaryMatrix();
@@ -3700,7 +4106,7 @@ export const AppProvider = ({ children }) => {
       } finally {
         setIsSyncing(false);
       }
-    }, 1500);
+    }, 3500);
 
     return () => clearTimeout(debounceId);
   }, [schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState]);
@@ -3743,19 +4149,366 @@ export const AppProvider = ({ children }) => {
   };
 
   const savePersonnelChanges = async (id, updatedPerson) => {
-    // Clear isDraft when user explicitly saves — this makes the record visible
-    // in PersonnelProfile and Workload which filter out isDraft: true records.
-    setPersonnel(prev => prev.map(p => {
-      if (String(p.id) === String(id)) {
-        return {
+    if (!updatedPerson) return;
+    const targetId = String(id || updatedPerson.id || '').trim().toLowerCase();
+    const targetPrn = String(updatedPerson.prn || '').trim();
+
+    setPersonnel(prev => {
+      const nextList = prev.map(p => {
+      const pId = String(p.id || '').trim().toLowerCase();
+      const pPrn = String(p.prn || '').trim();
+
+      const isMatch = (targetId && pId === targetId) || (targetPrn && pPrn && pPrn === targetPrn);
+
+      if (isMatch) {
+        const merged = {
           ...p,
           ...updatedPerson,
-          isDraft: false
+          isDraft: false,
+          personalVerified: true,
+          lastVerifiedAt: updatedPerson.lastVerifiedAt || new Date().toISOString()
         };
+
+        // Bidirectional normalization for all profile fields
+        if (merged.ethnicGroup) merged.ethnic_group = merged.ethnicGroup;
+        if (merged.ethnic_group && !merged.ethnicGroup) merged.ethnicGroup = merged.ethnic_group;
+        if (merged.prcSpecialization) merged.prc_specialization = merged.prcSpecialization;
+        if (merged.prc_specialization && !merged.prcSpecialization) merged.prcSpecialization = merged.prc_specialization;
+        if (merged.highestEducationalAttainment) merged.highest_educational_attainment = merged.highestEducationalAttainment;
+        if (merged.highest_educational_attainment && !merged.highestEducationalAttainment) merged.highestEducationalAttainment = merged.highest_educational_attainment;
+        if (merged.hiringArrangement) merged.hiring_arrangement = merged.hiringArrangement;
+        if (merged.hiring_arrangement && !merged.hiringArrangement) merged.hiringArrangement = merged.hiring_arrangement;
+        if (merged.natureOfAppointment) merged.nature_of_appointment = merged.natureOfAppointment;
+        if (merged.nature_of_appointment && !merged.natureOfAppointment) merged.natureOfAppointment = merged.nature_of_appointment;
+        if (merged.fundSource) merged.fund_source = merged.fundSource;
+        if (merged.fund_source && !merged.fundSource) merged.fundSource = merged.fund_source;
+        if (merged.deploymentStatus) merged.deployment_status = merged.deploymentStatus;
+        if (merged.deployment_status && !merged.deploymentStatus) merged.deploymentStatus = merged.deployment_status;
+        if (merged.soloParent !== undefined) merged.solo_parent = merged.soloParent;
+        if (merged.solo_parent !== undefined && merged.soloParent === undefined) merged.soloParent = merged.solo_parent;
+        if (merged.hasNoTeachingLoad !== undefined) merged.has_no_teaching_load = merged.hasNoTeachingLoad;
+        if (merged.has_no_teaching_load !== undefined && merged.hasNoTeachingLoad === undefined) merged.hasNoTeachingLoad = merged.has_no_teaching_load;
+        if (merged.nameExtension) {
+          merged.extensionName = merged.nameExtension;
+          merged.name_extension = merged.nameExtension;
+        }
+        if (merged.extensionName && !merged.nameExtension) {
+          merged.nameExtension = merged.extensionName;
+          merged.name_extension = merged.extensionName;
+        }
+
+        // Employment dates & step increments (explicitly preserve 'N/A')
+        if (updatedPerson.firstServiceDate !== undefined) {
+          merged.firstServiceDate = updatedPerson.firstServiceDate;
+          merged.first_service_date = updatedPerson.firstServiceDate;
+        } else if (merged.firstServiceDate) {
+          merged.first_service_date = merged.firstServiceDate;
+        } else if (merged.first_service_date) {
+          merged.firstServiceDate = merged.first_service_date;
+        }
+
+        if (updatedPerson.lastPromotionDate !== undefined) {
+          merged.lastPromotionDate = updatedPerson.lastPromotionDate;
+          merged.last_promotion_date = updatedPerson.lastPromotionDate;
+        } else if (merged.lastPromotionDate !== undefined) {
+          merged.last_promotion_date = merged.lastPromotionDate;
+        } else if (merged.last_promotion_date !== undefined) {
+          merged.lastPromotionDate = merged.last_promotion_date;
+        }
+
+        if (updatedPerson.newStationDate !== undefined) {
+          merged.newStationDate = updatedPerson.newStationDate;
+          merged.new_station_date = updatedPerson.newStationDate;
+        } else if (merged.newStationDate !== undefined) {
+          merged.new_station_date = merged.newStationDate;
+        } else if (merged.new_station_date !== undefined) {
+          merged.newStationDate = merged.new_station_date;
+        }
+
+        if (updatedPerson.lastLateralMovementDate !== undefined) {
+          merged.lastLateralMovementDate = updatedPerson.lastLateralMovementDate;
+          merged.last_lateral_movement_date = updatedPerson.lastLateralMovementDate;
+        } else if (merged.lastLateralMovementDate !== undefined) {
+          merged.last_lateral_movement_date = merged.lastLateralMovementDate;
+        } else if (merged.last_lateral_movement_date !== undefined) {
+          merged.lastLateralMovementDate = merged.last_lateral_movement_date;
+        }
+
+        if (merged.stepIncrement) merged.step_increment = merged.stepIncrement;
+        if (merged.step_increment && !merged.stepIncrement) merged.stepIncrement = merged.step_increment;
+        if (merged.stepIncrementConfirmed !== undefined) merged.step_increment_confirmed = merged.stepIncrementConfirmed;
+        if (merged.step_increment_confirmed !== undefined && merged.stepIncrementConfirmed === undefined) merged.stepIncrementConfirmed = merged.step_increment_confirmed;
+
+        // Email & IDs
+        const isPermAppt = String(merged.natureOfAppointment || merged.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
+
+        if (isPermAppt) {
+          merged.noDepedEmail = false;
+          merged.no_deped_email = false;
+          if (merged.depedEmail === 'N/A' || merged.deped_email === 'N/A' || merged.email === 'N/A') {
+            merged.depedEmail = '';
+            merged.deped_email = '';
+            merged.email = '';
+          } else if (merged.depedEmail) {
+            merged.deped_email = merged.depedEmail;
+            merged.email = merged.depedEmail;
+          } else if (merged.deped_email) {
+            merged.depedEmail = merged.deped_email;
+            merged.email = merged.deped_email;
+          }
+        } else {
+          if (updatedPerson.noDepedEmail !== undefined || updatedPerson.no_deped_email !== undefined) {
+            const isNoEmail = !!(updatedPerson.noDepedEmail || updatedPerson.no_deped_email);
+            merged.noDepedEmail = isNoEmail;
+            merged.no_deped_email = isNoEmail;
+            if (isNoEmail) {
+              merged.depedEmail = 'N/A';
+              merged.deped_email = 'N/A';
+              merged.email = 'N/A';
+            }
+          } else if (merged.depedEmail === 'N/A' || merged.deped_email === 'N/A') {
+            merged.noDepedEmail = true;
+            merged.no_deped_email = true;
+            merged.depedEmail = 'N/A';
+            merged.deped_email = 'N/A';
+            merged.email = 'N/A';
+          } else if (merged.depedEmail) {
+            merged.deped_email = merged.depedEmail;
+            merged.email = merged.depedEmail;
+            merged.noDepedEmail = false;
+            merged.no_deped_email = false;
+          } else if (merged.deped_email) {
+            merged.depedEmail = merged.deped_email;
+            merged.email = merged.deped_email;
+            merged.noDepedEmail = false;
+            merged.no_deped_email = false;
+          }
+        }
+
+        // PhilSys & TIN N/A Handling
+        if (updatedPerson.noPhilsys !== undefined || updatedPerson.no_philsys !== undefined) {
+          const isNoPs = !!(updatedPerson.noPhilsys || updatedPerson.no_philsys);
+          merged.noPhilsys = isNoPs;
+          merged.no_philsys = isNoPs;
+          if (isNoPs) {
+            merged.philsysNo = '';
+            merged.philsys_no = '';
+          }
+        } else {
+          const isNoPs = !!(merged.noPhilsys || merged.no_philsys);
+          merged.noPhilsys = isNoPs;
+          merged.no_philsys = isNoPs;
+          if (isNoPs) {
+            merged.philsysNo = '';
+            merged.philsys_no = '';
+          }
+        }
+
+        if (updatedPerson.noTin !== undefined || updatedPerson.no_tin !== undefined) {
+          const isNoTin = !!(updatedPerson.noTin || updatedPerson.no_tin);
+          merged.noTin = isNoTin;
+          merged.no_tin = isNoTin;
+          if (isNoTin) {
+            merged.tin = '';
+          }
+        } else {
+          const isNoTin = !!(merged.noTin || merged.no_tin);
+          merged.noTin = isNoTin;
+          merged.no_tin = isNoTin;
+          if (isNoTin) {
+            merged.tin = '';
+          }
+        }
+
+        // Employee No. & IDs
+        if (updatedPerson.noEmployeeNo !== undefined || updatedPerson.no_employee_no !== undefined) {
+          const isNoEmp = !!(updatedPerson.noEmployeeNo || updatedPerson.no_employee_no);
+          merged.noEmployeeNo = isNoEmp;
+          merged.no_employee_no = isNoEmp;
+          if (isNoEmp) {
+            merged.employeeNo = 'N/A';
+            merged.employee_no = 'N/A';
+          }
+        }
+        if (updatedPerson.employeeNo !== undefined) {
+          merged.employeeNo = updatedPerson.employeeNo;
+          merged.employee_no = updatedPerson.employeeNo;
+          if (updatedPerson.employeeNo === 'N/A') {
+            merged.noEmployeeNo = true;
+            merged.no_employee_no = true;
+          }
+        } else if (updatedPerson.employee_no !== undefined) {
+          merged.employeeNo = updatedPerson.employee_no;
+          merged.employee_no = updatedPerson.employee_no;
+          if (updatedPerson.employee_no === 'N/A') {
+            merged.noEmployeeNo = true;
+            merged.no_employee_no = true;
+          }
+        } else if (merged.employeeNo) {
+          merged.employee_no = merged.employeeNo;
+        } else if (merged.employee_no) {
+          merged.employeeNo = merged.employee_no;
+        }
+
+        // PRC Specialization & Eligibility
+        if (updatedPerson.prcSpecialization !== undefined) {
+          merged.prcSpecialization = updatedPerson.prcSpecialization;
+          merged.prc_specialization = updatedPerson.prcSpecialization;
+        } else if (updatedPerson.prc_specialization !== undefined) {
+          merged.prcSpecialization = updatedPerson.prc_specialization;
+          merged.prc_specialization = updatedPerson.prc_specialization;
+        } else if (merged.prcSpecialization) {
+          merged.prc_specialization = merged.prcSpecialization;
+        } else if (merged.prc_specialization) {
+          merged.prcSpecialization = merged.prc_specialization;
+        }
+        if (updatedPerson.eligibility !== undefined) {
+          merged.eligibility = updatedPerson.eligibility;
+        }
+
+        // Education degrees & post-grad disciplines
+        if (merged.collegeDegrees && Array.isArray(merged.collegeDegrees)) {
+          merged.degreeRows = merged.collegeDegrees;
+          merged.college_degrees = merged.collegeDegrees;
+        } else if (merged.degreeRows && Array.isArray(merged.degreeRows)) {
+          merged.collegeDegrees = merged.degreeRows;
+          merged.college_degrees = merged.degreeRows;
+        }
+        if (merged.postGraduateDegree) merged.post_graduate_degree = merged.postGraduateDegree;
+        if (merged.post_graduate_degree && !merged.postGraduateDegree) merged.postGraduateDegree = merged.post_graduate_degree;
+        if (merged.postGraduateDiscipline) merged.post_graduate_discipline = merged.postGraduateDiscipline;
+        if (merged.post_graduate_discipline && !merged.postGraduateDiscipline) merged.postGraduateDiscipline = merged.post_graduate_discipline;
+
+        // Professional Development / Trainings
+        if (Array.isArray(merged.neapTrainingRows)) merged.neap_training_rows = merged.neapTrainingRows;
+        if (Array.isArray(merged.neap_training_rows) && !merged.neapTrainingRows) merged.neapTrainingRows = merged.neap_training_rows;
+        if (Array.isArray(merged.certificationRows)) merged.certification_rows = merged.certificationRows;
+        if (Array.isArray(merged.certification_rows) && !merged.certificationRows) merged.certificationRows = merged.certification_rows;
+        if (Array.isArray(merged.otherTrainingRows)) merged.other_training_rows = merged.otherTrainingRows;
+        if (Array.isArray(merged.other_training_rows) && !merged.otherTrainingRows) merged.otherTrainingRows = merged.other_training_rows;
+
+        // Teaching Assignment & Grade Levels
+        const gl = merged.assignedGradeLevels || merged.gradeLevelsTaught || merged.assigned_grade_levels || merged.grade_levels_taught || [];
+        if (Array.isArray(gl) && gl.length > 0) {
+          merged.assignedGradeLevels = gl;
+          merged.assigned_grade_levels = gl;
+          merged.gradeLevelsTaught = gl;
+          merged.grade_levels_taught = gl;
+          merged.teachesShs = gl.some(g => String(g).includes('11') || String(g).includes('12'));
+          merged.teaches_shs = merged.teachesShs;
+        }
+
+        // Learning Area Matrix
+        const laMap = merged.learningAreaMap || merged.matrix_data || merged.matrixData;
+        if (laMap && typeof laMap === 'object' && Object.keys(laMap).length > 0) {
+          merged.learningAreaMap = laMap;
+          merged.matrix_data = laMap;
+          merged.matrixData = laMap;
+          try {
+            localStorage.setItem(`draft_learning_areas_${p.id}`, JSON.stringify(laMap));
+            if (updatedPerson.id && String(updatedPerson.id) !== String(p.id)) {
+              localStorage.setItem(`draft_learning_areas_${updatedPerson.id}`, JSON.stringify(laMap));
+            }
+          } catch (e) {}
+        }
+
+        // Immediately update localStorage draft key so PersonnelProfile gets fresh data
+        try {
+          localStorage.setItem(`draft_personnel_${p.id}`, JSON.stringify(merged));
+          if (updatedPerson.id && String(updatedPerson.id) !== String(p.id)) {
+            localStorage.setItem(`draft_personnel_${updatedPerson.id}`, JSON.stringify(merged));
+          }
+        } catch (e) {}
+
+        // Bidirectional sync: extract administrative rows from workloadRows
+        const adminFromWorkload = (Array.isArray(merged.workloadRows) ? merged.workloadRows : []).filter(r => {
+          const s = String(r.subject || r.task || '').toUpperCase();
+          return s.startsWith('ADMIN') || s.includes('ADMINISTRATIVE');
+        }).map(r => {
+          let diffHrs = 1;
+          if (r.startTime && r.endTime) {
+            const [sh, sm] = String(r.startTime).split(':').map(Number);
+            const [eh, em] = String(r.endTime).split(':').map(Number);
+            if (!isNaN(sh) && !isNaN(eh)) {
+              diffHrs = Math.max(0.5, Math.round((((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / 60) * 10) / 10);
+            }
+          }
+          return {
+            task: r.subject || r.task || 'ADMIN TASK – GENERAL ADMINISTRATIVE SUPPORT',
+            startTime: r.startTime || '13:00',
+            endTime: r.endTime || '14:00',
+            days: Array.isArray(r.days) && r.days.length > 0 ? r.days : ['M', 'T', 'W', 'TH', 'F'],
+            hours: diffHrs,
+            term: r.term || '1st'
+          };
+        });
+
+        if (adminFromWorkload.length > 0) {
+          merged.administrativeRows = adminFromWorkload;
+          merged.administrative_rows = adminFromWorkload;
+        }
+
+        // Persist workload rows directly to PostgreSQL esf7_workload_rows in the background
+        if (Array.isArray(merged.workloadRows) && typeof api !== 'undefined' && api.saveWorkloadBatch) {
+          api.saveWorkloadBatch({
+            personnel_id: merged.id || p.id,
+            workloadRows: merged.workloadRows,
+            teachingRelatedRows: merged.teachingRelatedRows || merged.teaching_related_rows || [],
+            administrativeRows: merged.administrativeRows || merged.administrative_rows || [],
+            school_id: (schoolInfo && schoolInfo.schoolId) || localStorage.getItem('activeSchoolId') || '108348',
+            school_year: (schoolInfo && schoolInfo.schoolYear) || '2026-2027',
+            term: merged.activeTerm || '1st'
+          }).catch(err => console.warn('PostgreSQL workload background sync notice:', err.message));
+        }
+
+        // Auto-dispatch inter-school requests for CLUSTERED or REASSIGNED personnel
+        const depStatus = String(merged.deploymentStatus || merged.deployment_status || '').toUpperCase();
+        const assignedSchoolsList = Array.isArray(merged.assignedSchools) 
+          ? merged.assignedSchools 
+          : (Array.isArray(merged.assigned_schools) ? merged.assigned_schools : (merged.assignedSchools ? [merged.assignedSchools] : []));
+
+        if ((depStatus === 'CLUSTERED' || depStatus === 'REASSIGNED') && assignedSchoolsList.length > 0) {
+          const reqType = depStatus === 'CLUSTERED' ? 'clustered_teacher' : 'reassigned_teacher';
+          const pPrn = merged.prn || merged.id;
+          const pFullName = `${merged.firstName || ''} ${merged.lastName || ''}`.trim();
+          const curSchoolId = String(schoolInfo?.schoolId || user?.school_id || user?.schoolId || '').replace(/^SCH-/i, '').trim();
+
+          assignedSchoolsList.forEach(item => {
+            const rawItem = String(item || '').trim();
+            const parenMatch = rawItem.match(/\((\d{5,})\)/);
+            const directDigits = rawItem.match(/\b(\d{5,})\b/);
+            const targetId = parenMatch ? parenMatch[1] : (directDigits ? directDigits[1] : null);
+
+            if (targetId && targetId !== curSchoolId) {
+              api.createRequest({
+                requesterSchoolId: curSchoolId,
+                targetSchoolId: targetId,
+                requestType: reqType,
+                personnelId: pPrn,
+                personnelName: pFullName,
+                remarks: `Auto-dispatched ${depStatus} teacher assignment from School ${curSchoolId}`
+              }).catch(err => console.warn('[Auto Request Dispatch Notice]:', err.message));
+            }
+          });
+        }
+
+        return merged;
       }
       return p;
-    }));
-    showToast("Changes saved locally.");
+    });
+
+    // Deduplicate to guarantee no duplicate records in state
+    const seen = new Set();
+    return nextList.filter(p => {
+      if (!p) return false;
+      const key = String(p.id || p.prn || `${p.firstName || ''}_${p.lastName || ''}`).trim().toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+    setHasUnsavedChanges(true);
+    showToast("Changes saved locally & synced to database.");
   };
 
   const commitDraftPersonnel = async (specificId = null) => {
@@ -3796,15 +4549,20 @@ export const AppProvider = ({ children }) => {
       noTin: newPerson.noTin === true,
       employeeNo: newPerson.employeeNo || '',
       depedEmail: newPerson.depedEmail || '',
+      noDepedEmail: newPerson.noDepedEmail === true || newPerson.no_deped_email === true || newPerson.depedEmail === 'N/A',
+      no_deped_email: newPerson.noDepedEmail === true || newPerson.no_deped_email === true || newPerson.depedEmail === 'N/A',
       deploymentStatus: newPerson.deploymentStatus || 'OWN STATION',
       stepIncrement: newPerson.stepIncrement || 1,
       position: newPerson.position || '',
       designation: newPerson.designation || '',
-      fundSource: newPerson.fundSource || 'NATIONAL',
-      natureOfAppointment: newPerson.natureOfAppointment || 'REGULAR PERMANENT',
-      hiringArrangement: newPerson.hiringArrangement || 'REGULAR',
+      fundSource: newPerson.fundSource || (newPerson.position === 'COOK' ? 'SBFP' : 'NATIONAL'),
+      natureOfAppointment: newPerson.natureOfAppointment || (newPerson.position === 'COOK' ? 'CONTRACTUAL' : 'REGULAR PERMANENT'),
+      hiringArrangement: newPerson.hiringArrangement || (newPerson.position === 'COOK' ? 'CONTRACTUAL' : 'REGULAR'),
       assignedSchools: newPerson.assignedSchools || [],
+      assignedGradeLevels: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
+      assigned_grade_levels: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
       gradeLevelsTaught: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
+      grade_levels_taught: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
       firstServiceDate: newPerson.firstServiceDate || '',
       lastPromotionDate: newPerson.lastPromotionDate || '',
       newStationDate: newPerson.newStationDate || '',
@@ -3840,14 +4598,103 @@ export const AppProvider = ({ children }) => {
   };
 
   const deletePersonnel = async (id) => {
-    setPersonnel(prev => {
-      const filtered = prev.filter(p => p.id !== id);
-      if (activePersonnelId === id) {
-        setActivePersonnelId(filtered.length > 0 ? filtered[0].id : '');
+    if (!id) return;
+    const target = personnel.find(p => String(p.id) === String(id) || String(p.prn) === String(id));
+    const targetId = target ? target.id : id;
+    const targetPrn = target ? target.prn : null;
+
+    const updatedPersonnel = personnel.filter(p => String(p.id) !== String(id) && String(p.prn) !== String(id));
+    setPersonnel(updatedPersonnel);
+
+    if (activePersonnelId === targetId || activePersonnelId === id) {
+      setActivePersonnelId(updatedPersonnel.length > 0 ? updatedPersonnel[0].id : '');
+    }
+
+    // Clean up advisor role in class sections
+    const updatedSections = classSections.map(sec => {
+      if (String(sec.advisorId) === String(targetId) || String(sec.advisorId) === String(id)) {
+        return { ...sec, advisorId: null };
       }
-      return filtered;
+      return sec;
     });
-    showToast("Personnel removed from draft locally.");
+    setClassSections(updatedSections);
+
+    // Track deleted IDs in tombstone list
+    const newDeletedIds = Array.from(new Set([
+      ...deletedPersonnelIds,
+      String(id),
+      String(targetId),
+      targetPrn ? String(targetPrn) : ''
+    ].filter(Boolean)));
+    setDeletedPersonnelIds(newDeletedIds);
+
+    // Clean up local storage
+    try {
+      localStorage.removeItem(`draft_personnel_${targetId}`);
+      localStorage.removeItem(`draft_learning_areas_${targetId}`);
+      localStorage.removeItem(`esf7_workload_draft_${targetId}`);
+      if (targetPrn) {
+        localStorage.removeItem(`draft_personnel_${targetPrn}`);
+        localStorage.removeItem(`draft_learning_areas_${targetPrn}`);
+      }
+    } catch (e) {}
+
+    // Persist deleted state to IndexedDB and Cloud Draft
+    try {
+      const draftKey = `draft_${schoolInfo?.schoolId || '100093'}_${schoolInfo?.schoolYear || 'SY 26-27'}`;
+      const currentDraft = (await getLocalDraft(draftKey)) || {};
+      const newDraftData = {
+        ...currentDraft,
+        personnel: updatedPersonnel,
+        classSections: updatedSections,
+        deletedPersonnelIds: newDeletedIds,
+        lastUpdated: new Date().toISOString()
+      };
+      await setLocalDraft(draftKey, newDraftData);
+      if (api.saveSchoolDraft) {
+        api.saveSchoolDraft(schoolInfo?.schoolYear || 'SY 26-27', newDraftData).catch(e => console.warn('Cloud draft update error on delete:', e));
+      }
+    } catch (err) {
+      console.warn('Error saving draft after delete:', err);
+    }
+
+    // Permanently delete in backend DB
+    try {
+      await api.deletePersonnel(targetId);
+      if (targetPrn && targetPrn !== targetId) {
+        await api.deletePersonnel(targetPrn).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Backend deletePersonnel notice:', err.message);
+    }
+
+    setHasUnsavedChanges(true);
+    showToast("Personnel deleted successfully.");
+  };
+
+  const resolveBorrowedPersonnel = async (personId, action) => {
+    if (!personId) return;
+    const target = personnel.find(p => String(p.id) === String(personId));
+    if (!target) return;
+    const teacherName = `${target.firstName || ''} ${target.lastName || ''}`.trim() || 'Teacher';
+
+    if (action === 'remove_and_await') {
+      await deletePersonnel(personId);
+      try {
+        localStorage.removeItem(`draft_personnel_${personId}`);
+      } catch (e) {}
+      setHasUnsavedChanges(true);
+      showToast(`Removed ${teacherName}. When Mother School tags them as Reassigned, accept them via Request Center.`);
+    } else if (action === 'convert_to_permanent') {
+      savePersonnelChanges(personId, {
+        deploymentStatus: 'OWN STATION',
+        deployment_status: 'OWN STATION',
+        fundSource: 'NATIONAL',
+        fund_source: 'NATIONAL',
+        isShared: false
+      });
+      showToast(`Converted ${teacherName} to Permanent (Own Station) in this school.`);
+    }
   };
 
   const toggleSchoolHead = async (id, isSchoolHead) => {
@@ -3860,16 +4707,29 @@ export const AppProvider = ({ children }) => {
       }
     }
     setPersonnel(prev => prev.map(item => {
-      if (item.id === id) {
-        return { ...item, isSchoolHead };
+      const isTarget = String(item.id) === String(id);
+      if (isTarget) {
+        return { ...item, isSchoolHead: Boolean(isSchoolHead), is_school_head: Boolean(isSchoolHead) };
       }
       if (isSchoolHead) {
-        return { ...item, isSchoolHead: false };
+        return { ...item, isSchoolHead: false, is_school_head: false };
       }
       return item;
     }));
     setHasUnsavedChanges(true);
-    showToast(isSchoolHead ? "School Head designated in draft locally." : "School Head designation removed in draft locally.");
+
+    if (targetPerson) {
+      savePersonnelChanges(id, {
+        ...targetPerson,
+        isSchoolHead: Boolean(isSchoolHead),
+        is_school_head: Boolean(isSchoolHead)
+      });
+      if (typeof api !== 'undefined' && api.toggleSchoolHead) {
+        api.toggleSchoolHead(id, Boolean(isSchoolHead)).catch(e => console.warn('Toggle school head backend sync notice:', e));
+      }
+    }
+
+    showToast(isSchoolHead ? "School Head designated." : "School Head designation removed.");
   };
 
   const addClassSection = async (gradeLevelOrObj, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null, maleLearners = null, femaleLearners = null) => {
@@ -3902,6 +4762,31 @@ export const AppProvider = ({ children }) => {
       computedTotal = (calcMale || 0) + (calcFemale || 0);
     }
 
+    const isRemedial = finalSectionType === 'REMEDIAL';
+    const isEnrichment = finalSectionType === 'ENRICHMENT';
+    const isAral = Boolean(
+      finalSectionType === 'ARAL' || String(finalSectionType || '').toUpperCase().includes('ARAL') ||
+      String(finalGradeLevel || '').toUpperCase().includes('ARAL') ||
+      String(finalSectionName || '').toUpperCase().includes('ARAL') ||
+      (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null && (
+        gradeLevelOrObj.aralBasis || gradeLevelOrObj.aralToolKey || gradeLevelOrObj.aralTool ||
+        String(gradeLevelOrObj.sectionType || '').toUpperCase().includes('ARAL') ||
+        String(gradeLevelOrObj.gradeLevel || '').toUpperCase().includes('ARAL')
+      )) ||
+      ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(t => 
+        String(finalGradeLevel || '').toUpperCase().includes(t) ||
+        String(finalSectionType || '').toUpperCase().includes(t) ||
+        String(finalSectionName || '').toUpperCase().includes(t) ||
+        (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null && (
+          String(gradeLevelOrObj.gradeLevel || '').toUpperCase().includes(t) ||
+          String(gradeLevelOrObj.sectionType || '').toUpperCase().includes(t) ||
+          String(gradeLevelOrObj.sectionName || '').toUpperCase().includes(t)
+        ))
+      )
+    );
+    const isALS = (finalSectionType === 'ALS' || String(finalSectionType || '').toUpperCase().includes('ALS') || String(finalGradeLevel || '').toUpperCase().includes('ALS'));
+    const isSNED = (finalSectionType === 'SNED' || finalSectionType === 'NON-GRADED' || String(finalSectionType || '').toUpperCase().includes('SNED') || String(finalGradeLevel || '').toUpperCase().includes('SNED') || String(finalGradeLevel || '').toUpperCase().includes('NON-GRADED'));
+
     const localSecId = `sec-draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     const newSec = {
@@ -3909,24 +4794,108 @@ export const AppProvider = ({ children }) => {
       gradeLevel: finalGradeLevel,
       sectionName: finalSectionName,
       advisorId: finalAdvisorId ? String(finalAdvisorId) : null,
-      sectionType: finalSectionType || 'MONO GRADE',
+      sectionType: isAral ? (finalSectionType && finalSectionType !== 'MONO GRADE' ? finalSectionType : 'ARAL') : (finalSectionType || 'MONO GRADE'),
       advisoryMinutes: Number(finalAdvisoryMins) || 300,
       hgpMinutes: Number(finalHgpMins) || 60,
       numberOfLearners: computedTotal,
       maleLearners: calcMale,
-      femaleLearners: calcFemale
+      femaleLearners: calcFemale,
+      adviserRemarks: (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) ? (gradeLevelOrObj.adviserRemarks || gradeLevelOrObj.adviser_remarks || null) : null,
+      adviser_remarks: (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) ? (gradeLevelOrObj.adviserRemarks || gradeLevelOrObj.adviser_remarks || null) : null,
+      ...(typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null ? gradeLevelOrObj : {})
     };
 
-    setClassSections(prev => [...prev.filter(s => !(s.gradeLevel === finalGradeLevel && s.sectionName === finalSectionName)), newSec]);
+    const isProgramTypeMatching = (s1Type, s2Type) => {
+      const isA1 = String(s1Type || '').toUpperCase().includes('ARAL');
+      const isA2 = String(s2Type || '').toUpperCase().includes('ARAL');
+      if (isA1 || isA2) return isA1 === isA2;
+      const isS1 = String(s1Type || '').toUpperCase().includes('SNED') || String(s1Type || '').toUpperCase().includes('NON-GRADED');
+      const isS2 = String(s2Type || '').toUpperCase().includes('SNED') || String(s2Type || '').toUpperCase().includes('NON-GRADED');
+      if (isS1 || isS2) return isS1 === isS2;
+      const isL1 = String(s1Type || '').toUpperCase().includes('ALS');
+      const isL2 = String(s2Type || '').toUpperCase().includes('ALS');
+      if (isL1 || isL2) return isL1 === isL2;
+      const isR1 = String(s1Type || '').toUpperCase().includes('REMEDIAL') || String(s1Type || '').toUpperCase().includes('ENRICHMENT');
+      const isR2 = String(s2Type || '').toUpperCase().includes('REMEDIAL') || String(s2Type || '').toUpperCase().includes('ENRICHMENT');
+      if (isR1 || isR2) return isR1 === isR2;
+      return true;
+    };
+
+    setClassSections(prev => [
+      ...prev.filter(s => {
+        if (s.id && newSec.id && String(s.id) === String(newSec.id)) return false;
+        const sameGrade = String(s.gradeLevel || '').trim().toUpperCase() === String(finalGradeLevel || '').trim().toUpperCase();
+        const sameName = String(s.sectionName || '').trim().toUpperCase() === String(finalSectionName || '').trim().toUpperCase();
+        const sameCategory = isProgramTypeMatching(s.sectionType, newSec.sectionType);
+        return !(sameGrade && sameName && sameCategory);
+      }),
+      newSec
+    ]);
 
     if (finalAdvisorId) {
       setPersonnel(prevPersonnel => {
         return prevPersonnel.map(p => {
-          if (String(p.id) !== String(finalAdvisorId)) return p;
           let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
           const secId = localSecId;
 
-          if (finalSectionType === 'REMEDIAL') {
+          if (String(p.id) !== String(finalAdvisorId)) {
+            // Remove any stale advisory / HGP / specialized row for this section from previous teachers
+            const filteredRows = rows.filter(r => !(
+              (r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP' || r.subject === 'ALS LEARNING STRAND' || r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'REMEDIATION' || r.subject === 'ENRICHMENT' || r.subject === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING') &&
+              ((r.sectionId && String(r.sectionId) === String(localSecId)) || ((r.sectionName || '').trim().toUpperCase() === String(finalSectionName || '').trim().toUpperCase() && r.gradeLevel === finalGradeLevel))
+            ));
+            if (filteredRows.length !== rows.length) {
+              const draftKey = `draft_workload_${p.id}`;
+              const savedDraft = localStorage.getItem(draftKey);
+              if (savedDraft) {
+                try {
+                  const parsed = JSON.parse(savedDraft);
+                  if (parsed) localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: filteredRows }));
+                } catch (e) {}
+              }
+              return { ...p, workloadRows: filteredRows };
+            }
+            return p;
+          }
+
+          if (isSNED) {
+            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
+            const hasSned = rows.some(r => (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subjectName === 'SNED MODIFIED SUBJECT') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasSned) {
+              rows.unshift({
+                id: `wk-sned-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'SNED MODIFIED SUBJECT',
+                subjectName: 'SNED MODIFIED SUBJECT',
+                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                days: ['M', 'T', 'W', 'TH', 'F'],
+                startTime: '08:00',
+                endTime: '09:00',
+                durationMinutes: 60
+              });
+            }
+          } else if (isALS) {
+            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
+            const hasAls = rows.some(r => (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS' || r.subjectName === 'ALS LEARNING STRAND') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            if (!hasAls) {
+              rows.unshift({
+                id: `wk-als-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                sectionId: secId,
+                sectionName: finalSectionName,
+                gradeLevel: finalGradeLevel,
+                subject: 'ALS LEARNING STRAND',
+                subjectName: 'ALS LEARNING STRAND',
+                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                days: ['M', 'T', 'W', 'TH', 'F'],
+                startTime: '08:00',
+                endTime: '09:00',
+                durationMinutes: 60
+              });
+            }
+          } else if (isRemedial) {
+            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
             const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
             if (!hasRem) {
               rows.push({
@@ -3943,7 +4912,8 @@ export const AppProvider = ({ children }) => {
                 durationMinutes: 60
               });
             }
-          } else if (finalSectionType === 'ENRICHMENT') {
+          } else if (isEnrichment) {
+            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
             const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
             if (!hasEnr) {
               rows.push({
@@ -3960,9 +4930,21 @@ export const AppProvider = ({ children }) => {
                 durationMinutes: 60
               });
             }
-          } else if (finalSectionType === 'ARAL' || String(finalSectionType || '').startsWith('ARAL')) {
+          } else if (isAral) {
+            // ARAL sections strictly receive ARAL TUTORING and NEVER ADVISORY or HGP
+            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
             const hasAral = rows.some(r => (r.subject === 'ARAL' || r.subjectName === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
             if (!hasAral) {
+              let aralStart = '15:00';
+              let aralEnd = '16:00';
+              const existingAralCount = rows.filter(r => (r.subject === 'ARAL' || r.subjectName === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING')).length;
+              if (existingAralCount > 0) {
+                const startHour = 15 + Math.min(existingAralCount, 3);
+                const endHour = startHour + 1;
+                const pad = n => String(n).padStart(2, '0');
+                aralStart = `${pad(startHour)}:00`;
+                aralEnd = `${pad(endHour)}:00`;
+              }
               rows.push({
                 id: `wk-aral-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
@@ -3972,13 +4954,13 @@ export const AppProvider = ({ children }) => {
                 subjectName: 'ARAL TUTORING',
                 daySchedule: 'Mon, Tue, Wed, Thu',
                 days: ['M', 'T', 'W', 'TH'],
-                startTime: '15:00',
-                endTime: '16:00',
+                startTime: aralStart,
+                endTime: aralEnd,
                 durationMinutes: 60
               });
             }
           } else {
-            const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY'));
             if (!hasAdv) {
               rows.unshift({
                 id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -3993,8 +4975,10 @@ export const AppProvider = ({ children }) => {
                 endTime: '08:30',
                 durationMinutes: 60
               });
+            } else {
+              rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionId: secId, sectionName: finalSectionName, gradeLevel: finalGradeLevel } : r);
             }
-            const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP'));
             if (!hasHgp) {
               rows.push({
                 id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4009,8 +4993,23 @@ export const AppProvider = ({ children }) => {
                 endTime: '08:30',
                 durationMinutes: 60
               });
+            } else {
+              rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionId: secId, sectionName: finalSectionName, gradeLevel: finalGradeLevel } : r);
             }
           }
+
+          // Sync localStorage draft if present for this teacher
+          const draftKey = `draft_workload_${p.id}`;
+          const savedDraft = localStorage.getItem(draftKey);
+          if (savedDraft) {
+            try {
+              const parsed = JSON.parse(savedDraft);
+              if (parsed) {
+                localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: rows }));
+              }
+            } catch (e) {}
+          }
+
           return { ...p, workloadRows: rows };
         });
       });
@@ -4022,7 +5021,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const updateSectionDetails = async (sectionId, updates = {}) => {
-    const { sectionName, gradeLevel, sectionType, numberOfLearners, maleLearners, femaleLearners, advisorId } = updates;
+    const { sectionName, gradeLevel, sectionType, numberOfLearners, maleLearners, femaleLearners, advisorId, adviserRemarks, adviser_remarks } = updates;
     const calcMale = maleLearners !== null && maleLearners !== undefined && maleLearners !== '' ? Number(maleLearners) : null;
     const calcFemale = femaleLearners !== null && femaleLearners !== undefined && femaleLearners !== '' ? Number(femaleLearners) : null;
     let computedTotal = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
@@ -4043,7 +5042,9 @@ export const AppProvider = ({ children }) => {
           numberOfLearners: computedTotal !== null ? computedTotal : s.numberOfLearners,
           maleLearners: calcMale !== null ? calcMale : s.maleLearners,
           femaleLearners: calcFemale !== null ? calcFemale : s.femaleLearners,
-          advisorId: strAdvisorId !== undefined ? strAdvisorId : s.advisorId
+          advisorId: strAdvisorId !== undefined ? strAdvisorId : s.advisorId,
+          adviserRemarks: adviserRemarks !== undefined ? adviserRemarks : (adviser_remarks !== undefined ? adviser_remarks : s.adviserRemarks),
+          adviser_remarks: adviser_remarks !== undefined ? adviser_remarks : (adviserRemarks !== undefined ? adviserRemarks : s.adviser_remarks)
         };
         return targetSec;
       }
@@ -4057,7 +5058,20 @@ export const AppProvider = ({ children }) => {
           const isTargetTeacher = strAdvisorId && String(p.id) === strAdvisorId;
           const isRemedial = targetSec.sectionType === 'REMEDIAL';
           const isEnrichment = targetSec.sectionType === 'ENRICHMENT';
-          const linkedSub = isRemedial ? 'REMEDIATION' : (isEnrichment ? 'ENRICHMENT' : 'ADVISORY');
+          const isAral = Boolean(
+            targetSec.sectionType === 'ARAL' || String(targetSec.sectionType || '').toUpperCase().includes('ARAL') ||
+            String(targetSec.gradeLevel || '').toUpperCase().includes('ARAL') ||
+            String(targetSec.sectionName || '').toUpperCase().includes('ARAL') ||
+            Boolean(targetSec.aralBasis || targetSec.aralToolKey || targetSec.aralTool) ||
+            ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(tool =>
+              String(targetSec.gradeLevel || '').toUpperCase().includes(tool) ||
+              String(targetSec.sectionType || '').toUpperCase().includes(tool) ||
+              String(targetSec.sectionName || '').toUpperCase().includes(tool)
+            )
+          );
+          const isALS = (targetSec.sectionType === 'ALS' || String(targetSec.sectionType || '').toUpperCase().includes('ALS') || String(targetSec.gradeLevel || '').toUpperCase().includes('ALS'));
+          const isSNED = (targetSec.sectionType === 'SNED' || targetSec.sectionType === 'NON-GRADED' || String(targetSec.sectionType || '').toUpperCase().includes('SNED') || String(targetSec.gradeLevel || '').toUpperCase().includes('SNED') || String(targetSec.gradeLevel || '').toUpperCase().includes('NON-GRADED'));
+          const linkedSub = isALS ? 'ALS LEARNING STRAND' : (isSNED ? 'SNED MODIFIED SUBJECT' : (isRemedial ? 'REMEDIATION' : (isEnrichment ? 'ENRICHMENT' : (isAral ? 'ARAL TUTORING' : 'ADVISORY'))));
 
           const isSecRow = (r) => {
             const rSecId = String(r.sectionId || r.section_id || '');
@@ -4072,7 +5086,50 @@ export const AppProvider = ({ children }) => {
           };
 
           if (isTargetTeacher) {
-            if (isRemedial) {
+            if (isALS) {
+              // Clear any accidental ADVISORY / HGP rows previously attached to this section
+              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
+              const hasAls = rows.some(r => (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS' || r.subjectName === 'ALS LEARNING STRAND') && isSecRow(r));
+              if (!hasAls) {
+                rows.unshift({
+                  id: `wk-als-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'ALS LEARNING STRAND',
+                  subjectName: 'ALS LEARNING STRAND',
+                  daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                  days: ['M', 'T', 'W', 'TH', 'F'],
+                  startTime: '08:00',
+                  endTime: '09:00',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS' || r.subjectName === 'ALS LEARNING STRAND') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel, subject: 'ALS LEARNING STRAND', subjectName: 'ALS LEARNING STRAND' } : r);
+              }
+            } else if (isSNED) {
+              // Clear any accidental ADVISORY / HGP rows previously attached to this section
+              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
+              const hasSned = rows.some(r => (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subjectName === 'SNED MODIFIED SUBJECT') && isSecRow(r));
+              if (!hasSned) {
+                rows.unshift({
+                  id: `wk-sned-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'SNED MODIFIED SUBJECT',
+                  subjectName: 'SNED MODIFIED SUBJECT',
+                  daySchedule: 'Mon, Tue, Wed, Thu, Fri',
+                  days: ['M', 'T', 'W', 'TH', 'F'],
+                  startTime: '08:00',
+                  endTime: '09:00',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subjectName === 'SNED MODIFIED SUBJECT') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel, subject: 'SNED MODIFIED SUBJECT', subjectName: 'SNED MODIFIED SUBJECT' } : r);
+              }
+            } else if (isRemedial) {
+              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
               const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && isSecRow(r));
               if (!hasRem) {
                 rows.push({
@@ -4092,6 +5149,7 @@ export const AppProvider = ({ children }) => {
                 rows = rows.map(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
             } else if (isEnrichment) {
+              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
               const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && isSecRow(r));
               if (!hasEnr) {
                 rows.push({
@@ -4110,8 +5168,29 @@ export const AppProvider = ({ children }) => {
               } else {
                 rows = rows.map(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
+            } else if (isAral) {
+              // Clear any accidental ADVISORY / HGP rows previously attached to this section (ARAL is tutoring only, never advisory or HGP)
+              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
+              const hasAral = rows.some(r => (r.subject === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL' || r.subjectName === 'ARAL TUTORING') && isSecRow(r));
+              if (!hasAral) {
+                rows.push({
+                  id: `wk-aral-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                  sectionId: targetSec.id,
+                  sectionName: targetSec.sectionName,
+                  gradeLevel: targetSec.gradeLevel,
+                  subject: 'ARAL TUTORING',
+                  subjectName: 'ARAL TUTORING',
+                  daySchedule: 'Mon, Tue, Wed, Thu',
+                  days: ['M', 'T', 'W', 'TH'],
+                  startTime: '15:00',
+                  endTime: '16:00',
+                  durationMinutes: 60
+                });
+              } else {
+                rows = rows.map(r => (r.subject === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL' || r.subjectName === 'ARAL TUTORING') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel, subject: 'ARAL TUTORING', subjectName: 'ARAL TUTORING' } : r);
+              }
             } else {
-              const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && isSecRow(r));
+              const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY'));
               if (!hasAdv) {
                 rows.unshift({
                   id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4127,9 +5206,9 @@ export const AppProvider = ({ children }) => {
                   durationMinutes: 60
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
-              const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && isSecRow(r));
+              const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP'));
               if (!hasHgp) {
                 rows.push({
                   id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -4145,7 +5224,7 @@ export const AppProvider = ({ children }) => {
                   durationMinutes: 60
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
               }
             }
           } else {
@@ -4194,7 +5273,7 @@ export const AppProvider = ({ children }) => {
           if (!Array.isArray(p.workloadRows)) return p;
           const rows = p.workloadRows.filter(r => !(
             (String(r.sectionId) === String(id)) ||
-            (r.sectionName === target.sectionName && r.gradeLevel === target.gradeLevel && ['ADVISORY', 'HGP', 'REMEDIATION', 'ENRICHMENT'].includes(r.subject))
+            (r.sectionName === target.sectionName && r.gradeLevel === target.gradeLevel && ['ADVISORY', 'HGP', 'REMEDIATION', 'ENRICHMENT', 'ALS', 'SNED', 'SNED MODIFIED SUBJECT', 'ARAL', 'ARAL TUTORING'].includes(r.subject))
           ));
           const draftKey = `draft_workload_${p.id}`;
           const savedDraft = localStorage.getItem(draftKey);
@@ -4247,9 +5326,14 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPersonnelAbsence = async (absenceData) => {
-    const startStr = absenceData.startDate;
-    const endStr = absenceData.endDate || absenceData.startDate;
-    const newId = `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
+    const startStr = absenceData.startDate || absenceData.logDate || absenceData.absenceDate;
+    const endStr = absenceData.endDate || absenceData.startDate || absenceData.logDate || startStr;
+    const newId = absenceData.id || `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
+
+    const isTardy = String(absenceData.leaveType || '').toUpperCase().includes('TARD') ||
+                    String(absenceData.leaveType || '').toUpperCase().includes('LATE') ||
+                    String(absenceData.leaveType || '').toUpperCase().includes('UNDER') ||
+                    Boolean(absenceData.timeIn || absenceData.timeOut || absenceData.lateMinutes || absenceData.undertimeMinutes);
 
     const newLeaveRecord = {
       id: newId,
@@ -4261,22 +5345,76 @@ export const AppProvider = ({ children }) => {
       endDate: endStr,
       absence_date: startStr,
       absenceDate: startStr,
+      log_date: startStr,
+      logDate: startStr,
+      term: absenceData.term || activeTerm || '1st',
+      month: absenceData.month || (startStr ? new Date(startStr).toLocaleString('default', { month: 'long' }) : 'June'),
       leave_type: absenceData.leaveType,
-      leaveType: absenceData.leaveType
+      leaveType: absenceData.leaveType,
+      log_type: isTardy ? (absenceData.logType || 'TARDINESS') : 'ABSENCE',
+      logType: isTardy ? (absenceData.logType || 'TARDINESS') : 'ABSENCE',
+      time_in: absenceData.timeIn || null,
+      timeIn: absenceData.timeIn || null,
+      time_out: absenceData.timeOut || null,
+      timeOut: absenceData.timeOut || null,
+      late_minutes: Number(absenceData.lateMinutes || 0),
+      lateMinutes: Number(absenceData.lateMinutes || 0),
+      undertime_minutes: Number(absenceData.undertimeMinutes || 0),
+      undertimeMinutes: Number(absenceData.undertimeMinutes || 0),
+      total_dtr_deficit_minutes: Number(absenceData.totalDtrDeficitMinutes || (Number(absenceData.lateMinutes || 0) + Number(absenceData.undertimeMinutes || 0))),
+      scheduled_teaching_minutes: Number(absenceData.scheduledTeachingMinutes || 0),
+      scheduledTeachingMinutes: Number(absenceData.scheduledTeachingMinutes || 0),
+      missed_minutes: Number(absenceData.missedMinutes || absenceData.missedTeachingMinutes || 0),
+      missedMinutes: Number(absenceData.missedMinutes || absenceData.missedTeachingMinutes || 0),
+      missed_teaching_minutes: Number(absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
+      missedTeachingMinutes: Number(absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
+      actual_rendered_minutes: Number(absenceData.actualRenderedMinutes || 0),
+      actualRenderedMinutes: Number(absenceData.actualRenderedMinutes || 0),
+      missed_slot_ids: Array.isArray(absenceData.missedSlotIds) ? absenceData.missedSlotIds : [],
+      missedSlotIds: Array.isArray(absenceData.missedSlotIds) ? absenceData.missedSlotIds : [],
+      teaching_impact_minutes: Number(absenceData.teachingImpactMinutes || absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
+      teachingImpactMinutes: Number(absenceData.teachingImpactMinutes || absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
+      daily_rendered_minutes: Number(absenceData.dailyRenderedMinutes || 0),
+      dailyRenderedMinutes: Number(absenceData.dailyRenderedMinutes || 0),
+      daily_overload_earned: Number(absenceData.dailyOverloadEarned || 0),
+      dailyOverloadEarned: Number(absenceData.dailyOverloadEarned || 0),
+      reason: absenceData.reason || '',
+      is_excused: Boolean(absenceData.isExcused),
+      isExcused: Boolean(absenceData.isExcused)
     };
 
-    setAbsences(prev => [...prev, newLeaveRecord]);
-    showToast("Absence record saved.");
-    return { success: true };
+    setAbsences(prev => [...prev.filter(a => !(a.personnelId === absenceData.personnelId && (a.startDate === startStr || a.logDate === startStr))), newLeaveRecord]);
+
+    // Persist to backend overload_late_undertime table if tardy
+    if (isTardy) {
+      try {
+        api.saveOverloadLateUndertime({
+          ...newLeaveRecord,
+          school_id: schoolInfo?.schoolId || '108348',
+          school_year: schoolInfo?.schoolYear || '2026-2027'
+        }).catch(err => console.warn('[AppContext] Async saveOverloadLateUndertime:', err.message));
+      } catch (e) {}
+    }
+
+    showToast("DTR Tardiness / Absence log saved.");
+    return { success: true, id: newId, record: newLeaveRecord };
   };
 
   const removePersonnelAbsence = async (id, targetBatchId = null) => {
+    const target = absences.find(a => a.id === id);
     setAbsences(prev => prev.filter(a => {
       if (targetBatchId && (a.batchId === targetBatchId || a.batch_id === targetBatchId)) return false;
       if (Array.isArray(id) && id.includes(a.id)) return false;
       return a.id !== id;
     }));
-    showToast("Absence log removed.");
+
+    if (target && target.id) {
+      try {
+        api.deleteOverloadLateUndertime(target.id).catch(() => {});
+      } catch (e) {}
+    }
+
+    showToast("Absence / DTR log removed.");
   };
 
   const resetToDatabase = async () => {
@@ -4440,10 +5578,12 @@ export const AppProvider = ({ children }) => {
     return personnel.some(p => p.id !== id && String(p[field] || "").toLowerCase() === String(value).toLowerCase());
   };
 
-  // Check if a person has a school head title
+  // Check if a person is designated as school head or has a school head title
   const isSchoolHead = (p) => {
-    const roleText = `${p.position || ""} ${p.designation || ""}`.toLowerCase();
-    if (roleText.includes("assistant")) return false;
+    if (!p) return false;
+    if (p.isSchoolHead === true || p.is_school_head === true || p.is_school_head === 'true' || p.isSchoolHead === 'true') return true;
+    const roleText = `${p.position || ""} ${p.plantilla_position || ""} ${p.position_title || ""} ${p.designation || ""}`.toLowerCase();
+    if (roleText.includes("assistant principal") || roleText.includes("assistant school principal")) return false;
     return ["school principal", "principal", "teacher-in-charge", "officer-in-charge"].some(token => roleText.includes(token)) ||
       /\b(tic|oic)\b/.test(roleText);
   };
@@ -4460,6 +5600,12 @@ export const AppProvider = ({ children }) => {
   };
 
   const getValidationIssues = () => {
+    const rawId = String(schoolInfo?.schoolId || '').replace(/^SCH-/i, '').trim();
+    // Test account 900230 (ALL OFFERING) or DEV Bypass mode: zero blocking validation errors
+    if (rawId === '900230' || bypassNodeLocks) {
+      return [];
+    }
+
     const issues = [];
 
     // 1. School Profile Validation
@@ -4473,7 +5619,7 @@ export const AppProvider = ({ children }) => {
     // 2. School Head Count Validation
     const heads = personnel.filter(isSchoolHead);
     if (heads.length > 1) {
-      issues.push({ id: "school-head-multiple", type: "error", category: "School Head", message: `School head conflict: only one Principal, OIC, or TIC may be assigned. Current count: ${heads.length}.` });
+      issues.push({ id: "school-head-multiple", type: "warn", category: "School Head", message: `Multiple school heads identified (${heads.length} assigned). Verify designated primary school head.` });
     } else if (heads.length === 0) {
       issues.push({ id: "school-head-none", type: "warn", category: "School Head", message: "No school head identified. Assign one Principal, OIC, or TIC before final verification." });
     }
@@ -4486,12 +5632,24 @@ export const AppProvider = ({ children }) => {
       return !roleText.includes("teacher-in-charge") && !roleText.includes("tic");
     });
     if (tics.length > 0 && nonTics.length > 0) {
-      issues.push({ id: "school-head-tic-conflict", type: "error", category: "School Head", message: "School Head Conflict: Schools with a Teacher-in-Charge (TIC) cannot simultaneously have another Principal or OIC assigned." });
+      issues.push({ id: "school-head-tic-conflict", type: "warn", category: "School Head", message: "Notice: School has both Teacher-in-Charge (TIC) and Principal/OIC entries." });
     }
 
     // 3. Personnel Record Validation
     personnel.forEach(p => {
       const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.id;
+
+      // Borrowed Personnel Handshake Verification Check
+      const isBorrowedUnlinked = String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') && !p.isShared;
+      if (isBorrowedUnlinked) {
+        issues.push({
+          id: `${p.id}-borrowed-unlinked`,
+          personId: p.id,
+          type: "warn",
+          category: "Borrowed Personnel Verification",
+          message: `${name}: Tagged as BORROWED. Must be accepted via Request Center from Mother School or updated to Permanent (Own Station).`
+        });
+      }
 
       // Timetable Verification Check
       if (p.workloadVerified === false || p.needsTimeReview === true) {
@@ -4504,44 +5662,52 @@ export const AppProvider = ({ children }) => {
         });
       }
 
-      // Check Workload Schedule Duration Errors (> 60m Elem/JHS, > 360m SHS, Kinder = exempt 3h)
-      const rows = p.workloadRows || [];
-      rows.forEach((r, rIdx) => {
-        if (r.startTime && r.endTime) {
-          const subStr = String(r.subject || r.task || '').toUpperCase();
-          const gStr = String(r.gradeLevel || '').toUpperCase();
-
-          // KINDER BLOCKS OF TIME is 3 Hours (180 mins) — exempt from 60-min limit!
-          if (subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER')) {
-            return;
-          }
-
-          const [sh, sm] = (r.startTime || '').split(':').map(Number);
-          const [eh, em] = (r.endTime || '').split(':').map(Number);
-          if (!isNaN(sh) && !isNaN(eh)) {
-            const diffMins = (eh * 60 + em) - (sh * 60 + sm);
-            const catStr = String(r.category || '').toUpperCase();
-            const isSHS = gStr.includes('11') || gStr.includes('12') || catStr.includes('SHS');
-            const maxMins = isSHS ? 360 : 60;
-
-            if (diffMins > maxMins) {
-              issues.push({
-                id: `${p.id}-duration-err-${rIdx}`,
-                personId: p.id,
-                type: "error",
-                category: "Workload Schedule",
-                message: `${name}: ${r.subject || 'Subject'} period duration is ${diffMins} mins (Exceeds maximum ${maxMins} mins limit).`
-              });
-            }
-          }
-        }
-      });
-
       // Detect personnel type
       const detectedType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
       const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
       const isTeachingRelated = ['teaching-related', 'TEACHING-RELATED', 'related', 'RELATED'].includes(detectedType) || ['teaching-related', 'TEACHING-RELATED', 'related', 'RELATED'].includes(p.type) || ['TEACHING-RELATED', 'RELATED'].includes(p.positionCategory);
       const isTeachingOnly = !isNonTeaching && !isTeachingRelated;
+
+      // Check Workload Schedule Duration Errors (> 60m Elem/JHS, > 360m SHS, Kinder = exempt 3h)
+      // Non-Teaching personnel and Administrative Tasks have NO classroom duration limits (no max/min teaching hours)
+      if (!isNonTeaching) {
+        const rows = p.workloadRows || [];
+        rows.forEach((r, rIdx) => {
+          if (r.startTime && r.endTime) {
+            const subStr = String(r.subject || r.task || '').toUpperCase();
+            const gStr = String(r.gradeLevel || '').toUpperCase();
+
+            // KINDER BLOCKS OF TIME is 3 Hours (180 mins) — exempt from 60-min limit!
+            if (subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER')) {
+              return;
+            }
+
+            // Administrative tasks are exempt from classroom teaching duration limits
+            if (subStr.startsWith('ADMIN') || subStr.includes('ADMIN') || subStr.includes('ADMINISTRATIVE') || Boolean(r.is_admin_task || r.isAdminTask)) {
+              return;
+            }
+
+            const [sh, sm] = (r.startTime || '').split(':').map(Number);
+            const [eh, em] = (r.endTime || '').split(':').map(Number);
+            if (!isNaN(sh) && !isNaN(eh)) {
+              const diffMins = (eh * 60 + em) - (sh * 60 + sm);
+              const catStr = String(r.category || '').toUpperCase();
+              const isSHS = gStr.includes('11') || gStr.includes('12') || catStr.includes('SHS');
+              const maxMins = isSHS ? 360 : 60;
+
+              if (diffMins > maxMins) {
+                issues.push({
+                  id: `${p.id}-duration-err-${rIdx}`,
+                  personId: p.id,
+                  type: "error",
+                  category: "Workload Schedule",
+                  message: `${name}: ${r.subject || 'Subject'} period duration is ${diffMins} mins (Exceeds maximum ${maxMins} mins limit).`
+                });
+              }
+            }
+          }
+        });
+      }
 
       // Required Basic Fields
       const requiredFields = [
@@ -4592,23 +5758,23 @@ export const AppProvider = ({ children }) => {
       }
 
       // DepEd Email Requirement & Validation
-      const isNationalFund = String(p.fundSource || '').toUpperCase() === 'NATIONAL';
-      const isEmailRequired = !isNonTeaching || isNationalFund;
+      const isPermAppt = String(p.natureOfAppointment || p.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
 
-      if (isEmailRequired) {
-        if (!p.depedEmail || p.depedEmail === 'N/A') {
+      if (isPermAppt) {
+        if (!p.depedEmail || p.depedEmail === 'N/A' || p.noDepedEmail || p.no_deped_email) {
           issues.push({
             id: `${p.id}-deped-email-req`,
             personId: p.id,
             type: "error",
             category: "Contact",
-            message: `${name}: DepEd Email (@deped.gov.ph) is required for ${isNonTeaching ? 'Nationally-Funded Non-Teaching' : 'Teaching & Related'} personnel.`
+            message: `${name}: DepEd Email (@deped.gov.ph) is mandatory for Regular Permanent personnel.`
           });
         }
       }
 
       if (p.depedEmail && p.depedEmail !== 'N/A') {
-        const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName);
+        const hasDiscrepancyAllowed = Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy);
+        const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName, hasDiscrepancyAllowed);
         if (!emailVal.isValid) {
           issues.push({
             id: `${p.id}-deped-email-invalid`,
@@ -4778,30 +5944,14 @@ export const AppProvider = ({ children }) => {
       }
 
       // Workload Rows & Schedule Verification
-      const isReassignedOut = (p.requestType === 'reassigned_teacher' || p.deploymentStatus === 'REASSIGNED' || p.isReassignedOut) && !p.isShared;
-
       if (p.type === "teaching") {
-        if (isReassignedOut) {
-          // Reassigned Personnel in Mother School: STRICTLY 0 workload rows
-          if (p.workloadRows && p.workloadRows.length > 0) {
-            issues.push({
-              id: `${p.id}-reassigned-workload-invalid`,
-              personId: p.id,
-              type: "error",
-              category: "Workload",
-              message: `${name}: Reassigned Personnel is deployed to another station and must have 0 workload rows in Mother Station.`
-            });
-          }
-        } else {
-          // Standard Teaching & Clustered Personnel
-          if (!p.workloadRows || p.workloadRows.length === 0) {
-            issues.push({ id: `${p.id}-workload-empty`, personId: p.id, type: "warn", category: "Workload", message: `${name}: Subject workload schedule rows are missing.` });
-          }
-          
-          const weeklyTeachingMins = computeWeeklyTeachingMinutes(p.workloadRows);
-          if (weeklyTeachingMins === 0) {
-            issues.push({ id: `${p.id}-teaching-zero`, personId: p.id, type: "error", category: "Workload", message: `${name}: Teaching staff has 0 minutes of teaching schedules.` });
-          }
+        if (!p.hasNoTeachingLoad && (!p.workloadRows || p.workloadRows.length === 0)) {
+          issues.push({ id: `${p.id}-workload-empty`, personId: p.id, type: "warn", category: "Workload", message: `${name}: Subject workload schedule rows are missing.` });
+        }
+        
+        const weeklyTeachingMins = computeWeeklyTeachingMinutes(p.workloadRows);
+        if (!p.hasNoTeachingLoad && weeklyTeachingMins === 0 && (!p.deploymentStatus || p.deploymentStatus === 'OWN STATION')) {
+          issues.push({ id: `${p.id}-teaching-zero`, personId: p.id, type: "error", category: "Workload", message: `${name}: Teaching staff has 0 minutes of teaching schedules.` });
         }
       }
 
@@ -5039,7 +6189,7 @@ export const AppProvider = ({ children }) => {
 
       // Validate only pure monograde sections (exclude multigrade)
       if (matatagSpec && !isMulti) {
-        const sectionRows = [];
+        const allSectionRows = [];
         (personnel || []).forEach(p => {
           if (p.isDraft || !Array.isArray(p.workloadRows)) return;
           p.workloadRows.forEach(r => {
@@ -5047,139 +6197,157 @@ export const AppProvider = ({ children }) => {
             const rowSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
             const rowGLevel = String(r.gradeLevel || '').trim().toUpperCase();
             if (rowSecId === String(sec.id) || (rowSecName === String(sec.sectionName || '').trim().toUpperCase() && (rowGLevel === gLevel || !rowGLevel))) {
-              sectionRows.push({ ...r, teacherName: `${p.firstName || ''} ${p.lastName || ''}`.trim() });
+              allSectionRows.push({ ...r, teacherName: `${p.firstName || ''} ${p.lastName || ''}`.trim() });
             }
           });
         });
 
-        // 6.1 Check each of the mandatory MATATAG subjects (No Subject Left Behind)
-        matatagSpec.mandatorySubjects.forEach(reqSub => {
-          const matchingRows = sectionRows.filter(r => {
-            const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
-            return reqSub.aliases.some(a => subStr === a || subStr.startsWith(`${a} `) || subStr.startsWith(`${a}-`));
-          });
+        // Determine terms to check for this section (always check 1st Term, and any other term that has schedules in this section)
+        const sectionTerms = Array.from(new Set(allSectionRows.map(r => r.term || '1st')));
+        const termsToCheck = sectionTerms.length > 0 ? sectionTerms : ['1st'];
 
-          if (matchingRows.length === 0) {
-            issues.push({
-              id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-missing-${sec.id}-${reqSub.key}`,
-              type: "error",
-              category: "MATATAG Curriculum Compliance",
-              sectionId: sec.id,
-              personId: sec.advisorId || null,
-              message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): Incomplete Section Schedule - Missing mandatory subject "${reqSub.name}". All core curriculum subjects must be assigned.`
+        termsToCheck.forEach(tId => {
+          const termLabel = tId === '1st' ? '1st Term' : tId === '2nd' ? '2nd Term' : tId === '3rd' ? '3rd Term' : `${tId} Term`;
+          const sectionRows = allSectionRows.filter(r => (r.term || '1st') === tId);
+
+          // 6.1 Check each of the mandatory MATATAG subjects (No Subject Left Behind)
+          matatagSpec.mandatorySubjects.forEach(reqSub => {
+            const matchingRows = sectionRows.filter(r => {
+              const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
+              return reqSub.aliases.some(a => subStr === a || subStr.startsWith(`${a} `) || subStr.startsWith(`${a}-`));
             });
-          } else {
-            matchingRows.forEach((r, rIdx) => {
-              if (r.startTime && r.endTime) {
-                const [sh, sm] = r.startTime.split(':').map(Number);
-                const [eh, em] = r.endTime.split(':').map(Number);
-                const diffM = (eh * 60 + em) - (sh * 60 + sm);
-                const rDays = Array.isArray(r.days) && r.days.length > 0 ? r.days : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-                const weeklyM = diffM * rDays.length;
 
-                // Grade 1 & 2 Fixed 40-minute rules
-                if (matatagSpec.fixedDailyMins) {
-                  if (diffM !== matatagSpec.fixedDailyMins) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" is scheduled for ${diffM} mins/day (MATATAG Policy requires exactly ${matatagSpec.fixedDailyMins} mins/day under DepEd Order No. 12, s. 2024).`
-                    });
-                  }
-
-                  if (rDays.length < 5) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" is scheduled for only ${rDays.length} day(s) (MATATAG Policy requires 5 days, Monday to Friday).`
-                    });
-                  }
-                }
-
-                // Grade 3 Flexible Time Allotment Rules
-                if (matatagSpec.allowedDailyMins) {
-                  if (!matatagSpec.allowedDailyMins.includes(diffM)) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" duration (${diffM} mins/day) must be 45, 50, 55, or 60 mins/day under DepEd Order No. 12, s. 2024.`
-                    });
-                  }
-
-                  if (weeklyM < reqSub.minWeekly) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-minweekly-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" has only ${weeklyM} mins/week (MATATAG Policy requires at least ${reqSub.minWeekly} mins/week under DepEd Order No. 12, s. 2024).`
-                    });
-                  }
-
-                  if (reqSub.minWeekly === 225 && rDays.length < 5) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" must be scheduled from Monday to Friday (5 days/week).`
-                    });
-                  } else if (reqSub.minWeekly === 200 && diffM === 45 && rDays.length < 5) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" (45 mins/day) must be scheduled from Monday to Friday (5 days/week).`
-                    });
-                  } else if (reqSub.minWeekly === 200 && [50, 55, 60].includes(diffM) && rDays.length < 4) {
-                    issues.push({
-                      id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${rIdx}`,
-                      type: "error",
-                      category: "MATATAG Curriculum Compliance",
-                      sectionId: sec.id,
-                      personId: r.personId || sec.advisorId || null,
-                      message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${reqSub.name}" (${diffM} mins/day) must be scheduled for at least 4 days/week.`
-                    });
-                  }
-                }
-              }
-            });
-          }
-        });
-
-        // 6.2 Check for disallowed legacy subjects
-        matatagSpec.disallowedSubjects.forEach(disSub => {
-          sectionRows.forEach((r, rIdx) => {
-            const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
-            if (subStr === disSub || subStr.startsWith(`${disSub} `) || subStr.startsWith(`${disSub}-`)) {
+            if (matchingRows.length === 0) {
               issues.push({
-                id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-disallowed-${sec.id}-${disSub}-${rIdx}`,
+                id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-missing-${sec.id}-${reqSub.key}-${tId}`,
                 type: "error",
                 category: "MATATAG Curriculum Compliance",
                 sectionId: sec.id,
-                personId: r.personId || sec.advisorId || null,
-                message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}): "${subStr}" is not part of the ${matatagSpec.gradeLabel} MATATAG curriculum under DepEd Order No. 12, s. 2024.`
+                personId: sec.advisorId || null,
+                term: tId,
+                message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): Incomplete Section Schedule - Missing mandatory subject "${reqSub.name}". All core curriculum subjects must be assigned.`
+              });
+            } else {
+              matchingRows.forEach((r, rIdx) => {
+                if (r.startTime && r.endTime) {
+                  const [sh, sm] = r.startTime.split(':').map(Number);
+                  const [eh, em] = r.endTime.split(':').map(Number);
+                  const diffM = (eh * 60 + em) - (sh * 60 + sm);
+                  const rDays = Array.isArray(r.days) && r.days.length > 0 ? r.days : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
+                  const weeklyM = diffM * rDays.length;
+
+                  // Grade 1 & 2 Fixed 40-minute rules
+                  if (matatagSpec.fixedDailyMins) {
+                    if (diffM !== matatagSpec.fixedDailyMins) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" is scheduled for ${diffM} mins/day (MATATAG Policy requires exactly ${matatagSpec.fixedDailyMins} mins/day under DepEd Order No. 12, s. 2024).`
+                      });
+                    }
+
+                    if (rDays.length < 5) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" is scheduled for only ${rDays.length} day(s) (MATATAG Policy requires 5 days, Monday to Friday).`
+                      });
+                    }
+                  }
+
+                  // Grade 3 Flexible Time Allotment Rules
+                  if (matatagSpec.allowedDailyMins) {
+                    if (!matatagSpec.allowedDailyMins.includes(diffM)) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" duration (${diffM} mins/day) must be 45, 50, 55, or 60 mins/day under DepEd Order No. 12, s. 2024.`
+                      });
+                    }
+
+                    if (weeklyM < reqSub.minWeekly) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-minweekly-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" has only ${weeklyM} mins/week (MATATAG Policy requires at least ${reqSub.minWeekly} mins/week under DepEd Order No. 12, s. 2024).`
+                      });
+                    }
+
+                    if (reqSub.minWeekly === 225 && rDays.length < 5) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" must be scheduled from Monday to Friday (5 days/week).`
+                      });
+                    } else if (reqSub.minWeekly === 200 && diffM === 45 && rDays.length < 5) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" (45 mins/day) must be scheduled from Monday to Friday (5 days/week).`
+                      });
+                    } else if (reqSub.minWeekly === 200 && [50, 55, 60].includes(diffM) && rDays.length < 4) {
+                      issues.push({
+                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
+                        type: "error",
+                        category: "MATATAG Curriculum Compliance",
+                        sectionId: sec.id,
+                        personId: r.personId || sec.advisorId || null,
+                        term: tId,
+                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" (${diffM} mins/day) must be scheduled for at least 4 days/week.`
+                      });
+                    }
+                  }
+                }
               });
             }
+          });
+
+          // 6.2 Check for disallowed legacy subjects
+          matatagSpec.disallowedSubjects.forEach(disSub => {
+            sectionRows.forEach((r, rIdx) => {
+              const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
+              if (subStr === disSub || subStr.startsWith(`${disSub} `) || subStr.startsWith(`${disSub}-`)) {
+                issues.push({
+                  id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-disallowed-${sec.id}-${disSub}-${tId}-${rIdx}`,
+                  type: "error",
+                  category: "MATATAG Curriculum Compliance",
+                  sectionId: sec.id,
+                  personId: r.personId || sec.advisorId || null,
+                  term: tId,
+                  message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${subStr}" is not part of the ${matatagSpec.gradeLabel} MATATAG curriculum under DepEd Order No. 12, s. 2024.`
+                });
+              }
+            });
           });
         });
       }
     });
 
-    // 7. Duplicate Subject Assignment in a Single Section (Kinder to Grade 12)
+    // 7. Duplicate Subject Assignment in a Single Section (Kinder to Grade 12 - Term Isolated)
     const sectionSubjectAssignments = {};
     (personnel || []).forEach(p => {
       if (p.isDraft || !Array.isArray(p.workloadRows)) return;
@@ -5188,14 +6356,14 @@ export const AppProvider = ({ children }) => {
       p.workloadRows.forEach((r, rIdx) => {
         const subRaw = String(r.subject || r.subjectName || '').trim();
         const subNorm = subRaw.toUpperCase();
-        if (!subNorm || subNorm === 'ADVISORY') return;
+        if (!subNorm || subNorm === 'ADVISORY' || subNorm === 'HGP' || subNorm.includes('HOMEROOM GUIDANCE')) return;
 
         const secId = String(r.sectionId || r.section_id || '');
         const secName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-        const isSHS = r.gradeLevel && (String(r.gradeLevel).includes('11') || String(r.gradeLevel).includes('12'));
-        const term = isSHS ? (r.term || r.semester || '1st') : 'all';
+        const rowTerm = r.term || r.semester || '1st';
+        const termLabel = rowTerm === '1st' ? '1st Term' : rowTerm === '2nd' ? '2nd Term' : rowTerm === '3rd' ? '3rd Term' : `${rowTerm}`;
 
-        const secKey = secId ? `id_${secId}_${term}` : (secName ? `name_${secName}_${term}` : null);
+        const secKey = secId ? `id_${secId}_${rowTerm}` : (secName ? `name_${secName}_${rowTerm}` : null);
         if (!secKey) return;
 
         if (!sectionSubjectAssignments[secKey]) {
@@ -5203,7 +6371,8 @@ export const AppProvider = ({ children }) => {
             secId,
             secName: r.sectionName || 'Section',
             gradeLevel: r.gradeLevel || '',
-            term: isSHS ? term : null,
+            term: rowTerm,
+            termLabel,
             subjects: {}
           };
         }
@@ -5216,7 +6385,8 @@ export const AppProvider = ({ children }) => {
           personId: p.id,
           teacherName,
           subjectOriginal: subRaw,
-          rowIdx: rIdx
+          rowIdx: rIdx,
+          term: rowTerm
         });
       });
     });
@@ -5229,21 +6399,22 @@ export const AppProvider = ({ children }) => {
           const targetSec = (classSections || []).find(s => String(s.id) === String(secData.secId) || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secData.secName));
           const finalSecName = targetSec?.sectionName || secData.secName;
           const finalGrade = targetSec?.gradeLevel || secData.gradeLevel || 'Section';
-          const termSuffix = secData.term ? ` (${secData.term} Sem)` : '';
+          const termSuffix = `, ${secData.termLabel}`;
 
           issues.push({
-            id: `dup-sec-sub-${secData.secId || secData.secName}-${subNorm}-${secData.term || 'all'}`,
+            id: `dup-sec-sub-${secData.secId || secData.secName}-${subNorm}-${secData.term}`,
             type: "error",
             category: "Schedule Conflicts & Duplicate Subjects",
             sectionId: secData.secId || null,
             personId: assignments[0].personId || null,
+            term: secData.term,
             message: `Section "${finalSecName}" (${finalGrade}${termSuffix}): Duplicate assignment for subject "${subDisplayName}" across multiple entries (${teacherNames}). Each subject may only be assigned once per section.`
           });
         }
       });
     });
 
-    // 8. Homeroom Guidance (HGP) 60-Minute Weekly Allotment Audit
+    // 8. Homeroom Guidance (HGP) 60-Minute Weekly Allotment Audit (Term Isolated)
     (personnel || []).forEach(p => {
       if (p.isDraft || !Array.isArray(p.workloadRows)) return;
       const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Teacher';
@@ -5251,6 +6422,8 @@ export const AppProvider = ({ children }) => {
       p.workloadRows.forEach((r, rIdx) => {
         const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
         if (subStr === 'HGP' || subStr.includes('HOMEROOM GUIDANCE')) {
+          const rowTerm = r.term || '1st';
+          const termLabel = rowTerm === '1st' ? '1st Term' : rowTerm === '2nd' ? '2nd Term' : rowTerm === '3rd' ? '3rd Term' : `${rowTerm} Term`;
           const rowDays = (Array.isArray(r.days) && r.days.length > 0)
             ? r.days
             : (r.daySchedule || r.day_schedule)
@@ -5259,11 +6432,12 @@ export const AppProvider = ({ children }) => {
           
           if (!r.startTime || !r.endTime || rowDays.length === 0) {
             issues.push({
-              id: `hgp-missing-schedule-${p.id}-${rIdx}`,
+              id: `hgp-missing-schedule-${p.id}-${rIdx}-${rowTerm}`,
               type: "error",
               category: "Schedule Conflicts & Duplicate Subjects",
               personId: p.id,
-              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}": Homeroom Guidance (HGP) requires a defined Start Time, End Time, and at least one day (Mon-Fri).`
+              term: rowTerm,
+              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}" (${termLabel}): Homeroom Guidance (HGP) requires a defined Start Time, End Time, and at least one day (Mon-Fri).`
             });
             return;
           }
@@ -5275,12 +6449,61 @@ export const AppProvider = ({ children }) => {
 
           if (weeklyM !== 60) {
             issues.push({
-              id: `hgp-weekly-error-${p.id}-${rIdx}`,
+              id: `hgp-weekly-error-${p.id}-${rIdx}-${rowTerm}`,
               type: "error",
               category: "Schedule Conflicts & Duplicate Subjects",
               personId: p.id,
-              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}": Homeroom Guidance (HGP) must total exactly 60 minutes per week under DepEd policy (Current: ${diffM} mins/day × ${rowDays.length} day${rowDays.length > 1 ? 's' : ''} = ${weeklyM} mins/week).`
+              term: rowTerm,
+              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}" (${termLabel}): Homeroom Guidance (HGP) must total exactly 60 minutes per week under DepEd policy (Current: ${diffM} mins/day × ${rowDays.length} day${rowDays.length > 1 ? 's' : ''} = ${weeklyM} mins/week).`
             });
+          }
+        }
+      });
+    });
+
+    // 8.1 Workload Schedule Time Overlaps per Teacher & Term
+    (personnel || []).forEach(p => {
+      if (p.isDraft || !Array.isArray(p.workloadRows)) return;
+      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Teacher';
+      const rows = p.workloadRows;
+      const termsPresent = Array.from(new Set(rows.map(r => r.term || '1st')));
+      
+      termsPresent.forEach(tId => {
+        const termLabel = tId === '1st' ? '1st Term' : tId === '2nd' ? '2nd Term' : tId === '3rd' ? '3rd Term' : `${tId} Term`;
+        const termRows = rows.filter(r => (r.term || '1st') === tId);
+        
+        for (let i = 0; i < termRows.length; i++) {
+          for (let j = i + 1; j < termRows.length; j++) {
+            const r1 = termRows[i], r2 = termRows[j];
+            if (!r1.startTime || !r1.endTime || !r2.startTime || !r2.endTime) continue;
+            const days1 = Array.isArray(r1.days) ? r1.days : (r1.daySchedule ? String(r1.daySchedule).split(',').map(s => s.trim()) : []);
+            const days2 = Array.isArray(r2.days) ? r2.days : (r2.daySchedule ? String(r2.daySchedule).split(',').map(s => s.trim()) : []);
+            const daysOverlap = days1.some(d => days2.includes(d));
+            if (!daysOverlap) continue;
+
+            const [s1h, s1m] = r1.startTime.split(':').map(Number);
+            const [e1h, e1m] = r1.endTime.split(':').map(Number);
+            const [s2h, s2m] = r2.startTime.split(':').map(Number);
+            const [e2h, e2m] = r2.endTime.split(':').map(Number);
+            const start1 = s1h * 60 + s1m, end1 = e1h * 60 + e1m;
+            const start2 = s2h * 60 + s2m, end2 = e2h * 60 + e2m;
+
+            if (start1 < end2 && end1 > start2) {
+              const isHGPSub = (sub) => String(sub || '').toUpperCase() === 'HGP' || String(sub || '').toUpperCase().includes('HOMEROOM GUIDANCE');
+              const isAdvSub = (sub) => String(sub || '').toUpperCase() === 'ADVISORY';
+              if ((isHGPSub(r1.subject) && isAdvSub(r2.subject)) || (isAdvSub(r1.subject) && isHGPSub(r2.subject))) {
+                continue; // Advisory/HGP nesting is allowed
+              }
+
+              issues.push({
+                id: `time-conflict-${p.id}-${tId}-${i}-${j}`,
+                type: 'error',
+                category: 'Schedule Conflicts & Duplicate Subjects',
+                personId: p.id,
+                term: tId,
+                message: `${teacherName} (${termLabel}): Schedule collision between "${r1.subject || 'Subject'}" (${r1.startTime}-${r1.endTime}) and "${r2.subject || 'Subject'}" (${r2.startTime}-${r2.endTime}).`
+              });
+            }
           }
         }
       });
@@ -5327,6 +6550,8 @@ export const AppProvider = ({ children }) => {
     <AppContext.Provider value={{
       activeView,
       setActiveView,
+      registerAutoSaveHandler,
+      triggerAutoSave,
       activePersonnelId,
       setActivePersonnelId,
       schoolInfo,
@@ -5340,6 +6565,8 @@ export const AppProvider = ({ children }) => {
       addPersonnel,
       commitDraftPersonnel,
       deletePersonnel,
+      deletedPersonnelIds,
+      resolveBorrowedPersonnel,
       discardLocalDraft: async () => {
         try {
           const confirmed = await showConfirm(
@@ -5409,6 +6636,7 @@ export const AppProvider = ({ children }) => {
       allowancesMap,
       fetchAllowances,
       toggleAllowance,
+      bulkToggleAllowances,
       workImmersionSchedulesMap,
       fetchWorkImmersionSchedules,
       saveWorkImmersionSchedules,

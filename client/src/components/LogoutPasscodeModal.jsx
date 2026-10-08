@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { FiKey, FiAlertTriangle, FiArrowRight } from 'react-icons/fi';
+import { api } from '../services/api';
 
 export default function LogoutPasscodeModal({ isOpen, onClose }) {
   const { user, logout } = useAuth();
@@ -78,17 +79,11 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
         isValid = true;
       } else {
         // 2. Verify via API endpoint if online
-        const API_BASE = import.meta.env.VITE_API_URL || '/api';
-        const response = await fetch(`${API_BASE}/auth/pin-login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            school_id: schoolId,
-            pin: enteredPin
-          })
+        const data = await api.pinLogin({
+          school_id: schoolId,
+          pin: enteredPin
         });
-        const data = await response.json();
-        if (response.ok && data.success) {
+        if (data.ok && data.success) {
           isValid = true;
         }
       }

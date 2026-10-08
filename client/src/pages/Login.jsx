@@ -4,6 +4,7 @@ import BlueprintBackground from '../components/BlueprintBackground';
 import PinLogin from '../components/PinLogin';
 import PageTransition from '../components/PageTransition';
 import { FiAlertCircle, FiMail, FiLock, FiKey } from 'react-icons/fi';
+import { api } from '../services/api';
 
 export default function Login() {
   const { login } = useAuth();
@@ -56,20 +57,13 @@ export default function Login() {
           return;
         }
 
-        const API_BASE = import.meta.env.VITE_API_URL || '/api';
-        const response = await fetch(`${API_BASE}/auth/passcode-login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            school_id: schoolId.trim(),
-            passcode: finalPin,
-            pin: finalPin
-          })
+        const data = await api.passcodeLogin({
+          school_id: schoolId.trim(),
+          passcode: finalPin,
+          pin: finalPin
         });
 
-        const data = await response.json();
-
-        if (response.ok && data.success && data.user && data.token) {
+        if (data.ok && data.success && data.user && data.token) {
           login(data.user, data.token);
         } else {
           setError(data.error || 'Incorrect passcode.');
@@ -81,19 +75,12 @@ export default function Login() {
           return;
         }
 
-        const API_BASE = import.meta.env.VITE_API_URL || '/api';
-        const response = await fetch(`${API_BASE}/auth/migrate-login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            identifier: schoolId.trim(),
-            password: password.trim()
-          })
+        const data = await api.migrateLogin({
+          identifier: schoolId.trim(),
+          password: password.trim()
         });
 
-        const data = await response.json();
-
-        if (response.ok && data.success && data.user && data.token) {
+        if (data.ok && data.success && data.user && data.token) {
           login(data.user, data.token);
         } else {
           setError(data.error || 'Invalid credentials.');
@@ -101,7 +88,7 @@ export default function Login() {
       }
     } catch (err) {
       console.error(err);
-      setError('Connection error. Please try again.');
+      setError(err.message?.includes('Server returned') ? 'Unable to connect to login server. Please try again.' : 'Connection error. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../../db');
+const { resolveTestDivision } = require('../../utils/divisionTestRegistry');
 require('dotenv').config();
 
 // ── Hardcoded Pilot School Credentials ────────────────────────────────────
@@ -17,34 +18,7 @@ const PILOT_SCHOOLS = [
   '500522', '500369'
 ];
 const PILOT_PASSWORD = 'Pilot2026!';
-
-// Create connection pool to 'users_database' containing user_schoolhead
-const usersDbPoolString = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('insighted_esf7', 'users_database')
-  : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/users_database`;
-
-const usersDatabasePool = new Pool({
-  connectionString: usersDbPoolString,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-});
-
-usersDatabasePool.on('error', (err) => {
-  console.error('[users_database Pool Error]:', err.message);
-});
-
-// Fallback connection pool to 'insightEd'
-const poolString = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-  : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-
-const insightEdPool = new Pool({
-  connectionString: poolString,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-});
-
-insightEdPool.on('error', (err) => {
-  console.error('[Auth DB Pool Error]:', err.message);
-});
+const { usersDatabasePool, insightEdPool } = require('../../db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'STRIDE_INSIGHTED_SECRET_2026_KEY_PROD';
 
@@ -64,6 +38,22 @@ router.get('/me', async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.uid && decoded.uid.startsWith('divtest-')) {
+      const schId = decoded.school_id || decoded.uid.replace('divtest-', '');
+      const testDiv = resolveTestDivision(schId);
+      return res.json({
+        uid: decoded.uid,
+        role: 'school',
+        email: decoded.email || (testDiv ? testDiv.handle : `div-${schId}@esf7.test`),
+        school_id: schId,
+        region: testDiv ? testDiv.region : (decoded.region || 'REGION V'),
+        division: testDiv ? testDiv.division : (decoded.division || 'DIVISION TEST'),
+        account_category: 'school',
+        first_name: 'School Head',
+        last_name: testDiv ? testDiv.schoolName : `Demo School ${schId}`
+      });
+    }
+
     if (decoded.uid && decoded.uid.startsWith('pilot-')) {
       const pilotId = decoded.uid.split('-')[1];
       return res.json({
@@ -124,6 +114,31 @@ const handlePasswordLogin = async (req, res) => {
 
   if (!inputSchoolId || !password) {
     return res.status(400).json({ error: 'School ID and password are required' });
+  }
+
+  // 230 Division & 7 MCOC Archetype Test Accounts Shortcut
+  const testDiv = resolveTestDivision(inputSchoolId);
+  if (testDiv && (password === '123456' || password === 'Pilot2026!' || password === 'Pilot2026' || password === 'deped123' || password === testDiv.schoolId || password === testDiv.handle || password === testDiv.shortHandle)) {
+    const token = jwt.sign(
+      { uid: `divtest-${testDiv.schoolId}`, email: testDiv.handle, role: 'school', school_id: testDiv.schoolId, region: testDiv.region, division: testDiv.division },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    return res.json({
+      success: true,
+      token,
+      user: {
+        uid: `divtest-${testDiv.schoolId}`,
+        email: testDiv.handle,
+        role: 'school',
+        account_category: 'school',
+        region: testDiv.region,
+        division: testDiv.division,
+        first_name: 'School Head',
+        last_name: testDiv.schoolName,
+        school_id: testDiv.schoolId
+      }
+    });
   }
 
   // Pilot shortcut
@@ -236,6 +251,31 @@ const handlePasscodeLogin = async (req, res) => {
 
   if (!inputSchoolId || !inputPasscode) {
     return res.status(400).json({ error: 'School ID and passcode are required' });
+  }
+
+  // 230 Division & 7 MCOC Archetype Test Accounts Shortcut
+  const testDiv = resolveTestDivision(inputSchoolId);
+  if (testDiv && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === 'Pilot2026!' || inputPasscode === 'Pilot2026' || inputPasscode === 'deped123' || inputPasscode === testDiv.schoolId || inputPasscode === testDiv.handle || inputPasscode === testDiv.shortHandle)) {
+    const token = jwt.sign(
+      { uid: `divtest-${testDiv.schoolId}`, email: testDiv.handle, role: 'school', school_id: testDiv.schoolId, region: testDiv.region, division: testDiv.division },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    return res.json({
+      success: true,
+      token,
+      user: {
+        uid: `divtest-${testDiv.schoolId}`,
+        email: testDiv.handle,
+        role: 'school',
+        account_category: 'school',
+        region: testDiv.region,
+        division: testDiv.division,
+        first_name: 'School Head',
+        last_name: testDiv.schoolName,
+        school_id: testDiv.schoolId
+      }
+    });
   }
 
   // Pilot shortcut

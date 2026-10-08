@@ -35,15 +35,15 @@ export default function NodeMap() {
 
   const NODE_SECTIONS = [
     {
-      key: 'esf7',
-      title: 'Core eSF7 Registry & Submission Pipeline',
-      subtitle: 'Primary school metadata, staffing roster, class sections, assignments, and workload schedules',
+      key: 'phase1',
+      title: 'Phase 1: School Setup & Faculty Profiling',
+      subtitle: 'School metadata, staffing roster, Room QR passcode posters & teacher profiling',
       nodes: [
         {
           id: 'school',
           nodeNumber: '01',
           title: 'School Profile',
-          subtitle: 'School identity, shift configuration & offerings',
+          subtitle: 'School identity & curricular offerings',
           Icon: FiBookOpen,
           view: 'school',
           summary: schoolInfo?.schoolId ? `School ID: ${schoolInfo.schoolId}` : 'Configure school identity'
@@ -58,17 +58,42 @@ export default function NodeMap() {
           summary: `${personnel.length} Registered Personnel`
         },
         {
-          id: 'profile',
+          id: 'room-qr',
           nodeNumber: '03',
+          title: 'Room QR Portal',
+          subtitle: 'Teacher passcode identity & self-profiling QR scanner',
+          Icon: FiMaximize,
+          view: 'room-qr',
+          summary: 'QR Posters & Teacher Self-Profiling'
+        },
+        {
+          id: 'profile',
+          nodeNumber: '04',
           title: 'Personnel Profiling',
           subtitle: 'Educational qualifications, LET & eligibility',
           Icon: FiUserCheck,
           view: 'profile',
           summary: `${personnel.filter(p => p.degreeMajor || p.major || p.collegeDegree).length} Profiles Configured`
+        }
+      ]
+    },
+    {
+      key: 'phase2',
+      title: 'Phase 2: Academic Structuring & Timetable',
+      subtitle: 'Inter-school requests, class sections, ancillary designations, and teaching workloads',
+      nodes: [
+        {
+          id: 'requests',
+          nodeNumber: '05',
+          title: 'Request Center',
+          subtitle: 'Incoming and outgoing personnel transfer requests',
+          Icon: FiMail,
+          view: 'requests',
+          summary: `${incomingRequests?.length || 0} Pending Inter-School Requests`
         },
         {
           id: 'classes',
-          nodeNumber: '04',
+          nodeNumber: '06',
           title: 'Organized Classes',
           subtitle: 'Section setup, advisers & learner counts',
           Icon: FiGrid,
@@ -77,7 +102,7 @@ export default function NodeMap() {
         },
         {
           id: 'designation',
-          nodeNumber: '05',
+          nodeNumber: '07',
           title: 'Designations & Duties',
           subtitle: 'Ancillary roles, grade chairpersons & SDS approvals',
           Icon: FiBookmark,
@@ -86,7 +111,7 @@ export default function NodeMap() {
         },
         {
           id: 'workload',
-          nodeNumber: '06',
+          nodeNumber: '08',
           title: 'Workload & Timetable',
           subtitle: 'Teaching schedules, period durations & timetable',
           Icon: FiClock,
@@ -96,45 +121,28 @@ export default function NodeMap() {
       ]
     },
     {
-      key: 'administrative',
-      title: 'Administrative Tools & Teacher Services',
-      subtitle: 'Teacher QR passcode generation, transfer requests, overload pay, allowances, and validation rules',
+      key: 'phase3',
+      title: 'Phase 3: Compensation & Final Submission',
+      subtitle: 'Financial incentives, 3-term overload computation, error audits & digital certification',
       nodes: [
         {
-          id: 'room-qr',
-          nodeNumber: '07',
-          title: 'Room QR Portal',
-          subtitle: 'Teacher passcode identity & self-profiling QR scanner',
-          Icon: FiMaximize,
-          view: 'room-qr',
-          summary: 'QR Posters & Teacher Self-Profiling'
-        },
-        {
-          id: 'requests',
-          nodeNumber: '08',
-          title: 'Request Center',
-          subtitle: 'Incoming and outgoing personnel transfer requests',
-          Icon: FiMail,
-          view: 'requests',
-          summary: `${incomingRequests?.length || 0} Pending Inter-School Requests`
+          id: 'allowances',
+          nodeNumber: '09',
+          title: 'Allowances & Incentives',
+          subtitle: 'Special Hardship Allowances, Honorarium & DepEd Compensation Incentives',
+          Icon: FiDollarSign,
+          view: 'allowances',
+          summary: 'Special Hardship & DepEd Incentives'
         },
         {
           id: 'overload',
-          nodeNumber: '09',
+          nodeNumber: '10',
           title: 'Teaching Overload Center',
-          subtitle: 'Overload minutes tracking, calendar terms & monthly pay calculations',
+          subtitle: 'Module temporarily locked for DepEd policy alignment',
           Icon: FiRepeat,
           view: 'overload',
-          summary: 'Monthly Overload Computation Engine'
-        },
-        {
-          id: 'allowances',
-          nodeNumber: '10',
-          title: 'Allowances & Incentives',
-          subtitle: 'Financial incentives, medical allowance & uniform indicators',
-          Icon: FiDollarSign,
-          view: 'allowances',
-          summary: 'Teacher Allowance & Incentive Matrix'
+          isLockedNode: true,
+          summary: 'Locked for DepEd Policy Review'
         },
         {
           id: 'validation',
@@ -164,69 +172,7 @@ export default function NodeMap() {
         onBack={() => setActiveView('dashboard')}
         backText="Back to Dashboard"
         actionButton={
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            
-            {/* DEV BYPASS TOGGLE */}
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '5px 12px',
-              borderRadius: '999px',
-              background: bypassNodeLocks 
-                ? 'linear-gradient(135deg, rgba(254, 243, 199, 0.95) 0%, rgba(253, 230, 138, 0.9) 100%)' 
-                : 'rgba(241, 245, 249, 0.85)',
-              border: bypassNodeLocks ? '1.5px solid #F59E0B' : '1px solid #CBD5E1',
-              boxShadow: bypassNodeLocks ? '0 2px 8px rgba(245, 158, 11, 0.25)' : 'none',
-              transition: 'all 0.25s ease'
-            }}>
-              <span style={{
-                fontSize: '10.5px',
-                fontWeight: '900',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                color: bypassNodeLocks ? '#92400E' : '#64748B'
-              }}>
-                {bypassNodeLocks ? 'DEV: LOCKS BYPASSED' : 'DEV: STRICT LOCKS'}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => setBypassNodeLocks(!bypassNodeLocks)}
-                style={{
-                  width: '42px',
-                  height: '22px',
-                  borderRadius: '999px',
-                  background: bypassNodeLocks ? '#F59E0B' : '#94A3B8',
-                  border: 'none',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  padding: '2px',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.15)'
-                }}
-                title="Toggle for testing purposes only to bypass node locks"
-              >
-                <div style={{
-                  width: '18px',
-                  height: '18px',
-                  borderRadius: '50%',
-                  background: '#FFFFFF',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                  transform: bypassNodeLocks ? 'translateX(20px)' : 'translateX(0px)',
-                  transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px'
-                }}>
-                  {bypassNodeLocks ? <FiUnlock size={11} color="#92400E" /> : <FiLock size={11} color="#475569" />}
-                </div>
-              </button>
-            </div>
-
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
               type="button"
               onClick={() => setIsUploadModalOpen(true)}
@@ -334,7 +280,7 @@ export default function NodeMap() {
               width: '7px',
               height: '7px',
               borderRadius: '50%',
-              background: sec.key === 'esf7' ? '#2563EB' : '#059669'
+              background: sec.key === 'phase1' ? '#2563EB' : sec.key === 'phase2' ? '#059669' : '#D97706'
             }} />
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '11.5px', fontWeight: '900', color: 'var(--navy)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -346,18 +292,26 @@ export default function NodeMap() {
             </div>
           </div>
 
-          {/* COMPACT NODE CARDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+          {/* RESPONSIVE NODE CARDS GRID */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: sec.nodes.length <= 3 
+              ? 'repeat(auto-fit, minmax(320px, 1fr))' 
+              : 'repeat(auto-fit, minmax(270px, 1fr))',
+            gap: '14px',
+            width: '100%'
+          }}>
             {sec.nodes.map(node => {
-              const isCoreNode = sec.key === 'esf7';
-              const isUnlocked = isNodeUnlocked(node.id);
+              const isAlwaysUnlocked = ['school', 'roster', 'room-qr', 'profile', 'requests', 'classes', 'designation', 'workload', 'allowances', 'validation'].includes(node.id);
+              const isExplicitlyLocked = !bypassNodeLocks && (node.id === 'overload' || Boolean(node.isLockedNode));
+              const isUnlocked = !isExplicitlyLocked && (isAlwaysUnlocked || isNodeUnlocked(node.id));
               const isCompleted = isNodeCompleted(node.id);
               const isActive = isUnlocked && !isCompleted;
               const IconComp = node.Icon;
 
               let cardBg = '#FFFFFF';
               let borderColor = '#E2E8F0';
-              let boxShadow = '0 2px 5px rgba(0, 0, 0, 0.03)';
+              let boxShadow = '0 2px 6px rgba(0, 0, 0, 0.04)';
               let nodeNumColor = '#64748B';
               let titleColor = '#0F172A';
               let subtitleColor = '#64748B';
@@ -375,56 +329,92 @@ export default function NodeMap() {
               if (isCompleted) {
                 cardBg = 'linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(209, 250, 229, 0.85) 100%)';
                 borderColor = '#10B981';
-                boxShadow = '0 4px 12px rgba(16, 185, 129, 0.12)';
+                boxShadow = '0 4px 14px rgba(16, 185, 129, 0.15)';
                 nodeNumColor = '#065F46';
                 titleColor = '#064E3B';
                 subtitleColor = '#166534';
                 iconBg = '#D1FAE5';
                 iconColor = '#047857';
                 iconBorder = '1px solid #A7F3D0';
-                summaryBg = 'rgba(255, 255, 255, 0.9)';
+                summaryBg = 'rgba(255, 255, 255, 0.95)';
                 summaryColor = '#065F46';
                 summaryBorder = '1px solid #6EE7B7';
                 badgeBg = '#059669';
                 badgeColor = '#FFFFFF';
                 badgeBorder = 'none';
                 badgeContent = <><FiCheck size={10} style={{ marginRight: '3px' }} /> Completed</>;
-              } else if (!isCoreNode) {
-                // Non-Core Nodes: Always permanently unlocked and available
+              } else if (isExplicitlyLocked) {
+                // Explicitly Locked Module (Node 10 Teaching Overload Center)
+                cardBg = '#FFFFFF';
+                borderColor = '#E2E8F0';
+                boxShadow = '0 2px 5px rgba(0, 0, 0, 0.03)';
+                nodeNumColor = '#94A3B8';
+                titleColor = '#64748B';
+                subtitleColor = '#94A3B8';
+                iconBg = '#F8FAFC';
+                iconColor = '#94A3B8';
+                iconBorder = '1px solid #E2E8F0';
+                summaryBg = '#F8FAFC';
+                summaryColor = '#94A3B8';
+                summaryBorder = '1px solid #E2E8F0';
+                badgeBg = '#F1F5F9';
+                badgeColor = '#64748B';
+                badgeBorder = '1px solid #CBD5E1';
+                badgeContent = <><FiLock size={10} style={{ marginRight: '3px' }} /> Locked</>;
+              } else if (isAlwaysUnlocked) {
+                // Unlocked Nodes (Nodes 01-09 & 11)
                 cardBg = 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)';
-                borderColor = '#CBD5E1';
-                boxShadow = '0 3px 8px rgba(0, 0, 0, 0.04)';
+                borderColor = '#93C5FD';
+                boxShadow = '0 4px 12px rgba(37, 99, 235, 0.08)';
                 nodeNumColor = '#2563EB';
                 titleColor = '#0F172A';
                 subtitleColor = '#475569';
                 iconBg = '#EFF6FF';
                 iconColor = '#2563EB';
                 iconBorder = '1px solid #BFDBFE';
-                summaryBg = '#F8FAFC';
-                summaryColor = '#334155';
-                summaryBorder = '1px solid #E2E8F0';
+                summaryBg = '#F0F9FF';
+                summaryColor = '#0369A1';
+                summaryBorder = '1px solid #BAE6FD';
                 badgeBg = '#EFF6FF';
                 badgeColor = '#1D4ED8';
                 badgeBorder = '1px solid #BFDBFE';
                 badgeContent = <><FiUnlock size={10} style={{ marginRight: '3px' }} /> Available</>;
               } else if (isActive) {
-                // Core Node: Active Current Step
+                // Active Current Step
                 cardBg = 'linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(219, 234, 254, 0.85) 100%)';
                 borderColor = '#2563EB';
-                boxShadow = '0 4px 14px rgba(37, 99, 235, 0.15)';
+                boxShadow = '0 5px 16px rgba(37, 99, 235, 0.18)';
                 nodeNumColor = '#1E40AF';
                 titleColor = '#0F172A';
                 subtitleColor = '#1E3A8A';
                 iconBg = '#DBEAFE';
                 iconColor = '#1D4ED8';
                 iconBorder = '1px solid #BFDBFE';
-                summaryBg = 'rgba(255, 255, 255, 0.9)';
+                summaryBg = 'rgba(255, 255, 255, 0.95)';
                 summaryColor = '#1E3A8A';
                 summaryBorder = '1px solid #93C5FD';
                 badgeBg = '#2563EB';
                 badgeColor = '#FFFFFF';
                 badgeBorder = 'none';
                 badgeContent = <><FiArrowRight size={10} style={{ marginRight: '3px' }} /> Active Step</>;
+              } else {
+                // Locked Node
+                cardBg = '#FFFFFF';
+                borderColor = '#E2E8F0';
+                boxShadow = '0 2px 5px rgba(0, 0, 0, 0.03)';
+                nodeNumColor = '#94A3B8';
+                titleColor = '#64748B';
+                subtitleColor = '#94A3B8';
+                iconBg = '#F8FAFC';
+                iconColor = '#94A3B8';
+                iconBorder = '1px solid #E2E8F0';
+                summaryBg = '#F8FAFC';
+                summaryColor = '#94A3B8';
+                summaryBorder = '1px solid #E2E8F0';
+                badgeBg = '#F1F5F9';
+                badgeColor = '#64748B';
+                badgeBorder = '1px solid #CBD5E1';
+                badgeContent = <><FiLock size={10} style={{ marginRight: '3px' }} /> Locked</>;
               }
 
               return (
@@ -434,30 +424,31 @@ export default function NodeMap() {
                     background: cardBg,
                     backdropFilter: 'blur(10px)',
                     border: `1.5px solid ${borderColor}`,
-                    borderRadius: '12px',
-                    padding: '12px 14px',
+                    borderRadius: '14px',
+                    padding: '16px 18px',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    gap: '10px',
+                    minHeight: '190px',
+                    gap: '12px',
                     boxShadow: boxShadow,
                     transition: 'all 0.2s ease',
                     position: 'relative'
                   }}
                 >
-                  <div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {/* Top Row: Node Number + Status Badge */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '10.5px', fontWeight: '900', color: nodeNumColor, letterSpacing: '0.06em' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '900', color: nodeNumColor, letterSpacing: '0.06em' }}>
                         NODE {node.nodeNumber}
                       </span>
                       <span style={{
                         background: badgeBg,
                         color: badgeColor,
                         border: badgeBorder,
-                        padding: '2px 8px',
+                        padding: '3px 9px',
                         borderRadius: '999px',
-                        fontSize: '10px',
+                        fontSize: '10.5px',
                         fontWeight: '800',
                         display: 'inline-flex',
                         alignItems: 'center'
@@ -467,11 +458,11 @@ export default function NodeMap() {
                     </div>
 
                     {/* Node Info: Icon + Title + Subtitle */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                       <div style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '9px',
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '10px',
                         background: iconBg,
                         color: iconColor,
                         border: iconBorder,
@@ -479,15 +470,15 @@ export default function NodeMap() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0,
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
                       }}>
-                        {IconComp && <IconComp size={16} />}
+                        {IconComp && <IconComp size={18} />}
                       </div>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <h3 style={{ margin: 0, fontSize: '14.5px', fontWeight: '800', color: titleColor, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: titleColor, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {node.title}
                         </h3>
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: subtitleColor, lineHeight: '1.3', fontWeight: '500', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        <p style={{ margin: '3px 0 0', fontSize: '11.5px', color: subtitleColor, lineHeight: '1.35', fontWeight: '500', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                           {node.subtitle}
                         </p>
                       </div>
@@ -495,13 +486,13 @@ export default function NodeMap() {
 
                     {/* Summary Chip */}
                     <div style={{
-                      fontSize: '10.5px',
+                      fontSize: '11px',
                       fontWeight: '700',
                       color: summaryColor,
                       background: summaryBg,
                       border: summaryBorder,
-                      padding: '5px 8px',
-                      borderRadius: '6px',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
                       fontFamily: 'monospace',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
@@ -518,9 +509,9 @@ export default function NodeMap() {
                     onClick={() => setActiveView(node.view)}
                     style={{
                       width: '100%',
-                      padding: '7px 12px',
-                      borderRadius: '8px',
-                      fontSize: '11.5px',
+                      padding: '8.5px 14px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
                       fontWeight: '800',
                       letterSpacing: '0.02em',
                       border: 'none',
@@ -534,11 +525,13 @@ export default function NodeMap() {
                         ? '#059669' 
                         : isActive 
                           ? '#2563EB' 
-                          : '#E2E8F0',
+                          : isAlwaysUnlocked
+                            ? '#1D4ED8'
+                            : '#E2E8F0',
                       color: isUnlocked ? '#FFFFFF' : '#94A3B8',
                       boxShadow: isCompleted 
                         ? '0 2px 6px rgba(5, 150, 105, 0.25)' 
-                        : isActive 
+                        : isActive || isAlwaysUnlocked
                           ? '0 2px 8px rgba(37, 99, 235, 0.25)' 
                           : 'none'
                     }}

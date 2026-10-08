@@ -1,3 +1,10 @@
 node_modules/
 .env
 *.xlsb
+__pycache__/
+*.pyc
+scratch/
+server/scratch/
+*.tmp.tar.gz
+*.tar.gz
+dist/

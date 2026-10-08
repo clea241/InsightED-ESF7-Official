@@ -62,7 +62,7 @@ const sanitizePositionCategory = (posCat, position) => {
   if (cat.includes('TEACHING')) return 'TEACHING';
 
   const pos = String(position || '').toUpperCase().trim();
-  if (pos.includes('ADMINISTRATIVE') || pos.includes('ADAS') || pos.includes('ADA ') || pos.includes('UTILITY') || pos.includes('CLERK') || pos.includes('GUARD') || pos.includes('NURSE')) {
+  if (pos.includes('ADMINISTRATIVE') || pos.includes('ADAS') || pos.includes('ADA ') || pos.includes('UTILITY') || pos.includes('CLERK') || pos.includes('GUARD') || pos.includes('NURSE') || pos === 'COOK' || pos.includes('COOK')) {
     return 'NON-TEACHING';
   }
   if (pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('SUPERVISOR') || pos.includes('GUIDANCE')) {
@@ -72,6 +72,10 @@ const sanitizePositionCategory = (posCat, position) => {
 };
 
 const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {}, highestAttainment = '') => {
+  let mastersWithUnits = [];
+  let mastersGraduated = [];
+  let doctorateWithUnits = [];
+  let doctorateGraduated = [];
   let masters = [];
   let doctorate = [];
 
@@ -91,25 +95,55 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
     return [];
   };
 
+  const attainmentStr = String(highestAttainment || '').toUpperCase();
+  const isDoc = attainmentStr.includes('DOCTOR');
+  const isWithUnits = attainmentStr.includes('WITH UNITS');
+
   if (rawDiscipline && typeof rawDiscipline === 'object' && !Array.isArray(rawDiscipline)) {
+    if (Array.isArray(rawDiscipline.mastersWithUnits)) mastersWithUnits = rawDiscipline.mastersWithUnits;
+    if (Array.isArray(rawDiscipline.mastersGraduated)) mastersGraduated = rawDiscipline.mastersGraduated;
+    if (Array.isArray(rawDiscipline.doctorateWithUnits)) doctorateWithUnits = rawDiscipline.doctorateWithUnits;
+    if (Array.isArray(rawDiscipline.doctorateGraduated)) doctorateGraduated = rawDiscipline.doctorateGraduated;
     if (Array.isArray(rawDiscipline.masters)) masters = rawDiscipline.masters;
     if (Array.isArray(rawDiscipline.doctorate)) doctorate = rawDiscipline.doctorate;
   } else if (typeof rawDiscipline === 'string' && rawDiscipline.trim().startsWith('{')) {
     try {
       const parsed = JSON.parse(rawDiscipline);
+      if (Array.isArray(parsed.mastersWithUnits)) mastersWithUnits = parsed.mastersWithUnits;
+      if (Array.isArray(parsed.mastersGraduated)) mastersGraduated = parsed.mastersGraduated;
+      if (Array.isArray(parsed.doctorateWithUnits)) doctorateWithUnits = parsed.doctorateWithUnits;
+      if (Array.isArray(parsed.doctorateGraduated)) doctorateGraduated = parsed.doctorateGraduated;
       if (Array.isArray(parsed.masters)) masters = parsed.masters;
       if (Array.isArray(parsed.doctorate)) doctorate = parsed.doctorate;
     } catch (e) {}
   } else if (rawDiscipline) {
     const list = extractList(rawDiscipline);
-    if (String(highestAttainment).toUpperCase().includes('DOCTOR')) {
+    if (isDoc) {
+      if (isWithUnits) doctorateWithUnits = list;
+      else doctorateGraduated = list;
       doctorate = list;
     } else {
+      if (isWithUnits) mastersWithUnits = list;
+      else mastersGraduated = list;
       masters = list;
     }
   }
 
   const combinedSource = { ...rawProfile, ...rawEduc };
+  if (mastersWithUnits.length === 0 && combinedSource.mastersWithUnitsDisciplines) {
+    mastersWithUnits = extractList(combinedSource.mastersWithUnitsDisciplines);
+  }
+  if (mastersGraduated.length === 0 && combinedSource.mastersGraduatedDisciplines) {
+    mastersGraduated = extractList(combinedSource.mastersGraduatedDisciplines);
+  }
+  if (doctorateWithUnits.length === 0 && combinedSource.doctorateWithUnitsDisciplines) {
+    doctorateWithUnits = extractList(combinedSource.doctorateWithUnitsDisciplines);
+  }
+  if (doctorateGraduated.length === 0 && combinedSource.doctorateGraduatedDisciplines) {
+    doctorateGraduated = extractList(combinedSource.doctorateGraduatedDisciplines);
+  }
+
+  // Fallback from legacy masters / doctorate
   if (masters.length === 0) {
     if (combinedSource.mastersDisciplines) {
       masters = extractList(combinedSource.mastersDisciplines);
@@ -117,7 +151,6 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
       masters = extractList(combinedSource.mastersDiscipline);
     }
   }
-
   if (doctorate.length === 0) {
     if (combinedSource.doctorateDisciplines) {
       doctorate = extractList(combinedSource.doctorateDisciplines);
@@ -136,17 +169,117 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
     }
   }
 
-  masters = [...new Set(masters.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
-  doctorate = [...new Set(doctorate.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && masters.length > 0) {
+    if (isWithUnits && !isDoc) mastersWithUnits = [...masters];
+    else mastersGraduated = [...masters];
+  }
+  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && doctorate.length > 0) {
+    if (isWithUnits && isDoc) doctorateWithUnits = [...doctorate];
+    else doctorateGraduated = [...doctorate];
+  }
+
+  const allMasters = [...new Set([...mastersWithUnits, ...mastersGraduated, ...masters].map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  const allDoctorate = [...new Set([...doctorateWithUnits, ...doctorateGraduated, ...doctorate].map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+
+  mastersWithUnits = [...new Set(mastersWithUnits.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  mastersGraduated = [...new Set(mastersGraduated.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorateWithUnits = [...new Set(doctorateWithUnits.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorateGraduated = [...new Set(doctorateGraduated.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
 
   return {
-    masters,
-    doctorate,
-    mastersDiscipline: masters.join(', '),
-    doctorateDiscipline: doctorate.join(', '),
-    jsonString: JSON.stringify({ masters, doctorate }),
-    rawObject: { masters, doctorate }
+    mastersWithUnits,
+    mastersGraduated,
+    doctorateWithUnits,
+    doctorateGraduated,
+    masters: allMasters,
+    doctorate: allDoctorate,
+    mastersDiscipline: allMasters.join(', '),
+    doctorateDiscipline: allDoctorate.join(', '),
+    jsonString: JSON.stringify({
+      mastersWithUnits,
+      mastersGraduated,
+      doctorateWithUnits,
+      doctorateGraduated,
+      masters: allMasters,
+      doctorate: allDoctorate
+    }),
+    rawObject: {
+      mastersWithUnits,
+      mastersGraduated,
+      doctorateWithUnits,
+      doctorateGraduated,
+      masters: allMasters,
+      doctorate: allDoctorate
+    }
   };
+};
+
+const sanitizeGradeLevel = (rawLvl, secName = '') => {
+  if (!rawLvl && !secName) return null;
+  const str = String(rawLvl || '').trim();
+  const upper = str.toUpperCase();
+
+  if (
+    upper.includes('MULTI-GRADE') || upper.includes('MULTIGRADE') || upper.includes('MULTI GRADE') ||
+    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE') ||
+    upper.includes('PHIL-IRI') || upper.includes('PHIL IRI') ||
+    upper.includes('CRLA') || upper.includes('RMA') ||
+    upper === 'ARAL' || upper.startsWith('ARAL ') ||
+    upper.includes('INDEPENDENT') || upper.includes('INSTRUCTIONAL') || upper.includes('FRUSTRATION')
+  ) {
+    if (secName) {
+      const secMatch = String(secName).match(/(?:Grade\s*|G)(\d{1,2})/i);
+      if (secMatch) return `Grade ${secMatch[1]}`;
+      if (String(secName).toUpperCase().includes('KINDER')) return 'Kinder';
+      if (String(secName).toUpperCase().includes('SNED') || String(secName).toUpperCase().includes('NON-GRADED') || String(secName).toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+      if (String(secName).toUpperCase().includes('ALS')) return 'ALS';
+    }
+    return null;
+  }
+
+  if (upper.includes('KINDER') || upper === 'K') {
+    return 'Kinder';
+  }
+
+  if (upper === 'SNED' || upper === 'SPED' || upper === 'NON-GRADED' || upper === 'NON GRADED' || upper.includes('SNED') || upper.includes('NON-GRADED') || upper.includes('NON GRADED')) {
+    return 'SNED (NON-GRADED)';
+  }
+  if (upper === 'ALS' || upper.startsWith('ALS-') || upper.startsWith('ALS ')) return 'ALS';
+
+  const numMatch = str.match(/^(?:Grade\s*|G\s*)?(\d{1,2})$/i);
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    if (num >= 1 && num <= 12) {
+      return `Grade ${num}`;
+    }
+  }
+
+  if (upper.startsWith('GRADE ')) {
+    const rest = str.substring(6).trim();
+    if (rest.toUpperCase().includes('KINDER')) return 'Kinder';
+    if (rest.toUpperCase().includes('MULTI') || rest.toUpperCase().includes('MONO')) return null;
+    if (rest.toUpperCase().includes('SNED') || rest.toUpperCase().includes('NON-GRADED') || rest.toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+    const subMatch = rest.match(/^(\d{1,2})$/);
+    if (subMatch) {
+      const num = parseInt(subMatch[1], 10);
+      if (num >= 1 && num <= 12) return `Grade ${num}`;
+    }
+    return null;
+  }
+
+  return null;
+};
+
+const sanitizeGradeArray = (arr) => {
+  if (!Array.isArray(arr)) return [];
+  const res = [];
+  for (const item of arr) {
+    const sanitized = sanitizeGradeLevel(item);
+    if (sanitized && !res.includes(sanitized)) {
+      res.push(sanitized);
+    }
+  }
+  return res;
 };
 
 /**
@@ -193,7 +326,7 @@ async function processJobById(targetJobId, specificClient = null) {
       shouldRelease = true;
     }
 
-    const jobRes = await client.query(
+    let jobRes = await client.query(
       `SELECT id, school_id, school_year, payload, signature, certified_by, status 
        FROM esf7_submission_queue 
        WHERE id = $1 
@@ -201,10 +334,26 @@ async function processJobById(targetJobId, specificClient = null) {
       [jobId]
     );
 
+    if (jobRes.rows.length === 0 && db.stagingPool && db.stagingPool !== db.pool) {
+      if (shouldRelease && client) {
+        try { client.release(); } catch (e) {}
+      }
+      client = await db.stagingPool.connect();
+      shouldRelease = true;
+      jobRes = await client.query(
+        `SELECT id, school_id, school_year, payload, signature, certified_by, status 
+         FROM esf7_submission_queue 
+         WHERE id = $1 
+         FOR UPDATE`,
+        [jobId]
+      );
+    }
+
     if (jobRes.rows.length === 0) {
       if (shouldRelease && client) client.release();
       return false;
     }
+
 
     const job = jobRes.rows[0];
     if (job.status === 'completed') {
@@ -214,16 +363,34 @@ async function processJobById(targetJobId, specificClient = null) {
 
     const cleanSchoolId = String(job.school_id).replace('SCH-', '').trim();
     const cleanSchoolYear = job.school_year || '2026-2027';
+    const isTestAccount = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
     const jobStartTime = Date.now();
     let currentStage = '[Step 1/8: Initializing Transaction]';
 
-    console.log(`\n\x1b[36m⏳ [Queue Worker] Starting Ingestion Job #${jobId} ➔ School ${cleanSchoolId} (${cleanSchoolYear})...\x1b[0m`);
+    console.log(`\n\x1b[36m⏳ [Queue Worker] Starting Ingestion Job #${jobId} ➔ School ${cleanSchoolId} (${cleanSchoolYear}) ${isTestAccount ? '[STAGING ROUTE]' : '[PROD ROUTE]'}...\x1b[0m`);
 
-    // 2. Set job status to processing
-    await client.query(
-      `UPDATE esf7_submission_queue SET status = 'processing', updated_at = NOW() WHERE id = $1`,
-      [jobId]
-    );
+    // If division test account or dummy account, write to staging database
+    if (isTestAccount && db.stagingPool) {
+      const stagingClient = await db.stagingPool.connect();
+      try {
+        await client.query(`UPDATE esf7_submission_queue SET status = 'processing', updated_at = NOW() WHERE id = $1`, [jobId]).catch(() => {});
+        if (shouldRelease && client) {
+          try { client.release(); } catch (e) {}
+        }
+        client = stagingClient; // Redirect ingestion client to staging
+        shouldRelease = true;
+      } catch (err) {
+        stagingClient.release();
+        throw err;
+      }
+    } else {
+      // 2. Set job status to processing
+      await client.query(
+        `UPDATE esf7_submission_queue SET status = 'processing', updated_at = NOW() WHERE id = $1`,
+        [jobId]
+      );
+    }
+
 
     // Start atomic transaction
     await client.query('BEGIN');
@@ -464,12 +631,29 @@ async function processJobById(targetJobId, specificClient = null) {
           no_philsys: p.noPhilsys === true || p.no_philsys === true,
           employee_no: p.employeeNo || p.employee_no || null,
           deped_email: p.depedEmail || p.deped_email || null,
+          no_deped_email: p.noDepedEmail === true || p.no_deped_email === true || String(p.depedEmail || p.deped_email || '').toUpperCase() === 'N/A',
+          allow_email_discrepancy: p.allowEmailDiscrepancy === true || p.allow_email_discrepancy === true,
           is_school_head: isHead,
           raw_payload: JSON.stringify(p.rawPayload || p)
         });
 
         // 4B. Employment
         const empId = p.employmentId || p.emp_id || generateEmploymentId();
+        const rawAssignedGrades = p.assignedGradeLevels || p.assigned_grade_levels || p.gradeLevelsTaught || p.grade_levels_taught || [];
+        const sanitizedGrades = sanitizeGradeArray(rawAssignedGrades);
+        const teachesShsFlag = !!(
+          p.teachesShs || p.teaches_shs ||
+          sanitizedGrades.some(g => String(g).includes('11') || String(g).includes('12'))
+        );
+
+        const isCook = String(p.position || '').trim().toUpperCase() === 'COOK';
+        let cleanFundSource = p.fundSource || p.fund_source || (isCook ? 'SBFP' : 'NATIONAL');
+        if (!isCook && String(cleanFundSource).toUpperCase() === 'SBFP') {
+          cleanFundSource = 'NATIONAL';
+        }
+        const cleanNature = p.natureOfAppointment || p.nature_of_appointment || (isCook ? 'CONTRACTUAL' : 'REGULAR PERMANENT');
+        const cleanHiring = p.hiringArrangement || p.hiring_arrangement || (isCook ? 'CONTRACTUAL' : 'REGULAR');
+
         const empRawPayload = (p.employment_raw_payload && typeof p.employment_raw_payload === 'object' && Object.keys(p.employment_raw_payload).length > 0)
           ? p.employment_raw_payload
           : ((p.employment && typeof p.employment === 'object' && Object.keys(p.employment).length > 0)
@@ -478,12 +662,17 @@ async function processJobById(targetJobId, specificClient = null) {
                 position: p.position || 'TEACHER I',
                 positionCategory: posCat,
                 stepIncrement: stepInc,
-                fundSource: p.fundSource || p.fund_source || 'NATIONAL',
-                natureOfAppointment: p.natureOfAppointment || p.nature_of_appointment || 'REGULAR PERMANENT',
-                hiringArrangement: p.hiringArrangement || p.hiring_arrangement || 'REGULAR',
+                fundSource: cleanFundSource,
+                natureOfAppointment: cleanNature,
+                hiringArrangement: cleanHiring,
                 deploymentStatus: p.deploymentStatus || p.deployment_status || 'OWN STATION',
                 assignedSchools: p.assignedSchools || p.assigned_schools || [],
-                gradeLevelsTaught: p.gradeLevelsTaught || p.grade_levels_taught || [],
+                gradeLevelsTaught: sanitizedGrades,
+                assignedGradeLevels: sanitizedGrades,
+                hasNoTeachingLoad: p.hasNoTeachingLoad === true || p.has_no_teaching_load === true || (isHead && sanitizedGrades.length === 0),
+                has_no_teaching_load: p.hasNoTeachingLoad === true || p.has_no_teaching_load === true || (isHead && sanitizedGrades.length === 0),
+                teachesShs: teachesShsFlag,
+                teaches_shs: teachesShsFlag,
                 firstServiceDate: p.firstServiceDate || p.first_service_date || null,
                 lastPromotionDate: p.lastPromotionDate || p.last_promotion_date || null,
                 newStationDate: p.newStationDate || p.new_station_date || null,
@@ -496,12 +685,12 @@ async function processJobById(targetJobId, specificClient = null) {
           position_category: posCat,
           position: p.position || 'TEACHER I',
           step_increment: stepInc,
-          fund_source: p.fundSource || p.fund_source || 'NATIONAL',
-          nature_of_appointment: p.natureOfAppointment || p.nature_of_appointment || 'REGULAR PERMANENT',
-          hiring_arrangement: p.hiringArrangement || p.hiring_arrangement || 'REGULAR',
+          fund_source: cleanFundSource,
+          nature_of_appointment: cleanNature,
+          hiring_arrangement: cleanHiring,
           deployment_status: p.deploymentStatus || p.deployment_status || 'OWN STATION',
           assigned_schools: JSON.stringify(p.assignedSchools || p.assigned_schools || []),
-          grade_levels_taught: JSON.stringify(p.gradeLevelsTaught || p.grade_levels_taught || []),
+          grade_levels_taught: JSON.stringify(sanitizedGrades),
           first_service_date: parseDate(p.firstServiceDate || p.first_service_date),
           last_promotion_date: parseDate(p.lastPromotionDate || p.last_promotion_date),
           new_station_date: parseDate(p.newStationDate || p.new_station_date),
@@ -515,6 +704,28 @@ async function processJobById(targetJobId, specificClient = null) {
         const shsTrack = p.shsTrack || p.shs_track || null;
         const vocCourse = p.vocationalCourse || p.vocational_course || null;
         const vocLevel = p.vocationalLevel || p.vocational_level || null;
+
+        // Process College Degrees array (multiple degrees support)
+        const rawCollegeDegrees = Array.isArray(p.collegeDegrees) && p.collegeDegrees.length > 0
+          ? p.collegeDegrees
+          : (Array.isArray(p.college_degrees) && p.college_degrees.length > 0
+            ? p.college_degrees
+            : (Array.isArray(p.degreeRows) && p.degreeRows.length > 0
+              ? p.degreeRows.map(d => ({
+                  collegeDegree: d.collegeDegree || '',
+                  major: d.major || '',
+                  minor: d.minor || ''
+                }))
+              : (p.collegeDegree || p.college_degree ? [{
+                  collegeDegree: p.collegeDegree || p.college_degree,
+                  major: p.major || '',
+                  minor: p.minor || ''
+                }] : [])));
+
+        const primaryCollege = rawCollegeDegrees[0] || {};
+        const primaryDegree = p.collegeDegree || p.college_degree || primaryCollege.collegeDegree || null;
+        const primaryMajor = p.major || primaryCollege.major || null;
+        const primaryMinor = p.minor || primaryCollege.minor || null;
 
         const parsedPostDisc = parsePostGraduateDiscipline(
           p.postGraduateDiscipline || p.post_graduate_discipline,
@@ -530,14 +741,19 @@ async function processJobById(targetJobId, specificClient = null) {
             ? p.education
             : {
                 highestEducationalAttainment: highestAttainment,
-                collegeDegree: p.collegeDegree || p.college_degree || null,
-                major: p.major || null,
-                minor: p.minor || null,
-                degreeRows: p.degreeRows || [],
+                collegeDegree: primaryDegree,
+                collegeDegrees: rawCollegeDegrees,
+                major: primaryMajor,
+                minor: primaryMinor,
+                degreeRows: p.degreeRows || rawCollegeDegrees,
                 postGraduateDegree: p.postGraduateDegree || p.post_graduate_degree || 'N/A',
                 postGraduateDiscipline: postDiscVal,
                 mastersDisciplines: parsedPostDisc.masters,
                 doctorateDisciplines: parsedPostDisc.doctorate,
+                mastersWithUnitsDisciplines: parsedPostDisc.mastersWithUnits,
+                mastersGraduatedDisciplines: parsedPostDisc.mastersGraduated,
+                doctorateWithUnitsDisciplines: parsedPostDisc.doctorateWithUnits,
+                doctorateGraduatedDisciplines: parsedPostDisc.doctorateGraduated,
                 mastersDiscipline: parsedPostDisc.mastersDiscipline,
                 doctorateDiscipline: parsedPostDisc.doctorateDiscipline,
                 eligibility: Array.isArray(p.eligibility) ? p.eligibility : [p.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS'],
@@ -556,9 +772,10 @@ async function processJobById(targetJobId, specificClient = null) {
           shs_track: shsTrack,
           vocational_course: vocCourse,
           vocational_level: vocLevel,
-          college_degree: p.collegeDegree || p.college_degree || null,
-          major: p.major || null,
-          minor: p.minor || null,
+          college_degree: primaryDegree,
+          college_degrees: JSON.stringify(rawCollegeDegrees),
+          major: primaryMajor,
+          minor: primaryMinor,
           post_graduate_degree: p.postGraduateDegree || p.post_graduate_degree || 'N/A',
           post_graduate_discipline: postDiscVal,
           eligibility: JSON.stringify(Array.isArray(p.eligibility) ? p.eligibility : [p.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS']),
@@ -602,14 +819,17 @@ async function processJobById(targetJobId, specificClient = null) {
           });
         }
 
-        // 4F. Designations
+        // 4F. Designations (with full Key Stage 1, 2, 3, 4 parsing & key_stage column)
         const rawDesigList = [];
-        if (p.designation && typeof p.designation === 'string' && p.designation.trim()) {
-          rawDesigList.push(p.designation.trim());
+        if (p.designation) {
+          const dStr = typeof p.designation === 'string' ? p.designation : (p.designation?.name || p.designation?.designation || p.designation?.serializedKey || '');
+          if (dStr && dStr !== '[object Object]') rawDesigList.push(dStr);
         }
         if (Array.isArray(p.designations)) {
           p.designations.forEach(d => {
-            if (d) rawDesigList.push(d);
+            if (!d) return;
+            const dStr = typeof d === 'string' ? d : (d?.name || d?.designation || d?.serializedKey || '');
+            if (dStr && dStr !== '[object Object]') rawDesigList.push(dStr);
           });
         }
 
@@ -627,18 +847,74 @@ async function processJobById(targetJobId, specificClient = null) {
             processedKeys.add(cleanKey.toUpperCase());
 
             let dsgName = cleanKey;
+            let keyStage = null;
             let gradeLevel = null;
             let subjectArea = null;
             let track = null;
 
-            if (cleanKey.includes(' - ')) {
+            const upper = cleanKey.toUpperCase();
+
+            // 1. Department Head - Key Stage 1 (Kinder - Grade 3)
+            if (
+              upper.startsWith('DEPARTMENT HEAD') && (
+                upper.includes('KEY STAGE 1') || upper.includes('KS1') || 
+                upper.includes('KINDER') || upper.includes('GRADE 1') || upper.includes('GRADE 2') || upper.includes('GRADE 3')
+              ) && !upper.includes('KEY STAGE 2') && !upper.includes('KEY STAGE 3') && !upper.includes('KEY STAGE 4') &&
+              !upper.includes('GRADE 4') && !upper.includes('GRADE 5') && !upper.includes('GRADE 6') &&
+              !upper.includes('GRADE 7') && !upper.includes('GRADE 8') && !upper.includes('GRADE 9') && !upper.includes('GRADE 10')
+            ) {
+              keyStage = 'KS1';
+              dsgName = 'DEPARTMENT HEAD';
+              subjectArea = 'Early Primary Literacy & Numeracy';
+
+              if (upper.includes('KINDER - GRADE 3') || upper.includes('KINDER TO GRADE 3') || upper === 'DEPARTMENT HEAD - KEY STAGE 1' || upper === 'DEPARTMENT HEAD - KS1') {
+                gradeLevel = 'Kinder, Grade 1, Grade 2, Grade 3';
+              } else {
+                const detected = [];
+                if (upper.includes('KINDER')) detected.push('Kinder');
+                if (upper.includes('GRADE 1') || upper.includes('G1')) detected.push('Grade 1');
+                if (upper.includes('GRADE 2') || upper.includes('G2')) detected.push('Grade 2');
+                if (upper.includes('GRADE 3') || upper.includes('G3')) detected.push('Grade 3');
+                gradeLevel = detected.length > 0 ? detected.join(', ') : 'Kinder, Grade 1, Grade 2, Grade 3';
+              }
+            }
+            // 2. Department Head - Key Stage 2 (Grade 4 - Grade 6)
+            else if (upper.startsWith('DEPARTMENT HEAD') && (upper.includes('KEY STAGE 2') || upper.includes('KS2'))) {
+              keyStage = 'KS2';
+              dsgName = 'DEPARTMENT HEAD';
+              gradeLevel = 'Grade 4, Grade 5, Grade 6';
+              if (cleanKey.includes(' - ')) {
+                const parts = cleanKey.split(' - ');
+                subjectArea = parts[parts.length - 1].trim();
+              }
+            }
+            // 3. Department Head - Key Stage 3 (Grade 7 - Grade 10)
+            else if (upper.startsWith('DEPARTMENT HEAD') && (upper.includes('KEY STAGE 3') || upper.includes('KS3'))) {
+              keyStage = 'KS3';
+              dsgName = 'DEPARTMENT HEAD';
+              gradeLevel = 'Grade 7, Grade 8, Grade 9, Grade 10';
+              if (cleanKey.includes(' - ')) {
+                const parts = cleanKey.split(' - ');
+                subjectArea = parts[parts.length - 1].trim();
+              }
+            }
+            // 4. Department Head - Key Stage 4 (Grade 11 - Grade 12)
+            else if (upper.startsWith('DEPARTMENT HEAD') && (upper.includes('KEY STAGE 4') || upper.includes('KS4') || upper.includes('ACADEMIC TRACK') || upper.includes('TECH-PRO TRACK') || upper.includes('SHS'))) {
+              keyStage = 'KS4';
+              dsgName = 'DEPARTMENT HEAD';
+              gradeLevel = 'Grade 11, Grade 12';
+              track = upper.includes('TECH') ? 'Tech-Pro Track' : 'Academic Track';
+            }
+            // 5. Grade Level / Learning Area Chairpersons
+            else if (cleanKey.includes(' - ')) {
               const parts = cleanKey.split(' - ');
               dsgName = parts[0].trim();
               const subPart = parts.slice(1).join(' - ').trim();
-              const gradeMatch = subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i);
+
+              const gradeMatch = subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i) || subPart.match(/^(Grade\s*\d+|Kinder|Grade\s*1[0-2])$/i);
               if (gradeMatch) {
-                gradeLevel = gradeMatch[1];
-                subjectArea = subPart.replace(gradeMatch[0], '').trim();
+                gradeLevel = gradeMatch[1] || gradeMatch[0];
+                subjectArea = subPart.replace(gradeMatch[0], '').trim() || null;
               } else {
                 subjectArea = subPart;
               }
@@ -646,13 +922,14 @@ async function processJobById(targetJobId, specificClient = null) {
 
             dsgObj = {
               designationName: dsgName,
+              keyStage: keyStage || null,
               gradeLevel: gradeLevel || '',
               subjectArea: subjectArea || '',
               track: track || '',
               isSdsApproved: isSds,
               sdsConfirmed: isSds,
               serializedKey: rawStr,
-              rawPayload: { designation: cleanKey, isSdsApproved: isSds, serializedKey: rawStr }
+              rawPayload: { designation: cleanKey, keyStage: keyStage || null, gradeLevel: gradeLevel || null, subjectArea: subjectArea || null, track: track || null, isSdsApproved: isSds, serializedKey: rawStr }
             };
           } else if (typeof item === 'object') {
             const rawKey = item.serializedKey || item.serialized_key || item.designation || item.designationName || item.designation_name || item.name || 'OFFICIAL DESIGNATION';
@@ -660,12 +937,34 @@ async function processJobById(targetJobId, specificClient = null) {
             if (!cleanKey || processedKeys.has(cleanKey.toUpperCase())) continue;
             processedKeys.add(cleanKey.toUpperCase());
 
+            const upper = cleanKey.toUpperCase();
+            let keyStage = item.keyStage || item.key_stage || null;
+            if (!keyStage) {
+              if (
+                upper.startsWith('DEPARTMENT HEAD') && (
+                  upper.includes('KEY STAGE 1') || upper.includes('KS1') || 
+                  upper.includes('KINDER') || upper.includes('GRADE 1') || upper.includes('GRADE 2') || upper.includes('GRADE 3')
+                ) && !upper.includes('KEY STAGE 2') && !upper.includes('KEY STAGE 3') && !upper.includes('KEY STAGE 4') &&
+                !upper.includes('GRADE 4') && !upper.includes('GRADE 5') && !upper.includes('GRADE 6') &&
+                !upper.includes('GRADE 7') && !upper.includes('GRADE 8') && !upper.includes('GRADE 9') && !upper.includes('GRADE 10')
+              ) {
+                keyStage = 'KS1';
+              } else if (upper.includes('KEY STAGE 2') || upper.includes('KS2')) {
+                keyStage = 'KS2';
+              } else if (upper.includes('KEY STAGE 3') || upper.includes('KS3')) {
+                keyStage = 'KS3';
+              } else if (upper.includes('KEY STAGE 4') || upper.includes('KS4') || upper.includes('ACADEMIC TRACK') || upper.includes('TECH-PRO TRACK')) {
+                keyStage = 'KS4';
+              }
+            }
+
             const isSds = !!(item.isSdsApproved || item.is_sds_approved || String(rawKey).includes('::APPROVED_SDS'));
             const isConf = !!(item.sdsConfirmed || item.sds_confirmed || isSds);
             const dsgName = (item.designationName || item.designation_name || item.name || cleanKey.split(' - ')[0]).replace(/::APPROVED_SDS/gi, '').trim();
 
             dsgObj = {
               designationName: dsgName || 'OFFICIAL DESIGNATION',
+              keyStage: keyStage || null,
               gradeLevel: item.gradeLevel || item.grade_level || '',
               subjectArea: item.subjectArea || item.subject_area || '',
               track: item.track || '',
@@ -678,12 +977,13 @@ async function processJobById(targetJobId, specificClient = null) {
 
           if (!dsgObj.designationName) continue;
           const seq = String(dsgCounter++).padStart(3, '0');
-          const dsgId = `DSG-${cleanSchoolId}-${pId.split('-').pop()}-${seq}`;
+          const dsgId = `DSG-${cleanSchoolId}-${pId.split('-').pop()}-${seq}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
           dsgBatch.push({
             id: dsgId,
             personnel_id: pId,
             designation_name: dsgObj.designationName,
+            key_stage: dsgObj.keyStage || null,
             grade_level: dsgObj.gradeLevel || null,
             subject_area: dsgObj.subjectArea || null,
             track: dsgObj.track || null,
@@ -738,15 +1038,56 @@ async function processJobById(targetJobId, specificClient = null) {
           });
         }
 
-        // 4H. Ingest Administrative Tasks (esf7_admin_task)
-        const admList = p.administrativeRows || p.administrative_rows || [];
+        // 4H. Ingest Administrative Tasks (from p.administrativeRows AND admin rows in p.workloadRows)
+        const ADMIN_TASK_KEYWORDS = [
+          'PERSONNEL ADMINISTRATION',
+          'PROPERTY CUSTODIANSHIP',
+          'FINANCIAL MANAGEMENT',
+          'GENERAL ADMINISTRATIVE SUPPORT',
+          'RECORDS MANAGEMENT & LIS',
+          'DISASTER RISK REDUCTION (SDRRM)',
+          'FEEDING PROGRAM MANAGEMENT',
+          'BAC & PROCUREMENT SUPPORT',
+          'BRIGADA ESKWELA & PARTNERSHIPS',
+          'ADMINISTRATIVE DUTY',
+          'ADMINISTRATIVE TASK'
+        ];
+
+        const isRowAdminTask = (r) => {
+          if (!r) return false;
+          if (r.isAdmin === true || r.is_admin === true) return true;
+          const sName = String(r.task || r.task_name || r.subject || r.name || '').toUpperCase();
+          if (sName.includes('ADMIN') || ADMIN_TASK_KEYWORDS.some(kw => sName.includes(kw))) return true;
+          if (r.category === 'admin' || r.taskCategory === 'General Administration') return true;
+          return false;
+        };
+
+        const admList = [
+          ...(Array.isArray(p.administrativeRows) ? p.administrativeRows : (Array.isArray(p.administrative_rows) ? p.administrative_rows : [])),
+          ...(Array.isArray(p.workloadRows) ? p.workloadRows.filter(r => isRowAdminTask(r)) : [])
+        ];
+
         let admCounter = 1;
+        const processedAdminKeys = new Set();
+
         for (const adm of admList) {
-          if (!adm || (!adm.task && !adm.task_name && !adm.name)) continue;
-          const admId = `ADM-${cleanSchoolId}-${pId.split('-').pop()}-${String(admCounter++).padStart(3, '0')}`;
-          const tName = adm.task || adm.task_name || adm.name || 'Administrative Task';
-          const datesArr = Array.isArray(adm.dates) ? adm.dates : (adm.taskDate ? [adm.taskDate] : (adm.date ? [adm.date] : []));
+          if (!adm || (!adm.task && !adm.task_name && !adm.name && !adm.subject)) continue;
+          const tName = adm.task || adm.task_name || adm.name || adm.subject || 'Administrative Task';
+          const startTime = adm.startTime || adm.start_time || null;
+          const endTime = adm.endTime || adm.end_time || null;
+          const term = adm.term || '1st';
+          const days = Array.isArray(adm.days) ? adm.days : ['M', 'T', 'W', 'TH', 'F'];
           
+          const uniqueAdminKey = `${tName}_${startTime}_${endTime}_${term}`.toUpperCase();
+          if (processedAdminKeys.has(uniqueAdminKey)) continue;
+          processedAdminKeys.add(uniqueAdminKey);
+
+          const admId = `ADM-${cleanSchoolId}-${pId.split('-').pop()}-${String(admCounter++).padStart(3, '0')}`;
+          const datesArr = Array.isArray(adm.dates) ? adm.dates : (adm.taskDate ? [adm.taskDate] : (adm.date ? [adm.date] : []));
+          const category = adm.category || adm.taskCategory || adm.task_category || 'General Administration';
+          const startDate = adm.startDate || adm.start_date || null;
+          const endDate = adm.endDate || adm.end_date || null;
+
           let durMins = 60;
           if (adm.duration_minutes !== undefined && adm.duration_minutes !== null) {
             durMins = parseInt(adm.duration_minutes, 10) || 60;
@@ -756,13 +1097,18 @@ async function processJobById(targetJobId, specificClient = null) {
             durMins = parseInt(adm.minutes, 10) || 60;
           } else if (adm.hours !== undefined && adm.hours !== null) {
             durMins = Math.round(parseFloat(adm.hours) * 60) || 60;
-          } else if (adm.startTime && adm.endTime) {
-            const [sh, sm] = adm.startTime.split(':').map(Number);
-            const [eh, em] = adm.endTime.split(':').map(Number);
+          } else if (startTime && endTime) {
+            const [sh, sm] = String(startTime).split(':').map(Number);
+            const [eh, em] = String(endTime).split(':').map(Number);
             if (!isNaN(sh) && !isNaN(eh)) {
               durMins = Math.max(15, (eh * 60 + em) - (sh * 60 + sm));
             }
           }
+
+          const daysCount = days.length > 0 ? days.length : 5;
+          const weeklyHours = (durMins / 60) * daysCount;
+          const termTotalHours = parseFloat((weeklyHours * 12).toFixed(2));
+          const isDesig = !!(adm.isDesignationSynced || adm.is_designation_synced);
 
           adminBatch.push({
             id: admId,
@@ -770,8 +1116,18 @@ async function processJobById(targetJobId, specificClient = null) {
             school_id: cleanSchoolId,
             school_year: cleanSchoolYear,
             task_name: tName,
+            task_category: category,
+            start_date: startDate,
+            end_date: endDate,
+            start_time: startTime,
+            end_time: endTime,
+            days: JSON.stringify(days),
             dates: JSON.stringify(datesArr),
+            term: term,
             duration_minutes: durMins,
+            term_total_hours: termTotalHours,
+            is_designation_synced: isDesig,
+            status: 'ACTIVE',
             raw_payload: JSON.stringify(adm)
           });
         }
@@ -806,6 +1162,8 @@ async function processJobById(targetJobId, specificClient = null) {
           no_philsys = EXCLUDED.no_philsys,
           employee_no = EXCLUDED.employee_no,
           deped_email = EXCLUDED.deped_email,
+          no_deped_email = EXCLUDED.no_deped_email,
+          allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
           is_school_head = EXCLUDED.is_school_head,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
@@ -843,6 +1201,7 @@ async function processJobById(targetJobId, specificClient = null) {
           vocational_course = EXCLUDED.vocational_course,
           vocational_level = EXCLUDED.vocational_level,
           college_degree = EXCLUDED.college_degree,
+          college_degrees = EXCLUDED.college_degrees,
           major = EXCLUDED.major,
           minor = EXCLUDED.minor,
           post_graduate_degree = EXCLUDED.post_graduate_degree,
@@ -892,16 +1251,20 @@ async function processJobById(targetJobId, specificClient = null) {
       }
     }
 
-    // Step 4/8: Ingest Class Sections (Regular, ARAL, Remedial/Enrichment)
+    // Step 4/8: Ingest Class Sections (Regular, SNED, ALS, ARAL, Remedial/Enrichment)
     currentStage = '[Step 4/8: Organized Sections]';
     const sectionsList = payload.classSections || [];
     console.log(`  \x1b[90m├─\x1b[0m \x1b[33m${currentStage}\x1b[0m Batch ingesting ${sectionsList.length} organized sections...`);
 
     await client.query('DELETE FROM esf7_regular_sections WHERE school_id = $1 AND school_year = $2', [cleanSchoolId, cleanSchoolYear]);
+    await client.query('DELETE FROM esf7_sned_sections WHERE school_id = $1 AND school_year = $2', [cleanSchoolId, cleanSchoolYear]);
+    await client.query('DELETE FROM esf7_als_sections WHERE school_id = $1 AND school_year = $2', [cleanSchoolId, cleanSchoolYear]);
     await client.query('DELETE FROM esf7_aral_sections WHERE school_id = $1 AND school_year = $2', [cleanSchoolId, cleanSchoolYear]);
     await client.query('DELETE FROM esf7_remedial_enrichment_sections WHERE school_id = $1 AND school_year = $2', [cleanSchoolId, cleanSchoolYear]);
 
     const regSecBatch = [];
+    const snedSecBatch = [];
+    const alsSecBatch = [];
     const aralSecBatch = [];
     const remSecBatch = [];
 
@@ -931,29 +1294,70 @@ async function processJobById(targetJobId, specificClient = null) {
         return totalL < 40 ? 'BELOW STANDARD' : (totalL <= 45 ? 'WITHIN STANDARD' : 'ABOVE STANDARD');
       })());
 
-      if (st === 'ARAL') {
+      const glUpper = String(gl).toUpperCase().trim();
+      const stUpper = String(st).toUpperCase().trim();
+
+      const isSned = stUpper.includes('SNED') || glUpper.includes('SNED') || glUpper.includes('NON-GRADED') || glUpper.includes('SPED');
+      const isAls = stUpper === 'ALS' || glUpper.includes('ALS');
+      const isAral = stUpper.startsWith('ARAL') || stUpper.includes('ARAL') || glUpper.includes('ARAL') || Boolean(s.aralBasis || s.aralToolKey || s.aralTool);
+      const isRem = stUpper === 'REMEDIAL' || stUpper === 'ENRICHMENT' || stUpper.includes('REMEDIAL') || stUpper.includes('ENRICHMENT') || stUpper.includes('REMEDIATION');
+
+      if (isSned) {
+        snedSecBatch.push({
+          id: secId,
+          school_id: cleanSchoolId,
+          school_year: cleanSchoolYear,
+          grade_level: 'SNED (NON-GRADED)',
+          section_name: sn,
+          program_type: s.programType || s.program_type || null,
+          adviser_id: advId,
+          male_learners: maleL,
+          female_learners: femaleL,
+          number_of_learners: totalL,
+          size_status: sizeStat,
+          raw_payload: JSON.stringify(s)
+        });
+      } else if (isAls) {
+        alsSecBatch.push({
+          id: secId,
+          school_id: cleanSchoolId,
+          school_year: cleanSchoolYear,
+          grade_level: gl,
+          section_name: sn,
+          delivery_mode: s.deliveryMode || s.delivery_mode || null,
+          clc_name: s.clcName || s.clc_name || null,
+          adviser_id: advId,
+          male_learners: maleL,
+          female_learners: femaleL,
+          number_of_learners: totalL,
+          size_status: sizeStat,
+          raw_payload: JSON.stringify(s)
+        });
+      } else if (isAral) {
         aralSecBatch.push({
           id: secId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
-          basis_type: s.basisType || 'grade',
-          grade_level: gl,
+          basis_type: s.basisType || s.aralBasis || (s.aralTool ? 'assessment' : 'grade'),
+          grade_level: s.aralGrade || gl,
+          assessment_tool: s.assessmentTool || s.aralTool || s.aralToolKey || null,
+          profile_level: s.profileLevel || s.aralProfileLevel || null,
           section_name: sn,
-          tutor_id: advId,
+          tutor_id: s.tutorId || s.tutor_id || advId,
           male_learners: maleL,
           female_learners: femaleL,
-          total_learners: totalL,
+          total_learners: totalL || Number(s.aralLearners || 0),
           raw_payload: JSON.stringify(s)
         });
-      } else if (st === 'REMEDIAL' || st === 'ENRICHMENT') {
+      } else if (isRem) {
         remSecBatch.push({
           id: secId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
-          intervention_type: st,
+          intervention_type: (stUpper.includes('ENRICHMENT') ? 'ENRICHMENT' : 'REMEDIAL'),
           grade_level: gl,
           section_name: sn,
-          assigned_teacher_id: advId,
+          assigned_teacher_id: s.assignedTeacherId || s.teacherId || advId,
           male_learners: maleL,
           female_learners: femaleL,
           total_learners: totalL,
@@ -992,53 +1396,164 @@ async function processJobById(targetJobId, specificClient = null) {
       if (bReg) await client.query(bReg.query, bReg.values);
     }
 
+    if (snedSecBatch.length > 0) {
+      const bSned = buildBatchInsert('esf7_sned_sections', Object.keys(snedSecBatch[0]), snedSecBatch, `
+        ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+          grade_level = EXCLUDED.grade_level,
+          program_type = EXCLUDED.program_type,
+          adviser_id = EXCLUDED.adviser_id,
+          male_learners = EXCLUDED.male_learners,
+          female_learners = EXCLUDED.female_learners,
+          number_of_learners = EXCLUDED.number_of_learners,
+          size_status = EXCLUDED.size_status,
+          raw_payload = EXCLUDED.raw_payload,
+          updated_at = NOW()
+      `);
+      if (bSned) await client.query(bSned.query, bSned.values);
+    }
+
+    if (alsSecBatch.length > 0) {
+      const bAls = buildBatchInsert('esf7_als_sections', Object.keys(alsSecBatch[0]), alsSecBatch, `
+        ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+          grade_level = EXCLUDED.grade_level,
+          delivery_mode = EXCLUDED.delivery_mode,
+          clc_name = EXCLUDED.clc_name,
+          adviser_id = EXCLUDED.adviser_id,
+          male_learners = EXCLUDED.male_learners,
+          female_learners = EXCLUDED.female_learners,
+          number_of_learners = EXCLUDED.number_of_learners,
+          size_status = EXCLUDED.size_status,
+          raw_payload = EXCLUDED.raw_payload,
+          updated_at = NOW()
+      `);
+      if (bAls) await client.query(bAls.query, bAls.values);
+    }
+
     if (aralSecBatch.length > 0) {
-      const bAral = buildBatchInsert('esf7_aral_sections', Object.keys(aralSecBatch[0]), aralSecBatch);
+      const bAral = buildBatchInsert('esf7_aral_sections', Object.keys(aralSecBatch[0]), aralSecBatch, `
+        ON CONFLICT (id) DO UPDATE SET
+          basis_type = EXCLUDED.basis_type,
+          grade_level = EXCLUDED.grade_level,
+          assessment_tool = EXCLUDED.assessment_tool,
+          profile_level = EXCLUDED.profile_level,
+          section_name = EXCLUDED.section_name,
+          tutor_id = EXCLUDED.tutor_id,
+          male_learners = EXCLUDED.male_learners,
+          female_learners = EXCLUDED.female_learners,
+          total_learners = EXCLUDED.total_learners,
+          raw_payload = EXCLUDED.raw_payload,
+          updated_at = NOW()
+      `);
       if (bAral) await client.query(bAral.query, bAral.values);
     }
 
     if (remSecBatch.length > 0) {
-      const bRem = buildBatchInsert('esf7_remedial_enrichment_sections', Object.keys(remSecBatch[0]), remSecBatch);
+      const bRem = buildBatchInsert('esf7_remedial_enrichment_sections', Object.keys(remSecBatch[0]), remSecBatch, `
+        ON CONFLICT (id) DO UPDATE SET
+          intervention_type = EXCLUDED.intervention_type,
+          grade_level = EXCLUDED.grade_level,
+          section_name = EXCLUDED.section_name,
+          assigned_teacher_id = EXCLUDED.assigned_teacher_id,
+          male_learners = EXCLUDED.male_learners,
+          female_learners = EXCLUDED.female_learners,
+          total_learners = EXCLUDED.total_learners,
+          raw_payload = EXCLUDED.raw_payload,
+          updated_at = NOW()
+      `);
       if (bRem) await client.query(bRem.query, bRem.values);
     }
 
     // Step 5/8: Ingest Workload Rows for this School
-    currentStage = '[Step 5/8: Elementary & JHS Workload Timetables]';
+    currentStage = '[Step 5/8: Elementary, JHS & SHS Workload Timetables]';
     console.log(`  \x1b[90m├─\x1b[0m \x1b[33m${currentStage}\x1b[0m Batch ingesting timetable schedules...`);
-    await client.query('DELETE FROM esf7_workload_rows WHERE school_id = $1 AND school_year = $2', [cleanSchoolId, cleanSchoolYear]);
 
     const workloadBatch = [];
+    const shsWorkloadBatch = [];
+
     for (const p of personnelList) {
       if (!p) continue;
       const pId = p.id || p.personnel_id;
       if (!pId) continue;
 
-      for (let sIdx = 0; sIdx < (p.workloadRows || []).length; sIdx++) {
-        const wk = p.workloadRows[sIdx];
-        if (!wk || !wk.subject) continue;
+      const allWk = [
+        ...(Array.isArray(p.workloadRows) ? p.workloadRows : []),
+        ...(Array.isArray(p.workload_rows) ? p.workload_rows : [])
+      ];
 
-        const wkId = (wk.id && !String(wk.id).startsWith('wk-local-') && !String(wk.id).startsWith('client-') && wk.id.length <= 40) ? wk.id : generateWorkloadId();
-        const daysArr = Array.isArray(wk.days) ? wk.days : ['M', 'T', 'W', 'TH', 'F'];
+      for (let sIdx = 0; sIdx < allWk.length; sIdx++) {
+        const wk = allWk[sIdx];
+        if (!wk || (!wk.subject && !wk.subjectName && !wk.task)) continue;
 
-        workloadBatch.push({
+        const wkId = (wk.id && !String(wk.id).startsWith('wk-local-') && !String(wk.id).startsWith('client-') && wk.id.length <= 40)
+          ? wk.id
+          : `WKL-${cleanSchoolId}-${pId.replace(/[^0-9]/g, '').slice(-3) || '001'}-${String(sIdx + 1).padStart(3, '0')}`;
+        const daysArr = Array.isArray(wk.days) && wk.days.length > 0 ? wk.days : ['M', 'T', 'W', 'TH', 'F'];
+        const rowTerm = wk.term || payload.term || payload.activeTerm || '1st';
+        const gradeLevel = wk.gradeLevel || wk.grade_level || 'Grade 7';
+        const isShsRow = gradeLevel.includes('11') || gradeLevel.includes('12') || gradeLevel.toUpperCase().includes('SHS') || Boolean(wk.trackStrand || wk.track_strand);
+
+        const record = {
           id: wkId,
           personnel_id: pId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
-          grade_level: wk.gradeLevel || wk.grade_level || 'Grade 7',
+          grade_level: gradeLevel,
+          section_id: wk.sectionId || wk.section_id || null,
           section_name: wk.sectionName || wk.section_name || 'Section 1',
-          subject: wk.subject || wk.subjectName || 'Subject',
+          subject: wk.subject || wk.subjectName || wk.task || 'Subject',
+          subject_id: wk.subjectId || wk.subject_id || null,
+          remediation_subject: wk.remediationSubject || wk.remediation_subject || null,
           start_time: wk.startTime || wk.start_time || '08:00',
           end_time: wk.endTime || wk.end_time || '09:00',
           days: JSON.stringify(daysArr),
-          raw_payload: JSON.stringify(wk)
-        });
+          term: rowTerm,
+          raw_payload: JSON.stringify({ ...wk, term: rowTerm })
+        };
+
+        workloadBatch.push(record);
+
+        if (isShsRow) {
+          shsWorkloadBatch.push({
+            ...record,
+            track_strand: wk.trackStrand || wk.track_strand || '',
+            shs_subject_category: wk.shsSubjectCategory || wk.shs_subject_category || wk.category || 'SHS-CORE SUBJECTS',
+            semester: wk.semester || (rowTerm === '2nd' ? '2nd Semester' : '1st Semester')
+          });
+        }
       }
+    }
+
+    // Determine terms being submitted to avoid deleting other historical/active terms
+    const submittedTerms = [...new Set(workloadBatch.map(w => w.term))];
+    if (submittedTerms.length > 0) {
+      await client.query(
+        'DELETE FROM esf7_workload_rows WHERE (school_id = $1 OR school_id = $2) AND (school_year = $3 OR school_year = $4) AND term = ANY($5)',
+        [cleanSchoolId, `SCH-${cleanSchoolId.replace('SCH-', '')}`, cleanSchoolYear, cleanSchoolYear.replace('SY ', '20').replace('-', '-20'), submittedTerms]
+      );
+      await client.query(
+        'DELETE FROM esf7_shs_workload_rows WHERE (school_id = $1 OR school_id = $2) AND (school_year = $3 OR school_year = $4) AND term = ANY($5)',
+        [cleanSchoolId, `SCH-${cleanSchoolId.replace('SCH-', '')}`, cleanSchoolYear, cleanSchoolYear.replace('SY ', '20').replace('-', '-20'), submittedTerms]
+      ).catch(() => {});
+    } else if (payload.term || payload.activeTerm) {
+      const explicitTerm = payload.term || payload.activeTerm;
+      await client.query(
+        'DELETE FROM esf7_workload_rows WHERE (school_id = $1 OR school_id = $2) AND (school_year = $3 OR school_year = $4) AND term = $5',
+        [cleanSchoolId, `SCH-${cleanSchoolId.replace('SCH-', '')}`, cleanSchoolYear, cleanSchoolYear.replace('SY ', '20').replace('-', '-20'), explicitTerm]
+      );
+      await client.query(
+        'DELETE FROM esf7_shs_workload_rows WHERE (school_id = $1 OR school_id = $2) AND (school_year = $3 OR school_year = $4) AND term = $5',
+        [cleanSchoolId, `SCH-${cleanSchoolId.replace('SCH-', '')}`, cleanSchoolYear, cleanSchoolYear.replace('SY ', '20').replace('-', '-20'), explicitTerm]
+      ).catch(() => {});
     }
 
     if (workloadBatch.length > 0) {
       const bWk = buildBatchInsert('esf7_workload_rows', Object.keys(workloadBatch[0]), workloadBatch);
       if (bWk) await client.query(bWk.query, bWk.values);
+    }
+
+    if (shsWorkloadBatch.length > 0) {
+      const bShs = buildBatchInsert('esf7_shs_workload_rows', Object.keys(shsWorkloadBatch[0]), shsWorkloadBatch);
+      if (bShs) await client.query(bShs.query, bShs.values).catch(() => {});
     }
 
     // Step 6/8: Ingest Allowances
@@ -1175,6 +1690,212 @@ async function processJobById(targetJobId, specificClient = null) {
       if (bTfr) await client.query(bTfr.query, bTfr.values);
     }
 
+    // Ingest Overload Pay & Reasons (overload_pay_and_reason)
+    const overloadBatch = [];
+    const overloadReasonsMap = payload.overloadReasonsMap || payload.overloadReasons || {};
+    const explicitOverloadList = payload.overloadPayAndReason || payload.overloadRecords || payload.overloadList || payload.overloadRoster || [];
+    const seenOverloadPersonnel = new Set();
+    const targetTerm = payload.activeTerm || payload.term || 'Term 1';
+
+    // 1. Ingest any explicitly passed overload records
+    for (let oIdx = 0; oIdx < explicitOverloadList.length; oIdx++) {
+      const oItem = explicitOverloadList[oIdx];
+      if (!oItem) continue;
+      const pId = oItem.personnelId || oItem.personnel_id || oItem.teacherId || oItem.teacher_id || oItem.teacher?.id;
+      if (!pId) continue;
+      seenOverloadPersonnel.add(pId);
+
+      const oHours = parseFloat(oItem.overloadHours || oItem.overload_hours || oItem.hours || oItem.totalStats?.net || 0) || 0;
+      const oPay = parseFloat(oItem.overloadPay || oItem.overload_pay || oItem.pay || 0) || 0;
+      const netPay = parseFloat(oItem.netTermPay || oItem.net_term_pay || oPay) || 0;
+      const reasons = Array.isArray(oItem.reasons) && oItem.reasons.length > 0
+        ? oItem.reasons
+        : (overloadReasonsMap[pId] || ['Teacher Shortage']);
+
+      const oId = oItem.id || `OPR-${cleanSchoolId}-${pId.split('-').pop() || String(oIdx + 1).padStart(3, '0')}`;
+
+      overloadBatch.push({
+        id: oId,
+        personnel_id: pId,
+        school_id: cleanSchoolId,
+        school_year: cleanSchoolYear,
+        term: oItem.term || targetTerm,
+        month: oItem.month || 'All',
+        overload_hours: oHours,
+        overload_pay: oPay,
+        net_term_pay: netPay,
+        reasons: JSON.stringify(reasons),
+        raw_payload: JSON.stringify(oItem),
+        updated_at: new Date()
+      });
+    }
+
+    // 2. Derive overload from timetable workloads & substitute transfers
+    try {
+      const smRes = await client.query(`SELECT position_title, step_number, basic_salary FROM salary_matrix`);
+      const smRows = smRes.rows || [];
+      const fallbackSalaries = {
+        'TEACHER I': 31705, 'TEACHER II': 33947, 'TEACHER III': 36125,
+        'TEACHER IV': 38764, 'TEACHER V': 42178, 'TEACHER VI': 45694,
+        'TEACHER VII': 49562, 'MASTER TEACHER I': 53818, 'MASTER TEACHER II': 59153,
+        'MASTER TEACHER III': 66052, 'MASTER TEACHER IV': 73303, 'MASTER TEACHER V': 81796
+      };
+
+      const parseTimeMins = (t) => {
+        if (!t) return 0;
+        const [h, m] = String(t).split(':').map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+
+      const getWeekdaysInMonth = (monthIndex, year) => {
+        const dates = [];
+        const date = new Date(year, monthIndex, 1);
+        while (date.getMonth() === monthIndex) {
+          const day = date.getDay();
+          if (day >= 1 && day <= 5) dates.push(new Date(date));
+          date.setDate(date.getDate() + 1);
+        }
+        return dates;
+      };
+
+      const term1Dates = [
+        ...getWeekdaysInMonth(5, 2026),
+        ...getWeekdaysInMonth(6, 2026),
+        ...getWeekdaysInMonth(7, 2026)
+      ];
+      const dayShortMap = { 1: 'M', 2: 'T', 3: 'W', 4: 'TH', 5: 'F' };
+
+      for (let pIdx = 0; pIdx < personnelList.length; pIdx++) {
+        const p = personnelList[pIdx];
+        if (!p) continue;
+        const pId = p.id || p.personnel_id || `PER-${cleanSchoolId}-${String(pIdx + 1).padStart(3, '0')}`;
+        if (seenOverloadPersonnel.has(pId)) continue;
+
+        const pWorkloads = p.workloadRows || [];
+        let netOverloadHours = 0;
+
+        term1Dates.forEach(d => {
+          const dateStr = d.toISOString().split('T')[0];
+          const dayShort = dayShortMap[d.getDay()];
+
+          let dayMins = 0;
+          pWorkloads.forEach(w => {
+            let daysArr = [];
+            if (Array.isArray(w.days)) {
+              daysArr = w.days;
+            } else if (typeof w.days === 'string') {
+              try { daysArr = JSON.parse(w.days); } catch (e) { daysArr = w.days.split(',').map(s => s.trim()).filter(Boolean); }
+            }
+            if (daysArr.includes(dayShort)) {
+              const sub = String(w.subject || w.subject_title || w.subjectName || '').toUpperCase().trim();
+              if (sub === 'HGP') {
+                // Excluded
+              } else if (sub === 'ADVISORY') {
+                dayMins += 60;
+              } else {
+                const sTime = w.startTime || w.start_time;
+                const eTime = w.endTime || w.end_time;
+                dayMins += Math.max(0, parseTimeMins(eTime) - parseTimeMins(sTime));
+              }
+            }
+          });
+
+          // Add substitute transferred workloads
+          transfersList.forEach(t => {
+            const tStart = t.startDate || t.start_date;
+            const tEnd = t.endDate || t.end_date || tStart;
+            if (dateStr >= tStart && dateStr <= tEnd) {
+              const isSub = (t.substituteTeacherId === pId || t.substitute_personnel_id === pId || t.relievingPersonnelId === pId || t.relieving_personnel_id === pId);
+              if (isSub) {
+                const tRows = t.workloadRows || t.workload_rows || [];
+                tRows.forEach(tw => {
+                  let tdays = [];
+                  try { tdays = Array.isArray(tw.days) ? tw.days : JSON.parse(tw.days); } catch(e) { tdays = String(tw.days).split(','); }
+                  if (tdays.includes(dayShort)) {
+                    const sub = String(tw.subject || '').toUpperCase().trim();
+                    if (sub !== 'HGP') {
+                      dayMins += Math.max(0, parseTimeMins(tw.endTime || tw.end_time) - parseTimeMins(tw.startTime || tw.start_time));
+                    }
+                  }
+                });
+              }
+            }
+          });
+
+          const dayHours = dayMins / 60;
+          if (dayHours > 6.0) {
+            netOverloadHours += (dayHours - 6.0);
+          }
+        });
+
+        // Also check standard 30h/wk baseline
+        let baseWeeklyMins = 0;
+        pWorkloads.forEach(w => {
+          let daysArr = [];
+          if (Array.isArray(w.days)) {
+            daysArr = w.days;
+          } else if (typeof w.days === 'string') {
+            try { daysArr = JSON.parse(w.days); } catch (e) { daysArr = w.days.split(',').map(s => s.trim()).filter(Boolean); }
+          }
+          const daysCount = Array.isArray(daysArr) && daysArr.length > 0 ? daysArr.length : 5;
+          const sub = String(w.subject || w.subject_title || w.subjectName || '').toUpperCase().trim();
+          if (sub !== 'HGP') {
+            const sTime = w.startTime || w.start_time;
+            const eTime = w.endTime || w.end_time;
+            baseWeeklyMins += Math.max(0, parseTimeMins(eTime) - parseTimeMins(sTime)) * daysCount;
+          }
+        });
+        const baseWeeklyHours = baseWeeklyMins / 60;
+        if (baseWeeklyHours > 30 && netOverloadHours === 0) {
+          netOverloadHours = (baseWeeklyHours - 30) * 12;
+        }
+
+        if (netOverloadHours > 0) {
+          const termOverloadHours = Math.round(netOverloadHours * 100) / 100;
+          const pos = String(p.position || 'TEACHER I').toUpperCase().trim();
+          const step = Number(p.stepIncrement || p.step_increment || 1);
+          const smMatch = smRows.find(r => String(r.position_title).toUpperCase().trim() === pos && Number(r.step_number) === step);
+          const basicSalary = smMatch ? Number(smMatch.basic_salary) : (fallbackSalaries[pos] || 31705);
+          const phtr = 0.000781 * 12 * basicSalary;
+          const overloadPay = Math.round(termOverloadHours * phtr * 100) / 100;
+          const reasons = overloadReasonsMap[pId] || ['Teacher Shortage'];
+
+          const oId = `OPR-${cleanSchoolId}-${pId.split('-').pop()}`;
+          overloadBatch.push({
+            id: oId,
+            personnel_id: pId,
+            school_id: cleanSchoolId,
+            school_year: cleanSchoolYear,
+            term: targetTerm,
+            month: 'All',
+            overload_hours: termOverloadHours,
+            overload_pay: overloadPay,
+            net_term_pay: overloadPay,
+            reasons: JSON.stringify(reasons),
+            raw_payload: JSON.stringify({ termOverloadHours, phtr, overloadPay }),
+            updated_at: new Date()
+          });
+        }
+      }
+    } catch (overloadCalcErr) {
+      console.warn('[Queue Worker] Overload calculation warning:', overloadCalcErr.message);
+    }
+
+    if (overloadBatch.length > 0) {
+      const bOpr = buildBatchInsert('overload_pay_and_reason', Object.keys(overloadBatch[0]), overloadBatch, `
+        ON CONFLICT (personnel_id, school_year, term, month) DO UPDATE SET
+          overload_hours = CASE WHEN EXCLUDED.overload_hours > 0 THEN EXCLUDED.overload_hours ELSE overload_pay_and_reason.overload_hours END,
+          overload_pay = CASE WHEN EXCLUDED.overload_pay > 0 THEN EXCLUDED.overload_pay ELSE overload_pay_and_reason.overload_pay END,
+          net_term_pay = CASE WHEN EXCLUDED.net_term_pay > 0 THEN EXCLUDED.net_term_pay ELSE overload_pay_and_reason.net_term_pay END,
+          reasons = EXCLUDED.reasons,
+          raw_payload = EXCLUDED.raw_payload,
+          updated_at = NOW()
+      `);
+      if (bOpr) await client.query(bOpr.query, bOpr.values);
+    }
+
+
+
     // Step 8/8: COMMIT transaction & Mark Complete
     currentStage = '[Step 8/8: Transaction Finalization]';
     await client.query('COMMIT');
@@ -1184,10 +1905,18 @@ async function processJobById(targetJobId, specificClient = null) {
       [jobId]
     );
 
+    try {
+      const { syncAllOverloadPayAndReasons } = require('./services/overloadSync');
+      await syncAllOverloadPayAndReasons(cleanSchoolId, cleanSchoolYear);
+    } catch (syncErr) {
+      console.warn('[Queue Worker Overload Sync Warning]:', syncErr.message);
+    }
+
     const totalDuration = Date.now() - jobStartTime;
     console.log(`  \x1b[32m✔ [Queue Worker] Job #${jobId} (School ${cleanSchoolId}) COMPLETED in ${totalDuration}ms\x1b[0m\n`);
     if (shouldRelease && client) client.release();
     return true;
+
 
   } catch (error) {
     const duration = Date.now() - (jobStartTime || Date.now());
@@ -1252,10 +1981,43 @@ async function processNextJob() {
     `);
 
     if (jobRes.rows.length === 0) {
+      if (db.stagingPool && db.stagingPool !== db.pool) {
+        let stagingClient = null;
+        try {
+          stagingClient = await db.stagingPool.connect();
+          await stagingClient.query(`
+            UPDATE esf7_submission_queue
+            SET status = 'pending', updated_at = NOW()
+            WHERE status = 'processing'
+              AND updated_at < NOW() - INTERVAL '1 minute'
+          `).catch(() => {});
+          const stagingJobRes = await stagingClient.query(`
+            SELECT id FROM esf7_submission_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+          `);
+          if (stagingJobRes.rows.length > 0) {
+            const nextStagingId = stagingJobRes.rows[0].id;
+            const res = await processJobById(nextStagingId, stagingClient);
+            stagingClient.release();
+            client.release();
+            activeWorkersCount--;
+            setImmediate(() => {
+              processNextJob().catch(() => {});
+            });
+            return res;
+          }
+        } catch (sErr) {
+          // ignore
+        } finally {
+          if (stagingClient) {
+            try { stagingClient.release(); } catch (e) {}
+          }
+        }
+      }
       client.release();
       activeWorkersCount--;
       return false;
     }
+
 
     const nextId = jobRes.rows[0].id;
     const result = await processJobById(nextId, client);

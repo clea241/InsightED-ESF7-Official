@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const { insightEdPool } = require('../../db');
 
 function formatLearningAreasRecord(row) {
   if (!row) return null;
@@ -55,23 +56,27 @@ router.post('/toggle', async (req, res) => {
       const idParts = String(personnelId).split('-');
       schoolId = idParts.length > 1 ? idParts[1] : '108348';
       const cleanSchoolId = schoolId.replace('SCH-', '');
-      const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-      
-      const { Pool } = require('pg');
-      const poolString = process.env.DATABASE_URL
-        ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-        : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-      const insightEdPool = new Pool({
-        connectionString: poolString,
-        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-      });
-      
+      const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
+      const tableName = isTest ? 'esf7_database_dummy' : 'esf7_database';
       const seqIndex = idParts.length > 2 ? parseInt(idParts[2], 10) - 1 : 0;
-      const masterRows = await insightEdPool.query(
-        `SELECT * FROM ${tableName} WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1`,
-        [cleanSchoolId]
-      ).catch(() => ({ rows: [] }));
-      await insightEdPool.end().catch(() => {});
+      let masterRows = { rows: [] };
+      if (isTest) {
+        masterRows = await insightEdPool.query(
+          `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+      } else {
+        masterRows = await insightEdPool.query(
+          `SELECT * FROM esf7_database WHERE school_id = $1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+        if (masterRows.rows.length === 0) {
+          masterRows = await insightEdPool.query(
+            `SELECT * FROM esf7_database WHERE schoool_id = $1`,
+            [cleanSchoolId]
+          ).catch(() => ({ rows: [] }));
+        }
+      }
       
       const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
       const fName = masterRow.first || masterRow.first_name || 'TEACHER';
@@ -168,23 +173,27 @@ router.post('/:personnel_id', async (req, res) => {
       const idParts = String(personnel_id).split('-');
       schoolId = idParts.length > 1 ? idParts[1] : '108348';
       const cleanSchoolId = schoolId.replace('SCH-', '');
-      const tableName = ['199998', '199997'].includes(cleanSchoolId) ? 'esf7_database_dummy' : 'esf7_database';
-      
-      const { Pool } = require('pg');
-      const poolString = process.env.DATABASE_URL
-        ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-        : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-      const insightEdPool = new Pool({
-        connectionString: poolString,
-        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-      });
-      
+      const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
+      const tableName = isTest ? 'esf7_database_dummy' : 'esf7_database';
       const seqIndex = idParts.length > 2 ? parseInt(idParts[2], 10) - 1 : 0;
-      const masterRows = await insightEdPool.query(
-        `SELECT * FROM ${tableName} WHERE CAST(school_id AS TEXT) = $1 OR CAST(schoool_id AS TEXT) = $1`,
-        [cleanSchoolId]
-      ).catch(() => ({ rows: [] }));
-      await insightEdPool.end().catch(() => {});
+      let masterRows = { rows: [] };
+      if (isTest) {
+        masterRows = await insightEdPool.query(
+          `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+      } else {
+        masterRows = await insightEdPool.query(
+          `SELECT * FROM esf7_database WHERE school_id = $1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+        if (masterRows.rows.length === 0) {
+          masterRows = await insightEdPool.query(
+            `SELECT * FROM esf7_database WHERE schoool_id = $1`,
+            [cleanSchoolId]
+          ).catch(() => ({ rows: [] }));
+        }
+      }
       
       const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
       const fName = masterRow.first || masterRow.first_name || 'TEACHER';

@@ -7,7 +7,8 @@ import PortalHeader from '../components/PortalHeader';
 import { 
   FiFileText, FiPrinter, FiShield, FiCheckCircle, FiCheck, FiRepeat, 
   FiEdit3, FiUploadCloud, FiAward, FiCalendar, FiUser, FiLayers, 
-  FiX, FiExternalLink, FiDownload, FiHome, FiClock, FiCheckSquare 
+  FiX, FiExternalLink, FiDownload, FiHome, FiClock, FiCheckSquare,
+  FiAlertTriangle, FiAlertCircle, FiRefreshCw, FiArrowRight, FiInfo
 } from 'react-icons/fi';
 
 
@@ -24,7 +25,9 @@ export default function ValidationCenter() {
     showToast,
     showAlert,
     completeNode,
-    allowancesMap
+    allowancesMap,
+    activeTerm,
+    setActiveTerm
   } = useApp();
 
   const [certified, setCertified] = useState(false);
@@ -45,6 +48,7 @@ export default function ValidationCenter() {
 
   // Tab & Preview filters for VIEW Sheet / Teacher Class Programs
   const [activeTab, setActiveTab] = useState('validation'); // 'validation' | 'view_preview'
+  const [previewTerm, setPreviewTerm] = useState('1st'); // '1st' | '2nd' | '3rd'
   const [searchQuery, setSearchQuery] = useState('');
   const [posFilter, setPosFilter] = useState('ALL'); // 'ALL' | 'TEACHING' | 'NON_TEACHING'
   const [expandedTeacherId, setExpandedTeacherId] = useState(null);
@@ -56,6 +60,86 @@ export default function ValidationCenter() {
     setHasPriorSubmission(false);
     setShowResubmitForm(false);
   }, [schoolInfo?.schoolId, schoolInfo?.schoolYear]);
+
+  // SDO Division Review State (from esf7_validation)
+  const [sdoValidation, setSdoValidation] = useState(null);
+  const [isLoadingSdoValidation, setIsLoadingSdoValidation] = useState(false);
+  const [isResubmittingToSdo, setIsResubmittingToSdo] = useState(false);
+
+  const fetchSdoValidation = async () => {
+    if (!schoolInfo?.schoolId) return;
+    try {
+      setIsLoadingSdoValidation(true);
+      const res = await api.getSchoolValidation(schoolInfo.schoolId);
+      if (res?.success && res?.data) {
+        setSdoValidation(res.data);
+      } else {
+        setSdoValidation(null);
+      }
+    } catch (err) {
+      console.error('Failed to fetch SDO validation status:', err);
+    } finally {
+      setIsLoadingSdoValidation(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSdoValidation();
+  }, [schoolInfo?.schoolId, schoolInfo?.schoolYear]);
+
+  const handleResubmitToSdo = async () => {
+    if (!principalName) {
+      if (showAlert) await showAlert("Missing Certification", "Please ensure the School Head name is specified before re-submitting.");
+      return;
+    }
+
+    try {
+      setIsResubmittingToSdo(true);
+      const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
+      const localDraft = await getLocalDraft(draftKey);
+
+      const currentPersonnel = (Array.isArray(personnel) && personnel.length > 0)
+        ? personnel
+        : (localDraft?.personnel || []);
+
+      const currentSections = (Array.isArray(classSections) && classSections.length > 0)
+        ? classSections
+        : (localDraft?.classSections || []);
+
+      const payload = {
+        ...(localDraft || {}),
+        schoolInfo: schoolInfo || localDraft?.schoolInfo,
+        personnel: (currentPersonnel || []).filter(p => !p.isShared),
+        classSections: currentSections,
+        workloadTransfers: workloadTransfers || localDraft?.workloadTransfers || [],
+        absences: absences || localDraft?.absences || [],
+        activeTerm: activeTerm || '1st',
+        term: activeTerm || '1st',
+        allowancesMap: allowancesMap || localDraft?.allowancesMap || {}
+      };
+
+      const res = await api.resubmitSchoolValidation({
+        schoolId: schoolInfo.schoolId,
+        schoolYear: schoolInfo.schoolYear || '2024-2025',
+        payload,
+        signature: signature || null,
+        certifiedBy: principalName
+      });
+
+      if (res?.success) {
+        if (showToast) showToast('eSF7 successfully re-submitted to SDO with RESUBMITTED status!', 'success');
+        await fetchSdoValidation();
+        await fetchHistory();
+      } else {
+        if (showAlert) await showAlert("Re-submission Error", res?.error || "Failed to re-submit eSF7 to SDO.");
+      }
+    } catch (err) {
+      console.error('Re-submit failed:', err);
+      if (showAlert) await showAlert("Network Error", "Unable to re-submit eSF7 to SDO.");
+    } finally {
+      setIsResubmittingToSdo(false);
+    }
+  };
 
   // Fetch submission history on load/school switch
   const fetchHistory = async () => {
@@ -84,10 +168,11 @@ export default function ValidationCenter() {
   }, [schoolInfo]);
 
   useEffect(() => {
-    const schoolHead = personnel.find(p => {
-      const pos = (p.position || '').toUpperCase();
-      return pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('TEACHER-IN-CHARGE') || pos.includes('TIC') || pos.includes('OIC');
-    });
+    const schoolHead = (personnel || []).find(p => p.isSchoolHead === true || p.is_school_head === true) ||
+      (personnel || []).find(p => {
+        const pos = (p.position || '').toUpperCase();
+        return pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('TEACHER-IN-CHARGE') || pos.includes('TIC') || pos.includes('OIC');
+      });
 
     if (schoolHead) {
       const middleInitial = schoolHead.middleName && schoolHead.middleName !== 'N/A' && schoolHead.middleName !== 'NONE'
@@ -321,20 +406,45 @@ export default function ValidationCenter() {
       const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
       const localDraft = await getLocalDraft(draftKey);
 
-      const basePayload = localDraft || {
-        schoolInfo,
-        personnel,
-        classSections,
-        workloadTransfers: [],
-        absences: [],
-        allowancesMap: allowancesMap || {}
-      };
+      const currentPersonnel = (Array.isArray(personnel) && personnel.length > 0)
+        ? personnel
+        : (localDraft?.personnel || []);
+
+      const currentSections = (Array.isArray(classSections) && classSections.length > 0)
+        ? classSections
+        : (localDraft?.classSections || []);
+
+      // Grab latest overload reasons map & computed records
+      let overloadReasonsMap = {};
+      let overloadPayAndReason = [];
+      try {
+        const storedOpr = localStorage.getItem('insighted_overload_records');
+        if (storedOpr) {
+          overloadPayAndReason = JSON.parse(storedOpr);
+        }
+        const ovRes = await api.getOverloadReasons(schoolInfo.schoolYear, activeTerm || 'Term 1');
+        if (ovRes && ovRes.data) overloadReasonsMap = ovRes.data;
+        if ((!overloadPayAndReason || overloadPayAndReason.length === 0) && ovRes && Array.isArray(ovRes.raw)) {
+          overloadPayAndReason = ovRes.raw;
+        }
+      } catch (ovErr) {
+        console.warn('Could not fetch overload reasons for submission:', ovErr);
+      }
 
       const payload = {
-        ...basePayload,
-        personnel: (basePayload.personnel || []).filter(p => !p.isShared),
-        allowancesMap: allowancesMap || basePayload.allowancesMap || {}
+        ...(localDraft || {}),
+        schoolInfo: schoolInfo || localDraft?.schoolInfo,
+        personnel: (currentPersonnel || []).filter(p => !p.isShared),
+        classSections: currentSections,
+        workloadTransfers: workloadTransfers || localDraft?.workloadTransfers || [],
+        absences: absences || localDraft?.absences || [],
+        activeTerm: activeTerm || '1st',
+        term: activeTerm || '1st',
+        allowancesMap: allowancesMap || localDraft?.allowancesMap || {},
+        overloadReasonsMap: overloadReasonsMap || localDraft?.overloadReasonsMap || {},
+        overloadPayAndReason: overloadPayAndReason || localDraft?.overloadPayAndReason || []
       };
+
 
       const res = await api.submitSchoolWorkload({
         schoolYear: schoolInfo.schoolYear,
@@ -342,6 +452,7 @@ export default function ValidationCenter() {
         signature: signature || null,
         certifiedBy: principalName
       });
+
 
       if (res.success) {
         setJobId(res.jobId);
@@ -527,6 +638,347 @@ export default function ValidationCenter() {
 
           {activeTab === 'validation' ? (
             <>
+              {/* SDO Division Review & Action Center (Option A) */}
+              {sdoValidation && (() => {
+                const po3Status = (sdoValidation.po3_validation || 'PENDING').toUpperCase();
+                const hrmoStatus = (sdoValidation.hrmo_validation || 'PENDING').toUpperCase();
+                const specProgStatus = (sdoValidation.special_program_validation || po3Status).toUpperCase();
+                const secDensityStatus = (sdoValidation.sections_density_validation || po3Status).toUpperCase();
+                const staffingStatus = (sdoValidation.staffing_composition_validation || hrmoStatus).toUpperCase();
+
+                const isForCorrection = 
+                  po3Status === 'FOR CORRECTION' || 
+                  hrmoStatus === 'FOR CORRECTION' || 
+                  specProgStatus === 'FOR CORRECTION' || 
+                  secDensityStatus === 'FOR CORRECTION' || 
+                  staffingStatus === 'FOR CORRECTION';
+
+                const isAllValidated = 
+                  (po3Status === 'VALIDATED' || po3Status === 'APPROVED') && 
+                  (hrmoStatus === 'VALIDATED' || hrmoStatus === 'APPROVED');
+
+                const isResubmitted = 
+                  po3Status === 'RESUBMITTED' || 
+                  hrmoStatus === 'RESUBMITTED';
+
+                const details = sdoValidation.validation_details || {};
+                const specProgDetails = details.special_program || {};
+                const secDensityDetails = details.sections_density || {};
+                const staffingDetails = details.staffing_composition || {};
+
+                const getBadgeStyle = (st) => {
+                  switch (st) {
+                    case 'VALIDATED':
+                    case 'APPROVED':
+                      return { background: '#DCFCE7', color: '#15803D', border: '1px solid #86EFAC' };
+                    case 'FOR CORRECTION':
+                      return { background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FCA5A5' };
+                    case 'RESUBMITTED':
+                      return { background: '#E0F2FE', color: '#0369A1', border: '1px solid #7DD3FC' };
+                    default:
+                      return { background: '#F1F5F9', color: '#475569', border: '1px solid #CBD5E1' };
+                  }
+                };
+
+                return (
+                  <div style={{
+                    marginBottom: '20px',
+                    borderRadius: '12px',
+                    border: isForCorrection ? '2px solid #FCA5A5' : isAllValidated ? '2px solid #86EFAC' : isResubmitted ? '2px solid #7DD3FC' : '1px solid #E2E8F0',
+                    background: isForCorrection ? 'linear-gradient(180deg, #FFF1F2 0%, #FFFFFF 100%)' : isAllValidated ? 'linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%)' : isResubmitted ? 'linear-gradient(180deg, #F0F9FF 0%, #FFFFFF 100%)' : '#F8FAFC',
+                    padding: '20px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                  }}>
+                    {/* Header Bar */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {isForCorrection ? (
+                          <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#DC2626' }}>
+                            <FiAlertTriangle size={24} />
+                          </div>
+                        ) : isAllValidated ? (
+                          <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16A34A' }}>
+                            <FiAward size={24} />
+                          </div>
+                        ) : isResubmitted ? (
+                          <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284C7' }}>
+                            <FiClock size={24} />
+                          </div>
+                        ) : (
+                          <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
+                            <FiInfo size={24} />
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: isForCorrection ? '#991B1B' : isAllValidated ? '#166534' : isResubmitted ? '#075985' : '#1E293B' }}>
+                              SDO Division Review & Validation Status
+                            </h3>
+                            <span style={{
+                              ...getBadgeStyle(isForCorrection ? 'FOR CORRECTION' : isAllValidated ? 'VALIDATED' : isResubmitted ? 'RESUBMITTED' : 'PENDING'),
+                              padding: '2px 10px',
+                              borderRadius: '20px',
+                              fontSize: '11px',
+                              fontWeight: '800',
+                              letterSpacing: '0.04em'
+                            }}>
+                              {isForCorrection ? 'FOR CORRECTION' : isAllValidated ? 'ALL VALIDATED' : isResubmitted ? 'RESUBMITTED' : 'UNDER SDO REVIEW'}
+                            </span>
+                          </div>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#64748B' }}>
+                            {isForCorrection 
+                              ? 'The Division Review Team (PO III / HRMO) has flagged items requiring revision. Review the feedback below, make corrections in the modules, and click Re-submit.' 
+                              : isAllValidated 
+                                ? 'Congratulations! Your eSF7 submission has been officially validated and approved by both Planning Officer III and HRMO.' 
+                                : isResubmitted 
+                                  ? 'Your revised eSF7 has been re-submitted to SDO and is currently queued for re-evaluation by the Division Review Team.' 
+                                  : 'Your eSF7 submission is currently under review by Planning Officer III and HRMO.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={fetchSdoValidation}
+                          disabled={isLoadingSdoValidation}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 12px',
+                            background: '#FFFFFF',
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            color: '#475569',
+                            cursor: 'pointer'
+                          }}
+                          title="Refresh SDO Status"
+                        >
+                          <FiRefreshCw size={13} className={isLoadingSdoValidation ? 'spin' : ''} />
+                          {isLoadingSdoValidation ? 'Checking...' : 'Refresh Status'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Reviewer Status Pills */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{ padding: '12px 14px', borderRadius: '8px', background: '#FFFFFF', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ fontSize: '12px', color: '#1E293B', display: 'block' }}>Planning Officer III (PO3)</strong>
+                          <span style={{ fontSize: '11px', color: '#64748B' }}>Special Program, Sections & Density</span>
+                        </div>
+                        <span style={{ ...getBadgeStyle(po3Status), padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' }}>
+                          {po3Status}
+                        </span>
+                      </div>
+
+                      <div style={{ padding: '12px 14px', borderRadius: '8px', background: '#FFFFFF', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ fontSize: '12px', color: '#1E293B', display: 'block' }}>HRMO Validation</strong>
+                          <span style={{ fontSize: '11px', color: '#64748B' }}>Staffing Composition & Plantilla</span>
+                        </div>
+                        <span style={{ ...getBadgeStyle(hrmoStatus), padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' }}>
+                          {hrmoStatus}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* For Correction Feedback Checklist & Sections */}
+                    {isForCorrection && (
+                      <div style={{ background: '#FFFFFF', borderRadius: '10px', border: '1px solid #FECACA', padding: '16px', marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#991B1B' }}>
+                          <FiAlertCircle size={18} />
+                          <strong style={{ fontSize: '14px' }}>Items Requiring Revision from SDO:</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {/* Special Program Feedback */}
+                          {specProgStatus === 'FOR CORRECTION' && (
+                            <div style={{ padding: '10px 14px', background: '#FFF1F2', borderRadius: '8px', borderLeft: '4px solid #EF4444' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <strong style={{ fontSize: '13px', color: '#991B1B' }}>• Special Program Validation</strong>
+                                <span style={{ ...getBadgeStyle('FOR CORRECTION'), fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>NEEDS REVISION</span>
+                              </div>
+                              {specProgDetails.notes && (
+                                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#7F1D1D' }}>
+                                  <strong>Note:</strong> {specProgDetails.notes}
+                                </p>
+                              )}
+                              {Array.isArray(specProgDetails.checklist) && specProgDetails.checklist.length > 0 && (
+                                <ul style={{ margin: '6px 0 0 16px', padding: 0, fontSize: '12px', color: '#7F1D1D' }}>
+                                  {specProgDetails.checklist.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Sections & Density Feedback */}
+                          {secDensityStatus === 'FOR CORRECTION' && (
+                            <div style={{ padding: '10px 14px', background: '#FFF1F2', borderRadius: '8px', borderLeft: '4px solid #EF4444' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <strong style={{ fontSize: '13px', color: '#991B1B' }}>• Sections & Class Density Validation</strong>
+                                <span style={{ ...getBadgeStyle('FOR CORRECTION'), fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>NEEDS REVISION</span>
+                              </div>
+                              {secDensityDetails.notes && (
+                                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#7F1D1D' }}>
+                                  <strong>Note:</strong> {secDensityDetails.notes}
+                                </p>
+                              )}
+                              {Array.isArray(secDensityDetails.checklist) && secDensityDetails.checklist.length > 0 && (
+                                <ul style={{ margin: '6px 0 0 16px', padding: 0, fontSize: '12px', color: '#7F1D1D' }}>
+                                  {secDensityDetails.checklist.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Staffing Composition Feedback */}
+                          {staffingStatus === 'FOR CORRECTION' && (
+                            <div style={{ padding: '10px 14px', background: '#FFF1F2', borderRadius: '8px', borderLeft: '4px solid #EF4444' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <strong style={{ fontSize: '13px', color: '#991B1B' }}>• Staffing Composition & Plantilla Validation</strong>
+                                <span style={{ ...getBadgeStyle('FOR CORRECTION'), fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>NEEDS REVISION</span>
+                              </div>
+                              {staffingDetails.notes && (
+                                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#7F1D1D' }}>
+                                  <strong>Note:</strong> {staffingDetails.notes}
+                                </p>
+                              )}
+                              {Array.isArray(staffingDetails.checklist) && staffingDetails.checklist.length > 0 && (
+                                <ul style={{ margin: '6px 0 0 16px', padding: 0, fontSize: '12px', color: '#7F1D1D' }}>
+                                  {staffingDetails.checklist.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+
+                          {/* General Checklist / Notes if present */}
+                          {details.notes && specProgStatus !== 'FOR CORRECTION' && secDensityStatus !== 'FOR CORRECTION' && staffingStatus !== 'FOR CORRECTION' && (
+                            <div style={{ padding: '10px 14px', background: '#FFF1F2', borderRadius: '8px', borderLeft: '4px solid #EF4444' }}>
+                              <strong style={{ fontSize: '13px', color: '#991B1B' }}>• Reviewer Notes:</strong>
+                              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#7F1D1D' }}>{details.notes}</p>
+                            </div>
+                          )}
+
+                          {Array.isArray(details.checklist) && details.checklist.length > 0 && (
+                            <div style={{ padding: '10px 14px', background: '#FFFBEB', borderRadius: '8px', border: '1px solid #FDE68A' }}>
+                              <strong style={{ fontSize: '12px', color: '#92400E' }}>Reviewer Checklist Items:</strong>
+                              <ul style={{ margin: '4px 0 0 16px', padding: 0, fontSize: '12px', color: '#92400E' }}>
+                                {details.checklist.map((chk, idx) => (
+                                  <li key={idx}>{chk}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Quick Navigation Jump Buttons */}
+                        <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #F1F5F9', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#64748B' }}>Quick Links to Fix:</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveView('classes')}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              background: '#EFF6FF',
+                              border: '1px solid #BFDBFE',
+                              color: '#1D4ED8',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            Organized Classes <FiArrowRight size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveView('roster')}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              background: '#EFF6FF',
+                              border: '1px solid #BFDBFE',
+                              color: '#1D4ED8',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            Personnel Roster <FiArrowRight size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveView('workload')}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              background: '#EFF6FF',
+                              border: '1px solid #BFDBFE',
+                              color: '#1D4ED8',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            Workload & Timetable <FiArrowRight size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Resubmit Action Button */}
+                    {isForCorrection && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', paddingTop: '8px' }}>
+                        <span style={{ fontSize: '12px', color: '#64748B' }}>
+                          After making the requested corrections, click to re-submit:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleResubmitToSdo}
+                          disabled={isResubmittingToSdo}
+                          style={{
+                            background: 'linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%)',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '10px 20px',
+                            fontSize: '13px',
+                            fontWeight: '700',
+                            cursor: isResubmittingToSdo ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.25)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <FiRefreshCw size={14} className={isResubmittingToSdo ? 'spin' : ''} />
+                          {isResubmittingToSdo ? 'Re-submitting eSF7...' : 'Re-submit eSF7 to SDO (RESUBMITTED)'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
           <div className="kpis" style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
             <div className="kpi">
@@ -576,7 +1028,18 @@ export default function ValidationCenter() {
                     </strong>
                     <span>{issue.message}</span>
                   </div>
-                  {issue.category === 'Allowances & Financial Incentives' ? (
+                  {issue.category === 'Borrowed Personnel Verification' ? (
+                    <span 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (issue.personId) setActivePersonnelId(issue.personId);
+                        setActiveView('profile');
+                      }}
+                      style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--blue)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      Resolve Status →
+                    </span>
+                  ) : issue.category === 'Allowances & Financial Incentives' ? (
                     <span 
                       onClick={() => setActiveView('allowances')}
                       style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--blue)', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -587,6 +1050,7 @@ export default function ValidationCenter() {
                     <span 
                       onClick={() => {
                         if (issue.personId) setActivePersonnelId(issue.personId);
+                        if (issue.term && typeof setActiveTerm === 'function') setActiveTerm(issue.term);
                         setActiveView('workload');
                       }}
                       style={{ fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline', color: 'var(--red, #b91c1c)', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1016,7 +1480,7 @@ export default function ValidationCenter() {
             </div>
           </div>
 
-          {/* Position Summary Tallies Table matching official eSF7 template */}
+          {/* Position Summary Tallies Table matching official new eSF7 template */}
           <div style={{
             background: 'white',
             border: '1.5px solid var(--outline, #E2E8F0)',
@@ -1024,113 +1488,337 @@ export default function ValidationCenter() {
             padding: '20px',
             boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
           }}>
-            <h4 style={{ margin: '0 0 14px 0', fontSize: '15px', fontWeight: '800', color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              📊 Personnel Position Incumbent Summary (Per Position)
-            </h4>
             {(() => {
+              const TEACHING_HIERARCHY = [
+                'SCHOOL PRINCIPAL IV', 'SCHOOL PRINCIPAL III', 'SCHOOL PRINCIPAL II', 'SCHOOL PRINCIPAL I', 'PRINCIPAL IV', 'PRINCIPAL III', 'PRINCIPAL II', 'PRINCIPAL I',
+                'ASSISTANT SCHOOL PRINCIPAL III', 'ASSISTANT SCHOOL PRINCIPAL II', 'ASSISTANT SCHOOL PRINCIPAL I', 'ASSISTANT PRINCIPAL II', 'ASSISTANT PRINCIPAL I',
+                'HEAD TEACHER VI', 'HEAD TEACHER V', 'HEAD TEACHER IV', 'HEAD TEACHER III', 'HEAD TEACHER II', 'HEAD TEACHER I',
+                'MASTER TEACHER V', 'MASTER TEACHER IV', 'MASTER TEACHER III', 'MASTER TEACHER II', 'MASTER TEACHER I',
+                'SPECIAL SCIENCE TEACHER I', 'SPECIAL EDUCATION TEACHER III', 'SPECIAL EDUCATION TEACHER II', 'SPECIAL EDUCATION TEACHER I', 'SPED TEACHER',
+                'TEACHER III', 'TEACHER II', 'TEACHER I',
+                'GUIDANCE COORDINATOR III', 'GUIDANCE COORDINATOR II', 'GUIDANCE COORDINATOR I', 'GUIDANCE COUNSELOR III', 'GUIDANCE COUNSELOR II', 'GUIDANCE COUNSELOR I', 'SCHOOL COUNSELOR ASSOCIATE I',
+                'VOCATIONAL INSTRUCTION SUPERVISOR', 'VOCATIONAL PLACEMENT COORDINATOR', 'INSTRUCTOR I'
+              ];
+
+              const NON_TEACHING_HIERARCHY = [
+                'ADMINISTRATIVE OFFICER V', 'ADMINISTRATIVE OFFICER IV', 'ADMINISTRATIVE OFFICER II', 'ADMINISTRATIVE OFFICER I', 'ADMINISTRATIVE OFFICER',
+                'ACCOUNTANT III', 'ACCOUNTANT II', 'ACCOUNTANT I',
+                'REGISTRAR III', 'REGISTRAR II', 'REGISTRAR I', 'REGISTRAR',
+                'SENIOR ADMINISTRATIVE ASSISTANT III', 'SENIOR ADMINISTRATIVE ASSISTANT II', 'SENIOR ADMINISTRATIVE ASSISTANT I',
+                'ADMINISTRATIVE ASSISTANT III', 'ADMINISTRATIVE ASSISTANT II', 'ADMINISTRATIVE ASSISTANT I', 'ADMINISTRATIVE ASSISTANT',
+                'ADMINISTRATIVE AIDE VI', 'ADMINISTRATIVE AIDE V', 'ADMINISTRATIVE AIDE IV', 'ADMINISTRATIVE AIDE III', 'ADMINISTRATIVE AIDE II', 'ADMINISTRATIVE AIDE I', 'ADMINISTRATIVE AIDE',
+                'SECURITY GUARD III', 'SECURITY GUARD II', 'SECURITY GUARD I', 'SECURITY GUARD',
+                'UTILITY WORKER II', 'UTILITY WORKER I', 'UTILITY WORKER', 'WATCHMAN', 'DRIVER'
+              ];
+
               const teachingMap = {};
               const nonTeachingMap = {};
-              const otherFundingRows = [];
-              let totalTeachingCount = 0;
-              let totalNonTeachingCount = 0;
+              const otherMap = {};
 
               (personnel || []).forEach(p => {
                 const pos = (p.position || p.plantilla_position || p.position_title || 'TEACHER I').toUpperCase().trim();
                 const fund = String(p.fundSource || p.fund_source || 'NATIONAL').toUpperCase().trim();
                 const isNational = fund === 'NATIONAL';
+                const depStatus = String(p.deploymentStatus || p.deployment_status || 'OWN STATION').toUpperCase().trim();
+
+                let statusKey = 'os';
+                if (depStatus.includes('CLUSTERED')) statusKey = 'clustered';
+                else if (depStatus.includes('BORROWED')) statusKey = 'borrowed';
+                else if (depStatus.includes('REASSIGNED')) statusKey = 'reassigned';
+
+                const detectedType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
+                const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
 
                 if (isNational) {
-                  const detectedType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
-                  const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
                   if (isNonTeaching) {
-                    nonTeachingMap[pos] = (nonTeachingMap[pos] || 0) + 1;
-                    totalNonTeachingCount++;
+                    if (!nonTeachingMap[pos]) nonTeachingMap[pos] = { os: 0, clustered: 0, borrowed: 0, reassigned: 0 };
+                    nonTeachingMap[pos][statusKey] = (nonTeachingMap[pos][statusKey] || 0) + 1;
                   } else {
-                    teachingMap[pos] = (teachingMap[pos] || 0) + 1;
-                    totalTeachingCount++;
+                    if (!teachingMap[pos]) teachingMap[pos] = { os: 0, clustered: 0, borrowed: 0, reassigned: 0 };
+                    teachingMap[pos][statusKey] = (teachingMap[pos][statusKey] || 0) + 1;
                   }
                 } else {
-                  // (C) Other Appointments and Funding Source (MOOE, SEF, LGU, PTA, NGO, OTHERS, etc.)
-                  otherFundingRows.push({
-                    title: pos,
-                    appointment: String(p.natureOfAppointment || p.nature_of_appointment || p.hiringArrangement || p.hiring_arrangement || 'JOB ORDER / COS').toUpperCase(),
-                    fundSource: fund
-                  });
+                  // (C) Other Appointments and Funding Source (Non-National)
+                  const appt = String(p.natureOfAppointment || p.nature_of_appointment || p.hiringArrangement || p.hiring_arrangement || 'CONTRACTUAL').toUpperCase().trim();
+                  const groupKey = `${pos}||${appt}||${fund}`;
+                  if (!otherMap[groupKey]) {
+                    otherMap[groupKey] = {
+                      title: pos,
+                      appointment: appt,
+                      fundSource: fund,
+                      teaching: 0,
+                      nonTeaching: 0
+                    };
+                  }
+                  if (isNonTeaching) {
+                    otherMap[groupKey].nonTeaching++;
+                  } else {
+                    otherMap[groupKey].teaching++;
+                  }
                 }
               });
 
-              const activeTeachingRows = Object.keys(teachingMap).map(t => ({ title: t, count: teachingMap[t] }));
-              const activeNonTeachingRows = Object.keys(nonTeachingMap).map(t => ({ title: t, count: nonTeachingMap[t] }));
+              // Sort by DepEd Hierarchy
+              const sortWithHierarchy = (keys, hierarchy) => {
+                return keys.sort((a, b) => {
+                  const idxA = hierarchy.indexOf(a);
+                  const idxB = hierarchy.indexOf(b);
+                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                  if (idxA !== -1) return -1;
+                  if (idxB !== -1) return 1;
+                  return a.localeCompare(b);
+                });
+              };
+
+              const activeTeachingRows = sortWithHierarchy(Object.keys(teachingMap), TEACHING_HIERARCHY).map(title => ({
+                title,
+                ...teachingMap[title]
+              }));
+
+              const activeNonTeachingRows = sortWithHierarchy(Object.keys(nonTeachingMap), NON_TEACHING_HIERARCHY).map(title => ({
+                title,
+                ...nonTeachingMap[title]
+              }));
+
+              const otherFundingRows = Object.values(otherMap);
               const maxRows = Math.max(activeTeachingRows.length, activeNonTeachingRows.length, otherFundingRows.length, 6);
 
-              return (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', border: '1.5px solid #0F172A' }}>
-                    <thead>
-                      <tr style={{ background: '#F1F5F9', textAlign: 'center', fontWeight: '800', color: 'var(--navy)' }}>
-                        <th colSpan="2" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '34%' }}>
-                          (A) Nationally-Funded Teaching & Teaching Related Items
-                        </th>
-                        <th colSpan="2" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '33%' }}>
-                          (B) Nationally-Funded Non Teaching Items
-                        </th>
-                        <th colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '33%' }}>
-                          (C) Other Appointments and Funding Source
-                        </th>
-                      </tr>
-                      <tr style={{ background: '#F8FAFC', fontSize: '10px', textAlign: 'center', fontWeight: '700', color: '#475569' }}>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Title of Plantilla Position</th>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '60px' }}>Incumbents</th>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Title of Plantilla Position</th>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '60px' }}>Incumbents</th>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Title of Position</th>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Appointment</th>
-                        <th style={{ border: '1px solid #CBD5E1', padding: '6px' }}>Fund Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from({ length: maxRows }).map((_, rIdx) => {
-                        const tItem = activeTeachingRows[rIdx];
-                        const ntItem = activeNonTeachingRows[rIdx];
-                        const otherItem = otherFundingRows[rIdx];
+              // Subtotals for (A) Teaching
+              const sumA = activeTeachingRows.reduce((acc, r) => ({
+                os: acc.os + (r.os || 0),
+                clustered: acc.clustered + (r.clustered || 0),
+                borrowed: acc.borrowed + (r.borrowed || 0),
+                reassigned: acc.reassigned + (r.reassigned || 0)
+              }), { os: 0, clustered: 0, borrowed: 0, reassigned: 0 });
+              const totalA = sumA.os + sumA.clustered + sumA.borrowed + sumA.reassigned;
 
-                        return (
-                          <tr key={rIdx} style={{ textAlign: 'left', height: '22px' }}>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: '600', color: '#0F172A' }}>
-                              {tItem ? tItem.title : ''}
-                            </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', textAlign: 'center', fontWeight: '800', color: '#047857' }}>
-                              {tItem ? tItem.count : ''}
-                            </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: '600', color: '#0F172A' }}>
-                              {ntItem ? ntItem.title : ''}
-                            </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', textAlign: 'center', fontWeight: '800', color: '#1D4ED8' }}>
-                              {ntItem ? ntItem.count : ''}
-                            </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: '600', color: otherItem ? '#0F172A' : '#94A3B8' }}>
-                              {otherItem ? otherItem.title : ''}
-                            </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', color: otherItem ? '#334155' : '#94A3B8' }}>
-                              {otherItem ? otherItem.appointment : ''}
-                            </td>
-                            <td style={{ border: '1px solid #E2E8F0', padding: '4px 8px', fontWeight: otherItem ? '700' : 'normal', color: otherItem ? '#D97706' : '#94A3B8' }}>
-                              {otherItem ? otherItem.fundSource : ''}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      <tr style={{ fontWeight: '800', background: '#F1F5F9', color: 'var(--navy)' }}>
-                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>TOTAL</td>
-                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#047857', fontSize: '13px' }}>{totalTeachingCount}</td>
-                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>TOTAL</td>
-                        <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#1D4ED8', fontSize: '13px' }}>{totalNonTeachingCount}</td>
-                        <td colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'right', fontSize: '12px', color: '#475569' }}>
-                          {otherFundingRows.length > 0 ? `TOTAL (OTHER): ${otherFundingRows.length}` : ''}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+              // Subtotals for (B) Non-Teaching
+              const sumB = activeNonTeachingRows.reduce((acc, r) => ({
+                os: acc.os + (r.os || 0),
+                clustered: acc.clustered + (r.clustered || 0),
+                borrowed: acc.borrowed + (r.borrowed || 0),
+                reassigned: acc.reassigned + (r.reassigned || 0)
+              }), { os: 0, clustered: 0, borrowed: 0, reassigned: 0 });
+              const totalB = sumB.os + sumB.clustered + sumB.borrowed + sumB.reassigned;
+
+              // Subtotals for (C) Other
+              const sumC = otherFundingRows.reduce((acc, r) => ({
+                teaching: acc.teaching + (r.teaching || 0),
+                nonTeaching: acc.nonTeaching + (r.nonTeaching || 0)
+              }), { teaching: 0, nonTeaching: 0 });
+              const totalC = sumC.teaching + sumC.nonTeaching;
+
+              // Official DepEd Math:
+              // Total School Plantilla Items = OS + Clustered + Reassigned
+              const totalSchoolPlantillaTeaching = sumA.os + sumA.clustered + sumA.reassigned;
+              const totalSchoolPlantillaNonTeaching = sumB.os + sumB.clustered + sumB.reassigned;
+              const totalSchoolPlantilla = totalSchoolPlantillaTeaching + totalSchoolPlantillaNonTeaching;
+
+              // Total Warm Bodies = OS + Clustered + Borrowed
+              const totalWarmBodiesTeaching = sumA.os + sumA.clustered + sumA.borrowed;
+              const totalWarmBodiesNonTeaching = sumB.os + sumB.clustered + sumB.borrowed;
+              const totalWarmBodies = totalWarmBodiesTeaching + totalWarmBodiesNonTeaching + totalC;
+
+              return (
+                <div>
+                  {/* Top Header & KPI Summary Badges */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      📊 Personnel Position Incumbent Summary (Per Position)
+                    </h4>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '11px', background: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0', padding: '4px 10px', borderRadius: '8px', fontWeight: 800 }}>
+                        🏛️ Plantilla Items: <strong>{totalSchoolPlantilla}</strong>
+                      </span>
+                      <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#1E40AF', border: '1px solid #BFDBFE', padding: '4px 10px', borderRadius: '8px', fontWeight: 800 }}>
+                        👥 Warm Bodies: <strong>{totalWarmBodies}</strong>
+                      </span>
+                      {totalC > 0 && (
+                        <span style={{ fontSize: '11px', background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', padding: '4px 10px', borderRadius: '8px', fontWeight: 800 }}>
+                          💼 Other Funded: <strong>{totalC}</strong>
+                        </span>
+                      )}
+                      <span style={{ fontSize: '11px', background: '#F8FAFC', color: '#475569', border: '1px solid #CBD5E1', padding: '4px 10px', borderRadius: '8px', fontWeight: 800 }}>
+                        📋 Total Roster: <strong>{(personnel || []).length}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', border: '1.5px solid #0F172A' }}>
+                      <thead>
+                        {/* Section Tier 1 Headers */}
+                        <tr style={{ background: '#F1F5F9', textAlign: 'center', fontWeight: '800', color: 'var(--navy)' }}>
+                          <th colSpan="5" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '37%' }}>
+                            (A) Nationally Funded Teaching & Related-Teaching Items
+                          </th>
+                          <th colSpan="5" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '37%' }}>
+                            (B) Nationally Funded Non-Teaching Items
+                          </th>
+                          <th colSpan="5" style={{ border: '1px solid #CBD5E1', padding: '8px', width: '26%' }}>
+                            (C) Other Appointments and Funding Source
+                          </th>
+                        </tr>
+                        {/* Section Tier 2 Sub-Headers */}
+                        <tr style={{ background: '#F8FAFC', fontSize: '10px', textAlign: 'center', fontWeight: '700', color: '#475569' }}>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '17%' }}>Title of Plantilla Position</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Own Station">Own Station</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Clustered Personnel">Clustered</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Borrowed Personnel">Borrowed</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Reassigned Personnel">Reassigned</th>
+
+                          <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '17%' }}>Title of Plantilla Position</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Own Station">Own Station</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Clustered Personnel">Clustered</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Borrowed Personnel">Borrowed</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '5%' }} title="Reassigned Personnel">Reassigned</th>
+
+                          <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '10%' }}>Title of Position</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '8%' }}>Nature of Appointment</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '6px', width: '8%' }}>Other Fund Source</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '4%' }} title="Teaching Count">Teaching</th>
+                          <th style={{ border: '1px solid #CBD5E1', padding: '4px', width: '4%' }} title="Non-Teaching Count">Non-Teaching</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: maxRows }).map((_, rIdx) => {
+                          const tItem = activeTeachingRows[rIdx];
+                          const ntItem = activeNonTeachingRows[rIdx];
+                          const otherItem = otherFundingRows[rIdx];
+
+                          return (
+                            <tr key={rIdx} style={{ textAlign: 'left', height: '24px' }}>
+                              {/* Section A: Teaching */}
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 6px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {tItem ? tItem.title : ''}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: tItem?.os ? '800' : 'normal', color: tItem?.os ? '#047857' : '#94A3B8' }}>
+                                {tItem?.os ? tItem.os : (tItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: tItem?.clustered ? '800' : 'normal', color: tItem?.clustered ? '#0284C7' : '#94A3B8' }}>
+                                {tItem?.clustered ? tItem.clustered : (tItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: tItem?.borrowed ? '800' : 'normal', color: tItem?.borrowed ? '#D97706' : '#94A3B8' }}>
+                                {tItem?.borrowed ? tItem.borrowed : (tItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: tItem?.reassigned ? '800' : 'normal', color: tItem?.reassigned ? '#7C3AED' : '#94A3B8' }}>
+                                {tItem?.reassigned ? tItem.reassigned : (tItem ? '-' : '')}
+                              </td>
+
+                              {/* Section B: Non-Teaching */}
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 6px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {ntItem ? ntItem.title : ''}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: ntItem?.os ? '800' : 'normal', color: ntItem?.os ? '#1D4ED8' : '#94A3B8' }}>
+                                {ntItem?.os ? ntItem.os : (ntItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: ntItem?.clustered ? '800' : 'normal', color: ntItem?.clustered ? '#0284C7' : '#94A3B8' }}>
+                                {ntItem?.clustered ? ntItem.clustered : (ntItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: ntItem?.borrowed ? '800' : 'normal', color: ntItem?.borrowed ? '#D97706' : '#94A3B8' }}>
+                                {ntItem?.borrowed ? ntItem.borrowed : (ntItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: ntItem?.reassigned ? '800' : 'normal', color: ntItem?.reassigned ? '#7C3AED' : '#94A3B8' }}>
+                                {ntItem?.reassigned ? ntItem.reassigned : (ntItem ? '-' : '')}
+                              </td>
+
+                              {/* Section C: Other Appointments & Fund Source */}
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 6px', fontWeight: '600', color: otherItem ? '#0F172A' : '#94A3B8' }}>
+                                {otherItem ? otherItem.title : ''}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 6px', color: otherItem ? '#334155' : '#94A3B8', fontSize: '10px' }}>
+                                {otherItem ? otherItem.appointment : ''}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 6px', fontWeight: otherItem ? '700' : 'normal', color: otherItem ? '#D97706' : '#94A3B8' }}>
+                                {otherItem ? otherItem.fundSource : ''}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: otherItem?.teaching ? '800' : 'normal', color: otherItem?.teaching ? '#047857' : '#94A3B8' }}>
+                                {otherItem?.teaching ? otherItem.teaching : (otherItem ? '-' : '')}
+                              </td>
+                              <td style={{ border: '1px solid #E2E8F0', padding: '4px 2px', textAlign: 'center', fontWeight: otherItem?.nonTeaching ? '800' : 'normal', color: otherItem?.nonTeaching ? '#1D4ED8' : '#94A3B8' }}>
+                                {otherItem?.nonTeaching ? otherItem.nonTeaching : (otherItem ? '-' : '')}
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {/* Subtotal Row */}
+                        <tr style={{ fontWeight: '800', background: '#F8FAFC', color: 'var(--navy)' }}>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>Total</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#047857', fontSize: '12px' }}>{sumA.os}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#0284C7', fontSize: '12px' }}>{sumA.clustered}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#D97706', fontSize: '12px' }}>{sumA.borrowed}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#7C3AED', fontSize: '12px' }}>{sumA.reassigned}</td>
+
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase' }}>Total</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#1D4ED8', fontSize: '12px' }}>{sumB.os}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#0284C7', fontSize: '12px' }}>{sumB.clustered}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#D97706', fontSize: '12px' }}>{sumB.borrowed}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#7C3AED', fontSize: '12px' }}>{sumB.reassigned}</td>
+
+                          <td colSpan="3" style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textTransform: 'uppercase', textAlign: 'right' }}>Total (Other)</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#047857', fontSize: '12px' }}>{sumC.teaching}</td>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 2px', textAlign: 'center', color: '#1D4ED8', fontSize: '12px' }}>{sumC.nonTeaching}</td>
+                        </tr>
+
+                        {/* Total School Plantilla Items Row */}
+                        <tr style={{ fontWeight: '800', background: '#F1F5F9', color: 'var(--navy)' }}>
+                          <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px' }}>Total School Plantilla Items</td>
+                          <td colSpan="4" style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#047857', fontSize: '13px' }}>
+                            {totalSchoolPlantillaTeaching} <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 'normal' }}>(OS + Clustered + Reassigned)</span>
+                          </td>
+                          <td colSpan="5" style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: '#1D4ED8', fontSize: '13px' }}>
+                            {totalSchoolPlantillaNonTeaching} <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 'normal' }}>(OS + Clustered + Reassigned)</span>
+                          </td>
+                          <td colSpan="5" style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', background: '#E2E8F0', color: '#0F172A', fontSize: '13px' }}>
+                            🏛️ Total Plantilla Items: <strong>{totalSchoolPlantilla}</strong>
+                          </td>
+                        </tr>
+
+                        {/* Total Warm Bodies Row */}
+                        <tr style={{ fontWeight: '800', background: '#E0F2FE', color: '#0369A1' }}>
+                          <td style={{ border: '1px solid #BAE6FD', padding: '6px 8px' }}>Total Warm Bodies <span style={{ fontSize: '10px', fontWeight: 'normal', color: '#0284C7' }}>(OS, Clustered, B)</span></td>
+                          <td colSpan="4" style={{ border: '1px solid #BAE6FD', padding: '6px 8px', textAlign: 'center', color: '#0369A1', fontSize: '13px' }}>
+                            {totalWarmBodiesTeaching} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>(Teaching)</span>
+                          </td>
+                          <td colSpan="5" style={{ border: '1px solid #BAE6FD', padding: '6px 8px', textAlign: 'center', color: '#0369A1', fontSize: '13px' }}>
+                            {totalWarmBodiesNonTeaching} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>(Non-Teaching)</span>
+                          </td>
+                          <td colSpan="5" style={{ border: '1px solid #BAE6FD', padding: '6px 8px', textAlign: 'center', color: '#1E40AF', fontSize: '13px' }}>
+                            👥 Total Warm Bodies: <strong>{totalWarmBodies}</strong> {totalC > 0 && <span style={{ fontSize: '10px', fontWeight: 'normal' }}>(incl. {totalC} Other Funded)</span>}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Official DepEd Notes Legend Box */}
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '10px 14px',
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    color: '#475569',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: '8px 16px'
+                  }}>
+                    <div>
+                      <strong style={{ color: '#0F172A' }}>Own Station (OS):</strong> Item and personnel are in the same school.
+                    </div>
+                    <div>
+                      <strong style={{ color: '#0F172A' }}>Clustered:</strong> Personnel serves in two or more schools (counted under Total Plantilla Items).
+                    </div>
+                    <div>
+                      <strong style={{ color: '#0F172A' }}>Reassigned:</strong> Plantilla Item is in this school; personnel physically serves in another school.
+                    </div>
+                    <div>
+                      <strong style={{ color: '#0F172A' }}>Borrowed:</strong> Personnel physically serves in this school; Plantilla Item is in another school.
+                    </div>
+                  </div>
                 </div>
               );
             })()}
@@ -1138,7 +1826,8 @@ export default function ValidationCenter() {
 
           {/* Search & Filter Controls */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ position: 'relative', minWidth: '280px', flex: 1 }}>
+            {/* Search Input */}
+            <div style={{ position: 'relative', minWidth: '260px', flex: 1 }}>
               <input
                 type="text"
                 placeholder="🔍 Search teacher name, TIN, position, or subject..."
@@ -1154,6 +1843,43 @@ export default function ValidationCenter() {
                 }}
               />
             </div>
+
+            {/* Academic Term Selection Pills (1st Term / 2nd Term / 3rd Term) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F1F5F9', padding: '4px', borderRadius: '12px', border: '1.5px solid #CBD5E1' }}>
+              <span style={{ fontSize: '10.5px', fontWeight: '800', color: '#64748B', padding: '0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                TERM:
+              </span>
+              {[
+                { id: '1st', label: '1st Term' },
+                { id: '2nd', label: '2nd Term' },
+                { id: '3rd', label: '3rd Term' }
+              ].map(t => {
+                const isActive = previewTerm === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setPreviewTerm(t.id)}
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '12px',
+                      fontWeight: isActive ? '800' : '600',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: isActive ? '#1E40AF' : 'transparent',
+                      color: isActive ? 'white' : '#475569',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isActive ? '0 2px 4px rgba(30, 64, 175, 0.25)' : 'none'
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Position Category Filters */}
             <div style={{ display: 'flex', gap: '6px' }}>
               <button
                 type="button"
@@ -1220,12 +1946,12 @@ export default function ValidationCenter() {
                 if (!searchQuery) return true;
                 const q = searchQuery.toLowerCase();
                 const name = `${p.firstName} ${p.lastName} ${p.tin} ${p.position}`.toLowerCase();
-                const hasSubj = (p.workloadRows || []).some(w => (w.subject || w.task || '').toLowerCase().includes(q));
+                const hasSubj = (p.workloadRows || []).filter(w => (w.term || '1st') === previewTerm).some(w => (w.subject || w.task || '').toLowerCase().includes(q));
                 return name.includes(q) || hasSubj;
               })
               .map((p, pIdx) => {
                 const isExpanded = expandedTeacherId === p.id || searchQuery.length > 0;
-                const workloads = p.workloadRows || [];
+                const workloads = (p.workloadRows || []).filter(w => (w.term || '1st') === previewTerm);
                 let teacherTotalMins = 0;
 
                 return (
@@ -1304,9 +2030,9 @@ export default function ValidationCenter() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ textAlign: 'right' }}>
                           <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>
-                            Assigned Workloads
+                            {previewTerm === '1st' ? '1st Term' : previewTerm === '2nd' ? '2nd Term' : '3rd Term'} Workload
                           </span>
-                          <strong style={{ fontSize: '14px', color: 'var(--navy)' }}>
+                          <strong style={{ fontSize: '14px', color: workloads.length > 0 ? 'var(--navy)' : '#94A3B8' }}>
                             {workloads.length} Slots
                           </strong>
                         </div>
@@ -1320,8 +2046,8 @@ export default function ValidationCenter() {
                     {isExpanded && (
                       <div style={{ padding: '16px 20px', background: 'white' }}>
                         {workloads.length === 0 ? (
-                          <div style={{ padding: '16px', textTransform: 'uppercase', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
-                            No active workload rows assigned yet.
+                          <div style={{ padding: '24px 16px', textTransform: 'uppercase', fontSize: '12px', color: '#64748B', textAlign: 'center', background: '#F8FAFC', borderRadius: '10px', border: '1px dashed #CBD5E1' }}>
+                            No active workload schedule periods assigned for {previewTerm === '1st' ? '1st Term' : previewTerm === '2nd' ? '2nd Term' : '3rd Term'}.
                           </div>
                         ) : (
                           <div style={{ overflowX: 'auto' }}>
@@ -1623,6 +2349,7 @@ export default function ValidationCenter() {
         signature={signature}
         isLocked={errors.length > 0}
         errorsCount={errors.length}
+        selectedTerm={previewTerm}
       />
 
       {/* Official Certified Submission Success Modal */}

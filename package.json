@@ -8,6 +8,7 @@
     "prompt": "node .agents/scripts/refine_prompt.js",
     "db:studio": "npm run db:studio --prefix server",
     "test:db": "npm run test:db --prefix server",
+    "test:resilience": "npm run test:resilience --prefix server",
     "build": "npm run build --prefix client"
   },
   "devDependencies": {

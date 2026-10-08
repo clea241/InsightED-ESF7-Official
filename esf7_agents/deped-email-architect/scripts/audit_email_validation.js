@@ -22,18 +22,18 @@ if (!fs.existsSync(APP_CONTEXT_PATH)) {
 
 const appContextCode = fs.readFileSync(APP_CONTEXT_PATH, 'utf-8');
 
-// Check that validateDepEdEmail accepts 4 parameters
-if (!appContextCode.includes("validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '')")) {
-  console.error('❌ FAIL: validateDepEdEmail signature does not include middleName parameter!');
+// Check that validateDepEdEmail accepts allowEmailDiscrepancy parameter
+if (!appContextCode.includes("validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '', allowEmailDiscrepancy = false)")) {
+  console.error('❌ FAIL: validateDepEdEmail signature does not include allowEmailDiscrepancy parameter!');
   process.exit(1);
 } else {
-  console.log('✅ [PASS] validateDepEdEmail signature accepts (email, firstName, lastName, middleName)');
+  console.log('✅ [PASS] validateDepEdEmail signature accepts (email, firstName, lastName, middleName, allowEmailDiscrepancy)');
 }
 
 // Extract or define the function to run test assertions
-const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '') => {
+const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '', allowEmailDiscrepancy = false) => {
   if (!email || email === 'N/A') return { isValid: true, error: null };
-  const rawEmail = String(email).trim().toLowerCase();
+  const rawEmail = String(email).trim().toLowerCase().replace(/[\u00f1\u00d1]/g, 'n');
 
   const atCount = (rawEmail.match(/@/g) || []).length;
   const depedDomainCount = (rawEmail.match(/deped\.gov\.ph/g) || []).length;
@@ -48,23 +48,53 @@ const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '
   const localPart = rawEmail.split('@')[0];
   if (!localPart) return { isValid: false, error: "Email local part cannot be empty." };
 
-  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (allowEmailDiscrepancy) {
+    return { isValid: true, error: null };
+  }
+
+  const cleanStr = (s) => String(s || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, '');
+
   const cleanFn = cleanStr(firstName);
   const cleanLn = cleanStr(lastName);
   const cleanMn = cleanStr(middleName);
   const cleanLocal = cleanStr(localPart);
 
-  const fnTokens = String(firstName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const fnTokens = String(firstName || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/)
+    .map(cleanStr)
+    .filter(Boolean);
+
   const fnMatches = fnTokens.length > 0
     ? fnTokens.some(t => cleanLocal.includes(t)) || (cleanFn && cleanLocal.includes(cleanFn))
     : true;
 
-  const lnTokens = String(lastName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const lnTokens = String(lastName || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/)
+    .map(cleanStr)
+    .filter(Boolean);
+
   const lnMatches = cleanLn
     ? (cleanLocal.includes(cleanLn) || lnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
     : true;
 
-  const mnTokens = String(middleName || '').toLowerCase().split(/\s+/).map(cleanStr).filter(Boolean);
+  const mnTokens = String(middleName || '')
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, 'n')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .split(/\s+/)
+    .map(cleanStr)
+    .filter(Boolean);
+
   const mnMatches = cleanMn && cleanMn !== 'na'
     ? (cleanLocal.includes(cleanMn) || mnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
     : false;
@@ -86,6 +116,7 @@ const testCases = [
     fn: 'Juan',
     ln: 'Dela Cruz',
     mn: 'Bautista',
+    allowDiscrepancy: false,
     expected: true
   },
   {
@@ -94,6 +125,43 @@ const testCases = [
     fn: 'Maria',
     ln: 'Reyes',
     mn: 'Santos',
+    allowDiscrepancy: false,
+    expected: true
+  },
+  {
+    name: 'Personnel with ñ in Last Name (Peña -> maria.pena@deped.gov.ph)',
+    email: 'maria.pena@deped.gov.ph',
+    fn: 'Maria',
+    ln: 'Peña',
+    mn: 'Cruz',
+    allowDiscrepancy: false,
+    expected: true
+  },
+  {
+    name: 'Personnel with ñ in Middle Name / Maiden Surname (Muñoz -> ana.munoz@deped.gov.ph)',
+    email: 'ana.munoz@deped.gov.ph',
+    fn: 'Ana',
+    ln: 'Santos',
+    mn: 'Muñoz',
+    allowDiscrepancy: false,
+    expected: true
+  },
+  {
+    name: 'Personnel with ñ in First Name (Iñigo -> inigo.salazar@deped.gov.ph)',
+    email: 'inigo.salazar@deped.gov.ph',
+    fn: 'Iñigo',
+    ln: 'Salazar',
+    mn: 'Ramos',
+    allowDiscrepancy: false,
+    expected: true
+  },
+  {
+    name: 'Personnel with ñ in both Name and Email input handle',
+    email: 'cañete.jose@deped.gov.ph',
+    fn: 'Jose',
+    ln: 'Cañete',
+    mn: '',
+    allowDiscrepancy: false,
     expected: true
   },
   {
@@ -102,6 +170,7 @@ const testCases = [
     fn: 'Maria',
     ln: 'Reyes',
     mn: 'Santos',
+    allowDiscrepancy: false,
     expected: true
   },
   {
@@ -110,6 +179,7 @@ const testCases = [
     fn: 'Maria',
     ln: 'Reyes',
     mn: 'Santos',
+    allowDiscrepancy: false,
     expected: true
   },
   {
@@ -118,6 +188,7 @@ const testCases = [
     fn: 'Mary Grace',
     ln: 'Reyes',
     mn: 'Tan',
+    allowDiscrepancy: false,
     expected: true
   },
   {
@@ -126,14 +197,25 @@ const testCases = [
     fn: 'Juan',
     ln: 'Dela Cruz',
     mn: '',
+    allowDiscrepancy: false,
     expected: true
   },
   {
-    name: 'Completely Unrelated Person Email (Mismatch)',
+    name: 'Legal Name Change (PSA Birth Certificate correction) with Override Enabled',
+    email: 'mary.christine.cruz@deped.gov.ph',
+    fn: 'Maria Cristina',
+    ln: 'Dela Cruz',
+    mn: 'Santos',
+    allowDiscrepancy: true,
+    expected: true
+  },
+  {
+    name: 'Completely Unrelated Person Email without Override (Mismatch)',
     email: 'pedro.penduko@deped.gov.ph',
     fn: 'Juan',
     ln: 'Dela Cruz',
     mn: 'Bautista',
+    allowDiscrepancy: false,
     expected: false
   },
   {
@@ -142,6 +224,7 @@ const testCases = [
     fn: 'Maria',
     ln: 'Reyes',
     mn: 'Santos',
+    allowDiscrepancy: true,
     expected: false
   },
   {
@@ -150,6 +233,7 @@ const testCases = [
     fn: 'Maria',
     ln: 'Reyes',
     mn: 'Santos',
+    allowDiscrepancy: true,
     expected: false
   }
 ];
@@ -157,7 +241,7 @@ const testCases = [
 let failed = 0;
 console.log('\n--- Test Case Assertions ---');
 testCases.forEach((tc, idx) => {
-  const res = validateDepEdEmail(tc.email, tc.fn, tc.ln, tc.mn);
+  const res = validateDepEdEmail(tc.email, tc.fn, tc.ln, tc.mn, tc.allowDiscrepancy);
   const passed = res.isValid === tc.expected;
   if (passed) {
     console.log(`  ✅ [PASS] Case ${idx + 1}: ${tc.name}`);

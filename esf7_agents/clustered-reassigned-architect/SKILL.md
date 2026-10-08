@@ -93,37 +93,30 @@ For clustered teachers, the local IndexedDB draft stores two distinct workload l
 }
 ```
 
-### B. Real-Time WebSocket Event Flow
-1. **Activation**: Triggered when `esf7_requests` status is set to `'approved'` for `clustered_teacher`.
-2. **Channel Subscription**: Both schools subscribe to `room:clustered_${prn}`.
-3. **Broadcasting Updates**:
-   - When School A drags/drops or edits a slot:
-     1. Local IndexedDB is written immediately (0ms lag).
-     2. A lightweight event (~200 bytes) is broadcasted:
-        ```json
-        {
-          "event": "CLUSTERED_SLOT_UPDATE",
-          "prn": "10029384",
-          "authorSchoolId": "100115",
-          "authorSchoolName": "Rizal High",
-          "slots": [
-            { "day": "Monday", "startTime": "08:00", "endTime": "09:00", "subject": "Math 7" }
-          ]
-        }
-        ```
-     3. School B receives the packet and updates its `sharedWorkloadRows` in IndexedDB.
-     4. School B's timetable grid immediately locks the block as a **Ghost Slot**.
+### B. PostgreSQL Atomic Ghost Sync & PM2 Cluster Handshake
+1. **PM2 Multi-Worker Isolation**: Staging and production run clustered PM2 workers (`instances: 2`). In-memory state creates worker desynchronization. Therefore, ghost slots are persisted atomically in PostgreSQL:
+   ```sql
+   CREATE TABLE IF NOT EXISTS esf7_clustered_ghost_sync (
+     room_key VARCHAR(255) PRIMARY KEY,
+     school_id VARCHAR(50),
+     school_name VARCHAR(255),
+     slots JSONB NOT NULL DEFAULT '[]',
+     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+   );
+   ```
+2. **Polling & Broadcast Endpoints**:
+   - `POST /api/requests/ghost-sync` — Atomic upsert keyed by `room_key` (`clustered_${roomKey}`).
+   - `GET /api/requests/ghost-sync/:room_key` — Polled by partner school client every 5 seconds.
+3. **60fps UI Smoothing (`Workload.jsx`)**:
+   - UI wraps incoming ghost updates inside `window.requestAnimationFrame()` to avoid schedule oscillation ("blinking") and frame drops during live edits.
 
 ### C. Ghost Slot Visual Specification
-- **Coloring**: Subtle striped amber/gray pattern (`background: repeating-linear-gradient(45deg, #FEF3C7, #FEF3C7 10px, #FFFBEB 10px, #FFFBEB 20px)`).
+- **Coloring**: Subtle striped amber/slate pattern with high-contrast indicator.
 - **Badge**: 🔒 *"Occupied by [School Name] • [Subject] ([Start]–[End])"*.
-- **Interaction**: Read-only, unmovable, non-deletable by the borrowing school.
+- **Interaction**: Read-only, unmovable, non-deletable by the partner school.
 
-### D. Reconnection & Offline Handshake
-If School B was offline while School A was editing:
-1. Upon opening the Workload view or reconnecting, the client calls `GET /api/clustered-sync/:prn`.
-2. The server responds with the latest active `sharedWorkloadRows` for that PRN.
-3. The client updates IndexedDB automatically.
+### D. Reconnection & Sub-path Resolution
+- In staging, all sync calls route dynamically through `api.getClusteredGhostSlots()` and `api.broadcastClusteredGhostSlots()` using `API_BASE` (`/insighted-esf7-staging/api`).
 
 ---
 

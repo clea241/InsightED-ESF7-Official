@@ -1,24 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { Pool } = require('pg');
-require('dotenv').config();
-
-// Create a connection pool to the main 'insightEd' database containing the unit1_school_identity table
-const poolString = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-  : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-
-const insightEdPool = new Pool({
-  connectionString: poolString,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-});
-
-insightEdPool.on('error', (err) => {
-  console.error('[Schools DB Pool Error]:', err.message);
-});
+const db = require('../../db');
+const { insightEdPool, usersDbPool } = require('../../db');
+const cacheService = require('../../services/cacheService');
 
 const { getSchoolIdFromRequest } = require('../../utils/auth');
-const db = require('../../db');
+const { resolveTestDivision } = require('../../utils/divisionTestRegistry');
 
 // GET school info directly from unit1_school_identity
 const JHS_PROGRAM_CODES = [
@@ -41,11 +28,11 @@ function parseCurricularOffering(rawOff) {
     return ['JHS'];
   } else if (s.includes('PURELY SHS') || s === 'PURELY SHS') {
     return ['SHS'];
-  } else if (s.includes('ES AND JHS') || s.includes('K TO 10') || s.includes('K-10')) {
+  } else if (s.includes('ES AND JHS') || s.includes('K TO 10') || s.includes('K-10') || s.includes('ELEMENTARY + JHS') || s.includes('ELEMENTARY AND JUNIOR HIGH')) {
     return ['Elementary', 'JHS'];
-  } else if (s.includes('JHS WITH SHS') || s.includes('JHS AND SHS') || s.includes('7 TO 12') || s.includes('7-12')) {
+  } else if (s.includes('JHS WITH SHS') || s.includes('JHS AND SHS') || s.includes('JUNIOR HIGH AND SENIOR HIGH') || s.includes('JUNIOR HIGH & SENIOR HIGH') || (s.includes('JUNIOR') && s.includes('SENIOR')) || s.includes('7 TO 12') || s.includes('7-12')) {
     return ['JHS', 'SHS'];
-  } else if (s.includes('ALL OFFERING') || s.includes('K TO 12') || s.includes('K-12')) {
+  } else if (s.includes('ALL OFFERING') || s.includes('K TO 12') || s.includes('K-12') || s.includes('COMPREHENSIVE')) {
     return ['Elementary', 'JHS', 'SHS'];
   }
 
@@ -63,9 +50,10 @@ function parseCurricularOffering(rawOff) {
 }
 
 // GET school info with master identity resolution & local profile overlay
-router.get('/', async (req, res) => {
+const handleGetSchool = async (req, res) => {
   try {
-    const rawSchoolId = getSchoolIdFromRequest(req) || '199999';
+    const paramId = (req.params && req.params.schoolId && req.params.schoolId !== 'draft') ? req.params.schoolId : null;
+    const rawSchoolId = paramId || req.query.schoolId || req.query.school_id || req.headers['x-school-id'] || getSchoolIdFromRequest(req) || '199999';
     const cleanSchoolId = String(rawSchoolId).replace('SCH-', '').trim();
 
     let schoolName = `School ${cleanSchoolId}`;
@@ -85,23 +73,30 @@ router.get('/', async (req, res) => {
     let shsCurriculumModel = 'Standard K-12 SHS Curriculum';
     let specialPrograms = [];
 
-    // Special test school 199999 handling
-    if (cleanSchoolId === '199999') {
+    // Check 230 SDO and 7 MCOC archetype test accounts
+    const testDiv = resolveTestDivision(cleanSchoolId);
+    if (testDiv) {
+      schoolName = testDiv.schoolName || `${testDiv.division} DEMONSTRATION SCHOOL`;
+      region = testDiv.region || 'REGION V';
+      division = testDiv.division || 'DIVISION TEST';
+      district = testDiv.district || 'DIVISION DEMO DISTRICT';
+      rawMCOC = testDiv.mcoc || testDiv.curricularOffering || 'ALL OFFERING';
+    } else if (cleanSchoolId === '199999') {
       schoolName = 'TEST K-12 INTEGRATED SCHOOL';
       region = 'REGION V';
       division = 'ALBAY';
       district = 'DARAGA NORTH';
       rawMCOC = 'ALL OFFERING';
     } else {
-      // 1. Query master 2025-2026_SchoolID table (official DepEd 46k+ schools with accurate region, division, district, mcoc)
-      const schIdMatch = await insightEdPool.query(
-        `SELECT "schoool_id", "school_name", "region", "division", "district", "mcoc" 
-         FROM "2025-2026_SchoolID" WHERE "schoool_id" = $1 LIMIT 1`,
-        [parseInt(cleanSchoolId, 10) || -1]
+      // 1. Query live schools_iern table in users_database (Primary source of truth for live MCOC updates)
+      const usersIernMatch = await usersDbPool.query(
+        `SELECT school_id, school_name, region, division, district, mcoc, status 
+         FROM schools_iern WHERE school_id::text = $1 LIMIT 1`,
+        [cleanSchoolId]
       ).catch(() => ({ rows: [] }));
 
-      if (schIdMatch.rows.length > 0) {
-        const row = schIdMatch.rows[0];
+      if (usersIernMatch.rows.length > 0) {
+        const row = usersIernMatch.rows[0];
         if (row.school_name) schoolName = row.school_name;
         if (row.region) region = row.region;
         if (row.division) division = row.division;
@@ -109,22 +104,44 @@ router.get('/', async (req, res) => {
         if (row.mcoc) rawMCOC = row.mcoc;
       }
 
-      // 2. Query schools_IERN table in insightEd
-      const iernMatch = await insightEdPool.query(
-        `SELECT "SchoolID", "School_Name", "Region", "Division", "District", "Curricular_Offering" 
-         FROM "schools_IERN" WHERE "SchoolID" = $1 LIMIT 1`,
-        [cleanSchoolId]
-      ).catch(() => ({ rows: [] }));
+      // 2. Query master 2025-2026_SchoolID table (official DepEd 46k+ schools with accurate region, division, district, mcoc)
+      if (!rawMCOC || !schoolName || schoolName === `School ${cleanSchoolId}`) {
+        const schIdMatch = await insightEdPool.query(
+          `SELECT "schoool_id", "school_name", "region", "division", "district", "mcoc" 
+           FROM "2025-2026_SchoolID" WHERE "schoool_id" = $1 LIMIT 1`,
+          [parseInt(cleanSchoolId, 10) || -1]
+        ).catch(() => ({ rows: [] }));
 
-      if (iernMatch.rows.length > 0) {
-        const row = iernMatch.rows[0];
-        if (!schoolName || schoolName === `School ${cleanSchoolId}`) {
-          if (row.School_Name) schoolName = row.School_Name;
+        if (schIdMatch.rows.length > 0) {
+          const row = schIdMatch.rows[0];
+          if (!schoolName || schoolName === `School ${cleanSchoolId}`) {
+            if (row.school_name) schoolName = row.school_name;
+          }
+          if (!region && row.region) region = row.region;
+          if (!division && row.division) division = row.division;
+          if (!district && row.district) district = row.district;
+          if (!rawMCOC && row.mcoc) rawMCOC = row.mcoc;
         }
-        if (!region && row.Region && row.Region !== 'CENTRAL OFFICE') region = row.Region;
-        if (!division && row.Division && row.Division !== 'BHROD-SED') division = row.Division;
-        if (!district && row.District) district = row.District;
-        if (!rawMCOC && row.Curricular_Offering) rawMCOC = row.Curricular_Offering;
+      }
+
+      // 3. Query schools_IERN table in insightEd
+      if (!rawMCOC || !schoolName || schoolName === `School ${cleanSchoolId}`) {
+        const iernMatch = await insightEdPool.query(
+          `SELECT "SchoolID", "School_Name", "Region", "Division", "District", "Curricular_Offering" 
+           FROM "schools_IERN" WHERE "SchoolID" = $1 LIMIT 1`,
+          [cleanSchoolId]
+        ).catch(() => ({ rows: [] }));
+
+        if (iernMatch.rows.length > 0) {
+          const row = iernMatch.rows[0];
+          if (!schoolName || schoolName === `School ${cleanSchoolId}`) {
+            if (row.School_Name) schoolName = row.School_Name;
+          }
+          if (!region && row.Region && row.Region !== 'CENTRAL OFFICE') region = row.Region;
+          if (!division && row.Division && row.Division !== 'BHROD-SED') division = row.Division;
+          if (!district && row.District) district = row.District;
+          if (!rawMCOC && row.Curricular_Offering) rawMCOC = row.Curricular_Offering;
+        }
       }
 
       // 3. Query unit1_school_identity
@@ -327,13 +344,19 @@ router.get('/', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
 
-// GET /api/school/draft - Fetch cloud draft for the school
-router.get('/draft', async (req, res) => {
+const handleGetDraft = async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || '123456';
+    const rawSchoolId = req.query.school_id || req.query.schoolId || req.query.schoolID || req.headers['x-school-id'] || getSchoolIdFromRequest(req) || '123456';
+    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
     const schoolYear = req.query.schoolYear || 'SY 26-27';
+
+    const cacheKey = `draft:${schoolId}:${schoolYear}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
 
     const result = await db.query(
       'SELECT payload, updated_at FROM school_drafts WHERE school_id = $1 AND school_year = $2',
@@ -341,38 +364,269 @@ router.get('/draft', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.json({ payload: null, updatedAt: null });
+      const emptyRes = { payload: null, updatedAt: null };
+      await cacheService.set(cacheKey, emptyRes, 10);
+      return res.json(emptyRes);
     }
 
-    res.json({
+    const responseData = {
       payload: result.rows[0].payload,
       updatedAt: result.rows[0].updated_at
-    });
+    };
+    await cacheService.set(cacheKey, responseData, 15);
+    res.json(responseData);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
 
-// PUT / POST /api/school/draft - Upsert cloud draft for the school
+router.get('/draft', handleGetDraft);
+router.get('/', handleGetSchool);
+router.get('/:schoolId', handleGetSchool);
+
+// Background helper: Synchronize school and personnel node status from draft payload
+async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
+  try {
+    const schoolInfo = payload.schoolInfo || {};
+    const personnelList = Array.isArray(payload.personnel) ? payload.personnel : [];
+    const classSections = Array.isArray(payload.classSections) ? payload.classSections : [];
+    const journeyState = payload.journey_state || {};
+    const completedNodes = Array.isArray(journeyState.completedNodes) ? journeyState.completedNodes : [];
+
+    const node01School = {
+      status: completedNodes.includes('school') || schoolInfo.schoolName ? 'COMPLETED' : 'IN_PROGRESS',
+      completed_at: new Date().toISOString(),
+      school_name: schoolInfo.schoolName || `School ${schoolId}`,
+      region: schoolInfo.region || '',
+      division: schoolInfo.division || '',
+      district: schoolInfo.district || '',
+      curricular_offering: schoolInfo.curricularOffering || ['Elementary'],
+      number_of_shifts: schoolInfo.numberOfShifts || '1',
+      shs_curriculum_model: schoolInfo.shsCurriculumModel || 'Standard K-12 SHS Curriculum',
+      special_programs: schoolInfo.specialPrograms || []
+    };
+
+    const teachingCount = personnelList.filter(p => p.type === 'teaching').length;
+    const relatedCount = personnelList.filter(p => p.type === 'teaching-related' || p.positionCategory === 'RELATED TEACHING').length;
+    const nonTeachingCount = personnelList.filter(p => p.type === 'non-teaching').length;
+
+    const node02Roster = {
+      status: completedNodes.includes('roster') || personnelList.length > 0 ? 'COMPLETED' : 'IN_PROGRESS',
+      completed_at: new Date().toISOString(),
+      total_personnel: personnelList.length,
+      teaching: teachingCount,
+      related_teaching: relatedCount,
+      non_teaching: nonTeachingCount
+    };
+
+    const node05Requests = {
+      status: completedNodes.includes('requests') ? 'COMPLETED' : 'IN_PROGRESS',
+      completed_at: new Date().toISOString()
+    };
+
+    const node06Classes = {
+      status: completedNodes.includes('classes') || classSections.length > 0 ? 'COMPLETED' : 'IN_PROGRESS',
+      completed_at: new Date().toISOString(),
+      total_sections: classSections.length,
+      sections: classSections
+    };
+
+    const node10Overload = {
+      status: completedNodes.includes('overload') ? 'COMPLETED' : 'IN_PROGRESS',
+      completed_at: new Date().toISOString()
+    };
+
+    const node11Validation = {
+      status: completedNodes.includes('validation') ? 'COMPLETED' : 'IN_PROGRESS',
+      completed_at: new Date().toISOString(),
+      certified_by: schoolInfo.certifiedBy || null,
+      certified_at: schoolInfo.certifiedAt || null
+    };
+
+    let profilingDoneCount = 0;
+    let workloadDoneCount = 0;
+
+    for (const p of personnelList) {
+      const pId = String(p.id || p.prn || `PER-${schoolId}-${Math.random().toString(36).substring(2, 7)}`);
+      const pName = `${p.lastName || ''}, ${p.firstName || ''} ${p.middleName || ''}`.trim() || 'TEACHER';
+      const pPos = p.position || p.plantilla_position || p.position_title || '';
+      const pCat = p.type === 'teaching-related' || p.positionCategory === 'RELATED TEACHING' ? 'RELATED TEACHING' : (p.type === 'non-teaching' ? 'NON-TEACHING' : 'TEACHING');
+      const isHead = Boolean(p.isSchoolHead || p.is_school_head || String(pPos).toUpperCase().includes('PRINCIPAL'));
+
+      const hasEduc = p.collegeDegree || (Array.isArray(p.degreeRows) && p.degreeRows.length > 0) || (Array.isArray(p.collegeDegrees) && p.collegeDegrees.length > 0);
+      const hasLearningArea = (p.matrixData && Object.keys(p.matrixData).length > 0) || (p.learningAreaMap && Object.keys(p.learningAreaMap).length > 0);
+      const profDone = !p.isDraft && Boolean(hasEduc || hasLearningArea || p.personalVerified || p.workloadVerified);
+
+      const hasNoLoad = p.hasNoTeachingLoad === true || p.has_no_teaching_load === true;
+      const workDone = hasNoLoad || (Array.isArray(p.workloadRows) && p.workloadRows.length > 0);
+
+      if (profDone) profilingDoneCount++;
+      if (workDone) workloadDoneCount++;
+
+      const node03RoomQr = { status: p.roomQrSubmitted ? 'COMPLETED' : 'NOT_STARTED', completed_at: p.roomQrSubmittedAt || null };
+      const node04Profile = {
+        status: profDone ? 'COMPLETED' : 'IN_PROGRESS',
+        completed_at: new Date().toISOString(),
+        highest_educational_attainment: p.highestEducationalAttainment || p.highest_educational_attainment || '',
+        prc_license_no: p.prcLicenseNo || p.prc_license_no || '',
+        degrees: p.degreeRows || p.collegeDegrees || [],
+        learning_area_matrix: p.matrixData || p.learningAreaMap || {}
+      };
+      const node07Designation = {
+        status: Array.isArray(p.designations) && p.designations.length > 0 ? 'COMPLETED' : 'IN_PROGRESS',
+        designations: p.designations || []
+      };
+      const node08Workload = {
+        status: workDone ? 'COMPLETED' : 'IN_PROGRESS',
+        completed_at: new Date().toISOString(),
+        is_zero_teaching_load: Boolean(hasNoLoad),
+        workload_rows: p.workloadRows || []
+      };
+      const node09Allowances = { status: 'COMPLETED', uniform: true, cash: true };
+
+      await db.query(`
+        INSERT INTO esf7_personnel_node_status (
+          school_id, school_year, personnel_id, personnel_name, position_title, category, is_school_head, is_complete,
+          node_03_room_qr, node_04_profile, node_07_designation, node_08_workload, node_09_allowances, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        ON CONFLICT (school_id, school_year, personnel_id)
+        DO UPDATE SET
+          personnel_name = EXCLUDED.personnel_name,
+          position_title = EXCLUDED.position_title,
+          category = EXCLUDED.category,
+          is_school_head = EXCLUDED.is_school_head,
+          is_complete = EXCLUDED.is_complete,
+          node_03_room_qr = EXCLUDED.node_03_room_qr,
+          node_04_profile = EXCLUDED.node_04_profile,
+          node_07_designation = EXCLUDED.node_07_designation,
+          node_08_workload = EXCLUDED.node_08_workload,
+          node_09_allowances = EXCLUDED.node_09_allowances,
+          updated_at = NOW()
+      `, [
+        schoolId, schoolYear, pId, pName, pPos, pCat, isHead, (profDone && workDone),
+        JSON.stringify(node03RoomQr), JSON.stringify(node04Profile), JSON.stringify(node07Designation), JSON.stringify(node08Workload), JSON.stringify(node09Allowances)
+      ]).catch(() => {});
+    }
+
+    const allReady = personnelList.length > 0 && profilingDoneCount === personnelList.length && workloadDoneCount === personnelList.length;
+    const personnelSummary = {
+      total_personnel: personnelList.length,
+      teaching: teachingCount,
+      related_teaching: relatedCount,
+      non_teaching: nonTeachingCount,
+      profiling_completed: profilingDoneCount,
+      workload_completed: workloadDoneCount,
+      all_personnel_ready: allReady
+    };
+    const overallPct = Math.min(100, Math.round(((completedNodes.length + (allReady ? 2 : 0)) / 11) * 100));
+
+    await db.query(`
+      INSERT INTO esf7_school_node_status (
+        school_id, school_year, overall_status, overall_percentage,
+        node_01_school, node_02_roster, node_05_requests, node_06_classes, node_10_overload, node_11_validation,
+        personnel_summary, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      ON CONFLICT (school_id, school_year)
+      DO UPDATE SET
+        overall_status = EXCLUDED.overall_status,
+        overall_percentage = EXCLUDED.overall_percentage,
+        node_01_school = EXCLUDED.node_01_school,
+        node_02_roster = EXCLUDED.node_02_roster,
+        node_05_requests = EXCLUDED.node_05_requests,
+        node_06_classes = EXCLUDED.node_06_classes,
+        node_10_overload = EXCLUDED.node_10_overload,
+        node_11_validation = EXCLUDED.node_11_validation,
+        personnel_summary = EXCLUDED.personnel_summary,
+        updated_at = NOW()
+    `, [
+      schoolId, schoolYear, completedNodes.includes('validation') ? 'COMPLETED' : 'IN_PROGRESS', overallPct,
+      JSON.stringify(node01School), JSON.stringify(node02Roster), JSON.stringify(node05Requests), JSON.stringify(node06Classes), JSON.stringify(node10Overload), JSON.stringify(node11Validation),
+      JSON.stringify(personnelSummary)
+    ]).catch(() => {});
+
+  } catch (err) {
+    console.warn('[SyncDraftToNodeStatus Notice]:', err.message);
+  }
+}
+
+// In-Memory Staging & Coalescing Write Buffer for high-throughput draft persistence
+const pendingDbWrites = new Map();
+let isFlushingDbWrites = false;
+
+async function queueDraftDbPersistence(schoolId, schoolYear, payload, updatedAt) {
+  const writeKey = `${schoolId}:${schoolYear}`;
+  pendingDbWrites.set(writeKey, { schoolId, schoolYear, payload, updatedAt });
+
+  if (isFlushingDbWrites) return;
+  isFlushingDbWrites = true;
+
+  setImmediate(async () => {
+    while (pendingDbWrites.size > 0) {
+      const currentKeys = Array.from(pendingDbWrites.keys());
+      for (const key of currentKeys) {
+        const item = pendingDbWrites.get(key);
+        pendingDbWrites.delete(key);
+        if (!item) continue;
+
+        try {
+          let finalPayload = { ...item.payload };
+          if (Array.isArray(item.payload?.personnel) && item.payload.personnel.length === 0) {
+            const existingDraft = await db.query(
+              'SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2',
+              [item.schoolId, item.schoolYear]
+            ).catch(() => ({ rows: [] }));
+            if (existingDraft.rows.length > 0 && Array.isArray(existingDraft.rows[0].payload?.personnel) && existingDraft.rows[0].payload.personnel.length > 0) {
+              finalPayload.personnel = existingDraft.rows[0].payload.personnel;
+            }
+          }
+
+          await db.query(
+            `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (school_id, school_year)
+             DO UPDATE SET payload = $3, updated_at = $4`,
+            [item.schoolId, item.schoolYear, JSON.stringify(finalPayload), item.updatedAt]
+          );
+
+          syncDraftToNodeStatus(item.schoolId, item.schoolYear, finalPayload).catch(e => {
+            console.warn('[SyncDraftToNodeStatus Background Warning]:', e.message);
+          });
+        } catch (dbErr) {
+          console.error(`[Draft DB Persistence Error for ${key}]:`, dbErr.message);
+        }
+      }
+    }
+    isFlushingDbWrites = false;
+  });
+}
+
+// PUT / POST /api/school/draft - Upsert cloud draft for the school (Fast in-memory staged response)
 const handleSaveDraft = async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || '123456';
     const { payload, schoolYear = 'SY 26-27' } = req.body;
 
     if (!payload) {
       return res.status(400).json({ error: 'Missing draft payload' });
     }
 
-    const result = await db.query(
-      `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (school_id, school_year)
-       DO UPDATE SET payload = $3, updated_at = NOW()
-       RETURNING updated_at`,
-      [schoolId, schoolYear, JSON.stringify(payload)]
-    );
+    const explicitId = payload.schoolInfo && (payload.schoolInfo.schoolId || payload.schoolInfo.school_id);
+    const rawSchoolId = explicitId || req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '123456';
+    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
 
-    res.json({ success: true, updatedAt: result.rows[0].updated_at });
+    const updatedAt = new Date().toISOString();
+    const cacheKey = `draft:${schoolId}:${schoolYear}`;
+
+    // 1. Stage in fast Redis / in-memory cache immediately (< 1ms)
+    await cacheService.set(cacheKey, { payload, updatedAt }, 60);
+    cacheService.delPattern(`dashboard:stats:${schoolId}:*`).catch(() => {});
+
+    // 2. Queue coalesced asynchronous write to PostgreSQL in background
+    queueDraftDbPersistence(schoolId, schoolYear, payload, updatedAt);
+
+    // 3. Return fast 200 OK immediately
+    res.json({ success: true, updatedAt });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

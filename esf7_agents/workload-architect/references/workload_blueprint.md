@@ -97,6 +97,10 @@ Each row object inside `workloadRows` contains:
 
 ## 4. Versioned Flow History Log
 
+* **Version 1.6 (2026-09-15)**: Real-Time Clustered Teacher Ghost Sync & 60fps rAF Smoothing.
+  * Integrated PostgreSQL atomic ghost sync (`api.getClusteredGhostSlots` and `api.broadcastClusteredGhostSlots`) backed by `esf7_clustered_ghost_sync`.
+  * Wrapped incoming ghost slot state updates in `window.requestAnimationFrame()` to completely eliminate schedule blinking and layout thrashing across partner schools in PM2 clusters.
+  * Rendered non-editable Ghost Slot indicators in the Gantt grid and row lists with partner school attribution (`🔒 Occupied by [School Name]`).
 * **Version 1.5 (2026-09-08)**: Fixed Gantt Schedule Drag-and-Drop Loop & Re-Drag Bug.
   * Decoupled high-frequency mousemove events from persistent workload state mutations, eliminating continuous localStorage serialization and unneeded component re-renders during drags.
   * Maintained live drag positions (`currentStartMins`, `currentEndMins`, `currentDays`) in `dragState`, committing `updateWorkloadRowFields` strictly ONCE on `handleMouseUp`.

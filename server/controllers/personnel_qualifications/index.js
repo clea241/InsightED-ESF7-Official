@@ -3,6 +3,10 @@ const router = express.Router();
 const db = require('../../db');
 
 const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {}, highestAttainment = '') => {
+  let mastersWithUnits = [];
+  let mastersGraduated = [];
+  let doctorateWithUnits = [];
+  let doctorateGraduated = [];
   let masters = [];
   let doctorate = [];
 
@@ -22,25 +26,55 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
     return [];
   };
 
+  const attainmentStr = String(highestAttainment || '').toUpperCase();
+  const isDoc = attainmentStr.includes('DOCTOR');
+  const isWithUnits = attainmentStr.includes('WITH UNITS');
+
   if (rawDiscipline && typeof rawDiscipline === 'object' && !Array.isArray(rawDiscipline)) {
+    if (Array.isArray(rawDiscipline.mastersWithUnits)) mastersWithUnits = rawDiscipline.mastersWithUnits;
+    if (Array.isArray(rawDiscipline.mastersGraduated)) mastersGraduated = rawDiscipline.mastersGraduated;
+    if (Array.isArray(rawDiscipline.doctorateWithUnits)) doctorateWithUnits = rawDiscipline.doctorateWithUnits;
+    if (Array.isArray(rawDiscipline.doctorateGraduated)) doctorateGraduated = rawDiscipline.doctorateGraduated;
     if (Array.isArray(rawDiscipline.masters)) masters = rawDiscipline.masters;
     if (Array.isArray(rawDiscipline.doctorate)) doctorate = rawDiscipline.doctorate;
   } else if (typeof rawDiscipline === 'string' && rawDiscipline.trim().startsWith('{')) {
     try {
       const parsed = JSON.parse(rawDiscipline);
+      if (Array.isArray(parsed.mastersWithUnits)) mastersWithUnits = parsed.mastersWithUnits;
+      if (Array.isArray(parsed.mastersGraduated)) mastersGraduated = parsed.mastersGraduated;
+      if (Array.isArray(parsed.doctorateWithUnits)) doctorateWithUnits = parsed.doctorateWithUnits;
+      if (Array.isArray(parsed.doctorateGraduated)) doctorateGraduated = parsed.doctorateGraduated;
       if (Array.isArray(parsed.masters)) masters = parsed.masters;
       if (Array.isArray(parsed.doctorate)) doctorate = parsed.doctorate;
     } catch (e) {}
   } else if (rawDiscipline) {
     const list = extractList(rawDiscipline);
-    if (String(highestAttainment).toUpperCase().includes('DOCTOR')) {
+    if (isDoc) {
+      if (isWithUnits) doctorateWithUnits = list;
+      else doctorateGraduated = list;
       doctorate = list;
     } else {
+      if (isWithUnits) mastersWithUnits = list;
+      else mastersGraduated = list;
       masters = list;
     }
   }
 
   const combinedSource = { ...rawProfile, ...rawEduc };
+  if (mastersWithUnits.length === 0 && combinedSource.mastersWithUnitsDisciplines) {
+    mastersWithUnits = extractList(combinedSource.mastersWithUnitsDisciplines);
+  }
+  if (mastersGraduated.length === 0 && combinedSource.mastersGraduatedDisciplines) {
+    mastersGraduated = extractList(combinedSource.mastersGraduatedDisciplines);
+  }
+  if (doctorateWithUnits.length === 0 && combinedSource.doctorateWithUnitsDisciplines) {
+    doctorateWithUnits = extractList(combinedSource.doctorateWithUnitsDisciplines);
+  }
+  if (doctorateGraduated.length === 0 && combinedSource.doctorateGraduatedDisciplines) {
+    doctorateGraduated = extractList(combinedSource.doctorateGraduatedDisciplines);
+  }
+
+  // Fallback from legacy masters / doctorate
   if (masters.length === 0) {
     if (combinedSource.mastersDisciplines) {
       masters = extractList(combinedSource.mastersDisciplines);
@@ -48,7 +82,6 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
       masters = extractList(combinedSource.mastersDiscipline);
     }
   }
-
   if (doctorate.length === 0) {
     if (combinedSource.doctorateDisciplines) {
       doctorate = extractList(combinedSource.doctorateDisciplines);
@@ -57,26 +90,48 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
     }
   }
 
-  const degreeRows = combinedSource.degreeRows || [];
-  if (Array.isArray(degreeRows)) {
-    for (const d of degreeRows) {
-      const lvl = String(d.level || '').toUpperCase();
-      const dList = extractList(d.postGraduateDiscipline || d.discipline || d.disciplines);
-      if (lvl === 'MASTERS' && masters.length === 0) masters.push(...dList);
-      if (lvl === 'DOCTORATE' && doctorate.length === 0) doctorate.push(...dList);
-    }
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && masters.length > 0) {
+    if (isWithUnits && !isDoc) mastersWithUnits = [...masters];
+    else mastersGraduated = [...masters];
+  }
+  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && doctorate.length > 0) {
+    if (isWithUnits && isDoc) doctorateWithUnits = [...doctorate];
+    else doctorateGraduated = [...doctorate];
   }
 
-  masters = [...new Set(masters.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
-  doctorate = [...new Set(doctorate.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  const allMasters = [...new Set([...mastersWithUnits, ...mastersGraduated, ...masters].map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  const allDoctorate = [...new Set([...doctorateWithUnits, ...doctorateGraduated, ...doctorate].map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+
+  mastersWithUnits = [...new Set(mastersWithUnits.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  mastersGraduated = [...new Set(mastersGraduated.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorateWithUnits = [...new Set(doctorateWithUnits.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorateGraduated = [...new Set(doctorateGraduated.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
 
   return {
-    masters,
-    doctorate,
-    mastersDiscipline: masters.join(', '),
-    doctorateDiscipline: doctorate.join(', '),
-    jsonString: JSON.stringify({ masters, doctorate }),
-    rawObject: { masters, doctorate }
+    mastersWithUnits,
+    mastersGraduated,
+    doctorateWithUnits,
+    doctorateGraduated,
+    masters: allMasters,
+    doctorate: allDoctorate,
+    mastersDiscipline: allMasters.join(', '),
+    doctorateDiscipline: allDoctorate.join(', '),
+    jsonString: JSON.stringify({
+      mastersWithUnits,
+      mastersGraduated,
+      doctorateWithUnits,
+      doctorateGraduated,
+      masters: allMasters,
+      doctorate: allDoctorate
+    }),
+    rawObject: {
+      mastersWithUnits,
+      mastersGraduated,
+      doctorateWithUnits,
+      doctorateGraduated,
+      masters: allMasters,
+      doctorate: allDoctorate
+    }
   };
 };
 
@@ -91,6 +146,24 @@ function formatEducRecord(row) {
     raw,
     row.highest_educational_attainment
   );
+
+  let rawDegrees = [];
+  if (Array.isArray(row.college_degrees)) {
+    rawDegrees = row.college_degrees;
+  } else if (typeof row.college_degrees === 'string') {
+    try {
+      const p = JSON.parse(row.college_degrees);
+      if (Array.isArray(p)) rawDegrees = p;
+    } catch (e) {}
+  } else if (Array.isArray(raw.collegeDegrees || raw.college_degrees)) {
+    rawDegrees = raw.collegeDegrees || raw.college_degrees;
+  } else if (row.college_degree) {
+    rawDegrees = [{
+      collegeDegree: row.college_degree,
+      major: row.major || '',
+      minor: row.minor || ''
+    }];
+  }
 
   return {
     ...raw,
@@ -107,12 +180,18 @@ function formatEducRecord(row) {
     vocational_level: row.vocational_level || '',
     collegeDegree: row.college_degree || '',
     college_degree: row.college_degree || '',
+    collegeDegrees: rawDegrees,
+    college_degrees: rawDegrees,
     major: row.major || '',
     minor: row.minor || '',
     postGraduateDegree: row.post_graduate_degree || 'N/A',
     post_graduate_degree: row.post_graduate_degree || 'N/A',
     postGraduateDiscipline: parsedPostDisc.jsonString,
     post_graduate_discipline: parsedPostDisc.jsonString,
+    mastersWithUnitsDisciplines: parsedPostDisc.mastersWithUnits,
+    mastersGraduatedDisciplines: parsedPostDisc.mastersGraduated,
+    doctorateWithUnitsDisciplines: parsedPostDisc.doctorateWithUnits,
+    doctorateGraduatedDisciplines: parsedPostDisc.doctorateGraduated,
     mastersDiscipline: parsedPostDisc.mastersDiscipline,
     mastersDisciplines: parsedPostDisc.masters,
     doctorateDiscipline: parsedPostDisc.doctorateDiscipline,
@@ -151,6 +230,7 @@ router.post('/:personnel_id', async (req, res) => {
       vocational_course, vocationalCourse,
       vocational_level, vocationalLevel,
       college_degree, collegeDegree, major, minor,
+      college_degrees, collegeDegrees,
       post_graduate_degree, postGraduateDegree,
       post_graduate_discipline, postGraduateDiscipline, postGraduateDisciplineCustom,
       eligibility, prc_specialization, prcSpecialization
@@ -173,9 +253,33 @@ router.post('/:personnel_id', async (req, res) => {
     const eduShsTrack = (shs_track || shsTrack || '').toUpperCase() || null;
     const eduVocationalCourse = (vocational_course || vocationalCourse || '').toUpperCase() || null;
     const eduVocationalLevel = (vocational_level || vocationalLevel || '').toUpperCase() || null;
-    const degree = (college_degree || collegeDegree || '').toUpperCase() || null;
-    const maj = (major || '').toUpperCase();
-    const min = (minor || '').toUpperCase();
+    let degree = (college_degree || collegeDegree || '').toUpperCase() || null;
+    let maj = (major || '').toUpperCase();
+    let min = (minor || '').toUpperCase();
+
+    const rawCollegeDegrees = college_degrees || collegeDegrees;
+    let eduCollegeDegrees = [];
+    if (Array.isArray(rawCollegeDegrees)) {
+      eduCollegeDegrees = rawCollegeDegrees
+        .filter(d => d && (d.collegeDegree || d.college_degree))
+        .map(d => ({
+          collegeDegree: (d.collegeDegree || d.college_degree || '').trim().toUpperCase(),
+          major: (d.major || '').trim().toUpperCase(),
+          minor: (d.minor || '').trim().toUpperCase()
+        }));
+    }
+    if (eduCollegeDegrees.length > 0) {
+      degree = eduCollegeDegrees[0].collegeDegree || degree;
+      maj = eduCollegeDegrees[0].major || maj;
+      min = eduCollegeDegrees[0].minor || min;
+    } else if (degree) {
+      eduCollegeDegrees = [{
+        collegeDegree: degree,
+        major: maj || '',
+        minor: min || ''
+      }];
+    }
+
     const postDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
     
     const parsedPostDisc = parsePostGraduateDiscipline(
@@ -199,16 +303,17 @@ router.post('/:personnel_id', async (req, res) => {
     const query = `
       INSERT INTO esf7_perssonel_educ (
         id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
-        college_degree, major, minor, post_graduate_degree,
+        college_degree, college_degrees, major, minor, post_graduate_degree,
         post_graduate_discipline, eligibility, prc_specialization, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
       ON CONFLICT (personnel_id) DO UPDATE SET
         highest_educational_attainment = EXCLUDED.highest_educational_attainment,
         shs_track = EXCLUDED.shs_track,
         vocational_course = EXCLUDED.vocational_course,
         vocational_level = EXCLUDED.vocational_level,
         college_degree = EXCLUDED.college_degree,
+        college_degrees = EXCLUDED.college_degrees,
         major = EXCLUDED.major,
         minor = EXCLUDED.minor,
         post_graduate_degree = EXCLUDED.post_graduate_degree,
@@ -228,6 +333,7 @@ router.post('/:personnel_id', async (req, res) => {
       eduVocationalCourse,
       eduVocationalLevel,
       degree,
+      JSON.stringify(eduCollegeDegrees),
       maj || null,
       min || null,
       postDeg,

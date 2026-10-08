@@ -1,4 +1,11 @@
-# ESF7 Domain Knowledge & Terminology
+## 🚨 CRITICAL RULE #1: DATABASE INTEGRITY & STRICT ISOLATION
+1. **NEVER TOUCH, QUERY, TRUNCATE, OR MODIFY OTHER DATABASES IN THE CLUSTER**:
+   - All operations are strictly isolated to `insighted_esf7`.
+   - **NEVER** touch, truncate, drop, or alter other databases (`insightEd`, `STRIDE`, `OpDash`, `AGAP`, `dpa_database`, `hq_database`, `tlo_database`, `siif_database`, `users_database`, `chat_database`, `cloud_database`, `gmis_items`, `Infra_Database`, etc.).
+2. **NEVER TOUCH, DROP, TRUNCATE, OR MODIFY `esf7_database` TABLE**:
+   - `esf7_database` contains mission-critical official/historical production data and MUST NEVER be dropped, truncated, or overwritten during testing, resets, or migrations under any circumstance.
+3. **NEVER TRUNCATE SALARY MATRIX**:
+   - `salary_matrix` / `esf7_salary_matrix` contains standard DepEd salary grades/steps and must always be preserved.
 
 ## Core Concepts
 - **ESF7 (Electronic School Form 7)**: Department of Education (DepEd) School Personnel Assignment List and Basic Profile.
@@ -10,15 +17,95 @@
 - Client: React with Vite/Webpack, Topbar, Blueprint backgrounds, Custom CSS modules.
 - Server: Node.js Express server running background jobs, worker threads for report processing, PostgreSQL / SQLite database controllers.
 
+### Added 2026-10-01 (Personnel Profiling 100% Completion Percentage Audit & Persistence)
+- **Root Cause of 75% Drop**:
+  - `stepIncrementConfirmed`: Was stored as an ephemeral UI flag without being returned by `formatPersonnel` on reload, causing step validation to fail after saving.
+  - `lastPromotionDate` & `lastLateralMovementDate` & `newStationDate`: In PostgreSQL, `DATE` columns store `null` when a user marks `"N/A"` (e.g., newly appointed or no lateral movement). On reload, `null` caused strict `!!p.lastPromotionDate` / `!!p.lastLateralMovementDate` checks to fail validation.
+  - `hasTrainings`: Spreadsheets and entry-level profiles have 0 initial seminars; requiring `> 0` training rows docked points from teachers who had completed all core plantilla and educational requirements.
+- **Resolution**:
+  - `getPersonnelValidationChecklist`:
+    - Gracefully treats `lastPromotionDate` as valid if explicitly set, `'N/A'`, or backed by `firstServiceDate`.
+    - Treats `lastLateralMovementDate` as valid (optional in DepEd plantilla).
+    - Defaults `newStationDate` to `firstServiceDate` when not transferring stations.
+    - Confirms `stepIncrementConfirmed` if step increment (1–8) is set.
+    - Evaluates L&D trainings only when training rows exist (verifies non-zero hours without penalizing empty seminar histories).
+  - Server `formatPersonnel` and `fetchMasterPersonnelFromInsightEd`: Return `stepIncrementConfirmed: true` and appropriate default date strings (`'N/A'`) instead of raw nulls.
+
+### Added 2026-10-01 (COOK Non-Teaching Position & SBFP Fund Source Exclusivity)
+- **Position: `COOK`**:
+  - Position category: **`NON-TEACHING`**.
+  - Selecting `COOK` **AUTOMATICALLY** defaults:
+    - **Nature of Appointment**: `CONTRACTUAL`
+    - **Hiring Arrangement**: `CONTRACTUAL`
+    - **Fund Source**: `SBFP` (School-Based Feeding Program)
+  - **`SBFP` Fund Source Scope**:
+    - **`SBFP`** is **ONLY visible / selectable** in the Fund Source dropdown when the position is **`COOK`**.
+    - For all other positions (Teaching, Teaching-Related, and other Non-Teaching positions), `SBFP` is completely excluded / hidden.
+    - If a user changes position away from `COOK`, the system automatically resets the Fund Source to `NATIONAL` if it was previously set to `SBFP`.
+  - Fully integrated across `PersonnelProfile.jsx`, `RoomProfiling.jsx`, `Roster.jsx`, and `AppContext.jsx`.
+
+### Added 2026-10-01 (DepEd Email N/A Issuance & `no_deped_email` Boolean Column)
+- **DepEd Email N/A Issuance Support**:
+  - Staff awaiting division ITO Google Workspace issuance or non-issued personnel can check `"No DepEd email issued / Pending ITO Issuance (N/A)"`.
+  - Stored in `esf7_personnel_profile` as `no_deped_email BOOLEAN NOT NULL DEFAULT FALSE` and `deped_email = 'N/A'`.
+  - Validates 100% complete in `getPersonnelValidationChecklist` and Room QR validation without raising validation errors.
+  - Handled seamlessly across database migrations, Express controllers (`INSERT`/`UPDATE`/`SELECT`), Queue Worker ingestion batches, and frontend UI in `PersonnelProfile.jsx`, `RoomProfiling.jsx`, `RoomQR.jsx`, and `Roster.jsx`.
+
+### Added 2026-09-28 (DepEd 230 SDO Division Test Accounts & Staging Database Isolation)
+- **1 Division = 1 Dedicated Account (`900001` - `900230`)**:
+  - All 230 DepEd Schools Division Offices (SDO) in the country are provisioned with an isolated test account.
+  - Standard login format: `<region_slug>.<division_slug>.test` (e.g. `rcar.benguet.test`, `r5.naga.test`, `r7.naga.test`, `rncr.pasig.test`).
+  - **With and Without "City" Interchangeability**: Both `rncr.pasig.test` and `rncr.pasigcity.test`, `r7.naga.test` and `r7.nagacity.test`, `rcar.baguio.test` and `rcar.baguiocity.test` resolve to the exact same division demo school.
+  - **Region-Scoped Disambiguation**: Shared names across regions are disambiguated by region slug (`r1.sanfernando.test` vs `r3.sanfernando.test`, `r1.sancarlos.test` vs `r6.sancarlos.test`, `r12.cotabato.test` vs `rbarmm.cotabato.test`).
+- **7 MCOC Archetype Accounts (`900223` - `900229`)**:
+  - `900223` / `mcoc.elem.test` / `mcoc.es.test`: Purely Elementary (SSES)
+  - `900224` / `mcoc.jhs.test`: Purely Junior High School (SPA, SPJ, STE)
+  - `900225` / `mcoc.shs.test`: Purely Senior High School (Standard K-12 Model)
+  - `900226` / `mcoc.integrated.test` / `mcoc.is.test`: Integrated School (K-10)
+  - `900227` / `mcoc.multigrade.test` / `mcoc.mg.test`: Multigrade Elementary (MG ES)
+  - `900228` / `mcoc.k12.test` / `mcoc.complete.test`: Comprehensive K-12 (All Offerings)
+  - `900229` / `mcoc.inclusive.test` / `mcoc.sned.test`: Special Inclusive Education (SNED/ALS/ARAL)
+- **Universal Test Password / Passcode**:
+  - `123456` works across all 230 SDO test accounts and all 7 MCOC archetype accounts.
+- **🚨 Strict Dual-Pool Database Isolation**:
+  - All test accounts (`900xxx`, `800xxx`, `199xxx`, `divtest-*`, `pilot-*`, `*.test`) route strictly to `insighted_esf7_staging` (`getPoolForSchool`).
+  - Live official DepEd schools route to `insighted_esf7`.
+  - Zero cross-pollution between staging and production.
+
+### Added 2026-09-16 (Private 3-Factor Room QR Profiling & Roster Birthdate Integration)
+- **Zero-Roster Leakage on Mobile Scanning**:
+  - Scanning the Faculty Room QR poster on mobile (`client/src/pages/RoomProfiling.jsx`) strictly eliminates public teacher dropdowns and pre-loaded roster names.
+  - **2-Step Sequential 3-Factor Verification**:
+    - **Step 1 (Passcode Verification)**: Teacher enters **ONLY** their 8-character dynamic TOTP passcode (`get10MinPasscode(teacher)` with 10-minute rotation). If valid for this school, advances to Step 2.
+    - **Step 2 (Identity Confirmation)**: Teacher confirms their **Last Name** (exact normalized match) and **Birth Year** (4-digit year, e.g. `1994`). On match, unlocks **only their individual profile form**.
+  - **3-Attempt Limit & 10-Minute Lockout**:
+    - 3 consecutive failed attempts (in Step 1 or Step 2) temporarily disables entry for 10 minutes (`room_profiling_lockout_until` in `localStorage`) with a live countdown timer.
+- **Roster Add Personnel Birthdate Capture**:
+  - `client/src/pages/Roster.jsx` "Add Personnel" modal captures `birthdate` (DATE) at creation time alongside Name and Position so `birthYear` is guaranteed present for Room QR authentication.
+- **School Head Master Passcode Gate (`RoomQR.jsx`)**:
+  - Opening the School Head's Room QR tab requires master passcode verification before revealing teacher passcodes and live draft merge queues.
+
+### Added 2026-09-16 (Post-Graduate Educational Attainment & Plantilla Positions)
+- **Educational Attainment - Post-Graduate Options**:
+  - `MASTER'S DEGREE`: Clean primary attainment with discipline-level `[GRADUATED]` or `[WITH UNITS]` status.
+  - `DOCTORATE DEGREE`: Clean primary attainment with discipline-level `[GRADUATED]` or `[WITH UNITS]` status.
+  - Multi-discipline tags are fully supported for both *WITH UNITS* and *GRADUATED* post-graduate levels.
+  - Multi-college degrees supported via `college_degrees JSONB` with mandatory conditional Major in Education.
+- **Plantilla Positions**:
+  - `LEARNER SUPPORT AIDE` and `MASTER TEACHER V` are classified under **TEACHING** personnel.
+  - Removed `LEARNING SUPPORT AIDE`.
+
 ### Added 2026-09-15 (Reassigned vs Clustered Personnel Inter-School Architecture)
 - **Reassigned Personnel vs Clustered Personnel Rules**:
-  - **1. Reassigned Personnel (`request_type === 'reassigned_teacher'`)**:
+  - **1. Reassigned & Borrowed Personnel (`request_type === 'reassigned_teacher' | 'borrowed_teacher'`)**:
     - **Mother School** (`requester_school_id` / Original Plantilla School):
-      - Holds the **FULL profile / appointment / personal information** of the personnel.
+      - Holds the permanent government appointment / Plantilla item of the personnel.
       - Has **ZERO WORKLOAD (`workloadRows: []`, 0 teaching minutes)** in Mother School.
+      - Automatically valid for 100% eSF7 completion with 0 load.
     - **Receiving / Host School B** (`target_school_id`):
-      - Holds the **FULL WORKLOAD** (all class programs, timetable slots, sections).
-      - Has minimal profile info (`isShared: true`, Name, PRN, Position).
+      - Holds the **FULL profile / appointment / personal information** and **100% of the teaching workload**.
+      - **EDITING & STATUS RULE**: `BORROWED` status can be automatically triggered via incoming Inter-School Requests and is also selectable in deployment status. `BORROWED` personnel are **NOT locked or read-only**—the host school retains full editing capability across all profile fields, qualifications, and workloads.
+      - **Faculty Room QR**: The teacher is stationed at School B and completes self-profiling via **School B's Faculty Room QR Poster & Passcode Portal**.
     - **Overlap Rule**: Reassigned personnel **NEVER** have schedule conflicts across schools because Mother School assigns 0 workload rows.
   - **2. Clustered Personnel (`request_type === 'clustered_teacher'`)**:
     - The **ONLY** personnel category that has **ACTIVE WORKLOAD in BOTH School A (Mother School) and School B (Host School)**.
@@ -390,4 +477,23 @@
 - **Database Schema Core (21 Tables)**:
   - Alphanumeric String IDs (`VARCHAR(50)`) across all relational entities, with `salary_matrix` and `esf7_submission_queue` utilizing auto-incrementing serial PKs.
   - Mandatory `raw_payload JSONB` on all entity tables ensuring lossless payload retention and zero frontend drift.
-  - Full relational cascade constraints (`ON DELETE CASCADE` / `ON DELETE SET NULL`) linking personnel profile children, class sections, and overload deduction logs.
+  - Full relational cascade constraints (`ON DELETE CASCADE` / `ON DELETE SET NULL`) linking personnel profile children, class sections, and overload deduction logs.
+
+### Added 2026-09-15: Atomic Clustered Ghost Sync & PM2 Multi-Worker Coordination
+- **PM2 Multi-Worker Concurrency Challenge**:
+  - In staging/production, backend instances run in cluster mode (`instances: 2` or `max`).
+  - In-memory data structures (like `Map` or local variables) in Express controllers cause desynchronization between Worker 0 and Worker 1, resulting in oscillating "blinking" ghost schedules.
+- **PostgreSQL Atomic Ghost Sync Table (`esf7_clustered_ghost_sync`)**:
+  - Schema:
+    - `room_key VARCHAR(255) PRIMARY KEY`
+    - `school_id VARCHAR(50)`
+    - `school_name VARCHAR(255)`
+    - `slots JSONB NOT NULL DEFAULT '[]'`
+    - `updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`
+  - Persistence Pattern: `INSERT INTO esf7_clustered_ghost_sync (room_key, school_id, school_name, slots, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (room_key) DO UPDATE SET slots = EXCLUDED.slots, school_id = EXCLUDED.school_id, school_name = EXCLUDED.school_name, updated_at = NOW()`
+- **UI 60fps RequestAnimationFrame Rendering (`Workload.jsx`)**:
+  - Real-time ghost schedule polling updates are batched inside `requestAnimationFrame` before triggering React state setters, preventing layout thrashing and UI jitter when co-editing timetables across partner schools.
+- **Sub-Path Routing & Media Asset Deployment Protocol**:
+  - All staging API requests route through `API_BASE` (`/insighted-esf7-staging/api`).
+  - All static media (GIFs, PNGs, badges) must use `import.meta.env.BASE_URL` paths.
+  - Staging deployment script (`deploy_esf7_staging.py`) automatically synchronizes media assets from root and client public directories to both `/mnt/insighted-esf7-staging/client/dist` and `/mnt/insighted-esf7-staging/dist`.

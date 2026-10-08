@@ -40,13 +40,15 @@ const LoadingScreen = ({ message = "Loading InsightED eSF7 Database...", inline 
                 }
             `}</style>
 
-            {/* InsightED Animated Logo GIF (Balanced 3.2s Loop) */}
+            {/* Official InsightED Animated Logo GIF */}
             <div style={{ 
                 animation: 'logoSmoothPulse 3.2s infinite ease-in-out',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                position: 'relative',
+                zIndex: 10
             }}>
                 <img 
                     key={loopKey}
@@ -73,7 +75,9 @@ const LoadingScreen = ({ message = "Loading InsightED eSF7 Database...", inline 
                     backdropFilter: 'blur(8px)',
                     border: '1px solid #E2E8F0',
                     borderRadius: '24px',
-                    boxShadow: '0 4px 14px rgba(8, 49, 95, 0.06)'
+                    boxShadow: '0 4px 14px rgba(8, 49, 95, 0.06)',
+                    position: 'relative',
+                    zIndex: 10
                 }}>
                     <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981', boxShadow: '0 0 8px #10B981' }} />
                     <span style={{ 

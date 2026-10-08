@@ -3,22 +3,8 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const db = require('../../db');
+const { insightEdPool } = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
-const { Pool } = require('pg');
-require('dotenv').config();
-
-const poolString = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
-  : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
-
-const insightEdPool = new Pool({
-  connectionString: poolString,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-});
-
-insightEdPool.on('error', (err) => {
-  console.error('[Personnel DB Pool Error]:', err.message);
-});
 
 const MONTH_NAME_MAP = {
   'JANUARY': '01', 'FEBRUARY': '02', 'MARCH': '03', 'APRIL': '04',
@@ -35,6 +21,10 @@ const parseDateFromParts = (yyyy, mmName, dd) => {
 };
 
 const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {}, highestAttainment = '') => {
+  let mastersWithUnits = [];
+  let mastersGraduated = [];
+  let doctorateWithUnits = [];
+  let doctorateGraduated = [];
   let masters = [];
   let doctorate = [];
 
@@ -54,25 +44,55 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
     return [];
   };
 
+  const attainmentStr = String(highestAttainment || '').toUpperCase();
+  const isDoc = attainmentStr.includes('DOCTOR');
+  const isWithUnits = attainmentStr.includes('WITH UNITS');
+
   if (rawDiscipline && typeof rawDiscipline === 'object' && !Array.isArray(rawDiscipline)) {
+    if (Array.isArray(rawDiscipline.mastersWithUnits)) mastersWithUnits = rawDiscipline.mastersWithUnits;
+    if (Array.isArray(rawDiscipline.mastersGraduated)) mastersGraduated = rawDiscipline.mastersGraduated;
+    if (Array.isArray(rawDiscipline.doctorateWithUnits)) doctorateWithUnits = rawDiscipline.doctorateWithUnits;
+    if (Array.isArray(rawDiscipline.doctorateGraduated)) doctorateGraduated = rawDiscipline.doctorateGraduated;
     if (Array.isArray(rawDiscipline.masters)) masters = rawDiscipline.masters;
     if (Array.isArray(rawDiscipline.doctorate)) doctorate = rawDiscipline.doctorate;
   } else if (typeof rawDiscipline === 'string' && rawDiscipline.trim().startsWith('{')) {
     try {
       const parsed = JSON.parse(rawDiscipline);
+      if (Array.isArray(parsed.mastersWithUnits)) mastersWithUnits = parsed.mastersWithUnits;
+      if (Array.isArray(parsed.mastersGraduated)) mastersGraduated = parsed.mastersGraduated;
+      if (Array.isArray(parsed.doctorateWithUnits)) doctorateWithUnits = parsed.doctorateWithUnits;
+      if (Array.isArray(parsed.doctorateGraduated)) doctorateGraduated = parsed.doctorateGraduated;
       if (Array.isArray(parsed.masters)) masters = parsed.masters;
       if (Array.isArray(parsed.doctorate)) doctorate = parsed.doctorate;
     } catch (e) {}
   } else if (rawDiscipline) {
     const list = extractList(rawDiscipline);
-    if (String(highestAttainment).toUpperCase().includes('DOCTOR')) {
+    if (isDoc) {
+      if (isWithUnits) doctorateWithUnits = list;
+      else doctorateGraduated = list;
       doctorate = list;
     } else {
+      if (isWithUnits) mastersWithUnits = list;
+      else mastersGraduated = list;
       masters = list;
     }
   }
 
   const combinedSource = { ...rawProfile, ...rawEduc };
+  if (mastersWithUnits.length === 0 && combinedSource.mastersWithUnitsDisciplines) {
+    mastersWithUnits = extractList(combinedSource.mastersWithUnitsDisciplines);
+  }
+  if (mastersGraduated.length === 0 && combinedSource.mastersGraduatedDisciplines) {
+    mastersGraduated = extractList(combinedSource.mastersGraduatedDisciplines);
+  }
+  if (doctorateWithUnits.length === 0 && combinedSource.doctorateWithUnitsDisciplines) {
+    doctorateWithUnits = extractList(combinedSource.doctorateWithUnitsDisciplines);
+  }
+  if (doctorateGraduated.length === 0 && combinedSource.doctorateGraduatedDisciplines) {
+    doctorateGraduated = extractList(combinedSource.doctorateGraduatedDisciplines);
+  }
+
+  // Fallback from legacy masters / doctorate
   if (masters.length === 0) {
     if (combinedSource.mastersDisciplines) {
       masters = extractList(combinedSource.mastersDisciplines);
@@ -80,7 +100,6 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
       masters = extractList(combinedSource.mastersDiscipline);
     }
   }
-
   if (doctorate.length === 0) {
     if (combinedSource.doctorateDisciplines) {
       doctorate = extractList(combinedSource.doctorateDisciplines);
@@ -89,26 +108,48 @@ const parsePostGraduateDiscipline = (rawDiscipline, rawEduc = {}, rawProfile = {
     }
   }
 
-  const degreeRows = combinedSource.degreeRows || [];
-  if (Array.isArray(degreeRows)) {
-    for (const d of degreeRows) {
-      const lvl = String(d.level || '').toUpperCase();
-      const dList = extractList(d.postGraduateDiscipline || d.discipline || d.disciplines);
-      if (lvl === 'MASTERS' && masters.length === 0) masters.push(...dList);
-      if (lvl === 'DOCTORATE' && doctorate.length === 0) doctorate.push(...dList);
-    }
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && masters.length > 0) {
+    if (isWithUnits && !isDoc) mastersWithUnits = [...masters];
+    else mastersGraduated = [...masters];
+  }
+  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && doctorate.length > 0) {
+    if (isWithUnits && isDoc) doctorateWithUnits = [...doctorate];
+    else doctorateGraduated = [...doctorate];
   }
 
-  masters = [...new Set(masters.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
-  doctorate = [...new Set(doctorate.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  const allMasters = [...new Set([...mastersWithUnits, ...mastersGraduated, ...masters].map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  const allDoctorate = [...new Set([...doctorateWithUnits, ...doctorateGraduated, ...doctorate].map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+
+  mastersWithUnits = [...new Set(mastersWithUnits.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  mastersGraduated = [...new Set(mastersGraduated.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorateWithUnits = [...new Set(doctorateWithUnits.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+  doctorateGraduated = [...new Set(doctorateGraduated.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
 
   return {
-    masters,
-    doctorate,
-    mastersDiscipline: masters.join(', '),
-    doctorateDiscipline: doctorate.join(', '),
-    jsonString: JSON.stringify({ masters, doctorate }),
-    rawObject: { masters, doctorate }
+    mastersWithUnits,
+    mastersGraduated,
+    doctorateWithUnits,
+    doctorateGraduated,
+    masters: allMasters,
+    doctorate: allDoctorate,
+    mastersDiscipline: allMasters.join(', '),
+    doctorateDiscipline: allDoctorate.join(', '),
+    jsonString: JSON.stringify({
+      mastersWithUnits,
+      mastersGraduated,
+      doctorateWithUnits,
+      doctorateGraduated,
+      masters: allMasters,
+      doctorate: allDoctorate
+    }),
+    rawObject: {
+      mastersWithUnits,
+      mastersGraduated,
+      doctorateWithUnits,
+      doctorateGraduated,
+      masters: allMasters,
+      doctorate: allDoctorate
+    }
   };
 };
 
@@ -120,7 +161,11 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
   // 1. Filter out delivery modes / section types that are NOT grade levels
   if (
     upper.includes('MULTI-GRADE') || upper.includes('MULTIGRADE') || upper.includes('MULTI GRADE') ||
-    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE')
+    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE') ||
+    upper.includes('PHIL-IRI') || upper.includes('PHIL IRI') ||
+    upper.includes('CRLA') || upper.includes('RMA') ||
+    upper === 'ARAL' || upper.startsWith('ARAL ') ||
+    upper.includes('INDEPENDENT') || upper.includes('INSTRUCTIONAL') || upper.includes('FRUSTRATION')
   ) {
     if (secName) {
       const secMatch = String(secName).match(/(?:Grade\s*|G)(\d{1,2})/i);
@@ -133,7 +178,7 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
   }
 
   // 2. Handle Kinder / Kindergarten / Grade KINDER
-  if (upper.includes('KINDER')) {
+  if (upper.includes('KINDER') || upper === 'K') {
     return 'Kinder';
   }
 
@@ -141,10 +186,10 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
   if (upper === 'SNED' || upper === 'SPED' || upper === 'NON-GRADED' || upper === 'NON GRADED' || upper.includes('SNED') || upper.includes('NON-GRADED') || upper.includes('NON GRADED')) {
     return 'SNED (NON-GRADED)';
   }
-  if (upper === 'ALS') return 'ALS';
+  if (upper === 'ALS' || upper.startsWith('ALS-') || upper.startsWith('ALS ')) return 'ALS';
 
   // 4. Handle Numeric e.g. "7", "G7", "Grade 7"
-  const numMatch = str.match(/(?:Grade\s*|G|^)(\d{1,2})$/i) || str.match(/(\d{1,2})/);
+  const numMatch = str.match(/^(?:Grade\s*|G\s*)?(\d{1,2})$/i);
   if (numMatch) {
     const num = parseInt(numMatch[1], 10);
     if (num >= 1 && num <= 12) {
@@ -157,10 +202,15 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
     if (rest.toUpperCase().includes('KINDER')) return 'Kinder';
     if (rest.toUpperCase().includes('MULTI') || rest.toUpperCase().includes('MONO')) return null;
     if (rest.toUpperCase().includes('SNED') || rest.toUpperCase().includes('NON-GRADED') || rest.toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
-    return `Grade ${rest}`;
+    const subMatch = rest.match(/^(\d{1,2})$/);
+    if (subMatch) {
+      const num = parseInt(subMatch[1], 10);
+      if (num >= 1 && num <= 12) return `Grade ${num}`;
+    }
+    return null;
   }
 
-  return str || null;
+  return null;
 };
 
 const sanitizeGradeArray = (arr) => {
@@ -232,6 +282,7 @@ const CANONICAL_POSITIONS_BY_CATEGORY = {
     "SPECIAL SCIENCE TEACHER I", "SPECIAL SCIENCE TEACHER II", "SPECIAL SCIENCE TEACHER III",
     "SPECIAL SCIENCE TEACHER IV", "SPECIAL SCIENCE TEACHER V",
     "MASTER TEACHER I", "MASTER TEACHER II", "MASTER TEACHER III", "MASTER TEACHER IV",
+    "MASTER TEACHER V", "LEARNER SUPPORT AIDE",
     "ALIVE TEACHER"
   ],
   "teaching-related": [
@@ -280,7 +331,7 @@ const CANONICAL_POSITIONS_BY_CATEGORY = {
     "SENIOR BOOKKEEPER", "SOCIAL WELFARE OFFICER", "STATISTICIAN AIDE",
     "SUPPLY OFFICER", "TECHNICAL EDUCATION AND SKILLS DEVELOPMENT SPECIALIST",
     "TELEGRAM CARRIER", "UTILITY FOREMAN", "UTILITY WORKER",
-    "VOCATIONAL PLACEMENT COORDINATOR", "WATCHMAN", "LEARNING SUPPORT AIDE",
+    "VOCATIONAL PLACEMENT COORDINATOR", "WATCHMAN",
     "INTERN", "OTHERS"
   ]
 };
@@ -311,22 +362,46 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
   const cleanSchoolId = String(schoolId).replace('SCH-', '');
   console.log(`[LocalDraft] Reading master personnel records for School ID ${cleanSchoolId}...`);
   
-  // 1. Primary: Check production esf7_database
-  let sourceTable = 'esf7_database';
-  let masterRes = await insightEdPool.query(
-    `SELECT * FROM esf7_database WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
-    [cleanSchoolId]
-  ).catch(() => ({ rows: [] }));
+  const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
+  let sourceTable = isTest ? 'esf7_database_dummy' : 'esf7_database';
+  let masterRes = { rows: [] };
 
-  // 2. Secondary: If not found in esf7_database, check esf7_database_dummy
-  if (masterRes.rows.length === 0) {
-    console.log(`[LocalDraft] No master records in esf7_database for School ID ${cleanSchoolId}, checking esf7_database_dummy...`);
+  if (isTest) {
     masterRes = await insightEdPool.query(
-      `SELECT * FROM esf7_database_dummy WHERE CAST(COALESCE(schoool_id, school_id) AS TEXT) = $1`,
+      `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
       [cleanSchoolId]
-    ).catch(() => ({ rows: [] }));
-    if (masterRes.rows.length > 0) {
-      sourceTable = 'esf7_database_dummy';
+    ).catch((err) => {
+      console.warn(`[LocalDraft] Query esf7_database_dummy error for ${cleanSchoolId}:`, err.message);
+      return { rows: [] };
+    });
+  } else {
+    // 1. Primary: Fast indexed lookup on school_id in production esf7_database (< 1s)
+    masterRes = await insightEdPool.query(
+      `SELECT * FROM esf7_database WHERE school_id = $1`,
+      [cleanSchoolId]
+    ).catch((err) => {
+      console.warn(`[LocalDraft] Primary indexed query failed for ${cleanSchoolId}:`, err.message);
+      return { rows: [] };
+    });
+
+    // Fallback: If 0 rows found with school_id, check schoool_id
+    if (masterRes.rows.length === 0) {
+      masterRes = await insightEdPool.query(
+        `SELECT * FROM esf7_database WHERE schoool_id = $1`,
+        [cleanSchoolId]
+      ).catch(() => ({ rows: [] }));
+    }
+
+    // 2. Secondary: If not found in production esf7_database, check test dummy table
+    if (masterRes.rows.length === 0) {
+      console.log(`[LocalDraft] No master records in esf7_database for School ID ${cleanSchoolId}, checking esf7_database_dummy...`);
+      masterRes = await insightEdPool.query(
+        `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+        [cleanSchoolId]
+      ).catch(() => ({ rows: [] }));
+      if (masterRes.rows.length > 0) {
+        sourceTable = 'esf7_database_dummy';
+      }
     }
   }
 
@@ -334,6 +409,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     console.log(`[LocalDraft] No master records found in esf7_database or esf7_database_dummy for School ID ${cleanSchoolId}.`);
     return [];
   }
+
 
   console.log(`[LocalDraft] Formatting ${masterRes.rows.length} personnel records from ${sourceTable} in-memory (0 database inserts)...`);
 
@@ -399,8 +475,8 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       tin: row.tin || '',
       noTin: !row.tin,
       no_tin: !row.tin,
-      sexAtBirth: (row.sex || row.sex_at_birth || 'FEMALE').toUpperCase(),
-      sex_at_birth: (row.sex || row.sex_at_birth || 'FEMALE').toUpperCase(),
+      sexAtBirth: (row.sex || row.sex_at_birth || row.gender || 'FEMALE').toUpperCase(),
+      sex_at_birth: (row.sex || row.sex_at_birth || row.gender || 'FEMALE').toUpperCase(),
       civilStatus: (row.civil_status || 'SINGLE').toUpperCase(),
       civil_status: (row.civil_status || 'SINGLE').toUpperCase(),
       soloParent: row.solo_parent ? 'YES' : 'NO',
@@ -412,7 +488,10 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       employeeNo: cleanEmpNo,
       employee_no: cleanEmpNo,
       depedEmail: depedEmail,
-      deped_email: depedEmail,
+      noDepedEmail: !!row.no_deped_email || depedEmail === 'N/A',
+      no_deped_email: !!row.no_deped_email || depedEmail === 'N/A',
+      allowEmailDiscrepancy: !!row.allow_email_discrepancy,
+      allow_email_discrepancy: !!row.allow_email_discrepancy,
 
       isSchoolHead: isSchoolHead,
       is_school_head: isSchoolHead,
@@ -439,8 +518,11 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       assigned_grade_levels: [],
       firstServiceDate: firstApptDate,
       lastPromotionDate: firstApptDate,
-      newStationDate: stationDate,
-
+      newStationDate: stationDate || firstApptDate,
+      lastLateralMovementDate: 'N/A',
+      last_lateral_movement_date: 'N/A',
+      stepIncrementConfirmed: true,
+      step_increment_confirmed: true,
 
       // Education Fields
       educationId: educId,
@@ -516,6 +598,8 @@ function formatDesignationRecord(row) {
     personnel_id: row.personnel_id,
     designationName: row.designation_name,
     designation_name: row.designation_name,
+    keyStage: row.key_stage || raw.keyStage || null,
+    key_stage: row.key_stage || raw.keyStage || null,
     gradeLevel: row.grade_level || '',
     grade_level: row.grade_level || '',
     subjectArea: row.subject_area || '',
@@ -559,12 +643,51 @@ function formatWorkloadRecord(row) {
     endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
     end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
     days: row.days || ['M', 'T', 'W', 'TH', 'F'],
+    term: row.term || raw.term || '1st',
+    rawPayload: raw
+  };
+}
+
+function formatAdminTaskRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    task: row.task_name,
+    task_name: row.task_name,
+    taskName: row.task_name,
+    category: row.task_category || raw.category || 'General Administration',
+    taskCategory: row.task_category || raw.category || 'General Administration',
+    startTime: row.start_time ? String(row.start_time).substring(0, 5) : (raw.startTime || '13:00'),
+    start_time: row.start_time ? String(row.start_time).substring(0, 5) : (raw.startTime || '13:00'),
+    endTime: row.end_time ? String(row.end_time).substring(0, 5) : (raw.endTime || '14:00'),
+    end_time: row.end_time ? String(row.end_time).substring(0, 5) : (raw.endTime || '14:00'),
+    days: row.days || raw.days || ['M', 'T', 'W', 'TH', 'F'],
+    term: row.term || raw.term || '1st',
+    startDate: row.start_date || raw.startDate || null,
+    start_date: row.start_date || raw.startDate || null,
+    endDate: row.end_date || raw.endDate || null,
+    end_date: row.end_date || raw.endDate || null,
+    dates: row.dates || raw.dates || [],
+    durationMinutes: row.duration_minutes || raw.durationMinutes || 60,
+    duration_minutes: row.duration_minutes || raw.durationMinutes || 60,
+    termTotalHours: row.term_total_hours ? parseFloat(row.term_total_hours) : (raw.termTotalHours || 0),
+    isDesignationSynced: !!row.is_designation_synced,
+    is_designation_synced: !!row.is_designation_synced,
+    status: row.status || 'ACTIVE',
     rawPayload: raw
   };
 }
 
 // Formatter to standardize database rows into frontend-compatible objects
-function formatPersonnelRecord(row, trainingsList = [], designationsList = [], workloadList = []) {
+function formatPersonnelRecord(row, trainingsList = [], designationsList = [], workloadList = [], adminTaskList = []) {
   if (!row) return null;
   const rawProfile = row.raw_payload || {};
   const rawEmp = row.employment_raw_payload || {};
@@ -639,7 +762,10 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     employeeNo: (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '',
     employee_no: (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '',
     depedEmail: row.deped_email || '',
-    deped_email: row.deped_email || '',
+    noDepedEmail: !!row.no_deped_email || row.deped_email === 'N/A',
+    no_deped_email: !!row.no_deped_email || row.deped_email === 'N/A',
+    allowEmailDiscrepancy: !!row.allow_email_discrepancy,
+    allow_email_discrepancy: !!row.allow_email_discrepancy,
     isSchoolHead: !!row.is_school_head,
     is_school_head: !!row.is_school_head,
 
@@ -667,9 +793,11 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     teachesShs: !!(rawEmp.teachesShs || rawEmp.teaches_shs || rawProfile.teachesShs) || (Array.isArray(row.grade_levels_taught) && row.grade_levels_taught.some(g => String(g).includes('11') || String(g).includes('12'))),
     teaches_shs: !!(rawEmp.teachesShs || rawEmp.teaches_shs || rawProfile.teachesShs) || (Array.isArray(row.grade_levels_taught) && row.grade_levels_taught.some(g => String(g).includes('11') || String(g).includes('12'))),
     firstServiceDate: row.first_service_date ? (row.first_service_date instanceof Date ? row.first_service_date.toISOString().split('T')[0] : String(row.first_service_date).split('T')[0]) : null,
-    lastPromotionDate: row.last_promotion_date ? (row.last_promotion_date instanceof Date ? row.last_promotion_date.toISOString().split('T')[0] : String(row.last_promotion_date).split('T')[0]) : null,
-    newStationDate: row.new_station_date ? (row.new_station_date instanceof Date ? row.new_station_date.toISOString().split('T')[0] : String(row.new_station_date).split('T')[0]) : null,
-    lastLateralMovementDate: row.last_lateral_movement_date ? (row.last_lateral_movement_date instanceof Date ? row.last_lateral_movement_date.toISOString().split('T')[0] : String(row.last_lateral_movement_date).split('T')[0]) : null,
+    lastPromotionDate: row.last_promotion_date ? (row.last_promotion_date instanceof Date ? row.last_promotion_date.toISOString().split('T')[0] : String(row.last_promotion_date).split('T')[0]) : (row.first_service_date ? (row.first_service_date instanceof Date ? row.first_service_date.toISOString().split('T')[0] : String(row.first_service_date).split('T')[0]) : 'N/A'),
+    newStationDate: row.new_station_date ? (row.new_station_date instanceof Date ? row.new_station_date.toISOString().split('T')[0] : String(row.new_station_date).split('T')[0]) : (row.first_service_date ? (row.first_service_date instanceof Date ? row.first_service_date.toISOString().split('T')[0] : String(row.first_service_date).split('T')[0]) : 'N/A'),
+    lastLateralMovementDate: row.last_lateral_movement_date ? (row.last_lateral_movement_date instanceof Date ? row.last_lateral_movement_date.toISOString().split('T')[0] : String(row.last_lateral_movement_date).split('T')[0]) : 'N/A',
+    stepIncrementConfirmed: true,
+    step_increment_confirmed: true,
 
     // Education Tab Fields
     educationId: row.educ_id || null,
@@ -691,8 +819,16 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     post_graduate_discipline: parsedPostDisc.jsonString,
     mastersDiscipline: parsedPostDisc.mastersDiscipline,
     mastersDisciplines: parsedPostDisc.masters,
+    mastersWithUnitsDisciplines: parsedPostDisc.mastersWithUnits,
+    mastersGraduatedDisciplines: parsedPostDisc.mastersGraduated,
     doctorateDiscipline: parsedPostDisc.doctorateDiscipline,
     doctorateDisciplines: parsedPostDisc.doctorate,
+    doctorateWithUnitsDisciplines: parsedPostDisc.doctorateWithUnits,
+    doctorateGraduatedDisciplines: parsedPostDisc.doctorateGraduated,
+    collegeDegrees: row.college_degrees && Array.isArray(row.college_degrees) && row.college_degrees.length > 0
+      ? row.college_degrees
+      : (rawEduc.collegeDegrees || rawProfile.collegeDegrees || (row.college_degree ? [{ collegeDegree: row.college_degree, major: row.major || '', minor: row.minor || '' }] : [])),
+    degreeRows: rawEduc.degreeRows || rawProfile.degreeRows || (row.college_degree ? [{ clientKey: 'legacy-1', level: 'BACCALAUREATE', collegeDegree: row.college_degree, major: row.major || '', minor: row.minor || '' }] : []),
     eligibility: row.eligibility || [],
     prcSpecialization: row.prc_specialization || '',
     prc_specialization: row.prc_specialization || '',
@@ -715,6 +851,11 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     workloadRows: (Array.isArray(workloadList) && workloadList.length > 0)
       ? workloadList
       : (Array.isArray(rawProfile.workloadRows) ? rawProfile.workloadRows : []),
+
+    // Administrative Tasks (from esf7_admin_task or raw_payload fallback)
+    administrativeRows: (Array.isArray(adminTaskList) && adminTaskList.length > 0)
+      ? adminTaskList.map(formatAdminTaskRecord)
+      : (Array.isArray(rawProfile.administrativeRows) ? rawProfile.administrativeRows : []),
 
     rawPayload: { ...rawProfile, ...rawEmp, ...rawEduc, ...rawLA }
   };
@@ -758,6 +899,7 @@ router.get('/', async (req, res) => {
         ed.vocational_course,
         ed.vocational_level,
         ed.college_degree,
+        ed.college_degrees,
         ed.major,
         ed.minor,
         ed.post_graduate_degree,
@@ -789,18 +931,47 @@ router.get('/', async (req, res) => {
       workloadMap.get(pKey).push(formatWorkloadRecord(wRow));
     }
 
+    const adminTaskMap = new Map();
+    const admRes = await db.query(
+      `SELECT * FROM esf7_admin_task WHERE school_id = $1 ORDER BY created_at ASC`,
+      [schoolId]
+    ).catch(() => ({ rows: [] }));
+
+    for (const aRow of admRes.rows) {
+      const pKey = String(aRow.personnel_id).toUpperCase();
+      if (!adminTaskMap.has(pKey)) adminTaskMap.set(pKey, []);
+      adminTaskMap.get(pKey).push(aRow);
+    }
+
+    const trainingsMap = new Map();
+    const trRes = await db.query(
+      `SELECT * FROM esf7_personnel_ld_trainings WHERE school_id = $1 OR school_id = $2 ORDER BY created_at ASC`,
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
+    for (const tRow of trRes.rows) {
+      const pKey = String(tRow.personnel_id).toUpperCase();
+      if (!trainingsMap.has(pKey)) trainingsMap.set(pKey, []);
+      trainingsMap.get(pKey).push(tRow);
+    }
+
+    const designationsMap = new Map();
+    const dsgRes = await db.query(
+      `SELECT * FROM esf7_personnel_designations WHERE school_id = $1 OR school_id = $2 ORDER BY created_at ASC`,
+      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+    ).catch(() => ({ rows: [] }));
+    for (const dRow of dsgRes.rows) {
+      const pKey = String(dRow.personnel_id).toUpperCase();
+      if (!designationsMap.has(pKey)) designationsMap.set(pKey, []);
+      designationsMap.get(pKey).push(dRow);
+    }
+
     const dbMap = new Map();
     for (const row of result.rows) {
-      const trRes = await db.query(
-        `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = $1 ORDER BY created_at ASC`,
-        [row.id]
-      );
-      const dsgRes = await db.query(
-        `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
-        [row.id]
-      );
+      const trList = trainingsMap.get(String(row.id).toUpperCase()) || (row.prn ? trainingsMap.get(String(row.prn).toUpperCase()) : []) || [];
+      const dsgList = designationsMap.get(String(row.id).toUpperCase()) || (row.prn ? designationsMap.get(String(row.prn).toUpperCase()) : []) || [];
       const wklList = workloadMap.get(String(row.id).toUpperCase()) || (row.prn ? workloadMap.get(String(row.prn).toUpperCase()) : []) || [];
-      const formatted = formatPersonnelRecord(row, trRes.rows, dsgRes.rows, wklList);
+      const admList = adminTaskMap.get(String(row.id).toUpperCase()) || (row.prn ? adminTaskMap.get(String(row.prn).toUpperCase()) : []) || [];
+      const formatted = formatPersonnelRecord(row, trList, dsgList, wklList, admList);
       if (formatted.id) dbMap.set(String(formatted.id).toUpperCase(), formatted);
       if (formatted.prn) dbMap.set(String(formatted.prn).toUpperCase(), formatted);
     }
@@ -815,7 +986,44 @@ router.get('/', async (req, res) => {
       const dbMatch = (idKey && dbMap.get(idKey)) || (prnKey && dbMap.get(prnKey));
 
       if (dbMatch) {
-        mergedList.push(dbMatch);
+        const isDbMatchPlaceholder = (!dbMatch.position && m.position) || 
+          (dbMatch.firstName === 'TEACHER' && String(dbMatch.lastName || '').startsWith('STAFF') && m.firstName !== 'TEACHER');
+
+        const mergedRecord = isDbMatchPlaceholder ? {
+          ...m,
+          ...dbMatch,
+          firstName: m.firstName,
+          first_name: m.first_name,
+          lastName: m.lastName,
+          last_name: m.last_name,
+          middleName: m.middleName || dbMatch.middleName,
+          middle_name: m.middle_name || dbMatch.middle_name,
+          position: m.position || dbMatch.position,
+          plantilla_position: m.plantilla_position || dbMatch.plantilla_position,
+          position_title: m.position_title || dbMatch.position_title,
+          type: m.type || dbMatch.type,
+          positionCategory: m.positionCategory || dbMatch.positionCategory,
+          position_category: m.position_category || dbMatch.position_category,
+          sexAtBirth: m.sexAtBirth || dbMatch.sexAtBirth,
+          sex_at_birth: m.sex_at_birth || dbMatch.sex_at_birth,
+          birthdate: m.birthdate || dbMatch.birthdate,
+          age: m.age || dbMatch.age,
+          collegeDegree: m.collegeDegree || dbMatch.collegeDegree,
+          college_degree: m.college_degree || dbMatch.college_degree,
+          major: m.major || dbMatch.major,
+          eligibility: m.eligibility || dbMatch.eligibility,
+          workloadRows: Array.isArray(dbMatch.workloadRows) ? dbMatch.workloadRows : (m.workloadRows || []),
+          designations: (Array.isArray(dbMatch.designations) && dbMatch.designations.length > 0) ? dbMatch.designations : (m.designations || []),
+          trainings: (Array.isArray(dbMatch.trainings) && dbMatch.trainings.length > 0) ? dbMatch.trainings : (m.trainings || [])
+        } : {
+          ...m,
+          ...dbMatch,
+          position: dbMatch.position || m.position,
+          position_title: dbMatch.position_title || m.position_title || m.position,
+          workloadRows: Array.isArray(dbMatch.workloadRows) ? dbMatch.workloadRows : (m.workloadRows || [])
+        };
+
+        mergedList.push(mergedRecord);
         if (dbMatch.id) usedDbKeys.add(String(dbMatch.id).toUpperCase());
         if (dbMatch.prn) usedDbKeys.add(String(dbMatch.prn).toUpperCase());
       } else {
@@ -838,14 +1046,65 @@ router.get('/', async (req, res) => {
 
     // 4. ALSO link approved shared / clustered / reassigned requests for BOTH Mother School and Target School!
     // A. Check for requests TARGETING this school (Host/Receiving School)
-    const targetReqs = await db.query(
-      `SELECT r.*, p.prn as master_prn, p.first_name as master_fn, p.last_name as master_ln, p.position as master_pos, p.raw_payload as master_raw
-       FROM esf7_requests r
-       LEFT JOIN esf7_personnel_profile p ON (r.personnel_id = p.id OR r.personnel_id = p.prn)
-       WHERE (r.target_school_id = $1 OR r.target_school_id = $2)
-         AND r.status = 'approved'`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [] }));
+    const targetQueryText = `
+      SELECT 
+        r.*,
+        p.*,
+        e.id AS emp_id,
+        e.position_category,
+        e.position,
+        e.step_increment,
+        e.fund_source,
+        e.nature_of_appointment,
+        e.hiring_arrangement,
+        e.deployment_status as mother_deployment_status,
+        e.assigned_schools,
+        e.grade_levels_taught,
+        e.first_service_date,
+        e.last_promotion_date,
+        e.new_station_date,
+        e.last_lateral_movement_date,
+        e.raw_payload AS employment_raw_payload,
+        ed.id AS educ_id,
+        ed.highest_educational_attainment,
+        ed.shs_track,
+        ed.vocational_course,
+        ed.vocational_level,
+        ed.college_degree,
+        ed.college_degrees,
+        ed.major,
+        ed.minor,
+        ed.post_graduate_degree,
+        ed.post_graduate_discipline,
+        ed.eligibility,
+        ed.prc_specialization,
+        ed.raw_payload AS educ_raw_payload,
+        la.id AS la_id,
+        la.matrix_data,
+        la.raw_payload AS la_raw_payload,
+        p.id as master_profile_id,
+        p.prn as master_prn,
+        p.first_name as master_fn,
+        p.last_name as master_ln,
+        e.position as master_pos
+      FROM esf7_requests r
+      LEFT JOIN esf7_personnel_profile p ON (r.personnel_id = p.id OR r.personnel_id = p.prn)
+      LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+      LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
+      LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
+      WHERE (r.target_school_id = $1 OR r.target_school_id = $2 OR REPLACE(r.target_school_id, 'SCH-', '') = $1 OR r.target_school_id ILIKE $3)
+        AND LOWER(r.status) = 'approved'
+    `;
+    const targetParams = [cleanSchoolId, `SCH-${cleanSchoolId}`, `%${cleanSchoolId}%`];
+    let targetReqs = await db.query(targetQueryText, targetParams).catch((err) => {
+      console.warn('[targetReqs join warning]:', err.message);
+      return { rows: [] };
+    });
+
+    if (targetReqs.rows.length === 0) {
+      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId) ? db.prodPool : db.stagingPool;
+      targetReqs = await fallbackPool.query(targetQueryText, targetParams).catch(() => ({ rows: [] }));
+    }
 
     for (const reqRow of targetReqs.rows) {
       const targetPrn = reqRow.master_prn || reqRow.personnel_id || reqRow.raw_payload?.prn || reqRow.raw_payload?.personnelId;
@@ -860,51 +1119,98 @@ router.get('/', async (req, res) => {
         `${p.firstName} ${p.lastName}`.toUpperCase() === targetName.toUpperCase()
       );
 
-      if (!existingMatch) {
-        const pParts = String(targetName).split(' ');
-        const fName = reqRow.master_fn || pParts[0] || 'TEACHER';
-        const lName = reqRow.master_ln || pParts.slice(1).join(' ') || 'STAFF';
+      // Fetch training & designation records for the borrowed personnel if available
+      let trRows = [];
+      let dsgRows = [];
+      if (reqRow.master_profile_id) {
+        const trRes = await db.query(
+          `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = $1 ORDER BY created_at ASC`,
+          [reqRow.master_profile_id]
+        ).catch(() => ({ rows: [] }));
+        trRows = trRes.rows || [];
 
-        mergedList.push({
-          id: targetId,
-          prn: targetPrn,
-          schoolId: cleanSchoolId,
-          school_id: cleanSchoolId,
-          schoolYear: '2026-2027',
-          type: 'teaching',
-          salutation: 'MR.',
-          firstName: fName,
-          first_name: fName,
-          middleName: '',
-          lastName: lName,
-          last_name: lName,
-          position: reqRow.master_pos || 'TEACHER I',
-          positionCategory: 'TEACHING',
-          deploymentStatus: depStatus,
-          deployment_status: depStatus,
-          requestType: reqRow.request_type,
-          partnerSchoolId: reqRow.requester_school_id,
-          isClustered: isClustered,
-          isShared: true,
-          workloadRows: []
-        });
+        const dsgRes = await db.query(
+          `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
+          [reqRow.master_profile_id]
+        ).catch(() => ({ rows: [] }));
+        dsgRows = dsgRes.rows || [];
+      }
+
+      const wklList = workloadMap.get(String(targetId).toUpperCase()) || (targetPrn ? workloadMap.get(String(targetPrn).toUpperCase()) : []) || [];
+      const admList = adminTaskMap.get(String(targetId).toUpperCase()) || (targetPrn ? adminTaskMap.get(String(targetPrn).toUpperCase()) : []) || [];
+
+      if (!existingMatch) {
+        if (reqRow.master_profile_id) {
+          const formatted = formatPersonnelRecord(reqRow, trRows, dsgRows, wklList, admList);
+          mergedList.push({
+            ...formatted,
+            schoolId: cleanSchoolId,
+            school_id: cleanSchoolId,
+            deploymentStatus: depStatus,
+            deployment_status: depStatus,
+            requestType: reqRow.request_type,
+            motherSchoolId: reqRow.requester_school_id,
+            partnerSchoolId: reqRow.requester_school_id,
+            isClustered: isClustered,
+            isBorrowed: !isClustered,
+            isShared: true,
+            workloadRows: wklList
+          });
+        } else {
+          const pParts = String(targetName).split(' ');
+          const fName = reqRow.master_fn || pParts[0] || 'TEACHER';
+          const lName = reqRow.master_ln || pParts.slice(1).join(' ') || 'STAFF';
+
+          mergedList.push({
+            id: targetId,
+            prn: targetPrn,
+            schoolId: cleanSchoolId,
+            school_id: cleanSchoolId,
+            schoolYear: '2026-2027',
+            type: 'teaching',
+            salutation: 'MR.',
+            firstName: fName,
+            first_name: fName,
+            middleName: '',
+            lastName: lName,
+            last_name: lName,
+            position: reqRow.master_pos || 'TEACHER I',
+            positionCategory: 'TEACHING',
+            deploymentStatus: depStatus,
+            deployment_status: depStatus,
+            requestType: reqRow.request_type,
+            motherSchoolId: reqRow.requester_school_id,
+            partnerSchoolId: reqRow.requester_school_id,
+            isClustered: isClustered,
+            isBorrowed: !isClustered,
+            isShared: true,
+            workloadRows: wklList
+          });
+        }
       } else {
         existingMatch.deploymentStatus = depStatus;
         existingMatch.deployment_status = depStatus;
         existingMatch.requestType = reqRow.request_type;
+        existingMatch.motherSchoolId = reqRow.requester_school_id;
         existingMatch.partnerSchoolId = reqRow.requester_school_id;
         existingMatch.isClustered = isClustered;
+        existingMatch.isBorrowed = !isClustered;
         existingMatch.isShared = true;
       }
     }
 
     // B. Check for requests REQUESTED BY this school (Mother/Plantilla School)
-    const motherReqs = await db.query(
-      `SELECT * FROM esf7_requests 
-       WHERE (requester_school_id = $1 OR requester_school_id = $2)
-         AND status = 'approved'`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [] }));
+    const motherQueryText = `
+      SELECT * FROM esf7_requests 
+      WHERE (requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(requester_school_id, 'SCH-', '') = $1 OR requester_school_id ILIKE $3)
+        AND LOWER(status) = 'approved'
+    `;
+    const motherParams = [cleanSchoolId, `SCH-${cleanSchoolId}`, `%${cleanSchoolId}%`];
+    let motherReqs = await db.query(motherQueryText, motherParams).catch(() => ({ rows: [] }));
+    if (motherReqs.rows.length === 0) {
+      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId) ? db.prodPool : db.stagingPool;
+      motherReqs = await fallbackPool.query(motherQueryText, motherParams).catch(() => ({ rows: [] }));
+    }
 
     for (const reqRow of motherReqs.rows) {
       const pId = reqRow.personnel_id;
@@ -1015,6 +1321,7 @@ router.get('/:id', async (req, res) => {
         ed.vocational_course,
         ed.vocational_level,
         ed.college_degree,
+        ed.college_degrees,
         ed.major,
         ed.minor,
         ed.post_graduate_degree,
@@ -1052,7 +1359,12 @@ router.get('/:id', async (req, res) => {
     );
     const wklList = wklRes.rows.map(formatWorkloadRecord);
 
-    res.json(formatPersonnelRecord(row, trRes.rows, dsgRes.rows, wklList));
+    const admRes = await db.query(
+      `SELECT * FROM esf7_admin_task WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      [row.id]
+    );
+
+    res.json(formatPersonnelRecord(row, trRes.rows, dsgRes.rows, wklList, admRes.rows));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1141,19 +1453,74 @@ async function syncDesignationsInTransaction(client, personnelId, targetSchoolId
       processedKeys.add(cleanKey.toUpperCase());
 
       let dsgName = cleanKey;
+      let keyStage = null;
       let gradeLevel = null;
       let subjectArea = null;
       let track = null;
 
-      if (cleanKey.includes(' - ')) {
+      const upper = cleanKey.toUpperCase();
+
+      // 1. Department Head - Key Stage 1 (Early Primary: Kinder - Grade 3)
+      if (
+        upper.startsWith('DEPARTMENT HEAD') && (
+          upper.includes('KEY STAGE 1') || upper.includes('KS1') || 
+          upper.includes('KINDER') || upper.includes('GRADE 1') || upper.includes('GRADE 2') || upper.includes('GRADE 3')
+        ) && !upper.includes('KEY STAGE 2') && !upper.includes('KEY STAGE 3') && !upper.includes('KEY STAGE 4') &&
+        !upper.includes('GRADE 4') && !upper.includes('GRADE 5') && !upper.includes('GRADE 6') &&
+        !upper.includes('GRADE 7') && !upper.includes('GRADE 8') && !upper.includes('GRADE 9') && !upper.includes('GRADE 10')
+      ) {
+        keyStage = 'KS1';
+        dsgName = 'DEPARTMENT HEAD';
+        subjectArea = 'Early Primary Literacy & Numeracy';
+
+        if (upper.includes('KINDER - GRADE 3') || upper.includes('KINDER TO GRADE 3') || upper === 'DEPARTMENT HEAD - KEY STAGE 1' || upper === 'DEPARTMENT HEAD - KS1') {
+          gradeLevel = 'Kinder, Grade 1, Grade 2, Grade 3';
+        } else {
+          const detected = [];
+          if (upper.includes('KINDER')) detected.push('Kinder');
+          if (upper.includes('GRADE 1') || upper.includes('G1')) detected.push('Grade 1');
+          if (upper.includes('GRADE 2') || upper.includes('G2')) detected.push('Grade 2');
+          if (upper.includes('GRADE 3') || upper.includes('G3')) detected.push('Grade 3');
+          gradeLevel = detected.length > 0 ? detected.join(', ') : 'Kinder, Grade 1, Grade 2, Grade 3';
+        }
+      }
+      // 2. Department Head - Key Stage 2 (Intermediate: Grade 4 - Grade 6)
+      else if (upper.startsWith('DEPARTMENT HEAD') && (upper.includes('KEY STAGE 2') || upper.includes('KS2'))) {
+        keyStage = 'KS2';
+        dsgName = 'DEPARTMENT HEAD';
+        gradeLevel = 'Grade 4, Grade 5, Grade 6';
+        if (cleanKey.includes(' - ')) {
+          const parts = cleanKey.split(' - ');
+          subjectArea = parts[parts.length - 1].trim();
+        }
+      }
+      // 3. Department Head - Key Stage 3 (Junior High School: Grade 7 - Grade 10)
+      else if (upper.startsWith('DEPARTMENT HEAD') && (upper.includes('KEY STAGE 3') || upper.includes('KS3'))) {
+        keyStage = 'KS3';
+        dsgName = 'DEPARTMENT HEAD';
+        gradeLevel = 'Grade 7, Grade 8, Grade 9, Grade 10';
+        if (cleanKey.includes(' - ')) {
+          const parts = cleanKey.split(' - ');
+          subjectArea = parts[parts.length - 1].trim();
+        }
+      }
+      // 4. Department Head - Key Stage 4 (Senior High School: Grade 11 - Grade 12)
+      else if (upper.startsWith('DEPARTMENT HEAD') && (upper.includes('KEY STAGE 4') || upper.includes('KS4') || upper.includes('ACADEMIC TRACK') || upper.includes('TECH-PRO TRACK') || upper.includes('SHS'))) {
+        keyStage = 'KS4';
+        dsgName = 'DEPARTMENT HEAD';
+        gradeLevel = 'Grade 11, Grade 12';
+        track = upper.includes('TECH') ? 'Tech-Pro Track' : 'Academic Track';
+      }
+      // 5. Grade Level / Learning Area Chairpersons & Other Roles
+      else if (cleanKey.includes(' - ')) {
         const parts = cleanKey.split(' - ');
         dsgName = parts[0].trim();
         const subPart = parts.slice(1).join(' - ').trim();
 
-        const gradeMatch = subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i);
+        const gradeMatch = subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i) || subPart.match(/^(Grade\s*\d+|Kinder|Grade\s*1[0-2])$/i);
         if (gradeMatch) {
-          gradeLevel = gradeMatch[1];
-          subjectArea = subPart.replace(gradeMatch[0], '').trim();
+          gradeLevel = gradeMatch[1] || gradeMatch[0];
+          subjectArea = subPart.replace(gradeMatch[0], '').trim() || null;
         } else {
           subjectArea = subPart;
         }
@@ -1161,13 +1528,22 @@ async function syncDesignationsInTransaction(client, personnelId, targetSchoolId
 
       dsgObj = {
         designationName: dsgName,
+        keyStage: keyStage || null,
         gradeLevel: gradeLevel || '',
         subjectArea: subjectArea || '',
         track: track || '',
         isSdsApproved: isSds,
         sdsConfirmed: isSds,
         serializedKey: rawStr,
-        rawPayload: { designation: cleanKey, isSdsApproved: isSds, serializedKey: rawStr }
+        rawPayload: {
+          designation: cleanKey,
+          keyStage: keyStage || null,
+          gradeLevel: gradeLevel || null,
+          subjectArea: subjectArea || null,
+          track: track || null,
+          isSdsApproved: isSds,
+          serializedKey: rawStr
+        }
       };
     } else if (typeof item === 'object') {
       const rawKey = item.serializedKey || item.serialized_key || item.designation || item.designationName || item.designation_name || item.name || 'OFFICIAL DESIGNATION';
@@ -1175,12 +1551,34 @@ async function syncDesignationsInTransaction(client, personnelId, targetSchoolId
       if (!cleanKey || processedKeys.has(cleanKey.toUpperCase())) continue;
       processedKeys.add(cleanKey.toUpperCase());
 
+      const upper = cleanKey.toUpperCase();
+      let keyStage = item.keyStage || item.key_stage || null;
+      if (!keyStage) {
+        if (
+          upper.startsWith('DEPARTMENT HEAD') && (
+            upper.includes('KEY STAGE 1') || upper.includes('KS1') || 
+            upper.includes('KINDER') || upper.includes('GRADE 1') || upper.includes('GRADE 2') || upper.includes('GRADE 3')
+          ) && !upper.includes('KEY STAGE 2') && !upper.includes('KEY STAGE 3') && !upper.includes('KEY STAGE 4') &&
+          !upper.includes('GRADE 4') && !upper.includes('GRADE 5') && !upper.includes('GRADE 6') &&
+          !upper.includes('GRADE 7') && !upper.includes('GRADE 8') && !upper.includes('GRADE 9') && !upper.includes('GRADE 10')
+        ) {
+          keyStage = 'KS1';
+        } else if (upper.includes('KEY STAGE 2') || upper.includes('KS2')) {
+          keyStage = 'KS2';
+        } else if (upper.includes('KEY STAGE 3') || upper.includes('KS3')) {
+          keyStage = 'KS3';
+        } else if (upper.includes('KEY STAGE 4') || upper.includes('KS4') || upper.includes('ACADEMIC TRACK') || upper.includes('TECH-PRO TRACK')) {
+          keyStage = 'KS4';
+        }
+      }
+
       const isSds = !!(item.isSdsApproved || item.is_sds_approved || String(rawKey).includes('::APPROVED_SDS'));
       const isConf = !!(item.sdsConfirmed || item.sds_confirmed || isSds);
       const dsgName = (item.designationName || item.designation_name || item.name || cleanKey.split(' - ')[0]).replace(/::APPROVED_SDS/gi, '').trim();
 
       dsgObj = {
         designationName: dsgName || 'OFFICIAL DESIGNATION',
+        keyStage: keyStage || null,
         gradeLevel: item.gradeLevel || item.grade_level || '',
         subjectArea: item.subjectArea || item.subject_area || '',
         track: item.track || '',
@@ -1193,17 +1591,18 @@ async function syncDesignationsInTransaction(client, personnelId, targetSchoolId
 
     if (!dsgObj.designationName) continue;
 
-    const dsgId = `DSG-${String(targetSchoolId).replace('SCH-', '')}-${String(personnelId).split('-').pop()}-${String(counter++).padStart(3, '0')}`;
+    const dsgId = `DSG-${String(targetSchoolId).replace('SCH-', '')}-${String(personnelId).split('-').pop()}-${String(counter++).padStart(3, '0')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
     await client.query(
       `INSERT INTO esf7_personnel_designations (
-        id, personnel_id, designation_name, grade_level, subject_area, track,
+        id, personnel_id, designation_name, key_stage, grade_level, subject_area, track,
         is_sds_approved, sds_confirmed, serialized_key, raw_payload
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
       [
         dsgId,
         personnelId,
         dsgObj.designationName,
+        dsgObj.keyStage || null,
         dsgObj.gradeLevel || null,
         dsgObj.subjectArea || null,
         dsgObj.track || null,
@@ -1229,7 +1628,9 @@ router.post('/', async (req, res) => {
       sex_at_birth, sexAtBirth, civil_status, civilStatus,
       solo_parent, soloParent, religion, ethnic_group, ethnicGroup,
       birthdate, age, philsys_no, philsysNo, no_philsys, noPhilsys, tin, no_tin, noTin,
-      employee_no, employeeNo, deped_email, depedEmail, is_school_head, isSchoolHead,
+      employee_no, employeeNo, deped_email, depedEmail, no_deped_email, noDepedEmail,
+      allow_email_discrepancy, allowEmailDiscrepancy,
+      is_school_head, isSchoolHead,
       prn: inputPrn,
       // Employment fields
       position_category, positionCategory, position, step_increment, stepIncrement,
@@ -1270,13 +1671,15 @@ router.post('/', async (req, res) => {
     const finalSex = (sex_at_birth || sexAtBirth || 'MALE').toUpperCase();
     const computedAge = calculateAge(birthdate) || (age ? Number(age) : null);
 
+    const finalAllowEmailDiscrepancy = allow_email_discrepancy !== undefined ? (allow_email_discrepancy === true || allow_email_discrepancy === 'true') : allowEmailDiscrepancy !== undefined ? (allowEmailDiscrepancy === true || allowEmailDiscrepancy === 'true') : false;
+
     const insertProfileQuery = `
       INSERT INTO esf7_personnel_profile (
         id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
         tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-        philsys_no, no_philsys, employee_no, deped_email, is_school_head, raw_payload
+        philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       RETURNING *;
     `;
 
@@ -1303,7 +1706,18 @@ router.post('/', async (req, res) => {
       philsys_no || philsysNo || null,
       no_philsys === true || noPhilsys === true,
       employee_no || employeeNo || null,
-      deped_email || depedEmail || '',
+      (() => {
+        const rawAppt = (nature_of_appointment || natureOfAppointment || '').toUpperCase().trim();
+        const rawMail = (deped_email || depedEmail || '').trim();
+        if (rawAppt === 'REGULAR PERMANENT' && rawMail === 'N/A') return '';
+        return rawMail;
+      })(),
+      (() => {
+        const rawAppt = (nature_of_appointment || natureOfAppointment || '').toUpperCase().trim();
+        if (rawAppt === 'REGULAR PERMANENT') return false;
+        return no_deped_email === true || noDepedEmail === true || deped_email === 'N/A' || depedEmail === 'N/A';
+      })(),
+      finalAllowEmailDiscrepancy,
       is_school_head === true || isSchoolHead === true,
       JSON.stringify(req.body)
     ];
@@ -1312,12 +1726,17 @@ router.post('/', async (req, res) => {
     const createdProfile = profileRes.rows[0];
 
     // Insert linked employment
-    const empCat = (position_category || positionCategory || type || 'TEACHING').toUpperCase();
     const empPos = (position || 'TEACHER I').toUpperCase();
+    const isCook = empPos === 'COOK';
+    const catObj = determinePositionCategory(empPos);
+    const empCat = isCook ? 'NON-TEACHING' : (position_category || positionCategory || type || catObj.category || 'TEACHING').toUpperCase();
     const empStep = Number(step_increment || stepIncrement || 1);
-    const empFund = (fund_source || fundSource || 'NATIONAL').toUpperCase();
-    const empAppt = (nature_of_appointment || natureOfAppointment || 'REGULAR PERMANENT').toUpperCase();
-    const empHire = (hiring_arrangement || hiringArrangement || 'PERMANENT').toUpperCase();
+    let empFund = (fund_source || fundSource || (isCook ? 'SBFP' : 'NATIONAL')).toUpperCase();
+    if (!isCook && empFund === 'SBFP') {
+      empFund = 'NATIONAL';
+    }
+    const empAppt = (nature_of_appointment || natureOfAppointment || (isCook ? 'CONTRACTUAL' : 'REGULAR PERMANENT')).toUpperCase();
+    const empHire = (hiring_arrangement || hiringArrangement || (isCook ? 'CONTRACTUAL' : 'PERMANENT')).toUpperCase();
     const empDeploy = (deployment_status || deploymentStatus || 'OWN STATION').toUpperCase();
     const empId = `EMP-${targetSchoolId.replace('SCH-', '')}-${seq}`;
 
@@ -1368,7 +1787,7 @@ router.post('/', async (req, res) => {
 
     const empRes = await client.query(insertEmpQuery, empValues);
 
-    // Insert linked education
+    //     // Upsert linked education
     const eduHighestAttainment = (
       highest_educational_attainment || highestEducationalAttainment ||
       (college_degree || collegeDegree ? 'COLLEGE GRADUATE / BACCALAUREATE' : 'COLLEGE GRADUATE / BACCALAUREATE')
@@ -1376,9 +1795,33 @@ router.post('/', async (req, res) => {
     const eduShsTrack = (shs_track || shsTrack || '').toUpperCase() || null;
     const eduVocationalCourse = (vocational_course || vocationalCourse || '').toUpperCase() || null;
     const eduVocationalLevel = (vocational_level || vocationalLevel || '').toUpperCase() || null;
-    const eduDegree = (college_degree || collegeDegree || '').toUpperCase() || null;
-    const eduMaj = (major || '').toUpperCase();
-    const eduMin = (minor || '').toUpperCase();
+    let eduDegree = (college_degree || collegeDegree || '').toUpperCase() || null;
+    let eduMaj = (major || '').toUpperCase();
+    let eduMin = (minor || '').toUpperCase();
+
+    const rawCollegeDegrees = req.body.college_degrees || req.body.collegeDegrees;
+    let eduCollegeDegrees = [];
+    if (Array.isArray(rawCollegeDegrees)) {
+      eduCollegeDegrees = rawCollegeDegrees
+        .filter(d => d && (d.collegeDegree || d.college_degree))
+        .map(d => ({
+          collegeDegree: (d.collegeDegree || d.college_degree || '').trim().toUpperCase(),
+          major: (d.major || '').trim().toUpperCase(),
+          minor: (d.minor || '').trim().toUpperCase()
+        }));
+    }
+    if (eduCollegeDegrees.length > 0) {
+      eduDegree = eduCollegeDegrees[0].collegeDegree || eduDegree;
+      eduMaj = eduCollegeDegrees[0].major || eduMaj;
+      eduMin = eduCollegeDegrees[0].minor || eduMin;
+    } else if (eduDegree) {
+      eduCollegeDegrees = [{
+        collegeDegree: eduDegree,
+        major: eduMaj || '',
+        minor: eduMin || ''
+      }];
+    }
+
     const eduPostDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
     const parsedPostDisc = parsePostGraduateDiscipline(
       post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom,
@@ -1400,16 +1843,17 @@ router.post('/', async (req, res) => {
     const insertEducQuery = `
       INSERT INTO esf7_perssonel_educ (
         id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
-        college_degree, major, minor, post_graduate_degree,
+        college_degree, college_degrees, major, minor, post_graduate_degree,
         post_graduate_discipline, eligibility, prc_specialization, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
       ON CONFLICT (personnel_id) DO UPDATE SET
         highest_educational_attainment = EXCLUDED.highest_educational_attainment,
         shs_track = EXCLUDED.shs_track,
         vocational_course = EXCLUDED.vocational_course,
         vocational_level = EXCLUDED.vocational_level,
         college_degree = EXCLUDED.college_degree,
+        college_degrees = EXCLUDED.college_degrees,
         major = EXCLUDED.major,
         minor = EXCLUDED.minor,
         post_graduate_degree = EXCLUDED.post_graduate_degree,
@@ -1429,6 +1873,7 @@ router.post('/', async (req, res) => {
       eduVocationalCourse,
       eduVocationalLevel,
       eduDegree,
+      JSON.stringify(eduCollegeDegrees),
       eduMaj || null,
       eduMin || null,
       eduPostDeg,
@@ -1476,6 +1921,7 @@ router.post('/', async (req, res) => {
         ed.vocational_course,
         ed.vocational_level,
         ed.college_degree,
+        ed.college_degrees,
         ed.major,
         ed.minor,
         ed.post_graduate_degree,
@@ -1631,7 +2077,18 @@ router.put('/:id', async (req, res) => {
     const finalPhilSys = (philsys_no !== undefined ? philsys_no : philsysNo !== undefined ? philsysNo : current.philsys_no || '').trim();
     const finalNoPhilSys = (no_philsys !== undefined ? (no_philsys === true || no_philsys === 'true') : noPhilsys !== undefined ? (noPhilsys === true || noPhilsys === 'true') : current.no_philsys);
     const finalEmpNo = (employee_no !== undefined ? employee_no : employeeNo !== undefined ? employeeNo : current.employee_no || '').trim();
-    const finalEmail = (deped_email !== undefined ? deped_email : depedEmail !== undefined ? depedEmail : current.deped_email || '').trim();
+    const empApptCheck = (nature_of_appointment || natureOfAppointment || (current.nature_of_appointment || 'REGULAR PERMANENT')).toUpperCase().trim();
+    const isRegularPermanent = empApptCheck === 'REGULAR PERMANENT';
+    const rawEmail = (deped_email !== undefined ? deped_email : depedEmail !== undefined ? depedEmail : current.deped_email || '').trim();
+    const finalEmail = (isRegularPermanent && rawEmail === 'N/A') ? '' : rawEmail;
+    const finalNoEmail = isRegularPermanent
+      ? false
+      : ((no_deped_email !== undefined ? (no_deped_email === true || no_deped_email === 'true') : noDepedEmail !== undefined ? (noDepedEmail === true || noDepedEmail === 'true') : !!current.no_deped_email) || finalEmail === 'N/A');
+    const finalAllowEmailDiscrepancy = allow_email_discrepancy !== undefined 
+      ? (allow_email_discrepancy === true || allow_email_discrepancy === 'true') 
+      : allowEmailDiscrepancy !== undefined 
+      ? (allowEmailDiscrepancy === true || allowEmailDiscrepancy === 'true') 
+      : !!current.allow_email_discrepancy;
     const finalSalutation = (salutation !== undefined ? salutation : current.salutation || 'MR.').toUpperCase();
     const finalType = type !== undefined ? type : current.type;
 
@@ -1657,10 +2114,12 @@ router.put('/:id', async (req, res) => {
         no_philsys = $18,
         employee_no = $19,
         deped_email = $20,
-        is_school_head = $21,
-        raw_payload = $22::jsonb,
+        no_deped_email = $21,
+        allow_email_discrepancy = $22,
+        is_school_head = $23,
+        raw_payload = $24::jsonb,
         updated_at = NOW()
-      WHERE id = $23
+      WHERE id = $25
       RETURNING *;
     `;
 
@@ -1685,6 +2144,8 @@ router.put('/:id', async (req, res) => {
       finalNoPhilSys,
       finalEmpNo,
       finalEmail,
+      finalNoEmail,
+      finalAllowEmailDiscrepancy,
       isTargetHead,
       JSON.stringify(req.body),
       req.params.id
@@ -1693,14 +2154,17 @@ router.put('/:id', async (req, res) => {
     const profileRes = await client.query(updateProfileQuery, profileValues);
     const updatedProfile = profileRes.rows[0];
 
-    // Upsert linked employment
-    const empPos = (position || 'TEACHER I').toUpperCase();
+    let empPos = (position || 'TEACHER I').toUpperCase();
+    const isCook = empPos === 'COOK';
     const catObj = determinePositionCategory(empPos);
-    const empCat = (position_category || positionCategory || catObj.category).toUpperCase();
+    const empCat = isCook ? 'NON-TEACHING' : (position_category || positionCategory || catObj.category || 'TEACHING').toUpperCase();
     const empStep = sanitizeStepIncrement(step_increment || stepIncrement);
-    const empFund = (fund_source || fundSource || 'NATIONAL').toUpperCase();
-    const empAppt = (nature_of_appointment || natureOfAppointment || 'REGULAR PERMANENT').toUpperCase();
-    const empHire = (hiring_arrangement || hiringArrangement || 'REGULAR').toUpperCase();
+    let empFund = (fund_source || fundSource || (isCook ? 'SBFP' : 'NATIONAL')).toUpperCase();
+    if (!isCook && empFund === 'SBFP') {
+      empFund = 'NATIONAL';
+    }
+    const empAppt = (nature_of_appointment || natureOfAppointment || (isCook ? 'CONTRACTUAL' : 'REGULAR PERMANENT')).toUpperCase();
+    const empHire = (hiring_arrangement || hiringArrangement || (isCook ? 'CONTRACTUAL' : 'REGULAR')).toUpperCase();
     const empDeploy = (deployment_status || deploymentStatus || 'OWN STATION').toUpperCase();
     const empId = `EMP-${updatedProfile.school_id.replace('SCH-', '')}-${updatedProfile.id.split('-').pop()}`;
 
@@ -1760,9 +2224,33 @@ router.put('/:id', async (req, res) => {
     const eduShsTrack = (shs_track || shsTrack || '').toUpperCase() || null;
     const eduVocationalCourse = (vocational_course || vocationalCourse || '').toUpperCase() || null;
     const eduVocationalLevel = (vocational_level || vocationalLevel || '').toUpperCase() || null;
-    const eduDegree = (college_degree || collegeDegree || '').toUpperCase() || null;
-    const eduMaj = (major || '').toUpperCase();
-    const eduMin = (minor || '').toUpperCase();
+    let eduDegree = (college_degree || collegeDegree || '').toUpperCase() || null;
+    let eduMaj = (major || '').toUpperCase();
+    let eduMin = (minor || '').toUpperCase();
+
+    const rawCollegeDegrees = req.body.college_degrees || req.body.collegeDegrees;
+    let eduCollegeDegrees = [];
+    if (Array.isArray(rawCollegeDegrees)) {
+      eduCollegeDegrees = rawCollegeDegrees
+        .filter(d => d && (d.collegeDegree || d.college_degree))
+        .map(d => ({
+          collegeDegree: (d.collegeDegree || d.college_degree || '').trim().toUpperCase(),
+          major: (d.major || '').trim().toUpperCase(),
+          minor: (d.minor || '').trim().toUpperCase()
+        }));
+    }
+    if (eduCollegeDegrees.length > 0) {
+      eduDegree = eduCollegeDegrees[0].collegeDegree || eduDegree;
+      eduMaj = eduCollegeDegrees[0].major || eduMaj;
+      eduMin = eduCollegeDegrees[0].minor || eduMin;
+    } else if (eduDegree) {
+      eduCollegeDegrees = [{
+        collegeDegree: eduDegree,
+        major: eduMaj || '',
+        minor: eduMin || ''
+      }];
+    }
+
     const eduPostDeg = (post_graduate_degree || postGraduateDegree || 'N/A').toUpperCase();
     const parsedPostDisc = parsePostGraduateDiscipline(
       post_graduate_discipline || postGraduateDiscipline || postGraduateDisciplineCustom,
@@ -1784,16 +2272,17 @@ router.put('/:id', async (req, res) => {
     const upsertEducQuery = `
       INSERT INTO esf7_perssonel_educ (
         id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
-        college_degree, major, minor, post_graduate_degree,
+        college_degree, college_degrees, major, minor, post_graduate_degree,
         post_graduate_discipline, eligibility, prc_specialization, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
       ON CONFLICT (personnel_id) DO UPDATE SET
         highest_educational_attainment = EXCLUDED.highest_educational_attainment,
         shs_track = EXCLUDED.shs_track,
         vocational_course = EXCLUDED.vocational_course,
         vocational_level = EXCLUDED.vocational_level,
         college_degree = EXCLUDED.college_degree,
+        college_degrees = EXCLUDED.college_degrees,
         major = EXCLUDED.major,
         minor = EXCLUDED.minor,
         post_graduate_degree = EXCLUDED.post_graduate_degree,
@@ -1813,6 +2302,7 @@ router.put('/:id', async (req, res) => {
       eduVocationalCourse,
       eduVocationalLevel,
       eduDegree,
+      JSON.stringify(eduCollegeDegrees),
       eduMaj || null,
       eduMin || null,
       eduPostDeg,
@@ -1875,6 +2365,7 @@ router.put('/:id', async (req, res) => {
       vocational_course: educRes.rows[0].vocational_course,
       vocational_level: educRes.rows[0].vocational_level,
       college_degree: educRes.rows[0].college_degree,
+      college_degrees: educRes.rows[0].college_degrees,
       major: educRes.rows[0].major,
       minor: educRes.rows[0].minor,
       post_graduate_degree: educRes.rows[0].post_graduate_degree,
@@ -1897,14 +2388,33 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE personnel profile (ON DELETE CASCADE automatically removes linked records)
+// DELETE personnel profile (and cleanly cascade remove linked records)
 router.delete('/:id', async (req, res) => {
+  const targetId = req.params.id;
   try {
-    await db.query(`DELETE FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`, [req.params.id]);
-    res.json({ success: true, message: `Personnel profile ${req.params.id} and all linked records deleted successfully.` });
+    // 1. Unassign advisor from any class sections
+    await db.query(`UPDATE esf7_class_sections SET advisor_id = NULL WHERE advisor_id = $1`, [targetId]).catch(() => {});
+    
+    // 2. Clean up child records (workloads, designations, trainings, tasks, allowances)
+    await db.query(`DELETE FROM esf7_workload_rows WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_personnel_trainings WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_personnel_designations WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_personnel_extra_tasks WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_personnel_allowances WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_overload_late_undertime WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+    await db.query(`DELETE FROM esf7_overload_no_work WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
+
+    // 3. Delete from primary personnel profile
+    const delRes = await db.query(`DELETE FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`, [targetId]);
+    res.json({ success: true, count: delRes.rowCount, message: `Personnel profile ${targetId} and all linked records deleted successfully.` });
   } catch (err) {
+    console.error('Error deleting personnel:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
+router.parsePostGraduateDiscipline = parsePostGraduateDiscipline;
+router.formatPersonnelRecord = formatPersonnelRecord;
 
 module.exports = router;

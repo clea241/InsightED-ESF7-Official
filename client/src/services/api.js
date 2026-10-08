@@ -1,14 +1,42 @@
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export const getApiBase = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (typeof window !== 'undefined' && window.location) {
+    const pathname = window.location.pathname || '';
+    if (pathname.includes('/insighted-esf7-prod')) {
+      return '/insighted-esf7-prod/api';
+    }
+    if (pathname.includes('/insighted-esf7-staging')) {
+      return '/insighted-esf7-staging/api';
+    }
+    if (pathname.includes('/insighted/Insighted-esf7')) {
+      return '/insighted/Insighted-esf7/api';
+    }
+    if (pathname.includes('/insighted-esf7')) {
+      return '/insighted-esf7/api';
+    }
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return '/api';
+    }
+    if (window.location.hostname.includes('stride.deped.gov.ph')) {
+      return '/insighted-esf7-prod/api';
+    }
+  }
+  return '/api';
+};
+
+export const API_BASE = getApiBase();
 
 export const fetchWithAuth = async (url, options = {}) => {
   const token = localStorage.getItem('token');
-  let activeSchoolId = localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
-  if (!activeSchoolId && token) {
+  let tokenSchoolId = null;
+  if (token) {
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      activeSchoolId = payload.school_id || payload.schoolId;
+      tokenSchoolId = payload.school_id || payload.schoolId;
     } catch (e) {}
   }
+  const rawSchoolId = tokenSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+  const activeSchoolId = rawSchoolId ? String(rawSchoolId).replace(/^SCH-/i, '').trim() : '';
 
   const headers = {
     ...options.headers,
@@ -127,6 +155,20 @@ export const api = {
     return res.json();
   },
 
+  // Workload Schedules (esf7_workload_rows)
+  saveWorkloadBatch: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/workloads/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  getWorkloadsByPersonnel: async (personnelId) => {
+    const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${personnelId}`);
+    return res.json();
+  },
+
   // Employment Tab Details
   updateEmployment: async (personnelId, data) => {
     const res = await fetchWithAuth(`${API_BASE}/employment/${personnelId}`, {
@@ -178,9 +220,14 @@ export const api = {
   },
   addSection: async (data) => {
     const sectionType = String(data.sectionType || data.section_type || 'MONO GRADE').toUpperCase();
+    const gradeLevel = String(data.gradeLevel || data.grade_level || '').toUpperCase();
     let endpoint = `${API_BASE}/sections/regular`;
-    if (sectionType.includes('ARAL')) {
+    if (sectionType.includes('ARAL') || gradeLevel.includes('ARAL') || data.aralBasis || data.aralToolKey || data.aralTool) {
       endpoint = `${API_BASE}/sections/aral`;
+    } else if (sectionType.includes('SNED') || sectionType.includes('NON-GRADED') || gradeLevel.includes('SNED') || gradeLevel.includes('NON-GRADED') || gradeLevel.includes('SPED')) {
+      endpoint = `${API_BASE}/sections/sned`;
+    } else if (sectionType.includes('ALS') || gradeLevel.includes('ALS')) {
+      endpoint = `${API_BASE}/sections/als`;
     } else if (sectionType === 'REMEDIAL' || sectionType === 'ENRICHMENT' || data.interventionType || data.intervention_type) {
       endpoint = `${API_BASE}/sections/remedial-enrichment`;
     }
@@ -292,9 +339,31 @@ export const api = {
     return res.json();
   },
 
-  // Absences management
+  // Absences & Tardiness / Undertime management
   getAbsences: async () => {
     const res = await fetchWithAuth(`${API_BASE}/absences`);
+    return res.json();
+  },
+  getOverloadLateUndertime: async (schoolYear = '2026-2027', personnelId = null, term = null, month = null) => {
+    let url = `${API_BASE}/overload-late-undertime?schoolYear=${encodeURIComponent(schoolYear)}`;
+    if (personnelId) url += `&personnelId=${encodeURIComponent(personnelId)}`;
+    if (term) url += `&term=${encodeURIComponent(term)}`;
+    if (month) url += `&month=${encodeURIComponent(month)}`;
+    const res = await fetchWithAuth(url);
+    return res.json();
+  },
+  saveOverloadLateUndertime: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/overload-late-undertime`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  deleteOverloadLateUndertime: async (id) => {
+    const res = await fetchWithAuth(`${API_BASE}/overload-late-undertime/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
     return res.json();
   },
 
@@ -320,19 +389,28 @@ export const api = {
     return res.json();
   },
 
-  // Overload Reasons management
+  // Overload Reasons & Pay management
   getOverloadReasons: async (schoolYear = 'SY 26-27', term = 'Term 1') => {
     const res = await fetchWithAuth(`${API_BASE}/overload-reasons?schoolYear=${encodeURIComponent(schoolYear)}&term=${encodeURIComponent(term)}`);
     return res.json();
   },
-  saveOverloadReasons: async ({ personnelId, schoolYear = 'SY 26-27', term = 'Term 1', reasons }) => {
+  saveOverloadReasons: async ({ personnelId, schoolYear = 'SY 26-27', term = 'Term 1', month = 'All', reasons, overloadHours = 0, overloadPay = 0, netTermPay = 0, rawPayload }) => {
     const res = await fetchWithAuth(`${API_BASE}/overload-reasons/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ personnelId, schoolYear, term, reasons })
+      body: JSON.stringify({ personnelId, schoolYear, term, month, reasons, overloadHours, overloadPay, netTermPay, rawPayload })
     });
     return res.json();
   },
+  saveOverloadReasonsBatch: async ({ items = [], schoolYear = 'SY 26-27', term = 'Term 1' }) => {
+    const res = await fetchWithAuth(`${API_BASE}/overload-reasons/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, schoolYear, term })
+    });
+    return res.json();
+  },
+
 
   // Work Immersion management
   getWorkImmersionSchedules: async (personnelId, schoolYear = '2026-2027') => {
@@ -417,19 +495,69 @@ export const api = {
     return res.json();
   },
 
-  // Public Faculty Room QR Profiling & Live Review Queue
   submitRoomProfiling: async (data) => {
     const res = await fetch(`${API_BASE}/room-profiling/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw new Error('Failed to submit room profile');
+    if (!res.ok) {
+      let errMsg = 'Failed to submit room profile';
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.error) errMsg = errJson.error;
+      } catch (_) {
+        try {
+          const errText = await res.text();
+          if (errText) errMsg = errText;
+        } catch (__) {}
+      }
+      throw new Error(errMsg);
+    }
     return res.json();
+  },
+  syncRoomRoster: async (schoolId, roster = []) => {
+    try {
+      const res = await fetch(`${API_BASE}/room-profiling/sync-roster`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schoolId, roster })
+      });
+      return res.ok ? await res.json() : { success: false };
+    } catch (e) {
+      return { success: false };
+    }
+  },
+  getRoomRoster: async (schoolId = '502624') => {
+    try {
+      const res = await fetch(`${API_BASE}/room-profiling/roster?schoolId=${encodeURIComponent(schoolId)}`);
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      return [];
+    }
+  },
+  verifyRoomPasscode: async ({ schoolId, passcode }) => {
+    try {
+      const res = await fetch(`${API_BASE}/room-profiling/verify-passcode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schoolId, passcode })
+      });
+      if (!res.ok) return { success: false, message: 'Server verification failed' };
+      return await res.json();
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
   },
   getPendingRoomSubmissions: async (schoolId = '199998') => {
     const res = await fetch(`${API_BASE}/room-profiling/pending?schoolId=${encodeURIComponent(schoolId)}`);
     if (!res.ok) throw new Error('Failed to fetch pending room submissions');
+    return res.json();
+  },
+  getApprovedRoomSubmissions: async (schoolId = '199998') => {
+    const res = await fetch(`${API_BASE}/room-profiling/approved?schoolId=${encodeURIComponent(schoolId)}`);
+    if (!res.ok) throw new Error('Failed to fetch approved room submissions');
     return res.json();
   },
   ackRoomSubmissions: async ({ schoolId, submissionIds = [], personnelIds = [] }) => {
@@ -440,6 +568,51 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to acknowledge room submissions');
     return res.json();
+  },
+  getProfilingSnapshots: async (schoolId = '199998') => {
+    const res = await fetch(`${API_BASE}/room-profiling/snapshots?schoolId=${encodeURIComponent(schoolId)}`);
+    if (!res.ok) throw new Error('Failed to fetch snapshots');
+    return res.json();
+  },
+  saveProfilingSnapshot: async ({ schoolId, snapshotName, personnel }) => {
+    const res = await fetch(`${API_BASE}/room-profiling/snapshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolId, snapshotName, personnel })
+    });
+    if (!res.ok) throw new Error('Failed to save snapshot');
+    return res.json();
+  },
+  getProfilingSnapshotById: async (id) => {
+    const res = await fetch(`${API_BASE}/room-profiling/snapshots/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Failed to fetch snapshot by ID');
+    return res.json();
+  },
+  checkPasscodeLockout: async ({ schoolId, passcode, personnelId }) => {
+    try {
+      const params = new URLSearchParams();
+      if (schoolId) params.append('schoolId', schoolId);
+      if (passcode) params.append('passcode', passcode);
+      if (personnelId) params.append('personnelId', personnelId);
+      const res = await fetch(`${API_BASE}/room-profiling/check-lockout?${params.toString()}`);
+      if (!res.ok) return { isLockedOut: false, lockoutRemainingSecs: 0 };
+      return res.json();
+    } catch (e) {
+      return { isLockedOut: false, lockoutRemainingSecs: 0 };
+    }
+  },
+  recordPasscodeAttempt: async ({ schoolId, passcode, personnelId, isSuccess }) => {
+    try {
+      const res = await fetch(`${API_BASE}/room-profiling/record-attempt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schoolId, passcode, personnelId, isSuccess })
+      });
+      if (!res.ok) return { isLockedOut: false };
+      return res.json();
+    } catch (e) {
+      return { isLockedOut: false };
+    }
   },
 
   addAbsence: async (data) => {
@@ -472,17 +645,39 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/submissions/status/${jobId}`);
     return res.json();
   },
-  getSchoolDraft: async (schoolYear) => {
-    const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}`);
+  getSchoolDraft: async (schoolYear = 'SY 26-27', targetSchoolId = null) => {
+    const rawId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const query = cleanId ? `&schoolId=${encodeURIComponent(cleanId)}` : '';
+    const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
+    const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}${query}`, { headers: customHeaders });
     return res.json();
   },
   saveSchoolDraft: async (schoolYear, payload) => {
-    const res = await fetchWithAuth(`${API_BASE}/school/draft`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schoolYear, payload })
-    });
-    return res.json();
+    if (activeDraftAbortController) {
+      try { activeDraftAbortController.abort(); } catch (e) {}
+    }
+    activeDraftAbortController = new AbortController();
+
+    const explicitId = payload?.schoolInfo && (payload.schoolInfo.schoolId || payload.schoolInfo.school_id);
+    const rawId = explicitId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
+
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/school/draft`, {
+        method: 'PUT',
+        signal: activeDraftAbortController.signal,
+        headers: { 'Content-Type': 'application/json', ...customHeaders },
+        body: JSON.stringify({ schoolYear, payload })
+      });
+      return res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return { success: true, aborted: true };
+      }
+      throw err;
+    }
   },
   deleteSchoolDraft: async (schoolYear) => {
     const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}`, {
@@ -490,20 +685,66 @@ export const api = {
     });
     return res.json();
   },
-  getIncomingRequests: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/requests/incoming`);
+
+  // Node Status & Boolean Progress Tracking
+  getNodeStatus: async (schoolYear = 'SY 26-27', targetSchoolId = null) => {
+    const rawId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const query = cleanId ? `&school_id=${encodeURIComponent(cleanId)}` : '';
+    const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
+    const res = await fetchWithAuth(`${API_BASE}/node-status/school?schoolYear=${encodeURIComponent(schoolYear)}${query}`, { headers: customHeaders });
     return res.json();
   },
-  getOutgoingRequests: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/requests/outgoing`);
+  saveSchoolNode: async (nodeId, payload = {}, schoolYear = 'SY 26-27', overallStatus = 'IN_PROGRESS', overallPercentage = 0) => {
+    const res = await fetchWithAuth(`${API_BASE}/node-status/school/${encodeURIComponent(nodeId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolYear, payload, overallStatus, overallPercentage })
+    });
     return res.json();
   },
-  getRequestHistory: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/requests/history`);
+  getPersonnelNodeStatus: async (schoolYear = 'SY 26-27') => {
+    const res = await fetchWithAuth(`${API_BASE}/node-status/personnel?schoolYear=${encodeURIComponent(schoolYear)}`);
     return res.json();
   },
-  getDistrictSchools: async () => {
-    const res = await fetchWithAuth(`${API_BASE}/requests/district-schools`);
+  savePersonnelNode: async (personnelId, nodeId, data = {}) => {
+    const { payload = {}, schoolYear = 'SY 26-27', personnelName, positionTitle, category, isSchoolHead, isComplete } = data;
+    const res = await fetchWithAuth(`${API_BASE}/node-status/personnel/${encodeURIComponent(personnelId)}/${encodeURIComponent(nodeId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolYear, personnelName, positionTitle, category, isSchoolHead, isComplete, payload })
+    });
+    return res.json();
+  },
+  getIncomingRequests: async (schoolId) => {
+    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/requests/incoming${query}`);
+    return res.json();
+  },
+  getOutgoingRequests: async (schoolId) => {
+    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/requests/outgoing${query}`);
+    return res.json();
+  },
+  getRequestHistory: async (schoolId) => {
+    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/requests/history${query}`);
+    return res.json();
+  },
+  getDistrictSchools: async (schoolId, division) => {
+    const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
+    const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
+    const params = new URLSearchParams();
+    if (cleanId) params.append('schoolId', cleanId);
+    if (division) params.append('division', division);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth(`${API_BASE}/requests/district-schools${query}`);
     return res.json();
   },
   createRequest: async (data) => {
@@ -662,6 +903,25 @@ export const api = {
     return res.json();
   },
 
+  // SDO Validation & Review Status
+  getSchoolValidation: async (schoolId) => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/validation/status/${encodeURIComponent(schoolId)}`);
+      return await res.json();
+    } catch (err) {
+      console.warn('Failed to fetch school validation status:', err);
+      return { exists: false, error: err.message };
+    }
+  },
+  resubmitSchoolValidation: async (data) => {
+    const res = await fetchWithAuth(`${API_BASE}/validation/resubmit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+
   // Auth passcode login
   passcodeLogin: async (data) => {
     const res = await fetch(`${API_BASE}/auth/passcode-login`, {
@@ -669,6 +929,50 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    let result = {};
+    try {
+      result = await res.json();
+    } catch (err) {
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'Bad Gateway'})`);
+      }
+    }
+    return { ok: res.ok, status: res.status, ...result };
+  },
+
+  // Auth password/migrate login
+  migrateLogin: async (data) => {
+    const res = await fetch(`${API_BASE}/auth/migrate-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    let result = {};
+    try {
+      result = await res.json();
+    } catch (err) {
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'Bad Gateway'})`);
+      }
+    }
+    return { ok: res.ok, status: res.status, ...result };
+  },
+
+  // Auth pin login
+  pinLogin: async (data) => {
+    const res = await fetch(`${API_BASE}/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    let result = {};
+    try {
+      result = await res.json();
+    } catch (err) {
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'Bad Gateway'})`);
+      }
+    }
+    return { ok: res.ok, status: res.status, ...result };
   }
 };

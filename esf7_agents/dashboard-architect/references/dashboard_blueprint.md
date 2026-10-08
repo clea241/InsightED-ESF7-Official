@@ -137,3 +137,7 @@ Whenever new cards, features, or action handlers are added to `Dashboard.jsx`, a
 * **Version 1.2 (2026-08-18)**: Added Learning Area & L&D Competency Heatmap Grid.
   * Features 5-column breakdown (`SUBJECT`, `DIRECT DEGREE MATCH`, `LEARNING AREA MATCHED`, `L&D / TRAINING MATCHED (≥8 HRS)`, `UNQUALIFIED OUT-OF-FIELD`).
   * Evaluates teacher qualifications across degree majors, learning area experience history, and L&D seminars with $\ge 8$ total hours.
+* **Version 1.3 (2026-09-15)**: Integrated Embedded LoadingScreen & Synchronized URL Routing.
+  * Replaced generic spinners with canonical `<LoadingScreen inline size="medium" />` for dashboard stats loading.
+  * Connected global URL query parameter navigation (`?view=dashboard`) with bidirectional browser history support.
+

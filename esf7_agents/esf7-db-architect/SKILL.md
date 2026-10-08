@@ -24,7 +24,7 @@ Detailed technical schema definitions (all tables, columns, data types, FKs, and
 
 ## 🗄 Active Database Tables Summary
 
-The `insighted_esf7` database currently contains **21 active tables**:
+The `insighted_esf7` database currently contains **22 active tables**:
 
 | # | Table Name | Purpose | Primary Key | Key Columns / Foreign Keys |
 |---|------------|---------|-------------|----------------------------|
@@ -49,6 +49,7 @@ The `insighted_esf7` database currently contains **21 active tables**:
 | 19 | `esf7_requests` | Request Center (Inter-School Clustered Teacher, Reassigned Teacher, Merger Requests) | `id` (VARCHAR(50)) | `requester_school_id`, `target_school_id`, `school_year`, `request_type`, `personnel_id` (FK), `personnel_name`, `status`, `remarks`, `raw_payload` |
 | 20 | `esf7_school_profile` | School Profile (Elementary, JHS, JHS JSONB Special Programs, SHS Curriculum Model) | `id` (VARCHAR(50)) | `school_id`, `school_year`, `has_elem_special_programs`, `has_jhs_special_programs`, `jhs_special_programs` (JSONB), `shs_curriculum_model`, `raw_payload` |
 | 21 | `esf7_submission_queue` | Submission Queue (Offline-First Certified E-Sign Submissions) | `id` (SERIAL) | `school_id`, `school_year`, `payload` (JSONB), `signature`, `certified_by`, `status`, `error_message`, `raw_payload` |
+| 22 | `esf7_clustered_ghost_sync` | Atomic Real-Time Clustered Teacher Timetable Ghost Sync across PM2 Workers | `room_key` (VARCHAR(255)) | `room_key`, `school_id`, `school_name`, `slots` (JSONB), `updated_at` |
 
 ---
 

@@ -13,6 +13,31 @@ const DEFAULT_AMOUNTS = {
   hardship: null
 };
 
+async function isPersonnelNonTeaching(personnelId) {
+  try {
+    const res = await db.query(
+      `SELECT type, plantilla_position FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [personnelId]
+    );
+    if (res.rows.length === 0) return false;
+    const p = res.rows[0];
+    const t = String(p.type || '').toLowerCase();
+    const pos = String(p.plantilla_position || '').toUpperCase();
+    if (t.includes('non') || t === 'non-teaching') return true;
+    if (
+      pos.includes('ADMINISTRATIVE') || pos.includes('ADAS') || pos.includes('BOOKKEEPER') ||
+      pos.includes('SECURITY') || pos.includes('UTILITY') || pos.includes('NURSE') ||
+      pos.includes('DRIVER') || pos.includes('AIDE') || pos.includes('ACCOUNTANT') ||
+      pos.includes('DISBURSING') || pos.includes('CLERK')
+    ) {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 function formatAllowanceRecord(row) {
   if (!row) return null;
   const raw = row.raw_payload || {};
@@ -164,6 +189,19 @@ router.post('/toggle', async (req, res) => {
       return res.status(400).json({ success: false, error: `Invalid allowanceKey. Allowed keys: ${ALLOWED_KEYS.join(', ')}` });
     }
 
+    const grantedBool = Boolean(isGranted);
+
+    // Rule: Non-Teaching staff cannot receive Teaching Supplies Allowance
+    if (keyLower === 'supplies' && grantedBool) {
+      const isNonTeaching = await isPersonnelNonTeaching(personnelId);
+      if (isNonTeaching) {
+        return res.status(400).json({
+          success: false,
+          error: 'Non-Teaching personnel are strictly not eligible for Teaching Supplies Allowance.'
+        });
+      }
+    }
+
     const personRes = await db.query(
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
       [personnelId]
@@ -176,7 +214,6 @@ router.post('/toggle', async (req, res) => {
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
     const alwId = `ALW-${targetSchoolId.replace('SCH-', '')}-${seq}`;
 
-    const grantedBool = Boolean(isGranted);
     const targetAmount = amount !== undefined && amount !== null ? Number(amount) : (DEFAULT_AMOUNTS[keyLower] || 0);
 
     const hasCol = `has_${keyLower}`;
@@ -201,13 +238,12 @@ router.post('/toggle', async (req, res) => {
       targetSchoolId,
       schoolYear,
       grantedBool,
-      targetAmount,
+      grantedBool ? targetAmount : null,
       JSON.stringify(req.body)
     ]);
 
     res.json({
       success: true,
-      message: `Updated ${keyLower} allowance to ${grantedBool} (Amount: ₱${targetAmount}) for personnel ${personnelId}`,
       record: formatAllowanceRecord(result.rows[0])
     });
   } catch (error) {
@@ -225,6 +261,8 @@ router.post('/bulk', async (req, res) => {
     if (!personnelId) {
       return res.status(400).json({ success: false, error: 'personnelId is required.' });
     }
+
+    const isNonTeaching = await isPersonnelNonTeaching(personnelId);
 
     const personRes = await db.query(
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
@@ -244,8 +282,9 @@ router.post('/bulk', async (req, res) => {
     const hasUniform = Boolean(allowances.uniform || allowances.has_uniform);
     const uniformAmt = Number(amounts.uniform_amount || amounts.uniformAmount || DEFAULT_AMOUNTS.uniform);
 
-    const hasSupplies = Boolean(allowances.supplies || allowances.has_supplies);
-    const suppliesAmt = Number(amounts.supplies_amount || amounts.suppliesAmount || DEFAULT_AMOUNTS.supplies);
+    // Non-teaching personnel can NEVER have supplies allowance
+    const hasSupplies = isNonTeaching ? false : Boolean(allowances.supplies || allowances.has_supplies);
+    const suppliesAmt = isNonTeaching ? null : Number(amounts.supplies_amount || amounts.suppliesAmount || DEFAULT_AMOUNTS.supplies);
 
     const hasMedical = Boolean(allowances.medical || allowances.has_medical);
     const medicalAmt = Number(amounts.medical_amount || amounts.medicalAmount || DEFAULT_AMOUNTS.medical);

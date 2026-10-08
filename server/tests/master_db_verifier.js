@@ -259,14 +259,14 @@ async function runMasterVerifier() {
     return `${cols.length} cols verified for Relieving Workloads`;
   });
 
-  // 18. overload_late
-  await testTable(18, 'overload_late', async () => {
+  // 18. overload_late_undertime
+  await testTable(18, 'overload_late_undertime', async () => {
     const res = await db.query(`
-      SELECT column_name FROM information_schema.columns WHERE table_name = 'overload_late'
+      SELECT column_name FROM information_schema.columns WHERE table_name = 'overload_late_undertime'
     `);
     const cols = res.rows.map(r => r.column_name);
-    if (!cols.includes('tardiness_date')) throw new Error('Missing tardiness_date');
-    return `${cols.length} cols verified for Single-Day Tardiness`;
+    if (!cols.includes('log_date')) throw new Error('Missing log_date');
+    return `${cols.length} cols verified for Tardiness & Undertime DTR Logs`;
   });
 
   // 19. esf7_work_immersion

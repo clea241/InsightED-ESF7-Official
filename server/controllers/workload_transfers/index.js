@@ -6,29 +6,36 @@ const db = require('../../db');
 router.get('/', async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT t.*, w.subject, w.start_time, w.end_time, w.days
-      FROM workload_transfers t
-      LEFT JOIN workload_rows w ON t.workload_row_id = w.id
-      ORDER BY t.id DESC
-    `);
+      SELECT t.*, 
+             COALESCE(t.relieving_personnel_id, t.raw_payload->>'substituteTeacherId') as substitute_personnel_id,
+             COALESCE(w.subject, t.subject) as subject_name, 
+             w.start_time, w.end_time, w.days
+      FROM esf7_workload_transfer t
+      LEFT JOIN esf7_workload_rows w ON t.workload_id = w.id
+      ORDER BY t.created_at DESC
+    `).catch(async () => {
+      // Fallback if table is empty or structure differs
+      return { rows: [] };
+    });
+
     res.json(result.rows.map(row => ({
       id: String(row.id),
       schoolId: row.school_id,
       schoolYear: row.school_year,
       absentTeacherId: String(row.absent_personnel_id),
-      substituteTeacherId: String(row.substitute_personnel_id),
-      workloadRowId: row.workload_row_id,
+      substituteTeacherId: String(row.substitute_personnel_id || row.relieving_personnel_id || ''),
+      workloadRowId: row.workload_id || row.workload_row_id,
       startDate: row.start_date,
       endDate: row.end_date,
-      reason: row.reason,
-      status: row.status,
-      loggedBy: row.logged_by,
-      workloadRows: row.subject ? [{
-        id: row.workload_row_id,
-        subject: row.subject,
-        startTime: row.start_time ? row.start_time.substring(0, 5) : '',
-        endTime: row.end_time ? row.end_time.substring(0, 5) : '',
-        days: row.days
+      reason: row.reason || row.raw_payload?.reason || '',
+      status: row.status || 'active',
+      loggedBy: row.logged_by || row.raw_payload?.loggedBy || 'School Head',
+      workloadRows: (row.subject_name || row.subject) ? [{
+        id: row.workload_id || row.workload_row_id,
+        subject: row.subject_name || row.subject,
+        startTime: row.start_time ? String(row.start_time).substring(0, 5) : '',
+        endTime: row.end_time ? String(row.end_time).substring(0, 5) : '',
+        days: row.days || ['M', 'T', 'W', 'TH', 'F']
       }] : []
     })));
   } catch (err) {

@@ -33,7 +33,7 @@ const JHS_PROGRAM_OPTIONS = [
 ];
 
 export default function SchoolProfile() {
-  const { schoolInfo, setSchoolInfo, showAlert, showConfirm, completeNode, setActiveView } = useApp();
+  const { schoolInfo, setSchoolInfo, showAlert, showConfirm, completeNode, setActiveView, registerAutoSaveHandler } = useApp();
   const currentOfferings = Array.isArray(schoolInfo.curricularOffering) ? schoolInfo.curricularOffering : [];
 
   const isElemActive = currentOfferings.includes('Elementary');
@@ -132,12 +132,117 @@ export default function SchoolProfile() {
     loadConfig();
   }, [schoolInfo.schoolId, schoolInfo.inclusivePrograms, schoolInfo.specialPrograms]);
 
+  // Register auto-save handler on navigation (e.g. clicking Node Map)
+  useEffect(() => {
+    if (!registerAutoSaveHandler) return;
+    return registerAutoSaveHandler('school_profile', async () => {
+      try {
+        const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || 'default'}`;
+        const selectedPrograms = [
+          ...(hasElemSpecialPrograms === 'yes' && elemSpecialProgram ? ['SPECIAL SCIENCE ELEMENTARY SCHOOL'] : []),
+          ...(hasJhsSpecialPrograms === 'yes' ? jhsSpecialPrograms : [])
+        ];
+        const selectedInclusive = [
+          ...(hasElemInclusive === 'yes' ? elemInclusivePrograms : []),
+          ...(hasJhsInclusive === 'yes' ? jhsInclusivePrograms : []),
+          ...(hasShsInclusive === 'yes' ? shsInclusivePrograms : [])
+        ];
+        const configData = {
+          hasElemSpecialPrograms: hasElemSpecialPrograms === 'yes',
+          elemSpecialProgram: hasElemSpecialPrograms === 'yes' && elemSpecialProgram,
+          hasElemInclusive: hasElemInclusive === 'yes',
+          elemInclusivePrograms,
+          hasJhsSpecialPrograms: hasJhsSpecialPrograms === 'yes',
+          jhsSpecialPrograms,
+          hasJhsInclusive: hasJhsInclusive === 'yes',
+          jhsInclusivePrograms,
+          hasShsInclusive: hasShsInclusive === 'yes',
+          shsInclusivePrograms,
+          shsCurriculumModel,
+          specialPrograms: selectedPrograms,
+          inclusivePrograms: selectedInclusive
+        };
+        localStorage.setItem(draftKey, JSON.stringify(configData));
+        await setLocalDraft(draftKey, configData);
+        if (setSchoolInfo) {
+          setSchoolInfo(prev => ({
+            ...prev,
+            ...configData,
+            specialPrograms: selectedPrograms,
+            shsCurriculumModel: configData.shsCurriculumModel,
+            inclusivePrograms: selectedInclusive
+          }));
+        }
+        return true;
+      } catch (e) {
+        console.warn('[SchoolProfile Auto-Save Notice]:', e);
+        return false;
+      }
+    });
+  }, [registerAutoSaveHandler, schoolInfo?.schoolId, hasElemSpecialPrograms, elemSpecialProgram, hasElemInclusive, elemInclusivePrograms, hasJhsSpecialPrograms, jhsSpecialPrograms, hasJhsInclusive, jhsInclusivePrograms, hasShsInclusive, shsInclusivePrograms, shsCurriculumModel, setSchoolInfo]);
+
+  const syncConfigDraft = (overrides = {}) => {
+    try {
+      const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || 'default'}`;
+      const curHasElemSpecial = overrides.hasElemSpecialPrograms !== undefined ? overrides.hasElemSpecialPrograms : hasElemSpecialPrograms;
+      const curElemSpecial = overrides.elemSpecialProgram !== undefined ? overrides.elemSpecialProgram : elemSpecialProgram;
+      const curHasJhsSpecial = overrides.hasJhsSpecialPrograms !== undefined ? overrides.hasJhsSpecialPrograms : hasJhsSpecialPrograms;
+      const curJhsSpecial = overrides.jhsSpecialPrograms !== undefined ? overrides.jhsSpecialPrograms : jhsSpecialPrograms;
+      const curHasElemInc = overrides.hasElemInclusive !== undefined ? overrides.hasElemInclusive : hasElemInclusive;
+      const curElemInc = overrides.elemInclusivePrograms !== undefined ? overrides.elemInclusivePrograms : elemInclusivePrograms;
+      const curHasJhsInc = overrides.hasJhsInclusive !== undefined ? overrides.hasJhsInclusive : hasJhsInclusive;
+      const curJhsInc = overrides.jhsInclusivePrograms !== undefined ? overrides.jhsInclusivePrograms : jhsInclusivePrograms;
+      const curHasShsInc = overrides.hasShsInclusive !== undefined ? overrides.hasShsInclusive : hasShsInclusive;
+      const curShsInc = overrides.shsInclusivePrograms !== undefined ? overrides.shsInclusivePrograms : shsInclusivePrograms;
+
+      const selectedPrograms = [
+        ...(curHasElemSpecial === 'yes' && curElemSpecial ? ['SPECIAL SCIENCE ELEMENTARY SCHOOL'] : []),
+        ...(curHasJhsSpecial === 'yes' ? curJhsSpecial : [])
+      ];
+      const selectedInclusive = [
+        ...(curHasElemInc === 'yes' ? curElemInc : []),
+        ...(curHasJhsInc === 'yes' ? curJhsInc : []),
+        ...(curHasShsInc === 'yes' ? curShsInc : [])
+      ];
+
+      const configData = {
+        hasElemSpecialPrograms: curHasElemSpecial === 'yes',
+        elemSpecialProgram: curHasElemSpecial === 'yes' && curElemSpecial,
+        hasJhsSpecialPrograms: curHasJhsSpecial === 'yes',
+        jhsSpecialPrograms: curHasJhsSpecial === 'yes' ? curJhsSpecial : [],
+        specialPrograms: selectedPrograms,
+        hasElemInclusive: curHasElemInc === 'yes',
+        elemInclusivePrograms: curHasElemInc === 'yes' ? curElemInc : [],
+        hasJhsInclusive: curHasJhsInc === 'yes',
+        jhsInclusivePrograms: curHasJhsInc === 'yes' ? curJhsInc : [],
+        hasShsInclusive: curHasShsInc === 'yes',
+        shsInclusivePrograms: curHasShsInc === 'yes' ? curShsInc : [],
+        inclusivePrograms: selectedInclusive,
+        shsCurriculumModel,
+        schoolYear: schoolInfo.schoolYear || 'SY 26-27'
+      };
+
+      localStorage.setItem(draftKey, JSON.stringify(configData));
+      setLocalDraft(draftKey, configData).catch(() => {});
+      if (setSchoolInfo) {
+        setSchoolInfo(prev => ({
+          ...prev,
+          ...configData
+        }));
+      }
+    } catch (e) {
+      console.warn('Sync draft warning:', e);
+    }
+  };
+
   const handleToggleJhsProgram = (programLabel) => {
-    setJhsSpecialPrograms(prev => 
-      prev.includes(programLabel) 
+    setJhsSpecialPrograms(prev => {
+      const next = prev.includes(programLabel) 
         ? prev.filter(p => p !== programLabel) 
-        : [...prev, programLabel]
-    );
+        : [...prev, programLabel];
+      syncConfigDraft({ jhsSpecialPrograms: next });
+      return next;
+    });
   };
 
   const handleConfirmAndProceed = async () => {
@@ -333,14 +438,9 @@ export default function SchoolProfile() {
                     <span style={{ fontSize: '14px', fontWeight: '700', color: '#334155' }}>{schoolInfo.division || '—'}</span>
                   </div>
 
-                  <div style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0', gridColumn: 'span 2' }}>
                     <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.04em', display: 'block', marginBottom: '4px' }}>District</label>
                     <span style={{ fontSize: '14px', fontWeight: '700', color: '#334155' }}>{schoolInfo.district || '—'}</span>
-                  </div>
-
-                  <div style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                    <label style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', letterSpacing: '0.04em', display: 'block', marginBottom: '4px' }}>Shifts</label>
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#334155' }}>{schoolInfo.numberOfShifts || '1'} Shift</span>
                   </div>
                 </div>
               </div>
@@ -654,7 +754,10 @@ export default function SchoolProfile() {
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <button
                         type="button"
-                        onClick={() => setHasJhsSpecialPrograms('yes')}
+                        onClick={() => {
+                          setHasJhsSpecialPrograms('yes');
+                          syncConfigDraft({ hasJhsSpecialPrograms: 'yes' });
+                        }}
                         style={{
                           padding: '8px 22px',
                           borderRadius: '10px',
@@ -673,6 +776,7 @@ export default function SchoolProfile() {
                         onClick={() => {
                           setHasJhsSpecialPrograms('no');
                           setJhsSpecialPrograms([]);
+                          syncConfigDraft({ hasJhsSpecialPrograms: 'no', jhsSpecialPrograms: [] });
                         }}
                         style={{
                           padding: '8px 22px',

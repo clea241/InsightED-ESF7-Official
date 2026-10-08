@@ -6,9 +6,9 @@ import { useMemo, useState } from 'react';
 // getSortValue defaults to getValue when omitted (e.g. text/number columns);
 // pass it explicitly for columns whose display text isn't the right sort order
 // (e.g. a status badge that should sort Below < Within < Above, not alphabetically).
-export default function useSortableFilterableTable(rows, columns) {
+export default function useSortableFilterableTable(rows, columns, defaultSort = { key: null, direction: 'asc' }) {
   const [filters, setFilters] = useState({});
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState(defaultSort || { key: null, direction: 'asc' });
 
   const setFilter = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -42,7 +42,11 @@ export default function useSortableFilterableTable(rows, columns) {
         result = [...result].sort((a, b) => {
           const va = getSortValue(a);
           const vb = getSortValue(b);
-          if (va === vb) return 0;
+          if (va === vb) {
+            const nameA = a.sectionName || a.name || '';
+            const nameB = b.sectionName || b.name || '';
+            return String(nameA).localeCompare(String(nameB));
+          }
           const cmp = (typeof va === 'number' && typeof vb === 'number')
             ? va - vb
             : String(va ?? '').localeCompare(String(vb ?? ''));

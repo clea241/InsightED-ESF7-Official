@@ -30,6 +30,45 @@ function formatWorkloadRecord(row) {
     endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
     end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
     days: row.days || ['M', 'T', 'W', 'TH', 'F'],
+    term: row.term || raw.term || '1st',
+    rawPayload: raw
+  };
+}
+
+function formatAdminTaskRecord(row) {
+  if (!row) return null;
+  const raw = row.raw_payload || {};
+  return {
+    ...raw,
+    id: row.id,
+    personnelId: row.personnel_id,
+    personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
+    schoolYear: row.school_year,
+    school_year: row.school_year,
+    task: row.task_name,
+    task_name: row.task_name,
+    taskName: row.task_name,
+    category: row.task_category || raw.category || 'General Administration',
+    taskCategory: row.task_category || raw.category || 'General Administration',
+    startTime: row.start_time ? String(row.start_time).substring(0, 5) : (raw.startTime || '13:00'),
+    start_time: row.start_time ? String(row.start_time).substring(0, 5) : (raw.startTime || '13:00'),
+    endTime: row.end_time ? String(row.end_time).substring(0, 5) : (raw.endTime || '14:00'),
+    end_time: row.end_time ? String(row.end_time).substring(0, 5) : (raw.endTime || '14:00'),
+    days: row.days || raw.days || ['M', 'T', 'W', 'TH', 'F'],
+    term: row.term || raw.term || '1st',
+    startDate: row.start_date || raw.startDate || null,
+    start_date: row.start_date || raw.startDate || null,
+    endDate: row.end_date || raw.endDate || null,
+    end_date: row.end_date || raw.endDate || null,
+    dates: row.dates || raw.dates || [],
+    durationMinutes: row.duration_minutes || raw.durationMinutes || 60,
+    duration_minutes: row.duration_minutes || raw.durationMinutes || 60,
+    termTotalHours: row.term_total_hours ? parseFloat(row.term_total_hours) : (raw.termTotalHours || 0),
+    isDesignationSynced: !!row.is_designation_synced,
+    is_designation_synced: !!row.is_designation_synced,
+    status: row.status || 'ACTIVE',
     rawPayload: raw
   };
 }
@@ -43,6 +82,20 @@ router.get('/personnel/:personnel_id', async (req, res) => {
       [personnel_id]
     );
     res.json(result.rows.map(formatWorkloadRecord));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET all administrative tasks (Gantt blocks) for a personnel
+router.get('/personnel/:personnel_id/admin-tasks', async (req, res) => {
+  try {
+    const { personnel_id } = req.params;
+    const result = await db.query(
+      `SELECT * FROM esf7_admin_task WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      [personnel_id]
+    );
+    res.json(result.rows.map(formatAdminTaskRecord));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -126,20 +179,27 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT Batch replace all workload rows for a personnel
-router.put('/personnel/:personnel_id', async (req, res) => {
+// Batch replace workload rows for a personnel (supports PUT/POST /personnel/:personnel_id and POST /bulk)
+const saveWorkloadBatchHandler = async (req, res) => {
   const client = await db.getClient();
   try {
-    const { personnel_id } = req.params;
+    const targetPersonnelId = req.params.personnel_id || req.body.personnel_id || req.body.personnelId;
+    if (!targetPersonnelId) {
+      return res.status(400).json({ error: 'personnel_id is required' });
+    }
+
     const {
       workloadRows = [],
       workload_rows = [],
-      teachingRelatedRows = [],
-      administrativeRows = [],
       shsWorkloads = null,
       schoolId: bodySchoolId,
-      schoolYear: bodySchoolYear
+      school_id: bodySnakeSchoolId,
+      schoolYear: bodySchoolYear,
+      school_year: bodySnakeSchoolYear
     } = req.body;
+
+    const teachingRelatedRows = req.body.teachingRelatedRows !== undefined ? req.body.teachingRelatedRows : req.body.teaching_related_rows;
+    const administrativeRows = req.body.administrativeRows !== undefined ? req.body.administrativeRows : req.body.administrative_rows;
 
     const rowsToSave = Array.isArray(workloadRows) && workloadRows.length > 0
       ? workloadRows
@@ -150,47 +210,85 @@ router.put('/personnel/:personnel_id', async (req, res) => {
     // 1. Locate or create personnel profile record to satisfy FK
     let personRes = await client.query(
       `SELECT id, school_id, school_year, raw_payload FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [personnel_id]
+      [targetPersonnelId]
     );
 
-    let targetPersonId = personnel_id;
-    let targetSchoolId = bodySchoolId || '108348';
-    let targetSchoolYear = bodySchoolYear || '2026-2027';
+    let targetPersonId = targetPersonnelId;
+    let targetSchoolId = bodySchoolId || bodySnakeSchoolId || '108348';
+    let targetSchoolYear = bodySchoolYear || bodySnakeSchoolYear || '2026-2027';
+
+    const targetTerm = req.body.term || (rowsToSave.length > 0 ? (rowsToSave[0].term || '1st') : null);
 
     if (personRes.rows.length > 0) {
       targetPersonId = personRes.rows[0].id;
-      targetSchoolId = bodySchoolId || personRes.rows[0].school_id || targetSchoolId;
-      targetSchoolYear = bodySchoolYear || personRes.rows[0].school_year || targetSchoolYear;
+      targetSchoolId = bodySchoolId || bodySnakeSchoolId || personRes.rows[0].school_id || targetSchoolId;
+      targetSchoolYear = bodySchoolYear || bodySnakeSchoolYear || personRes.rows[0].school_year || targetSchoolYear;
 
-      // Update raw_payload in esf7_personnel_profile
+      const termsInPayload = Array.from(new Set(rowsToSave.map(r => r.term || targetTerm || '1st')));
+
+      // Update raw_payload in esf7_personnel_profile with term preservation
       const existingRaw = personRes.rows[0].raw_payload || {};
+      const existingWorkloadRows = Array.isArray(existingRaw.workloadRows) ? existingRaw.workloadRows : [];
+      let mergedWorkloadRows = rowsToSave;
+      if (termsInPayload.length > 0) {
+        const otherTermsRows = existingWorkloadRows.filter(r => !termsInPayload.includes(r.term || '1st'));
+        mergedWorkloadRows = [...otherTermsRows, ...rowsToSave];
+      } else if (targetTerm) {
+        const otherTermsRows = existingWorkloadRows.filter(r => (r.term || '1st') !== targetTerm);
+        mergedWorkloadRows = [...otherTermsRows, ...rowsToSave];
+      }
+
+      const existingAdminRows = Array.isArray(existingRaw.administrativeRows) ? existingRaw.administrativeRows : [];
+      let mergedAdminRows = administrativeRows !== undefined ? administrativeRows : existingAdminRows;
+      if (termsInPayload.length > 0 && Array.isArray(administrativeRows) && administrativeRows.length > 0) {
+        const otherTermsAdmin = existingAdminRows.filter(r => !termsInPayload.includes(r.term || '1st'));
+        mergedAdminRows = [...otherTermsAdmin, ...administrativeRows];
+      } else if (targetTerm && Array.isArray(administrativeRows)) {
+        const otherTermsAdmin = existingAdminRows.filter(r => (r.term || '1st') !== targetTerm);
+        mergedAdminRows = [...otherTermsAdmin, ...administrativeRows];
+      }
+
       const updatedRaw = {
         ...existingRaw,
-        workloadRows: rowsToSave,
-        teachingRelatedRows,
-        administrativeRows
+        workloadRows: mergedWorkloadRows,
+        teachingRelatedRows: teachingRelatedRows !== undefined ? teachingRelatedRows : (existingRaw.teachingRelatedRows || existingRaw.teaching_related_rows || []),
+        administrativeRows: mergedAdminRows
       };
       await client.query(
         `UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`,
         [JSON.stringify(updatedRaw), targetPersonId]
       );
     } else {
+      const generatedPrn = String(targetPersonId).startsWith('PRN-') ? targetPersonId : `PRN-${String(targetPersonId).replace(/^PER-/, '')}`;
       // Baseline profile fallback so foreign key constraint does not fail
       await client.query(`
-        INSERT INTO esf7_personnel_profile (id, school_id, school_year, first_name, last_name, raw_payload, created_at, updated_at)
-        VALUES ($1, $2, $3, 'TEACHER', 'STAFF', $4::jsonb, NOW(), NOW())
-        ON CONFLICT (id) DO NOTHING
-      `, [targetPersonId, targetSchoolId, targetSchoolYear, JSON.stringify({ workloadRows: rowsToSave, teachingRelatedRows, administrativeRows })]);
+        INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name, raw_payload, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 'TEACHER', 'STAFF', $5::jsonb, NOW(), NOW())
+        ON CONFLICT (id) DO UPDATE SET raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
+      `, [targetPersonId, generatedPrn, targetSchoolId, targetSchoolYear, JSON.stringify({ workloadRows: rowsToSave, teachingRelatedRows, administrativeRows })]);
     }
 
     // Clean school ID
     targetSchoolId = String(targetSchoolId).replace('SCH-', '');
 
-    // 2. Delete existing workload rows for this personnel
-    await client.query(
-      `DELETE FROM esf7_workload_rows WHERE personnel_id = $1`,
-      [targetPersonId]
-    );
+    // 2. Delete existing workload rows for this personnel (scoped by terms present in payload to preserve other terms)
+    const termsInPayload = Array.from(new Set(rowsToSave.map(r => r.term || targetTerm || '1st')));
+    if (termsInPayload.length > 0) {
+      await client.query(
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND term = ANY($2::text[])`,
+        [targetPersonId, termsInPayload]
+      );
+    } else if (targetTerm) {
+      await client.query(
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND (term = $2 OR (term IS NULL AND $2 = '1st'))`,
+        [targetPersonId, targetTerm]
+      );
+    } else {
+      await client.query(
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1`,
+        [targetPersonId]
+      );
+    }
 
     // 3. Insert each workload row
     const insertedRows = [];
@@ -210,7 +308,7 @@ router.put('/personnel/:personnel_id', async (req, res) => {
       const startTime = r.startTime || r.start_time || null;
       const endTime = r.endTime || r.end_time || null;
       const days = r.days || (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-      const term = r.term || '1st';
+      const term = r.term || targetTerm || '1st';
 
       const insertQuery = `
         INSERT INTO esf7_workload_rows (
@@ -236,7 +334,7 @@ router.put('/personnel/:personnel_id', async (req, res) => {
         endTime,
         JSON.stringify(days),
         term,
-        JSON.stringify({ ...r, id: wklId, sectionId, sectionName, gradeLevel, subject, startTime, endTime, days })
+        JSON.stringify({ ...r, id: wklId, sectionId, sectionName, gradeLevel, subject, startTime, endTime, days, term })
       ];
 
       const resRow = await client.query(insertQuery, insertValues);
@@ -245,7 +343,11 @@ router.put('/personnel/:personnel_id', async (req, res) => {
 
     // 4. Also handle SHS workloads if provided or present
     if (shsWorkloads) {
-      await client.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1`, [targetPersonId]);
+      if (targetTerm) {
+        await client.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1 AND (term = $2 OR (term IS NULL AND $2 = '1st'))`, [targetPersonId, targetTerm]);
+      } else {
+        await client.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1`, [targetPersonId]);
+      }
 
       let allShsList = [];
       if (Array.isArray(shsWorkloads)) {
@@ -279,7 +381,7 @@ router.put('/personnel/:personnel_id', async (req, res) => {
           targetPersonId,
           targetSchoolId,
           targetSchoolYear,
-          sr.term || '1st',
+          sr.term || targetTerm || '1st',
           sr.semester || null,
           sr.gradeLevel || sr.grade_level || 'Grade 11',
           sr.trackStrand || sr.track_strand || null,
@@ -351,14 +453,25 @@ router.put('/personnel/:personnel_id', async (req, res) => {
 
     // 6. Ingest Administrative Tasks (esf7_admin_task)
     if (Array.isArray(administrativeRows)) {
-      await client.query('DELETE FROM esf7_admin_task WHERE personnel_id = $1', [targetPersonId]);
+      if (targetTerm) {
+        await client.query('DELETE FROM esf7_admin_task WHERE personnel_id = $1 AND (term = $2 OR (term IS NULL AND $2 = \'1st\'))', [targetPersonId, targetTerm]);
+      } else {
+        await client.query('DELETE FROM esf7_admin_task WHERE personnel_id = $1', [targetPersonId]);
+      }
       let admCounter = 1;
       for (const adm of administrativeRows) {
-        if (!adm || (!adm.task && !adm.task_name && !adm.name)) continue;
+        if (!adm || (!adm.task && !adm.task_name && !adm.name && !adm.subject)) continue;
         const admId = `ADM-${targetSchoolId}-${targetPersonId.split('-').pop()}-${String(admCounter++).padStart(3, '0')}`;
-        const tName = adm.task || adm.task_name || adm.name || 'Administrative Task';
+        const tName = adm.task || adm.task_name || adm.name || adm.subject || 'Administrative Task';
         const datesArr = Array.isArray(adm.dates) ? adm.dates : (adm.taskDate ? [adm.taskDate] : (adm.date ? [adm.date] : []));
-        
+        const category = adm.category || adm.taskCategory || adm.task_category || 'General Administration';
+        const term = adm.term || targetTerm || '1st';
+        const days = Array.isArray(adm.days) ? adm.days : ['M', 'T', 'W', 'TH', 'F'];
+        const startTime = adm.startTime || adm.start_time || null;
+        const endTime = adm.endTime || adm.end_time || null;
+        const startDate = adm.startDate || adm.start_date || null;
+        const endDate = adm.endDate || adm.end_date || null;
+
         let durMins = 60;
         if (adm.duration_minutes !== undefined && adm.duration_minutes !== null) {
           durMins = parseInt(adm.duration_minutes, 10) || 60;
@@ -368,27 +481,44 @@ router.put('/personnel/:personnel_id', async (req, res) => {
           durMins = parseInt(adm.minutes, 10) || 60;
         } else if (adm.hours !== undefined && adm.hours !== null) {
           durMins = Math.round(parseFloat(adm.hours) * 60) || 60;
-        } else if (adm.startTime && adm.endTime) {
-          const [sh, sm] = adm.startTime.split(':').map(Number);
-          const [eh, em] = adm.endTime.split(':').map(Number);
+        } else if (startTime && endTime) {
+          const [sh, sm] = startTime.split(':').map(Number);
+          const [eh, em] = endTime.split(':').map(Number);
           if (!isNaN(sh) && !isNaN(eh)) {
             durMins = Math.max(15, (eh * 60 + em) - (sh * 60 + sm));
           }
         }
 
+        const daysCount = days.length > 0 ? days.length : 5;
+        const weeklyHours = (durMins / 60) * daysCount;
+        const termTotalHours = parseFloat((weeklyHours * 12).toFixed(2));
+        const isDesig = !!(adm.isDesignationSynced || adm.is_designation_synced);
+
         await client.query(
           `INSERT INTO esf7_admin_task (
-             id, personnel_id, school_id, school_year, task_name, dates,
-             duration_minutes, raw_payload, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+             id, personnel_id, school_id, school_year, task_name, task_category,
+             start_date, end_date, start_time, end_time, days, dates, term,
+             duration_minutes, term_total_hours, is_designation_synced, status,
+             raw_payload, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16, $17, $18::jsonb, NOW(), NOW())`,
           [
             admId,
             targetPersonId,
             targetSchoolId,
             targetSchoolYear,
             tName,
+            category,
+            startDate,
+            endDate,
+            startTime,
+            endTime,
+            JSON.stringify(days),
             JSON.stringify(datesArr),
+            term,
             durMins,
+            termTotalHours,
+            isDesig,
+            'ACTIVE',
             JSON.stringify(adm)
           ]
         );
@@ -409,7 +539,12 @@ router.put('/personnel/:personnel_id', async (req, res) => {
   } finally {
     client.release();
   }
-});
+};
+
+router.put('/personnel/:personnel_id', saveWorkloadBatchHandler);
+router.post('/personnel/:personnel_id', saveWorkloadBatchHandler);
+router.post('/bulk', saveWorkloadBatchHandler);
+router.put('/bulk', saveWorkloadBatchHandler);
 
 // PUT Update an existing workload row
 router.put('/:id', async (req, res) => {
@@ -510,7 +645,22 @@ router.delete('/clear-all', async (req, res) => {
 // DELETE a specific workload row by ID
 router.delete('/:id', async (req, res) => {
   try {
+    const rowRes = await db.query(`SELECT personnel_id FROM esf7_workload_rows WHERE id = $1`, [req.params.id]);
+    const pId = rowRes.rows.length > 0 ? rowRes.rows[0].personnel_id : null;
+
     await db.query(`DELETE FROM esf7_workload_rows WHERE id = $1`, [req.params.id]);
+
+    if (pId) {
+      const pRes = await db.query(`SELECT raw_payload FROM esf7_personnel_profile WHERE id = $1`, [pId]);
+      if (pRes.rows.length > 0 && pRes.rows[0].raw_payload) {
+        const raw = pRes.rows[0].raw_payload;
+        if (Array.isArray(raw.workloadRows)) {
+          raw.workloadRows = raw.workloadRows.filter(r => String(r.id) !== String(req.params.id));
+          await db.query(`UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`, [JSON.stringify(raw), pId]);
+        }
+      }
+    }
+
     res.json({ success: true, message: `Workload row ${req.params.id} deleted successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });

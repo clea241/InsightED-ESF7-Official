@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_profile (
     no_philsys BOOLEAN NOT NULL DEFAULT FALSE,
     employee_no TEXT,
     deped_email TEXT,
+    no_deped_email BOOLEAN NOT NULL DEFAULT FALSE,
+    allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE,
     is_school_head BOOLEAN NOT NULL DEFAULT FALSE,
     
     -- FLEXIBLE DATA STORAGE (JSONB)
@@ -94,10 +96,11 @@ CREATE TABLE IF NOT EXISTS esf7_perssonel_educ (
     vocational_course TEXT,
     vocational_level TEXT,
     college_degree TEXT,
+    college_degrees JSONB DEFAULT '[]'::jsonb,
     major TEXT,
     minor TEXT,
     post_graduate_degree TEXT DEFAULT 'N/A',
-    post_graduate_discipline TEXT,
+    post_graduate_discipline JSONB DEFAULT '{}'::jsonb,
     
     eligibility JSONB DEFAULT '[]'::jsonb,
     prc_specialization TEXT,
@@ -288,6 +291,65 @@ CREATE TABLE IF NOT EXISTS esf7_remedial_enrichment_sections (
 
 CREATE INDEX IF NOT EXISTS idx_remedial_sections_school_sy ON esf7_remedial_enrichment_sections (school_id, school_year);
 CREATE INDEX IF NOT EXISTS idx_remedial_sections_teacher ON esf7_remedial_enrichment_sections (assigned_teacher_id);
+
+-- 8D. SNED (Non-Graded) Sections Table (Special Needs Education)
+CREATE TABLE IF NOT EXISTS esf7_sned_sections (
+    id VARCHAR(50) PRIMARY KEY,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    grade_level TEXT NOT NULL DEFAULT 'SNED (NON-GRADED)',
+    section_name TEXT NOT NULL,
+    program_type TEXT,
+    
+    adviser_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+    
+    male_learners INTEGER DEFAULT 0,
+    female_learners INTEGER DEFAULT 0,
+    number_of_learners INTEGER DEFAULT 0,
+    
+    size_status TEXT DEFAULT 'WITHIN STANDARD',
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_sned_section_school_sy UNIQUE (school_id, school_year, section_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sned_sections_school_sy ON esf7_sned_sections (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_sned_sections_adviser ON esf7_sned_sections (adviser_id);
+
+-- 8E. ALS Sections Table (Alternative Learning System)
+CREATE TABLE IF NOT EXISTS esf7_als_sections (
+    id VARCHAR(50) PRIMARY KEY,
+    school_id TEXT NOT NULL,
+    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    
+    grade_level TEXT NOT NULL DEFAULT 'ALS',
+    section_name TEXT NOT NULL,
+    delivery_mode TEXT,
+    clc_name TEXT,
+    
+    adviser_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+    
+    male_learners INTEGER DEFAULT 0,
+    female_learners INTEGER DEFAULT 0,
+    number_of_learners INTEGER DEFAULT 0,
+    
+    size_status TEXT DEFAULT 'WITHIN STANDARD',
+    
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT uq_als_section_school_sy UNIQUE (school_id, school_year, section_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_als_sections_school_sy ON esf7_als_sections (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_als_sections_adviser ON esf7_als_sections (adviser_id);
 
 -- 9. School Subjects Table (Stores Custom Added Subjects per School & Key Stage)
 CREATE TABLE IF NOT EXISTS esf7_school_subjects (
@@ -482,24 +544,35 @@ CREATE INDEX IF NOT EXISTS idx_esf7_workload_transfer_relieving ON esf7_workload
 CREATE INDEX IF NOT EXISTS idx_esf7_workload_transfer_absent ON esf7_workload_transfer (absent_personnel_id);
 CREATE INDEX IF NOT EXISTS idx_esf7_workload_transfer_absence ON esf7_workload_transfer (absence_id);
 
--- 16. Overload Late Table (Teacher Tardiness Logs for Overload Disqualification on Specific Date)
-CREATE TABLE IF NOT EXISTS overload_late (
-    id VARCHAR(50) PRIMARY KEY,
-    personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
-    school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL,
-    
-    tardiness_date DATE NOT NULL,
-    
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
-    CONSTRAINT uq_personnel_sy_tardiness_date UNIQUE (personnel_id, school_year, tardiness_date)
+-- 16. Overload Late & Undertime Table (Teacher Tardiness / Undertime DTR Logs)
+CREATE TABLE IF NOT EXISTS overload_late_undertime (
+    id                          TEXT PRIMARY KEY,
+    school_id                   TEXT NOT NULL DEFAULT '108348',
+    school_year                 TEXT NOT NULL DEFAULT '2026-2027',
+    term                        TEXT DEFAULT '1st',
+    month                       TEXT,
+    personnel_id                TEXT NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
+    log_date                    DATE NOT NULL,
+    time_in                     TEXT,
+    time_out                    TEXT,
+    late_minutes                INTEGER DEFAULT 0,
+    undertime_minutes           INTEGER DEFAULT 0,
+    total_dtr_deficit_minutes   INTEGER DEFAULT 0,
+    scheduled_teaching_minutes  INTEGER DEFAULT 0,
+    missed_teaching_minutes     INTEGER DEFAULT 0,
+    actual_rendered_minutes     INTEGER DEFAULT 0,
+    missed_slot_ids             JSONB DEFAULT '[]'::jsonb,
+    log_type                    TEXT DEFAULT 'TARDINESS',
+    reason                      TEXT,
+    is_excused                  BOOLEAN DEFAULT FALSE,
+    raw_payload                 JSONB DEFAULT '{}'::jsonb,
+    created_at                  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_late_undertime_record UNIQUE (school_id, school_year, personnel_id, log_date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_overload_late_personnel ON overload_late (personnel_id);
-CREATE INDEX IF NOT EXISTS idx_overload_late_date ON overload_late (tardiness_date);
-CREATE INDEX IF NOT EXISTS idx_overload_late_school_sy ON overload_late (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_late_undertime_lookup ON overload_late_undertime (school_id, school_year, personnel_id);
+CREATE INDEX IF NOT EXISTS idx_late_undertime_date ON overload_late_undertime (log_date);
 
 -- 17. Work Immersion Table (SHS Work Immersion Coordinator / Teacher Daily Venue Visit Schedules)
 CREATE TABLE IF NOT EXISTS esf7_work_immersion (
@@ -638,3 +711,143 @@ CREATE TABLE IF NOT EXISTS esf7_submission_queue (
 
 CREATE INDEX IF NOT EXISTS idx_esf7_submission_queue_status_id ON esf7_submission_queue (status, id ASC);
 CREATE INDEX IF NOT EXISTS idx_esf7_submission_queue_school_sy ON esf7_submission_queue (school_id, school_year);
+
+-- 22. School Node Status Table (1 School = 1 Row Milestone Snapshots)
+CREATE TABLE IF NOT EXISTS esf7_school_node_status (
+    school_id VARCHAR(255) NOT NULL,
+    school_year VARCHAR(50) NOT NULL DEFAULT 'SY 26-27',
+    overall_status VARCHAR(50) NOT NULL DEFAULT 'IN_PROGRESS',
+    overall_percentage INTEGER NOT NULL DEFAULT 0,
+    
+    node_01_school JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_02_roster JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_05_requests JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_06_classes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_10_overload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_11_validation JSONB NOT NULL DEFAULT '{}'::jsonb,
+    
+    personnel_summary JSONB NOT NULL DEFAULT '{"total_personnel":0,"profiling_completed":0,"workload_completed":0,"all_personnel_ready":false}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT pk_esf7_school_node_status PRIMARY KEY (school_id, school_year)
+);
+
+CREATE INDEX IF NOT EXISTS idx_school_node_status_lookup ON esf7_school_node_status (school_id, school_year);
+CREATE INDEX IF NOT EXISTS idx_school_node_status_overall ON esf7_school_node_status (overall_status);
+CREATE INDEX IF NOT EXISTS idx_school_node_status_gin ON esf7_school_node_status USING GIN (personnel_summary, node_11_validation);
+
+-- 23. Personnel Node Status Table (1 Personnel = 1 Row Teacher Milestones)
+CREATE TABLE IF NOT EXISTS esf7_personnel_node_status (
+    school_id VARCHAR(255) NOT NULL,
+    school_year VARCHAR(50) NOT NULL DEFAULT 'SY 26-27',
+    personnel_id VARCHAR(255) NOT NULL,
+    personnel_name TEXT NOT NULL,
+    position_title TEXT DEFAULT '',
+    category VARCHAR(50) DEFAULT 'TEACHING',
+    is_school_head BOOLEAN DEFAULT false,
+    is_complete BOOLEAN DEFAULT false,
+    
+    node_03_room_qr JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_04_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_07_designation JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_08_workload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    node_09_allowances JSONB NOT NULL DEFAULT '{}'::jsonb,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT pk_esf7_personnel_node_status PRIMARY KEY (school_id, school_year, personnel_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personnel_node_status_lookup ON esf7_personnel_node_status (school_id, school_year, personnel_id);
+CREATE INDEX IF NOT EXISTS idx_personnel_node_status_complete ON esf7_personnel_node_status (school_id, is_complete);
+
+-- 24. DepEd Schools Reference Table (synced from users_database)
+CREATE TABLE IF NOT EXISTS schools_iern (
+    school_id VARCHAR(50) PRIMARY KEY,
+    school_name VARCHAR(255),
+    region VARCHAR(100),
+    division VARCHAR(150),
+    district VARCHAR(150),
+    is_testaccount BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_schools_iern_region ON schools_iern(region);
+CREATE INDEX IF NOT EXISTS idx_schools_iern_division ON schools_iern(division);
+CREATE INDEX IF NOT EXISTS idx_schools_iern_district ON schools_iern(district);
+
+-- 25. Real-Time School Node Progress Boolean View
+DROP VIEW IF EXISTS vw_esf7_school_node_progress CASCADE;
+CREATE OR REPLACE VIEW vw_esf7_school_node_progress AS
+SELECT
+    s.school_id,
+    COALESCE(i.school_name, s.school_id)                              AS school_name,
+    i.region,
+    i.division,
+    i.district,
+    s.school_year,
+    CASE
+      WHEN (
+        COALESCE((s.node_01_school->>'status') = 'COMPLETED', false) AND
+        COALESCE((s.node_02_roster->>'status') = 'COMPLETED', false) AND
+        COALESCE((s.node_06_classes->>'status') = 'COMPLETED', false) AND
+        COALESCE((s.node_11_validation->>'status') = 'COMPLETED', false) AND
+        COALESCE((s.personnel_summary->>'all_personnel_ready')::boolean, false)
+      ) THEN 'COMPLETED'
+      WHEN s.overall_percentage > 0 THEN 'IN_PROGRESS'
+      ELSE 'NOT_STARTED'
+    END                                                               AS overall_status,
+    s.overall_percentage,
+    
+    COALESCE((s.node_01_school->>'status') = 'COMPLETED', false)      AS is_node_01_school_completed,
+    COALESCE((s.node_02_roster->>'status') = 'COMPLETED', false)      AS is_node_02_roster_completed,
+    COALESCE((s.node_05_requests->>'status') = 'COMPLETED', false)    AS is_node_05_requests_completed,
+    COALESCE((s.node_06_classes->>'status') = 'COMPLETED', false)     AS is_node_06_classes_completed,
+    COALESCE((s.node_10_overload->>'status') = 'COMPLETED', false)    AS is_node_10_overload_completed,
+    COALESCE((s.node_11_validation->>'status') = 'COMPLETED', false)  AS is_node_11_validation_completed,
+
+    COALESCE((s.personnel_summary->>'all_personnel_ready')::boolean, false) AS is_all_personnel_completed,
+    COALESCE((s.personnel_summary->>'total_personnel')::int, 0)             AS total_personnel_count,
+    COALESCE((s.personnel_summary->>'profiling_completed')::int, 0)         AS profiling_completed_count,
+    COALESCE((s.personnel_summary->>'workload_completed')::int, 0)          AS workload_completed_count,
+
+    (
+      COALESCE((s.node_01_school->>'status') = 'COMPLETED', false) AND
+      COALESCE((s.node_02_roster->>'status') = 'COMPLETED', false) AND
+      COALESCE((s.node_06_classes->>'status') = 'COMPLETED', false) AND
+      COALESCE((s.node_11_validation->>'status') = 'COMPLETED', false) AND
+      COALESCE((s.personnel_summary->>'all_personnel_ready')::boolean, false)
+    ) AS is_all_nodes_completed,
+
+    s.updated_at
+FROM esf7_school_node_status s
+LEFT JOIN schools_iern i ON (
+    CAST(s.school_id AS TEXT) = CAST(i.school_id AS TEXT) 
+    OR s.school_id = ('SCH-' || CAST(i.school_id AS TEXT))
+    OR REPLACE(s.school_id, 'SCH-', '') = CAST(i.school_id AS TEXT)
+);
+
+-- 25. Real-Time Personnel Node Progress Boolean View
+CREATE OR REPLACE VIEW vw_esf7_personnel_node_progress AS
+SELECT
+    p.school_id,
+    p.school_year,
+    p.personnel_id,
+    p.personnel_name,
+    p.position_title,
+    p.category,
+    p.is_school_head,
+    
+    COALESCE((p.node_03_room_qr->>'status') = 'COMPLETED', false)     AS is_room_qr_completed,
+    COALESCE((p.node_04_profile->>'status') = 'COMPLETED', false)     AS is_profile_completed,
+    COALESCE((p.node_07_designation->>'status') = 'COMPLETED', false) AS is_designation_completed,
+    COALESCE((p.node_08_workload->>'status') = 'COMPLETED', false)    AS is_workload_completed,
+    COALESCE((p.node_09_allowances->>'status') = 'COMPLETED', false)  AS is_allowances_completed,
+
+    p.is_complete AS is_teacher_fully_completed,
+    p.updated_at
+FROM esf7_personnel_node_status p;
