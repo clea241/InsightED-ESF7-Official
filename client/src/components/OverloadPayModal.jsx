@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { errorMessage } from '../services/errorMessage';
 import { api } from '../services/api';
 import { FiBarChart2, FiCalendar, FiEdit3, FiTrendingUp, FiAlertTriangle, FiCheckCircle, FiDownload, FiX } from 'react-icons/fi';
 
@@ -45,7 +46,7 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
       }
     } catch (err) {
       console.error(err);
-      setError('Network error fetching school calendar schedule');
+      setError(errorMessage(err, 'Network error fetching school calendar schedule'));
     } finally {
       setLoading(false);
     }
@@ -85,7 +86,7 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
       }
     } catch (err) {
       console.error(err);
-      alert('Error saving term updates');
+      alert(errorMessage(err, 'Error saving term updates'));
     } finally {
       setLoading(false);
     }
@@ -116,7 +117,7 @@ export default function OverloadPayModal({ isOpen, onClose, schoolId = '123456',
       }
     } catch (err) {
       console.error(err);
-      setError('Error generating overload pay report workbook.');
+      setError(errorMessage(err, 'Error generating overload pay report workbook.'));
     } finally {
       setGenerating(false);
     }

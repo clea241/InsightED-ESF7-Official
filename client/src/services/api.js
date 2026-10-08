@@ -1,3 +1,7 @@
+import { configureDraftSaver } from './draftSaver';
+import { configureHealth, waitUntilHealthy, recordServerFailure, recordServerSuccess, isServerFailureStatus } from './serverHealth';
+import { reportUnauthorized } from './session';
+
 export const getApiBase = () => {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
   if (typeof window !== 'undefined' && window.location) {
@@ -25,8 +29,13 @@ export const getApiBase = () => {
 };
 
 export const API_BASE = getApiBase();
+configureHealth({ url: `${API_BASE}/health` });
+
+const REQUEST_TIMEOUT_MS = 60000;
 
 export const fetchWithAuth = async (url, options = {}) => {
+  // While the server-health lock is on, new calls wait instead of firing and failing.
+  await waitUntilHealthy();
   const token = localStorage.getItem('token');
   let tokenSchoolId = null;
   if (token) {
@@ -43,7 +52,112 @@ export const fetchWithAuth = async (url, options = {}) => {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(activeSchoolId ? { 'x-school-id': activeSchoolId } : {})
   };
-  return fetch(url, { ...options, headers });
+
+  // Own controller so we can tell a timeout apart from a caller-initiated abort.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+  const callerSignal = options.signal;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  try {
+    const res = await fetch(url, { ...options, headers, signal: controller.signal });
+    // 401 on an authenticated call = the session is no longer valid (expired token, rotated secret). Not a server failure.
+    if (res.status === 401 && token && !String(url).includes('/auth/')) reportUnauthorized({ url: String(url) });
+    if (isServerFailureStatus(res.status)) {
+      recordServerFailure({ name: 'ApiError', message: `Server responded with HTTP ${res.status}`, url, status: res.status });
+    } else {
+      recordServerSuccess(); // 2xx/3xx and 4xx (validation/auth) are not server failures
+    }
+    return res;
+  } catch (err) {
+    if (timedOut) {
+      const e = new ApiError('The request timed out.', { url });
+      e.name = 'TimeoutError';
+      recordServerFailure(e);
+      throw e;
+    }
+    if (err.name === 'AbortError') throw err; // caller aborted (e.g. superseded draft save)
+    if (err instanceof TypeError) {
+      const netErr = /** @type {TypeError & { url?: string }} */ (err);
+      netErr.url = netErr.url || url;
+      recordServerFailure(netErr); // network failure
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+export class ApiError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ url?: string, status?: number, cause?: unknown }} [details]
+   */
+  constructor(message, { url, status, cause } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.url = url;
+    this.status = status;
+    /** @type {any} parsed JSON body of a non-OK reply, when the server sent one */
+    this.body = null;
+    if (cause) this.cause = cause;
+  }
+}
+
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Single shared response handler: checks res.ok and content-type before parsing, so an HTML gateway page never
+// reaches res.json(). On a non-OK JSON reply the server's own message (error/message) and body are kept on the ApiError.
+const parseJsonOrThrow = async (res, url = res.url) => {
+  const type = res.headers.get('content-type') || '';
+  const isJson = type.includes('application/json');
+  if (!res.ok) {
+    let body = null;
+    if (isJson) {
+      try { body = await res.json(); } catch (e) { body = null; }
+    }
+    const serverMessage = body && (body.error || body.message);
+    const err = new ApiError(
+      RETRYABLE_STATUSES.has(res.status)
+        ? `The server is busy or timed out (HTTP ${res.status}). Please try again shortly.`
+        : (typeof serverMessage === 'string' && serverMessage) || `Request failed (HTTP ${res.status}).`,
+      { url, status: res.status }
+    );
+    err.body = body;
+    throw err;
+  }
+  if (!isJson) {
+    throw new ApiError('The server returned an unexpected (non-JSON) response.', { url, status: res.status });
+  }
+  try {
+    return await res.json();
+  } catch (e) {
+    throw new ApiError('The server returned invalid JSON.', { url, status: res.status, cause: e });
+  }
+};
+
+// Retries 502/503/504 and network failures with exponential backoff (0.5s, 1s, 2s).
+const fetchJsonWithRetry = async (url, options = {}, retries = 3) => {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchWithAuth(url, options);
+      return await parseJsonOrThrow(res, url);
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      lastErr = err;
+      const retryable = err instanceof ApiError ? RETRYABLE_STATUSES.has(err.status ?? 0) : err instanceof TypeError;
+      if (!retryable || attempt === retries) break;
+      await sleep(500 * 2 ** attempt);
+    }
+  }
+  if (lastErr && !lastErr.url) lastErr.url = url;
+  throw lastErr;
 };
 
 export const api = {
@@ -51,7 +165,7 @@ export const api = {
   getDashboardStats: async (simulatedDate = null) => {
     const query = simulatedDate ? `?simulated_date=${encodeURIComponent(simulatedDate)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/dashboard/stats${query}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // School Profile
@@ -60,7 +174,7 @@ export const api = {
     const customHeaders = activeId ? { 'x-school-id': String(activeId) } : {};
     const query = activeId ? `?school_id=${encodeURIComponent(activeId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/school${query}`, { headers: customHeaders });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updateSchool: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/school`, {
@@ -68,7 +182,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updateSchoolSubjects: async (subjectsConfig) => {
     const res = await fetchWithAuth(`${API_BASE}/school-info/subjects`, {
@@ -76,7 +190,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subjectsConfig })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updateCurricularConfig: async (configData) => {
     const res = await fetchWithAuth(`${API_BASE}/schools/curricular-config`, {
@@ -84,21 +198,20 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(configData)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Personnel Roster
   getPersonnel: async (targetSchoolId = null) => {
     const customHeaders = targetSchoolId ? { 'x-school-id': targetSchoolId } : {};
     const query = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
-    const res = await fetchWithAuth(`${API_BASE}/personnel${query}`, { headers: customHeaders });
-    return res.json();
+    return await fetchJsonWithRetry(`${API_BASE}/personnel${query}`, { headers: customHeaders });
   },
   getAutofillTemplate: async (targetSchoolId = null) => {
     const customHeaders = targetSchoolId ? { 'x-school-id': targetSchoolId } : {};
     const query = targetSchoolId ? `?school_id=${encodeURIComponent(targetSchoolId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/personnel/autofill-template${query}`, { headers: customHeaders });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveBulkPersonnel: async (personnelList) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/bulk`, {
@@ -106,7 +219,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelList })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   importBulkHarvester: async (schoolId, personnelList) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/bulk-harvester-import`, {
@@ -114,7 +227,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schoolId, personnelList })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   addPersonnel: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel`, {
@@ -122,13 +235,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deletePersonnel: async (id) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updatePersonnel: async (id, data) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}`, {
@@ -136,7 +249,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   verifyPersonnel: async (id, field, value) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/verify`, {
@@ -144,7 +257,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ field, value })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   toggleSchoolHead: async (id, isSchoolHead) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/school-head`, {
@@ -152,7 +265,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isSchoolHead })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Workload Schedules (esf7_workload_rows)
@@ -162,11 +275,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getWorkloadsByPersonnel: async (personnelId) => {
     const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${personnelId}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Employment Tab Details
@@ -176,7 +289,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Qualifications Tab Details
@@ -186,7 +299,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Trainings (NEAP, Certifications, Other)
@@ -196,7 +309,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updatePersonnelTrainings: async (personnelId, data) => {
     const res = await fetchWithAuth(`${API_BASE}/trainings/personnel/${personnelId}`, {
@@ -204,19 +317,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deleteTraining: async (id) => {
     const res = await fetchWithAuth(`${API_BASE}/trainings/${id}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Class Sections (3 Tailored Tables)
   getSections: async () => {
     const res = await fetchWithAuth(`${API_BASE}/sections`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   addSection: async (data) => {
     const sectionType = String(data.sectionType || data.section_type || 'MONO GRADE').toUpperCase();
@@ -236,10 +349,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   createSection: async function(data) {
-    return this.addSection(data);
+    return await this.addSection(data);
   },
   addRegularSection: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/regular`, {
@@ -247,7 +360,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   addAralSection: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/aral`, {
@@ -255,7 +368,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   addRemedialEnrichmentSection: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/remedial-enrichment`, {
@@ -263,7 +376,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updateSectionAdviser: async (id, advisorId, advisory_minutes = 300, hgp_minutes = 60, numberOfLearners = null) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/regular`, {
@@ -278,19 +391,19 @@ export const api = {
         number_of_learners: numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null
       })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deleteSection: async (id) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/${encodeURIComponent(id)}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   clearAllSections: async (schoolId) => {
     const res = await fetchWithAuth(`${API_BASE}/sections/clear-all?schoolId=${encodeURIComponent(schoolId || '')}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Workload Schedules
@@ -300,7 +413,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updatePersonnelWorkloadRows: async (personnelId, workloadRows, teachingRelatedRows, administrativeRows) => {
     const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${personnelId}`, {
@@ -308,19 +421,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workloadRows, teachingRelatedRows, administrativeRows })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deleteWorkloadRow: async (id) => {
     const res = await fetchWithAuth(`${API_BASE}/workloads/${id}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Workload Coverage / Substitution transfers
   getTransfers: async () => {
     const res = await fetchWithAuth(`${API_BASE}/transfers`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   createBatchTransfers: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/transfers/batch`, {
@@ -328,7 +441,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   updateTransferStatus: async (id, status) => {
     const res = await fetchWithAuth(`${API_BASE}/transfers/${id}`, {
@@ -336,13 +449,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Absences & Tardiness / Undertime management
   getAbsences: async () => {
     const res = await fetchWithAuth(`${API_BASE}/absences`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getOverloadLateUndertime: async (schoolYear = '2026-2027', personnelId = null, term = null, month = null) => {
     let url = `${API_BASE}/overload-late-undertime?schoolYear=${encodeURIComponent(schoolYear)}`;
@@ -350,7 +463,7 @@ export const api = {
     if (term) url += `&term=${encodeURIComponent(term)}`;
     if (month) url += `&month=${encodeURIComponent(month)}`;
     const res = await fetchWithAuth(url);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveOverloadLateUndertime: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/overload-late-undertime`, {
@@ -358,19 +471,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deleteOverloadLateUndertime: async (id) => {
     const res = await fetchWithAuth(`${API_BASE}/overload-late-undertime/${encodeURIComponent(id)}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Allowances & Incentives management
   getPersonnelAllowances: async (schoolYear = 'SY 26-27') => {
     const res = await fetchWithAuth(`${API_BASE}/allowances?schoolYear=${encodeURIComponent(schoolYear)}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   togglePersonnelAllowance: async (personnelId, allowanceKey, isGranted, schoolYear = 'SY 26-27') => {
     const res = await fetchWithAuth(`${API_BASE}/allowances/toggle`, {
@@ -378,7 +491,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, allowanceKey, isGranted, schoolYear })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   bulkUpdatePersonnelAllowances: async (personnelId, allowances, schoolYear = 'SY 26-27') => {
     const res = await fetchWithAuth(`${API_BASE}/allowances/bulk`, {
@@ -386,13 +499,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, allowances, schoolYear })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Overload Reasons & Pay management
   getOverloadReasons: async (schoolYear = 'SY 26-27', term = 'Term 1') => {
     const res = await fetchWithAuth(`${API_BASE}/overload-reasons?schoolYear=${encodeURIComponent(schoolYear)}&term=${encodeURIComponent(term)}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveOverloadReasons: async ({ personnelId, schoolYear = 'SY 26-27', term = 'Term 1', month = 'All', reasons, overloadHours = 0, overloadPay = 0, netTermPay = 0, rawPayload }) => {
     const res = await fetchWithAuth(`${API_BASE}/overload-reasons/save`, {
@@ -400,7 +513,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, schoolYear, term, month, reasons, overloadHours, overloadPay, netTermPay, rawPayload })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveOverloadReasonsBatch: async ({ items = [], schoolYear = 'SY 26-27', term = 'Term 1' }) => {
     const res = await fetchWithAuth(`${API_BASE}/overload-reasons/batch`, {
@@ -408,14 +521,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items, schoolYear, term })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
 
   // Work Immersion management
   getWorkImmersionSchedules: async (personnelId, schoolYear = '2026-2027') => {
     const res = await fetchWithAuth(`${API_BASE}/work-immersion/${personnelId}?schoolYear=${encodeURIComponent(schoolYear)}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveWorkImmersionBatch: async ({ personnelId, schoolId = '123456', schoolYear = '2026-2027', schedules }) => {
     const res = await fetchWithAuth(`${API_BASE}/work-immersion/batch`, {
@@ -423,7 +536,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, schoolId, schoolYear, schedules })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deleteWorkImmersionDate: async ({ personnelId, schoolYear = '2026-2027', date }) => {
     const res = await fetchWithAuth(`${API_BASE}/work-immersion/date`, {
@@ -431,14 +544,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, schoolYear, date })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Feature A — Learning Area Matrix management
   getLearningAreas: async (personnelId) => {
     const res = await fetchWithAuth(`${API_BASE}/learning-areas?personnelId=${encodeURIComponent(personnelId)}`);
     if (!res.ok) throw new Error('Failed to fetch learning areas');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveLearningArea: async ({ personnelId, schoolYear, learningArea, checked, yearsTaught }) => {
     const res = await fetchWithAuth(`${API_BASE}/learning-areas/toggle`, {
@@ -447,7 +560,7 @@ export const api = {
       body: JSON.stringify({ personnelId, schoolYear, learningArea, checked, yearsTaught })
     });
     if (!res.ok) throw new Error('Failed to save learning area');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Feature B — Work Immersion management
@@ -455,7 +568,7 @@ export const api = {
     const params = new URLSearchParams({ personnelId, schoolYear, month });
     const res = await fetchWithAuth(`${API_BASE}/work-immersion?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch work immersion data');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveWorkImmersion: async ({ personnelId, schoolYear, month, day, minutes }) => {
     const res = await fetchWithAuth(`${API_BASE}/work-immersion/save`, {
@@ -464,14 +577,14 @@ export const api = {
       body: JSON.stringify({ personnelId, schoolYear, month, day, minutes })
     });
     if (!res.ok) throw new Error('Failed to save work immersion data');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   getExtraTasks: async (personnelId = null) => {
     const query = personnelId ? `?personnelId=${encodeURIComponent(personnelId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/extra-tasks${query}`);
     if (!res.ok) throw new Error('Failed to fetch extra tasks');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   saveExtraTasks: async (personnelId, tasks = []) => {
@@ -481,7 +594,7 @@ export const api = {
       body: JSON.stringify({ personnelId, tasks })
     });
     if (!res.ok) throw new Error('Failed to save extra tasks');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   sharePersonnelToClusteredSchools: async (prn, target_school_ids, first_name, last_name) => {
@@ -492,7 +605,7 @@ export const api = {
       body: JSON.stringify({ prn, target_school_ids, first_name, last_name })
     });
     if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   submitRoomProfiling: async (data) => {
@@ -514,7 +627,7 @@ export const api = {
       }
       throw new Error(errMsg);
     }
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   syncRoomRoster: async (schoolId, roster = []) => {
     try {
@@ -553,12 +666,12 @@ export const api = {
   getPendingRoomSubmissions: async (schoolId = '199998') => {
     const res = await fetch(`${API_BASE}/room-profiling/pending?schoolId=${encodeURIComponent(schoolId)}`);
     if (!res.ok) throw new Error('Failed to fetch pending room submissions');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getApprovedRoomSubmissions: async (schoolId = '199998') => {
     const res = await fetch(`${API_BASE}/room-profiling/approved?schoolId=${encodeURIComponent(schoolId)}`);
     if (!res.ok) throw new Error('Failed to fetch approved room submissions');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   ackRoomSubmissions: async ({ schoolId, submissionIds = [], personnelIds = [] }) => {
     const res = await fetch(`${API_BASE}/room-profiling/ack`, {
@@ -567,12 +680,12 @@ export const api = {
       body: JSON.stringify({ schoolId, submissionIds, personnelIds })
     });
     if (!res.ok) throw new Error('Failed to acknowledge room submissions');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getProfilingSnapshots: async (schoolId = '199998') => {
     const res = await fetch(`${API_BASE}/room-profiling/snapshots?schoolId=${encodeURIComponent(schoolId)}`);
     if (!res.ok) throw new Error('Failed to fetch snapshots');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveProfilingSnapshot: async ({ schoolId, snapshotName, personnel }) => {
     const res = await fetch(`${API_BASE}/room-profiling/snapshots`, {
@@ -581,12 +694,12 @@ export const api = {
       body: JSON.stringify({ schoolId, snapshotName, personnel })
     });
     if (!res.ok) throw new Error('Failed to save snapshot');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getProfilingSnapshotById: async (id) => {
     const res = await fetch(`${API_BASE}/room-profiling/snapshots/${encodeURIComponent(id)}`);
     if (!res.ok) throw new Error('Failed to fetch snapshot by ID');
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   checkPasscodeLockout: async ({ schoolId, passcode, personnelId }) => {
     try {
@@ -596,7 +709,7 @@ export const api = {
       if (personnelId) params.append('personnelId', personnelId);
       const res = await fetch(`${API_BASE}/room-profiling/check-lockout?${params.toString()}`);
       if (!res.ok) return { isLockedOut: false, lockoutRemainingSecs: 0 };
-      return res.json();
+      return parseJsonOrThrow(res);
     } catch (e) {
       return { isLockedOut: false, lockoutRemainingSecs: 0 };
     }
@@ -609,7 +722,7 @@ export const api = {
         body: JSON.stringify({ schoolId, passcode, personnelId, isSuccess })
       });
       if (!res.ok) return { isLockedOut: false };
-      return res.json();
+      return parseJsonOrThrow(res);
     } catch (e) {
       return { isLockedOut: false };
     }
@@ -621,17 +734,17 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   deleteAbsence: async (id) => {
     const res = await fetchWithAuth(`${API_BASE}/absences/${id}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getSalaryMatrix: async () => {
     const res = await fetchWithAuth(`${API_BASE}/salary-matrix`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   submitSchoolWorkload: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/submissions`, {
@@ -639,11 +752,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getSubmissionStatus: async (jobId) => {
     const res = await fetchWithAuth(`${API_BASE}/submissions/status/${jobId}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getSchoolDraft: async (schoolYear = 'SY 26-27', targetSchoolId = null) => {
     const rawId = targetSchoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
@@ -651,31 +764,30 @@ export const api = {
     const query = cleanId ? `&schoolId=${encodeURIComponent(cleanId)}` : '';
     const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
     const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}${query}`, { headers: customHeaders });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
-  saveSchoolDraft: async (schoolYear, payload) => {
-    if (activeDraftAbortController) {
-      try { activeDraftAbortController.abort(); } catch (e) {}
-    }
-    activeDraftAbortController = new AbortController();
-
+  // Never aborted: a save may already be committing on the server. Ordering/supersession is handled by draftSaver.
+  // Resolves { success, version, updatedAt }, or { conflict: true, currentVersion } on HTTP 409.
+  saveSchoolDraft: async (schoolYear, payload, baseVersion = null) => {
     const explicitId = payload?.schoolInfo && (payload.schoolInfo.schoolId || payload.schoolInfo.school_id);
     const rawId = explicitId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
+    const url = `${API_BASE}/school/draft`;
 
     try {
-      const res = await fetchWithAuth(`${API_BASE}/school/draft`, {
+      const res = await fetchWithAuth(url, {
         method: 'PUT',
-        signal: activeDraftAbortController.signal,
         headers: { 'Content-Type': 'application/json', ...customHeaders },
-        body: JSON.stringify({ schoolYear, payload })
+        body: JSON.stringify({ schoolYear, payload, baseVersion })
       });
-      return res.json();
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        return { success: true, aborted: true };
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}));
+        return { conflict: true, currentVersion: body.currentVersion };
       }
+      return await parseJsonOrThrow(res, url);
+    } catch (err) {
+      if (err instanceof TypeError && !(/** @type {any} */ (err)).url) /** @type {any} */ (err).url = url;
       throw err;
     }
   },
@@ -683,7 +795,7 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}`, {
       method: 'DELETE'
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Node Status & Boolean Progress Tracking
@@ -693,7 +805,7 @@ export const api = {
     const query = cleanId ? `&school_id=${encodeURIComponent(cleanId)}` : '';
     const customHeaders = cleanId ? { 'x-school-id': cleanId } : {};
     const res = await fetchWithAuth(`${API_BASE}/node-status/school?schoolYear=${encodeURIComponent(schoolYear)}${query}`, { headers: customHeaders });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveSchoolNode: async (nodeId, payload = {}, schoolYear = 'SY 26-27', overallStatus = 'IN_PROGRESS', overallPercentage = 0) => {
     const res = await fetchWithAuth(`${API_BASE}/node-status/school/${encodeURIComponent(nodeId)}`, {
@@ -701,11 +813,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schoolYear, payload, overallStatus, overallPercentage })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getPersonnelNodeStatus: async (schoolYear = 'SY 26-27') => {
     const res = await fetchWithAuth(`${API_BASE}/node-status/personnel?schoolYear=${encodeURIComponent(schoolYear)}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   savePersonnelNode: async (personnelId, nodeId, data = {}) => {
     const { payload = {}, schoolYear = 'SY 26-27', personnelName, positionTitle, category, isSchoolHead, isComplete } = data;
@@ -714,28 +826,28 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schoolYear, personnelName, positionTitle, category, isSchoolHead, isComplete, payload })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getIncomingRequests: async (schoolId) => {
     const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/incoming${query}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getOutgoingRequests: async (schoolId) => {
     const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/outgoing${query}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getRequestHistory: async (schoolId) => {
     const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, '').trim() : '';
     const query = cleanId ? `?schoolId=${encodeURIComponent(cleanId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/history${query}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getDistrictSchools: async (schoolId, division) => {
     const rawId = schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId');
@@ -745,7 +857,7 @@ export const api = {
     if (division) params.append('division', division);
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/district-schools${query}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   createRequest: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/requests/create`, {
@@ -765,11 +877,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getSubmissionHistory: async () => {
     const res = await fetchWithAuth(`${API_BASE}/submissions/history`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   downloadESF7XLSB: async () => {
     const res = await fetchWithAuth(`${API_BASE}/reports/esf7-xlsb`);
@@ -806,7 +918,7 @@ export const api = {
   },
   getCalendarTerms: async (schoolId, schoolYear) => {
     const res = await fetchWithAuth(`${API_BASE}/reports/calendar-terms/${schoolId || '123456'}?school_year=${encodeURIComponent(schoolYear || 'SY 2026-2027')}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveCalendarTerms: async (schoolId, schoolYear, terms) => {
     const res = await fetchWithAuth(`${API_BASE}/reports/calendar-terms`, {
@@ -814,7 +926,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ school_id: schoolId, school_year: schoolYear, terms })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   generateOverloadPayReport: async (payload) => {
     const res = await fetchWithAuth(`${API_BASE}/reports/generate-overload-pay`, {
@@ -822,7 +934,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // SHS Workloads
@@ -848,11 +960,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shsWorkloadRows })
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   getShsTransfers: async (personnelId, term) => {
     const res = await fetchWithAuth(`${API_BASE}/shs-transfers?personnelId=${personnelId || ''}&term=${term || ''}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   saveShsTransfer: async (transferData) => {
     const res = await fetchWithAuth(`${API_BASE}/shs-transfers`, {
@@ -860,14 +972,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(transferData)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Clustered Personnel Real-Time Ghost Timetable Sync
   getClusteredGhostSlots: async (prn, schoolId) => {
     const query = schoolId ? `?schoolId=${encodeURIComponent(schoolId)}` : '';
     const res = await fetchWithAuth(`${API_BASE}/requests/clustered/${encodeURIComponent(prn)}/sync${query}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   broadcastClusteredGhostSlots: async (prn, data) => {
     const res = await fetchWithAuth(`${API_BASE}/requests/clustered/${encodeURIComponent(prn)}/sync`, {
@@ -875,24 +987,24 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Harvester Upload & Status Endpoints
   getHarvestStatus: async (schoolId) => {
     const res = await fetchWithAuth(`${API_BASE}/esf7-upload/status/${encodeURIComponent(schoolId)}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   checkHarvestStatus: async (schoolId) => {
     const res = await fetchWithAuth(`${API_BASE}/esf7-upload/check/${encodeURIComponent(schoolId)}`);
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   uploadHarvestFile: async (formData) => {
     const res = await fetchWithAuth(`${API_BASE}/esf7-upload`, {
       method: 'POST',
       body: formData
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
   importConvertedHarvest: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/esf7-upload/import-converted`, {
@@ -900,7 +1012,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // SDO Validation & Review Status
@@ -919,7 +1031,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+    return parseJsonOrThrow(res);
   },
 
   // Auth passcode login
@@ -976,3 +1088,5 @@ export const api = {
     return { ok: res.ok, status: res.status, ...result };
   }
 };
+
+configureDraftSaver({ send: (year, payload, baseVersion) => api.saveSchoolDraft(year, payload, baseVersion) });

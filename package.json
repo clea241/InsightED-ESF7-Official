@@ -9,9 +9,43 @@
     "db:studio": "npm run db:studio --prefix server",
     "test:db": "npm run test:db --prefix server",
     "test:resilience": "npm run test:resilience --prefix server",
-    "build": "npm run build --prefix client"
+    "build": "node scripts/build-check.mjs",
+    "build:client": "npm run build --prefix client",
+    "lint": "eslint client/src client/tests server/server.js server/queue_worker.js server/controllers server/services server/utils server/db server/migrations server/tests/unit server/tests/integration e2e scripts vitest.config.mjs vitest.integration.config.mjs playwright.config.mjs eslint.config.mjs --max-warnings 343",
+    "lint:errors": "eslint --quiet --no-warn-ignored",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test:unit": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "node scripts/with-test-db.mjs -- vitest run -c vitest.integration.config.mjs",
+    "test:integration:ci": "vitest run -c vitest.integration.config.mjs",
+    "test:e2e": "playwright test",
+    "test": "npm run test:coverage && npm run test:integration",
+    "check:env": "node scripts/check-env.mjs",
+    "smoke": "node scripts/with-test-db.mjs -- node scripts/smoke-test.mjs",
+    "verify": "node scripts/verify.mjs",
+    "verify:ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:integration:ci && npm run check:env && npm run build && node scripts/with-test-db.mjs -- node scripts/smoke-test.mjs",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.4",
+    "@vitest/coverage-v8": "^4.1.11",
+    "concurrently": "^8.2.2",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^4.1.11"
+  },
+  "lint-staged": {
+    "*.{js,jsx,mjs}": [
+      "eslint --quiet --no-warn-ignored"
+    ]
   }
 }

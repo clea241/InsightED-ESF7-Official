@@ -20,7 +20,7 @@ const PILOT_SCHOOLS = [
 const PILOT_PASSWORD = 'Pilot2026!';
 const { usersDatabasePool, insightEdPool } = require('../../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'STRIDE_INSIGHTED_SECRET_2026_KEY_PROD';
+const { getJwtSecret } = require('../../utils/jwtSecret');
 
 // Standard official DepEd error prompt when a school ID is not found in user_schoolhead
 function getUnregisteredSchoolError(inputSchoolId, isEmail) {
@@ -37,7 +37,7 @@ router.get('/me', async (req, res) => {
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     if (decoded.uid && decoded.uid.startsWith('divtest-')) {
       const schId = decoded.school_id || decoded.uid.replace('divtest-', '');
       const testDiv = resolveTestDivision(schId);
@@ -121,7 +121,7 @@ const handlePasswordLogin = async (req, res) => {
   if (testDiv && (password === '123456' || password === 'Pilot2026!' || password === 'Pilot2026' || password === 'deped123' || password === testDiv.schoolId || password === testDiv.handle || password === testDiv.shortHandle)) {
     const token = jwt.sign(
       { uid: `divtest-${testDiv.schoolId}`, email: testDiv.handle, role: 'school', school_id: testDiv.schoolId, region: testDiv.region, division: testDiv.division },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
     return res.json({
@@ -146,7 +146,7 @@ const handlePasswordLogin = async (req, res) => {
   if (isPilotSeries && (password === PILOT_PASSWORD || password === inputSchoolId || password === 'deped123' || password === 'Pilot2026')) {
     const token = jwt.sign(
       { uid: `pilot-${inputSchoolId}`, email: `pilot-${inputSchoolId}@esf7.pilot`, role: 'school', school_id: inputSchoolId },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
     return res.json({
@@ -219,7 +219,7 @@ const handlePasswordLogin = async (req, res) => {
 
     const token = jwt.sign(
       { uid: user.uid, email: user.email, role: user.role, school_id: user.school_id },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
 
@@ -258,7 +258,7 @@ const handlePasscodeLogin = async (req, res) => {
   if (testDiv && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === 'Pilot2026!' || inputPasscode === 'Pilot2026' || inputPasscode === 'deped123' || inputPasscode === testDiv.schoolId || inputPasscode === testDiv.handle || inputPasscode === testDiv.shortHandle)) {
     const token = jwt.sign(
       { uid: `divtest-${testDiv.schoolId}`, email: testDiv.handle, role: 'school', school_id: testDiv.schoolId, region: testDiv.region, division: testDiv.division },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
     return res.json({
@@ -283,7 +283,7 @@ const handlePasscodeLogin = async (req, res) => {
   if (isPilotSeries && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === inputSchoolId || inputPasscode === PILOT_PASSWORD)) {
     const token = jwt.sign(
       { uid: `pilot-${inputSchoolId}`, email: `pilot-${inputSchoolId}@esf7.pilot`, role: 'school', school_id: inputSchoolId },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
     return res.json({
@@ -359,7 +359,7 @@ const handlePasscodeLogin = async (req, res) => {
 
     const token = jwt.sign(
       { uid: user.uid, email: user.email, role: user.role, school_id: user.school_id },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { errorMessage } from '../services/errorMessage';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import SearchableDropdown from '../components/SearchableDropdown';
@@ -36,7 +37,7 @@ export default function RequestCenter() {
       }
     } catch (e) {
       console.error(e);
-      showAlert('Error', 'A network error occurred.');
+      showAlert('Error', errorMessage(e, 'A network error occurred.'));
     }
   };
 
@@ -63,7 +64,7 @@ export default function RequestCenter() {
       }
     } catch (err) {
       console.error(err);
-      showAlert('Error', 'Could not send request.');
+      showAlert('Request Failed', errorMessage(err, 'Could not send request.'));
     } finally {
       setIsSubmittingMerge(false);
     }

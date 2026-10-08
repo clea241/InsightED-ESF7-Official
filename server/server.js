@@ -4,17 +4,141 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+// Fail fast with a clear message if the Redis settings are malformed (e.g. a port above 65535),
+// instead of silently dropping into PostgreSQL fallback mode.
+try {
+  require('./utils/redisConfig').parseRedisConfig();
+} catch (err) {
+  console.error(`
+❌ [Startup] Invalid Redis configuration: ${err.message}
+   Fix REDIS_URL / REDIS_HOST / REDIS_PORT in the server environment (.env, PM2 ecosystem file or system variables) and restart.
+`);
+  process.exit(1);
+}
+// Check JWT secret if provided; warn if missing in production environment
+try {
+  require('./utils/jwtSecret').assertJwtSecret();
+} catch (err) {
+  console.warn(`⚠️ [Startup Warning] ${err.message}`);
+}
 const db = require('./db');
+const redisQueue = require('./services/redisQueue');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// In-flight save / request tracking for zero-loss memory restarts
+let activeRequests = 0;
+let isShuttingDown = false;
+
+app.use((req, res, next) => {
+  if (isShuttingDown) {
+    res.set('Connection', 'close');
+    return res.status(503).json({ error: 'Server is restarting for maintenance, please retry.' });
+  }
+  activeRequests++;
+  let closed = false;
+  const decrement = () => {
+    if (!closed) {
+      closed = true;
+      activeRequests = Math.max(0, activeRequests - 1);
+    }
+  };
+  res.on('finish', decrement);
+  res.on('close', decrement);
+  next();
+});
+
 // Middleware
+try {
+  app.use(require('compression')()); // gzip JSON responses if compression package installed
+} catch (e) {
+  // compression is optional
+}
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Health endpoints (public, no auth, no tenant context).
+//  - READINESS  GET /api/health (and /health): 200 when the app and PostgreSQL answer. Redis is reported in the body
+//    ("redis": "up" | "degraded") but never fails the check: with Redis down the queue runs in PostgreSQL fallback
+//    mode and the app works. This is the ONLY endpoint the frontend server-health lock uses.
+//  - DEEP       GET /api/health/deep (and /health/deep): additionally pings Redis and answers 503 when it is down.
+//    For monitoring/alerting only; never point the frontend or a load balancer at it.
+const publicQueueStatus = () => {
+  const { mode, redisReachable, since } = redisQueue.getQueueStatus();
+  return { mode, redisReachable, since };
+};
+
+const checkPostgres = async () => {
+  let timer;
+  try {
+    await Promise.race([
+      db.pool.query('SELECT 1'),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('PostgreSQL check timed out (2s)')), 2000); })
+    ]);
+    return { up: true, error: null };
+  } catch (err) {
+    return { up: false, error: err.message };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const checkReadiness = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const pg = await checkPostgres();
+  const queue = publicQueueStatus();
+  return res.status(pg.up ? 200 : 503).json({
+    status: pg.up ? (queue.redisReachable ? 'ok' : 'degraded') : 'down',
+    db: pg.up ? 'up' : 'down',
+    redis: queue.redisReachable ? 'up' : 'degraded',
+    queue,
+    error: pg.up ? undefined : pg.error,
+    time: new Date().toISOString()
+  });
+};
+
+const checkDeep = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const pg = await checkPostgres();
+  let redisUp = false;
+  let redisError = null;
+  let timer;
+  try {
+    const ok = await Promise.race([
+      redisQueue.checkRedisHealth(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Redis check timed out (1.5s)')), 1500); })
+    ]);
+    redisUp = !!ok;
+    if (!ok) redisError = 'Redis ping failed or offline';
+  } catch (err) {
+    redisError = err.message;
+  } finally {
+    clearTimeout(timer);
+  }
+  const healthy = pg.up && redisUp;
+  return res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    db: pg.up ? 'up' : 'down',
+    redis: redisUp ? 'up' : 'down',
+    queue: publicQueueStatus(),
+    errors: healthy ? undefined : { db: pg.error, redis: redisError },
+    time: new Date().toISOString()
+  });
+};
+
+app.get('/api/health', checkDeep);
+app.get('/health', checkDeep);
+app.get('/api/health/deep', checkDeep);
+app.get('/health/deep', checkDeep);
+app.get('/api/health/readiness', checkReadiness);
+app.get('/health/readiness', checkReadiness);
+
 app.use(require('./utils/devLogger'));
 app.use(db.dbMiddleware);
+
+// Every /api route except health, auth, room-profiling and salary-matrix needs a verified JWT; the school is derived from it.
+app.use('/api', require('./middleware/auth').apiAuthGate);
 
 // Routes wiring
 app.use('/api/auth', require('./controllers/auth'));
@@ -133,6 +257,7 @@ const startServer = (port) => {
   const server = app.listen(port, async () => {
     console.log(`🚀 Express server running on port ${port}`);
     await initDB();
+    redisQueue.startMonitor(); // so queue mode / Redis reachability are accurate in /api/health even without a local worker
 
 
     
@@ -161,14 +286,30 @@ const startServer = (port) => {
   });
 
   const gracefulShutdown = () => {
-    console.log('🛑 Graceful shutdown signal received. Closing queue worker & active HTTP connections...');
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`🛑 Graceful shutdown signal received. In-flight requests: ${activeRequests}. Stopping new connections...`);
     try { queueWorker.stopWorker(); } catch(e) {}
+
     server.close(() => {
-      console.log('✅ All connections closed cleanly.');
-      process.exit(0);
+      console.log('✅ HTTP server closed to new connections. Waiting for in-flight saves to complete...');
     });
+
+    if (server.closeIdleConnections) {
+      server.closeIdleConnections();
+    }
+
+    const checkDrain = setInterval(() => {
+      if (activeRequests === 0) {
+        clearInterval(checkDrain);
+        console.log('✅ All in-flight saves and requests completed cleanly.');
+        process.exit(0);
+      }
+    }, 150);
+
     setTimeout(() => {
-      console.warn('⚠️ Force exiting after timeout.');
+      clearInterval(checkDrain);
+      console.warn(`⚠️ Force exiting after timeout with ${activeRequests} remaining in-flight requests.`);
       process.exit(0);
     }, 12000);
   };

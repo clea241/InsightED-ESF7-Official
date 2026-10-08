@@ -29,7 +29,8 @@ import {
   FiMapPin,
   FiPlus,
   FiTag,
-  FiShield
+  FiShield,
+  FiRefreshCw
 } from 'react-icons/fi';
 
 import {
@@ -1759,6 +1760,13 @@ export default function PersonnelProfile() {
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
   };
 
+  // Age calculation (must stay above the early return below: hooks may not be called conditionally)
+  const maxBirthdate = React.useMemo(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 15);
+    return d;
+  }, []);
+
   if (!currentPerson) {
     return (
       <div className="card-inner">
@@ -1935,13 +1943,6 @@ export default function PersonnelProfile() {
       return updated;
     });
   };
-
-  // Age calculation
-  const maxBirthdate = React.useMemo(() => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 15);
-    return d;
-  }, []);
 
   // getAge is exported at module level
 

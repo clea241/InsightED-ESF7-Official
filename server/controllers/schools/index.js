@@ -8,15 +8,6 @@ const { getSchoolIdFromRequest } = require('../../utils/auth');
 const { resolveTestDivision } = require('../../utils/divisionTestRegistry');
 
 // GET school info directly from unit1_school_identity
-const JHS_PROGRAM_CODES = [
-  'SPECIAL PROGRAM IN THE ARTS (SPA)',
-  'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)',
-  'SPECIAL PROGRAM IN JOURNALISM (SPJ)',
-  'SPECIAL PROGRAM IN SPORTS (SPS)',
-  'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM',
-  'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)',
-  'SPECIAL PROGRAM IN SCIENCE'
-];
 
 function parseCurricularOffering(rawOff) {
   const s = String(rawOff || '').toUpperCase().trim();
@@ -346,36 +337,48 @@ const handleGetSchool = async (req, res) => {
   }
 };
 
+// Version column support is detected once (and re-checked if absent) so the routes work before/after the migration.
+let draftVersionColumn = null;
+let draftVersionCheckedAt = 0;
+async function hasDraftVersionColumn() {
+  if (draftVersionColumn === true) return true;
+  if (draftVersionColumn === false && Date.now() - draftVersionCheckedAt < 30000) return false;
+  try {
+    const r = await db.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'school_drafts' AND column_name = 'version'");
+    draftVersionColumn = r.rows.length > 0;
+  } catch (e) {
+    draftVersionColumn = false;
+  }
+  draftVersionCheckedAt = Date.now();
+  return draftVersionColumn;
+}
+
+// Draft reads go straight to PostgreSQL on purpose: a per-worker in-memory/Redis cache could serve a stale
+// draft right after login when requests land on a different PM2 worker than the one that took the save.
 const handleGetDraft = async (req, res) => {
   try {
     const rawSchoolId = req.query.school_id || req.query.schoolId || req.query.schoolID || req.headers['x-school-id'] || getSchoolIdFromRequest(req) || '123456';
     const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
     const schoolYear = req.query.schoolYear || 'SY 26-27';
-
-    const cacheKey = `draft:${schoolId}:${schoolYear}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached) {
-      return res.json(cached);
-    }
+    const withVersion = await hasDraftVersionColumn();
 
     const result = await db.query(
-      'SELECT payload, updated_at FROM school_drafts WHERE school_id = $1 AND school_year = $2',
+      `SELECT payload, updated_at${withVersion ? ', version' : ''} FROM school_drafts WHERE school_id = $1 AND school_year = $2`,
       [schoolId, schoolYear]
     );
 
+    res.set('Cache-Control', 'no-store');
     if (result.rows.length === 0) {
-      const emptyRes = { payload: null, updatedAt: null };
-      await cacheService.set(cacheKey, emptyRes, 10);
-      return res.json(emptyRes);
+      return res.json({ payload: null, updatedAt: null, version: 0 });
     }
-
-    const responseData = {
-      payload: result.rows[0].payload,
-      updatedAt: result.rows[0].updated_at
-    };
-    await cacheService.set(cacheKey, responseData, 15);
-    res.json(responseData);
+    const row = result.rows[0];
+    res.json({
+      payload: row.payload,
+      updatedAt: row.updated_at,
+      version: withVersion ? Number(row.version) : undefined
+    });
   } catch (err) {
+    console.error('[DraftLoad][FAIL]', err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -551,83 +554,91 @@ async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
   }
 }
 
-// In-Memory Staging & Coalescing Write Buffer for high-throughput draft persistence
-const pendingDbWrites = new Map();
-let isFlushingDbWrites = false;
-
-async function queueDraftDbPersistence(schoolId, schoolYear, payload, updatedAt) {
-  const writeKey = `${schoolId}:${schoolYear}`;
-  pendingDbWrites.set(writeKey, { schoolId, schoolYear, payload, updatedAt });
-
-  if (isFlushingDbWrites) return;
-  isFlushingDbWrites = true;
-
-  setImmediate(async () => {
-    while (pendingDbWrites.size > 0) {
-      const currentKeys = Array.from(pendingDbWrites.keys());
-      for (const key of currentKeys) {
-        const item = pendingDbWrites.get(key);
-        pendingDbWrites.delete(key);
-        if (!item) continue;
-
-        try {
-          let finalPayload = { ...item.payload };
-          if (Array.isArray(item.payload?.personnel) && item.payload.personnel.length === 0) {
-            const existingDraft = await db.query(
-              'SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2',
-              [item.schoolId, item.schoolYear]
-            ).catch(() => ({ rows: [] }));
-            if (existingDraft.rows.length > 0 && Array.isArray(existingDraft.rows[0].payload?.personnel) && existingDraft.rows[0].payload.personnel.length > 0) {
-              finalPayload.personnel = existingDraft.rows[0].payload.personnel;
-            }
-          }
-
-          await db.query(
-            `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (school_id, school_year)
-             DO UPDATE SET payload = $3, updated_at = $4`,
-            [item.schoolId, item.schoolYear, JSON.stringify(finalPayload), item.updatedAt]
-          );
-
-          syncDraftToNodeStatus(item.schoolId, item.schoolYear, finalPayload).catch(e => {
-            console.warn('[SyncDraftToNodeStatus Background Warning]:', e.message);
-          });
-        } catch (dbErr) {
-          console.error(`[Draft DB Persistence Error for ${key}]:`, dbErr.message);
-        }
-      }
-    }
-    isFlushingDbWrites = false;
-  });
-}
-
-// PUT / POST /api/school/draft - Upsert cloud draft for the school (Fast in-memory staged response)
+// PUT / POST /api/school/draft - Upsert cloud draft. Responds ONLY after the row is committed to PostgreSQL.
+// Optimistic concurrency: if the client sends baseVersion and the stored version differs, nothing is written and
+// 409 is returned so the client can ask the user instead of silently overwriting a newer copy.
 const handleSaveDraft = async (req, res) => {
+  const startedAt = Date.now();
+  let schoolId = '?';
+  let schoolYear = 'SY 26-27';
   try {
-    const { payload, schoolYear = 'SY 26-27' } = req.body;
+    const { payload } = req.body;
+    schoolYear = req.body.schoolYear || schoolYear;
+    const rawBase = req.body.baseVersion;
+    const baseVersion = (rawBase === undefined || rawBase === null || rawBase === '') ? null : Number(rawBase);
 
     if (!payload) {
       return res.status(400).json({ error: 'Missing draft payload' });
     }
+    if (baseVersion !== null && !Number.isFinite(baseVersion)) {
+      return res.status(400).json({ error: 'Invalid baseVersion' });
+    }
 
     const explicitId = payload.schoolInfo && (payload.schoolInfo.schoolId || payload.schoolInfo.school_id);
     const rawSchoolId = explicitId || req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '123456';
-    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
+    schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
 
-    const updatedAt = new Date().toISOString();
-    const cacheKey = `draft:${schoolId}:${schoolYear}`;
+    // Never let an empty roster replace a populated one.
+    const finalPayload = { ...payload };
+    if (Array.isArray(payload.personnel) && payload.personnel.length === 0) {
+      const existing = await db.query(
+        'SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2',
+        [schoolId, schoolYear]
+      );
+      const old = existing.rows[0] && existing.rows[0].payload && existing.rows[0].payload.personnel;
+      if (Array.isArray(old) && old.length > 0) finalPayload.personnel = old;
+    }
 
-    // 1. Stage in fast Redis / in-memory cache immediately (< 1ms)
-    await cacheService.set(cacheKey, { payload, updatedAt }, 60);
+    const withVersion = await hasDraftVersionColumn();
+    let saved;
+    if (withVersion) {
+      const r = await db.query(
+        `INSERT INTO school_drafts (school_id, school_year, payload, updated_at, version)
+         VALUES ($1, $2, $3, NOW(), 1)
+         ON CONFLICT (school_id, school_year)
+         DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW(), version = school_drafts.version + 1
+         WHERE $4::bigint IS NULL OR school_drafts.version = $4::bigint
+         RETURNING version, updated_at`,
+        [schoolId, schoolYear, JSON.stringify(finalPayload), baseVersion]
+      );
+      if (r.rows.length === 0) {
+        const cur = await db.query('SELECT version, updated_at FROM school_drafts WHERE school_id = $1 AND school_year = $2', [schoolId, schoolYear]);
+        const curRow = cur.rows[0] || {};
+        console.warn(`[DraftSave][CONFLICT] school=${schoolId} user=${(req.auth && req.auth.uid) || '-'} year=${schoolYear} base=${baseVersion} current=${curRow.version}`);
+        return res.status(409).json({
+          error: 'Draft was changed by another session',
+          conflict: true,
+          currentVersion: Number(curRow.version),
+          updatedAt: curRow.updated_at
+        });
+      }
+      saved = { version: Number(r.rows[0].version), updatedAt: r.rows[0].updated_at };
+    } else {
+      const r = await db.query(
+        `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (school_id, school_year)
+         DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+         RETURNING updated_at`,
+        [schoolId, schoolYear, JSON.stringify(finalPayload)]
+      );
+      saved = { version: undefined, updatedAt: r.rows[0].updated_at };
+    }
+
+    console.log(`[DraftSave][OK] school=${schoolId} user=${(req.auth && req.auth.uid) || '-'} year=${schoolYear} base=${baseVersion} version=${saved.version} bytes=${req.headers['content-length'] || '?'} ms=${Date.now() - startedAt}`);
+
     cacheService.delPattern(`dashboard:stats:${schoolId}:*`).catch(() => {});
+    // Derived node-status sync runs after the commit; a failure here is logged but never reported as a failed save.
+    // The post-deploy smoke test (reserved school 000000 / year SMOKE) sends x-smoke-test so it leaves no derived rows behind.
+    if (!req.headers['x-smoke-test']) {
+      syncDraftToNodeStatus(schoolId, schoolYear, finalPayload).catch((e) => {
+        console.warn('[SyncDraftToNodeStatus Background Warning]:', e.message);
+      });
+    }
 
-    // 2. Queue coalesced asynchronous write to PostgreSQL in background
-    queueDraftDbPersistence(schoolId, schoolYear, payload, updatedAt);
-
-    // 3. Return fast 200 OK immediately
-    res.json({ success: true, updatedAt });
+    res.json({ success: true, version: saved.version, updatedAt: saved.updatedAt });
   } catch (err) {
+    console.error(`[DraftSave][FAIL] school=${schoolId} year=${schoolYear} ms=${Date.now() - startedAt}: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 };

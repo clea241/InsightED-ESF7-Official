@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { FiKey, FiAlertTriangle, FiArrowRight } from 'react-icons/fi';
 import { api } from '../services/api';
+import { flushDrafts } from '../services/draftSaver';
 
 export default function LogoutPasscodeModal({ isOpen, onClose }) {
   const { user, logout } = useAuth();
   const [passcode, setPasscode] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [saveBlocked, setSaveBlocked] = useState(false);
   const inputRefs = useRef([]);
 
   useEffect(() => {
@@ -15,6 +17,7 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
       setPasscode(['', '', '', '', '', '']);
       setError('');
       setLoading(false);
+      setSaveBlocked(false);
       setTimeout(() => {
         if (inputRefs.current[0]) {
           inputRefs.current[0].focus();
@@ -89,6 +92,15 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
       }
 
       if (isValid) {
+        // Logout must not complete until the newest changes are confirmed saved on the server.
+        try {
+          await flushDrafts();
+        } catch (saveErr) {
+          console.warn('[Logout] blocked: draft not saved yet:', saveErr.message);
+          setSaveBlocked(true);
+          setError('Your latest changes could not be saved to the server yet, so you were not logged out. Retry, or log out anyway: your work stays safely on this device.');
+          return;
+        }
         onClose();
         logout();
       } else {
@@ -251,9 +263,28 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
                 gap: '6px'
               }}
             >
-              {loading ? 'Verifying...' : <>Confirm & Logout <FiArrowRight /></>}
+              {loading ? (saveBlocked ? 'Saving...' : 'Verifying...') : (saveBlocked ? <>Retry save & Logout <FiArrowRight /></> : <>Confirm & Logout <FiArrowRight /></>)}
             </button>
           </div>
+          {saveBlocked && (
+            <button
+              type="button"
+              onClick={() => { onClose(); logout(); }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '12px',
+                border: '1.5px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#475569',
+                fontSize: '13px',
+                fontWeight: '800',
+                cursor: 'pointer'
+              }}
+            >
+              Log out anyway (keep local copy)
+            </button>
+          )}
         </form>
       </div>
     </div>

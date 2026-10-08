@@ -5,61 +5,115 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const STREAM_KEY = process.env.REDIS_STREAM_KEY || 'esf7:submission_stream';
 const GROUP_NAME = process.env.REDIS_GROUP_NAME || 'esf7_submission_group';
 
+const { parseRedisConfig } = require('../utils/redisConfig');
+
 let redisClient = null;
 let isConnected = false;
-let hasLoggedFailure = false;
+
+// Queue mode bookkeeping. "redis" = stream consumers are active; "postgres-fallback" = jobs are processed
+// straight from the esf7_submission_queue table. The reason is logged ONCE per outage, not on every retry.
+let queueMode = 'postgres-fallback';
+let modeSince = new Date().toISOString();
+let lastError = 'Redis connection not established yet';
+let outageLogged = false;
+let configDisplay = null;
+const modeListeners = new Set();
+
+function setMode(next, reason) {
+  if (next === queueMode) {
+    if (next === 'postgres-fallback') {
+      if (reason) lastError = reason;
+      // First failure since startup (we begin in fallback mode): log the reason once.
+      if (!outageLogged && reason) {
+        console.warn(`⚠️ [Redis Queue] Using POSTGRES-FALLBACK mode (${configDisplay}): ${lastError}. Reconnecting automatically in the background.`);
+        outageLogged = true;
+      }
+    }
+    return;
+  }
+  queueMode = next;
+  modeSince = new Date().toISOString();
+  if (next === 'redis') {
+    lastError = null;
+    outageLogged = false;
+    console.log(`✅ [Redis Queue] Back in REDIS mode (${configDisplay}). Pending stream entries and queued PostgreSQL rows will be drained.`);
+  } else {
+    lastError = reason || lastError;
+    if (!outageLogged) {
+      console.warn(`⚠️ [Redis Queue] Switched to POSTGRES-FALLBACK mode (${configDisplay}): ${lastError}. Reconnecting automatically in the background.`);
+      outageLogged = true;
+    }
+  }
+  modeListeners.forEach((fn) => { try { fn(queueMode); } catch (e) { console.error('[Redis Queue] mode listener failed:', e.message); } });
+}
 
 function getRedisClient() {
   if (redisClient) return redisClient;
 
+  // Throws RedisConfigError with a clear message if REDIS_URL / REDIS_HOST / REDIS_PORT is malformed.
+  const cfg = parseRedisConfig();
+  configDisplay = cfg.display;
+
   const redisOptions = {
-    host: process.env.REDIS_HOST || '127.0.0.1',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD || undefined,
+    host: cfg.host,
+    port: cfg.port,
+    password: cfg.password,
     lazyConnect: true,
     maxRetriesPerRequest: null,
     enableOfflineQueue: false,
+    // Never give up: keep trying with a capped backoff so the app returns to Redis mode by itself.
     retryStrategy(times) {
-      if (times > 5) {
-        if (!hasLoggedFailure) {
-          console.warn('⚠️ [Redis Queue] Redis offline or unreachable. Operating in PostgreSQL fallback mode.');
-          hasLoggedFailure = true;
-        }
-        return null; // Stop retrying aggressively
-      }
-      return Math.min(times * 1000, 5000);
+      return Math.min(times * 1000, 15000);
     }
   };
 
-  if (process.env.REDIS_URL) {
-    redisClient = new Redis(process.env.REDIS_URL, redisOptions);
-  } else {
-    redisClient = new Redis(redisOptions);
-  }
-
-  redisClient.on('connect', () => {
-    isConnected = true;
-    hasLoggedFailure = false;
-    console.log(`✅ [Redis Queue] Connected to Redis (${redisOptions.host}:${redisOptions.port})`);
-  });
+  redisClient = cfg.url ? new Redis(cfg.url, redisOptions) : new Redis(redisOptions);
 
   redisClient.on('ready', () => {
     isConnected = true;
+    setMode('redis');
   });
 
   redisClient.on('error', (err) => {
     isConnected = false;
-    if (!hasLoggedFailure) {
-      console.warn(`⚠️ [Redis Queue] Connection notice: ${err.message}. Fallback mode active.`);
-      hasLoggedFailure = true;
-    }
+    setMode('postgres-fallback', err.message);
   });
 
   redisClient.on('close', () => {
     isConnected = false;
+    setMode('postgres-fallback', 'connection closed');
   });
 
   return redisClient;
+}
+
+// Start connecting (idempotent). Called at server/worker startup so mode and health are accurate immediately.
+function startMonitor() {
+  try {
+    const client = getRedisClient();
+    if (client.status === 'wait') {
+      client.connect().catch(() => { /* reported via the 'error' event */ });
+    }
+  } catch (err) {
+    // Malformed configuration must be loud, not silently ignored.
+    console.error(`❌ [Redis Queue] Invalid Redis configuration: ${err.message}`);
+    throw err;
+  }
+}
+
+function getQueueStatus() {
+  return {
+    mode: queueMode,
+    redisReachable: queueMode === 'redis',
+    since: modeSince,
+    lastError: queueMode === 'redis' ? null : lastError,
+    target: configDisplay
+  };
+}
+
+function onModeChange(fn) {
+  modeListeners.add(fn);
+  return () => modeListeners.delete(fn);
 }
 
 /**
@@ -75,6 +129,7 @@ async function checkRedisHealth() {
     isConnected = true;
     return true;
   } catch (err) {
+    if (err && err.name === 'RedisConfigError') throw err;
     isConnected = false;
     return false;
   }
@@ -154,7 +209,7 @@ async function readNextStreamJob({ consumerName = 'worker-1', blockMs = 2000, co
 
     if (!result || result.length === 0) return null;
 
-    const [streamName, entries] = result[0];
+    const [, entries] = result[0];
     if (!entries || entries.length === 0) return null;
 
     const [entryId, fieldsArray] = entries[0];
@@ -232,7 +287,50 @@ async function claimStalledJobs({ consumerName = 'worker-1', minIdleTimeMs = 120
   }
 }
 
+/**
+ * Inspect and claim ALL idle pending (delivered but never acknowledged) stream entries: XPENDING for the log,
+ * XAUTOCLAIM in batches for the work. Used at startup and every time the queue switches back to Redis.
+ * Entries stay pending until the caller acknowledges them after the database commit.
+ */
+async function drainPendingEntries({ consumerName = 'worker-1', minIdleTimeMs = 30000, batch = 50, maxBatches = 40 } = {}) {
+  const claimed = [];
+  try {
+    const isHealthy = await checkRedisHealth();
+    if (!isHealthy) return claimed;
+    const client = getRedisClient();
+
+    try {
+      const summary = await client.xpending(STREAM_KEY, GROUP_NAME);
+      if (summary && Number(summary[0]) > 0) {
+        console.log(`🔎 [Redis Queue] XPENDING: ${summary[0]} unacknowledged entr${Number(summary[0]) === 1 ? 'y' : 'ies'} (oldest ${summary[1]}, newest ${summary[2]}).`);
+      }
+    } catch (e) { /* NOGROUP etc.: nothing pending */ }
+
+    let cursor = '0-0';
+    for (let n = 0; n < maxBatches; n++) {
+      const result = await client.xautoclaim(STREAM_KEY, GROUP_NAME, consumerName, minIdleTimeMs, cursor, 'COUNT', batch);
+      if (!result) break;
+      const entries = Array.isArray(result[1]) ? result[1] : [];
+      for (const [entryId, fieldsArray] of entries) {
+        const fields = {};
+        for (let k = 0; k < fieldsArray.length; k += 2) fields[fieldsArray[k]] = fieldsArray[k + 1];
+        claimed.push({ messageId: entryId, jobId: parseInt(fields.jobId, 10), schoolId: fields.schoolId, schoolYear: fields.schoolYear, queuedAt: fields.queuedAt, isClaimed: true });
+      }
+      cursor = result[0];
+      if (!cursor || cursor === '0-0') break;
+    }
+  } catch (err) {
+    if (err && err.name === 'RedisConfigError') throw err;
+    console.warn('[Redis Queue] drainPendingEntries notice:', err.message);
+  }
+  return claimed;
+}
+
 module.exports = {
+  startMonitor,
+  getQueueStatus,
+  onModeChange,
+  drainPendingEntries,
   STREAM_KEY,
   GROUP_NAME,
   getRedisClient,

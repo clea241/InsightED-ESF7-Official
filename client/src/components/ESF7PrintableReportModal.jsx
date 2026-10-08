@@ -2,9 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { FiPrinter, FiX, FiAlertTriangle, FiCheck } from 'react-icons/fi';
 import { detectPersonnelTypeFromPosition } from '../context/AppContext';
 
-export default function ESF7PrintableReportModal({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount, selectedTerm = '1st' }) {
-  if (!isOpen) return null;
+// The wrapper owns the open/closed decision so the inner component always calls its hooks in the same order.
+export default function ESF7PrintableReportModal(props) {
+  if (!props.isOpen) return null;
+  return <ESF7PrintableReportModalContent {...props} />;
+}
 
+function ESF7PrintableReportModalContent({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount, selectedTerm = '1st' }) {
   const [activePrintTerm, setActivePrintTerm] = useState(selectedTerm || '1st');
 
   useEffect(() => {

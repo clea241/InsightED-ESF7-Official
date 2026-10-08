@@ -2,28 +2,32 @@ import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
-import Dashboard from './pages/Dashboard';
-import NodeMap from './pages/NodeMap';
-import Roster from './pages/Roster';
-import PersonnelProfile from './pages/PersonnelProfile';
-import OrganizedClasses from './pages/OrganizedClasses';
-import Workload from './pages/Workload';
-import Overload from './pages/Overload';
-import ValidationCenter from './pages/ValidationCenter';
-import RoomQR from './pages/RoomQR';
-import RequestCenter from './pages/RequestCenter';
-import RoomProfiling from './pages/RoomProfiling';
-import SchoolProfile from './pages/SchoolProfile';
-import Allowances from './pages/Allowances';
-import Designations from './pages/Designations';
-import Deployment from './pages/Deployment';
-import Submission from './pages/Submission';
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const NodeMap = React.lazy(() => import('./pages/NodeMap'));
+const Roster = React.lazy(() => import('./pages/Roster'));
+const PersonnelProfile = React.lazy(() => import('./pages/PersonnelProfile'));
+const OrganizedClasses = React.lazy(() => import('./pages/OrganizedClasses'));
+const Workload = React.lazy(() => import('./pages/Workload'));
+const Overload = React.lazy(() => import('./pages/Overload'));
+const ValidationCenter = React.lazy(() => import('./pages/ValidationCenter'));
+const RoomQR = React.lazy(() => import('./pages/RoomQR'));
+const RequestCenter = React.lazy(() => import('./pages/RequestCenter'));
+const RoomProfiling = React.lazy(() => import('./pages/RoomProfiling'));
+const SchoolProfile = React.lazy(() => import('./pages/SchoolProfile'));
+const Allowances = React.lazy(() => import('./pages/Allowances'));
+const Designations = React.lazy(() => import('./pages/Designations'));
+const Deployment = React.lazy(() => import('./pages/Deployment'));
+const Submission = React.lazy(() => import('./pages/Submission'));
 import SchoolHeadChatWidget from './components/SchoolHeadChatWidget';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
 import LoadingScreen from './components/LoadingScreen';
+import ServerHealthModal from './components/ServerHealthModal';
+import SaveStatusIndicator from './components/SaveStatusIndicator';
+import { subscribeHealth } from './services/serverHealth';
 import { FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
+import { subscribeDraftError, setDraftErrorContext, buildErrorReport, copyTextToClipboard } from './services/draftErrorReporter';
 
 const VIEW_LABELS = {
   dashboard: 'School Dashboard',
@@ -68,6 +72,23 @@ function MainAppContent() {
 
 
 
+  // One shared draft-error notice (auto-save / journey save / personnel fetch); cleared by the next success.
+  const [draftError, setDraftError] = React.useState(null);
+  const [copied, setCopied] = React.useState(false);
+  const [serverLocked, setServerLocked] = React.useState(false);
+  React.useEffect(() => subscribeDraftError((e) => { setDraftError(e); setCopied(false); }), []);
+  React.useEffect(() => subscribeHealth((h) => setServerLocked(!!h.locked)), []);
+  React.useEffect(() => {
+    setDraftErrorContext({ userId: user?.id || user?.email || user?.username || null, role: user?.role || null });
+  }, [user]);
+  const handleCopyDraftError = async () => {
+    if (!draftError) return;
+    if (await copyTextToClipboard(buildErrorReport(draftError))) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   React.useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => {
@@ -91,7 +112,7 @@ function MainAppContent() {
 
   // Public Faculty Room QR Profiling bypass (No Login Required)
   if (isRoomProfiling || activeView === 'room-profiling') {
-    return <RoomProfiling />;
+    return <React.Suspense fallback={<LoadingScreen message="Loading..." />}><RoomProfiling /></React.Suspense>;
   }
 
   if (authLoading) {
@@ -133,7 +154,7 @@ function MainAppContent() {
       <div className="app">
         <main className="main" style={{ marginLeft: 0, width: '100%' }}>
           <Topbar />
-          
+          <React.Suspense fallback={<LoadingScreen message="Loading module..." />}>
           {activeView === 'dashboard' && <Dashboard />}
           {activeView === 'nodemap' && <NodeMap />}
           {activeView === 'school' && <SchoolProfile />}
@@ -149,6 +170,7 @@ function MainAppContent() {
           {activeView === 'submission' && <Submission />}
           {activeView === 'room-qr' && <RoomQR />}
           {activeView === 'requests' && <RequestCenter />}
+          </React.Suspense>
         </main>
       </div>
 
@@ -175,6 +197,68 @@ function MainAppContent() {
           justifyContent: 'center'
         }}>
           {toast.type === 'error' ? <FiAlertTriangle size={18} /> : <FiCheckCircle size={18} />} <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Draft save/sync failure notice (single instance, updates in place) */}
+      {draftError && !serverLocked && (
+        <div role="alert" style={{
+          position: 'fixed',
+          top: toast ? '84px' : '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, #EF4444, #B91C1C)',
+          color: 'white',
+          padding: '12px 24px',
+          borderRadius: '12px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          zIndex: 99998,
+          fontSize: '14px',
+          fontWeight: '600',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          minWidth: '320px',
+          maxWidth: '90vw'
+        }}>
+          <FiAlertTriangle size={18} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            Saving or syncing failed ({draftError.action}). Your draft is still kept locally on this device.
+          </span>
+          {draftError.retry && (
+            <button
+              onClick={() => { try { draftError.retry(); } catch (e) {} }}
+              style={{
+                background: 'white',
+                color: '#B91C1C',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Retry
+            </button>
+          )}
+          <button
+            onClick={handleCopyDraftError}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.5)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {copied ? 'Copied' : 'Copy error details'}
+          </button>
         </div>
       )}
 
@@ -234,6 +318,8 @@ function MainAppContent() {
         </div>
       )}
 
+      <SaveStatusIndicator />
+
       {/* Floating Chat Widget for School Head */}
       <SchoolHeadChatWidget />
     </>
@@ -245,6 +331,7 @@ export default function App() {
     <AuthProvider>
       <AppProvider>
         <MainAppContent />
+        <ServerHealthModal />
       </AppProvider>
     </AuthProvider>
   );

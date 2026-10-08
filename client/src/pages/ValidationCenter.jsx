@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { errorMessage as apiErrorMessage } from '../services/errorMessage';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
@@ -135,7 +136,7 @@ export default function ValidationCenter() {
       }
     } catch (err) {
       console.error('Re-submit failed:', err);
-      if (showAlert) await showAlert("Network Error", "Unable to re-submit eSF7 to SDO.");
+      if (showAlert) await showAlert("Re-submission Error", apiErrorMessage(err, "Unable to re-submit eSF7 to SDO."));
     } finally {
       setIsResubmittingToSdo(false);
     }
@@ -464,7 +465,7 @@ export default function ValidationCenter() {
       }
     } catch (err) {
       console.error('Submit failed:', err);
-      await showAlert("Network Error", "Unable to connect to the submission server.");
+      await showAlert("Submission Error", apiErrorMessage(err, "Unable to connect to the submission server."));
       setQueueStatus(null);
     }
   };

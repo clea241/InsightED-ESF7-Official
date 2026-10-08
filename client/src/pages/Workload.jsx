@@ -7045,6 +7045,7 @@ export default function Workload() {
     saveWorkImmersionSchedules,
     activeTerm,
     setActiveTerm,
+    setHasUnsavedChanges,
     termStatuses,
     isTermLocked,
     unlockTerm,
@@ -7063,6 +7064,9 @@ export default function Workload() {
 
   // Term Unlock / Copy Modal state
   const [showUnlockTermModal, setShowUnlockTermModal] = useState(null);
+
+  // Id of the workload row that was just added (set by handleAddWorkloadRow).
+  const [, setNewlyAddedWorkloadId] = useState(null);
 
   // Clustered Personnel Ghost Sync State
   const [sharedWorkloadRows, setSharedWorkloadRows] = useState([]);
@@ -8802,8 +8806,6 @@ export default function Workload() {
         if (isJHS && (csBand.includes('JHS') || csBand.includes('JUNIOR') || !csBand)) matches = true;
         else if (isSHS && (csBand.includes('SHS') || csBand.includes('SENIOR') || !csBand)) matches = true;
         else if (isElem && (csBand.includes('ELEM') || !csBand)) matches = true;
-      } else if (csGrade === uGrade) {
-        matches = true;
       }
 
       if (matches && !filtered.some(s => String(s).toUpperCase() === csName)) {
@@ -12856,6 +12858,117 @@ export default function Workload() {
           </div>
         </div>
       )}
+
+      {/* ── Unlock / Initialize Term Modal ── */}
+      {showUnlockTermModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            maxWidth: '480px',
+            width: '100%',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            border: '1px solid #E2E8F0'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ background: '#FEF3C7', padding: '10px', borderRadius: '12px' }}>
+                <FiLock size={22} color="#D97706" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>
+                  Unlock {showUnlockTermModal} Term
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
+                  {showUnlockTermModal} Term is currently locked for encoding.
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#334155', lineHeight: '1.6', marginBottom: '20px' }}>
+              Unlocking will open <strong>{showUnlockTermModal} Term</strong> for timetable scheduling. You can choose to copy existing class schedules from <strong>1st Term</strong> as a baseline or start with a blank timetable.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  unlockTerm(showUnlockTermModal);
+                  copyTermData('1st', showUnlockTermModal);
+                  setActiveTerm(showUnlockTermModal);
+                  setShowUnlockTermModal(null);
+                }}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                  color: '#FFFFFF',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FiCopy size={15} /> Unlock & Duplicate from 1st Term</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  unlockTerm(showUnlockTermModal);
+                  setActiveTerm(showUnlockTermModal);
+                  setShowUnlockTermModal(null);
+                }}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#334155',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                Unlock with Blank Timetable
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowUnlockTermModal(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#64748B',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -13195,117 +13308,6 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
                 className="btn secondary"
                 onClick={() => setEditingDate(null)}
                 style={{ fontSize: '12px', padding: '7px 14px', borderRadius: '8px' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Unlock / Initialize Term Modal ── */}
-      {showUnlockTermModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(15, 23, 42, 0.65)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '20px'
-        }}>
-          <div style={{
-            background: '#FFFFFF',
-            borderRadius: '16px',
-            maxWidth: '480px',
-            width: '100%',
-            padding: '24px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
-            border: '1px solid #E2E8F0'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-              <div style={{ background: '#FEF3C7', padding: '10px', borderRadius: '12px' }}>
-                <FiLock size={22} color="#D97706" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>
-                  Unlock {showUnlockTermModal} Term
-                </h3>
-                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
-                  {showUnlockTermModal} Term is currently locked for encoding.
-                </p>
-              </div>
-            </div>
-
-            <p style={{ fontSize: '13px', color: '#334155', lineHeight: '1.6', marginBottom: '20px' }}>
-              Unlocking will open <strong>{showUnlockTermModal} Term</strong> for timetable scheduling. You can choose to copy existing class schedules from <strong>1st Term</strong> as a baseline or start with a blank timetable.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  unlockTerm(showUnlockTermModal);
-                  copyTermData('1st', showUnlockTermModal);
-                  setActiveTerm(showUnlockTermModal);
-                  setShowUnlockTermModal(null);
-                }}
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-                  color: '#FFFFFF',
-                  fontWeight: '800',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><FiCopy size={15} /> Unlock & Duplicate from 1st Term</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  unlockTerm(showUnlockTermModal);
-                  setActiveTerm(showUnlockTermModal);
-                  setShowUnlockTermModal(null);
-                }}
-                style={{
-                  padding: '10px 16px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#334155',
-                  fontWeight: '700',
-                  fontSize: '13px',
-                  cursor: 'pointer'
-                }}
-              >
-                Unlock with Blank Timetable
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setShowUnlockTermModal(null)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: '#64748B',
-                  fontWeight: '600',
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
               >
                 Cancel
               </button>

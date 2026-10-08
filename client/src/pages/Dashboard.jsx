@@ -7,6 +7,7 @@ import ForceLogoutNoticeModal from '../components/ForceLogoutNoticeModal';
 import LoadingScreen from '../components/LoadingScreen';
 import PortalHeader from '../components/PortalHeader';
 import { FiUsers, FiSliders, FiFileText, FiLayers, FiAlertCircle, FiCheckCircle, FiUserCheck, FiTarget, FiPieChart, FiArrowRight, FiMap, FiSettings, FiAward, FiBarChart2, FiStar, FiBookOpen, FiUploadCloud, FiInbox } from 'react-icons/fi';
+import { flushDrafts } from '../services/draftSaver';
 import '../premium-dashboard.css';
 
 export default function Dashboard() {
@@ -99,7 +100,14 @@ export default function Dashboard() {
     setIsLogoutNoticeModalOpen(true);
   };
 
-  const confirmForceLogout = () => {
+  const confirmForceLogout = async () => {
+    // Never log out before the newest changes are confirmed saved on the server.
+    try {
+      await flushDrafts();
+    } catch (e) {
+      if (showToast) showToast('Could not save your latest changes to the server yet. Please retry in a moment.', 'error');
+      return;
+    }
     setIsLogoutNoticeModalOpen(false);
     setIsUploadModalOpen(false);
     if (showToast) showToast('Logged out: eSF7 upload required for station initialization.', 'info');

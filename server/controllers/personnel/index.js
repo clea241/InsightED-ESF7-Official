@@ -871,8 +871,26 @@ router.get('/', async (req, res) => {
 
     const cleanSchoolId = schoolId.replace('SCH-', '');
 
+    const timing = { start: Date.now() };
+
     // 1. Fetch master records from insightEd database
     const masterList = await fetchMasterPersonnelFromInsightEd(cleanSchoolId);
+    timing.master = Date.now() - timing.start;
+
+    // Start independent per-school lookups concurrently (previously run one after another)
+    const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+    const wklPromise = db.query(
+      `SELECT * FROM esf7_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`, [sidPair]
+    ).catch(() => ({ rows: [] }));
+    const admPromise = db.query(
+      `SELECT * FROM esf7_admin_task WHERE school_id = $1 ORDER BY created_at ASC`, [schoolId]
+    ).catch(() => ({ rows: [] }));
+    const trPromise = db.query(
+      `SELECT * FROM esf7_personnel_ld_trainings WHERE school_id = ANY($1) ORDER BY created_at ASC`, [sidPair]
+    ).catch(() => ({ rows: [] }));
+    const dsgPromise = db.query(
+      `SELECT * FROM esf7_personnel_designations WHERE school_id = ANY($1) ORDER BY created_at ASC`, [sidPair]
+    ).catch(() => ({ rows: [] }));
 
     // 2. Fetch locally saved records from esf7_personnel_profile
     let result = await db.query(`
@@ -914,15 +932,12 @@ router.get('/', async (req, res) => {
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
       LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
-      WHERE p.school_id = $1 OR p.school_id = $2
+      WHERE p.school_id = ANY($1)
       ORDER BY p.created_at ASC, p.id ASC
-    `, [cleanSchoolId, `SCH-${cleanSchoolId}`]);
+    `, [sidPair]);
 
     // 3. Fetch all workload rows for this school from esf7_workload_rows
-    const wklRes = await db.query(
-      `SELECT * FROM esf7_workload_rows WHERE school_id = $1 OR school_id = $2 ORDER BY created_at ASC`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [] }));
+    const wklRes = await wklPromise;
 
     const workloadMap = new Map();
     for (const wRow of wklRes.rows) {
@@ -932,10 +947,7 @@ router.get('/', async (req, res) => {
     }
 
     const adminTaskMap = new Map();
-    const admRes = await db.query(
-      `SELECT * FROM esf7_admin_task WHERE school_id = $1 ORDER BY created_at ASC`,
-      [schoolId]
-    ).catch(() => ({ rows: [] }));
+    const admRes = await admPromise;
 
     for (const aRow of admRes.rows) {
       const pKey = String(aRow.personnel_id).toUpperCase();
@@ -944,10 +956,7 @@ router.get('/', async (req, res) => {
     }
 
     const trainingsMap = new Map();
-    const trRes = await db.query(
-      `SELECT * FROM esf7_personnel_ld_trainings WHERE school_id = $1 OR school_id = $2 ORDER BY created_at ASC`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [] }));
+    const trRes = await trPromise;
     for (const tRow of trRes.rows) {
       const pKey = String(tRow.personnel_id).toUpperCase();
       if (!trainingsMap.has(pKey)) trainingsMap.set(pKey, []);
@@ -955,15 +964,14 @@ router.get('/', async (req, res) => {
     }
 
     const designationsMap = new Map();
-    const dsgRes = await db.query(
-      `SELECT * FROM esf7_personnel_designations WHERE school_id = $1 OR school_id = $2 ORDER BY created_at ASC`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [] }));
+    const dsgRes = await dsgPromise;
     for (const dRow of dsgRes.rows) {
       const pKey = String(dRow.personnel_id).toUpperCase();
       if (!designationsMap.has(pKey)) designationsMap.set(pKey, []);
       designationsMap.get(pKey).push(dRow);
     }
+
+    timing.local = Date.now() - timing.start - timing.master;
 
     const dbMap = new Map();
     for (const row of result.rows) {
@@ -1234,6 +1242,11 @@ router.get('/', async (req, res) => {
       }
     }
 
+    timing.total = Date.now() - timing.start;
+    // Stage timings so a future slow/504 request shows where the time went (master DB vs local DB vs requests).
+    if (timing.total > 2000) {
+      console.warn(`[Personnel Timing] school ${cleanSchoolId} slow: total=${timing.total}ms master=${timing.master}ms local=${timing.local}ms rows=${mergedList.length}`);
+    }
     res.json(mergedList);
   } catch (err) {
     console.error('Error fetching personnel profiles:', err);
@@ -1640,6 +1653,10 @@ router.post('/', async (req, res) => {
       first_service_date, firstServiceDate, last_promotion_date, lastPromotionDate,
       new_station_date, newStationDate, last_lateral_movement_date, lastLateralMovementDate,
       // Education fields
+      highest_educational_attainment, highestEducationalAttainment,
+      shs_track, shsTrack,
+      vocational_course, vocationalCourse,
+      vocational_level, vocationalLevel,
       college_degree, collegeDegree, major, minor,
       post_graduate_degree, postGraduateDegree,
       post_graduate_discipline, postGraduateDiscipline, postGraduateDisciplineCustom,
@@ -1652,7 +1669,7 @@ router.post('/', async (req, res) => {
       designation, designations
     } = req.body;
 
-    const targetSchoolId = school_id || bodySchoolId || '108348';
+    const targetSchoolId = school_id || bodySchoolId || (req.auth && req.auth.schoolId) || '108348';
     const targetSchoolYear = school_year || bodySchoolYear || '2026-2027';
 
     // Sequence ID Generation
@@ -1986,6 +2003,8 @@ router.put('/:id', async (req, res) => {
       no_philsys, noPhilsys,
       employee_no, employeeNo,
       deped_email, depedEmail,
+      no_deped_email, noDepedEmail,
+      allow_email_discrepancy, allowEmailDiscrepancy,
       is_school_head, isSchoolHead,
 
       // Employment Fields

@@ -8,3 +8,14 @@ server/scratch/
 *.tmp.tar.gz
 *.tar.gz
 dist/
+
+# quality gates
+.verify-passed
+coverage/
+playwright-report/
+test-results/
+
+# backups
+*.bak
+*.bak_*
+

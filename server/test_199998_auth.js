@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const inputId = '199998';
 const PILOT_SCHOOLS = ['199999'];
 const PILOT_PASSWORD = 'Pilot2026!';
-const JWT_SECRET = 'STRIDE_INSIGHTED_SECRET_2026_KEY_PROD';
+const JWT_SECRET = process.env.JWT_SECRET || 'unit-test-only-secret-0123456789';
 
 const isPilotSeries = PILOT_SCHOOLS.includes(inputId) || /^199\d{3}$/.test(inputId);
 

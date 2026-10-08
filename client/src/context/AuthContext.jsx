@@ -1,4 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+
+import { pauseForAuth, resumeAfterLogin } from '../services/draftSaver';
+import { onSessionExpired, clearSessionExpired } from '../services/session';
 
 const AuthContext = createContext(null);
 
@@ -24,7 +27,17 @@ export const AuthProvider = ({ children }) => {
         initAuth();
     }, []);
 
+    // A 401 on an authenticated call (expired token, rotated JWT_SECRET) sends the user to the login screen.
+    // Unlike an ordinary error it first keeps the newest local state on this device and queues the unsent save;
+    // logout() below removes only session keys, never drafts, IndexedDB or the draft version/unsynced markers.
+    const logoutRef = useRef(() => {});
+    useEffect(() => onSessionExpired(async () => {
+        await pauseForAuth();
+        logoutRef.current();
+    }), []);
+
     const login = (userData, tokenVal) => {
+        clearSessionExpired();
         localStorage.setItem('token', tokenVal);
         localStorage.setItem('remembered_user', JSON.stringify(userData));
         localStorage.setItem('schoolId', userData.school_id || '');
@@ -32,6 +45,8 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('activeSchoolId', userData.school_id || '');
         setUser(userData);
         setToken(tokenVal);
+        // Replay whatever was queued when the session ended (version checks still apply).
+        resumeAfterLogin(userData.school_id || userData.schoolId || null);
     };
 
     const logout = () => {
@@ -44,6 +59,8 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setToken(null);
     };
+
+    logoutRef.current = logout;
 
     const confirmLogout = () => {
         logout();

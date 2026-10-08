@@ -18,13 +18,21 @@ router.post('/', async (req, res) => {
     const cleanSchoolYear = schoolYear || 'SY 26-27';
 
     // 1. Insert into esf7_submission_queue
+    // Avoid double serialization if payload is already a string
+    const payloadJson = typeof payload === 'string' ? payload : JSON.stringify(payload);
+
     const result = await db.query(
       `INSERT INTO esf7_submission_queue (school_id, school_year, payload, signature, certified_by, status)
        VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id`,
-      [schoolId, cleanSchoolYear, JSON.stringify(payload), signature || null, certifiedBy || null]
+      [schoolId, cleanSchoolYear, payloadJson, signature || null, certifiedBy || null]
     );
 
     const jobId = result.rows[0].id;
+
+    // Allow V8 GC to reclaim the large payload buffers immediately
+    if (req.body) {
+      req.body.payload = null;
+    }
 
     // 2. Publish lightweight job pointer to Redis Stream (non-blocking, falls back to DB worker if offline)
     redisQueue.publishSubmissionJob({
@@ -35,12 +43,14 @@ router.post('/', async (req, res) => {
       console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
     });
 
-    // 3. Trigger immediate worker execution asynchronously (instant processing)
-    setImmediate(() => {
-      queueWorker.processNextJob().catch(err => {
-        console.warn(`[Queue Immediate Trigger Notice]: ${err.message}`);
+    // 3. Trigger immediate worker execution only if local worker is active
+    if (process.env.START_LOCAL_WORKER !== 'false') {
+      setImmediate(() => {
+        queueWorker.processNextJob().catch(err => {
+          console.warn(`[Queue Immediate Trigger Notice]: ${err.message}`);
+        });
       });
-    });
+    }
 
     // 4. Fetch initial queue position
     const posRes = await db.query(

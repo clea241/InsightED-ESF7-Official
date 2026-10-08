@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
+  },
+  "include": [
+    "client/src/env.d.ts",
+    "client/src/services/api.js",
+    "client/src/services/draftSaver.js",
+    "client/src/services/serverHealth.js",
+    "client/src/services/draftErrorReporter.js",
+    "client/src/services/db.js",
+    "client/src/components/ServerHealthModal.jsx",
+    "client/src/components/SaveStatusIndicator.jsx",
+    "server/services/redisQueue.js",
+    "server/services/cacheService.js",
+    "server/utils/redisConfig.js",
+    "server/middleware/auth.js",
+    "server/utils/jwtSecret.js",
+    "server/controllers/schools/index.js"
+  ]
+}

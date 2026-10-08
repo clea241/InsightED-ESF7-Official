@@ -17,54 +17,90 @@ const dbSsl = (!isLocalHost && (process.env.DB_SSL === 'true' || dbHost.includes
   ? { rejectUnauthorized: false } 
   : (process.env.DB_SSL === 'true' && !isLocalHost ? { rejectUnauthorized: false } : false);
 
+// Base configuration with bounded connection timeout and quick idle recovery
 const baseConfig = {
   ssl: dbSsl,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 30000,
-  max: 30
+  idleTimeoutMillis: 10000,        // Reclaim idle connections after 10s
+  connectionTimeoutMillis: 15000   // Fail fast at 15s instead of hanging indefinitely
 };
 
+// Lazy pool references (instantiated on first access)
+let _pool = null;
+let _stagingPool = null;
+let _prodPool = null;
+let _insightEdPool = null;
+let _usersDbPool = null;
+
 // 1. Primary Pool (env configured)
-const pool = new Pool({
-  ...baseConfig,
-  connectionString: process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`
-});
+function getPool() {
+  if (!_pool) {
+    _pool = new Pool({
+      ...baseConfig,
+      max: 8,
+      connectionString: process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`
+    });
+    _pool.on('error', (err) => console.warn('[Database Pool Client Error (Auto-recovering)]:', err.message));
+  }
+  return _pool;
+}
 
 // 2. Explicit Staging Pool (for division test accounts & staging QA)
-const stagingPool = new Pool({
-  ...baseConfig,
-  connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`
-});
+function getStagingPool() {
+  if (!_stagingPool) {
+    _stagingPool = new Pool({
+      ...baseConfig,
+      max: 5,
+      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`
+    });
+    _stagingPool.on('error', (err) => console.warn('[Staging Pool Client Error (Auto-recovering)]:', err.message));
+  }
+  return _stagingPool;
+}
 
 // 3. Explicit Production Pool
-const prodPool = new Pool({
-  ...baseConfig,
-  connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`
-});
+function getProdPool() {
+  if (!_prodPool) {
+    _prodPool = new Pool({
+      ...baseConfig,
+      max: 8,
+      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`
+    });
+    _prodPool.on('error', (err) => console.warn('[Production Pool Client Error (Auto-recovering)]:', err.message));
+  }
+  return _prodPool;
+}
 
 // 4. Centralized insightEd Pool (Read-only master historical data: esf7_database, esf7_database_dummy, unit1_school_identity)
-const insightEdPool = new Pool({
-  ...baseConfig,
-  connectionString: process.env.DATABASE_URL
-    ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, 'insightEd')
-    : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insightEd`
-});
+function getInsightEdPool() {
+  if (!_insightEdPool) {
+    _insightEdPool = new Pool({
+      ...baseConfig,
+      max: 5,
+      connectionString: process.env.DATABASE_URL
+        ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, 'insightEd')
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insightEd`
+    });
+    _insightEdPool.on('error', (err) => console.warn('[insightEd Pool Client Error (Auto-recovering)]:', err.message));
+  }
+  return _insightEdPool;
+}
 
 // 5. Centralized users_database Pool (Read-only user authentication: user_schoolhead)
-const usersDbPool = new Pool({
-  ...baseConfig,
-  connectionString: process.env.DATABASE_URL
-    ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, 'users_database')
-    : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/users_database`
-});
-
-pool.on('error', (err) => console.warn('[Database Pool Client Error (Auto-recovering)]:', err.message));
-stagingPool.on('error', (err) => console.warn('[Staging Pool Client Error (Auto-recovering)]:', err.message));
-prodPool.on('error', (err) => console.warn('[Production Pool Client Error (Auto-recovering)]:', err.message));
-insightEdPool.on('error', (err) => console.warn('[insightEd Pool Client Error (Auto-recovering)]:', err.message));
-usersDbPool.on('error', (err) => console.warn('[users_database Pool Client Error (Auto-recovering)]:', err.message));
+function getUsersDbPool() {
+  if (!_usersDbPool) {
+    _usersDbPool = new Pool({
+      ...baseConfig,
+      max: 4,
+      connectionString: process.env.DATABASE_URL
+        ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, 'users_database')
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/users_database`
+    });
+    _usersDbPool.on('error', (err) => console.warn('[users_database Pool Client Error (Auto-recovering)]:', err.message));
+  }
+  return _usersDbPool;
+}
 
 // AsyncLocalStorage to maintain request-level database context across asynchronous operations
 const dbStorage = new AsyncLocalStorage();
@@ -119,9 +155,9 @@ function isDivisionOrTestAccount(schoolId) {
  */
 function getPoolForSchool(schoolId) {
   if (isDivisionOrTestAccount(schoolId)) {
-    return stagingPool;
+    return getStagingPool();
   }
-  return process.env.NODE_ENV === 'production' ? prodPool : pool;
+  return process.env.NODE_ENV === 'production' ? getProdPool() : getPool();
 }
 
 /**
@@ -172,7 +208,7 @@ function dbMiddleware(req, res, next) {
     }
 
     const isTest = isDivisionOrTestAccount(schoolId);
-    const activePool = isTest ? stagingPool : (process.env.NODE_ENV === 'production' ? prodPool : pool);
+    const activePool = isTest ? getStagingPool() : (process.env.NODE_ENV === 'production' ? getProdPool() : getPool());
 
     dbStorage.run({ schoolId, isStaging: isTest, pool: activePool }, () => {
       next();
@@ -187,7 +223,7 @@ function dbMiddleware(req, res, next) {
  */
 function runWithSchool(schoolId, callback) {
   const isTest = isDivisionOrTestAccount(schoolId);
-  const activePool = isTest ? stagingPool : (process.env.NODE_ENV === 'production' ? prodPool : pool);
+  const activePool = isTest ? getStagingPool() : (process.env.NODE_ENV === 'production' ? getProdPool() : getPool());
   return dbStorage.run({ schoolId, isStaging: isTest, pool: activePool }, callback);
 }
 
@@ -202,10 +238,10 @@ function query(text, params) {
   
   // Fallback if called outside HTTP request context (e.g. background job, CLI scripts)
   if (containsTestAccountIndicator(text, params)) {
-    return stagingPool.query(text, params);
+    return getStagingPool().query(text, params);
   }
 
-  const defaultActivePool = process.env.NODE_ENV === 'production' ? prodPool : pool;
+  const defaultActivePool = process.env.NODE_ENV === 'production' ? getProdPool() : getPool();
   return defaultActivePool.query(text, params);
 }
 
@@ -217,19 +253,18 @@ function getClient() {
   if (store && store.pool) {
     return store.pool.connect();
   }
-  const defaultActivePool = process.env.NODE_ENV === 'production' ? prodPool : pool;
+  const defaultActivePool = process.env.NODE_ENV === 'production' ? getProdPool() : getPool();
   return defaultActivePool.connect();
 }
 
-module.exports = {
+const dbExport = {
   query,
   getClient,
-  pool,
-  stagingPool,
-  prodPool,
-  insightEdPool,
-  usersDbPool,
-  usersDatabasePool: usersDbPool,
+  getPool,
+  getStagingPool,
+  getProdPool,
+  getInsightEdPool,
+  getUsersDbPool,
   getPoolForSchool,
   isDivisionOrTestAccount,
   dbMiddleware,
@@ -237,3 +272,14 @@ module.exports = {
   dbStorage
 };
 
+// Lazy getter properties preserve full backwards-compatibility with `db.stagingPool`, `db.prodPool`, etc.
+Object.defineProperties(dbExport, {
+  pool: { get: getPool, enumerable: true },
+  stagingPool: { get: getStagingPool, enumerable: true },
+  prodPool: { get: getProdPool, enumerable: true },
+  insightEdPool: { get: getInsightEdPool, enumerable: true },
+  usersDbPool: { get: getUsersDbPool, enumerable: true },
+  usersDatabasePool: { get: getUsersDbPool, enumerable: true }
+});
+
+module.exports = dbExport;

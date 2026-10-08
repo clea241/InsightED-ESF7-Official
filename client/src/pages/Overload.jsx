@@ -100,6 +100,7 @@ export default function Overload() {
     schoolInfo,
     showConfirm,
     showAlert,
+    showToast,
     salaryMatrix,
     localNonWorkingDays,
     setLocalNonWorkingDays,
@@ -303,6 +304,8 @@ export default function Overload() {
 
   // Tardiness & Late Log form state (Step 3)
   const [tardinessTeacherId, setTardinessTeacherId] = useState('');
+  const [tardinessStartDate, setTardinessStartDate] = useState('');
+  const [tardinessEndDate, setTardinessEndDate] = useState('');
   const [tardinessMonth, setTardinessMonth] = useState('June');
   const [selectedTardyDate, setSelectedTardyDate] = useState('');
   const [tardyTimeIn, setTardyTimeIn] = useState('08:00');
@@ -312,6 +315,8 @@ export default function Overload() {
   // Absences & Leave Log form state (Step 2)
   const [leaveType, setLeaveType] = useState('Sick Leave');
   const [absentTeacherId, setAbsentTeacherId] = useState('');
+  const [absenceStartDate, setAbsenceStartDate] = useState('');
+  const [absenceEndDate, setAbsenceEndDate] = useState('');
   const [absenceMonth, setAbsenceMonth] = useState('June');
   const [rangeStartDate, setRangeStartDate] = useState(null);
   const [rangeEndDate, setRangeEndDate] = useState(null);
@@ -565,12 +570,8 @@ export default function Overload() {
   const getAutoReasonsForTeacher = (teacher, overloadItem) => {
     const reasons = [];
     
-    // 1. Teacher Shortage (Excess teaching load beyond 6 hours of actual classroom teaching)
-    const weeklyHrs = Number(overloadItem?.weeklyOverload || 0);
-    const netHrs = Number(overloadItem?.totalStats?.net || 0);
-    if (weeklyHrs > 0 || netHrs > 0 || true) {
-      reasons.push('Teacher Shortage');
-    }
+    // 1. Teacher Shortage (always listed first)
+    reasons.push('Teacher Shortage');
 
     // 2. Class Advising Duty (Advisory class assignment)
     const rows = teacher?.workloadRows || [];
@@ -3962,7 +3963,7 @@ export default function Overload() {
                                                 phtr: item.phtr,
                                                 overloadPay: item.overloadPay
                                               }
-                                            });
+                                            }).catch(err => console.warn('[Overload] Saving reasons failed:', err.message));
                                           }
                                         }}
                                         style={{

@@ -1,5 +1,6 @@
 const db = require('./db');
 const redisQueue = require('./services/redisQueue');
+const { claimJob, recoverStaleJobs, pickNextPendingJob } = require('./services/queueClaims');
 const { 
   generateSchoolId,
   generatePersonnelId, 
@@ -311,14 +312,34 @@ function buildBatchInsert(tableName, columns, rows, conflictClause = '') {
   return { query, values };
 }
 
+/**
+ * Paginated / Chunked Batch Insert Builder & Executor
+ * Chunks rows into batches (e.g. 50 items) so parameter arrays and SQL strings
+ * never exceed memory limits or PostgreSQL parameter caps ($65535).
+ */
+async function executeBatchInsertInChunks(client, tableName, columns, rows, conflictClause = '', chunkSize = 50) {
+  if (!rows || rows.length === 0) return;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const batch = buildBatchInsert(tableName, columns, chunk, conflictClause);
+    if (batch) {
+      await client.query(batch.query, batch.values);
+    }
+  }
+}
+
 let activeWorkersCount = 0;
 const MAX_CONCURRENT_WORKERS = 5;
 let isRedisWorkerActive = false;
+let currentProcessingJobId = null;
 
 async function processJobById(targetJobId, specificClient = null) {
   let client = specificClient;
   let shouldRelease = false;
   let jobId = targetJobId;
+  // Declared before the try block so the catch block below can always read them.
+  let jobStartTime = Date.now();
+  let currentStage = '[Loading job]';
 
   try {
     if (!client) {
@@ -364,8 +385,9 @@ async function processJobById(targetJobId, specificClient = null) {
     const cleanSchoolId = String(job.school_id).replace('SCH-', '').trim();
     const cleanSchoolYear = job.school_year || '2026-2027';
     const isTestAccount = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
-    const jobStartTime = Date.now();
-    let currentStage = '[Step 1/8: Initializing Transaction]';
+    jobStartTime = Date.now();
+    currentProcessingJobId = jobId;
+    currentStage = '[Step 1/8: Initializing Transaction]';
 
     console.log(`\n\x1b[36m⏳ [Queue Worker] Starting Ingestion Job #${jobId} ➔ School ${cleanSchoolId} (${cleanSchoolYear}) ${isTestAccount ? '[STAGING ROUTE]' : '[PROD ROUTE]'}...\x1b[0m`);
 
@@ -384,11 +406,14 @@ async function processJobById(targetJobId, specificClient = null) {
         throw err;
       }
     } else {
-      // 2. Set job status to processing
-      await client.query(
-        `UPDATE esf7_submission_queue SET status = 'processing', updated_at = NOW() WHERE id = $1`,
-        [jobId]
-      );
+      // 2. Atomically claim the job: only one worker (stream delivery or PostgreSQL poll) can move it to 'processing'.
+      // If another worker already claimed it, skip it; the stream entry stays unacknowledged until the job is completed.
+      const claimed = await claimJob(client, jobId);
+      if (!claimed) {
+        console.log(`[Queue Worker] Job #${jobId} is already being processed by another worker; skipping duplicate delivery.`);
+        if (shouldRelease && client) client.release();
+        return false;
+      }
     }
 
 
@@ -1138,7 +1163,7 @@ async function processJobById(targetJobId, specificClient = null) {
     currentStage = '[Step 3/8: Batch Ingesting Personnel & Sub-records]';
 
     if (profileBatch.length > 0) {
-      const bProf = buildBatchInsert('esf7_personnel_profile', Object.keys(profileBatch[0]), profileBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_personnel_profile', Object.keys(profileBatch[0]), profileBatch, `
         ON CONFLICT (id) DO UPDATE SET
           prn = EXCLUDED.prn,
           school_id = EXCLUDED.school_id,
@@ -1167,12 +1192,12 @@ async function processJobById(targetJobId, specificClient = null) {
           is_school_head = EXCLUDED.is_school_head,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bProf) await client.query(bProf.query, bProf.values);
+      `, 50);
+      profileBatch.length = 0;
     }
 
     if (empBatch.length > 0) {
-      const bEmp = buildBatchInsert('esf7_personnel_employment', Object.keys(empBatch[0]), empBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_personnel_employment', Object.keys(empBatch[0]), empBatch, `
         ON CONFLICT (personnel_id) DO UPDATE SET
           position_category = EXCLUDED.position_category,
           position = EXCLUDED.position,
@@ -1189,12 +1214,12 @@ async function processJobById(targetJobId, specificClient = null) {
           last_lateral_movement_date = EXCLUDED.last_lateral_movement_date,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bEmp) await client.query(bEmp.query, bEmp.values);
+      `, 50);
+      empBatch.length = 0;
     }
 
     if (educBatch.length > 0) {
-      const bEduc = buildBatchInsert('esf7_perssonel_educ', Object.keys(educBatch[0]), educBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_perssonel_educ', Object.keys(educBatch[0]), educBatch, `
         ON CONFLICT (personnel_id) DO UPDATE SET
           highest_educational_attainment = EXCLUDED.highest_educational_attainment,
           shs_track = EXCLUDED.shs_track,
@@ -1210,44 +1235,44 @@ async function processJobById(targetJobId, specificClient = null) {
           prc_specialization = EXCLUDED.prc_specialization,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bEduc) await client.query(bEduc.query, bEduc.values);
+      `, 50);
+      educBatch.length = 0;
     }
 
     if (laBatch.length > 0) {
-      const bLa = buildBatchInsert('esf7_personnel_learning_areas', Object.keys(laBatch[0]), laBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_personnel_learning_areas', Object.keys(laBatch[0]), laBatch, `
         ON CONFLICT (personnel_id) DO UPDATE SET
           matrix_data = EXCLUDED.matrix_data,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bLa) await client.query(bLa.query, bLa.values);
+      `, 50);
+      laBatch.length = 0;
     }
 
     // Clean and batch insert child records for processed personnel IDs
     if (processedPersonnelIds.length > 0) {
       await client.query('DELETE FROM esf7_personnel_ld_trainings WHERE personnel_id = ANY($1)', [processedPersonnelIds]);
       if (ldBatch.length > 0) {
-        const bLd = buildBatchInsert('esf7_personnel_ld_trainings', Object.keys(ldBatch[0]), ldBatch);
-        if (bLd) await client.query(bLd.query, bLd.values);
+        await executeBatchInsertInChunks(client, 'esf7_personnel_ld_trainings', Object.keys(ldBatch[0]), ldBatch, '', 50);
+        ldBatch.length = 0;
       }
 
       await client.query('DELETE FROM esf7_personnel_designations WHERE personnel_id = ANY($1)', [processedPersonnelIds]);
       if (dsgBatch.length > 0) {
-        const bDsg = buildBatchInsert('esf7_personnel_designations', Object.keys(dsgBatch[0]), dsgBatch);
-        if (bDsg) await client.query(bDsg.query, bDsg.values);
+        await executeBatchInsertInChunks(client, 'esf7_personnel_designations', Object.keys(dsgBatch[0]), dsgBatch, '', 50);
+        dsgBatch.length = 0;
       }
 
       await client.query('DELETE FROM esf7_related_task WHERE personnel_id = ANY($1)', [processedPersonnelIds]);
       if (relatedBatch.length > 0) {
-        const bRel = buildBatchInsert('esf7_related_task', Object.keys(relatedBatch[0]), relatedBatch);
-        if (bRel) await client.query(bRel.query, bRel.values);
+        await executeBatchInsertInChunks(client, 'esf7_related_task', Object.keys(relatedBatch[0]), relatedBatch, '', 50);
+        relatedBatch.length = 0;
       }
 
       await client.query('DELETE FROM esf7_admin_task WHERE personnel_id = ANY($1)', [processedPersonnelIds]);
       if (adminBatch.length > 0) {
-        const bAdm = buildBatchInsert('esf7_admin_task', Object.keys(adminBatch[0]), adminBatch);
-        if (bAdm) await client.query(bAdm.query, bAdm.values);
+        await executeBatchInsertInChunks(client, 'esf7_admin_task', Object.keys(adminBatch[0]), adminBatch, '', 50);
+        adminBatch.length = 0;
       }
     }
 
@@ -1382,7 +1407,7 @@ async function processJobById(targetJobId, specificClient = null) {
     }
 
     if (regSecBatch.length > 0) {
-      const bReg = buildBatchInsert('esf7_regular_sections', Object.keys(regSecBatch[0]), regSecBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_regular_sections', Object.keys(regSecBatch[0]), regSecBatch, `
         ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
           section_type = EXCLUDED.section_type,
           adviser_id = EXCLUDED.adviser_id,
@@ -1392,12 +1417,12 @@ async function processJobById(targetJobId, specificClient = null) {
           size_status = EXCLUDED.size_status,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bReg) await client.query(bReg.query, bReg.values);
+      `, 50);
+      regSecBatch.length = 0;
     }
 
     if (snedSecBatch.length > 0) {
-      const bSned = buildBatchInsert('esf7_sned_sections', Object.keys(snedSecBatch[0]), snedSecBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_sned_sections', Object.keys(snedSecBatch[0]), snedSecBatch, `
         ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
           grade_level = EXCLUDED.grade_level,
           program_type = EXCLUDED.program_type,
@@ -1408,12 +1433,12 @@ async function processJobById(targetJobId, specificClient = null) {
           size_status = EXCLUDED.size_status,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bSned) await client.query(bSned.query, bSned.values);
+      `, 50);
+      snedSecBatch.length = 0;
     }
 
     if (alsSecBatch.length > 0) {
-      const bAls = buildBatchInsert('esf7_als_sections', Object.keys(alsSecBatch[0]), alsSecBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_als_sections', Object.keys(alsSecBatch[0]), alsSecBatch, `
         ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
           grade_level = EXCLUDED.grade_level,
           delivery_mode = EXCLUDED.delivery_mode,
@@ -1425,12 +1450,12 @@ async function processJobById(targetJobId, specificClient = null) {
           size_status = EXCLUDED.size_status,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bAls) await client.query(bAls.query, bAls.values);
+      `, 50);
+      alsSecBatch.length = 0;
     }
 
     if (aralSecBatch.length > 0) {
-      const bAral = buildBatchInsert('esf7_aral_sections', Object.keys(aralSecBatch[0]), aralSecBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_aral_sections', Object.keys(aralSecBatch[0]), aralSecBatch, `
         ON CONFLICT (id) DO UPDATE SET
           basis_type = EXCLUDED.basis_type,
           grade_level = EXCLUDED.grade_level,
@@ -1443,12 +1468,12 @@ async function processJobById(targetJobId, specificClient = null) {
           total_learners = EXCLUDED.total_learners,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bAral) await client.query(bAral.query, bAral.values);
+      `, 50);
+      aralSecBatch.length = 0;
     }
 
     if (remSecBatch.length > 0) {
-      const bRem = buildBatchInsert('esf7_remedial_enrichment_sections', Object.keys(remSecBatch[0]), remSecBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_remedial_enrichment_sections', Object.keys(remSecBatch[0]), remSecBatch, `
         ON CONFLICT (id) DO UPDATE SET
           intervention_type = EXCLUDED.intervention_type,
           grade_level = EXCLUDED.grade_level,
@@ -1459,8 +1484,8 @@ async function processJobById(targetJobId, specificClient = null) {
           total_learners = EXCLUDED.total_learners,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bRem) await client.query(bRem.query, bRem.values);
+      `, 50);
+      remSecBatch.length = 0;
     }
 
     // Step 5/8: Ingest Workload Rows for this School
@@ -1547,13 +1572,13 @@ async function processJobById(targetJobId, specificClient = null) {
     }
 
     if (workloadBatch.length > 0) {
-      const bWk = buildBatchInsert('esf7_workload_rows', Object.keys(workloadBatch[0]), workloadBatch);
-      if (bWk) await client.query(bWk.query, bWk.values);
+      await executeBatchInsertInChunks(client, 'esf7_workload_rows', Object.keys(workloadBatch[0]), workloadBatch, '', 50);
+      workloadBatch.length = 0;
     }
 
     if (shsWorkloadBatch.length > 0) {
-      const bShs = buildBatchInsert('esf7_shs_workload_rows', Object.keys(shsWorkloadBatch[0]), shsWorkloadBatch);
-      if (bShs) await client.query(bShs.query, bShs.values).catch(() => {});
+      await executeBatchInsertInChunks(client, 'esf7_shs_workload_rows', Object.keys(shsWorkloadBatch[0]), shsWorkloadBatch, '', 50).catch(() => {});
+      shsWorkloadBatch.length = 0;
     }
 
     // Step 6/8: Ingest Allowances
@@ -1637,7 +1662,7 @@ async function processJobById(targetJobId, specificClient = null) {
     }
 
     if (allowancesBatch.length > 0) {
-      const bAlw = buildBatchInsert('esf7_personnel_allowances', Object.keys(allowancesBatch[0]), allowancesBatch, `
+      await executeBatchInsertInChunks(client, 'esf7_personnel_allowances', Object.keys(allowancesBatch[0]), allowancesBatch, `
         ON CONFLICT (personnel_id, school_year) DO UPDATE SET
           has_pera = EXCLUDED.has_pera,
           pera_amount = EXCLUDED.pera_amount,
@@ -1651,8 +1676,8 @@ async function processJobById(targetJobId, specificClient = null) {
           hardship_amount = EXCLUDED.hardship_amount,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bAlw) await client.query(bAlw.query, bAlw.values);
+      `, 50);
+      allowancesBatch.length = 0;
     }
 
     // Step 7/8: Ingest Workload Transfers (if present)
@@ -1686,8 +1711,8 @@ async function processJobById(targetJobId, specificClient = null) {
     }
 
     if (transferBatch.length > 0) {
-      const bTfr = buildBatchInsert('esf7_workload_transfer', Object.keys(transferBatch[0]), transferBatch);
-      if (bTfr) await client.query(bTfr.query, bTfr.values);
+      await executeBatchInsertInChunks(client, 'esf7_workload_transfer', Object.keys(transferBatch[0]), transferBatch, '', 50);
+      transferBatch.length = 0;
     }
 
     // Ingest Overload Pay & Reasons (overload_pay_and_reason)
@@ -1882,7 +1907,7 @@ async function processJobById(targetJobId, specificClient = null) {
     }
 
     if (overloadBatch.length > 0) {
-      const bOpr = buildBatchInsert('overload_pay_and_reason', Object.keys(overloadBatch[0]), overloadBatch, `
+      await executeBatchInsertInChunks(client, 'overload_pay_and_reason', Object.keys(overloadBatch[0]), overloadBatch, `
         ON CONFLICT (personnel_id, school_year, term, month) DO UPDATE SET
           overload_hours = CASE WHEN EXCLUDED.overload_hours > 0 THEN EXCLUDED.overload_hours ELSE overload_pay_and_reason.overload_hours END,
           overload_pay = CASE WHEN EXCLUDED.overload_pay > 0 THEN EXCLUDED.overload_pay ELSE overload_pay_and_reason.overload_pay END,
@@ -1890,8 +1915,8 @@ async function processJobById(targetJobId, specificClient = null) {
           reasons = EXCLUDED.reasons,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
-      `);
-      if (bOpr) await client.query(bOpr.query, bOpr.values);
+      `, 50);
+      overloadBatch.length = 0;
     }
 
 
@@ -1914,11 +1939,13 @@ async function processJobById(targetJobId, specificClient = null) {
 
     const totalDuration = Date.now() - jobStartTime;
     console.log(`  \x1b[32m✔ [Queue Worker] Job #${jobId} (School ${cleanSchoolId}) COMPLETED in ${totalDuration}ms\x1b[0m\n`);
+    currentProcessingJobId = null;
     if (shouldRelease && client) client.release();
     return true;
 
 
   } catch (error) {
+    currentProcessingJobId = null;
     const duration = Date.now() - (jobStartTime || Date.now());
     if (jobId) {
       console.error(`  \x1b[31m✖ [Queue Worker] Job #${jobId} FAILED at ${currentStage} after ${duration}ms:\x1b[0m ${error.message}\n`);
@@ -1963,39 +1990,19 @@ async function processNextJob() {
     client = await db.pool.connect();
     
     // Auto-recover jobs stuck in 'processing' for > 60 seconds
-    await client.query(`
-      UPDATE esf7_submission_queue
-      SET status = 'pending', updated_at = NOW()
-      WHERE status = 'processing'
-        AND updated_at < NOW() - INTERVAL '1 minute'
-    `).catch(() => {});
+    await recoverStaleJobs(client).catch(() => {});
 
     // Fetch next pending job with row lock skipping already locked rows
-    const jobRes = await client.query(`
-      SELECT id 
-      FROM esf7_submission_queue 
-      WHERE status = 'pending' 
-      ORDER BY id ASC 
-      LIMIT 1 
-      FOR UPDATE SKIP LOCKED
-    `);
+    const nextId = await pickNextPendingJob(client);
 
-    if (jobRes.rows.length === 0) {
+    if (nextId === null) {
       if (db.stagingPool && db.stagingPool !== db.pool) {
         let stagingClient = null;
         try {
           stagingClient = await db.stagingPool.connect();
-          await stagingClient.query(`
-            UPDATE esf7_submission_queue
-            SET status = 'pending', updated_at = NOW()
-            WHERE status = 'processing'
-              AND updated_at < NOW() - INTERVAL '1 minute'
-          `).catch(() => {});
-          const stagingJobRes = await stagingClient.query(`
-            SELECT id FROM esf7_submission_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 1 FOR UPDATE SKIP LOCKED
-          `);
-          if (stagingJobRes.rows.length > 0) {
-            const nextStagingId = stagingJobRes.rows[0].id;
+          await recoverStaleJobs(stagingClient).catch(() => {});
+          const nextStagingId = await pickNextPendingJob(stagingClient);
+          if (nextStagingId !== null) {
             const res = await processJobById(nextStagingId, stagingClient);
             stagingClient.release();
             client.release();
@@ -2019,7 +2026,6 @@ async function processNextJob() {
     }
 
 
-    const nextId = jobRes.rows[0].id;
     const result = await processJobById(nextId, client);
     client.release();
     activeWorkersCount--;
@@ -2039,78 +2045,136 @@ async function processNextJob() {
   }
 }
 
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// Claim and process everything left over: unacknowledged stream entries (XPENDING/XAUTOCLAIM) and queued
+// PostgreSQL rows. Each job is acknowledged only after processJobById returns true (i.e. after the DB commit),
+// and processJobById claims the row atomically, so a job delivered twice is still processed once.
+async function drainBacklog(consumerName) {
+  try {
+    const entries = await redisQueue.drainPendingEntries({ consumerName, minIdleTimeMs: 30000 });
+    if (entries.length > 0) console.log(`🔄 [Queue Worker] Draining ${entries.length} unacknowledged stream entr${entries.length === 1 ? 'y' : 'ies'}...`);
+    for (const entry of entries) {
+      const success = await processJobById(entry.jobId);
+      if (success) await redisQueue.ackJob(entry.messageId);
+    }
+  } catch (err) {
+    if (err && err.name === 'RedisConfigError') throw err;
+    console.warn('[Queue Worker] Stream backlog drain notice:', err.message);
+  }
+  // Rows queued in PostgreSQL while Redis was down (or never published).
+  for (let i = 0; i < 500; i++) {
+    const didWork = await processNextJob().catch(() => false);
+    if (!didWork) break;
+  }
+}
+
 async function startRedisStreamWorker(consumerName = `worker-${process.pid || '1'}`) {
   if (isRedisWorkerActive) return;
   isRedisWorkerActive = true;
 
   console.log(`🌊 [Redis Queue Worker] Started Redis Stream consumer loop (${consumerName})...`);
+  redisQueue.startMonitor(); // idempotent; also covers run_redis_worker.js, which calls this function directly
 
   let lastClaimCheck = 0;
+  let needsDrain = true; // drain on startup
+  const offMode = redisQueue.onModeChange((mode) => { if (mode === 'redis') needsDrain = true; });
 
-  while (isRedisWorkerActive) {
-    try {
-      const now = Date.now();
-      // Check for stalled jobs every 30 seconds
-      if (now - lastClaimCheck > 30000) {
-        lastClaimCheck = now;
-        const stalledJobs = await redisQueue.claimStalledJobs({ consumerName, minIdleTimeMs: 60000 });
-        for (const sJob of stalledJobs) {
-          console.log(`🔄 [Redis Queue Worker] Auto-claimed stalled job ${sJob.jobId} (Message: ${sJob.messageId})`);
-          const success = await processJobById(sJob.jobId);
+  try {
+    while (isRedisWorkerActive) {
+      try {
+        // While Redis is unreachable, do not spin: the PostgreSQL poller keeps processing queued rows.
+        if (!redisQueue.isRedisAvailable()) {
+          await sleep(1000);
+          continue;
+        }
+
+        if (needsDrain) {
+          needsDrain = false;
+          lastClaimCheck = Date.now();
+          await redisQueue.initRedisStream();
+          await drainBacklog(consumerName);
+        } else if (Date.now() - lastClaimCheck > 30000) {
+          // Periodic recovery of entries held by crashed workers
+          lastClaimCheck = Date.now();
+          await drainBacklog(consumerName);
+        }
+
+        // Read next incoming event from stream (blocking up to 2000ms)
+          const event = await redisQueue.readNextStreamJob({ consumerName, blockMs: 2000 });
+        if (event && event.jobId) {
+          console.log(`📥 [Redis Queue Worker] Received job ${event.jobId} from stream (School: ${event.schoolId})`);
+          const success = await processJobById(event.jobId);
           if (success) {
-            await redisQueue.ackJob(sJob.messageId);
+            // Postgres fallback check: verify row is committed as 'completed' in DB before acknowledging stream
+            const targetPool = (db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(event.schoolId) && db.stagingPool)
+              ? db.stagingPool
+              : db.pool;
+            const checkRes = await targetPool.query(
+              `SELECT status FROM esf7_submission_queue WHERE id = $1`,
+              [event.jobId]
+            ).catch(() => ({ rows: [] }));
+
+            if (checkRes.rows.length > 0 && checkRes.rows[0].status === 'completed') {
+              await redisQueue.ackJob(event.messageId);
+            } else {
+              console.warn(`⚠️ [Redis Queue Worker] Post-commit check failed: Job #${event.jobId} is not 'completed' in database. Retaining unacknowledged in stream.`);
+            }
           }
         }
+      } catch (err) {
+        if (err && err.name === 'RedisConfigError') throw err;
+        console.warn('[Redis Queue Worker Loop Notice]:', err.message);
+        await sleep(2000);
       }
-
-      // Read next incoming event from stream (blocking up to 2000ms)
-      const event = await redisQueue.readNextStreamJob({ consumerName, blockMs: 2000 });
-      if (event && event.jobId) {
-        console.log(`📥 [Redis Queue Worker] Received job ${event.jobId} from stream (School: ${event.schoolId})`);
-        const success = await processJobById(event.jobId);
-        if (success) {
-          await redisQueue.ackJob(event.messageId);
-        }
-      }
-    } catch (err) {
-      console.warn('[Redis Queue Worker Loop Notice]:', err.message);
-      await new Promise(res => setTimeout(res, 2000));
     }
+  } finally {
+    offMode();
+    isRedisWorkerActive = false;
   }
 }
 
 let workerInterval = null;
+let workerIntervalMs = 0;
+let offModeListener = null;
+
+function setPollInterval(ms) {
+  if (workerInterval && workerIntervalMs === ms) return;
+  if (workerInterval) clearInterval(workerInterval);
+  workerIntervalMs = ms;
+  workerInterval = setInterval(async () => {
+    try {
+      await processNextJob();
+    } catch (err) {
+      console.error('[Queue Worker] Unexpected error in worker loop:', err.message);
+    }
+  }, ms);
+}
 
 async function startWorker(intervalMs = 2000) {
   if (workerInterval || isRedisWorkerActive) return;
 
   console.log('[Queue Worker] Initializing submissions queue high-performance processor...');
 
-  // 1. Attempt Redis Stream Consumer setup
-  const hasRedis = await redisQueue.initRedisStream();
+  // Validates REDIS_* settings (throws a clear error if malformed) and starts connecting in the background.
+  redisQueue.startMonitor();
 
-  if (hasRedis) {
-    console.log('🚀 [Queue Worker] Redis Streams connected! Running in Event-Driven Consumer Mode.');
-    startRedisStreamWorker().catch(err => {
-      console.error('[Redis Worker Fatal]:', err);
-    });
+  const applyMode = (mode) => {
+    if (mode === 'redis') {
+      console.log('🚀 [Queue Worker] Redis Streams connected! Running in Event-Driven Consumer Mode.');
+      setPollInterval(10000); // low-frequency safety poll
+      startRedisStreamWorker().catch((err) => {
+        console.error('[Redis Worker Fatal]:', err);
+      });
+    } else {
+      console.log('ℹ️ [Queue Worker] Operating in High-Throughput PostgreSQL (FOR UPDATE SKIP LOCKED) mode.');
+      setPollInterval(intervalMs);
+    }
+  };
 
-    // Low-frequency safety poll
-    workerInterval = setInterval(async () => {
-      try {
-        await processNextJob();
-      } catch (err) {}
-    }, 10000);
-  } else {
-    console.log('ℹ️ [Queue Worker] Operating in High-Throughput PostgreSQL (FOR UPDATE SKIP LOCKED) mode.');
-    workerInterval = setInterval(async () => {
-      try {
-        await processNextJob();
-      } catch (err) {
-        console.error('[Queue Worker] Unexpected error in worker loop:', err.message);
-      }
-    }, intervalMs);
-  }
+  // Start in PostgreSQL mode immediately so no queued row waits for Redis; upgrade automatically when Redis is ready.
+  applyMode(redisQueue.getQueueStatus().mode);
+  offModeListener = redisQueue.onModeChange(applyMode);
 }
 
 function stopWorker() {
@@ -2118,8 +2182,33 @@ function stopWorker() {
   if (workerInterval) {
     clearInterval(workerInterval);
     workerInterval = null;
+    workerIntervalMs = 0;
+  }
+  if (offModeListener) {
+    offModeListener();
+    offModeListener = null;
   }
   console.log('[Queue Worker] Stopped background processor.');
+}
+
+function getCurrentProcessingJobId() {
+  return currentProcessingJobId;
+}
+
+async function requeueInFlightJob() {
+  if (!currentProcessingJobId) return;
+  const jId = currentProcessingJobId;
+  console.warn(`⚠️ [Queue Worker] Requeuing in-flight Job #${jId} back to 'pending' in PostgreSQL due to shutdown...`);
+  await db.query(
+    `UPDATE esf7_submission_queue SET status = 'pending', updated_at = NOW() WHERE id = $1 AND status = 'processing'`,
+    [jId]
+  ).catch(() => {});
+  if (db.stagingPool && db.stagingPool !== db.pool) {
+    await db.stagingPool.query(
+      `UPDATE esf7_submission_queue SET status = 'pending', updated_at = NOW() WHERE id = $1 AND status = 'processing'`,
+      [jId]
+    ).catch(() => {});
+  }
 }
 
 module.exports = {
@@ -2127,5 +2216,7 @@ module.exports = {
   processNextJob,
   startRedisStreamWorker,
   startWorker,
-  stopWorker
+  stopWorker,
+  getCurrentProcessingJobId,
+  requeueInFlightJob
 };

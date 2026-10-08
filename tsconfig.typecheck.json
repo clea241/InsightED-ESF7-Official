@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "client/src/env.d.ts",
+    "client/src/services/api.js",
+    "client/src/services/draftSaver.js",
+    "client/src/services/serverHealth.js",
+    "client/src/services/draftErrorReporter.js",
+    "client/src/services/db.js",
+    "server/utils/redisConfig.js"
+  ]
+}

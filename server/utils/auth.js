@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'STRIDE_INSIGHTED_SECRET_2026_KEY_PROD';
+const { getJwtSecret } = require('./jwtSecret');
 
 function isDepEdSchoolId(val) {
   if (!val) return false;
@@ -19,6 +18,9 @@ function cleanSchoolId(val) {
 
 function getSchoolIdFromRequest(req) {
   if (!req) return null;
+
+  // 0. A verified token (set by middleware/auth.js) always wins over anything the client sent.
+  if (req.auth && req.auth.schoolId) return req.auth.schoolId;
 
   // 1. Check explicit query param
   if (req.query) {
@@ -54,11 +56,12 @@ function getSchoolIdFromRequest(req) {
     const token = parts.length === 2 ? parts[1] : authHeader;
     if (token) {
       try {
+        // Signature must verify; an unverified (forged) token is never trusted.
         let decoded = null;
         try {
-          decoded = jwt.verify(token, JWT_SECRET);
+          decoded = jwt.verify(token, getJwtSecret());
         } catch (err) {
-          decoded = jwt.decode(token);
+          decoded = null;
         }
         if (decoded) {
           const directSchool = decoded.school_id || decoded.schoolId ||

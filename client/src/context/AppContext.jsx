@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
+import { reportDraftError, clearDraftError, DRAFT_ACTIONS } from '../services/draftErrorReporter';
 import { useAuth } from './AuthContext';
+import { markUnsynced, markSynced, hasUnsynced, onServerLock, onServerRecover } from '../services/serverHealth';
+import { chooseDraftSource } from '../services/draftSync';
+import { saveDraft, flushDrafts, markDraftDirty, registerSnapshotProvider, subscribeDraftSave, getSyncedVersion, setSyncedVersion, acceptServerVersion, retryNow, DraftConflictError } from '../services/draftSaver';
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
 
 const AppContext = createContext();
@@ -2719,6 +2723,50 @@ export const computeWeeklyAdministrativeMinutesFromWorkload = (rows) => {
   }, 0);
 };
 
+// Pure helpers used by both the initial load and the "restore from official database" flows.
+// (They used to live inside loadInitialData, so the restore flow hit a ReferenceError.)
+const SPREADSHEET_PLACEHOLDERS = ['MULTI-GRADE', 'MULTIGRADE', 'MULTI GRADE', 'MONO-GRADE', 'MONOGRADE', 'MONO GRADE'];
+const isInvalidClassSection = (sec) => {
+  if (!sec) return true;
+  const g = String(sec.gradeLevel || sec.grade_level || '').toUpperCase().trim();
+  const n = String(sec.sectionName || sec.section_name || '').toUpperCase().trim();
+  const isPlaceholderGrade = !g || SPREADSHEET_PLACEHOLDERS.includes(g);
+  const isPlaceholderName = !n || SPREADSHEET_PLACEHOLDERS.includes(n);
+  return isPlaceholderGrade && isPlaceholderName;
+};
+
+const sanitizeClassSectionList = (list) => {
+  if (!Array.isArray(list)) return [];
+  return list.filter(sec => !isInvalidClassSection(sec)).map(sec => {
+    let cleanGrade = sec.gradeLevel || sec.grade_level || '';
+    const upperG = String(cleanGrade).toUpperCase().trim();
+    if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
+    else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
+
+    const rawType = String(sec.sectionType || sec.section_type || '').toUpperCase().trim();
+    const isRegType = rawType === 'MONO GRADE' || rawType === 'MONOGRADE' || rawType === 'MULTIGRADE' || rawType === 'MULTI GRADE';
+
+    const sanitized = {
+      ...sec,
+      gradeLevel: cleanGrade,
+      grade_level: cleanGrade
+    };
+
+    if (isRegType) {
+      delete sanitized.aralBasis;
+      delete sanitized.aralGrade;
+      delete sanitized.aralToolKey;
+      delete sanitized.aralTool;
+      delete sanitized.aralProfileLevel;
+      delete sanitized.aralLearners;
+      delete sanitized.interventionCategory;
+      delete sanitized.interventionType;
+    }
+
+    return sanitized;
+  });
+};
+
 export const AppProvider = ({ children }) => {
   const [activeView, setActiveViewState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3032,7 +3080,9 @@ export const AppProvider = ({ children }) => {
       };
       try {
         await setLocalDraft(draftKey, draftData);
-        await api.saveSchoolDraft(schoolInfo.schoolYear, draftData);
+        markDraftDirty();
+        await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
+        clearDraftError();
 
         // Milestone Sync to esf7_school_node_status
         const nodeMap = {
@@ -3052,7 +3102,7 @@ export const AppProvider = ({ children }) => {
           });
         }
       } catch (err) {
-        console.error('Failed to save journey state in draft:', err);
+        reportDraftError(DRAFT_ACTIONS.JOURNEY_SAVE, err);
       }
     }
 
@@ -3376,10 +3426,14 @@ export const AppProvider = ({ children }) => {
 
   const [isInitialized, setIsInitialized] = useState(false);
   const initialLoadCompleteRef = useRef(false);
+  // True when the initial load failed or only partly succeeded: cloud auto-save is blocked so a partial state can never overwrite real data.
+  const loadIncompleteRef = useRef(false);
+  const loadInitialDataRef = useRef(null);
 
   // Load initial data from draft or DB
   useEffect(() => {
     const loadInitialData = async () => {
+      loadIncompleteRef.current = false;
       try {
         // 1. Fetch current school configuration
         const activeSchoolId = user?.school_id || user?.schoolId || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || '100093';
@@ -3430,56 +3484,71 @@ export const AppProvider = ({ children }) => {
         }
         setSchoolInfo(currentSchoolInfo);
 
-        // 2. Load Salary Matrix (always static from DB)
-        const matrix = await api.getSalaryMatrix();
-        if (Array.isArray(matrix)) {
-          setSalaryMatrix(matrix);
-        }
+        // 2. Salary Matrix is static reference data: load it in the background, never block the splash on it
+        api.getSalaryMatrix()
+          .then((matrix) => { if (Array.isArray(matrix)) setSalaryMatrix(matrix); })
+          .catch((e) => console.error('[AppContext] Failed to load salary matrix:', e));
 
-        // 3. Fetch Local (IndexedDB) and Cloud (Postgres) drafts
+        // 3. Local draft (IndexedDB), cloud draft (Postgres) and milestone node status are independent: fetch together
         const draftKey = `draft_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}`;
-        const localDraft = await getLocalDraft(draftKey);
-        
-        let cloudDraft = null;
-        let cloudUpdatedAt = null;
-        try {
-          const cloudDraftRes = await api.getSchoolDraft(currentSchoolInfo.schoolYear);
-          cloudDraft = cloudDraftRes?.payload;
-          cloudUpdatedAt = cloudDraftRes?.updatedAt;
-        } catch (e) {
-          console.error('Failed to load cloud draft from backend:', e);
-        }
+        const [localDraft, cloudDraftRes, nodeRes] = await Promise.all([
+          getLocalDraft(draftKey),
+          api.getSchoolDraft(currentSchoolInfo.schoolYear).catch((e) => {
+            console.error('Failed to load cloud draft from backend:', e);
+            return null;
+          }),
+          api.getNodeStatus(currentSchoolInfo.schoolYear).catch((err) => {
+            console.warn('[NodeStatus Sync] Could not fetch school node status:', err.message);
+            return null;
+          })
+        ]);
+        const cloudDraft = cloudDraftRes?.payload || null;
+        const cloudUpdatedAt = cloudDraftRes?.updatedAt || null;
 
-        // 3b. Fetch PostgreSQL Milestone Node Status (esf7_school_node_status)
+        // 3b. PostgreSQL Milestone Node Status (esf7_school_node_status)
         let schoolNodeStatus = null;
-        try {
-          const nodeRes = await api.getNodeStatus(currentSchoolInfo.schoolYear);
-          if (nodeRes && nodeRes.exists) {
-            schoolNodeStatus = nodeRes;
-            console.log('[NodeStatus Sync] Fetched PostgreSQL school node status for', currentSchoolInfo.schoolId);
-          }
-        } catch (err) {
-          console.warn('[NodeStatus Sync] Could not fetch school node status:', err.message);
+        if (nodeRes && nodeRes.exists) {
+          schoolNodeStatus = nodeRes;
+          console.log('[NodeStatus Sync] Fetched PostgreSQL school node status for', currentSchoolInfo.schoolId);
         }
 
-        // 4. Compare timestamps and load the newest
+        // 4. Pick the draft to load using the SERVER version number (never client clocks). Decision logic: services/draftSync.js
         let activeDraft = null;
-        if (localDraft && cloudDraft) {
-          const localTime = new Date(localDraft.lastUpdated || 0).getTime();
-          const cloudTime = new Date(cloudUpdatedAt || cloudDraft.lastUpdated || 0).getTime();
-          if (localTime >= cloudTime) {
-            activeDraft = localDraft;
-            console.log('[Draft Sync] Loading newer local draft...');
-          } else {
-            activeDraft = cloudDraft;
-            console.log('[Draft Sync] Loading newer cloud draft...');
-          }
-        } else if (localDraft) {
+        const cloudVersion = (typeof cloudDraftRes?.version === 'number') ? cloudDraftRes.version : null;
+        const decision = chooseDraftSource({
+          hasLocal: !!localDraft,
+          hasCloud: !!cloudDraft,
+          cloudVersion,
+          syncedVersion: getSyncedVersion(currentSchoolInfo.schoolId, currentSchoolInfo.schoolYear),
+          hasUnsyncedChanges: hasUnsynced(),
+          localTime: new Date(localDraft?.lastUpdated || 0).getTime(),
+          cloudTime: new Date(cloudUpdatedAt || cloudDraft?.lastUpdated || 0).getTime()
+        });
+        console.log(`[Draft Sync] ${decision.source}: ${decision.reason}`);
+        if (decision.source === 'local') {
           activeDraft = localDraft;
-          console.log('[Draft Sync] Loading local-only draft...');
-        } else if (cloudDraft) {
+        } else if (decision.source === 'cloud') {
           activeDraft = cloudDraft;
-          console.log('[Draft Sync] Loading cloud-only draft...');
+        } else if (decision.source === 'conflict') {
+          // Both sides changed: keep both, let the user choose which one to continue with.
+          const stamp = Date.now();
+          await setLocalDraft(`conflict_server_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}_${stamp}`, cloudDraft);
+          const useLocal = await showConfirm(
+            'Two versions of your work found',
+            'This draft was changed on the server while you also have unsaved changes on this device. Confirm = continue with this device\'s changes. Cancel = continue with the server version. The other version is kept as a backup on this device either way.'
+          );
+          if (useLocal) {
+            activeDraft = localDraft;
+          } else {
+            await setLocalDraft(`conflict_local_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}_${stamp}`, localDraft);
+            activeDraft = cloudDraft;
+            markSynced();
+          }
+          console.warn('[Draft Sync] Version conflict resolved by user:', useLocal ? 'kept local' : 'kept server');
+        }
+        // Whatever was chosen, this tab's saves are now based on the server version it just saw.
+        if (cloudVersion !== null) {
+          setSyncedVersion(currentSchoolInfo.schoolId, currentSchoolInfo.schoolYear, cloudVersion);
         }
 
         // Helper: Auto enrich personnel types based on position
@@ -3538,48 +3607,6 @@ export const AppProvider = ({ children }) => {
         };
 
         // Helper: Check if section is invalid (multi-grade/mono-grade artifacts from spreadsheet scanning)
-        const SPREADSHEET_PLACEHOLDERS = ['MULTI-GRADE', 'MULTIGRADE', 'MULTI GRADE', 'MONO-GRADE', 'MONOGRADE', 'MONO GRADE'];
-        const isInvalidClassSection = (sec) => {
-          if (!sec) return true;
-          const g = String(sec.gradeLevel || sec.grade_level || '').toUpperCase().trim();
-          const n = String(sec.sectionName || sec.section_name || '').toUpperCase().trim();
-          const isPlaceholderGrade = !g || SPREADSHEET_PLACEHOLDERS.includes(g);
-          const isPlaceholderName = !n || SPREADSHEET_PLACEHOLDERS.includes(n);
-          return isPlaceholderGrade && isPlaceholderName;
-        };
-
-        const sanitizeClassSectionList = (list) => {
-          if (!Array.isArray(list)) return [];
-          return list.filter(sec => !isInvalidClassSection(sec)).map(sec => {
-            let cleanGrade = sec.gradeLevel || sec.grade_level || '';
-            const upperG = String(cleanGrade).toUpperCase().trim();
-            if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
-            else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
-
-            const rawType = String(sec.sectionType || sec.section_type || '').toUpperCase().trim();
-            const isRegType = rawType === 'MONO GRADE' || rawType === 'MONOGRADE' || rawType === 'MULTIGRADE' || rawType === 'MULTI GRADE';
-
-            const sanitized = {
-              ...sec,
-              gradeLevel: cleanGrade,
-              grade_level: cleanGrade
-            };
-
-            if (isRegType) {
-              delete sanitized.aralBasis;
-              delete sanitized.aralGrade;
-              delete sanitized.aralToolKey;
-              delete sanitized.aralTool;
-              delete sanitized.aralProfileLevel;
-              delete sanitized.aralLearners;
-              delete sanitized.interventionCategory;
-              delete sanitized.interventionType;
-            }
-
-            return sanitized;
-          });
-        };
-
         // Helper: Extract class sections fallback from workload rows
         const extractClassSectionsFromPersonnel = (personnelList, schoolInf) => {
           if (!Array.isArray(personnelList) || personnelList.length === 0) return [];
@@ -3639,8 +3666,12 @@ export const AppProvider = ({ children }) => {
           try {
             const res = await fetchAndNormalizePersonnel(currentSchoolInfo.schoolId);
             if (Array.isArray(res)) dbList = res;
+            clearDraftError();
           } catch(e) {
-            console.error('Failed to fetch DB personnel for draft sync', e);
+            // Local draft stays intact; dbList remains empty so the draft's own personnel is used.
+            // Cloud auto-save stays blocked until a retry succeeds, so this partial state is never written over real data.
+            loadIncompleteRef.current = true;
+            reportDraftError(DRAFT_ACTIONS.PERSONNEL_FETCH, e, { retry: () => loadInitialDataRef.current && loadInitialDataRef.current() });
           }
 
           const rawDeleted = activeDraft.deletedPersonnelIds || activeDraft.deleted_personnel_ids || [];
@@ -3896,6 +3927,12 @@ export const AppProvider = ({ children }) => {
           }
           setSchoolInfo(mergedSchoolInfo);
 
+          // Sections, transfers and absences don't depend on the personnel list: start them alongside it
+          const sectionsReq = api.getSections();
+          const transfersReq = api.getTransfers();
+          const absencesReq = api.getAbsences();
+          [sectionsReq, transfersReq, absencesReq].forEach((p) => p.catch(() => {})); // avoid unhandled rejection if personnel throws first
+
           const list = await fetchAndNormalizePersonnel(currentSchoolInfo.schoolId);
           let loadedPersonnel = [];
           if (Array.isArray(list) && list.length > 0) {
@@ -3907,7 +3944,7 @@ export const AppProvider = ({ children }) => {
 
           loadedPersonnel = autoEnrichPersonnel(loadedPersonnel);
 
-          const rawSections = await api.getSections();
+          const rawSections = await sectionsReq;
           let loadedSections = Array.isArray(rawSections) ? rawSections : (rawSections && Array.isArray(rawSections.allSections) ? rawSections.allSections : []);
           if (loadedSections.length === 0 && Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) && schoolNodeStatus.nodes.node_06_classes.sections.length > 0) {
             console.log('[NodeStatus Sync] Restoring', schoolNodeStatus.nodes.node_06_classes.sections.length, 'class sections from PostgreSQL node status');
@@ -3928,10 +3965,10 @@ export const AppProvider = ({ children }) => {
             }
           });
 
-          const transfers = await api.getTransfers();
+          const transfers = await transfersReq;
           const loadedTransfers = Array.isArray(transfers) ? transfers : [];
 
-          const absData = await api.getAbsences();
+          const absData = await absencesReq;
           const loadedAbs = Array.isArray(absData) ? absData : [];
 
           // Merge completed milestone nodes from PostgreSQL
@@ -4000,21 +4037,19 @@ export const AppProvider = ({ children }) => {
         }
 
         initialLoadCompleteRef.current = true;
+        if (!loadIncompleteRef.current) clearDraftError();
         refreshRequests(currentSchoolInfo.schoolId);
         loadDistrictSchools(currentSchoolInfo.schoolId);
         fetchAllowances(currentSchoolInfo.schoolYear);
-        try {
-          const matrix = await api.getSalaryMatrix();
-          if (Array.isArray(matrix)) setSalaryMatrix(matrix);
-        } catch (e) {
-          console.error('[AppContext] Failed to load salary matrix:', e);
-        }
       } catch (err) {
-        console.error('Error loading initial data:', err);
+        // Failed load: keep auto-save blocked (never save an empty/partial state) and let the user retry.
+        loadIncompleteRef.current = true;
+        reportDraftError(DRAFT_ACTIONS.INITIAL_LOAD, err, { retry: () => loadInitialDataRef.current && loadInitialDataRef.current() });
       } finally {
         setIsInitialized(true);
       }
     };
+    loadInitialDataRef.current = loadInitialData;
 
     if (user) {
       loadInitialData();
@@ -4097,12 +4132,18 @@ export const AppProvider = ({ children }) => {
             localStorage.setItem('insighted_personnel_cache', JSON.stringify(personnel));
           }
         } catch (e) {}
-        // 2. Save to cloud Postgres drafts table
-        await api.saveSchoolDraft(schoolInfo.schoolYear, draftData);
-        
+        // 2. Save to cloud Postgres drafts table (blocked while the initial load is incomplete)
+        if (loadIncompleteRef.current) {
+          markUnsynced();
+          return;
+        }
+        await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
+        clearDraftError();
         setHasUnsavedChanges(true);
       } catch (err) {
-        console.error('Failed to auto-save drafts:', err);
+        // Conflicts are handled by the resolution prompt; everything else shows the shared error notice.
+        // A 401 means the session ended: the auth layer keeps the work queued and returns the user to login.
+        if (!(err instanceof DraftConflictError) && /** @type {any} */ (err)?.status !== 401) reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
       } finally {
         setIsSyncing(false);
       }
@@ -4110,6 +4151,108 @@ export const AppProvider = ({ children }) => {
 
     return () => clearTimeout(debounceId);
   }, [schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState]);
+
+  // ---- Server-health lock integration: protect local work, then re-sync on recovery ----
+  const latestDraftRef = useRef(null);
+  const healthHandlersRef = useRef({});
+  useEffect(() => {
+    if (!initialLoadCompleteRef.current || !schoolInfo?.schoolId || !schoolInfo?.schoolYear) return;
+    markDraftDirty();
+    latestDraftRef.current = {
+      key: `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
+      schoolYear: schoolInfo.schoolYear,
+      data: { schoolInfo, personnel, classSections, workloadTransfers, absences, journey_state: journeyState, lastUpdated: new Date().toISOString() }
+    };
+  }, [schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState]);
+
+  // Handlers read the latest closures through a ref so they are registered once.
+  healthHandlersRef.current.syncLocalDraft = async () => {
+    if (loadIncompleteRef.current) throw new Error('Initial data load is incomplete; not syncing a partial state');
+    await flushDrafts();
+    clearDraftError();
+    return true;
+  };
+
+  const conflictPromptOpenRef = useRef(false);
+  healthHandlersRef.current.resolveConflict = async () => {
+    const latest = latestDraftRef.current;
+    if (!latest || conflictPromptOpenRef.current) return;
+    conflictPromptOpenRef.current = true;
+    try {
+      const sid = latest.data.schoolInfo.schoolId;
+      const sy = latest.schoolYear;
+      const cloud = await api.getSchoolDraft(sy);
+      const stamp = Date.now();
+      // Keep both versions: the server copy is backed up on this device before anything is decided.
+      await setLocalDraft(`conflict_server_${sid}_${sy}_${stamp}`, cloud?.payload || {});
+      const keepMine = await showConfirm(
+        'Two versions of your work found',
+        'This draft was also changed from another session. Confirm = keep the changes on this screen (the other version is saved as a backup on this device). Cancel = load the other version (your changes are saved as a backup on this device).'
+      );
+      console.warn('[DraftSave] conflict resolved by user:', keepMine ? 'kept local' : 'kept server');
+      if (keepMine) {
+        acceptServerVersion(sid, sy, cloud?.version);
+        retryNow().catch(() => {});
+      } else {
+        await setLocalDraft(`conflict_local_${sid}_${sy}_${stamp}`, latest.data);
+        await setLocalDraft(latest.key, cloud?.payload || latest.data);
+        acceptServerVersion(sid, sy, cloud?.version);
+        markSynced();
+        window.location.reload();
+      }
+    } catch (e) {
+      reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, e);
+    } finally {
+      conflictPromptOpenRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    // flushDrafts() (logout, recovery) asks for the newest state and persists it locally first.
+    registerSnapshotProvider(async () => {
+      const latest = latestDraftRef.current;
+      if (!latest || loadIncompleteRef.current) return null;
+      await setLocalDraft(latest.key, latest.data);
+      return { schoolId: latest.data.schoolInfo.schoolId, schoolYear: latest.schoolYear, payload: latest.data };
+    });
+    const offLock = onServerLock(() => {
+      const latest = latestDraftRef.current;
+      if (latest) setLocalDraft(latest.key, latest.data).catch(() => {
+        try { localStorage.setItem(`insighted_fallback_${latest.key}`, JSON.stringify(latest.data)); } catch (e) {}
+      });
+    });
+    const offRecover = onServerRecover(() => healthHandlersRef.current.syncLocalDraft());
+    const offSave = subscribeDraftSave((st) => {
+      if (st.status === 'conflict') healthHandlersRef.current.resolveConflict();
+    });
+    return () => { offLock(); offRecover(); offSave(); };
+  }, []);
+
+  // Always-current copy of the draft state, read by the restore effect below without making it re-run on every edit.
+  const currentStateRef = useRef(null);
+  currentStateRef.current = { schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState };
+
+  // Next load with unsynced work: tell the user it was restored (the auto-save sends it once the load has fully succeeded).
+  useEffect(() => {
+    if (isInitialized && hasUnsynced() && !loadIncompleteRef.current) {
+      showToast('Restored your unsynced changes from this device. Syncing now...');
+      // Send them right away instead of waiting for the next edit (version checks still apply: a newer server copy
+      // raises the conflict prompt). Failures keep the local copy and show the shared draft error notice.
+      // The snapshot ref is normally filled by the next state change; after a restore there is none, so fill it now.
+      const cur = currentStateRef.current;
+      if (cur.schoolInfo?.schoolId && cur.schoolInfo?.schoolYear) {
+        latestDraftRef.current = {
+          key: `draft_${cur.schoolInfo.schoolId}_${cur.schoolInfo.schoolYear}`,
+          schoolYear: cur.schoolInfo.schoolYear,
+          data: { schoolInfo: cur.schoolInfo, personnel: cur.personnel, classSections: cur.classSections, workloadTransfers: cur.workloadTransfers, absences: cur.absences, journey_state: cur.journeyState, lastUpdated: new Date().toISOString() }
+        };
+      }
+      markDraftDirty();
+      flushDrafts().catch((err) => {
+        if (!(err instanceof DraftConflictError) && /** @type {any} */ (err)?.status !== 401) reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
+      });
+    }
+  }, [isInitialized]);
 
   // Save changes to schoolInfo to the backend (Disabled: school profile is read-only in ESF7 Personnel Portal)
   /*
@@ -4651,8 +4794,9 @@ export const AppProvider = ({ children }) => {
         lastUpdated: new Date().toISOString()
       };
       await setLocalDraft(draftKey, newDraftData);
-      if (api.saveSchoolDraft) {
-        api.saveSchoolDraft(schoolInfo?.schoolYear || 'SY 26-27', newDraftData).catch(e => console.warn('Cloud draft update error on delete:', e));
+      if (!loadIncompleteRef.current && schoolInfo?.schoolId) {
+        markDraftDirty();
+        saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear || 'SY 26-27', newDraftData).catch(e => console.warn('Cloud draft update error on delete:', e));
       }
     } catch (err) {
       console.warn('Error saving draft after delete:', err);

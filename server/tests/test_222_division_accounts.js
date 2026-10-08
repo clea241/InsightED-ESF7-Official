@@ -126,7 +126,7 @@ async function runQATests() {
   console.log('\n--- 4. Auth Dispatch Verification ---');
   test('divtest- token signs and decodes cleanly with full division metadata', () => {
     const div = resolveTestDivision('cebucity.test');
-    const secret = process.env.JWT_SECRET || 'STRIDE_INSIGHTED_SECRET_2026_KEY_PROD';
+    const secret = process.env.JWT_SECRET || 'unit-test-only-secret-0123456789';
     const token = jwt.sign(
       { uid: `divtest-${div.schoolId}`, email: `${div.slug}@esf7.test`, role: 'school', school_id: div.schoolId },
       secret,
