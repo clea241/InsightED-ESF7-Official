@@ -3698,14 +3698,17 @@ export const AppProvider = ({ children }) => {
           const filteredDbList = dbList.filter(p => {
             const idKey = String(p.id || '').trim().toLowerCase();
             const prnKey = String(p.prn || '').trim().toLowerCase();
+            const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
             const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            return !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey);
+            return !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey) && (!empKey || !deletedSet.has(empKey));
           });
 
           let draftPersonnel = (activeDraft.personnel || []).filter(p => {
             const idKey = String(p.id || '').trim().toLowerCase();
             const prnKey = String(p.prn || '').trim().toLowerCase();
-            return !deletedSet.has(idKey) && !deletedSet.has(prnKey);
+            const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
+            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+            return !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey) && (!empKey || !deletedSet.has(empKey));
           });
 
           // Only initialize from DB list if the draft is empty
@@ -3718,14 +3721,18 @@ export const AppProvider = ({ children }) => {
               draftPersonnel.flatMap(p => [
                 String(p.id || '').trim().toLowerCase(),
                 String(p.prn || '').trim().toLowerCase(),
+                String(p.employeeNo || p.employee_no || '').trim().toLowerCase(),
                 `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
               ]).filter(Boolean)
             );
             const missingMasterPersonnel = filteredDbList.filter(p => {
               const idKey = String(p.id || '').trim().toLowerCase();
               const prnKey = String(p.prn || '').trim().toLowerCase();
+              const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
               const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-              return !draftKeys.has(idKey) && !draftKeys.has(prnKey) && !draftKeys.has(nameKey) && !deletedSet.has(idKey) && !deletedSet.has(prnKey);
+              return !draftKeys.has(idKey) && !draftKeys.has(prnKey) && !draftKeys.has(nameKey) &&
+                     !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey) &&
+                     (!empKey || (!draftKeys.has(empKey) && !deletedSet.has(empKey)));
             });
             if (missingMasterPersonnel.length > 0) {
               console.log(`[Draft Sync] Merging ${missingMasterPersonnel.length} master personnel from official database into draft...`);
@@ -4192,9 +4199,9 @@ export const AppProvider = ({ children }) => {
     latestDraftRef.current = {
       key: `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
       schoolYear: schoolInfo.schoolYear,
-      data: { schoolInfo, personnel, classSections, workloadTransfers, absences, journey_state: journeyState, lastUpdated: new Date().toISOString() }
+      data: { schoolInfo, personnel, classSections, workloadTransfers, absences, deletedPersonnelIds, journey_state: journeyState, lastUpdated: new Date().toISOString() }
     };
-  }, [schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState]);
+  }, [schoolInfo, personnel, classSections, workloadTransfers, absences, deletedPersonnelIds, journeyState]);
 
   // Handlers read the latest closures through a ref so they are registered once.
   healthHandlersRef.current.syncLocalDraft = async () => {
@@ -4261,7 +4268,7 @@ export const AppProvider = ({ children }) => {
 
   // Always-current copy of the draft state, read by the restore effect below without making it re-run on every edit.
   const currentStateRef = useRef(null);
-  currentStateRef.current = { schoolInfo, personnel, classSections, workloadTransfers, absences, journeyState };
+  currentStateRef.current = { schoolInfo, personnel, classSections, workloadTransfers, absences, deletedPersonnelIds, journeyState };
 
   // Next load with unsynced work: tell the user it was restored (the auto-save sends it once the load has fully succeeded).
   useEffect(() => {
@@ -4275,7 +4282,7 @@ export const AppProvider = ({ children }) => {
         latestDraftRef.current = {
           key: `draft_${cur.schoolInfo.schoolId}_${cur.schoolInfo.schoolYear}`,
           schoolYear: cur.schoolInfo.schoolYear,
-          data: { schoolInfo: cur.schoolInfo, personnel: cur.personnel, classSections: cur.classSections, workloadTransfers: cur.workloadTransfers, absences: cur.absences, journey_state: cur.journeyState, lastUpdated: new Date().toISOString() }
+          data: { schoolInfo: cur.schoolInfo, personnel: cur.personnel, classSections: cur.classSections, workloadTransfers: cur.workloadTransfers, absences: cur.absences, deletedPersonnelIds: cur.deletedPersonnelIds, journey_state: cur.journeyState, lastUpdated: new Date().toISOString() }
         };
       }
       markDraftDirty();
@@ -4794,11 +4801,15 @@ export const AppProvider = ({ children }) => {
     setClassSections(updatedSections);
 
     // Track deleted IDs in tombstone list
+    const targetName = target ? `${target.firstName || ''} ${target.lastName || ''}`.trim() : '';
+    const targetEmpNo = target?.employeeNo || target?.employee_no || '';
     const newDeletedIds = Array.from(new Set([
       ...deletedPersonnelIds,
       String(id),
       String(targetId),
-      targetPrn ? String(targetPrn) : ''
+      targetPrn ? String(targetPrn) : '',
+      targetEmpNo ? String(targetEmpNo) : '',
+      targetName ? targetName.toLowerCase() : ''
     ].filter(Boolean)));
     setDeletedPersonnelIds(newDeletedIds);
 
@@ -4833,11 +4844,18 @@ export const AppProvider = ({ children }) => {
       console.warn('Error saving draft after delete:', err);
     }
 
-    // Permanently delete in backend DB
+    // Permanently delete in backend DB and record tombstone
     try {
-      await api.deletePersonnel(targetId);
+      const deleteMeta = {
+        schoolId: schoolInfo?.schoolId || getSessionSchoolId() || '',
+        prn: targetPrn || targetId,
+        firstName: target?.firstName || '',
+        lastName: target?.lastName || '',
+        employeeNo: targetEmpNo
+      };
+      await api.deletePersonnel(targetId, deleteMeta);
       if (targetPrn && targetPrn !== targetId) {
-        await api.deletePersonnel(targetPrn).catch(() => {});
+        await api.deletePersonnel(targetPrn, deleteMeta).catch(() => {});
       }
     } catch (err) {
       console.warn('Backend deletePersonnel notice:', err.message);

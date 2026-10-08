@@ -368,7 +368,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
 
   if (isTest) {
     masterRes = await insightEdPool.query(
-      `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+      `SELECT * FROM esf7_database_dummy WHERE (school_id = $1 OR schoool_id = $1)`,
       [cleanSchoolId]
     ).catch((err) => {
       console.warn(`[LocalDraft] Query esf7_database_dummy error for ${cleanSchoolId}:`, err.message);
@@ -396,7 +396,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     if (masterRes.rows.length === 0) {
       console.log(`[LocalDraft] No master records in esf7_database for School ID ${cleanSchoolId}, checking esf7_database_dummy...`);
       masterRes = await insightEdPool.query(
-        `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+        `SELECT * FROM esf7_database_dummy WHERE (school_id = $1 OR schoool_id = $1)`,
         [cleanSchoolId]
       ).catch(() => ({ rows: [] }));
       if (masterRes.rows.length > 0) {
@@ -891,6 +891,9 @@ router.get('/', async (req, res) => {
     const dsgPromise = db.query(
       `SELECT * FROM esf7_personnel_designations WHERE school_id = ANY($1) ORDER BY created_at ASC`, [sidPair]
     ).catch(() => ({ rows: [] }));
+    const delPromise = db.query(
+      `SELECT * FROM esf7_deleted_personnel WHERE school_id = ANY($1)`, [sidPair]
+    ).catch(() => ({ rows: [] }));
 
     // 2. Fetch locally saved records from esf7_personnel_profile
     let result = await db.query(`
@@ -971,10 +974,40 @@ router.get('/', async (req, res) => {
       designationsMap.get(pKey).push(dRow);
     }
 
+    // Build persistent deletion tombstone sets
+    const delRes = await delPromise;
+    const deletedIdSet = new Set();
+    const deletedPrnSet = new Set();
+    const deletedEmpNoSet = new Set();
+    const deletedNameSet = new Set();
+
+    for (const dRow of delRes.rows) {
+      if (dRow.personnel_id) deletedIdSet.add(String(dRow.personnel_id).trim().toUpperCase());
+      if (dRow.prn) deletedPrnSet.add(String(dRow.prn).trim().toUpperCase());
+      if (dRow.employee_no) deletedEmpNoSet.add(String(dRow.employee_no).trim().toUpperCase());
+      if (dRow.full_name_clean) deletedNameSet.add(String(dRow.full_name_clean).trim().toUpperCase());
+      if (dRow.first_name && dRow.last_name) {
+        deletedNameSet.add(`${String(dRow.first_name).trim()} ${String(dRow.last_name).trim()}`.trim().toUpperCase());
+      }
+    }
+
     timing.local = Date.now() - timing.start - timing.master;
 
     const dbMap = new Map();
     for (const row of result.rows) {
+      const pIdUpper = String(row.id || '').trim().toUpperCase();
+      const pPrnUpper = String(row.prn || '').trim().toUpperCase();
+      const pEmpUpper = String(row.employee_no || '').trim().toUpperCase();
+      const pNameUpper = `${String(row.first_name || '').trim()} ${String(row.last_name || '').trim()}`.trim().toUpperCase();
+
+      // Skip locally saved records if marked as deleted
+      if ((pIdUpper && deletedIdSet.has(pIdUpper)) || 
+          (pPrnUpper && deletedPrnSet.has(pPrnUpper)) || 
+          (pEmpUpper && deletedEmpNoSet.has(pEmpUpper)) || 
+          (pNameUpper && deletedNameSet.has(pNameUpper))) {
+        continue;
+      }
+
       const trList = trainingsMap.get(String(row.id).toUpperCase()) || (row.prn ? trainingsMap.get(String(row.prn).toUpperCase()) : []) || [];
       const dsgList = designationsMap.get(String(row.id).toUpperCase()) || (row.prn ? designationsMap.get(String(row.prn).toUpperCase()) : []) || [];
       const wklList = workloadMap.get(String(row.id).toUpperCase()) || (row.prn ? workloadMap.get(String(row.prn).toUpperCase()) : []) || [];
@@ -984,11 +1017,25 @@ router.get('/', async (req, res) => {
       if (formatted.prn) dbMap.set(String(formatted.prn).toUpperCase(), formatted);
     }
 
+    // Filter master list against persistent tombstones
+    const filteredMasterList = masterList.filter(m => {
+      const mId = String(m.id || '').trim().toUpperCase();
+      const mPrn = String(m.prn || '').trim().toUpperCase();
+      const mEmp = String(m.employee_no || m.employeeNo || '').trim().toUpperCase();
+      const mName = `${String(m.first_name || m.firstName || '').trim()} ${String(m.last_name || m.lastName || '').trim()}`.trim().toUpperCase();
+
+      if (mId && deletedIdSet.has(mId)) return false;
+      if (mPrn && deletedPrnSet.has(mPrn)) return false;
+      if (mEmp && deletedEmpNoSet.has(mEmp)) return false;
+      if (mName && deletedNameSet.has(mName)) return false;
+      return true;
+    });
+
     const mergedList = [];
     const usedDbKeys = new Set();
 
     // Overlay master records with DB saved records where available
-    for (const m of masterList) {
+    for (const m of filteredMasterList) {
       const idKey = String(m.id || '').toUpperCase();
       const prnKey = String(m.prn || '').toUpperCase();
       const dbMatch = (idKey && dbMap.get(idKey)) || (prnKey && dbMap.get(prnKey));
@@ -2407,10 +2454,114 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE personnel profile (and cleanly cascade remove linked records)
+// DELETE personnel profile (and cleanly cascade remove linked records + record deletion tombstone)
 router.delete('/:id', async (req, res) => {
-  const targetId = req.params.id;
+  const targetId = String(req.params.id || '').trim();
+  const schoolId = getSchoolIdFromRequest(req) || req.query.schoolId || req.query.school_id || req.body?.schoolId || req.body?.school_id || '';
+  const cleanSchoolId = String(schoolId).replace(/^SCH-/i, '').trim();
+
   try {
+    // A. Query existing details to construct persistent tombstone
+    let existingRec = null;
+    const profRes = await db.query(
+      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`, [targetId]
+    ).catch(() => ({ rows: [] }));
+
+    if (profRes.rows.length > 0) {
+      existingRec = profRes.rows[0];
+    }
+
+    const sid = String(existingRec?.school_id || cleanSchoolId || '').replace(/^SCH-/i, '').trim();
+    let fName = existingRec?.first_name || req.body?.firstName || req.query?.firstName || '';
+    let lName = existingRec?.last_name || req.body?.lastName || req.query?.lastName || '';
+    let prn = existingRec?.prn || req.body?.prn || req.query?.prn || targetId;
+    let empNo = existingRec?.employee_no || req.body?.employeeNo || req.query?.employeeNo || '';
+
+    // If details not in esf7_personnel_profile, check master table for accurate names/PRN
+    if ((!fName || !lName) && sid) {
+      const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(sid);
+      const tbl = isTest ? 'esf7_database_dummy' : 'esf7_database';
+      const mRes = await insightEdPool.query(
+        `SELECT * FROM ${tbl} WHERE (school_id = $1 OR schoool_id = $1) AND (prn = $2 OR employee_no = $2)`,
+        [sid, targetId]
+      ).catch(() => ({ rows: [] }));
+
+      if (mRes.rows.length > 0) {
+        const mRow = mRes.rows[0];
+        fName = mRow.first_name || mRow.first || fName;
+        lName = mRow.last_name || mRow.last || lName;
+        prn = mRow.prn || prn;
+        empNo = mRow.employee_no || empNo;
+      }
+    }
+
+    const cleanFullName = `${String(fName || '').trim()} ${String(lName || '').trim()}`.trim().toUpperCase();
+
+    // B. Record in esf7_deleted_personnel
+    if (sid) {
+      const tombstoneId = `DEL-${sid}-${String(prn || targetId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      await db.query(`
+        INSERT INTO esf7_deleted_personnel (id, school_id, personnel_id, prn, employee_no, first_name, last_name, full_name_clean, deleted_by, deleted_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHOOL_HEAD', NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          personnel_id = EXCLUDED.personnel_id,
+          prn = EXCLUDED.prn,
+          employee_no = EXCLUDED.employee_no,
+          first_name = EXCLUDED.first_name,
+          last_name = EXCLUDED.last_name,
+          full_name_clean = EXCLUDED.full_name_clean,
+          deleted_at = NOW()
+      `, [tombstoneId, sid, targetId, prn, empNo, String(fName).toUpperCase(), String(lName).toUpperCase(), cleanFullName]).catch((e) => {
+        console.warn('[Tombstone Record Notice]:', e.message);
+      });
+
+      // B2. Scrub deleted personnel from school_drafts for this school
+      try {
+        const dRes = await db.query(`SELECT payload, school_year FROM school_drafts WHERE school_id = $1`, [sid]);
+        for (const row of dRes.rows) {
+          let pld = row.payload;
+          if (pld && typeof pld === 'object') {
+            let changed = false;
+            if (Array.isArray(pld.personnel)) {
+              const beforeLen = pld.personnel.length;
+              pld.personnel = pld.personnel.filter(p => {
+                const pId = String(p.id || '').trim().toLowerCase();
+                const pPrn = String(p.prn || '').trim().toLowerCase();
+                const pEmp = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
+                const pName = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+                const tId = String(targetId).toLowerCase();
+                const tPrn = String(prn || '').toLowerCase();
+                const tEmp = String(empNo || '').toLowerCase();
+                const tName = cleanFullName.toLowerCase();
+                return pId !== tId && pPrn !== tId && (!tPrn || pPrn !== tPrn) && (!tEmp || pEmp !== tEmp) && (!tName || pName !== tName);
+              });
+              if (pld.personnel.length !== beforeLen) changed = true;
+            }
+            if (Array.isArray(pld.classSections)) {
+              pld.classSections = pld.classSections.map(sec => {
+                if (String(sec.advisorId) === String(targetId) || (prn && String(sec.advisorId) === String(prn))) {
+                  changed = true;
+                  return { ...sec, advisorId: null };
+                }
+                return sec;
+              });
+            }
+            const existingDel = Array.isArray(pld.deletedPersonnelIds) ? pld.deletedPersonnelIds : [];
+            pld.deletedPersonnelIds = Array.from(new Set([...existingDel, targetId, prn, empNo, cleanFullName.toLowerCase()].filter(Boolean)));
+            changed = true;
+            if (changed) {
+              await db.query(
+                `UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3`,
+                [JSON.stringify(pld), sid, row.school_year]
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Draft scrub notice]:', e.message);
+      }
+    }
+
     // 1. Unassign advisor from any class sections
     await db.query(`UPDATE esf7_class_sections SET advisor_id = NULL WHERE advisor_id = $1`, [targetId]).catch(() => {});
     
@@ -2424,7 +2575,7 @@ router.delete('/:id', async (req, res) => {
     await db.query(`DELETE FROM esf7_overload_late_undertime WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
     await db.query(`DELETE FROM esf7_overload_no_work WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`, [targetId]).catch(() => {});
 
-    // 3. Delete from primary personnel profile
+    // 3. Remove from esf7_personnel_profile
     const delRes = await db.query(`DELETE FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`, [targetId]);
     res.json({ success: true, count: delRes.rowCount, message: `Personnel profile ${targetId} and all linked records deleted successfully.` });
   } catch (err) {

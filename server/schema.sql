@@ -851,3 +851,22 @@ SELECT
     p.is_complete AS is_teacher_fully_completed,
     p.updated_at
 FROM esf7_personnel_node_status p;
+
+-- 26. Deleted Personnel Tombstone Table (Masks deleted personnel without touching immutable esf7_database)
+CREATE TABLE IF NOT EXISTS esf7_deleted_personnel (
+    id VARCHAR(128) PRIMARY KEY,
+    school_id VARCHAR(64) NOT NULL,
+    personnel_id VARCHAR(64),
+    prn VARCHAR(64),
+    employee_no VARCHAR(64),
+    first_name VARCHAR(128),
+    last_name VARCHAR(128),
+    full_name_clean VARCHAR(256),
+    deleted_by VARCHAR(128),
+    deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_school ON esf7_deleted_personnel(school_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_prn ON esf7_deleted_personnel(prn);
+CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_name ON esf7_deleted_personnel(school_id, full_name_clean);
+

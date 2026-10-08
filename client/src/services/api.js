@@ -235,9 +235,11 @@ export const api = {
     });
     return parseJsonOrThrow(res);
   },
-  deletePersonnel: async (id) => {
+  deletePersonnel: async (id, meta = {}) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(meta)
     });
     return parseJsonOrThrow(res);
   },

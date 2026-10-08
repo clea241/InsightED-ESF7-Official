@@ -372,8 +372,38 @@ const handleGetDraft = async (req, res) => {
       return res.json({ payload: null, updatedAt: null, version: 0 });
     }
     const row = result.rows[0];
+    let payload = row.payload;
+
+    // Filter out any deleted personnel from the retrieved draft payload
+    if (payload && typeof payload === 'object' && Array.isArray(payload.personnel)) {
+      try {
+        const delRes = await db.query(
+          `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = $1 OR school_id = $2`,
+          [schoolId, `SCH-${schoolId}`]
+        );
+        if (delRes.rows.length > 0) {
+          const delKeys = new Set();
+          for (const d of delRes.rows) {
+            if (d.personnel_id) delKeys.add(String(d.personnel_id).trim().toLowerCase());
+            if (d.prn) delKeys.add(String(d.prn).trim().toLowerCase());
+            if (d.employee_no) delKeys.add(String(d.employee_no).trim().toLowerCase());
+            if (d.full_name_clean) delKeys.add(String(d.full_name_clean).trim().toLowerCase());
+          }
+          payload.personnel = payload.personnel.filter(p => {
+            const idK = String(p.id || '').trim().toLowerCase();
+            const prnK = String(p.prn || '').trim().toLowerCase();
+            const empK = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
+            const nameK = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+            return !delKeys.has(idK) && !delKeys.has(prnK) && (!empK || !delKeys.has(empK)) && (!nameK || !delKeys.has(nameK));
+          });
+        }
+      } catch (e) {
+        console.warn('[handleGetDraft] Deletion filter check warning:', e.message);
+      }
+    }
+
     res.json({
-      payload: row.payload,
+      payload: payload,
       updatedAt: row.updated_at,
       version: withVersion ? Number(row.version) : undefined
     });
@@ -589,9 +619,24 @@ const handleSaveDraft = async (req, res) => {
 
     const finalPayload = { ...payload };
 
-    // 1. Never let an empty roster replace a populated one.
-    if (Array.isArray(payload.personnel) && payload.personnel.length === 0 && oldPersonnel.length > 0) {
-      finalPayload.personnel = oldPersonnel;
+    // 1. Personnel Deletion Filter & Protection
+    if (Array.isArray(payload.personnel)) {
+      if (payload.personnel.length === 0 && oldPersonnel.length > 0 && (!payload.deletedPersonnelIds || payload.deletedPersonnelIds.length === 0)) {
+        finalPayload.personnel = oldPersonnel;
+      } else {
+        const deletedIds = Array.isArray(payload.deletedPersonnelIds) ? new Set(payload.deletedPersonnelIds.map(k => String(k).trim().toLowerCase())) : new Set();
+        if (deletedIds.size > 0) {
+          finalPayload.personnel = payload.personnel.filter(p => {
+            const idKey = String(p.id || '').trim().toLowerCase();
+            const prnKey = String(p.prn || '').trim().toLowerCase();
+            const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
+            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
+            return !deletedIds.has(idKey) && !deletedIds.has(prnKey) && (!empKey || !deletedIds.has(empKey)) && (!nameKey || !deletedIds.has(nameKey));
+          });
+        } else {
+          finalPayload.personnel = payload.personnel;
+        }
+      }
     }
 
     // 2. Class Sections: Per-record upsert keyed by stable id and protection against accidental drops
