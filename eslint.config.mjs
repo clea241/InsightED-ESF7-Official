@@ -118,6 +118,12 @@ export default [
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: { ...globals.node, ...globals.browser } }
   },
 
+  // Operational scripts (backup/restore) are CommonJS Node scripts.
+  {
+    files: ['scripts/**/*.js'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'commonjs', globals: { ...globals.node } }
+  },
+
   // ---------- LEGACY files with KNOWN latent bugs (found by the first lint run, 2026-10-08) ----------
   // These still reference undeclared variables / call hooks conditionally. Fixing them changes application behavior,
   // so they are tracked as warnings (counted by the --max-warnings ratchet) instead of blocking CI.

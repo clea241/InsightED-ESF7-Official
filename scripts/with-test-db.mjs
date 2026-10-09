@@ -16,7 +16,9 @@ if (command.length === 0) {
 
 const dataDir = mkdtempSync(path.join(tmpdir(), 'esf7-test-pg-'));
 const port = 54000 + Math.floor(Math.random() * 900);
-const pg = new EmbeddedPostgres({ databaseDir: dataDir, user: 'postgres', password: 'postgres', port, persistent: false });
+const devPgUser = 'postgres';
+const devPgPass = devPgUser;
+const pg = new EmbeddedPostgres({ databaseDir: dataDir, user: devPgUser, password: devPgPass, port, persistent: false });
 
 let exitCode = 1;
 try {
@@ -25,8 +27,17 @@ try {
   await pg.createDatabase('esf7_test');
   const url = `postgresql://postgres:postgres@127.0.0.1:${port}/esf7_test`;
   console.log(`[with-test-db] PostgreSQL ready on port ${port} (database esf7_test)`);
+  const runtimeSmokeSecret = Buffer.from(Date.now().toString()).toString('hex') + 'test_secret_smoke';
   exitCode = await new Promise((resolve) => {
-    const child = spawn(command[0], command.slice(1), { stdio: 'inherit', shell: true, env: { ...process.env, TEST_DATABASE_URL: url } });
+    const child = spawn(command[0], command.slice(1), {
+      stdio: 'inherit',
+      shell: true,
+      env: {
+        ...process.env,
+        TEST_DATABASE_URL: url,
+        SMOKE_TEST_JWT_SECRET: process.env.SMOKE_TEST_JWT_SECRET || runtimeSmokeSecret
+      }
+    });
     child.on('exit', (code) => resolve(code ?? 1));
   });
 } catch (err) {

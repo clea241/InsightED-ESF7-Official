@@ -1,3 +1,11 @@
+// PM2 Production Ecosystem Configuration for InsightED ESF7
+// Secrets are loaded from the runtime environment (systemd, /etc/environment, or server/.env)
+// Log rotation is managed via pm2-logrotate:
+//   pm2 install pm2-logrotate
+//   pm2 set pm2-logrotate:max_size 10M
+//   pm2 set pm2-logrotate:retain 14
+//   pm2 set pm2-logrotate:compress true
+
 module.exports = {
   apps: [
     {
@@ -11,17 +19,17 @@ module.exports = {
       listen_timeout: 10000,
       env: {
         NODE_ENV: 'production',
-        PORT: 5007,
+        PORT: process.env.PORT || 5007,
         START_LOCAL_WORKER: 'false',
-        JWT_SECRET: 'insighted_super_secret_jwt_token_key_2026_esf7_prod_secure',
-        DB_USER: 'Administrator1',
-        DB_PASSWORD: 'pRZTbQ2T1JD7',
-        DB_HOST: '127.0.0.1',
-        DB_PORT: '6432',
-        DB_NAME: 'insighted_esf7',
-        DB_SSL: 'false',
-        REDIS_HOST: '127.0.0.1',
-        REDIS_PORT: '6379'
+        JWT_SECRET: process.env.JWT_SECRET,
+        DB_USER: process.env.DB_USER,
+        DB_PASSWORD: process.env.DB_PASSWORD,
+        DB_HOST: process.env.DB_HOST || '127.0.0.1',
+        DB_PORT: process.env.DB_PORT || '6432',
+        DB_NAME: process.env.DB_NAME || 'insighted_esf7',
+        DB_SSL: process.env.DB_SSL || 'false',
+        REDIS_HOST: process.env.REDIS_HOST || '127.0.0.1',
+        REDIS_PORT: process.env.REDIS_PORT || '6379'
       },
       max_memory_restart: '1500M',
       node_args: '--max-old-space-size=1024',
@@ -40,16 +48,16 @@ module.exports = {
       listen_timeout: 10000,
       env: {
         NODE_ENV: 'production',
-        PORT: 5007,
-        JWT_SECRET: 'insighted_super_secret_jwt_token_key_2026_esf7_prod_secure',
-        DB_USER: 'Administrator1',
-        DB_PASSWORD: 'pRZTbQ2T1JD7',
-        DB_HOST: '127.0.0.1',
-        DB_PORT: '6432',
-        DB_NAME: 'insighted_esf7',
-        DB_SSL: 'false',
-        REDIS_HOST: '127.0.0.1',
-        REDIS_PORT: '6379'
+        PORT: process.env.PORT || 5007,
+        JWT_SECRET: process.env.JWT_SECRET,
+        DB_USER: process.env.DB_USER,
+        DB_PASSWORD: process.env.DB_PASSWORD,
+        DB_HOST: process.env.DB_HOST || '127.0.0.1',
+        DB_PORT: process.env.DB_PORT || '6432',
+        DB_NAME: process.env.DB_NAME || 'insighted_esf7',
+        DB_SSL: process.env.DB_SSL || 'false',
+        REDIS_HOST: process.env.REDIS_HOST || '127.0.0.1',
+        REDIS_PORT: process.env.REDIS_PORT || '6379'
       },
       max_memory_restart: '1500M',
       node_args: '--max-old-space-size=1024',

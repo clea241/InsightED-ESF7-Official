@@ -26,8 +26,12 @@ const dbEnv = {
 const mig = spawnSync(process.execPath, ['migrations/add_school_drafts_version.js'], { cwd: path.join(root, 'server'), env: { ...process.env, ...dbEnv }, encoding: 'utf8' });
 check(mig.status === 0, 'additive migration applies');
 
-// 2. Start the real server (with a throw-away JWT secret; the smoke test signs its own token for school 302261).
-const SMOKE_SECRET = 'smoke-test-secret-not-used-anywhere-else';
+// 2. Start the real server (using required SMOKE_TEST_JWT_SECRET loaded at runtime).
+const SMOKE_SECRET = process.env.SMOKE_TEST_JWT_SECRET;
+if (!SMOKE_SECRET || String(SMOKE_SECRET).trim().length < 16) {
+  console.error('FATAL: SMOKE_TEST_JWT_SECRET environment variable is required (min 16 chars)');
+  process.exit(1);
+}
 const smokeToken = nodeRequire('jsonwebtoken').sign({ uid: 'smoke-302261', role: 'school', school_id: '302261' }, SMOKE_SECRET, { expiresIn: '10m' });
 const authHeaders = { Authorization: `Bearer ${smokeToken}`, 'x-school-id': '302261' };
 const server = spawn(process.execPath, ['server.js'], {
