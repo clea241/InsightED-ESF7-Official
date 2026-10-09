@@ -36,10 +36,12 @@ let _usersDbPool = null;
 // 1. Primary Pool (env configured)
 function getPool() {
   if (!_pool) {
+    const connStr = process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`;
+    console.log(`📦 [DB Pool] Primary Pool connected -> database: "${defaultDbName}" on ${dbHost}:${dbPort}`);
     _pool = new Pool({
       ...baseConfig,
       max: 8,
-      connectionString: process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`
+      connectionString: connStr
     });
     _pool.on('error', (err) => console.warn('[Database Pool Client Error (Auto-recovering)]:', err.message));
   }
@@ -49,6 +51,7 @@ function getPool() {
 // 2. Explicit Staging Pool (for division test accounts & staging QA)
 function getStagingPool() {
   if (!_stagingPool) {
+    console.log(`📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`);
     _stagingPool = new Pool({
       ...baseConfig,
       max: 5,
@@ -62,6 +65,7 @@ function getStagingPool() {
 // 3. Explicit Production Pool
 function getProdPool() {
   if (!_prodPool) {
+    console.log(`📦 [DB Pool] Production Pool connected -> database: "insighted_esf7" on ${dbHost}:${dbPort}`);
     _prodPool = new Pool({
       ...baseConfig,
       max: 8,
@@ -75,6 +79,7 @@ function getProdPool() {
 // 4. Centralized insightEd Pool (Read-only master historical data: esf7_database, esf7_database_dummy, unit1_school_identity)
 function getInsightEdPool() {
   if (!_insightEdPool) {
+    console.log(`📦 [DB Pool] insightEd (Master) Pool connected -> database: "insightEd" on ${dbHost}:${dbPort}`);
     _insightEdPool = new Pool({
       ...baseConfig,
       max: 5,
@@ -87,17 +92,19 @@ function getInsightEdPool() {
   return _insightEdPool;
 }
 
-// 5. Centralized users_database Pool (Read-only user authentication: user_schoolhead)
+// 5. Centralized users / auth Pool (Read-only user authentication: user_schoolhead)
 function getUsersDbPool() {
   if (!_usersDbPool) {
+    const usersDbName = process.env.USERS_DB_NAME || process.env.AUTH_DB_NAME || (isLocalHost ? 'users_local' : 'users_database');
+    console.log(`📦 [DB Pool] Auth/Users Pool connected -> database: "${usersDbName}" on ${dbHost}:${dbPort}`);
     _usersDbPool = new Pool({
       ...baseConfig,
       max: 4,
-      connectionString: process.env.DATABASE_URL
-        ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, 'users_database')
-        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/users_database`
+      connectionString: process.env.USERS_DATABASE_URL || (process.env.DATABASE_URL
+        ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, usersDbName)
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`)
     });
-    _usersDbPool.on('error', (err) => console.warn('[users_database Pool Client Error (Auto-recovering)]:', err.message));
+    _usersDbPool.on('error', (err) => console.warn(`[${usersDbName} Pool Client Error (Auto-recovering)]:`, err.message));
   }
   return _usersDbPool;
 }

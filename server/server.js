@@ -209,6 +209,30 @@ app.get('/api/salary-matrix', async (req, res) => {
 // Initialize DB schema & ensure zero VARCHAR character-length restrictions
 const initDB = async () => {
   try {
+    const dbCheck = await db.query('SELECT current_database() AS db_name, current_user, inet_server_addr() AS ip, inet_server_port() AS port;');
+    const row = dbCheck.rows[0] || {};
+    const dbHost = process.env.DB_HOST || 'stride-posgre-prod-01.postgres.database.azure.com';
+    const dbPort = process.env.DB_PORT || '5432';
+    const isLocalHost = dbHost === '127.0.0.1' || dbHost === 'localhost';
+    const sslMode = (!isLocalHost && (process.env.DB_SSL === 'true' || dbHost.includes('azure.com'))) || (process.env.DB_SSL === 'true' && !isLocalHost);
+
+    let authDbName = process.env.USERS_DB_NAME || process.env.AUTH_DB_NAME || (isLocalHost ? 'users_local' : 'users_database');
+    try {
+      const authCheck = await db.usersDbPool.query('SELECT current_database() AS auth_db;');
+      if (authCheck.rows[0]) authDbName = `${authCheck.rows[0].auth_db} (Connected)`;
+    } catch (e) {
+      authDbName = `${authDbName} (Unavailable: ${e.message})`;
+    }
+
+    console.log('\n========================================================================');
+    console.log('🗄️  [ACTIVE DATABASE CONNECTION VERIFIED]');
+    console.log(`   Primary DB    : ${row.db_name || process.env.DB_NAME || 'insighted_esf7'}`);
+    console.log(`   Auth Database : ${authDbName}`);
+    console.log(`   Host & Port   : ${dbHost}:${dbPort}${row.ip ? ` (Resolved: ${row.ip}:${row.port || dbPort})` : ''}`);
+    console.log(`   Database User : ${row.current_user || process.env.DB_USER || 'postgres'}`);
+    console.log(`   SSL Mode      : ${sslMode ? 'Enabled' : 'Disabled (Localhost/Direct)'}`);
+    console.log('========================================================================\n');
+
     const schemaPath = path.join(__dirname, 'schema.sql');
     if (fs.existsSync(schemaPath)) {
       const sql = fs.readFileSync(schemaPath, 'utf8');
@@ -248,14 +272,17 @@ const initDB = async () => {
       WHERE status = 'processing'
     `).catch(() => {});
   } catch (err) {
-    console.error('❌ Failed to initialize database:', err.message);
+    console.error(`\n❌ [Database Connection Error]: Could not access database "${process.env.DB_NAME || 'insighted_esf7'}" on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
+    console.error(`   Error details: ${err.message}\n`);
   }
 };
 
 
 const startServer = (port) => {
+  const targetDb = process.env.DB_NAME || 'insighted_esf7';
+  const targetHost = process.env.DB_HOST || 'localhost';
   const server = app.listen(port, async () => {
-    console.log(`🚀 Express server running on port ${port}`);
+    console.log(`🚀 Express server running on port ${port} (Target DB: ${targetDb} @ ${targetHost})`);
     await initDB();
     redisQueue.startMonitor(); // so queue mode / Redis reachability are accurate in /api/health even without a local worker
 
