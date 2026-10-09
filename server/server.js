@@ -62,8 +62,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 //  - READINESS  GET /api/health (and /health): 200 when the app and PostgreSQL answer. Redis is reported in the body
 //    ("redis": "up" | "degraded") but never fails the check: with Redis down the queue runs in PostgreSQL fallback
 //    mode and the app works. This is the ONLY endpoint the frontend server-health lock uses.
-//  - DEEP       GET /api/health/deep (and /health/deep): additionally pings Redis and answers 503 when it is down.
-//    For monitoring/alerting only; never point the frontend or a load balancer at it.
+//  - DEEP       GET /api/health, /health, /api/health/deep, /health/deep: also pings Redis. 503 only when PostgreSQL is
+//    unreachable; with Redis down it answers 200 with "degraded": true and per-dependency status in the body.
 const publicQueueStatus = () => {
   const { mode, redisReachable, since } = redisQueue.getQueueStatus();
   return { mode, redisReachable, since };
@@ -117,8 +117,9 @@ const checkDeep = async (req, res) => {
     clearTimeout(timer);
   }
   const healthy = pg.up && redisUp;
-  return res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'ok' : 'degraded',
+  return res.status(pg.up ? 200 : 503).json({
+    status: pg.up ? (redisUp ? 'ok' : 'degraded') : 'down',
+    degraded: !healthy,
     db: pg.up ? 'up' : 'down',
     redis: redisUp ? 'up' : 'down',
     queue: publicQueueStatus(),
@@ -159,6 +160,10 @@ app.use('/api/reports', require('./controllers/reports'));
 app.use('/api/allowances', require('./controllers/allowances'));
 app.use('/api/school-head-sdo', require('./controllers/school_head_sdo'));
 app.use('/api/extra-tasks', require('./controllers/personnel_extra_tasks'));
+app.get('/api/room-profiling/snapshots/:id', (req, res, next) => {
+  if (!/^[\w.:-]{1,128}$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid snapshot id' });
+  next();
+});
 app.use('/api/room-profiling', require('./controllers/room_profiling'));
 app.use('/api/esf7-upload', require('./controllers/esf7_upload'));
 
@@ -205,6 +210,23 @@ app.get('/api/salary-matrix', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Global error handler: never sends stack traces or file paths to the client; full detail is logged server-side only.
+const stripServerPaths = (msg) => String(msg || '')
+  .replace(/[A-Za-z]:[\\/][^\s'"<>)]*/g, '[path]')
+  .replace(/(^|[\s(])\/(?:[\w.-]+\/)+[\w.-]+/g, '$1[path]');
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  let status = Number(err.status || err.statusCode) || 500;
+  if (status < 400 || status > 599) status = 500;
+  console.error(`[Error] ${req.method} ${req.originalUrl} -> ${status}:`, err && err.stack ? err.stack : err);
+  let message;
+  if (err.type === 'entity.parse.failed') { status = 400; message = 'Invalid JSON body'; }
+  else if (err.type === 'entity.too.large') { status = 413; message = 'Request body too large'; }
+  else if (status >= 500) message = stripServerPaths(err.message) || 'Internal server error';
+  else message = stripServerPaths(err.message) || 'Request failed';
+  res.status(status).json({ error: message });
 });
 
 // Initialize DB schema & ensure zero VARCHAR character-length restrictions
