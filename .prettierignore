@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+.next
+coverage
+readiness-reports
+*.lock
+package-lock.json
+pnpm-lock.yaml
+server/backups

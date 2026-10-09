@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", "e2e/*.{js,mjs}", "ecosystem*.{js,cjs}", "*.{js,mjs,cjs}"],
+      "project": ["scripts/**/*.mjs", "e2e/**/*.mjs", "*.{js,mjs,cjs}"],
+      "ignoreDependencies": ["lint-staged"]
+    },
+    "client": {
+      "entry": ["src/main.{js,jsx}", "tests/**/*.{js,mjs}"],
+      "project": ["src/**/*.{js,jsx}", "tests/**/*.{js,mjs}"]
+    },
+    "server": {
+      "entry": ["queue_worker.js", "*.js", "scripts/**/*.js", "migrations/*.js", "tests/**/*.{js,mjs}"],
+      "project": ["**/*.js"]
+    },
+    "shared": {
+      "entry": ["**/*.{js,mjs,cjs}"],
+      "project": ["**/*.{js,mjs,cjs}"]
+    }
+  }
+}
