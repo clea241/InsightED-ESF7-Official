@@ -1,11 +1,6 @@
 const { Pool } = require('pg');
 const path = require('path');
-let bcrypt;
-try {
-  bcrypt = require('bcryptjs');
-} catch (e) {
-  bcrypt = require('bcrypt');
-}
+const bcrypt = require('bcryptjs'); // declared in server/package.json
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const poolString = process.env.DATABASE_URL

@@ -1,4 +1,4 @@
-const cacheService1 = require('/mnt/insighted-esf7-staging/server/services/cacheService');
+const cacheService1 = require('../services/cacheService');
 
 async function testCrossWorker() {
   console.log('--- Testing Cross-Worker Cache Invalidation Broadcast ---');

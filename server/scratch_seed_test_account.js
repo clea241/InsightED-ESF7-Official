@@ -1,14 +1,5 @@
 const db = require('./db');
-let bcrypt;
-try {
-  bcrypt = require('bcryptjs');
-} catch (e) {
-  try {
-    bcrypt = require('bcrypt');
-  } catch (err) {
-    bcrypt = null;
-  }
-}
+const bcrypt = require('bcryptjs'); // declared in server/package.json
 
 async function createTestAccount() {
   const schoolId = '199888';

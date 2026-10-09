@@ -1,5 +1,5 @@
 const path = require('path');
-const cacheService = require('/mnt/insighted-esf7-staging/server/services/cacheService');
+const cacheService = require('../services/cacheService');
 
 async function testLiveCache() {
   console.log('--- Testing cacheService on Staging with Live Redis ---');

@@ -1,6 +1,6 @@
 const http = require('http');
-const jwt = require('/mnt/insighted-esf7-staging/server/node_modules/jsonwebtoken');
-const db = require('/mnt/insighted-esf7-staging/server/db');
+const jwt = require('jsonwebtoken');
+const db = require('../db');
 
 async function testStaging() {
   console.log('=== Verifying Section Merge Protection on Staging (Port 5035) ===');

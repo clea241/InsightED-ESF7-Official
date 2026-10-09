@@ -1,4 +1,4 @@
-const db = require('e:/InsightED - ESF7 Official/server/db');
+const db = require('./db');
 
 async function listProfileCols() {
   const res = await db.query(`

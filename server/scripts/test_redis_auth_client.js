@@ -1,5 +1,5 @@
-const { parseRedisConfig } = require('/mnt/insighted-esf7-staging/server/utils/redisConfig');
-const Redis = require('/mnt/insighted-esf7-staging/server/node_modules/ioredis');
+const { parseRedisConfig } = require('../utils/redisConfig');
+const Redis = require('ioredis');
 
 async function testAuthClient() {
   console.log('--- Testing Node/ioredis with Redis requirepass on port 6380 ---');

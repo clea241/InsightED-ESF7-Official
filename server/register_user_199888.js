@@ -10,13 +10,7 @@ async function main() {
   console.log(`🔐 Registering School ID ${schoolId} in Auth DB with password "${rawPass}"...`);
 
   try {
-    // 1. Check if bcryptjs exists
-    let bcrypt;
-    try {
-      bcrypt = require('bcryptjs');
-    } catch (e) {
-      bcrypt = require('bcrypt');
-    }
+    const bcrypt = require('bcryptjs'); // declared in server/package.json
 
     const hashedPass = await bcrypt.hash(rawPass, 10);
     const hashedPin = passcodePin; // plain or hashed
