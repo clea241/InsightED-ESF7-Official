@@ -107,3 +107,12 @@
 - Workload Rows Stable Key Overlay:
   - Enhanced `server/controllers/personnel/index.js` to index `workloadMap` and match each teacher's saved workload by stable keys (`id`, `prn`, `employee_no`, and clean numeric IDs).
   - Verified end-to-end: Workload saved through `/api/workloads/bulk` survives cache clears and logins; `GET /api/personnel` returns the 91 records without 3D000 error with the saved workload for `PER-300488-001` intact.
+
+## 2026-10-09 Persistence audit and first fixes (see PERSISTENCE_AUDIT.md)
+- Audit: `docs/living/PERSISTENCE_AUDIT.md` - table inventory and drift, node-to-table map, every school_drafts dependency classified, large-JSON endpoints, connections, fix plan.
+- Reports (`reports/index.js`, `esf7_xlsb.js`): the draft lookup was `SELECT payload FROM school_drafts LIMIT 1` (any school's draft); now scoped to the requesting school.
+- `overloadSync`: saved workload rows are the source; the draft is a logged fallback only. `room_profiling`: removed two dead `school_drafts.draft_data` lookups (column does not exist).
+- School Profile: save now writes `esf7_school_profile` via `PUT /schools/curricular-config` and verifies the returned row; `GET school` returns `curricularConfigSaved`; once set the database outranks the draft and a server-saved browser copy.
+- Roster: save creates people added on the roster (`local-p-` ids) through `POST /personnel`, now idempotent on id/PRN (`existing: true`), and checks the returned id.
+- Absences: `GET /absences` is scoped to the school (it returned all schools); `POST` is an idempotent upsert; a foreign-key failure returns 422 with a clear message.
+- Tooling (nothing applied): `utils/naturalKeys.js`, `scripts/audit_duplicates.js` (read-only), `scripts/dedupe_natural_keys.js` (report; `--apply --confirm=<table>` snapshots first), `migrations/add_natural_key_constraints.js` (check-only unless `--apply --confirm=YES`; skips tables that still have duplicates).

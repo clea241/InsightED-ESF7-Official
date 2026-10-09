@@ -360,7 +360,12 @@ router.get('/esf7/:schoolId', async (req, res) => {
 
     // 1. Try school_drafts payload lookup
     try {
-      const draftRes = await db.query('SELECT payload FROM school_drafts LIMIT 1');
+      // Scoped to THIS school: an unscoped LIMIT 1 printed whichever school's draft happened to be first.
+      const cleanReportSchool = String(schoolId || '').replace(/^SCH-/i, '');
+      const draftRes = await db.query(
+        'SELECT payload FROM school_drafts WHERE school_id = $1 OR school_id = $2 ORDER BY updated_at DESC LIMIT 1',
+        [cleanReportSchool, `SCH-${cleanReportSchool}`]
+      );
       if (draftRes.rows.length > 0 && draftRes.rows[0].payload) {
         const payload = draftRes.rows[0].payload;
         if (payload.schoolInfo) {

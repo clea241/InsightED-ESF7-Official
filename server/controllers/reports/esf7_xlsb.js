@@ -71,7 +71,11 @@ const generateESF7Xlsb = async (req, res) => {
 
     // 1. Check school_drafts for active payload
     try {
-      const draftRes = await db.query('SELECT payload FROM school_drafts LIMIT 1');
+      // Scoped to the requesting school (an unscoped LIMIT 1 could use another school's draft); no school = no draft lookup.
+      const reqSchool = String(req.params?.schoolId || req.query?.schoolId || req.headers['x-school-id'] || (req.auth && req.auth.schoolId) || '').replace(/^SCH-/i, '');
+      const draftRes = reqSchool
+        ? await db.query('SELECT payload FROM school_drafts WHERE school_id = $1 OR school_id = $2 ORDER BY updated_at DESC LIMIT 1', [reqSchool, `SCH-${reqSchool}`])
+        : { rows: [] };
       if (draftRes.rows.length > 0 && draftRes.rows[0].payload) {
         const payload = draftRes.rows[0].payload;
         if (payload.schoolInfo) school = payload.schoolInfo;
