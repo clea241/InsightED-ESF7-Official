@@ -8,6 +8,10 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 pg.types.setTypeParser(1082, (val) => val);
 
 const defaultDbName = process.env.DB_NAME || 'insighted_esf7';
+// The read-only master database (esf7_database, esf7_database_dummy, unit1_school_identity). Its name is case-sensitive in a
+// connection string ('insightEd' != 'insighted'). It is configured via INSIGHTED_DATABASE_URL or INSIGHTED_DB_NAME.
+// Default to defaultDbName so reads and writes share the same working database unless explicitly pointed elsewhere.
+const masterDbName = process.env.INSIGHTED_DB_NAME || defaultDbName;
 const dbHost = process.env.DB_HOST || 'stride-posgre-prod-01.postgres.database.azure.com';
 const dbUser = process.env.DB_USER || 'Administrator1';
 const dbPassword = process.env.DB_PASSWORD || 'pRZTbQ2T1JD7';
@@ -78,14 +82,20 @@ function getProdPool() {
 
 // 4. Centralized insightEd Pool (Read-only master historical data: esf7_database, esf7_database_dummy, unit1_school_identity)
 function getInsightEdPool() {
+  // If master database name matches defaultDbName and no separate INSIGHTED_DATABASE_URL is provided,
+  // share the primary pool directly so reads and writes are guaranteed to use the exact same database.
+  if (!process.env.INSIGHTED_DATABASE_URL && masterDbName === defaultDbName) {
+    return getPool();
+  }
+
   if (!_insightEdPool) {
-    console.log(`📦 [DB Pool] insightEd (Master) Pool connected -> database: "insightEd" on ${dbHost}:${dbPort}`);
+    console.log(`📦 [DB Pool] insightEd (Master) Pool connected -> database: "${masterDbName}" on ${dbHost}:${dbPort}`);
     _insightEdPool = new Pool({
       ...baseConfig,
       max: 5,
-      connectionString: process.env.DATABASE_URL
-        ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, 'insightEd')
-        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insightEd`
+      connectionString: process.env.INSIGHTED_DATABASE_URL || (process.env.DATABASE_URL
+        ? process.env.DATABASE_URL.replace(/\/[^/?]+(\?|$)/, `/${masterDbName}$1`)
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`)
     });
     _insightEdPool.on('error', (err) => console.warn('[insightEd Pool Client Error (Auto-recovering)]:', err.message));
   }
@@ -264,6 +274,16 @@ function getClient() {
   return defaultActivePool.connect();
 }
 
+function getMasterDbInfo() {
+  return {
+    masterDbName,
+    defaultDbName,
+    isShared: !process.env.INSIGHTED_DATABASE_URL && masterDbName === defaultDbName,
+    host: dbHost,
+    port: dbPort
+  };
+}
+
 const dbExport = {
   query,
   getClient,
@@ -272,6 +292,7 @@ const dbExport = {
   getProdPool,
   getInsightEdPool,
   getUsersDbPool,
+  getMasterDbInfo,
   getPoolForSchool,
   isDivisionOrTestAccount,
   dbMiddleware,

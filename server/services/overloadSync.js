@@ -105,13 +105,17 @@ async function syncAllOverloadPayAndReasons(targetSchoolId = null, targetSchoolY
       const draftTransfers = schoolDraft.workloadTransfers || [];
       const allTransfers = [...tfrRes.rows.filter(t => t.school_id === schoolId || t.school_id === `SCH-${schoolId}`), ...draftTransfers];
 
-      // Workload rows: prefer draft rows if present, else DB rows
-      const pWorkloads = (draftPersonnel && Array.isArray(draftPersonnel.workloadRows) && draftPersonnel.workloadRows.length > 0)
-        ? draftPersonnel.workloadRows
-        : [
-            ...wRes.rows.filter(w => w.personnel_id === pId),
-            ...(shsRes.rows || []).filter(w => w.personnel_id === pId)
-          ];
+      // Workload rows: the saved rows (esf7_workload_rows / SHS) are the source of truth. The draft is only a fallback for a
+      // teacher with no saved rows at all, and that is logged so the overload figure is known to rest on unsaved data.
+      const savedWorkloads = [
+        ...wRes.rows.filter(w => w.personnel_id === pId),
+        ...(shsRes.rows || []).filter(w => w.personnel_id === pId)
+      ];
+      const draftWorkloads = (draftPersonnel && Array.isArray(draftPersonnel.workloadRows)) ? draftPersonnel.workloadRows : [];
+      if (savedWorkloads.length === 0 && draftWorkloads.length > 0) {
+        console.warn(`[OverloadSync] ${pId}: no saved workload rows, using ${draftWorkloads.length} unsaved draft row(s) - NOT confirmed saved.`);
+      }
+      const pWorkloads = savedWorkloads.length > 0 ? savedWorkloads : draftWorkloads;
 
       let netOverloadHours = 0;
       let totalWeeklyMins = 0;

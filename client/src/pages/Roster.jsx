@@ -6,6 +6,7 @@ import ESF7UploadModal from '../components/ESF7UploadModal';
 import PortalHeader from '../components/PortalHeader';
 import useDirtyGuard from '../hooks/useDirtyGuard';
 import { confirmServerDraftSaved } from '../services/screenSave';
+import { cleanPersonnelDates } from '../services/dateFields';
 import { api } from '../services/api';
 import { FiPlus, FiSave, FiTag, FiLink, FiUser, FiTrash2, FiInfo, FiX, FiUploadCloud, FiRefreshCw, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
@@ -588,6 +589,21 @@ export default function Roster() {
       const drafts = personnel.filter(p => p.isDraft);
       if (drafts.length > 0) {
         await commitDraftPersonnel();
+      }
+
+      // 2b. People added on this roster exist only in the browser (local-p-… ids) until they are created in
+      //     esf7_personnel_profile. The create is idempotent on that id, so a retry or a second save never duplicates them.
+      const unsavedNew = personnel.filter(p => String(p.id || '').startsWith('local-p-'));
+      for (const p of unsavedNew) {
+        const created = await api.addPersonnel({
+          ...cleanPersonnelDates(p),
+          id: p.id,
+          school_id: schoolInfo?.schoolId,
+          school_year: schoolInfo?.schoolYear
+        });
+        if (!created || String(created.id) !== String(p.id)) {
+          throw new Error(`The database did not confirm ${p.firstName || ''} ${p.lastName || ''} (sent ${p.id}, got ${created && created.id}).`);
+        }
       }
 
       // Success is reported only after the server confirmed the database write.

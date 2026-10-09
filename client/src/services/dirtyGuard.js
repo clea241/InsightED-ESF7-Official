@@ -1,3 +1,5 @@
+import { takeRecentApiError, inlineDetailsHtml, markErrorHandled } from './errorAlert';
+
 // SweetAlert2 is loaded on demand (only when the unsaved-changes modal opens) to keep it out of the main bundle.
 
 /**
@@ -55,7 +57,28 @@ export const registerDirtyGuard = (screenId, config) => {
 export const unregisterDirtyGuard = (screenId) => {
   if (!screenId) return;
   guards.delete(screenId);
+  loggedReasons.delete(screenId);
   syncBeforeUnloadListener();
+};
+
+// Development only: say WHICH fields made a screen dirty, so a false positive is spotted immediately.
+const loggedReasons = new Map();
+const logDirtyReasons = (id, config) => {
+  let isDev = false;
+  try { isDev = Boolean(import.meta.env.DEV); } catch (e) { /* not a Vite build */ }
+  if (!isDev) return;
+  let reasons = null;
+  try { reasons = typeof config.getDirtyReasons === 'function' ? config.getDirtyReasons() : null; } catch (e) { /* ignore */ }
+  const signature = JSON.stringify(reasons);
+  if (loggedReasons.get(id) === signature) return; // once per distinct set of differences, not on every check
+  loggedReasons.set(id, signature);
+  if (Array.isArray(reasons) && reasons.length > 0) {
+    console.groupCollapsed(`[dirtyGuard] "${id}" is dirty - ${reasons.length} difference(s)`);
+    console.table(reasons);
+    console.groupEnd();
+  } else {
+    console.warn(`[dirtyGuard] "${id}" is dirty but gave no reasons (add getDirtyReasons to useDirtyGuard to see what differs).`);
+  }
 };
 
 /**
@@ -63,11 +86,11 @@ export const unregisterDirtyGuard = (screenId) => {
  * @returns {boolean}
  */
 export const isAnyScreenDirty = () => {
-  for (const [, config] of guards.entries()) {
+  for (const [id, config] of guards.entries()) {
     try {
-      if (typeof config.isDirty === 'function') {
-        if (config.isDirty()) return true;
-      } else if (config.isDirty) {
+      const dirty = typeof config.isDirty === 'function' ? config.isDirty() : Boolean(config.isDirty);
+      if (dirty) {
+        logDirtyReasons(id, config);
         return true;
       }
     } catch (err) {
@@ -170,11 +193,16 @@ const openUnsavedChangesModal = async ({ actionType = 'navigate', onSave } = {})
       try {
         result = await onSave();
       } catch (err) {
-        result = { ok: false, message: (err && err.message) || 'The save failed. Please try again.' };
+        result = { ok: false, message: (err && err.message) || 'The save failed. Please try again.', error: err };
       }
-      if (result && result.ok === false) {
+      // Only an explicit { ok: true } counts as saved: a missing or malformed result keeps the dialog open.
+      if (!result || result.ok !== true) {
         const heading = result.title ? `<strong>${toSafeHtml(result.title)}</strong><br>` : '';
-        Swal.showValidationMessage(heading + toSafeHtml(result.message || 'The save failed. Please try again.'));
+        // Same facts as the global error dialog: the failure that just happened, shown inside this dialog (so no 2nd dialog).
+        const failure = (result && result.error) || takeRecentApiError();
+        if (failure) markErrorHandled(failure);
+        const detail = failure ? `<div style="margin-top:6px;font-size:11px;font-family:ui-monospace,Consolas,monospace;text-align:left">${inlineDetailsHtml(failure)}</div>` : '';
+        Swal.showValidationMessage(heading + toSafeHtml((result && result.message) || 'The save did not report success, so nothing was cleared. Please try again.') + detail);
         return false;
       }
       return 'saved';

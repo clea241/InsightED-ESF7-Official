@@ -585,10 +585,17 @@ const saveWorkloadBatchHandler = async (req, res) => {
       }
     }
 
+    // Zero (or fewer) rows written for rows that were sent is a failure, never a quiet success: roll everything back.
+    if (insertedRows.length !== rowsToSave.length) {
+      throw new Error(`Workload save wrote ${insertedRows.length} of ${rowsToSave.length} rows for ${targetPersonId}; nothing was saved.`);
+    }
+
     await client.query('COMMIT');
     res.json({
       success: true,
       message: `Saved ${insertedRows.length} workload rows for personnel ${targetPersonId} successfully.`,
+      rowsRequested: rowsToSave.length,
+      rowsWritten: insertedRows.length,
       count: insertedRows.length,
       workloadSavedAt,
       data: insertedRows

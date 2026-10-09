@@ -1,6 +1,7 @@
 import { configureDraftSaver } from './draftSaver';
 import { configureHealth, waitUntilHealthy, recordServerFailure, recordServerSuccess, isServerFailureStatus } from './serverHealth';
 import { reportUnauthorized, resolveSchoolId } from './session';
+import { noteApiError, noteApiSuccess, summarizePayload } from './errorAlert';
 
 export const getApiBase = () => {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
@@ -47,6 +48,18 @@ export const fetchWithAuth = async (url, options = {}) => {
     ...(activeSchoolId ? { 'x-school-id': activeSchoolId } : {})
   };
 
+  // What was requested (method + payload field names + ids; never the token) - attached to any failure for the error report.
+  const reqMethod = String(options.method || 'GET').toUpperCase();
+  const reqSummary = summarizePayload(typeof options.body === 'string' ? options.body : null);
+  const describeFailure = (e) => {
+    e.method = e.method || reqMethod;
+    e.url = e.url || url;
+    e.payloadKeys = e.payloadKeys || reqSummary.payloadKeys;
+    e.requestIds = e.requestIds || reqSummary.ids;
+    // Background GET failures are covered by the load notices / server-health lock; writes always get reported.
+    if (reqMethod !== 'GET' && !String(url).includes('/health')) noteApiError(e);
+    return e;
+  };
   // Own controller so we can tell a timeout apart from a caller-initiated abort.
   const controller = new AbortController();
   let timedOut = false;
@@ -59,6 +72,8 @@ export const fetchWithAuth = async (url, options = {}) => {
 
   try {
     const res = await fetch(url, { ...options, headers, signal: controller.signal });
+    try { Object.defineProperty(res, '__req', { value: { method: reqMethod, ...reqSummary } }); } catch (e) { /* not extensible */ }
+    if (res.ok) noteApiSuccess(reqMethod, url);
     // 401 on an authenticated call = the session is no longer valid (expired token, rotated secret). Not a server failure.
     if (res.status === 401 && token && !String(url).includes('/auth/')) reportUnauthorized({ url: String(url) });
     if (isServerFailureStatus(res.status)) {
@@ -72,13 +87,14 @@ export const fetchWithAuth = async (url, options = {}) => {
       const e = new ApiError('The request timed out.', { url });
       e.name = 'TimeoutError';
       recordServerFailure(e);
-      throw e;
+      throw describeFailure(e);
     }
     if (err.name === 'AbortError') throw err; // caller aborted (e.g. superseded draft save)
     if (err instanceof TypeError) {
       const netErr = /** @type {TypeError & { url?: string }} */ (err);
       netErr.url = netErr.url || url;
       recordServerFailure(netErr); // network failure
+      throw describeFailure(netErr);
     }
     throw err;
   } finally {
@@ -98,6 +114,10 @@ export class ApiError extends Error {
     this.status = status;
     /** @type {any} parsed JSON body of a non-OK reply, when the server sent one */
     this.body = null;
+    /** @type {string} */ this.method = '';
+    /** @type {string} */ this.statusText = '';
+    /** @type {string[]} */ this.payloadKeys = [];
+    /** @type {Record<string,string>} */ this.requestIds = {};
     if (cause) this.cause = cause;
   }
 }
@@ -107,7 +127,21 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Single shared response handler: checks res.ok and content-type before parsing, so an HTML gateway page never
 // reaches res.json(). On a non-OK JSON reply the server's own message (error/message) and body are kept on the ApiError.
-const parseJsonOrThrow = async (res, url = res.url) => {
+// Adds method, status text and what was sent to an error, and queues it for the shared error alert (unless a catch
+// block handles it first - see errorAlert.noteApiError). `note: false` is used between automatic retries.
+const decorate = (err, res, note = true) => {
+  const req = res && res.__req;
+  err.statusText = (res && res.statusText) || '';
+  if (req) {
+    err.method = req.method;
+    err.payloadKeys = req.payloadKeys || [];
+    err.requestIds = req.ids || {};
+  }
+  if (note && (!req || req.method !== 'GET' || (res && res.status >= 400 && res.status < 500 && res.status !== 404))) noteApiError(err);
+  return err;
+};
+
+const parseJsonOrThrow = async (res, url = res.url, { note = true } = {}) => {
   const type = res.headers.get('content-type') || '';
   const isJson = type.includes('application/json');
   if (!res.ok) {
@@ -123,15 +157,15 @@ const parseJsonOrThrow = async (res, url = res.url) => {
       { url, status: res.status }
     );
     err.body = body;
-    throw err;
+    throw decorate(err, res, note);
   }
   if (!isJson) {
-    throw new ApiError('The server returned an unexpected (non-JSON) response.', { url, status: res.status });
+    throw decorate(new ApiError('The server returned an unexpected (non-JSON) response.', { url, status: res.status }), res, note);
   }
   try {
     return await res.json();
   } catch (e) {
-    throw new ApiError('The server returned invalid JSON.', { url, status: res.status, cause: e });
+    throw decorate(new ApiError('The server returned invalid JSON.', { url, status: res.status, cause: e }), res, note);
   }
 };
 
@@ -141,7 +175,7 @@ const fetchJsonWithRetry = async (url, options = {}, retries = 3) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetchWithAuth(url, options);
-      return await parseJsonOrThrow(res, url);
+      return await parseJsonOrThrow(res, url, { note: attempt === retries });
     } catch (err) {
       if (err.name === 'AbortError') throw err;
       lastErr = err;
@@ -151,8 +185,20 @@ const fetchJsonWithRetry = async (url, options = {}, retries = 3) => {
     }
   }
   if (lastErr && !lastErr.url) lastErr.url = url;
+  if (lastErr && lastErr.status !== undefined && lastErr.method !== 'GET') noteApiError(lastErr);
   throw lastErr;
 };
+
+// Single routing rule for sections (used for save and for deciding what goes in the regular-section transaction).
+function sectionKindOf(data) {
+  const sectionType = String(data.sectionType || data.section_type || 'MONO GRADE').toUpperCase();
+  const gradeLevel = String(data.gradeLevel || data.grade_level || '').toUpperCase();
+  if (sectionType.includes('ARAL') || gradeLevel.includes('ARAL') || data.aralBasis || data.aralToolKey || data.aralTool) return 'aral';
+  if (sectionType.includes('SNED') || sectionType.includes('NON-GRADED') || gradeLevel.includes('SNED') || gradeLevel.includes('NON-GRADED') || gradeLevel.includes('SPED')) return 'sned';
+  if (sectionType.includes('ALS') || gradeLevel.includes('ALS')) return 'als';
+  if (sectionType === 'REMEDIAL' || sectionType === 'ENRICHMENT' || data.interventionType || data.intervention_type) return 'remedial-enrichment';
+  return 'regular';
+}
 
 export const api = {
   // Dashboard stats
@@ -350,19 +396,19 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/sections`);
     return parseJsonOrThrow(res);
   },
+  // Which of the section tables a section belongs to: 'regular' | 'aral' | 'sned' | 'als' | 'remedial-enrichment'.
+  sectionKind: (data) => sectionKindOf(data),
+  // Whole regular-section save in ONE database transaction (upserts + explicit deletes).
+  syncRegularSections: async ({ schoolId, schoolYear, sections, deletedIds }) => {
+    const res = await fetchWithAuth(`${API_BASE}/sections/regular/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolId, schoolYear, sections, deletedIds })
+    });
+    return parseJsonOrThrow(res);
+  },
   addSection: async (data) => {
-    const sectionType = String(data.sectionType || data.section_type || 'MONO GRADE').toUpperCase();
-    const gradeLevel = String(data.gradeLevel || data.grade_level || '').toUpperCase();
-    let endpoint = `${API_BASE}/sections/regular`;
-    if (sectionType.includes('ARAL') || gradeLevel.includes('ARAL') || data.aralBasis || data.aralToolKey || data.aralTool) {
-      endpoint = `${API_BASE}/sections/aral`;
-    } else if (sectionType.includes('SNED') || sectionType.includes('NON-GRADED') || gradeLevel.includes('SNED') || gradeLevel.includes('NON-GRADED') || gradeLevel.includes('SPED')) {
-      endpoint = `${API_BASE}/sections/sned`;
-    } else if (sectionType.includes('ALS') || gradeLevel.includes('ALS')) {
-      endpoint = `${API_BASE}/sections/als`;
-    } else if (sectionType === 'REMEDIAL' || sectionType === 'ENRICHMENT' || data.interventionType || data.intervention_type) {
-      endpoint = `${API_BASE}/sections/remedial-enrichment`;
-    }
+    const endpoint = `${API_BASE}/sections/${sectionKindOf(data)}`;
     const res = await fetchWithAuth(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

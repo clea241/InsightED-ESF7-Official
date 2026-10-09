@@ -1,5 +1,5 @@
 // Run with: npm run test:unit
-import { test, expect } from 'vitest';
+import { test, expect, describe } from 'vitest';
 import {
   NO_VERSION, versionOf, compositeRowKey, dedupeWorkloadRows, rowsFingerprint, decideWorkloadMerge
 } from '../../src/services/workloadMerge.js';
@@ -256,4 +256,27 @@ test('with a known baseline and no edits of its own, the draft is clean even tho
 test('summarizeWorkloadDiff counts added, changed and removed against the saved rows', () => {
   const result = [slot('WKL-1', '08:00', { subject: 'SCIENCE' }), slot('new', '14:00')];
   expect(summarizeWorkloadDiff(P, '1st', DB, result)).toEqual({ added: 1, changed: 1, removed: 1 });
+});
+
+import { overlayDatabaseWorkload } from '../../src/services/workloadMerge';
+
+describe('overlayDatabaseWorkload (login)', () => {
+  const row = (id, subject, term = '1st', start = '08:00') => ({ id, subject, term, gradeLevel: 'Grade 7', sectionName: 'A', startTime: start, endTime: '09:00', days: ['M'] });
+  test('database rows replace a stale draft for the same term', () => {
+    const out = overlayDatabaseWorkload({ personId: 'P', draftRows: [row('d1', 'OLD'), row('d2', 'OLD2', '1st', '10:00')], dbRows: [row('s1', 'MATH')] });
+    expect(out.map(r => r.id)).toEqual(['s1']);
+  });
+  test('terms the database does not have keep the draft rows', () => {
+    const out = overlayDatabaseWorkload({ personId: 'P', draftRows: [row('d3', 'SCI', '2nd')], dbRows: [row('s1', 'MATH')] });
+    expect(out.map(r => r.id).sort()).toEqual(['d3', 's1']);
+  });
+  test('unsaved local edits keep the draft; empty database keeps the draft', () => {
+    const draft = [row('d1', 'EDITED')];
+    expect(overlayDatabaseWorkload({ personId: 'P', draftRows: draft, dbRows: [row('s1', 'MATH')], hasUnsavedLocalEdits: true })).toBe(draft);
+    expect(overlayDatabaseWorkload({ personId: 'P', draftRows: draft, dbRows: [] })).toBe(draft);
+  });
+  test('same block under two ids is not duplicated', () => {
+    const out = overlayDatabaseWorkload({ personId: 'P', draftRows: [], dbRows: [row('s1', 'MATH'), row('s2', 'MATH')] });
+    expect(out).toHaveLength(1);
+  });
 });

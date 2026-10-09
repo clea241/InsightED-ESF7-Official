@@ -11,6 +11,9 @@ export const DRAFT_ACTIONS = {
 };
 
 let current = null;
+// errorAlert registers itself here so draft/auto-save failures also reach the shared SweetAlert (no circular import).
+let externalReporter = null;
+export const setExternalDraftReporter = (fn) => { externalReporter = fn; };
 let context = { userId: null, role: null };
 const listeners = new Set();
 
@@ -36,12 +39,12 @@ const getSchoolId = () => {
 };
 
 // Remove anything that looks like a credential before it can reach the report.
-const scrub = (text) => String(text == null ? '' : text)
+export const scrub = (text) => String(text == null ? '' : text)
   .replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [redacted]')
   .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, '[redacted-token]')
   .replace(/((?:token|password|authorization|cookie|secret|api[_-]?key)["']?\s*[:=]\s*)["']?[^\s"',;&]+/gi, '$1[redacted]');
 
-const scrubUrl = (url) => {
+export const scrubUrl = (url) => {
   try {
     const u = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
     ['token', 'access_token', 'auth', 'key', 'password'].forEach((k) => u.searchParams.delete(k));
@@ -101,6 +104,7 @@ export const reportDraftError = (action, error, { retry } = {}) => {
   };
   console.error(`[DraftError] ${action} failed:`, error);
   emit();
+  if (externalReporter && error) { try { externalReporter(error, { action, source: 'Draft sync / auto-save' }); } catch (e) { /* reporting must never break saving */ } }
 };
 
 // Call after any later successful draft save/fetch.

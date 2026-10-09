@@ -117,7 +117,9 @@ export default function SchoolProfile() {
         const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || 'default'}`;
         const localDraft = await getLocalDraft(draftKey);
         const storedStr = localStorage.getItem(draftKey);
-        const config = localDraft || (storedStr ? JSON.parse(storedStr) : null);
+        const localConfig = localDraft || (storedStr ? JSON.parse(storedStr) : null);
+        // Database first: the browser copy only wins while it holds edits that were NOT saved to the server yet.
+        const config = (schoolInfo?.curricularConfigSaved && (!localConfig || localConfig.savedToServer)) ? null : localConfig;
 
         const allInclusive = Array.isArray(config?.inclusivePrograms)
           ? config.inclusivePrograms
@@ -347,6 +349,26 @@ export default function SchoolProfile() {
           inclusivePrograms: selectedInclusive
         }));
       }
+
+      // 3. The configuration lives in esf7_school_profile: write it there (idempotent upsert on school + year) and check the
+      //    row the server stored before anything is called saved. The draft below is only the backup of unsaved work.
+      const stored = await api.updateCurricularConfig({
+        ...configData,
+        elemSpecialPrograms: configData.hasElemSpecialPrograms && configData.elemSpecialProgram ? ['SPECIAL SCIENCE ELEMENTARY SCHOOL'] : []
+      });
+      const row = stored && stored.data;
+      const sameList = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify([...(b || [])].sort());
+      if (!stored || stored.success !== true || !row
+        || Boolean(row.hasElemSpecialPrograms) !== configData.hasElemSpecialPrograms
+        || Boolean(row.hasJhsSpecialPrograms) !== configData.hasJhsSpecialPrograms
+        || !sameList(row.jhsSpecialPrograms, configData.jhsSpecialPrograms)
+        || !sameList(row.inclusivePrograms, configData.inclusivePrograms)) {
+        throw new Error('The database did not return the school configuration that was sent, so it was not marked as saved.');
+      }
+      const savedConfig = { ...configData, savedToServer: true };
+      localStorage.setItem(draftKey, JSON.stringify(savedConfig));
+      await setLocalDraft(draftKey, savedConfig);
+      if (setSchoolInfo) setSchoolInfo(prev => ({ ...prev, curricularConfigSaved: true }));
 
       // Success is reported only after the server confirmed the database write.
       const confirmed = await confirmServerDraftSaved();

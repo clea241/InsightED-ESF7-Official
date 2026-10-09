@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
+const { normalizeSchoolYear, sameSchoolYear } = require('../../utils/schoolYear');
 
 function isInvalidSectionRecord(row) {
   if (!row) return true;
@@ -13,6 +14,14 @@ function isInvalidSectionRecord(row) {
     n.includes('MULTI-GRADE') || n.includes('MULTIGRADE') || n.includes('MULTI GRADE') ||
     n.includes('MONO-GRADE') || n.includes('MONOGRADE') || n.includes('MONO GRADE')
   );
+}
+
+// The adviser of a regular section: the foreign-key column first, else the id the UI saved in raw_payload.
+function storedAdviser(row) {
+  if (row.adviser_id) return String(row.adviser_id);
+  const raw = row.raw_payload || {};
+  const v = raw.advisorId || raw.adviserId || raw.adviser_id || raw.advisor_id;
+  return v ? String(v) : null;
 }
 
 function formatRegularRecord(row) {
@@ -39,10 +48,13 @@ function formatRegularRecord(row) {
     section_name: row.section_name,
     sectionType: row.section_type || 'MONO GRADE',
     section_type: row.section_type || 'MONO GRADE',
-    adviserId: row.adviser_id ? String(row.adviser_id) : null,
-    adviser_id: row.adviser_id ? String(row.adviser_id) : null,
-    advisorId: row.adviser_id ? String(row.adviser_id) : null,
-    advisor_id: row.adviser_id ? String(row.adviser_id) : null,
+    adviserId: storedAdviser(row),
+    adviser_id: storedAdviser(row),
+    advisorId: storedAdviser(row),
+    advisor_id: storedAdviser(row),
+    // true = adviser_id is set and enforced by the foreign key; false with an adviser = chosen from the roster but that
+    // person has no profile row yet (kept in raw_payload, not an error, shown as "not yet profiled").
+    adviserLinked: Boolean(row.adviser_id),
     maleLearners: m,
     male_learners: m,
     femaleLearners: f,
@@ -51,6 +63,7 @@ function formatRegularRecord(row) {
     number_of_learners: total,
     sizeStatus: row.size_status || 'WITHIN STANDARD',
     size_status: row.size_status || 'WITHIN STANDARD',
+    updatedAt: row.updated_at,
     rawPayload: raw
   };
 }
@@ -300,8 +313,10 @@ function calculateSizeStatus(gradeLevel, totalLearners, sectionType = '') {
   return 'ABOVE STANDARD';
 }
 
-// POST /regular - Insert/Update Regular Section
-router.post('/regular', async (req, res) => {
+// POST /regular - Insert/Update Regular Section.
+// One stable-key rule: the row id first, then school + canonical school year + grade level + section name (also the
+// duplicate guard). An existing row keeps its id forever; a "sec-draft-" id that is already saved is just a saved row.
+async function upsertRegularSection(client, body) {
   const {
     id, school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
     grade_level, gradeLevel, section_name, sectionName,
@@ -309,14 +324,19 @@ router.post('/regular', async (req, res) => {
     section_type, sectionType,
     male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners,
     size_status, sizeStatus
-  } = req.body;
+  } = body;
 
-  const targetSchoolId = school_id || bodySchoolId || '108348';
-  const targetSchoolYear = school_year || bodySchoolYear || '2026-2027';
+  const targetSchoolId = String(school_id || bodySchoolId || '108348').replace(/^SCH-/i, '');
+  const targetSchoolYear = normalizeSchoolYear(school_year || bodySchoolYear);
   const targetGradeLevel = grade_level || gradeLevel || 'Grade 1';
   const targetSectionName = (section_name || sectionName || 'SECTION 1').toUpperCase().trim();
-  const targetAdviserId = adviser_id || advisor_id || advisorId || adviserId || null;
   const targetType = section_type || sectionType || 'MONO GRADE';
+
+  // Adviser semantics: a payload WITHOUT any adviser field leaves the stored adviser alone; an adviser field that is
+  // empty/null ("Unassigned") clears it on purpose; a value is stored (foreign key when that person has a profile row).
+  const adviserKeys = [adviser_id, advisor_id, advisorId, adviserId];
+  const adviserProvided = adviserKeys.some((v) => v !== undefined);
+  const targetAdviserId = adviserKeys.find((v) => v !== undefined && v !== null && String(v).trim() !== '') || null;
 
   const mVal = Number(male_learners || maleLearners || 0);
   const fVal = Number(female_learners || femaleLearners || 0);
@@ -324,43 +344,106 @@ router.post('/regular', async (req, res) => {
   const totalLearners = rawTotal !== undefined && rawTotal !== null && rawTotal !== '' ? Number(rawTotal) : (mVal + fVal);
   const targetSizeStatus = size_status || sizeStatus || calculateSizeStatus(targetGradeLevel, totalLearners, targetType);
 
+  let validAdviserId = null;
+  if (targetAdviserId) {
+    const pCheck = await client.query('SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1', [targetAdviserId]);
+    if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
+  }
+
+  const sidPair = [targetSchoolId, 'SCH-' + targetSchoolId];
+  const byId = id ? (await client.query('SELECT * FROM esf7_regular_sections WHERE id = $1 AND school_id = ANY($2)', [id, sidPair])).rows[0] : null;
+  const sameName = (await client.query(
+    'SELECT * FROM esf7_regular_sections WHERE school_id = ANY($1) AND grade_level = $2 AND section_name = $3 ORDER BY created_at, id',
+    [sidPair, targetGradeLevel, targetSectionName]
+  )).rows.filter((r) => sameSchoolYear(r.school_year, targetSchoolYear));
+  const byNatural = sameName[0] || null;
+
+  if (byId && byNatural && byId.id !== byNatural.id) {
+    const err = new Error('Section ' + targetGradeLevel + ' ' + targetSectionName + ' already exists under another id (' + byNatural.id + ').');
+    err.status = 409;
+    throw err;
+  }
+  const existing = byId || byNatural;
+  // raw_payload keeps what the UI sent (including the adviser id for people without a profile row yet). A partial update
+  // is merged over the stored payload, so fields it does not mention (like the adviser) survive.
+  const payloadJson = JSON.stringify(adviserProvided ? body : { ...(existing && existing.raw_payload ? existing.raw_payload : {}), ...body });
+
+  if (existing) {
+    const r = await client.query(
+      'UPDATE esf7_regular_sections SET ' +
+      'grade_level = $2, section_name = $3, adviser_id = CASE WHEN $11::boolean THEN $4 ELSE adviser_id END, section_type = $5, ' +
+      'male_learners = $6, female_learners = $7, number_of_learners = $8, size_status = $9, ' +
+      'raw_payload = $10::jsonb, updated_at = NOW() WHERE id = $1 RETURNING *',
+      [existing.id, targetGradeLevel, targetSectionName, validAdviserId, targetType, mVal, fVal, totalLearners, targetSizeStatus, payloadJson, adviserProvided]
+    );
+    return r.rows[0];
+  }
+
+  const countRes = await client.query('SELECT COUNT(*) FROM esf7_regular_sections WHERE school_id = $1', [targetSchoolId]);
+  const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
+  const secId = id || ('REG-' + targetSchoolId + '-' + seq);
+  const r = await client.query(
+    'INSERT INTO esf7_regular_sections (id, school_id, school_year, grade_level, section_name, section_type, ' +
+    'adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload) ' +
+    'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb) ' +
+    'ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET ' +
+    'adviser_id = EXCLUDED.adviser_id, section_type = EXCLUDED.section_type, ' +
+    'male_learners = EXCLUDED.male_learners, female_learners = EXCLUDED.female_learners, ' +
+    'number_of_learners = EXCLUDED.number_of_learners, size_status = EXCLUDED.size_status, ' +
+    'raw_payload = EXCLUDED.raw_payload, updated_at = NOW() RETURNING *',
+    [secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetType, validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, payloadJson]
+  );
+  return r.rows[0];
+}
+
+async function inTransaction(fn) {
+  const client = await db.pool.connect();
   try {
-    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_regular_sections WHERE school_id = $1`, [targetSchoolId]);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const secId = id || `REG-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    await client.query('BEGIN');
+    const out = await fn(client);
+    await client.query('COMMIT');
+    return out;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
-    let validAdviserId = null;
-    if (targetAdviserId) {
-      const pCheck = await db.query(`SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`, [targetAdviserId]);
-      if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
-    }
-
-    const query = `
-      INSERT INTO esf7_regular_sections (
-        id, school_id, school_year, grade_level, section_name, section_type,
-        adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
-      ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
-        adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_regular_sections.adviser_id),
-        section_type = EXCLUDED.section_type,
-        male_learners = EXCLUDED.male_learners,
-        female_learners = EXCLUDED.female_learners,
-        number_of_learners = EXCLUDED.number_of_learners,
-        size_status = EXCLUDED.size_status,
-        raw_payload = EXCLUDED.raw_payload,
-        updated_at = NOW()
-      RETURNING *;
-    `;
-
-    const result = await db.query(query, [
-      secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetType,
-      validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, JSON.stringify(req.body)
-    ]);
-    res.status(201).json(formatRegularRecord(result.rows[0]));
+router.post('/regular', async (req, res) => {
+  try {
+    const row = await inTransaction((client) => upsertRegularSection(client, req.body));
+    res.status(201).json(formatRegularRecord(row));
   } catch (err) {
-    console.error('Error inserting esf7_regular_sections:', err);
-    res.status(500).json({ error: err.message });
+    console.error('Error upserting esf7_regular_sections:', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// POST /regular/sync - the whole regular-section save in ONE transaction: upsert every listed section and delete
+// the explicitly removed ids (only inside this school). Any failure rolls everything back.
+router.post('/regular/sync', async (req, res) => {
+  try {
+    const { sections = [], deletedIds = [] } = req.body || {};
+    const schoolId = String(req.body.schoolId || getSchoolIdFromRequest(req) || '').replace(/^SCH-/i, '');
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const result = await inTransaction(async (client) => {
+      const saved = [];
+      for (const sec of sections) {
+        saved.push(await upsertRegularSection(client, { ...sec, schoolId, schoolYear: sec.schoolYear || req.body.schoolYear }));
+      }
+      let removed = 0;
+      if (deletedIds.length) {
+        const d = await client.query('DELETE FROM esf7_regular_sections WHERE id = ANY($1) AND school_id = ANY($2)', [deletedIds.map(String), [schoolId, 'SCH-' + schoolId]]);
+        removed = d.rowCount;
+      }
+      return { saved, removed };
+    });
+    res.json({ success: true, sections: result.saved.map(formatRegularRecord).filter(Boolean), removed: result.removed });
+  } catch (err) {
+    console.error('Error syncing esf7_regular_sections:', err);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -711,4 +794,5 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+router.upsertRegularSection = upsertRegularSection; router.formatRegularRecord = formatRegularRecord; // exposed for tests
 module.exports = router;

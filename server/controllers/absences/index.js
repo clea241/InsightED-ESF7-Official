@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const { getSchoolIdFromRequest } = require('../../utils/auth');
 
 function formatAbsenceRecord(row) {
   if (!row) return null;
@@ -40,6 +41,14 @@ router.get('/', async (req, res) => {
       query += ` AND personnel_id = $${counter}`;
       values.push(targetPersonnelId);
       counter++;
+    }
+
+    // Scoped to the requesting school: without this the list contained every school's absences.
+    const scopeSchool = String(school_id || schoolId || getSchoolIdFromRequest(req) || '').replace(/^SCH-/i, '');
+    if (scopeSchool) {
+      query += ` AND (school_id = $${counter} OR school_id = $${counter + 1})`;
+      values.push(scopeSchool, `SCH-${scopeSchool}`);
+      counter += 2;
     }
 
     query += ` ORDER BY start_date DESC, created_at DESC`;
@@ -92,6 +101,9 @@ router.post('/', async (req, res) => {
         id, personnel_id, school_id, school_year, start_date, end_date, leave_type, total_days, raw_payload
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      ON CONFLICT (id) DO UPDATE SET
+        start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, leave_type = EXCLUDED.leave_type,
+        total_days = EXCLUDED.total_days, raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
       RETURNING *;
     `;
 
@@ -111,6 +123,10 @@ router.post('/', async (req, res) => {
     res.status(201).json(formatAbsenceRecord(result.rows[0]));
   } catch (err) {
     console.error('Error inserting overload_absences:', err);
+    if (err.code === '23503') {
+      // foreign key: overload_absences.personnel_id must exist in esf7_personnel_profile
+      return res.status(422).json({ error: `This person has no personnel profile yet, so the absence cannot be linked (${err.detail || err.message}).`, code: err.code });
+    }
     res.status(500).json({ error: err.message });
   }
 });

@@ -7,6 +7,12 @@ import { chooseDraftSource } from '../services/draftSync';
 import { getSessionSchoolId, resolveSchoolId } from '../services/session';
 import { saveDraft, flushDrafts, markDraftDirty, registerSnapshotProvider, subscribeDraftSave, getSyncedVersion, setSyncedVersion, acceptServerVersion, retryNow, DraftConflictError } from '../services/draftSaver';
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
+import { dedupeSections, dedupePersonnel } from '../services/dedupe';
+import { mergeSectionsByKey, inSchoolYear } from '../services/sectionMerge';
+import { cleanPersonnelDates } from '../services/dateFields';
+import { reportError, takeRecentApiError } from '../services/errorAlert';
+import { overlayDatabaseWorkload } from '../services/workloadMerge';
+import { retryTransient } from '../services/workloadSave';
 import { checkBeforeLeave, checkBeforeLeaveDetailed, allowNextUnload, isAnyScreenDirty, discardAllDirtyScreens } from '../services/dirtyGuard';
 
 const AppContext = createContext();
@@ -2803,6 +2809,9 @@ const sanitizeClassSectionList = (list) => {
   return Array.from(map.values());
 };
 
+// Master-source problems are reported once per page load per school (the dialog would otherwise repeat at every refresh).
+const masterSourceReported = new Set();
+
 export const AppProvider = ({ children }) => {
   const [activeView, setActiveViewState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3166,7 +3175,7 @@ export const AppProvider = ({ children }) => {
         if (target) {
           const overallPct = Math.round((updatedCompleted.length / 11) * 100);
           api.saveSchoolNode(target.key, target.payload, schoolInfo.schoolYear, updatedCompleted.length >= 11 ? 'COMPLETED' : 'IN_PROGRESS', overallPct).catch(err => {
-            console.warn('[NodeStatus Sync Warning]:', err.message);
+            reportError(err, { action: `Updating Node Map progress (${target.key})`, handler: 'completeNode', source: 'NodeStatus Sync' });
           });
         }
       } catch (err) {
@@ -3347,11 +3356,28 @@ export const AppProvider = ({ children }) => {
   };
 
 
+  // An alert/toast that reports a failure right after an API call failed becomes the shared detailed error dialog
+  // (same facts as everywhere else), instead of a plain message that hides the real cause.
+  const FAILURE_WORDS = /error|fail|could not|couldn't|cannot|can't|not saved|unable|rejected|invalid|denied/i;
+  const asDetailedFailure = (title, message) => {
+    if (!FAILURE_WORDS.test(`${title} ${message}`)) return null;
+    const recent = takeRecentApiError();
+    return recent ? { err: recent, title: String(title || ''), message: String(message || '') } : null;
+  };
+
   const showToast = (message, type = 'success') => {
+    if (type === 'error' || type === 'warning') {
+      const f = asDetailedFailure('', message);
+      if (f) reportError(f.err, { userMessage: f.message });
+    }
     setToast({ message, type });
   };
 
   const showAlert = (title, message) => {
+    const detailed = asDetailedFailure(title, message);
+    if (detailed) {
+      return reportError(detailed.err, { title: detailed.title && !/^error$/i.test(detailed.title) ? detailed.title : 'Something went wrong', userMessage: detailed.message }).then(() => true);
+    }
     return new Promise((resolve) => {
       setCustomModal({
         type: 'alert',
@@ -3403,6 +3429,18 @@ export const AppProvider = ({ children }) => {
     const activeSchoolId = resolveSchoolId(overrideSchoolId) || user?.school_id || user?.schoolId || null;
     const list = await api.getPersonnel(activeSchoolId);
     if (!Array.isArray(list)) return [];
+
+    // The server flags records whose roster came from the cache (not confirmed saved) and why the real tables were skipped.
+    const flagged = list.find(p => p && p.masterSourceError);
+    if (flagged && !masterSourceReported.has(String(activeSchoolId))) {
+      masterSourceReported.add(String(activeSchoolId));
+      reportError(new Error(flagged.masterSourceError), {
+        action: 'Loading the school roster from the master database',
+        userMessage: `The master database could not be read, so the roster is shown from ${flagged.masterSource || 'a cache'} and is NOT confirmed saved. Your saved workload still comes from the database.`,
+        handler: 'GET /api/personnel (fetchMasterPersonnelFromInsightEd)',
+        source: 'Master database unreachable'
+      });
+    }
 
     const gradeToCategory = {
       'Kinder': 'Elementary', 'Grade 1': 'Elementary', 'Grade 2': 'Elementary', 'Grade 3': 'Elementary', 'Grade 4': 'Elementary', 'Grade 5': 'Elementary', 'Grade 6': 'Elementary',
@@ -3530,15 +3568,46 @@ export const AppProvider = ({ children }) => {
   const { user } = useAuth();
 
   const [isInitialized, setIsInitialized] = useState(false);
+  // Class sections exactly as esf7_regular_sections (and its sibling tables) returned them at load: the baseline the
+  // Organized Classes page measures unsaved changes against. null = not loaded from the database.
+  const [sectionsBaseline, setSectionsBaseline] = useState(null);
+  // Set when the sections request failed: the draft is shown but is NOT confirmed saved.
+  const [sectionsLoadError, setSectionsLoadError] = useState(null);
+  // true only when the user confirmed restoring unsaved draft sections at login: those ARE unsaved changes on purpose.
+  const [sectionsOverlayApplied, setSectionsOverlayApplied] = useState(false);
   const initialLoadCompleteRef = useRef(false);
   // True when the initial load failed or only partly succeeded: cloud auto-save is blocked so a partial state can never overwrite real data.
   const loadIncompleteRef = useRef(false);
   const loadInitialDataRef = useRef(null);
+  const loadInFlightRef = useRef(null);
+  // Logging in must never write. Auto-save only runs once the user has actually interacted, and only when the
+  // draft differs from what was last loaded/saved (derived values filled in during load are absorbed, not saved).
+  const userEditedRef = useRef(false);
+  const lastSavedSigRef = useRef(null);
+  const draftSignature = (d) => { try { return JSON.stringify({ ...d, lastUpdated: undefined }); } catch (e) { return null; } };
+  useEffect(() => {
+    const mark = () => { userEditedRef.current = true; };
+    const evs = ['input', 'change', 'keydown', 'click'];
+    evs.forEach(e => document.addEventListener(e, mark, true));
+    return () => evs.forEach(e => document.removeEventListener(e, mark, true));
+  }, []);
 
   // Load initial data from draft or DB
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadInitialData = () => {
+      // Single-flight: a double effect run, a user-object refresh or a retry click joins the load already running
+      // instead of starting a second hydration over the same state.
+      const flightKey = String(user?.school_id || user?.schoolId || '');
+      if (loadInFlightRef.current && loadInFlightRef.current.key === flightKey) return loadInFlightRef.current.run;
+      const run = runInitialLoad().finally(() => { if (loadInFlightRef.current && loadInFlightRef.current.run === run) loadInFlightRef.current = null; });
+      loadInFlightRef.current = { key: flightKey, run };
+      return run;
+    };
+    const runInitialLoad = async () => {
       loadIncompleteRef.current = false;
+      setSectionsOverlayApplied(false);
+      userEditedRef.current = false;
+      lastSavedSigRef.current = null;
       try {
         // 1. Fetch current school configuration
         const activeSchoolId = resolveSchoolId(null) || user?.school_id || user?.schoolId;
@@ -3585,7 +3654,8 @@ export const AppProvider = ({ children }) => {
             hasSned: school.hasSned || false,
             hasIped: school.hasIped || false,
             hasMadrasah: school.hasMadrasah || false,
-            inclusivePrograms: school.inclusivePrograms || []
+            inclusivePrograms: school.inclusivePrograms || [],
+            curricularConfigSaved: Boolean(school.curricularConfigSaved)
           };
         }
         setSchoolInfo(currentSchoolInfo);
@@ -3597,6 +3667,10 @@ export const AppProvider = ({ children }) => {
 
         // 3. Local draft (IndexedDB), cloud draft (Postgres) and milestone node status are independent: fetch together
         const draftKey = `draft_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}`;
+        // The database is the source of truth for sections: always fetch it, whatever draft is chosen below.
+        const dbSectionsPromise = api.getSections()
+          .then((r) => ({ ok: true, rows: Array.isArray(r) ? r : (r && Array.isArray(r.allSections) ? r.allSections : []) }))
+          .catch((error) => ({ ok: false, error }));
         const [localDraft, cloudDraftRes, nodeRes] = await Promise.all([
           getLocalDraft(draftKey),
           api.getSchoolDraft(currentSchoolInfo.schoolYear).catch((e) => {
@@ -3897,6 +3971,26 @@ export const AppProvider = ({ children }) => {
             activeDraft.personnel = draftPersonnel;
           }
 
+          // Saved workload (esf7_workload_rows) is the baseline: a stale draft or cache default never replaces it. Matched by
+          // stable key (personnel id / PRN) per term; a teacher with unsaved local workload edits keeps the draft for the
+          // Workload page's conflict dialog. Read-only: nothing is written here.
+          if (filteredDbList.length > 0 && draftPersonnel.length > 0) {
+            const dbWorkloadByKey = new Map();
+            filteredDbList.forEach(p => {
+              if (!Array.isArray(p.workloadRows) || p.workloadRows.length === 0) return;
+              [p.id, p.prn].forEach(k => { const key = String(k || '').trim().toLowerCase(); if (key) dbWorkloadByKey.set(key, p.workloadRows); });
+            });
+            draftPersonnel = draftPersonnel.map(dp => {
+              const dbRows = dbWorkloadByKey.get(String(dp.id || '').trim().toLowerCase()) || dbWorkloadByKey.get(String(dp.prn || '').trim().toLowerCase());
+              if (!dbRows) return dp;
+              let unsaved = false;
+              try { unsaved = Boolean(localStorage.getItem(`draft_workload_${dp.id}`)); } catch (e) { /* storage unavailable */ }
+              const rows = overlayDatabaseWorkload({ personId: dp.id, draftRows: dp.workloadRows, dbRows, hasUnsavedLocalEdits: unsaved });
+              return rows === dp.workloadRows ? dp : { ...dp, workloadRows: rows };
+            });
+            activeDraft.personnel = draftPersonnel;
+          }
+
           // Self-healing: If draft personnel has 0 total workloads across all teachers, repair from autofill template
           const currentDraftWorkloads = draftPersonnel.reduce((acc, p) => acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0), 0);
           if (currentDraftWorkloads === 0 && draftPersonnel.length > 0) {
@@ -3925,7 +4019,42 @@ export const AppProvider = ({ children }) => {
 
           // Load draft state
           const extractedSecs = extractClassSectionsFromPersonnel(draftPersonnel, currentSchoolInfo);
-          let loadedDraftSecs = activeDraft.classSections || [];
+          // Sections: esf7_regular_sections (+ sibling tables) is the baseline; the draft only overlays genuine differences,
+          // matched by stable key, never appended. Nothing is written here.
+          let loadedDraftSecs;
+          const secFetch = await dbSectionsPromise;
+          if (secFetch.ok) {
+            const secYear = currentSchoolInfo.schoolYear;
+            const baseline = mergeSectionsByKey(inSchoolYear(secFetch.rows, secYear), []).merged;
+            setSectionsBaseline(baseline);
+            setSectionsLoadError(null);
+            const m = mergeSectionsByKey(baseline, inSchoolYear(activeDraft.classSections || [], secYear), {
+              deletedIds: activeDraft.deletedSectionIds || [],
+              draftUpdatedAt: activeDraft.lastUpdated || cloudUpdatedAt
+            });
+            loadedDraftSecs = baseline;
+            if (m.hasDifferences && !m.draftIsOlder) {
+              const bits = [];
+              if (m.added.length) bits.push(m.added.length + ' new');
+              if (m.edited.length) bits.push(m.edited.length + ' edited');
+              if (m.removed.length) bits.push(m.removed.length + ' removed');
+              const apply = await showConfirm(
+                'Restore unsaved section changes?',
+                'Your saved draft has section changes that are not in the database yet (' + bits.join(', ') + '). Confirm = bring them back (you still need to press Save). Cancel = discard them and show what is saved in the database.'
+              );
+              if (apply) {
+                loadedDraftSecs = m.merged;
+                setSectionsOverlayApplied(true);
+                userEditedRef.current = true; // restored work is the user's: let auto-save keep the draft
+              }
+            }
+          } else {
+            // Database sections could not be confirmed: show the draft, clearly flagged, and keep cloud saves blocked.
+            console.error('[Sections] Could not load sections from the database:', secFetch.error);
+            loadedDraftSecs = dedupeSections(activeDraft.classSections || []);
+            loadIncompleteRef.current = true;
+            setSectionsLoadError(secFetch.error?.message || 'The server did not respond.');
+          }
           if (!activeDraft.sectionsCleared && loadedDraftSecs.length === 0 && extractedSecs.length > 0) {
             console.log('[Draft Sync] Auto-populating organized class sections from workload rows:', extractedSecs.length);
             loadedDraftSecs = extractedSecs;
@@ -3985,8 +4114,9 @@ export const AppProvider = ({ children }) => {
               certifiedBy: activeDraft.schoolInfo.certifiedBy || mergedSchoolInfo.certifiedBy,
               certifiedSignature: activeDraft.schoolInfo.certifiedSignature || mergedSchoolInfo.certifiedSignature,
               certifiedAt: activeDraft.schoolInfo.certifiedAt || mergedSchoolInfo.certifiedAt,
-              specialPrograms: activeDraft.schoolInfo.specialPrograms || mergedSchoolInfo.specialPrograms,
-              shsCurriculumModel: activeDraft.schoolInfo.shsCurriculumModel || mergedSchoolInfo.shsCurriculumModel
+              // Database first: once esf7_school_profile holds the configuration, a draft never overrides it.
+              specialPrograms: mergedSchoolInfo.curricularConfigSaved ? mergedSchoolInfo.specialPrograms : (activeDraft.schoolInfo.specialPrograms || mergedSchoolInfo.specialPrograms),
+              shsCurriculumModel: mergedSchoolInfo.curricularConfigSaved ? mergedSchoolInfo.shsCurriculumModel : (activeDraft.schoolInfo.shsCurriculumModel || mergedSchoolInfo.shsCurriculumModel)
             });
           } else {
             setSchoolInfo(mergedSchoolInfo);
@@ -4035,7 +4165,7 @@ export const AppProvider = ({ children }) => {
             };
           });
           const cleanDraftSecs = sanitizeClassSectionList(loadedDraftSecs);
-          setPersonnel(draftPersonnel);
+          setPersonnel(dedupePersonnel(draftPersonnel));
           setClassSections(cleanDraftSecs);
           setWorkloadTransfers(activeDraft.workloadTransfers || []);
           setAbsences(activeDraft.absences || []);
@@ -4125,6 +4255,8 @@ export const AppProvider = ({ children }) => {
 
           const rawSections = await sectionsReq;
           let loadedSections = Array.isArray(rawSections) ? rawSections : (rawSections && Array.isArray(rawSections.allSections) ? rawSections.allSections : []);
+          setSectionsBaseline(mergeSectionsByKey(inSchoolYear(loadedSections, currentSchoolInfo.schoolYear), []).merged);
+          setSectionsLoadError(null);
           if (loadedSections.length === 0 && Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) && schoolNodeStatus.nodes.node_06_classes.sections.length > 0) {
             console.log('[NodeStatus Sync] Restoring', schoolNodeStatus.nodes.node_06_classes.sections.length, 'class sections from PostgreSQL node status');
             loadedSections = schoolNodeStatus.nodes.node_06_classes.sections;
@@ -4175,7 +4307,7 @@ export const AppProvider = ({ children }) => {
             currentNode: 'school'
           });
 
-          setPersonnel(loadedPersonnel);
+          setPersonnel(dedupePersonnel(loadedPersonnel));
           if (loadedPersonnel.length > 0) {
             setActivePersonnelId(loadedPersonnel[0].id);
           }
@@ -4235,6 +4367,8 @@ export const AppProvider = ({ children }) => {
     } else {
       setPersonnel([]);
       setClassSections([]);
+      setSectionsBaseline(null);
+      setSectionsLoadError(null);
       setWorkloadTransfers([]);
       setAbsences([]);
       setSalaryMatrix([]);
@@ -4304,6 +4438,11 @@ export const AppProvider = ({ children }) => {
     if (!schoolInfo || !schoolInfo.schoolId || !schoolInfo.schoolYear) return;
 
     const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
+    // Before the first user interaction every state change is load-derived: keep the baseline current and do not sync.
+    if (!userEditedRef.current) {
+      lastSavedSigRef.current = draftSignature({ schoolInfo, personnel, classSections, deletedSectionIds, workloadTransfers, absences, journey_state: journeyState });
+      return;
+    }
     setIsSyncing(true);
 
     const debounceId = setTimeout(async () => {
@@ -4319,6 +4458,12 @@ export const AppProvider = ({ children }) => {
           journey_state: journeyState,
           lastUpdated: timestamp
         };
+        // 0. Login/load is read-only: nothing here has been edited by the user yet, so just remember the loaded state.
+        const sig = draftSignature(draftData);
+        if (!userEditedRef.current || (sig !== null && sig === lastSavedSigRef.current)) {
+          lastSavedSigRef.current = sig;
+          return;
+        }
         // 1. Save to local IndexedDB
         await setLocalDraft(draftKey, draftData);
         try {
@@ -4332,6 +4477,7 @@ export const AppProvider = ({ children }) => {
           return;
         }
         await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
+        lastSavedSigRef.current = sig;
         clearDraftError();
         setHasUnsavedChanges(true);
       } catch (err) {
@@ -4351,7 +4497,7 @@ export const AppProvider = ({ children }) => {
   const healthHandlersRef = useRef({});
   useEffect(() => {
     if (!initialLoadCompleteRef.current || !schoolInfo?.schoolId || !schoolInfo?.schoolYear) return;
-    markDraftDirty();
+    if (userEditedRef.current) markDraftDirty();
     latestDraftRef.current = {
       key: `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
       schoolYear: schoolInfo.schoolYear,
@@ -4800,7 +4946,7 @@ export const AppProvider = ({ children }) => {
             school_id: (schoolInfo && schoolInfo.schoolId) || localStorage.getItem('activeSchoolId') || '108348',
             school_year: (schoolInfo && schoolInfo.schoolYear) || '2026-2027',
             term: merged.activeTerm || '1st'
-          }).catch(err => console.warn('PostgreSQL workload background sync notice:', err.message));
+          }).catch(err => reportError(err, { action: `Saving workload for ${merged.id || p.id} (background sync)`, handler: 'savePersonnelChanges', ids: { personnel_id: String(merged.id || p.id) } }));
         }
 
         // Auto-dispatch inter-school requests for CLUSTERED or REASSIGNED personnel
@@ -4829,7 +4975,7 @@ export const AppProvider = ({ children }) => {
                 personnelId: pPrn,
                 personnelName: pFullName,
                 remarks: `Auto-dispatched ${depStatus} teacher assignment from School ${curSchoolId}`
-              }).catch(err => console.warn('[Auto Request Dispatch Notice]:', err.message));
+              }).catch(err => reportError(err, { action: `Sending the ${reqType} request for ${pFullName || pPrn}`, handler: 'savePersonnelChanges (auto-dispatch)' }));
             }
           });
         }
@@ -4852,20 +4998,30 @@ export const AppProvider = ({ children }) => {
 
     // Write through to PostgreSQL relational database (esf7_personnel_profile, educ, employment)
     if (!options.skipApiUpdate && rawTargetId && !rawTargetId.startsWith('temp-') && typeof api !== 'undefined' && api.updatePersonnel) {
+      // The database write is NOT optional: a rejected request throws (with the server's own message) so the caller can
+      // keep its dialog open and its draft. Transient failures (502/timeout) are retried; 4xx validation answers are final.
+      // Placeholder dates ("N/A", "-") are sent as null. The local state above is already updated either way.
+      const payloadToPersist = cleanPersonnelDates(mergedSnapshot || updatedPerson);
       try {
-        const payloadToPersist = mergedSnapshot || updatedPerson;
-        await api.updatePersonnel(rawTargetId, {
+        await retryTransient(() => api.updatePersonnel(rawTargetId, {
           ...payloadToPersist,
           school_id: (schoolInfo && schoolInfo.schoolId) || localStorage.getItem('activeSchoolId') || '300488',
           school_year: (schoolInfo && schoolInfo.schoolYear) || '2026-2027'
-        });
+        }));
       } catch (apiErr) {
-        console.warn('[savePersonnelChanges] Direct API update notice:', apiErr.message);
+        const detail = apiErr?.body?.error || apiErr?.message || 'The server rejected the update.';
+        const field = apiErr?.body?.field ? ` (field: ${apiErr.body.field})` : '';
+        console.error('[savePersonnelChanges] Database update failed:', detail);
+        const failure = new Error(`Personnel record was not saved to the database${field}: ${detail}`);
+        failure.status = apiErr?.status;
+        failure.cause = apiErr;
+        throw failure;
       }
     }
 
     setHasUnsavedChanges(true);
-    showToast("Changes saved locally & synced to database.");
+    showToast(options.skipApiUpdate ? "Changes saved locally." : "Changes saved locally & synced to database.");
+    return { ok: true };
   };
 
   const commitDraftPersonnel = async (specificId = null) => {
@@ -5014,7 +5170,7 @@ export const AppProvider = ({ children }) => {
       await setLocalDraft(draftKey, newDraftData);
       if (!loadIncompleteRef.current && schoolInfo?.schoolId) {
         markDraftDirty();
-        saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear || 'SY 26-27', newDraftData).catch(e => console.warn('Cloud draft update error on delete:', e));
+        saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear || 'SY 26-27', newDraftData).catch(e => reportError(e, { action: 'Saving your draft after removing a personnel record', handler: 'deletePersonnel' }));
       }
     } catch (err) {
       console.warn('Error saving draft after delete:', err);
@@ -5031,7 +5187,7 @@ export const AppProvider = ({ children }) => {
       };
       await api.deletePersonnel(targetId, deleteMeta);
       if (targetPrn && targetPrn !== targetId) {
-        await api.deletePersonnel(targetPrn, deleteMeta).catch(() => {});
+        await api.deletePersonnel(targetPrn, deleteMeta).catch(e => reportError(e, { action: `Deleting personnel record ${targetPrn}`, handler: 'deletePersonnel', ids: { prn: String(targetPrn) }, expectedStatuses: [404] }));
       }
     } catch (err) {
       console.warn('Backend deletePersonnel notice:', err.message);
@@ -5061,7 +5217,7 @@ export const AppProvider = ({ children }) => {
         fundSource: 'NATIONAL',
         fund_source: 'NATIONAL',
         isShared: false
-      });
+      }).catch(e => showToast(e.message, 'error'));
       showToast(`Converted ${teacherName} to Permanent (Own Station) in this school.`);
     }
   };
@@ -5092,9 +5248,9 @@ export const AppProvider = ({ children }) => {
         ...targetPerson,
         isSchoolHead: Boolean(isSchoolHead),
         is_school_head: Boolean(isSchoolHead)
-      });
+      }).catch(e => showToast(e.message, 'error'));
       if (typeof api !== 'undefined' && api.toggleSchoolHead) {
-        api.toggleSchoolHead(id, Boolean(isSchoolHead)).catch(e => console.warn('Toggle school head backend sync notice:', e));
+        api.toggleSchoolHead(id, Boolean(isSchoolHead)).catch(e => reportError(e, { action: `Updating the School Head flag for ${id}`, handler: 'toggleSchoolHead', ids: { personnel_id: String(id) } }));
       }
     }
 
@@ -5769,7 +5925,7 @@ export const AppProvider = ({ children }) => {
           ...newLeaveRecord,
           school_id: schoolInfo?.schoolId || '108348',
           school_year: schoolInfo?.schoolYear || '2026-2027'
-        }).catch(err => console.warn('[AppContext] Async saveOverloadLateUndertime:', err.message));
+        }).catch(err => reportError(err, { action: 'Saving late/undertime for the overload record', handler: 'saveOverloadLateUndertime' }));
       } catch (e) {}
     }
 
@@ -5787,7 +5943,7 @@ export const AppProvider = ({ children }) => {
 
     if (target && target.id) {
       try {
-        api.deleteOverloadLateUndertime(target.id).catch(() => {});
+        api.deleteOverloadLateUndertime(target.id).catch(e => reportError(e, { action: 'Deleting a late/undertime record', handler: 'deleteOverloadLateUndertime', ids: { id: String(target.id) }, expectedStatuses: [404] }));
       } catch (e) {}
     }
 
@@ -5853,7 +6009,8 @@ export const AppProvider = ({ children }) => {
             hasSned: school.hasSned || false,
             hasIped: school.hasIped || false,
             hasMadrasah: school.hasMadrasah || false,
-            inclusivePrograms: school.inclusivePrograms || []
+            inclusivePrograms: school.inclusivePrograms || [],
+            curricularConfigSaved: Boolean(school.curricularConfigSaved)
           };
         }
 
@@ -7038,7 +7195,12 @@ export const AppProvider = ({ children }) => {
       isNodeCompleted,
       bypassNodeLocks,
       setBypassNodeLocks,
-      isInitialized
+      isInitialized,
+      sectionsBaseline,
+      sectionsLoadError,
+      sectionsOverlayApplied,
+      setSectionsOverlayApplied,
+      retrySectionsLoad: () => (loadInitialDataRef.current ? loadInitialDataRef.current() : Promise.resolve())
     }}>
       {children}
     </AppContext.Provider>

@@ -208,37 +208,170 @@ app.get('/api/salary-matrix', async (req, res) => {
 
 // Initialize DB schema & ensure zero VARCHAR character-length restrictions
 const initDB = async () => {
+  const dbHost = process.env.DB_HOST || 'stride-posgre-prod-01.postgres.database.azure.com';
+  const dbPort = process.env.DB_PORT || '5432';
+  const isLocalHost = dbHost === '127.0.0.1' || dbHost === 'localhost';
+  const sslMode = (!isLocalHost && (process.env.DB_SSL === 'true' || dbHost.includes('azure.com'))) || (process.env.DB_SSL === 'true' && !isLocalHost);
+
+  const errors = [];
+  let primaryStatus = 'Checking...';
+  let masterStatus = 'Checking...';
+  let authStatus = 'Checking...';
+  let primaryRow = {};
+
+  // 1. Primary Database Check
   try {
     const dbCheck = await db.query('SELECT current_database() AS db_name, current_user, inet_server_addr() AS ip, inet_server_port() AS port;');
-    const row = dbCheck.rows[0] || {};
-    const dbHost = process.env.DB_HOST || 'stride-posgre-prod-01.postgres.database.azure.com';
-    const dbPort = process.env.DB_PORT || '5432';
-    const isLocalHost = dbHost === '127.0.0.1' || dbHost === 'localhost';
-    const sslMode = (!isLocalHost && (process.env.DB_SSL === 'true' || dbHost.includes('azure.com'))) || (process.env.DB_SSL === 'true' && !isLocalHost);
+    primaryRow = dbCheck.rows[0] || {};
+    primaryStatus = `${primaryRow.db_name || process.env.DB_NAME || 'insighted_esf7'} (Connected)`;
+  } catch (err) {
+    primaryStatus = `${process.env.DB_NAME || 'insighted_esf7'} (FAILED: ${err.message}${err.code ? ` [code ${err.code}]` : ''})`;
+    errors.push({ pool: 'Primary Database', name: process.env.DB_NAME || 'insighted_esf7', error: err });
+  }
 
-    let authDbName = process.env.USERS_DB_NAME || process.env.AUTH_DB_NAME || (isLocalHost ? 'users_local' : 'users_database');
-    try {
-      const authCheck = await db.usersDbPool.query('SELECT current_database() AS auth_db;');
-      if (authCheck.rows[0]) authDbName = `${authCheck.rows[0].auth_db} (Connected)`;
-    } catch (e) {
-      authDbName = `${authDbName} (Unavailable: ${e.message})`;
+  // 2. Master Database Check (esf7_database, esf7_database_dummy, unit1_school_identity)
+  const masterInfo = db.getMasterDbInfo ? db.getMasterDbInfo() : { masterDbName: process.env.INSIGHTED_DB_NAME || process.env.DB_NAME || 'insighted_esf7', isShared: true };
+  try {
+    const masterCheck = await db.insightEdPool.query('SELECT current_database() AS master_db;');
+    const realMasterDb = masterCheck.rows[0]?.master_db || masterInfo.masterDbName;
+    masterStatus = `${realMasterDb} (Connected${masterInfo.isShared ? ' - Shared with Primary DB' : ''})`;
+  } catch (err) {
+    masterStatus = `${masterInfo.masterDbName} (FAILED: ${err.message}${err.code ? ` [code ${err.code}]` : ''})`;
+    errors.push({ pool: 'Master Database (insightEdPool)', name: masterInfo.masterDbName, error: err });
+  }
+
+  // 3. Auth / Users Database Check (user_schoolhead)
+  let authTargetName = process.env.USERS_DB_NAME || process.env.AUTH_DB_NAME || (isLocalHost ? 'users_local' : 'users_database');
+  try {
+    const authCheck = await db.usersDbPool.query('SELECT current_database() AS auth_db;');
+    const realAuthDb = authCheck.rows[0]?.auth_db || authTargetName;
+    authStatus = `${realAuthDb} (Connected)`;
+  } catch (err) {
+    authStatus = `${authTargetName} (FAILED: ${err.message}${err.code ? ` [code ${err.code}]` : ''})`;
+    errors.push({ pool: 'Auth Database (usersDbPool)', name: authTargetName, error: err });
+  }
+
+  console.log('\n========================================================================');
+  console.log('🗄️  [ACTIVE DATABASE CONNECTIONS VERIFIED]');
+  console.log(`   Primary DB    : ${primaryStatus}`);
+  console.log(`   Master DB     : ${masterStatus}`);
+  console.log(`   Auth Database : ${authStatus}`);
+  console.log(`   Host & Port   : ${dbHost}:${dbPort}${primaryRow.ip ? ` (Resolved: ${primaryRow.ip}:${primaryRow.port || dbPort})` : ''}`);
+  console.log(`   Database User : ${primaryRow.current_user || process.env.DB_USER || 'postgres'}`);
+  console.log(`   SSL Mode      : ${sslMode ? 'Enabled' : 'Disabled (Localhost/Direct)'}`);
+  console.log('========================================================================\n');
+
+  if (errors.length > 0) {
+    console.error('\n🚨 ========================================================================');
+    console.error(`❌ [STARTUP DATABASE REACHABILITY ERROR]: ${errors.length} database(s) unreachable on ${dbHost}:${dbPort}`);
+    for (const e of errors) {
+      console.error(`   - ${e.pool} ["${e.name}"]: ${e.error.message}${e.error.code ? ` (code ${e.error.code})` : ''}`);
     }
+    console.error('   Please check your .env database names, credentials, and PostgreSQL service.');
+    console.error('========================================================================\n');
+  }
 
-    console.log('\n========================================================================');
-    console.log('🗄️  [ACTIVE DATABASE CONNECTION VERIFIED]');
-    console.log(`   Primary DB    : ${row.db_name || process.env.DB_NAME || 'insighted_esf7'}`);
-    console.log(`   Auth Database : ${authDbName}`);
-    console.log(`   Host & Port   : ${dbHost}:${dbPort}${row.ip ? ` (Resolved: ${row.ip}:${row.port || dbPort})` : ''}`);
-    console.log(`   Database User : ${row.current_user || process.env.DB_USER || 'postgres'}`);
-    console.log(`   SSL Mode      : ${sslMode ? 'Enabled' : 'Disabled (Localhost/Direct)'}`);
-    console.log('========================================================================\n');
-
+  try {
     const schemaPath = path.join(__dirname, 'schema.sql');
     if (fs.existsSync(schemaPath)) {
       const sql = fs.readFileSync(schemaPath, 'utf8');
       await db.query(sql);
       console.log('✅ Database schema initialized successfully.');
     }
+
+    // Ensure master table schema (esf7_database, esf7_database_dummy, unit1_school_identity) in active DB
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS esf7_database (
+        id TEXT PRIMARY KEY,
+        schoool_id TEXT,
+        school_id TEXT,
+        school_name TEXT,
+        region TEXT,
+        division TEXT,
+        muncipality TEXT,
+        district TEXT,
+        employee_no TEXT,
+        prn TEXT,
+        first TEXT,
+        first_name TEXT,
+        middle TEXT,
+        middle_name TEXT,
+        last TEXT,
+        last_name TEXT,
+        last_first TEXT,
+        tin TEXT,
+        gender TEXT,
+        sex TEXT,
+        sex_at_birth TEXT,
+        civil_status TEXT,
+        religion TEXT,
+        ehtinic_group TEXT,
+        ethnic_group TEXT,
+        birthday_yyyy TEXT,
+        birthday_mm TEXT,
+        birthday_dd TEXT,
+        birthdate TEXT,
+        age INTEGER,
+        position TEXT,
+        position_title TEXT,
+        position_category TEXT,
+        rank_position TEXT,
+        step_increment INTEGER,
+        degree_finished__baccalaureate TEXT,
+        college_degree TEXT,
+        major__specialization TEXT,
+        major TEXT,
+        minor TEXT,
+        highest_educational_attainment TEXT,
+        post_graduate__degree TEXT,
+        post_graduate_degree TEXT,
+        post_graduate_discipline TEXT,
+        eligibility JSONB,
+        prc_specialization TEXT,
+        fund_source TEXT,
+        nature_of_appointment TEXT,
+        hiring_arrangement TEXT,
+        deployment_status TEXT,
+        appt_yyyy TEXT,
+        appt_mm TEXT,
+        appt_dd TEXT,
+        first_service_date TEXT,
+        station_yyyy TEXT,
+        station_mm TEXT,
+        station_dd TEXT,
+        new_station_date TEXT,
+        last_promotion_date TEXT,
+        last_lateral_movement_date TEXT,
+        teaching_load TEXT,
+        phylsys_num TEXT,
+        esf7_id TEXT,
+        is_school_head BOOLEAN DEFAULT FALSE,
+        deped_email TEXT,
+        college_degrees JSONB,
+        degree_rows JSONB,
+        grade_levels_taught JSONB,
+        assigned_schools JSONB,
+        raw_payload JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_esf7_database_school_id ON esf7_database (school_id);
+      CREATE INDEX IF NOT EXISTS idx_esf7_database_schoool_id ON esf7_database (schoool_id);
+      CREATE INDEX IF NOT EXISTS idx_esf7_database_prn ON esf7_database (prn);
+      CREATE INDEX IF NOT EXISTS idx_esf7_database_employee_no ON esf7_database (employee_no);
+
+      CREATE TABLE IF NOT EXISTS esf7_database_dummy (LIKE esf7_database INCLUDING ALL);
+
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'schools_iern') THEN
+          CREATE OR REPLACE VIEW unit1_school_identity AS
+            SELECT school_id, school_name, region, division, district, ''::text AS curricular_offering
+            FROM schools_iern;
+        END IF;
+      END $$;
+    `).catch((err) => console.warn('[Master tables check warning]:', err.message));
 
     // Self-healing: expand critical VARCHAR columns to TEXT so ID and error strings never truncate
     await db.query(`
@@ -272,7 +405,7 @@ const initDB = async () => {
       WHERE status = 'processing'
     `).catch(() => {});
   } catch (err) {
-    console.error(`\n❌ [Database Connection Error]: Could not access database "${process.env.DB_NAME || 'insighted_esf7'}" on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
+    console.error(`\n❌ [Database Initialization Error]: Could not initialize database "${process.env.DB_NAME || 'insighted_esf7'}" on ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
     console.error(`   Error details: ${err.message}\n`);
   }
 };

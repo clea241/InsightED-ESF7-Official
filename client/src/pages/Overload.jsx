@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { reportError } from '../services/errorAlert';
 import { useApp, DEFAULT_PH_HOLIDAYS, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import PortalHeader from '../components/PortalHeader';
@@ -1460,7 +1461,7 @@ export default function Overload() {
         items: itemsToSync,
         schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
         term: activeTermKey || 'Term 1'
-      }).catch(err => console.warn('[Overload AutoSync] Error:', err.message));
+      }).catch(err => reportError(err, { action: 'Syncing overload data', handler: 'Overload auto-sync' }));
     }, 500);
 
     return () => clearTimeout(timeout);
@@ -3963,7 +3964,7 @@ export default function Overload() {
                                                 phtr: item.phtr,
                                                 overloadPay: item.overloadPay
                                               }
-                                            }).catch(err => console.warn('[Overload] Saving reasons failed:', err.message));
+                                            }).catch(err => reportError(err, { action: 'Saving overload reasons', handler: 'Overload reasons save' }));
                                           }
                                         }}
                                         style={{

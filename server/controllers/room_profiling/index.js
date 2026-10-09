@@ -546,19 +546,10 @@ router.get('/roster', async (req, res) => {
       return res.json(cacheRows[0].roster_json);
     }
 
-    // 3. Check school_drafts
-    const { rows: draftRows } = await db.query(`
-      SELECT draft_data 
-      FROM school_drafts 
-      WHERE school_id = $1 OR school_id = $2
-      ORDER BY updated_at DESC LIMIT 1
-    `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] }));
+    // (The old school_drafts step was removed: it queried a column that does not exist, so it never returned anything,
+    // and the draft is a backup of unsaved work, not a roster source.)
 
-    if (draftRows && draftRows.length > 0 && draftRows[0].draft_data && Array.isArray(draftRows[0].draft_data.personnel) && draftRows[0].draft_data.personnel.length > 0) {
-      return res.json(draftRows[0].draft_data.personnel);
-    }
-
-    // 4. Fallback to database personnel with full payload
+    // 3. Registered personnel from the database
     const { rows } = await db.query(`
       SELECT id, prn, first_name as "firstName", last_name as "lastName", middle_name as "middleName",
              birthdate, raw_payload
@@ -637,34 +628,23 @@ router.post('/verify-passcode', async (req, res) => {
     }
 
     if (!roster || roster.length === 0) {
-      const { rows: draftRows } = await db.query(`
-        SELECT draft_data 
-        FROM school_drafts 
+      const { rows } = await db.query(`
+        SELECT id, prn, first_name as "firstName", last_name as "lastName", middle_name as "middleName",
+               birthdate, raw_payload
+        FROM esf7_personnel_profile
         WHERE school_id = $1 OR school_id = $2
-        ORDER BY updated_at DESC LIMIT 1
       `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] }));
 
-      if (draftRows && draftRows.length > 0 && draftRows[0].draft_data && Array.isArray(draftRows[0].draft_data.personnel) && draftRows[0].draft_data.personnel.length > 0) {
-        roster = draftRows[0].draft_data.personnel;
-      } else {
-        const { rows } = await db.query(`
-          SELECT id, prn, first_name as "firstName", last_name as "lastName", middle_name as "middleName",
-                 birthdate, raw_payload
-          FROM esf7_personnel_profile
-          WHERE school_id = $1 OR school_id = $2
-        `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] }));
-
-        roster = (rows || []).map(r => ({
-          ...(r.raw_payload || {}),
-          id: r.id,
-          prn: r.prn,
-          firstName: r.firstName,
-          lastName: r.lastName,
-          middleName: r.middleName,
-          birthdate: r.birthdate || r.raw_payload?.birthdate,
-          position: r.raw_payload?.position || 'Teacher'
-        }));
-      }
+      roster = (rows || []).map(r => ({
+        ...(r.raw_payload || {}),
+        id: r.id,
+        prn: r.prn,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        middleName: r.middleName,
+        birthdate: r.birthdate || r.raw_payload?.birthdate,
+        position: r.raw_payload?.position || 'Teacher'
+      }));
     }
 
     let matched = null;

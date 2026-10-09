@@ -7487,7 +7487,7 @@ export default function Workload() {
         updatedPersonnelList.push(fullySaved);
 
         if (savePersonnelChanges) {
-          await savePersonnelChanges(p.id, fullySaved, { skipWorkloadSync: true });
+          await savePersonnelChanges(p.id, fullySaved, { skipWorkloadSync: true, skipApiUpdate: true });
         }
       } catch (err) {
         console.warn("Error saving workload batch for", p.id, err);
@@ -7574,7 +7574,7 @@ export default function Workload() {
           workloadVerified: false,
           needsTimeReview: false,
           ...(clearedVersion ? { workloadBaseVersion: clearedVersion } : {})
-        });
+        }, { skipApiUpdate: true });
       }
       if (clearedVersion) applyWorkloadToPerson(activePersonId, { termRows: null, baseVersion: clearedVersion });
 
@@ -10552,6 +10552,11 @@ export default function Workload() {
         term: activeTerm || '1st'
       }));
 
+      // The server reports how many rows it wrote. Rows were sent but none (or fewer) were written = the save failed.
+      if (sentRows.length > 0 && Number(res?.rowsWritten ?? res?.count ?? 0) < sentRows.length) {
+        throw new Error(`The server reported writing ${Number(res?.rowsWritten ?? res?.count ?? 0)} of ${sentRows.length} schedule blocks, so nothing was marked as saved. Your changes are kept on this device; please press Save again.`);
+      }
+
       // Verify the write: what the server says it saved must be what was sent. If the reply does not prove it,
       // read the rows back from the database before anyone shows success or clears a draft.
       const terms = Array.from(new Set([...sentRows.map(r => r.term || '1st'), activeTerm || '1st']));
@@ -10636,7 +10641,7 @@ export default function Workload() {
       const { person: updatedPerson, edited } = commitConfirmedSave(currentPerson, res);
 
       if (savePersonnelChanges) {
-        await savePersonnelChanges(currentPerson.id, updatedPerson, { skipWorkloadSync: true });
+        await savePersonnelChanges(currentPerson.id, updatedPerson, { skipWorkloadSync: true, skipApiUpdate: true });
       }
 
       broadcastClusteredSlots(updatedPerson.workloadRows);
@@ -10689,7 +10694,7 @@ export default function Workload() {
       const res = await persistWorkloadToServer(updated);
       const { person: fullyUpdated, edited } = commitConfirmedSave(updated, res);
       if (savePersonnelChanges) {
-        await savePersonnelChanges(currentPerson.id, fullyUpdated, { skipWorkloadSync: true });
+        await savePersonnelChanges(currentPerson.id, fullyUpdated, { skipWorkloadSync: true, skipApiUpdate: true });
       }
 
       // Validated only if nothing was edited while the save was running.
@@ -10790,7 +10795,7 @@ export default function Workload() {
           const { person: fullyUpdated, edited } = commitConfirmedSave(updated, res);
 
           if (savePersonnelChanges) {
-            await savePersonnelChanges(p.id, fullyUpdated, { skipWorkloadSync: true });
+            await savePersonnelChanges(p.id, fullyUpdated, { skipWorkloadSync: true, skipApiUpdate: true });
           }
           markTeacherValidated(p.id, !edited);
           successfulTeachers.push(fullyUpdated);

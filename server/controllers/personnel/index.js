@@ -5,6 +5,7 @@ const path = require('path');
 const db = require('../../db');
 const { insightEdPool } = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
+const { coerceDateField, isDatePlaceholder } = require('../../utils/dateInput');
 
 const MONTH_NAME_MAP = {
   'JANUARY': '01', 'FEBRUARY': '02', 'MARCH': '03', 'APRIL': '04',
@@ -365,31 +366,33 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
   const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
   let sourceTable = isTest ? 'esf7_database_dummy' : 'esf7_database';
   let masterRes = { rows: [] };
+  // A failure to reach the master database is an ERROR, not "no data": it is logged with the exact message and travels
+  // with every record (masterSourceError) so the client can report it instead of silently trusting the fallback.
+  let masterError = null;
+  const noteMasterFailure = (label) => (err) => {
+    masterError = masterError || { query: label, message: err.message, code: err.code || null };
+    console.error(`[LocalDraft][ERROR] ${label} failed for ${cleanSchoolId}: ${err.message}${err.code ? ` (code ${err.code})` : ''}. Master database is unreachable - the roster will NOT come from esf7_database.`);
+    return { rows: [] };
+  };
 
   if (isTest) {
     masterRes = await insightEdPool.query(
       `SELECT * FROM esf7_database_dummy WHERE (school_id = $1 OR schoool_id = $1)`,
       [cleanSchoolId]
-    ).catch((err) => {
-      console.warn(`[LocalDraft] Query esf7_database_dummy error for ${cleanSchoolId}:`, err.message);
-      return { rows: [] };
-    });
+    ).catch(noteMasterFailure('esf7_database_dummy query'));
   } else {
     // 1. Primary: Fast indexed lookup on school_id in production esf7_database (< 1s)
     masterRes = await insightEdPool.query(
       `SELECT * FROM esf7_database WHERE school_id = $1`,
       [cleanSchoolId]
-    ).catch((err) => {
-      console.warn(`[LocalDraft] Primary indexed query failed for ${cleanSchoolId}:`, err.message);
-      return { rows: [] };
-    });
+    ).catch(noteMasterFailure('esf7_database primary indexed query'));
 
     // Fallback: If 0 rows found with school_id, check schoool_id
     if (masterRes.rows.length === 0) {
       masterRes = await insightEdPool.query(
         `SELECT * FROM esf7_database WHERE schoool_id = $1`,
         [cleanSchoolId]
-      ).catch(() => ({ rows: [] }));
+      ).catch(noteMasterFailure('esf7_database schoool_id query'));
     }
 
     // 2. Secondary: If not found in production esf7_database, check test dummy table
@@ -398,7 +401,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       masterRes = await insightEdPool.query(
         `SELECT * FROM esf7_database_dummy WHERE (school_id = $1 OR schoool_id = $1)`,
         [cleanSchoolId]
-      ).catch(() => ({ rows: [] }));
+      ).catch(noteMasterFailure('esf7_database_dummy fallback query'));
       if (masterRes.rows.length > 0) {
         sourceTable = 'esf7_database_dummy';
       }
@@ -416,6 +419,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       console.log(`[LocalDraft] Found ${cacheRes.rows[0].roster_json.length} records in esf7_room_roster_cache for School ID ${cleanSchoolId}`);
       masterRes = { rows: cacheRes.rows[0].roster_json };
       sourceTable = 'esf7_room_roster_cache';
+      console.warn(`[LocalDraft][SOURCE] Using esf7_room_roster_cache as a LAST RESORT for ${cleanSchoolId} - this roster is NOT confirmed saved data.`);
     }
   }
 
@@ -424,6 +428,23 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     return [];
   }
 
+
+  // One person = one row: the same person listed twice (same PRN / employee no., else same name) is kept once, first copy wins.
+  {
+    const seenKeys = new Set();
+    const before = masterRes.rows.length;
+    masterRes = { rows: masterRes.rows.filter((r) => {
+      const prnKey = String(r.prn || r.employee_no || r.employeeNo || '').trim().toUpperCase();
+      const nameKey = `${r.firstName || r.first_name || r.first || ''} ${r.lastName || r.last_name || r.last || r.last_first || ''}`.trim().toUpperCase();
+      const key = prnKey && !prnKey.startsWith('PRN-') ? 'p:' + prnKey : (nameKey ? 'n:' + nameKey : '');
+      if (!key) return true;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    }) };
+    if (masterRes.rows.length !== before) console.warn(`[LocalDraft] Dropped ${before - masterRes.rows.length} duplicate master row(s) from ${sourceTable} for ${cleanSchoolId}.`);
+  }
+  const sourceConfirmed = sourceTable !== 'esf7_room_roster_cache';
 
   console.log(`[LocalDraft] Formatting ${masterRes.rows.length} personnel records from ${sourceTable} in-memory (0 database inserts)...`);
 
@@ -475,6 +496,9 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
 
     list.push({
       ...row,
+      masterSource: sourceTable,
+      masterSourceConfirmed: sourceConfirmed,
+      masterSourceError: masterError ? `${masterError.query}: ${masterError.message}${masterError.code ? ` (code ${masterError.code})` : ''}` : null,
       id: profileId,
       prn,
       schoolId: cleanSchoolId,
@@ -971,10 +995,34 @@ router.get('/', async (req, res) => {
 
     const workloadMap = new Map();
     for (const wRow of wklRes.rows) {
-      const pKey = String(wRow.personnel_id).toUpperCase();
+      const pKey = String(wRow.personnel_id || '').trim().toUpperCase();
+      if (!pKey) continue;
+      const formattedWkl = formatWorkloadRecord(wRow);
       if (!workloadMap.has(pKey)) workloadMap.set(pKey, []);
-      workloadMap.get(pKey).push(formatWorkloadRecord(wRow));
+      workloadMap.get(pKey).push(formattedWkl);
+
+      // Also index clean numeric key if personnel_id is PER-xxxxxx-nnn or PRN-xxxxxx-nnn
+      const stripped = pKey.replace(/^PER-/, '').replace(/^PRN-/, '');
+      if (stripped && stripped !== pKey) {
+        if (!workloadMap.has(stripped)) workloadMap.set(stripped, []);
+        workloadMap.get(stripped).push(formattedWkl);
+      }
     }
+
+    const getWorkloadForTeacher = (id, prn, empNo) => {
+      const kId = String(id || '').trim().toUpperCase();
+      const kPrn = String(prn || '').trim().toUpperCase();
+      const kEmp = String(empNo || '').trim().toUpperCase();
+      const direct = (kId && workloadMap.get(kId)) ||
+                     (kPrn && workloadMap.get(kPrn)) ||
+                     (kEmp && workloadMap.get(kEmp));
+      if (direct && direct.length > 0) return direct;
+      if (kId) {
+        const stripped = kId.replace(/^PER-/, '').replace(/^PRN-/, '');
+        if (stripped && workloadMap.has(stripped)) return workloadMap.get(stripped);
+      }
+      return [];
+    };
 
     const adminTaskMap = new Map();
     const admRes = await admPromise;
@@ -1058,7 +1106,7 @@ router.get('/', async (req, res) => {
 
       const trList = trainingsMap.get(String(row.id).toUpperCase()) || (row.prn ? trainingsMap.get(String(row.prn).toUpperCase()) : []) || [];
       const dsgList = designationsMap.get(String(row.id).toUpperCase()) || (row.prn ? designationsMap.get(String(row.prn).toUpperCase()) : []) || [];
-      const wklList = workloadMap.get(String(row.id).toUpperCase()) || (row.prn ? workloadMap.get(String(row.prn).toUpperCase()) : []) || [];
+      const wklList = getWorkloadForTeacher(row.id, row.prn, row.employee_no);
       const admList = adminTaskMap.get(String(row.id).toUpperCase()) || (row.prn ? adminTaskMap.get(String(row.prn).toUpperCase()) : []) || [];
       const formatted = formatPersonnelRecord(row, trList, dsgList, wklList, admList);
       if (formatted.id) dbMap.set(String(formatted.id).toUpperCase(), formatted);
@@ -1083,6 +1131,11 @@ router.get('/', async (req, res) => {
       if (dbMatch) {
         const isDbMatchPlaceholder = (!dbMatch.position && m.position) || 
           (dbMatch.firstName === 'TEACHER' && String(dbMatch.lastName || '').startsWith('STAFF') && m.firstName !== 'TEACHER');
+
+        const savedWkl = getWorkloadForTeacher(dbMatch.id || m.id, dbMatch.prn || m.prn, dbMatch.employee_no || m.employee_no || m.employeeNo);
+        const resolvedWkl = (Array.isArray(dbMatch.workloadRows) && dbMatch.workloadRows.length > 0)
+          ? dbMatch.workloadRows
+          : (savedWkl.length > 0 ? savedWkl : (Array.isArray(m.workloadRows) ? m.workloadRows : []));
 
         const mergedRecord = isDbMatchPlaceholder ? {
           ...m,
@@ -1114,7 +1167,7 @@ router.get('/', async (req, res) => {
           prcSpecialization: m.prcSpecialization || dbMatch.prcSpecialization,
           prc_specialization: m.prc_specialization || dbMatch.prc_specialization,
           eligibility: (Array.isArray(m.eligibility) && m.eligibility.length > 0) ? m.eligibility : dbMatch.eligibility,
-          workloadRows: Array.isArray(dbMatch.workloadRows) ? dbMatch.workloadRows : (m.workloadRows || []),
+          workloadRows: resolvedWkl,
           designations: (Array.isArray(dbMatch.designations) && dbMatch.designations.length > 0) ? dbMatch.designations : (m.designations || []),
           trainings: (Array.isArray(dbMatch.trainings) && dbMatch.trainings.length > 0) ? dbMatch.trainings : (m.trainings || [])
         } : {
@@ -1132,14 +1185,14 @@ router.get('/', async (req, res) => {
           collegeDegrees: (Array.isArray(dbMatch.collegeDegrees) && dbMatch.collegeDegrees.length > 0) ? dbMatch.collegeDegrees : (m.collegeDegrees || []),
           prcSpecialization: dbMatch.prcSpecialization || dbMatch.prc_specialization || m.prcSpecialization || m.prc_specialization || '',
           prc_specialization: dbMatch.prc_specialization || dbMatch.prcSpecialization || m.prc_specialization || m.prcSpecialization || '',
-          workloadRows: Array.isArray(dbMatch.workloadRows) ? dbMatch.workloadRows : (m.workloadRows || [])
+          workloadRows: resolvedWkl
         };
 
         mergedList.push(mergedRecord);
         if (dbMatch.id) usedDbKeys.add(String(dbMatch.id).toUpperCase());
         if (dbMatch.prn) usedDbKeys.add(String(dbMatch.prn).toUpperCase());
       } else {
-        const mWkl = workloadMap.get(idKey) || (prnKey ? workloadMap.get(prnKey) : null);
+        const mWkl = getWorkloadForTeacher(m.id, m.prn, m.employee_no || m.employeeNo);
         if (mWkl && mWkl.length > 0) {
           m.workloadRows = mWkl;
         }
@@ -1776,6 +1829,19 @@ router.post('/', async (req, res) => {
     const targetSchoolId = school_id || bodySchoolId || (req.auth && req.auth.schoolId) || '108348';
     const targetSchoolYear = school_year || bodySchoolYear || '2026-2027';
 
+    // Idempotent create: a client-chosen id (or PRN) that already exists is the same person. A retry or a second save
+    // answers "existing" and writes nothing instead of failing on the primary key or creating a second record.
+    if (req.body.id || inputPrn) {
+      const dup = await client.query(
+        'SELECT id, prn, school_id FROM esf7_personnel_profile WHERE ($1::text IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND prn = $2) LIMIT 1',
+        [req.body.id || null, inputPrn || null]
+      );
+      if (dup.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(200).json({ id: dup.rows[0].id, prn: dup.rows[0].prn, schoolId: dup.rows[0].school_id, existing: true });
+      }
+    }
+
     // Sequence ID Generation
     const countRes = await client.query(
       `SELECT COUNT(*) FROM esf7_personnel_profile WHERE school_id = $1`,
@@ -1822,7 +1888,7 @@ router.post('/', async (req, res) => {
       solo_parent === true || soloParent === 'YES' || soloParent === true,
       (religion || '').toUpperCase() || null,
       (ethnic_group || ethnicGroup || '').toUpperCase() || null,
-      birthdate || null,
+      coerceDateField(birthdate, 'birthdate'),
       computedAge,
       philsys_no || philsysNo || null,
       no_philsys === true || noPhilsys === true,
@@ -1899,10 +1965,10 @@ router.post('/', async (req, res) => {
       empDeploy,
       JSON.stringify(assigned_schools || assignedSchools || []),
       JSON.stringify(sanitizeGradeArray(assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [])),
-      first_service_date || firstServiceDate || null,
-      last_promotion_date || lastPromotionDate || null,
-      new_station_date || newStationDate || null,
-      last_lateral_movement_date || lastLateralMovementDate || null,
+      coerceDateField(first_service_date || firstServiceDate, 'first_service_date'),
+      coerceDateField(last_promotion_date || lastPromotionDate, 'last_promotion_date'),
+      coerceDateField(new_station_date || newStationDate, 'new_station_date'),
+      coerceDateField(last_lateral_movement_date || lastLateralMovementDate, 'last_lateral_movement_date'),
       JSON.stringify(req.body)
     ];
 
@@ -2074,7 +2140,7 @@ router.post('/', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error creating personnel record:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, ...(err.field ? { field: err.field } : {}) });
   } finally {
     client.release();
   }
@@ -2195,7 +2261,7 @@ router.put('/:id', async (req, res) => {
     const finalRel = (religion !== undefined ? religion : current.religion || 'CHRISTIANITY').toUpperCase();
     const rawEth = (ethnic_group !== undefined ? ethnic_group : ethnicGroup !== undefined ? ethnicGroup : current.ethnic_group || '');
     const finalEth = (rawEth === 'OTHERS' ? '' : rawEth).toUpperCase();
-    const finalBDate = birthdate !== undefined ? birthdate : current.birthdate;
+    const finalBDate = birthdate !== undefined ? (isDatePlaceholder(birthdate) && birthdate !== null && birthdate !== '' ? current.birthdate : coerceDateField(birthdate, 'birthdate')) : current.birthdate;
     const finalAge = age !== undefined ? age : sanitizeAge(current.age, finalBDate);
     const finalPhilSys = (philsys_no !== undefined ? philsys_no : philsysNo !== undefined ? philsysNo : current.philsys_no || '').trim();
     const finalNoPhilSys = (no_philsys !== undefined ? (no_philsys === true || no_philsys === 'true') : noPhilsys !== undefined ? (noPhilsys === true || noPhilsys === 'true') : current.no_philsys);
@@ -2330,10 +2396,10 @@ router.put('/:id', async (req, res) => {
       empDeploy,
       JSON.stringify(assigned_schools || assignedSchools || []),
       JSON.stringify(sanitizeGradeArray(assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [])),
-      first_service_date || firstServiceDate || null,
-      last_promotion_date || lastPromotionDate || null,
-      new_station_date || newStationDate || null,
-      last_lateral_movement_date || lastLateralMovementDate || null,
+      coerceDateField(first_service_date || firstServiceDate, 'first_service_date'),
+      coerceDateField(last_promotion_date || lastPromotionDate, 'last_promotion_date'),
+      coerceDateField(new_station_date || newStationDate, 'new_station_date'),
+      coerceDateField(last_lateral_movement_date || lastLateralMovementDate, 'last_lateral_movement_date'),
       JSON.stringify(req.body)
     ];
 
@@ -2505,7 +2571,7 @@ router.put('/:id', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error updating personnel profile:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, ...(err.field ? { field: err.field } : {}) });
   } finally {
     client.release();
   }
@@ -2658,4 +2724,5 @@ router.delete('/:id', async (req, res) => {
 router.parsePostGraduateDiscipline = parsePostGraduateDiscipline;
 router.formatPersonnelRecord = formatPersonnelRecord;
 
+router.fetchMasterPersonnelFromInsightEd = fetchMasterPersonnelFromInsightEd; // exposed for tests
 module.exports = router;

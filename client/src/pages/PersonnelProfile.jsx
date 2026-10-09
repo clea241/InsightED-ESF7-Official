@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { reportError } from '../services/errorAlert';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import PortalHeader from '../components/PortalHeader';
@@ -2171,7 +2172,7 @@ export default function PersonnelProfile() {
               degrees: p.degreeRows || p.collegeDegrees || [],
               highest_educational_attainment: p.highestEducationalAttainment || p.highest_educational_attainment || ''
             }
-          }).catch(err => console.warn('[savePersonnelNode notice]:', err.message));
+          }).catch(err => reportError(err, { action: `Updating Node Map progress for ${p.id}`, handler: 'runProfileSave', ids: { personnel_id: String(p.id) } }));
         }
       }
 

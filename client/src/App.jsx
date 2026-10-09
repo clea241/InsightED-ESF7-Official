@@ -27,6 +27,8 @@ import ServerHealthModal from './components/ServerHealthModal';
 import SaveStatusIndicator from './components/SaveStatusIndicator';
 import { subscribeHealth } from './services/serverHealth';
 import { FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
+import ErrorBoundary from './components/ErrorBoundary';
+import { setErrorAlertContext } from './services/errorAlert';
 import { subscribeDraftError, setDraftErrorContext, buildErrorReport, copyTextToClipboard } from './services/draftErrorReporter';
 
 const VIEW_LABELS = {
@@ -80,6 +82,7 @@ function MainAppContent() {
   React.useEffect(() => subscribeHealth((h) => setServerLocked(!!h.locked)), []);
   React.useEffect(() => {
     setDraftErrorContext({ userId: user?.id || user?.email || user?.username || null, role: user?.role || null });
+    setErrorAlertContext({ userId: user?.id || user?.email || user?.username || null, role: user?.role || null });
   }, [user]);
   const handleCopyDraftError = async () => {
     if (!draftError) return;
@@ -154,6 +157,7 @@ function MainAppContent() {
       <div className="app">
         <main className="main" style={{ marginLeft: 0, width: '100%' }}>
           <Topbar />
+          <ErrorBoundary resetKey={activeView} label={VIEW_LABELS[activeView]}>
           <React.Suspense fallback={<LoadingScreen message="Loading module..." />}>
           {activeView === 'dashboard' && <Dashboard />}
           {activeView === 'nodemap' && <NodeMap />}
@@ -171,6 +175,7 @@ function MainAppContent() {
           {activeView === 'room-qr' && <RoomQR />}
           {activeView === 'requests' && <RequestCenter />}
           </React.Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 

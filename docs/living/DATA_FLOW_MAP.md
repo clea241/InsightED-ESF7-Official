@@ -16,3 +16,6 @@
 - Workload page, selecting a teacher or term: `GET /api/workloads/personnel/:id/state?schoolId=&term=` returns the saved rows + version marker (`raw_payload.workloadSavedAt`); merged with the local draft per `services/workloadMerge.js`.
 - Workload Save / Save & Validate / header Save: `POST /api/workloads/bulk` stamps a new `workloadSavedAt`; the editor is rebuilt from the rows the server returns.
 - Delete one block: `DELETE /api/workloads/:id` (also stamps the marker). Clear this teacher (one term): `DELETE /api/workloads/personnel/:id/term/:term?schoolId=`. Clear All Teachers (one term): `DELETE /api/workloads/term-clear/school?schoolId=&term=`. Both also remove the term from the teacher's `raw_payload.workloadRows`.
+
+## Login load vs save (2026-10-09)
+Login (loadInitialData): READ only - GET school, draft, personnel, sections. No write until the user interacts and the draft differs from the loaded baseline. Saves: debounced auto-save / node "Complete" / explicit Save -> PUT /api/school/draft (dedupes, upserts school_drafts by school+year, then upserts esf7_personnel_node_status / esf7_school_node_status by key).

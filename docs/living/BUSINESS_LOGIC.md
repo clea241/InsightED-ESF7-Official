@@ -43,3 +43,6 @@
 - Save runs the page's real save and waits for the server's confirmation (the school draft write is awaited and must be confirmed). If it fails (502, timeout, 422...), the dialog stays open with the server's message, the draft stays and the page stays unsaved. Discard drops the drafts; navigation then skips the auto-save so discarded work is not written back.
 - The header Save button uses the same save function as the dialog. "Discard Changes" now also drops every page's draft before reloading, without a second browser prompt.
 - Overload, Room QR, Request Center, Allowances, Node Map, Dashboard and Submission have no unsaved state (they save immediately or auto-sync), so they are not guarded. School Profile still asks for the typed CONFIRM from its header Save; the dialog's Save does not.
+
+## Class sections: source of truth (2026-10-09)
+Sections live in `esf7_regular_sections` (and sibling sned/als/aral/remedial tables), never in `school_drafts`. Stable key = row id, then school + canonical school year + grade level + section name. Canonical school year format is "SY 26-27". A draft is only an unsaved overlay and needs user confirmation to be applied.

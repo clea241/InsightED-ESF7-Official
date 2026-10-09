@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
 import useDirtyGuard from '../hooks/useDirtyGuard';
 import { confirmServerDraftSaved } from '../services/screenSave';
+import { diffSections } from '../services/sectionMerge';
 import SortableTableHead from '../components/SortableTableHead';
 import SearchableDropdown from '../components/SearchableDropdown';
 import useSortableFilterableTable from '../hooks/useSortableFilterableTable';
@@ -14,6 +15,20 @@ import { FiGrid, FiBookOpen, FiBook, FiUsers, FiTrash2, FiCheck, FiX, FiTarget, 
 const ELEM_GRADE_ORDER = ['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
 const ELEM_SPECIAL_KEYS = ['SNED', 'ALS'];
 const JHS_GRADE_ORDER = ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'];
+
+// A section whose adviser cannot be matched in the loaded roster: if an adviser id IS stored, say so (amber) instead of
+// showing "Unassigned" - the assignment exists in the database, the roster just has no matching person right now.
+const AdviserMissing = ({ sec }) => {
+  const storedId = sec && (sec.advisorId || sec.adviserId || sec.tutorId);
+  if (storedId) {
+    return (
+      <span title={'Saved adviser id ' + storedId + ' was not found in the loaded roster.'} style={{ fontSize: '11px', color: '#B45309', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <FiAlertCircle size={12} /> Adviser not found in roster ({storedId})
+      </span>
+    );
+  }
+  return <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiAlertCircle size={12} /> Unassigned</span>;
+};
 
 export const getGradeRank = (gradeStr) => {
   if (!gradeStr) return 999;
@@ -701,12 +716,12 @@ export const isTeacherQualifiedForGrade = (teacher, sectionGradeLevel, sectionTy
 };
 
 export default function OrganizedClasses() {
-  const { classSections, setClassSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, setPersonnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm, showToast, setHasUnsavedChanges, completeNode, setActiveView, registerAutoSaveHandler } = useApp();
+  const { classSections, setClassSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, setPersonnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm, showToast, setHasUnsavedChanges, completeNode, setActiveView, registerAutoSaveHandler, sectionsBaseline, sectionsLoadError, retrySectionsLoad, sectionsOverlayApplied, setSectionsOverlayApplied } = useApp();
 
   const savedSectionsSnapshotRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const getSectionsSnapshot = useCallback(() => (classSections || []).map(s => ({
+  const snapshotOf = (list) => (list || []).map(s => ({
     id: s.id,
     sectionName: s.sectionName,
     gradeLevel: s.gradeLevel,
@@ -718,15 +733,41 @@ export default function OrganizedClasses() {
     specialProgramType: s.specialProgramType,
     aralBasis: s.aralBasis,
     aralToolKey: s.aralToolKey
-  })), [classSections]);
+  }));
+  const getSectionsSnapshot = useCallback(() => snapshotOf(classSections), [classSections]);
+
+  // The "saved" snapshot is what the page looked like once hydration settled. Anything the app derives after load
+  // (sanitized grades, learner defaults, advisers filled in from workload, roster re-resolution) happens BEFORE the user
+  // touches anything, so it is absorbed into the snapshot instead of being reported as an unsaved change. Only changes
+  // made after the first real interaction count. Exception: draft sections the user confirmed restoring at login are
+  // unsaved on purpose, so the snapshot stays at what the database returned.
+  const touchedRef = useRef(false);
+  useEffect(() => {
+    const mark = () => { touchedRef.current = true; };
+    const evs = ['input', 'change', 'keydown', 'click'];
+    evs.forEach(e => document.addEventListener(e, mark, true));
+    return () => evs.forEach(e => document.removeEventListener(e, mark, true));
+  }, []);
 
   useEffect(() => {
-    if (savedSectionsSnapshotRef.current === null && classSections && classSections.length > 0) {
-      savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+    if (sectionsOverlayApplied) {
+      if (savedSectionsSnapshotRef.current === null && sectionsBaseline) {
+        savedSectionsSnapshotRef.current = JSON.stringify(snapshotOf(sectionsBaseline));
+      }
+      return;
     }
-  }, [classSections, getSectionsSnapshot]);
+    if (savedSectionsSnapshotRef.current === null || !touchedRef.current) {
+      savedSectionsSnapshotRef.current = JSON.stringify(snapshotOf(classSections));
+    }
+  }, [classSections, sectionsBaseline, sectionsOverlayApplied]);
 
-  const isDirty = Boolean(savedSectionsSnapshotRef.current && JSON.stringify(getSectionsSnapshot()) !== savedSectionsSnapshotRef.current);
+  // What differs from the saved snapshot, field by field. Dirty = at least one real difference, computed at the moment it
+  // is asked (render, and the guard reads it through a ref at navigation time), never a sticky flag.
+  const dirtyReasons = (() => {
+    if (!savedSectionsSnapshotRef.current) return [];
+    try { return diffSections(JSON.parse(savedSectionsSnapshotRef.current), snapshotOf(classSections)); } catch (e) { return []; }
+  })();
+  const isDirty = dirtyReasons.length > 0;
 
   const handleDiscard = () => {
     if (savedSectionsSnapshotRef.current) {
@@ -741,6 +782,7 @@ export default function OrganizedClasses() {
   useDirtyGuard({
     screenId: 'organized_classes',
     isDirty,
+    getDirtyReasons: () => dirtyReasons,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current()
   });
@@ -2113,19 +2155,53 @@ export default function OrganizedClasses() {
       // 2. Identify deleted sections
       const deletedSections = snapshotList.filter(s => !currentIds.has(String(s.id)));
 
-      // Persist ONLY changed sections
-      for (const sec of changedSections) {
-        if (api && api.addSection) {
-          await api.addSection({
-            ...sec,
-            schoolId: schoolInfo?.schoolId,
-            schoolYear: schoolInfo?.schoolYear || 'SY 26-27'
-          });
+      // Regular sections are saved together in ONE awaited database transaction (idempotent upserts keyed by the
+      // section id / grade+name, plus the explicit deletions). Other section kinds keep their own tables and routes.
+      const regularChanged = changedSections.filter(sec => api.sectionKind(sec) === 'regular');
+      const otherChanged = changedSections.filter(sec => api.sectionKind(sec) !== 'regular');
+      const regularDeleted = deletedSections.filter(sec => api.sectionKind(sec) === 'regular');
+      const otherDeleted = deletedSections.filter(sec => api.sectionKind(sec) !== 'regular');
+      const saveYear = schoolInfo?.schoolYear || 'SY 26-27';
+
+      if (regularChanged.length > 0 || regularDeleted.length > 0) {
+        const resp = await api.syncRegularSections({
+          schoolId: schoolInfo?.schoolId,
+          schoolYear: saveYear,
+          sections: regularChanged.map(sec => ({ ...sec, schoolId: schoolInfo?.schoolId, schoolYear: saveYear })),
+          deletedIds: regularDeleted.map(sec => String(sec.id))
+        });
+        // Verify what the database stored before anything is reported as saved: same number of sections, and each section's
+        // stored adviser equals the one that was sent ("" = Unassigned on purpose). A mismatch is a failed save.
+        const savedList = resp?.sections || [];
+        if (savedList.length !== regularChanged.length) {
+          throw new Error('The server confirmed ' + savedList.length + ' of ' + regularChanged.length + ' sections, so nothing was marked as saved.');
         }
+        const adviserOf = (x) => String((x && (x.advisorId || x.adviserId)) || '').trim();
+        const adviserMismatch = regularChanged.find((sent, i) => adviserOf(sent) !== adviserOf(savedList[i]));
+        if (adviserMismatch) {
+          const i = regularChanged.indexOf(adviserMismatch);
+          throw new Error('Section ' + (adviserMismatch.gradeLevel || '') + ' ' + (adviserMismatch.sectionName || '') + ': the database stored adviser "' + (adviserOf(savedList[i]) || 'none') + '" but "' + (adviserOf(adviserMismatch) || 'none') + '" was sent.');
+        }
+        const notProfiled = savedList.filter(x => adviserOf(x) && x.adviserLinked === false);
+        if (notProfiled.length > 0 && showToast) {
+          showToast(notProfiled.length + ' adviser(s) are saved but have no personnel profile yet (set up in Personnel Profiling to link them).', 'warning');
+        }
+        // The database may already know a section under another id: adopt the saved id so it never shows up twice.
+        const idFix = new Map();
+        (resp?.sections || []).forEach((saved, i) => { if (regularChanged[i] && String(saved.id) !== String(regularChanged[i].id)) idFix.set(String(regularChanged[i].id), saved.id); });
+        if (idFix.size > 0) setClassSections(prev => prev.map(s => (idFix.has(String(s.id)) ? { ...s, id: idFix.get(String(s.id)) } : s)));
       }
 
-      // Persist deletions
-      for (const delSec of deletedSections) {
+      for (const sec of otherChanged) {
+        await api.addSection({
+          ...sec,
+          schoolId: schoolInfo?.schoolId,
+          schoolYear: saveYear
+        });
+      }
+
+      // Persist deletions of the other section kinds
+      for (const delSec of otherDeleted) {
         if (api && api.deleteSection) {
           try {
             await api.deleteSection(delSec.id);
@@ -2142,6 +2218,7 @@ export default function OrganizedClasses() {
 
       // Update snapshot
       savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+      if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
 
       // Complete Node without forcing navigation
       if (completeNode) {
@@ -2183,6 +2260,13 @@ export default function OrganizedClasses() {
         continueText="Save"
         continueDisabled={!isDirty || isSaving}
       />
+      {sectionsLoadError && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#FFFBEB', border: '1px solid #FCD34D', color: '#78350F', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', fontWeight: 600 }}>
+          <FiAlertCircle size={16} />
+          <span style={{ flex: 1, minWidth: '220px' }}>Could not confirm your sections from the database ({sectionsLoadError}). Showing your draft - not yet confirmed saved.</span>
+          <button type="button" className="btn secondary" onClick={() => retrySectionsLoad && retrySectionsLoad()}>Retry</button>
+        </div>
+      )}
       <section id="classes" className="view" style={{ width: '100%' }}>
         <article className="card" style={{ width: '100%', marginBottom: '24px' }}>
           <div className="card-inner">
@@ -3051,9 +3135,7 @@ export default function OrganizedClasses() {
                                         )}
                                       </div>
                                     ) : (
-                                      <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                        <FiAlertCircle size={12} /> Unassigned
-                                      </span>
+                                      <AdviserMissing sec={sec} />
                                     )}
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
@@ -3246,7 +3328,7 @@ export default function OrganizedClasses() {
                                   <td style={{ padding: '10px 12px' }}>
                                     {advisor
                                       ? <span style={{ fontWeight: '700', color: '#0F172A', fontSize: '12px' }}>{advisor.firstName} {advisor.lastName}</span>
-                                      : <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiAlertCircle size={12} /> Unassigned</span>}
+                                      : <AdviserMissing sec={sec} />}
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
@@ -3373,7 +3455,7 @@ export default function OrganizedClasses() {
                                   <td style={{ padding: '10px 12px' }}>
                                     {advisor
                                       ? <span style={{ fontWeight: '700', color: '#0F172A', fontSize: '12px' }}>{advisor.firstName} {advisor.lastName}</span>
-                                      : <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiAlertCircle size={12} /> Unassigned</span>}
+                                      : <AdviserMissing sec={sec} />}
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
@@ -3515,7 +3597,7 @@ export default function OrganizedClasses() {
                                   </td>
                                   <td style={{ padding: '10px 12px' }}>
                                     {tutor ? <span style={{ fontWeight: '700', color: '#0F172A', fontSize: '12px' }}>{tutor.firstName} {tutor.lastName}</span>
-                                      : <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiAlertCircle size={12} /> Unassigned</span>}
+                                      : <AdviserMissing sec={sec} />}
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
@@ -3699,7 +3781,7 @@ export default function OrganizedClasses() {
                                   </td>
                                   <td style={{ padding: '10px 12px' }}>
                                     {teacher ? <span style={{ fontWeight: '700', color: '#0F172A', fontSize: '12px' }}>{teacher.firstName} {teacher.lastName}</span>
-                                      : <span style={{ fontSize: '11px', color: '#EF4444', fontStyle: 'italic', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FiAlertCircle size={12} /> Unassigned</span>}
+                                      : <AdviserMissing sec={sec} />}
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>

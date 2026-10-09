@@ -11,6 +11,7 @@ import {
  * @param {Object} options
  * @param {string} options.screenId - Unique identifier for the screen (e.g. 'school_profile', 'roster')
  * @param {boolean} [options.isDirty] - Optional external boolean controlling dirty state
+ * @param {Function} [options.getDirtyReasons] - Optional: returns [{ section|field, from, to }] explaining WHY the screen is dirty (logged in development)
  * @param {Function} [options.onDiscard] - Callback to revert screen data when changes are discarded
  * @param {Function} [options.onSave] - Async save used by the dialog's Save button; resolves { ok, title?, message? } (same handler as the screen's Save button)
  * @param {any} [options.initialSnapshot] - Baseline snapshot for data comparison
@@ -20,6 +21,7 @@ export function useDirtyGuard({
   isDirty: externalIsDirty,
   onDiscard: externalOnDiscard,
   onSave: externalOnSave,
+  getDirtyReasons: externalGetDirtyReasons,
   initialSnapshot = null
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -33,6 +35,9 @@ export function useDirtyGuard({
   const onDiscardRef = useRef(externalOnDiscard);
   onDiscardRef.current = externalOnDiscard;
 
+  const reasonsRef = useRef(externalGetDirtyReasons);
+  reasonsRef.current = externalGetDirtyReasons;
+
   const onSaveRef = useRef(externalOnSave);
   onSaveRef.current = externalOnSave;
   const supportsSave = typeof externalOnSave === 'function';
@@ -40,6 +45,8 @@ export function useDirtyGuard({
   useEffect(() => {
     const unregister = registerDirtyGuard(screenId, {
       isDirty: () => isDirtyRef.current,
+      getDirtyReasons: () => (typeof reasonsRef.current === 'function' ? reasonsRef.current() : null),
+      screenId,
       onDiscard: () => {
         if (typeof onDiscardRef.current === 'function') {
           try {

@@ -346,3 +346,19 @@ export const compareDraftToDatabase = ({ personId, term, dbRows, dbVersion, loca
   const summary = { ...summarizeWorkloadDiff(personId, term, dbList, resolved.rows), overlapsReplaced: resolved.dropped, conflicts };
   return { action: 'prompt', reason: conflicts > 0 ? 'blocks-changed-on-both-sides' : (newer === true ? 'draft-is-newer' : 'draft-has-additional-or-different-blocks'), draftNewer: newer, rows: resolved.rows, summary };
 };
+
+/**
+ * Login-time overlay of the SAVED workload (esf7_workload_rows) onto a teacher that came from a draft.
+ * Database first: for every term the database has rows for, the database rows are the schedule (deduplicated);
+ * terms the database knows nothing about keep the draft's rows (shown, but not confirmed saved). A teacher with
+ * unsaved local workload edits (hasUnsavedLocalEdits) keeps the draft untouched - the Workload page's conflict
+ * dialog handles that case. Nothing is written; the result is a new array, inputs are not mutated.
+ */
+export const overlayDatabaseWorkload = ({ personId, draftRows, dbRows, hasUnsavedLocalEdits = false }) => {
+  const draft = Array.isArray(draftRows) ? draftRows : [];
+  const db = Array.isArray(dbRows) ? dbRows.filter(Boolean) : [];
+  if (db.length === 0 || hasUnsavedLocalEdits) return draft;
+  const dbTerms = new Set(db.map((r) => termOf(r)));
+  const keptFromDraft = draft.filter((r) => !dbTerms.has(termOf(r)));
+  return dedupeWorkloadRows(personId, [...db, ...keptFromDraft]);
+};

@@ -5,6 +5,7 @@ const { insightEdPool, usersDbPool } = require('../../db');
 const cacheService = require('../../services/cacheService');
 
 const { getSchoolIdFromRequest } = require('../../utils/auth');
+const { dedupeSections, dedupePersonnel } = require('../../utils/draftDedupe');
 const { resolveTestDivision } = require('../../utils/divisionTestRegistry');
 
 // GET school info directly from unit1_school_identity
@@ -329,7 +330,9 @@ const handleGetSchool = async (req, res) => {
       hasSned,
       hasIped,
       hasMadrasah,
-      inclusivePrograms
+      inclusivePrograms,
+      // true when esf7_school_profile has a saved row for this school (the database, not a draft, holds the configuration)
+      curricularConfigSaved: localProf.rows.length > 0
     });
 
   } catch (err) {
@@ -400,6 +403,13 @@ const handleGetDraft = async (req, res) => {
       } catch (e) {
         console.warn('[handleGetDraft] Deletion filter check warning:', e.message);
       }
+    }
+
+    // Read-only repair of already-duplicated drafts: the response is clean, nothing is written back from a GET.
+    if (payload && typeof payload === 'object') {
+      if (Array.isArray(payload.classSections)) payload.classSections = dedupeSections(payload.classSections);
+      if (Array.isArray(payload.sections)) payload.sections = dedupeSections(payload.sections);
+      if (Array.isArray(payload.personnel)) payload.personnel = dedupePersonnel(payload.personnel);
     }
 
     res.json({
@@ -480,7 +490,9 @@ async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
     let workloadDoneCount = 0;
 
     for (const p of personnelList) {
-      const pId = String(p.id || p.prn || `PER-${schoolId}-${Math.random().toString(36).substring(2, 7)}`);
+      // Never invent an id here: a random one would create a brand-new row on every save. No stable key = no derived row.
+      if (!p || (!p.id && !p.prn)) continue;
+      const pId = String(p.id || p.prn);
       const pName = `${p.lastName || ''}, ${p.firstName || ''} ${p.middleName || ''}`.trim() || 'TEACHER';
       const pPos = p.position || p.plantilla_position || p.position_title || '';
       const pCat = p.type === 'teaching-related' || p.positionCategory === 'RELATED TEACHING' ? 'RELATED TEACHING' : (p.type === 'non-teaching' ? 'NON-TEACHING' : 'TEACHING');
@@ -790,6 +802,11 @@ const handleSaveDraft = async (req, res) => {
         finalPayload.classSections = Array.from(sectionMap.values());
       }
     }
+
+    // Last line of defence: whatever path built the lists, a draft is never stored with two copies of one record.
+    if (Array.isArray(finalPayload.classSections)) finalPayload.classSections = dedupeSections(finalPayload.classSections);
+    if (Array.isArray(finalPayload.sections)) finalPayload.sections = dedupeSections(finalPayload.sections);
+    if (Array.isArray(finalPayload.personnel)) finalPayload.personnel = dedupePersonnel(finalPayload.personnel);
 
     const withVersion = await hasDraftVersionColumn();
     let saved;
