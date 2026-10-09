@@ -24,12 +24,7 @@ import {
 } from "../services/workloadSave";
 import { showWorkloadRestoreModal } from "../services/dirtyGuard";
 import { reportError } from "../services/errorAlert";
-import {
-  isAllowanceDisabled,
-  isAllowanceActive,
-  hasActiveAllowance,
-  ALLOWANCE_KEYS,
-} from "@shared/allowances.js";
+import { isAllowanceDisabled, isAllowanceActive } from "@shared/allowances.js";
 import {
   FiUser,
   FiGrid,
@@ -67,7 +62,6 @@ import {
   FiAward,
   FiSlash,
   FiSquare,
-  FiInfo,
 } from "react-icons/fi";
 
 // What happened to the draft check for each teacher + term since this page was loaded (reset by a browser reload):
@@ -11664,29 +11658,34 @@ function WorkloadInner() {
 
   // add60MinutesToTime is exported at module level (top of file)
 
-  const getAssignedGradeLevels = (p) => {
-    if (!p || typeof p !== "object") return [];
-    let raw =
-      p.assignedGradeLevels ||
-      p.assigned_grade_levels ||
-      p.gradeLevelsTaught ||
-      p.grade_levels_taught;
-    if (typeof raw === "string") {
-      try {
-        raw = JSON.parse(raw);
-      } catch (e) {
-        raw = raw
-          .split(",")
-          .map((s) => String(s || "").trim())
-          .filter(Boolean);
+  const getAssignedGradeLevels = useCallback(
+    (p) => {
+      if (!p || typeof p !== "object") return [];
+      let raw =
+        p.assignedGradeLevels ||
+        p.assigned_grade_levels ||
+        p.gradeLevelsTaught ||
+        p.grade_levels_taught;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch (e) {
+          raw = raw
+            .split(",")
+            .map((s) => String(s || "").trim())
+            .filter(Boolean);
+        }
       }
-    }
-    const assigned = Array.isArray(raw) ? raw.filter(Boolean).map(String) : [];
-    const organized = getOrganizedClassGradeLevels(p, classSections);
-    return organized.length > 0
-      ? [...new Set([...assigned, ...organized])]
-      : assigned;
-  };
+      const assigned = Array.isArray(raw)
+        ? raw.filter(Boolean).map(String)
+        : [];
+      const organized = getOrganizedClassGradeLevels(p, classSections);
+      return organized.length > 0
+        ? [...new Set([...assigned, ...organized])]
+        : assigned;
+    },
+    [classSections],
+  );
 
   // Filter people list based on search query, grade level, and category (teaching / teaching-related)
   const filteredPeople = useMemo(() => {
@@ -11743,7 +11742,13 @@ function WorkloadInner() {
 
       return matchesSearch && matchesCat && matchesGrade;
     });
-  }, [personnel, teacherSearch, categoryFilter, gradeFilter, classSections]);
+  }, [
+    personnel,
+    teacherSearch,
+    categoryFilter,
+    gradeFilter,
+    getAssignedGradeLevels,
+  ]);
 
   const dbPerson =
     (personnel || []).find(
