@@ -2739,7 +2739,10 @@ const isInvalidClassSection = (sec) => {
 
 const sanitizeClassSectionList = (list) => {
   if (!Array.isArray(list)) return [];
-  return list.filter(sec => !isInvalidClassSection(sec)).map(sec => {
+  const map = new Map();
+  const naturalKeyIndex = new Map();
+
+  list.filter(sec => !isInvalidClassSection(sec)).forEach(sec => {
     let cleanGrade = sec.gradeLevel || sec.grade_level || '';
     const upperG = String(cleanGrade).toUpperCase().trim();
     if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
@@ -2765,8 +2768,39 @@ const sanitizeClassSectionList = (list) => {
       delete sanitized.interventionType;
     }
 
-    return sanitized;
+    const sid = (sanitized.id && String(sanitized.id).trim()) ? String(sanitized.id).trim() : null;
+    const gl = String(cleanGrade).trim().toUpperCase();
+    const sn = String(sanitized.sectionName || sanitized.section_name || '').trim().toUpperCase();
+    const st = String(sanitized.sectionType || sanitized.section_type || 'MONO GRADE').trim().toUpperCase();
+    const nKey = (gl && sn) ? `${gl}::${sn}::${st}` : null;
+
+    let targetKey = null;
+    if (sid && map.has(sid)) {
+      targetKey = sid;
+    } else if (nKey && naturalKeyIndex.has(nKey)) {
+      targetKey = naturalKeyIndex.get(nKey);
+    } else {
+      targetKey = sid || nKey || `sec-${Math.random().toString(36).substring(2, 9)}`;
+    }
+
+    if (map.has(targetKey)) {
+      const prev = map.get(targetKey);
+      const merged = { ...prev, ...sanitized };
+      if ((sanitized.numberOfLearners === null || sanitized.numberOfLearners === undefined || sanitized.numberOfLearners === '') &&
+          (prev.numberOfLearners !== null && prev.numberOfLearners !== undefined && prev.numberOfLearners !== '')) {
+        merged.numberOfLearners = prev.numberOfLearners;
+        merged.maleLearners = prev.maleLearners;
+        merged.femaleLearners = prev.femaleLearners;
+      }
+      map.set(targetKey, merged);
+      if (nKey) naturalKeyIndex.set(nKey, targetKey);
+    } else {
+      map.set(targetKey, sanitized);
+      if (nKey) naturalKeyIndex.set(nKey, targetKey);
+    }
   });
+
+  return Array.from(map.values());
 };
 
 export const AppProvider = ({ children }) => {

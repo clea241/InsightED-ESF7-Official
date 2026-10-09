@@ -9,16 +9,16 @@ npm error code 127
 npm error path /var/www/html/InsightED-ROSDO/insighted-esf7-prod
 npm error command failed
 npm error command sh -c husky
-npm error A complete log of this run can be found in: /home/Administrator1/.npm/_logs/2026-10-09T01_44_14_338Z-debug-0.log
+npm error A complete log of this run can be found in: /home/Administrator1/.npm/_logs/2026-10-09T05_11_49_008Z-debug-0.log
 
-up to date in 2s
+up to date in 391ms
        -> Reloading insighted-esf7-prod-backend cluster with zero downtime (--update-env)...
 [PM2] Applying action reloadProcessId on app [insighted-esf7-prod-backend](ids: [ 363, 364, 365, 366 ])
 [PM2] Applying action reloadProcessId on app [insighted-esf7-prod-worker](ids: [ 370 ])
 [PM2] [insighted-esf7-prod-worker](370) ✓
 [PM2] [insighted-esf7-prod-backend](364) ✓
 [PM2] [insighted-esf7-prod-backend](363) ✓
-[PM2] [insighted-esf7-prod-backend](365) ✓
 [PM2] [insighted-esf7-prod-backend](366) ✓
+[PM2] [insighted-esf7-prod-backend](365) ✓
 [PM2] Saving current process list...
 [PM2] Successfully saved in /home/Administrator1/.pm2/dump.pm2

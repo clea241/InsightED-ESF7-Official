@@ -642,10 +642,23 @@ const handleSaveDraft = async (req, res) => {
     // 2. Class Sections: Per-record upsert keyed by stable id and protection against accidental drops
     const incomingSections = Array.isArray(payload.classSections) ? payload.classSections : (Array.isArray(payload.sections) ? payload.sections : null);
     if (incomingSections !== null) {
-      if (oldSections.length > 0) {
-        const allowDeletion = Boolean(payload.allowSectionDeletion || req.body.allowSectionDeletion);
-        const deletedIds = Array.isArray(payload.deletedSectionIds) ? new Set(payload.deletedSectionIds.map(String)) : new Set();
+      const allowDeletion = Boolean(payload.allowSectionDeletion || req.body.allowSectionDeletion);
+      const deletedIds = Array.isArray(payload.deletedSectionIds) ? new Set(payload.deletedSectionIds.map(String)) : new Set();
 
+      const getNaturalKey = (s) => {
+        if (!s) return null;
+        const gl = String(s.gradeLevel || s.grade_level || '').trim().toUpperCase();
+        const sn = String(s.sectionName || s.section_name || '').trim().toUpperCase();
+        const st = String(s.sectionType || s.section_type || 'MONO GRADE').trim().toUpperCase();
+        if (!gl || !sn) return null;
+        return `${gl}::${sn}::${st}`;
+      };
+
+      const getPrimaryId = (s) => {
+        return (s && s.id && String(s.id).trim()) ? String(s.id).trim() : null;
+      };
+
+      if (oldSections.length > 0) {
         // If incoming list is empty and deletion was not explicitly confirmed, preserve existing sections
         if (incomingSections.length === 0 && !allowDeletion) {
           console.warn(`[DraftSave] Prevented empty section array from overwriting ${oldSections.length} existing sections for school ${schoolId}`);
@@ -654,46 +667,127 @@ const handleSaveDraft = async (req, res) => {
           // Section count dropped without explicit deletion confirmation -> merge by stable ID to prevent data loss
           console.warn(`[DraftSave] Merging sections by stable ID: incoming ${incomingSections.length} vs existing ${oldSections.length} for school ${schoolId}`);
           const sectionMap = new Map();
+          const naturalKeyIndex = new Map();
+
+          // 1. Seed with old sections
           oldSections.forEach(s => {
-            const sid = s.id ? String(s.id) : null;
-            const gl = String(s.gradeLevel || s.grade_level || '').trim().toUpperCase();
-            const sn = String(s.sectionName || s.section_name || '').trim().toUpperCase();
-            if (sid) sectionMap.set(sid, s);
-            if (gl && sn) sectionMap.set(`${gl}::${sn}`, s);
+            if (!s) return;
+            const pid = getPrimaryId(s);
+            const nKey = getNaturalKey(s);
+            if (pid && deletedIds.has(pid)) return;
+
+            const canonicalKey = pid || nKey;
+            if (!canonicalKey) return;
+
+            if (nKey && naturalKeyIndex.has(nKey)) {
+              const prevKey = naturalKeyIndex.get(nKey);
+              const prev = sectionMap.get(prevKey);
+              sectionMap.set(prevKey, { ...prev, ...s });
+            } else {
+              sectionMap.set(canonicalKey, { ...s });
+              if (nKey) naturalKeyIndex.set(nKey, canonicalKey);
+            }
           });
 
-          // Overlay incoming items
+          // 2. Overlay incoming items
           incomingSections.forEach(s => {
-            const sid = s.id ? String(s.id) : null;
-            const gl = String(s.gradeLevel || s.grade_level || '').trim().toUpperCase();
-            const sn = String(s.sectionName || s.section_name || '').trim().toUpperCase();
-            const matchKey = (sid && sectionMap.has(sid)) ? sid : ((gl && sn && sectionMap.has(`${gl}::${sn}`)) ? `${gl}::${sn}` : null);
-            if (matchKey) {
-              const prev = sectionMap.get(matchKey);
+            if (!s) return;
+            const pid = getPrimaryId(s);
+            const nKey = getNaturalKey(s);
+            if (pid && deletedIds.has(pid)) return;
+
+            let targetKey = null;
+            if (pid && sectionMap.has(pid)) {
+              targetKey = pid;
+            } else if (nKey && naturalKeyIndex.has(nKey)) {
+              targetKey = naturalKeyIndex.get(nKey);
+            } else {
+              targetKey = pid || nKey;
+            }
+
+            if (targetKey && sectionMap.has(targetKey)) {
+              const prev = sectionMap.get(targetKey);
               const merged = { ...prev, ...s };
               // preserve existing learner counts if incoming is null/undefined
-              if ((s.numberOfLearners === null || s.numberOfLearners === undefined || s.numberOfLearners === '') && prev.numberOfLearners !== null && prev.numberOfLearners !== undefined) {
+              if ((s.numberOfLearners === null || s.numberOfLearners === undefined || s.numberOfLearners === '') && prev.numberOfLearners !== null && prev.numberOfLearners !== undefined && prev.numberOfLearners !== '') {
                 merged.numberOfLearners = prev.numberOfLearners;
                 merged.maleLearners = prev.maleLearners;
                 merged.femaleLearners = prev.femaleLearners;
               }
-              sectionMap.set(matchKey, merged);
-            } else {
-              sectionMap.set(sid || `${gl}::${sn}`, s);
+              sectionMap.set(targetKey, merged);
+              if (nKey) naturalKeyIndex.set(nKey, targetKey);
+            } else if (targetKey) {
+              sectionMap.set(targetKey, { ...s });
+              if (nKey) naturalKeyIndex.set(nKey, targetKey);
             }
           });
 
-          finalPayload.classSections = Array.from(new Set(sectionMap.values()));
+          finalPayload.classSections = Array.from(sectionMap.values());
         } else {
-          // Normal save or explicit deletion: if deletedIds are provided, filter them out
-          if (deletedIds.size > 0) {
-            finalPayload.classSections = incomingSections.filter(s => !deletedIds.has(String(s.id)));
-          } else {
-            finalPayload.classSections = incomingSections;
-          }
+          // Normal save or explicit deletion: deduplicate incoming sections and filter deleted IDs
+          const sectionMap = new Map();
+          const naturalKeyIndex = new Map();
+
+          incomingSections.forEach(s => {
+            if (!s) return;
+            const pid = getPrimaryId(s);
+            const nKey = getNaturalKey(s);
+            if (pid && deletedIds.has(pid)) return;
+
+            let targetKey = null;
+            if (pid && sectionMap.has(pid)) {
+              targetKey = pid;
+            } else if (nKey && naturalKeyIndex.has(nKey)) {
+              targetKey = naturalKeyIndex.get(nKey);
+            } else {
+              targetKey = pid || nKey;
+            }
+
+            if (targetKey && sectionMap.has(targetKey)) {
+              const prev = sectionMap.get(targetKey);
+              const merged = { ...prev, ...s };
+              sectionMap.set(targetKey, merged);
+              if (nKey) naturalKeyIndex.set(nKey, targetKey);
+            } else if (targetKey) {
+              sectionMap.set(targetKey, { ...s });
+              if (nKey) naturalKeyIndex.set(nKey, targetKey);
+            }
+          });
+
+          finalPayload.classSections = Array.from(sectionMap.values());
         }
       } else {
-        finalPayload.classSections = incomingSections;
+        // No existing sections, deduplicate incoming
+        const sectionMap = new Map();
+        const naturalKeyIndex = new Map();
+
+        incomingSections.forEach(s => {
+          if (!s) return;
+          const pid = getPrimaryId(s);
+          const nKey = getNaturalKey(s);
+          if (pid && deletedIds.has(pid)) return;
+
+          let targetKey = null;
+          if (pid && sectionMap.has(pid)) {
+            targetKey = pid;
+          } else if (nKey && naturalKeyIndex.has(nKey)) {
+            targetKey = naturalKeyIndex.get(nKey);
+          } else {
+            targetKey = pid || nKey;
+          }
+
+          if (targetKey && sectionMap.has(targetKey)) {
+            const prev = sectionMap.get(targetKey);
+            const merged = { ...prev, ...s };
+            sectionMap.set(targetKey, merged);
+            if (nKey) naturalKeyIndex.set(nKey, targetKey);
+          } else if (targetKey) {
+            sectionMap.set(targetKey, { ...s });
+            if (nKey) naturalKeyIndex.set(nKey, targetKey);
+          }
+        });
+
+        finalPayload.classSections = Array.from(sectionMap.values());
       }
     }
 

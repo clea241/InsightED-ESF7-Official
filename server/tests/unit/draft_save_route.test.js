@@ -132,3 +132,19 @@ test('allowSectionDeletion allows clearing sections when user explicitly confirm
   assert.equal(rows.get('302261|SY 26-27').payload.classSections.length, 0);
 });
 
+test('duplicate sections with same ID or same grade+name are automatically deduplicated on save', async () => {
+  const duplicateSections = [
+    { id: 'sec-1', gradeLevel: 'Grade 7', sectionName: 'Section A', numberOfLearners: 40 },
+    { id: 'sec-1', gradeLevel: 'Grade 7', sectionName: 'Section A', numberOfLearners: 40 },
+    { id: 'sec-2', gradeLevel: 'Grade 8', sectionName: 'Section B', numberOfLearners: 35 },
+    { id: 'sec-diff-id', gradeLevel: 'Grade 8', sectionName: 'Section B', numberOfLearners: 35 }
+  ];
+  const res = await put({ schoolYear: 'SY 26-27', payload: { schoolInfo: { schoolId: '302261' }, personnel: [{ id: 'P1' }], classSections: duplicateSections }, baseVersion: 7 });
+  assert.equal(res.status, 200);
+  const saved = rows.get('302261|SY 26-27').payload.classSections;
+  assert.equal(saved.length, 2);
+  assert.ok(saved.some(s => s.sectionName === 'Section A'));
+  assert.ok(saved.some(s => s.sectionName === 'Section B'));
+});
+
+
