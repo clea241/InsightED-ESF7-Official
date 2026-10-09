@@ -44,8 +44,8 @@ export const describeRequest = (method, url, ids = {}) => {
   const m = String(method || 'GET').toUpperCase();
   const path = String(url || '');
   const id = ids.personnel_id || ids.personnelId || ids.id || (path.match(/\/(PER-[\w-]+|local-p-[\w-]+)/i) || [])[1] || '';
-  const hit = ROUTES.find(([re]) => re.test(path));
-  if (hit) return hit[1](m, id);
+  const hit = ROUTES.find((entry) => entry[0] instanceof RegExp && entry[0].test(path));
+  if (hit && typeof hit[1] === 'function') return hit[1](m, id);
   return m === 'GET' ? 'Loading data from the server' : 'Saving changes to the server';
 };
 
@@ -188,6 +188,7 @@ const pump = async () => {
   showing = true;
   const item = queue.shift();
   try {
+    // @ts-ignore
     const [{ default: Swal }] = await Promise.all([import('sweetalert2'), import('sweetalert2/dist/sweetalert2.min.css')]);
     const more = queue.length;
     const repeats = item.count > 1 ? `<div style="font-size:12px;color:#B45309;margin-top:6px">This happened ${item.count} times.</div>` : '';
