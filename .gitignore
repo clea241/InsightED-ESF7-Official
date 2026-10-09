@@ -1,5 +1,8 @@
 node_modules/
 .env
+.env.*
+!.env.example
+client/.env.production
 *.xlsb
 __pycache__/
 *.pyc
@@ -22,3 +25,9 @@ test-results/
 
 # Database backups (contain real personnel data)
 server/backups/
+
+# Pre-launch readiness reports (may contain sensitive findings)
+readiness-reports/
+
+# pg-health-assessment reports (may contain schema details)
+pg-health-reports/
