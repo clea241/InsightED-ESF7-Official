@@ -7,6 +7,57 @@ const { insightEdPool } = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
 const { coerceDateField, isDatePlaceholder } = require('../../utils/dateInput');
 
+function convertExcelTimeToHHMM(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  if (!isNaN(num) && num >= 0 && num < 1) {
+    const totalMinutes = Math.round(num * 24 * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(mins).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  const str = String(val).trim();
+  if (str.match(/^\d{1,2}:\d{2}/)) return str.substring(0, 5);
+  return str;
+}
+
+function parseDays(r, sfx) {
+  const d1 = r[`d1_1${sfx}`];
+  const d2 = r[`d2_1${sfx}`];
+  const d3 = r[`d3_1${sfx}`];
+  const d4 = r[`d4_1${sfx}`];
+  const d5 = r[`d5_1${sfx}`];
+  const d6 = r[`d6_1${sfx}`];
+  const d7 = r[`d7_1${sfx}`];
+
+  const days = [];
+  if (d1 === true || d1 === 'true' || d1 === 1 || d1 === '1') days.push('M');
+  if (d2 === true || d2 === 'true' || d2 === 1 || d2 === '1') days.push('T');
+  if (d3 === true || d3 === 'true' || d3 === 1 || d3 === '1') days.push('W');
+  if (d4 === true || d4 === 'true' || d4 === 1 || d4 === '1') days.push('TH');
+  if (d5 === true || d5 === 'true' || d5 === 1 || d5 === '1') days.push('F');
+  if (d6 === true || d6 === 'true' || d6 === 1 || d6 === '1') days.push('S');
+  if (d7 === true || d7 === 'true' || d7 === 1 || d7 === '1') days.push('SU');
+
+  return days.length > 0 ? days : ['M', 'T', 'W', 'TH', 'F'];
+}
+
+function sanitizeGrade(rawLvl) {
+  if (!rawLvl) return 'Grade 7';
+  const str = String(rawLvl).trim().toUpperCase();
+  if (str.includes('KINDER')) return 'Kinder';
+  if (str.includes('SNED') || str.includes('NON-GRADED') || str.includes('MULTI-GRADE')) return 'SNED (NON-GRADED)';
+  const m = str.match(/^(?:GRADE\s*|G\s*)?(\d{1,2})$/i);
+  if (m) {
+    const num = parseInt(m[1], 10);
+    if (num >= 1 && num <= 12) return `Grade ${num}`;
+  }
+  return str.startsWith('GRADE') ? str : `Grade ${str}`;
+}
+
+
 const MONTH_NAME_MAP = {
   'JANUARY': '01', 'FEBRUARY': '02', 'MARCH': '03', 'APRIL': '04',
   'MAY': '05', 'JUNE': '06', 'JULY': '07', 'AUGUST': '08',
@@ -260,20 +311,6 @@ const sanitizeAge = (rawVal, bDate) => {
   }
   return age > 0 ? age : null;
 };
-
-function convertExcelTimeToHHMM(val) {
-  if (val === null || val === undefined || val === '') return null;
-  const num = Number(val);
-  if (!isNaN(num) && num >= 0 && num < 1) {
-    const totalMinutes = Math.round(num * 24 * 60);
-    const hours = Math.floor(totalMinutes / 60);
-    const mins = totalMinutes % 60;
-    const hh = String(hours).padStart(2, '0');
-    const mm = String(mins).padStart(2, '0');
-    return `${hh}:${mm}`;
-  }
-  return String(val).trim();
-}
 
 const CANONICAL_POSITIONS_BY_CATEGORY = {
   teaching: [
@@ -585,7 +622,73 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       prcSpecialization: String(prcSpec).toUpperCase(),
       prc_specialization: String(prcSpec).toUpperCase(),
 
-      workloadRows: Array.isArray(row.workloadRows) ? row.workloadRows : [],
+      workloadRows: (() => {
+        if (Array.isArray(row.workloadRows) && row.workloadRows.length > 0) return row.workloadRows;
+        const parsedWorkloads = [];
+        for (let slot = 1; slot <= 20; slot++) {
+          const sfx = slot === 1 ? '' : `_${slot}`;
+          const subj = row[`subject_1${sfx}`];
+          const from = row[`from_1${sfx}`];
+          const to = row[`to_1${sfx}`];
+          const sec = row[`section_1${sfx}`];
+          const lvl = row[`lvl_1${sfx}`];
+          if (!subj && !from && !sec) continue;
+
+          const subjectStr = String(subj || 'GENERAL SUBJECT').trim();
+          const sectionStr = String(sec || 'SECTION 1').trim();
+          const gradeStr = sanitizeGrade(lvl);
+          const startTime = convertExcelTimeToHHMM(from) || '07:30';
+          const endTime = convertExcelTimeToHHMM(to) || '08:30';
+          const days = parseDays(row, sfx);
+          const rowId = `wkl_${cleanSchoolId}_${profileId}_${slot}`;
+          const isShs = gradeStr.includes('11') || gradeStr.includes('12') || String(row[`department_1${sfx}`] || '').toUpperCase().includes('SHS') || String(row[`categ_1${sfx}`] || '').toUpperCase().includes('SHS');
+
+          parsedWorkloads.push({
+            id: rowId,
+            personnelId: profileId,
+            personnel_id: profileId,
+            schoolId: cleanSchoolId,
+            school_id: cleanSchoolId,
+            schoolYear: '2025-2026',
+            school_year: '2025-2026',
+            gradeLevel: gradeStr,
+            grade_level: gradeStr,
+            sectionId: `SEC-${cleanSchoolId}-${slot}`,
+            section_id: `SEC-${cleanSchoolId}-${slot}`,
+            sectionName: sectionStr,
+            section_name: sectionStr,
+            subject: subjectStr,
+            subjectId: `SUB-${cleanSchoolId}-${slot}`,
+            subject_id: `SUB-${cleanSchoolId}-${slot}`,
+            remediationSubject: '',
+            remediation_subject: '',
+            startTime: startTime,
+            start_time: startTime,
+            endTime: endTime,
+            end_time: endTime,
+            days: days,
+            term: '1st',
+            trackStrand: isShs ? 'TVL/ACADEMIC' : '',
+            track_strand: isShs ? 'TVL/ACADEMIC' : '',
+            shsSubjectCategory: isShs ? 'Specialized' : '',
+            shs_subject_category: isShs ? 'Specialized' : '',
+            semester: '1st Semester',
+            rawPayload: {
+              id: rowId,
+              personnelId: profileId,
+              schoolId: cleanSchoolId,
+              gradeLevel: gradeStr,
+              sectionName: sectionStr,
+              subject: subjectStr,
+              startTime,
+              endTime,
+              days,
+              term: '1st'
+            }
+          });
+        }
+        return parsedWorkloads;
+      })(),
       neapTrainingRows: Array.isArray(row.neapTrainingRows) ? row.neapTrainingRows : [],
       certificationRows: Array.isArray(row.certificationRows) ? row.certificationRows : [],
       otherTrainingRows: Array.isArray(row.otherTrainingRows) ? row.otherTrainingRows : [],
@@ -933,6 +1036,9 @@ router.get('/', async (req, res) => {
     const wklPromise = db.query(
       `SELECT * FROM esf7_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`, [sidPair]
     ).catch(() => ({ rows: [] }));
+    const shsWklPromise = db.query(
+      `SELECT * FROM esf7_shs_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`, [sidPair]
+    ).catch(() => ({ rows: [] }));
     const admPromise = db.query(
       `SELECT * FROM esf7_admin_task WHERE school_id = $1 ORDER BY created_at ASC`, [schoolId]
     ).catch(() => ({ rows: [] }));
@@ -990,22 +1096,28 @@ router.get('/', async (req, res) => {
       ORDER BY p.created_at ASC, p.id ASC
     `, [sidPair]);
 
-    // 3. Fetch all workload rows for this school from esf7_workload_rows
-    const wklRes = await wklPromise;
+    // 3. Fetch all workload rows for this school from esf7_workload_rows and esf7_shs_workload_rows
+    const [wklRes, shsWklRes] = await Promise.all([wklPromise, (typeof shsWklPromise !== 'undefined' ? shsWklPromise : Promise.resolve({ rows: [] }))]);
 
     const workloadMap = new Map();
-    for (const wRow of wklRes.rows) {
+    for (const wRow of [...wklRes.rows, ...(shsWklRes?.rows || [])]) {
       const pKey = String(wRow.personnel_id || '').trim().toUpperCase();
       if (!pKey) continue;
       const formattedWkl = formatWorkloadRecord(wRow);
       if (!workloadMap.has(pKey)) workloadMap.set(pKey, []);
-      workloadMap.get(pKey).push(formattedWkl);
+      const existing = workloadMap.get(pKey);
+      if (!existing.some(r => r.id === wRow.id)) {
+        existing.push(formattedWkl);
+      }
 
       // Also index clean numeric key if personnel_id is PER-xxxxxx-nnn or PRN-xxxxxx-nnn
       const stripped = pKey.replace(/^PER-/, '').replace(/^PRN-/, '');
       if (stripped && stripped !== pKey) {
         if (!workloadMap.has(stripped)) workloadMap.set(stripped, []);
-        workloadMap.get(stripped).push(formattedWkl);
+        const strippedExisting = workloadMap.get(stripped);
+        if (!strippedExisting.some(r => r.id === wRow.id)) {
+          strippedExisting.push(formattedWkl);
+        }
       }
     }
 
@@ -1523,11 +1635,18 @@ router.get('/:id', async (req, res) => {
       `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
       [row.id]
     );
-    const wklRes = await db.query(
-      `SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
-      [row.id]
-    );
-    const wklList = wklRes.rows.map(formatWorkloadRecord);
+    const [wklRes, shsWklRes] = await Promise.all([
+      db.query(`SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`, [row.id]).catch(() => ({ rows: [] })),
+      db.query(`SELECT * FROM esf7_shs_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`, [row.id]).catch(() => ({ rows: [] }))
+    ]);
+    const seenWklIds = new Set();
+    const wklList = [];
+    for (const r of [...wklRes.rows, ...shsWklRes.rows]) {
+      if (!seenWklIds.has(r.id)) {
+        seenWklIds.add(r.id);
+        wklList.push(formatWorkloadRecord(r));
+      }
+    }
 
     const admRes = await db.query(
       `SELECT * FROM esf7_admin_task WHERE personnel_id = $1 ORDER BY created_at ASC`,

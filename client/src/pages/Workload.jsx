@@ -313,6 +313,122 @@ const isRemediationSub = (sub) => {
   return s === 'REMEDIATION' || s.includes('REMEDIAL') || s.includes('ENHANCEMENT') || s.includes('ENRICHMENT');
 };
 
+export const isSameGradeLevel = (gradeA, gradeB) => {
+  if (!gradeA || !gradeB) return true; // if either is missing, allow match
+  const a = String(gradeA).toUpperCase().trim();
+  const b = String(gradeB).toUpperCase().trim();
+  if (a === b) return true;
+
+  const extractGradeToken = (g) => {
+    if (!g) return '';
+    const norm = g.replace(/\s*[\u2013\u2014-]\s*/g, ' - ').trim();
+    if (norm.includes('KINDER') || norm === 'K') return 'KINDER';
+    if (norm.includes('SNED') || norm.includes('SPED') || norm.includes('NON-GRADED') || norm.includes('NON GRADED')) return 'SNED';
+    if (norm.includes('ALS')) return 'ALS';
+    if (norm.includes('ARAL')) return 'ARAL';
+    const m = norm.match(/(?:GRADE\s*|G\s*)?(\d+)/i);
+    if (m) return m[1];
+    return norm;
+  };
+
+  const tokenA = extractGradeToken(a);
+  const tokenB = extractGradeToken(b);
+  if (tokenA && tokenB && tokenA === tokenB) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  return false;
+};
+
+export const matchSectionForWorkloadRow = (row, classSections = []) => {
+  if (!row || !Array.isArray(classSections) || classSections.length === 0) return null;
+  if (isAdminTaskRow(row) || isNonTeachingTaskSubject(row.subject || row.subject_name)) return null;
+
+  const rawSecId = String(row.sectionId || row.section_id || '').trim();
+  const rawSecName = String(row.sectionName || row.section_name || row.section || '').trim();
+  const rawGrade = String(row.gradeLevel || row.grade_level || '').trim();
+
+  // 1. Direct ID match
+  if (rawSecId) {
+    const idMatch = classSections.find(s => String(s.id).trim() === rawSecId);
+    if (idMatch) return idMatch;
+  }
+
+  // 2. Section Name matching (fuzzy / normalized / track-stripped)
+  if (rawSecName) {
+    const normName = rawSecName.toUpperCase().trim();
+    // Helper to strip track/strand prefix (e.g. "BE - ", "ASSH - ", "SSHS - ", "ABM - ", "STEM - ", "HUMSS - ", "GAS - ", "TVL - ", "TVL-ICT - ", "HE - ", "ICT - ", "IA - ", "ARTS - ", "SPORTS - ", "GRADE 11 - ")
+    const getBaseSectionName = (name) => {
+      if (!name) return '';
+      let s = String(name).toUpperCase().trim();
+      // Remove Grade prefix (e.g. "GRADE 11 - ", "G11 - ", "GRADE 11: ")
+      s = s.replace(/^(?:GRADE|G)\s*\d+\s*[-–—:]\s*/i, '');
+      // Strip any track / strand / specialization prefix
+      s = s.replace(/^(?:BE|ASSH|SSHS|STEM|HUMSS|ABM|GAS|TVL|TVL-HE|TVL-ICT|TVL-IA|TVL-AFA|HE|ICT|IA|AFA|ARTS|SPORTS|ACAD|TECHPRO|TECH-PRO|TECHVOC|TECH-VOC|SPA|SPFL|SPJ|SPS|STE|SPTVE|SNED|SPED|ALS|ARAL)\s*[-–—:]\s*/i, '');
+      // Fallback: If there is still a hyphen/colon prefix (e.g. "XXX - SECTION"), strip the prefix before the dash
+      if (s.includes('-') || s.includes('–') || s.includes('—') || s.includes(':')) {
+        const parts = s.split(/[-–—:]/);
+        if (parts.length > 1) {
+          const afterPrefix = parts.slice(1).join('-').trim();
+          if (afterPrefix) return afterPrefix;
+        }
+      }
+      return s.trim();
+    };
+
+    const baseRowName = getBaseSectionName(normName);
+
+    // 2a. Exact full name match with matching grade level
+    const exactGradeMatch = classSections.find(s => {
+      const sName = String(s.sectionName || s.section_name || '').toUpperCase().trim();
+      return sName === normName && isSameGradeLevel(s.gradeLevel || s.grade_level, rawGrade);
+    });
+    if (exactGradeMatch) return exactGradeMatch;
+
+    // 2b. Exact full name match across any grade level
+    const exactNameMatch = classSections.find(s => {
+      const sName = String(s.sectionName || s.section_name || '').toUpperCase().trim();
+      return sName === normName;
+    });
+    if (exactNameMatch) return exactNameMatch;
+
+    // 2c. Base name match (e.g. "RESILIENT" matches "BE - RESILIENT" or "ABUEVA" matches "ASSH - ABUEVA") with matching grade level
+    if (baseRowName) {
+      const baseGradeMatch = classSections.find(s => {
+        const sName = String(s.sectionName || s.section_name || '').toUpperCase().trim();
+        const sBase = getBaseSectionName(sName);
+        const gradeMatches = isSameGradeLevel(s.gradeLevel || s.grade_level, rawGrade);
+        return gradeMatches && (sBase === baseRowName || sBase === normName || sName === baseRowName);
+      });
+      if (baseGradeMatch) return baseGradeMatch;
+
+      // 2d. Base name match across any grade
+      const baseAnyMatch = classSections.find(s => {
+        const sName = String(s.sectionName || s.section_name || '').toUpperCase().trim();
+        const sBase = getBaseSectionName(sName);
+        return sBase === baseRowName || sBase === normName || sName === baseRowName;
+      });
+      if (baseAnyMatch) return baseAnyMatch;
+    }
+
+    // 2e. Substring / contains match within same grade
+    const containsMatch = classSections.find(s => {
+      const sName = String(s.sectionName || s.section_name || '').toUpperCase().trim();
+      const gradeMatches = isSameGradeLevel(s.gradeLevel || s.grade_level, rawGrade);
+      return gradeMatches && (sName.includes(normName) || normName.includes(sName));
+    });
+    if (containsMatch) return containsMatch;
+  }
+
+  // 3. If no sectionName was provided, ONLY match by grade level IF there is strictly ONE section in that grade
+  if (!rawSecName && rawGrade) {
+    const gradeSecs = classSections.filter(s => isSameGradeLevel(s.gradeLevel || s.grade_level, rawGrade));
+    if (gradeSecs.length === 1) {
+      return gradeSecs[0];
+    }
+  }
+
+  return null;
+};
+
 // Grade 1/2 MATATAG core subjects (DepEd Order No. 12, s. 2024) are locked to exactly 40 mins/day
 // wherever they're scheduled at those grades — mirrors the G1/G2 core lists in
 // getMatatagFixedDurationMins below, used here just to badge the subject in the "Subjects Taught"
@@ -6877,7 +6993,8 @@ function WorkloadGanttScheduleView({
                           const teacherId = currentPerson?.id || dbPerson?.id || null;
                           const teacherName = `${currentPerson?.firstName || dbPerson?.firstName || ''} ${currentPerson?.lastName || dbPerson?.lastName || ''}`.trim();
                           let matchingSections = (classSections || []).filter(s => isSectionMatchingTeacherGrades(s, teacherAssignedGrades, teacherId, teacherName));
-                          const currentSecId = String(selectedRow.sectionId || selectedRow.section_id || '');
+                          const matchedSec = matchSectionForWorkloadRow(selectedRow, classSections);
+                          let currentSecId = String(selectedRow.sectionId || selectedRow.section_id || matchedSec?.id || '');
                           if (currentSecId && !matchingSections.some(s => String(s.id) === currentSecId)) {
                             const matchInAll = (classSections || []).find(s => String(s.id) === currentSecId);
                             if (matchInAll) matchingSections.push(matchInAll);
@@ -6896,10 +7013,23 @@ function WorkloadGanttScheduleView({
                             };
                           });
 
+                          // Fallback: If selectedRow has a sectionName but is not in classSections yet, add it so the dropdown is never blank!
+                          const existingSecName = selectedRow.sectionName || selectedRow.section_name || matchedSec?.sectionName || '';
+                          if (existingSecName && !currentSecId) {
+                            const fallbackSecId = `sec-custom-${existingSecName.toLowerCase().replace(/\s+/g, '-')}`;
+                            currentSecId = fallbackSecId;
+                            if (!sectionOptions.some(opt => String(opt.value) === String(fallbackSecId))) {
+                              sectionOptions.unshift({
+                                value: fallbackSecId,
+                                label: `${existingSecName} (${selectedRow.gradeLevel || matchedSec?.gradeLevel || 'Grade 11'})`
+                              });
+                            }
+                          }
+
                           return (
                             <SearchableSelect
                               disabled={isLockedSectionAndSubject}
-                              value={selectedRow.sectionId}
+                              value={currentSecId}
                               onChange={(e) => {
                                 recordUndoSnapshot();
                                 handleSectionChangeForRow(idx, e.target.value);
@@ -7858,7 +7988,9 @@ export default function Workload() {
     return matchesSearch && matchesCat && matchesGrade;
   });
 
-  const dbPerson = filteredPeople.find(p => p.id === activePersonnelId) || filteredPeople[0] || null;
+  const dbPerson = (personnel || []).find(p => String(p.id) === String(activePersonnelId) || String(p._id) === String(activePersonnelId)) ||
+                   filteredPeople.find(p => String(p.id) === String(activePersonnelId) || String(p._id) === String(activePersonnelId)) ||
+                   filteredPeople[0] || null;
   const [editPerson, setEditPerson] = useState(null);
 
   useEffect(() => {
@@ -7900,24 +8032,16 @@ export default function Workload() {
       }
 
       let updatedRows = (person.workloadRows || []).map(r => {
-        let normSecId = (r.sectionId !== undefined && r.sectionId !== null && r.sectionId !== '')
-          ? String(r.sectionId)
-          : ((r.section_id !== undefined && r.section_id !== null && r.section_id !== '') ? String(r.section_id) : '');
         const normSub = r.subject || r.subject_name || '';
         const normGrade = r.gradeLevel || r.grade_level || '';
-        if (!normSecId && normGrade) {
-          const normGradeClean = normGrade.replace(/\s*[\u2013\u2014-]\s*/g, ' - ');
-          const matchingSec = (classSections || []).find(s =>
-            s.gradeLevel && s.gradeLevel.replace(/\s*[\u2013\u2014-]\s*/g, ' - ') === normGradeClean
-          );
-          if (matchingSec) {
-            normSecId = String(matchingSec.id);
-          }
-        }
-        let normCat = r.category;
-        if (!normCat && normGrade) {
+        const matchedSec = matchSectionForWorkloadRow(r, classSections);
+        let normSecId = matchedSec ? String(matchedSec.id) : (r.sectionId !== undefined && r.sectionId !== null && r.sectionId !== '' ? String(r.sectionId) : ((r.section_id !== undefined && r.section_id !== null && r.section_id !== '') ? String(r.section_id) : ''));
+        let normSecName = matchedSec?.sectionName || r.sectionName || r.section_name || '';
+        let finalGrade = matchedSec?.gradeLevel || normGrade;
+        let normCat = r.category || matchedSec?.category;
+        if (!normCat && finalGrade) {
           for (const [cat, grades] of Object.entries(GRADE_LEVELS_BY_CATEGORY)) {
-            if (grades.includes(normGrade)) {
+            if (grades.includes(finalGrade)) {
               normCat = cat;
               break;
             }
@@ -7926,9 +8050,11 @@ export default function Workload() {
         return {
           ...r,
           sectionId: normSecId,
+          sectionName: normSecName,
           subject: String(normSub || '').toUpperCase().trim(),
-          gradeLevel: normGrade,
-          category: normCat || (isAdminTaskRow(r) ? 'Administrative' : 'Elementary')
+          gradeLevel: finalGrade,
+          category: normCat || (isAdminTaskRow(r) ? 'Administrative' : 'Elementary'),
+          trackStrand: matchedSec?.trackStrand || r.trackStrand || ''
         };
       });
       let rowsChanged = false;
@@ -8283,7 +8409,25 @@ export default function Workload() {
           }
         } else {
           // Keep all assigned workload rows intact (including admin duties, immersion, and standard/custom subjects)
-          otherCleanedRows.push(r);
+          let resolvedRow = r;
+          if (!isAdminTaskRow(r) && !isNonTeachingTaskSubject(r.subject || r.subject_name)) {
+            const matched = matchSectionForWorkloadRow(r, classSections);
+            if (matched) {
+              const matchedIdStr = String(matched.id);
+              const matchedName = matched.sectionName || matched.section_name || r.sectionName;
+              const matchedGrade = matched.gradeLevel || matched.grade_level || r.gradeLevel;
+              if (String(r.sectionId) !== matchedIdStr || r.sectionName !== matchedName || r.gradeLevel !== matchedGrade) {
+                resolvedRow = {
+                  ...r,
+                  sectionId: matchedIdStr,
+                  sectionName: matchedName,
+                  gradeLevel: matchedGrade
+                };
+                didClean = true;
+              }
+            }
+          }
+          otherCleanedRows.push(resolvedRow);
         }
       });
 
@@ -8496,24 +8640,23 @@ export default function Workload() {
         rowsChanged = true;
       }
 
-      if (rowsChanged) {
-        const updatedPerson = { ...person, workloadRows: updatedRows };
-        setEditPerson(updatedPerson);
-        // Only update an existing draft in localStorage if one was already present
-        // and really differs from saved state; never create a fresh draft from auto-generation
-        if (savedDraft && draftOverlaid) {
-          const schoolId = resolveSchoolId(schoolInfo?.schoolId);
-          const snapKey = `${schoolId}__${dbPerson.id}__${activeTerm}`;
-          const savedNorm = savedTeacherTermSnapshotRef.current?.get(snapKey);
-          const currentNorm = normalizeRowsForComparison(updatedRows, activeTerm);
-          if (savedNorm && JSON.stringify(currentNorm) === JSON.stringify(savedNorm)) {
-            localStorage.removeItem(draftKey);
-          } else {
-            try { localStorage.setItem(draftKey, JSON.stringify(updatedPerson)); } catch (e) {}
-          }
+      if (!rowsChanged && JSON.stringify(updatedRows) !== JSON.stringify(person.workloadRows || [])) {
+        rowsChanged = true;
+      }
+
+      const updatedPerson = { ...person, workloadRows: updatedRows };
+      setEditPerson(updatedPerson);
+
+      if (rowsChanged && savedDraft && draftOverlaid) {
+        const schoolId = resolveSchoolId(schoolInfo?.schoolId);
+        const snapKey = `${schoolId}__${dbPerson.id}__${activeTerm}`;
+        const savedNorm = savedTeacherTermSnapshotRef.current?.get(snapKey);
+        const currentNorm = normalizeRowsForComparison(updatedRows, activeTerm);
+        if (savedNorm && JSON.stringify(currentNorm) === JSON.stringify(savedNorm)) {
+          localStorage.removeItem(draftKey);
+        } else {
+          try { localStorage.setItem(draftKey, JSON.stringify(updatedPerson)); } catch (e) {}
         }
-      } else {
-        setEditPerson(person);
       }
     } else {
       setEditPerson(null);
@@ -8602,18 +8745,34 @@ export default function Workload() {
 
   // baseRows = { term, rows } (or { all: true, rows }) are the saved rows the local copy was built on; the per-block merge diffs against them.
   const applyWorkloadToPerson = useCallback((personId, { termRows = null, baseVersion, baseRows = null, skipDraft = false }) => {
+    const remap = (rows) => (Array.isArray(rows) ? rows : []).map(r => {
+      const matched = matchSectionForWorkloadRow(r, classSections);
+      if (matched) {
+        return {
+          ...r,
+          sectionId: String(matched.id),
+          sectionName: matched.sectionName || r.sectionName || '',
+          gradeLevel: matched.gradeLevel || r.gradeLevel || '',
+          trackStrand: matched.trackStrand || r.trackStrand || ''
+        };
+      }
+      return r;
+    });
+
     const patch = (p) => {
       const next = { ...p };
       if (baseVersion !== undefined) next.workloadBaseVersion = baseVersion;
       if (baseRows) {
+        const remappedBase = remap(baseRows.rows);
         next.workloadBaseRows = baseRows.all
-          ? baseRows.rows
-          : [...(Array.isArray(p.workloadBaseRows) ? p.workloadBaseRows : []).filter(r => (r.term || '1st') !== baseRows.term), ...baseRows.rows];
+          ? remappedBase
+          : [...(Array.isArray(p.workloadBaseRows) ? p.workloadBaseRows : []).filter(r => (r.term || '1st') !== baseRows.term), ...remappedBase];
       }
       if (termRows) {
+        const remappedTerm = remap(termRows.rows);
         next.workloadRows = [
           ...(Array.isArray(p.workloadRows) ? p.workloadRows : []).filter(r => (r.term || '1st') !== termRows.term),
-          ...termRows.rows
+          ...remappedTerm
         ];
       }
       return next;
@@ -8626,7 +8785,7 @@ export default function Workload() {
       const raw = localStorage.getItem(key);
       if (raw) localStorage.setItem(key, JSON.stringify(patch(JSON.parse(raw))));
     } catch (e) { /* the draft is left as it was */ }
-  }, [setPersonnel]);
+  }, [setPersonnel, classSections]);
 
   const hydrateWorkloadFromServer = useCallback(async (personId, term, { afterSave = false } = {}) => {
     const schoolId = schoolInfo?.schoolId;
@@ -8663,7 +8822,20 @@ export default function Workload() {
     const person = (open && String(open.id) === String(personId)) ? open : (list || []).find(p => String(p.id) === String(personId));
     if (!person) return;
 
-    const dbRows = dedupeWorkloadRows(personId, (state.rows || []).map(r => ({ ...r, term: r.term || term })));
+    const dbRows = dedupeWorkloadRows(personId, (state.rows || []).map(r => {
+      const termRow = { ...r, term: r.term || term };
+      const matched = matchSectionForWorkloadRow(termRow, classSections);
+      if (matched) {
+        return {
+          ...termRow,
+          sectionId: String(matched.id),
+          sectionName: matched.sectionName || termRow.sectionName || '',
+          gradeLevel: matched.gradeLevel || termRow.gradeLevel || '',
+          trackStrand: matched.trackStrand || termRow.trackStrand || ''
+        };
+      }
+      return termRow;
+    }));
     const version = versionOf(state.version);
     const localRows = Array.isArray(person.workloadRows) ? person.workloadRows : [];
 
@@ -9691,9 +9863,35 @@ export default function Workload() {
       ? currentRowObj.days
       : (currentRowObj?.daySchedule ? String(currentRowObj.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
 
+    // Identification of the current teacher being edited to strictly avoid false duplicate alerts against self
+    const currentPersonIds = [
+      String(currentPerson?.id || ''),
+      String(currentPerson?._id || ''),
+      String(dbPerson?.id || ''),
+      String(dbPerson?._id || ''),
+      String(activePersonnelId || '')
+    ].filter(Boolean);
+
+    const currentPersonPrns = [
+      String(currentPerson?.prn || ''),
+      String(dbPerson?.prn || '')
+    ].filter(Boolean);
+
+    const currentFn = String(currentPerson?.firstName || dbPerson?.firstName || '').trim().toLowerCase();
+    const currentLn = String(currentPerson?.lastName || dbPerson?.lastName || '').trim().toLowerCase();
+
     // Scan other personnel in the school
     for (const p of (personnel || [])) {
-      if (String(p.id) === String(currentPerson?.id)) continue;
+      const pId = String(p.id || p._id || '');
+      const pPrn = String(p.prn || '');
+      const pFn = String(p.firstName || '').trim().toLowerCase();
+      const pLn = String(p.lastName || '').trim().toLowerCase();
+
+      // Check if p is the current teacher (by id, prn, or full name)
+      if (pId && currentPersonIds.includes(pId)) continue;
+      if (pPrn && currentPersonPrns.includes(pPrn)) continue;
+      if (currentFn && currentLn && pFn === currentFn && pLn === currentLn) continue;
+
       if (p.isDraft || !Array.isArray(p.workloadRows)) continue;
 
       for (const r of p.workloadRows) {
@@ -9741,14 +9939,15 @@ export default function Workload() {
     const normSub = String(row.subject).trim().toUpperCase();
     if (normSub === 'ADVISORY') return null;
 
-    const secId = String(row.sectionId || row.section_id || '');
-    const secName = String(row.sectionName || row.section_name || '').trim().toUpperCase();
+    const matchedSec = matchSectionForWorkloadRow(row, classSections);
+    const secId = String(row.sectionId || row.section_id || matchedSec?.id || '');
+    const secName = String(row.sectionName || row.section_name || matchedSec?.sectionName || '').trim().toUpperCase();
     if (!secId && !secName) return null;
 
     const term = row.term || row.semester || activeTerm || '1st';
-    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowRefOrIdx || row);
+    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowRefOrIdx || row, row.gradeLevel || matchedSec?.gradeLevel);
 
-    const targetSec = (classSections || []).find(s => String(s.id) === secId || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secName));
+    const targetSec = matchedSec || (classSections || []).find(s => String(s.id) === secId || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secName));
     const displaySecName = targetSec?.sectionName || row.sectionName || 'this section';
 
     if (assignment && assignment.assigned && assignment.isOtherTeacher) {
@@ -14100,3 +14299,4 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
     </div>
   );
 };
+
