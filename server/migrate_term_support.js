@@ -1,11 +1,12 @@
-const { Client } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Client } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const sslConfig = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+const sslConfig =
+  process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;
 
 async function migrateTermSupport() {
-  const targetDbName = 'insighted_esf7';
+  const targetDbName = "insighted_esf7";
   console.log(`Connecting to '${targetDbName}'...`);
 
   const client = new Client({
@@ -14,7 +15,7 @@ async function migrateTermSupport() {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: targetDbName,
-    ssl: sslConfig
+    ssl: sslConfig,
   });
 
   await client.connect();
@@ -24,41 +25,55 @@ async function migrateTermSupport() {
     const res = await client.query(`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
     `);
-    const tables = res.rows.map(r => r.table_name);
+    const tables = res.rows.map((r) => r.table_name);
     console.log("Found tables:", tables);
 
-    if (tables.includes('esf7_personnel_profile')) {
-      await client.query(`ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_personnel_profile")) {
+      await client.query(
+        `ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_personnel_profile");
     }
 
-    if (tables.includes('esf7_regular_sections')) {
-      await client.query(`ALTER TABLE esf7_regular_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_regular_sections")) {
+      await client.query(
+        `ALTER TABLE esf7_regular_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_regular_sections");
     }
 
-    if (tables.includes('esf7_aral_sections')) {
-      await client.query(`ALTER TABLE esf7_aral_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_aral_sections")) {
+      await client.query(
+        `ALTER TABLE esf7_aral_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_aral_sections");
     }
 
-    if (tables.includes('esf7_remedial_enrichment_sections')) {
-      await client.query(`ALTER TABLE esf7_remedial_enrichment_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_remedial_enrichment_sections")) {
+      await client.query(
+        `ALTER TABLE esf7_remedial_enrichment_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_remedial_enrichment_sections");
     }
 
-    if (tables.includes('esf7_class_sections')) {
-      await client.query(`ALTER TABLE esf7_class_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_class_sections")) {
+      await client.query(
+        `ALTER TABLE esf7_class_sections ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_class_sections");
     }
 
-    if (tables.includes('esf7_workload_rows')) {
-      await client.query(`ALTER TABLE esf7_workload_rows ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_workload_rows")) {
+      await client.query(
+        `ALTER TABLE esf7_workload_rows ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_workload_rows");
     }
 
-    if (tables.includes('esf7_shs_workload_rows')) {
-      await client.query(`ALTER TABLE esf7_shs_workload_rows ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`);
+    if (tables.includes("esf7_shs_workload_rows")) {
+      await client.query(
+        `ALTER TABLE esf7_shs_workload_rows ADD COLUMN IF NOT EXISTS term TEXT DEFAULT '1st';`,
+      );
       console.log("✓ Added term to esf7_shs_workload_rows");
     }
 

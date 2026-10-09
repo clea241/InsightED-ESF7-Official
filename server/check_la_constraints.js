@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require("./db");
 
 async function checkConstraints() {
   const res = await db.query(`
@@ -6,7 +6,7 @@ async function checkConstraints() {
     FROM pg_constraint 
     WHERE conrelid = 'esf7_personnel_learning_areas'::regclass
   `);
-  console.log('Constraints on esf7_personnel_learning_areas:', res.rows);
+  console.log("Constraints on esf7_personnel_learning_areas:", res.rows);
   process.exit(0);
 }
 

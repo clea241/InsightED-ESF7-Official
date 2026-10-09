@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require("./db");
 
 async function listProfileCols() {
   const res = await db.query(`
@@ -7,7 +7,10 @@ async function listProfileCols() {
     WHERE table_name = 'esf7_personnel_profile'
     ORDER BY ordinal_position
   `);
-  console.log('Columns in esf7_personnel_profile:', res.rows.map(r => r.column_name));
+  console.log(
+    "Columns in esf7_personnel_profile:",
+    res.rows.map((r) => r.column_name),
+  );
   process.exit(0);
 }
 

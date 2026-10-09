@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testSubmissionQueueFlow() {
-  console.log('Testing esf7_submission_queue insertion, status transition, and querying...');
+  console.log(
+    "Testing esf7_submission_queue insertion, status transition, and querying...",
+  );
 
-  await db.query(`DELETE FROM esf7_submission_queue WHERE school_id = '108348'`);
+  await db.query(
+    `DELETE FROM esf7_submission_queue WHERE school_id = '108348'`,
+  );
 
   // 1. Insert Queue Job
   const res = await db.query(`
@@ -14,21 +18,34 @@ async function testSubmissionQueueFlow() {
     ) RETURNING *
   `);
 
-  console.log('✅ Created Submission Queue Record:');
+  console.log("✅ Created Submission Queue Record:");
   const row = res.rows[0];
-  console.log('Job ID:', row.id, '| School ID:', row.school_id, '| Certified By:', row.certified_by);
-  console.log('Status:', row.status);
+  console.log(
+    "Job ID:",
+    row.id,
+    "| School ID:",
+    row.school_id,
+    "| Certified By:",
+    row.certified_by,
+  );
+  console.log("Status:", row.status);
 
   // 2. Query Table esf7_submission_queue
-  const viewRes = await db.query(`SELECT * FROM esf7_submission_queue WHERE id = $1`, [row.id]);
-  console.log('✅ Retrieved from esf7_submission_queue Count:', viewRes.rows.length);
+  const viewRes = await db.query(
+    `SELECT * FROM esf7_submission_queue WHERE id = $1`,
+    [row.id],
+  );
+  console.log(
+    "✅ Retrieved from esf7_submission_queue Count:",
+    viewRes.rows.length,
+  );
 
   // Cleanup
   await db.query(`DELETE FROM esf7_submission_queue WHERE id = $1`, [row.id]);
   process.exit(0);
 }
 
-testSubmissionQueueFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testSubmissionQueueFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

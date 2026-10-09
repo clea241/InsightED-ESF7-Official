@@ -11,20 +11,23 @@
 //  3. Submission queue entries that failed, or are stuck in 'processing'.
 // Recovery: affected users may still hold the newest copy in their browser (IndexedDB keys "draft_<school>_<year>");
 // with the new build, "Restored your unsynced changes" will push it to the server on their next login.
-const { pool } = require('../db/index.js');
+const { pool } = require("../db/index.js");
 
 const args = process.argv.slice(2);
-const argOf = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
-const days = Number(argOf('--days', 14));
-const school = argOf('--school', null);
+const argOf = (name, fallback) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : fallback;
+};
+const days = Number(argOf("--days", 14));
+const school = argOf("--school", null);
 
 async function run() {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN READ ONLY');
+    await client.query("BEGIN READ ONLY");
     await client.query("SET LOCAL statement_timeout = '30s'");
-    const schoolFilter = school ? 'AND school_id = $2' : '';
-    const params = school ? [days, school.replace(/^SCH-/i, '')] : [days];
+    const schoolFilter = school ? "AND school_id = $2" : "";
+    const params = school ? [days, school.replace(/^SCH-/i, "")] : [days];
 
     const stale = await client.query(
       `SELECT school_id, school_year, updated_at,
@@ -35,8 +38,12 @@ async function run() {
           AND payload ? 'lastUpdated'
           AND (payload->>'lastUpdated') ~ '^\\d{4}-\\d{2}-\\d{2}T'
           AND (payload->>'lastUpdated')::timestamptz > updated_at + interval '30 seconds'
-        ORDER BY seconds_client_ahead ASC LIMIT 200`, params); // smallest gaps first: the most plausible real losses
-    console.log(`\n1) Drafts where the client's latest save is newer than the server copy (${stale.rows.length}):`);
+        ORDER BY seconds_client_ahead ASC LIMIT 200`,
+      params,
+    ); // smallest gaps first: the most plausible real losses
+    console.log(
+      `\n1) Drafts where the client's latest save is newer than the server copy (${stale.rows.length}):`,
+    );
     console.table(stale.rows);
 
     // Client clocks on school PCs are often wrong (gaps of exactly 8/16/24 h are typical), so group by size:
@@ -51,8 +58,10 @@ async function run() {
                 WHERE updated_at > NOW() - make_interval(days => $1::int) ${schoolFilter}
                   AND (payload->>'lastUpdated') ~ '^\\d{4}-\\d{2}-\\d{2}T'
                   AND (payload->>'lastUpdated')::timestamptz > updated_at + interval '30 seconds') g
-        GROUP BY 1 ORDER BY 1`, params);
-    console.log('\n1b) Same drafts grouped by gap size:');
+        GROUP BY 1 ORDER BY 1`,
+      params,
+    );
+    console.log("\n1b) Same drafts grouped by gap size:");
     console.table(buckets.rows);
 
     const empty = await client.query(
@@ -60,8 +69,12 @@ async function run() {
          FROM school_drafts
         WHERE updated_at > NOW() - make_interval(days => $1::int) ${schoolFilter}
           AND jsonb_array_length(COALESCE(payload->'personnel','[]'::jsonb)) = 0
-        ORDER BY updated_at DESC LIMIT 200`, params);
-    console.log(`\n2) Recently updated drafts with an empty roster (${empty.rows.length}):`);
+        ORDER BY updated_at DESC LIMIT 200`,
+      params,
+    );
+    console.log(
+      `\n2) Recently updated drafts with an empty roster (${empty.rows.length}):`,
+    );
     console.table(empty.rows);
 
     const subs = await client.query(
@@ -69,14 +82,20 @@ async function run() {
          FROM esf7_submission_queue
         WHERE created_at > NOW() - make_interval(days => $1::int) ${schoolFilter}
           AND (status = 'failed' OR (status = 'processing' AND updated_at < NOW() - interval '10 minutes'))
-        ORDER BY updated_at DESC LIMIT 200`, params);
-    console.log(`\n3) Failed or stuck submission queue entries (${subs.rows.length}):`);
+        ORDER BY updated_at DESC LIMIT 200`,
+      params,
+    );
+    console.log(
+      `\n3) Failed or stuck submission queue entries (${subs.rows.length}):`,
+    );
     console.table(subs.rows);
   } catch (err) {
-    console.error('Report failed:', err.message);
+    console.error("Report failed:", err.message);
     process.exitCode = 1;
   } finally {
-    try { await client.query('ROLLBACK'); } catch (e) {}
+    try {
+      await client.query("ROLLBACK");
+    } catch (e) {}
     client.release();
     await pool.end();
   }

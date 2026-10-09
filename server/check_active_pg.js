@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require("./db");
 async function check() {
   try {
     const res = await db.query(`
@@ -7,9 +7,9 @@ async function check() {
       WHERE state != 'idle' 
       ORDER BY duration DESC LIMIT 10
     `);
-    console.log('Active queries in DB:', res.rows);
-  } catch(e) {
-    console.error('Error:', e.message);
+    console.log("Active queries in DB:", res.rows);
+  } catch (e) {
+    console.error("Error:", e.message);
   } finally {
     process.exit(0);
   }

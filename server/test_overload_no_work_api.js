@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testOverloadNoWorkFlow() {
-  console.log('Testing overload_no_work insertion & multi-level query scoping...');
+  console.log(
+    "Testing overload_no_work insertion & multi-level query scoping...",
+  );
 
-  await db.query(`DELETE FROM overload_no_work WHERE id IN ('NWK-TEST-001', 'NWK-TEST-002')`);
+  await db.query(
+    `DELETE FROM overload_no_work WHERE id IN ('NWK-TEST-001', 'NWK-TEST-002')`,
+  );
 
   // 1. Insert Division Level Holiday
   await db.query(`
@@ -32,19 +36,28 @@ async function testOverloadNoWorkFlow() {
     ORDER BY no_work_date ASC
   `);
 
-  console.log('✅ Successfully retrieved no-work records matching School 108348 (including Division-wide holidays):');
+  console.log(
+    "✅ Successfully retrieved no-work records matching School 108348 (including Division-wide holidays):",
+  );
   res.rows.forEach((row, i) => {
-    const dStr = row.no_work_date instanceof Date ? row.no_work_date.toISOString().split('T')[0] : String(row.no_work_date).split('T')[0];
-    console.log(` ${i + 1}. [${dStr}] ${row.event_type}: ${row.title} (School Scope: ${row.school_id})`);
+    const dStr =
+      row.no_work_date instanceof Date
+        ? row.no_work_date.toISOString().split("T")[0]
+        : String(row.no_work_date).split("T")[0];
+    console.log(
+      ` ${i + 1}. [${dStr}] ${row.event_type}: ${row.title} (School Scope: ${row.school_id})`,
+    );
   });
 
   // Clean up
-  await db.query(`DELETE FROM overload_no_work WHERE id IN ('NWK-TEST-001', 'NWK-TEST-002')`);
-  console.log('🧹 Cleaned up test records.');
+  await db.query(
+    `DELETE FROM overload_no_work WHERE id IN ('NWK-TEST-001', 'NWK-TEST-002')`,
+  );
+  console.log("🧹 Cleaned up test records.");
   process.exit(0);
 }
 
-testOverloadNoWorkFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testOverloadNoWorkFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

@@ -1,33 +1,38 @@
-const pg = require('pg');
+const pg = require("pg");
 const { Pool } = pg;
-const path = require('path');
-const { AsyncLocalStorage } = require('async_hooks');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const path = require("path");
+const { AsyncLocalStorage } = require("async_hooks");
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 // Prevent timezone-shifting of DATE columns by returning raw strings
 pg.types.setTypeParser(1082, (val) => val);
 
-const defaultDbName = process.env.DB_NAME || 'insighted_esf7';
+const defaultDbName = process.env.DB_NAME || "insighted_esf7";
 // The read-only master database (esf7_database, esf7_database_dummy, unit1_school_identity). Its name is case-sensitive in a
 // connection string ('insightEd' != 'insighted'). It is configured via INSIGHTED_DATABASE_URL or INSIGHTED_DB_NAME.
 // Default to defaultDbName so reads and writes share the same working database unless explicitly pointed elsewhere.
 const masterDbName = process.env.INSIGHTED_DB_NAME || defaultDbName;
-const dbHost = process.env.DB_HOST || 'stride-posgre-prod-01.postgres.database.azure.com';
-const dbUser = process.env.DB_USER || 'Administrator1';
-const dbPassword = process.env.DB_PASSWORD || 'pRZTbQ2T1JD7';
-const dbPort = process.env.DB_PORT || '5432';
-const isLocalHost = dbHost === '127.0.0.1' || dbHost === 'localhost';
-const dbSsl = (!isLocalHost && (process.env.DB_SSL === 'true' || dbHost.includes('azure.com'))) 
-  ? { rejectUnauthorized: false } 
-  : (process.env.DB_SSL === 'true' && !isLocalHost ? { rejectUnauthorized: false } : false);
+const dbHost =
+  process.env.DB_HOST || "stride-posgre-prod-01.postgres.database.azure.com";
+const dbUser = process.env.DB_USER || "Administrator1";
+const dbPassword = process.env.DB_PASSWORD || "pRZTbQ2T1JD7";
+const dbPort = process.env.DB_PORT || "5432";
+const isLocalHost = dbHost === "127.0.0.1" || dbHost === "localhost";
+const dbSsl =
+  !isLocalHost &&
+  (process.env.DB_SSL === "true" || dbHost.includes("azure.com"))
+    ? { rejectUnauthorized: false }
+    : process.env.DB_SSL === "true" && !isLocalHost
+      ? { rejectUnauthorized: false }
+      : false;
 
 // Base configuration with bounded connection timeout and quick idle recovery
 const baseConfig = {
   ssl: dbSsl,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
-  idleTimeoutMillis: 10000,        // Reclaim idle connections after 10s
-  connectionTimeoutMillis: 15000   // Fail fast at 15s instead of hanging indefinitely
+  idleTimeoutMillis: 10000, // Reclaim idle connections after 10s
+  connectionTimeoutMillis: 15000, // Fail fast at 15s instead of hanging indefinitely
 };
 
 // Lazy pool references (instantiated on first access)
@@ -40,14 +45,23 @@ let _usersDbPool = null;
 // 1. Primary Pool (env configured)
 function getPool() {
   if (!_pool) {
-    const connStr = process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`;
-    console.log(`📦 [DB Pool] Primary Pool connected -> database: "${defaultDbName}" on ${dbHost}:${dbPort}`);
+    const connStr =
+      process.env.DATABASE_URL ||
+      `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`;
+    console.log(
+      `📦 [DB Pool] Primary Pool connected -> database: "${defaultDbName}" on ${dbHost}:${dbPort}`,
+    );
     _pool = new Pool({
       ...baseConfig,
       max: 8,
-      connectionString: connStr
+      connectionString: connStr,
     });
-    _pool.on('error', (err) => console.warn('[Database Pool Client Error (Auto-recovering)]:', err.message));
+    _pool.on("error", (err) =>
+      console.warn(
+        "[Database Pool Client Error (Auto-recovering)]:",
+        err.message,
+      ),
+    );
   }
   return _pool;
 }
@@ -55,13 +69,20 @@ function getPool() {
 // 2. Explicit Staging Pool (for division test accounts & staging QA)
 function getStagingPool() {
   if (!_stagingPool) {
-    console.log(`📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`);
+    console.log(
+      `📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`,
+    );
     _stagingPool = new Pool({
       ...baseConfig,
       max: 5,
-      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`
+      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`,
     });
-    _stagingPool.on('error', (err) => console.warn('[Staging Pool Client Error (Auto-recovering)]:', err.message));
+    _stagingPool.on("error", (err) =>
+      console.warn(
+        "[Staging Pool Client Error (Auto-recovering)]:",
+        err.message,
+      ),
+    );
   }
   return _stagingPool;
 }
@@ -69,13 +90,20 @@ function getStagingPool() {
 // 3. Explicit Production Pool
 function getProdPool() {
   if (!_prodPool) {
-    console.log(`📦 [DB Pool] Production Pool connected -> database: "insighted_esf7" on ${dbHost}:${dbPort}`);
+    console.log(
+      `📦 [DB Pool] Production Pool connected -> database: "insighted_esf7" on ${dbHost}:${dbPort}`,
+    );
     _prodPool = new Pool({
       ...baseConfig,
       max: 8,
-      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`
+      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`,
     });
-    _prodPool.on('error', (err) => console.warn('[Production Pool Client Error (Auto-recovering)]:', err.message));
+    _prodPool.on("error", (err) =>
+      console.warn(
+        "[Production Pool Client Error (Auto-recovering)]:",
+        err.message,
+      ),
+    );
   }
   return _prodPool;
 }
@@ -89,15 +117,27 @@ function getInsightEdPool() {
   }
 
   if (!_insightEdPool) {
-    console.log(`📦 [DB Pool] insightEd (Master) Pool connected -> database: "${masterDbName}" on ${dbHost}:${dbPort}`);
+    console.log(
+      `📦 [DB Pool] insightEd (Master) Pool connected -> database: "${masterDbName}" on ${dbHost}:${dbPort}`,
+    );
     _insightEdPool = new Pool({
       ...baseConfig,
       max: 5,
-      connectionString: process.env.INSIGHTED_DATABASE_URL || (process.env.DATABASE_URL
-        ? process.env.DATABASE_URL.replace(/\/[^/?]+(\?|$)/, `/${masterDbName}$1`)
-        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`)
+      connectionString:
+        process.env.INSIGHTED_DATABASE_URL ||
+        (process.env.DATABASE_URL
+          ? process.env.DATABASE_URL.replace(
+              /\/[^/?]+(\?|$)/,
+              `/${masterDbName}$1`,
+            )
+          : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`),
     });
-    _insightEdPool.on('error', (err) => console.warn('[insightEd Pool Client Error (Auto-recovering)]:', err.message));
+    _insightEdPool.on("error", (err) =>
+      console.warn(
+        "[insightEd Pool Client Error (Auto-recovering)]:",
+        err.message,
+      ),
+    );
   }
   return _insightEdPool;
 }
@@ -105,16 +145,31 @@ function getInsightEdPool() {
 // 5. Centralized users / auth Pool (Read-only user authentication: user_schoolhead)
 function getUsersDbPool() {
   if (!_usersDbPool) {
-    const usersDbName = process.env.USERS_DB_NAME || process.env.AUTH_DB_NAME || (isLocalHost ? 'users_local' : 'users_database');
-    console.log(`📦 [DB Pool] Auth/Users Pool connected -> database: "${usersDbName}" on ${dbHost}:${dbPort}`);
+    const usersDbName =
+      process.env.USERS_DB_NAME ||
+      process.env.AUTH_DB_NAME ||
+      (isLocalHost ? "users_local" : "users_database");
+    console.log(
+      `📦 [DB Pool] Auth/Users Pool connected -> database: "${usersDbName}" on ${dbHost}:${dbPort}`,
+    );
     _usersDbPool = new Pool({
       ...baseConfig,
       max: 4,
-      connectionString: process.env.USERS_DATABASE_URL || (process.env.DATABASE_URL
-        ? process.env.DATABASE_URL.replace(/insighted_esf7(_staging)?/, usersDbName)
-        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`)
+      connectionString:
+        process.env.USERS_DATABASE_URL ||
+        (process.env.DATABASE_URL
+          ? process.env.DATABASE_URL.replace(
+              /insighted_esf7(_staging)?/,
+              usersDbName,
+            )
+          : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`),
     });
-    _usersDbPool.on('error', (err) => console.warn(`[${usersDbName} Pool Client Error (Auto-recovering)]:`, err.message));
+    _usersDbPool.on("error", (err) =>
+      console.warn(
+        `[${usersDbName} Pool Client Error (Auto-recovering)]:`,
+        err.message,
+      ),
+    );
   }
   return _usersDbPool;
 }
@@ -125,7 +180,7 @@ const dbStorage = new AsyncLocalStorage();
 // Lazy reference to division registry if needed
 let resolveTestDivision = null;
 try {
-  const reg = require('../utils/divisionTestRegistry');
+  const reg = require("../utils/divisionTestRegistry");
   resolveTestDivision = reg.resolveTestDivision;
 } catch (e) {}
 
@@ -135,26 +190,26 @@ try {
 function isDivisionOrTestAccount(schoolId) {
   if (!schoolId) return false;
   const str = String(schoolId).trim();
-  const cleanId = str.replace(/^SCH-/i, '').trim();
+  const cleanId = str.replace(/^SCH-/i, "").trim();
   const num = parseInt(cleanId, 10);
-  
+
   if (!isNaN(num)) {
     if (num >= 900001 && num <= 900999) return true;
     if (num >= 800000 && num <= 800100) return true;
     if (num >= 199000 && num <= 199999) return true;
     if (num >= 700000 && num <= 700100) return true;
   }
-  
+
   const lower = str.toLowerCase();
   if (
-    lower.startsWith('divtest-') ||
-    lower.startsWith('pilot-') ||
-    lower.endsWith('.test') ||
-    lower.includes('mcoc.') ||
-    lower === 'dummy' ||
-    lower.startsWith('dummy-') ||
-    lower.startsWith('test-') ||
-    lower.startsWith('demo-')
+    lower.startsWith("divtest-") ||
+    lower.startsWith("pilot-") ||
+    lower.endsWith(".test") ||
+    lower.includes("mcoc.") ||
+    lower === "dummy" ||
+    lower.startsWith("dummy-") ||
+    lower.startsWith("test-") ||
+    lower.startsWith("demo-")
   ) {
     return true;
   }
@@ -174,7 +229,7 @@ function getPoolForSchool(schoolId) {
   if (isDivisionOrTestAccount(schoolId)) {
     return getStagingPool();
   }
-  return process.env.NODE_ENV === 'production' ? getProdPool() : getPool();
+  return process.env.NODE_ENV === "production" ? getProdPool() : getPool();
 }
 
 /**
@@ -183,12 +238,12 @@ function getPoolForSchool(schoolId) {
 function containsTestAccountIndicator(text, params) {
   if (Array.isArray(params)) {
     for (const p of params) {
-      if (typeof p === 'string' || typeof p === 'number') {
+      if (typeof p === "string" || typeof p === "number") {
         if (isDivisionOrTestAccount(p)) return true;
       }
     }
   }
-  if (typeof text === 'string') {
+  if (typeof text === "string") {
     if (
       text.includes("'199999'") ||
       text.includes("'900230'") ||
@@ -212,7 +267,7 @@ function containsTestAccountIndicator(text, params) {
  */
 function dbMiddleware(req, res, next) {
   try {
-    const { getSchoolIdFromRequest } = require('../utils/auth');
+    const { getSchoolIdFromRequest } = require("../utils/auth");
     let schoolId = getSchoolIdFromRequest(req);
 
     if (!schoolId && req.body) {
@@ -225,7 +280,11 @@ function dbMiddleware(req, res, next) {
     }
 
     const isTest = isDivisionOrTestAccount(schoolId);
-    const activePool = isTest ? getStagingPool() : (process.env.NODE_ENV === 'production' ? getProdPool() : getPool());
+    const activePool = isTest
+      ? getStagingPool()
+      : process.env.NODE_ENV === "production"
+        ? getProdPool()
+        : getPool();
 
     dbStorage.run({ schoolId, isStaging: isTest, pool: activePool }, () => {
       next();
@@ -240,8 +299,15 @@ function dbMiddleware(req, res, next) {
  */
 function runWithSchool(schoolId, callback) {
   const isTest = isDivisionOrTestAccount(schoolId);
-  const activePool = isTest ? getStagingPool() : (process.env.NODE_ENV === 'production' ? getProdPool() : getPool());
-  return dbStorage.run({ schoolId, isStaging: isTest, pool: activePool }, callback);
+  const activePool = isTest
+    ? getStagingPool()
+    : process.env.NODE_ENV === "production"
+      ? getProdPool()
+      : getPool();
+  return dbStorage.run(
+    { schoolId, isStaging: isTest, pool: activePool },
+    callback,
+  );
 }
 
 /**
@@ -252,13 +318,14 @@ function query(text, params) {
   if (store && store.pool) {
     return store.pool.query(text, params);
   }
-  
+
   // Fallback if called outside HTTP request context (e.g. background job, CLI scripts)
   if (containsTestAccountIndicator(text, params)) {
     return getStagingPool().query(text, params);
   }
 
-  const defaultActivePool = process.env.NODE_ENV === 'production' ? getProdPool() : getPool();
+  const defaultActivePool =
+    process.env.NODE_ENV === "production" ? getProdPool() : getPool();
   return defaultActivePool.query(text, params);
 }
 
@@ -270,7 +337,8 @@ function getClient() {
   if (store && store.pool) {
     return store.pool.connect();
   }
-  const defaultActivePool = process.env.NODE_ENV === 'production' ? getProdPool() : getPool();
+  const defaultActivePool =
+    process.env.NODE_ENV === "production" ? getProdPool() : getPool();
   return defaultActivePool.connect();
 }
 
@@ -278,17 +346,25 @@ function getMasterDbInfo() {
   return {
     masterDbName,
     defaultDbName,
-    isShared: !process.env.INSIGHTED_DATABASE_URL && masterDbName === defaultDbName,
+    isShared:
+      !process.env.INSIGHTED_DATABASE_URL && masterDbName === defaultDbName,
     host: dbHost,
-    port: dbPort
+    port: dbPort,
   };
 }
 
-
 /** Ends every pool that was actually created (shared pools are ended once). Used by graceful shutdown. */
 async function closeAllPools() {
-  const pools = new Set([_pool, _stagingPool, _prodPool, _insightEdPool, _usersDbPool].filter(Boolean));
-  await Promise.all([...pools].map((p) => p.end().catch((e) => console.warn('[Pool close warning]:', e.message))));
+  const pools = new Set(
+    [_pool, _stagingPool, _prodPool, _insightEdPool, _usersDbPool].filter(
+      Boolean,
+    ),
+  );
+  await Promise.all(
+    [...pools].map((p) =>
+      p.end().catch((e) => console.warn("[Pool close warning]:", e.message)),
+    ),
+  );
 }
 
 const dbExport = {
@@ -305,7 +381,7 @@ const dbExport = {
   isDivisionOrTestAccount,
   dbMiddleware,
   runWithSchool,
-  dbStorage
+  dbStorage,
 };
 
 // Lazy getter properties preserve full backwards-compatibility with `db.stagingPool`, `db.prodPool`, etc.
@@ -315,7 +391,7 @@ Object.defineProperties(dbExport, {
   prodPool: { get: getProdPool, enumerable: true },
   insightEdPool: { get: getInsightEdPool, enumerable: true },
   usersDbPool: { get: getUsersDbPool, enumerable: true },
-  usersDatabasePool: { get: getUsersDbPool, enumerable: true }
+  usersDatabasePool: { get: getUsersDbPool, enumerable: true },
 });
 
 module.exports = dbExport;

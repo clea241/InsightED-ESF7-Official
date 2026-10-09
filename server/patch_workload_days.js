@@ -1,8 +1,8 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const filePath = path.resolve(__dirname, '../client/src/pages/Workload.jsx');
-let content = fs.readFileSync(filePath, 'utf8');
+const filePath = path.resolve(__dirname, "../client/src/pages/Workload.jsx");
+let content = fs.readFileSync(filePath, "utf8");
 
 const targetSnippet = `                                      {/* Usual Days & Minutes */}
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
@@ -116,14 +116,14 @@ const replacementSnippet = `                                      {/* Usual Days
                                       </div>`;
 
 // Normalize line endings
-const normContent = content.replace(/\r\n/g, '\n');
-const normTarget = targetSnippet.replace(/\r\n/g, '\n');
-const normReplacement = replacementSnippet.replace(/\r\n/g, '\n');
+const normContent = content.replace(/\r\n/g, "\n");
+const normTarget = targetSnippet.replace(/\r\n/g, "\n");
+const normReplacement = replacementSnippet.replace(/\r\n/g, "\n");
 
 if (normContent.includes(normTarget)) {
   const newContent = normContent.replace(normTarget, normReplacement);
-  fs.writeFileSync(filePath, newContent, 'utf8');
-  console.log('✓ Successfully replaced in Workload.jsx');
+  fs.writeFileSync(filePath, newContent, "utf8");
+  console.log("✓ Successfully replaced in Workload.jsx");
 } else {
-  console.error('Target snippet not found in Workload.jsx');
+  console.error("Target snippet not found in Workload.jsx");
 }

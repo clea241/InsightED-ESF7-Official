@@ -1,8 +1,9 @@
-const { Client } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Client } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const sslConfig = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+const sslConfig =
+  process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;
 
 async function testKeyStagePersistence() {
   const client = new Client({
@@ -10,14 +11,16 @@ async function testKeyStagePersistence() {
     password: process.env.DB_PASSWORD,
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
-    database: 'insighted_esf7',
-    ssl: sslConfig
+    database: "insighted_esf7",
+    ssl: sslConfig,
   });
 
   await client.connect();
 
   try {
-    console.log('[Test] Verifying esf7_personnel_designations table structure...');
+    console.log(
+      "[Test] Verifying esf7_personnel_designations table structure...",
+    );
     const colRes = await client.query(`
       SELECT column_name, data_type 
       FROM information_schema.columns 
@@ -25,14 +28,16 @@ async function testKeyStagePersistence() {
       ORDER BY ordinal_position;
     `);
 
-    const colNames = colRes.rows.map(r => r.column_name);
-    console.log('[Test] Columns:', colNames.join(', '));
+    const colNames = colRes.rows.map((r) => r.column_name);
+    console.log("[Test] Columns:", colNames.join(", "));
 
-    if (!colNames.includes('key_stage')) {
-      throw new Error("Column 'key_stage' missing from esf7_personnel_designations!");
+    if (!colNames.includes("key_stage")) {
+      throw new Error(
+        "Column 'key_stage' missing from esf7_personnel_designations!",
+      );
     }
 
-    console.log('✓ PASS: key_stage column is present in database.');
+    console.log("✓ PASS: key_stage column is present in database.");
 
     // Fetch existing test designations
     const desRes = await client.query(`
@@ -41,17 +46,20 @@ async function testKeyStagePersistence() {
       LIMIT 10
     `);
 
-    console.log(`[Test] Current stored designations count: ${desRes.rows.length}`);
-    desRes.rows.forEach(r => {
-      console.log(`• [${r.id}] Person: ${r.personnel_id} | Name: ${r.designation_name} | KS: ${r.key_stage || 'N/A'} | Grade: ${r.grade_level || 'N/A'} | Subj: ${r.subject_area || 'N/A'} | Track: ${r.track || 'N/A'}`);
+    console.log(
+      `[Test] Current stored designations count: ${desRes.rows.length}`,
+    );
+    desRes.rows.forEach((r) => {
+      console.log(
+        `• [${r.id}] Person: ${r.personnel_id} | Name: ${r.designation_name} | KS: ${r.key_stage || "N/A"} | Grade: ${r.grade_level || "N/A"} | Subj: ${r.subject_area || "N/A"} | Track: ${r.track || "N/A"}`,
+      );
     });
-
   } finally {
     await client.end();
   }
 }
 
-testKeyStagePersistence().catch(err => {
-  console.error('Test Failed:', err);
+testKeyStagePersistence().catch((err) => {
+  console.error("Test Failed:", err);
   process.exit(1);
 });

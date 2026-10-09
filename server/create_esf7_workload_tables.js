@@ -1,11 +1,12 @@
-const { Client } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Client } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const sslConfig = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+const sslConfig =
+  process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;
 
 async function createWorkloadTables() {
-  const targetDbName = 'insighted_esf7';
+  const targetDbName = "insighted_esf7";
   console.log(`Connecting to '${targetDbName}'...`);
 
   const client = new Client({
@@ -14,14 +15,16 @@ async function createWorkloadTables() {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: targetDbName,
-    ssl: sslConfig
+    ssl: sslConfig,
   });
 
   await client.connect();
 
   try {
-    console.log("Creating tables 'esf7_workload_rows' and 'esf7_shs_workload_rows'...");
-    
+    console.log(
+      "Creating tables 'esf7_workload_rows' and 'esf7_shs_workload_rows'...",
+    );
+
     // 1. Elementary & Junior High School Workload Rows
     await client.query(`
       CREATE TABLE IF NOT EXISTS esf7_workload_rows (
@@ -89,7 +92,9 @@ async function createWorkloadTables() {
       CREATE INDEX IF NOT EXISTS idx_esf7_shs_workload_rows_school_sy ON esf7_shs_workload_rows (school_id, school_year);
     `);
 
-    console.log("Tables 'esf7_workload_rows' and 'esf7_shs_workload_rows' created successfully!");
+    console.log(
+      "Tables 'esf7_workload_rows' and 'esf7_shs_workload_rows' created successfully!",
+    );
 
     const res = await client.query(`
       SELECT table_name
@@ -98,16 +103,17 @@ async function createWorkloadTables() {
       ORDER BY table_name;
     `);
 
-    console.log('\n--- Verified Tables in insighted_esf7 ---');
-    res.rows.forEach((row, idx) => console.log(`${idx + 1}. ${row.table_name}`));
-    console.log('-----------------------------------------\n');
-
+    console.log("\n--- Verified Tables in insighted_esf7 ---");
+    res.rows.forEach((row, idx) =>
+      console.log(`${idx + 1}. ${row.table_name}`),
+    );
+    console.log("-----------------------------------------\n");
   } finally {
     await client.end();
   }
 }
 
-createWorkloadTables().catch(err => {
-  console.error('Error creating tables:', err);
+createWorkloadTables().catch((err) => {
+  console.error("Error creating tables:", err);
   process.exit(1);
 });

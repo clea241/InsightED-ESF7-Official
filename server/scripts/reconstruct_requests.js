@@ -1,7 +1,7 @@
-const { prodPool, insightEdPool } = require('../db');
+const { prodPool, insightEdPool } = require("../db");
 
 async function inspectAndReconstructRequests() {
-  console.log('=== High-Speed SQL Request Reconstruction ===');
+  console.log("=== High-Speed SQL Request Reconstruction ===");
 
   // 1. Find all clustered personnel from drafts
   const clusteredRes = await prodPool.query(`
@@ -21,7 +21,9 @@ async function inspectAndReconstructRequests() {
        OR (p_elem->'assignedSchools' IS NOT NULL AND jsonb_array_length(p_elem->'assignedSchools') > 1)
   `);
 
-  console.log(`Found ${clusteredRes.rows.length} clustered teacher records in drafts`);
+  console.log(
+    `Found ${clusteredRes.rows.length} clustered teacher records in drafts`,
+  );
 
   // 2. Find all reassigned personnel from drafts
   const reassignedRes = await prodPool.query(`
@@ -41,7 +43,9 @@ async function inspectAndReconstructRequests() {
        OR p_elem->>'isReassigned' = 'true'
   `);
 
-  console.log(`Found ${reassignedRes.rows.length} reassigned personnel records in drafts`);
+  console.log(
+    `Found ${reassignedRes.rows.length} reassigned personnel records in drafts`,
+  );
 
   // 3. Find any explicit requests saved in payload.interSchoolRequests or payload.requests
   const explicitRes = await prodPool.query(`
@@ -64,7 +68,9 @@ async function inspectAndReconstructRequests() {
 
   // Combine and restore into esf7_requests
   const allCandidates = [...clusteredRes.rows, ...reassignedRes.rows];
-  console.log(`Restoring ${allCandidates.length} total request records into esf7_requests...`);
+  console.log(
+    `Restoring ${allCandidates.length} total request records into esf7_requests...`,
+  );
 
   // Batch insert in chunks of 200
   const CHUNK_SIZE = 200;
@@ -77,21 +83,29 @@ async function inspectAndReconstructRequests() {
     let pIdx = 1;
 
     for (const c of chunk) {
-      const sId = String(c.requester_school_id || '').replace(/^SCH-/i, '').trim() || 'SCHOOL';
-      const tId = String(c.target_school_id || '').replace(/^SCH-/i, '').trim() || 'TARGET';
+      const sId =
+        String(c.requester_school_id || "")
+          .replace(/^SCH-/i, "")
+          .trim() || "SCHOOL";
+      const tId =
+        String(c.target_school_id || "")
+          .replace(/^SCH-/i, "")
+          .trim() || "TARGET";
       const reqId = `REQ-${sId}-${tId}-${i + totalInserted + 1}-${Math.floor(100 + Math.random() * 900)}`;
 
-      valuePlaceholders.push(`($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NULL, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NOW(), NOW())`);
+      valuePlaceholders.push(
+        `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NULL, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NOW(), NOW())`,
+      );
       values.push(
         reqId,
         sId,
         tId,
-        c.school_year || '2026-2027',
+        c.school_year || "2026-2027",
         c.request_type,
-        c.personnel_name || 'TEACHER',
-        c.status || 'pending',
+        c.personnel_name || "TEACHER",
+        c.status || "pending",
         c.remarks,
-        JSON.stringify(c.raw_payload)
+        JSON.stringify(c.raw_payload),
       );
     }
 
@@ -101,7 +115,7 @@ async function inspectAndReconstructRequests() {
         request_type, personnel_id, personnel_name, status, remarks, raw_payload,
         created_at, updated_at
       )
-      VALUES ${valuePlaceholders.join(',\n')}
+      VALUES ${valuePlaceholders.join(",\n")}
       ON CONFLICT (id) DO NOTHING
     `;
 
@@ -109,8 +123,12 @@ async function inspectAndReconstructRequests() {
     totalInserted += res.rowCount;
   }
 
-  const finalCount = await prodPool.query('SELECT count(*)::int as count FROM esf7_requests');
-  console.log(`\n✅ Successfully Restored ${totalInserted} requests! Total rows in esf7_requests: ${finalCount.rows[0].count}`);
+  const finalCount = await prodPool.query(
+    "SELECT count(*)::int as count FROM esf7_requests",
+  );
+  console.log(
+    `\n✅ Successfully Restored ${totalInserted} requests! Total rows in esf7_requests: ${finalCount.rows[0].count}`,
+  );
 
   await prodPool.end();
 }

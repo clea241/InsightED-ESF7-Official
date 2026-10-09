@@ -3,21 +3,27 @@
 // SAFETY: these tests CREATE and DROP tables. They only run against a database whose name contains "test"
 // (a disposable database such as the CI service container or `createdb esf7_test`), and they never read
 // server/.env credentials. Point them at it with TEST_DATABASE_URL (and optionally TEST_REDIS_URL).
-import { createRequire } from 'node:module';
+import { createRequire } from "node:module";
 
 export const nodeRequire = createRequire(import.meta.url);
 
-export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || '';
-export const TEST_REDIS_URL = process.env.TEST_REDIS_URL || '';
+export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || "";
+export const TEST_REDIS_URL = process.env.TEST_REDIS_URL || "";
 
 export function assertDisposableDatabase(url) {
-  let name = '';
-  try { name = new URL(url).pathname.replace(/^\//, ''); } catch { throw new Error('TEST_DATABASE_URL is not a valid URL'); }
+  let name = "";
+  try {
+    name = new URL(url).pathname.replace(/^\//, "");
+  } catch {
+    throw new Error("TEST_DATABASE_URL is not a valid URL");
+  }
   if (!/test/i.test(name)) {
-    throw new Error(`Refusing to run: database name "${name}" does not contain "test". Integration tests drop and recreate tables.`);
+    throw new Error(
+      `Refusing to run: database name "${name}" does not contain "test". Integration tests drop and recreate tables.`,
+    );
   }
   if (/stride-posgre-prod|azure\.com/i.test(url)) {
-    throw new Error('Refusing to run against the production host.');
+    throw new Error("Refusing to run against the production host.");
   }
 }
 
@@ -28,11 +34,11 @@ export function pointServerAtTestDatabase() {
   const u = new URL(TEST_DATABASE_URL);
   process.env.DATABASE_URL = TEST_DATABASE_URL;
   process.env.DB_HOST = u.hostname;
-  process.env.DB_PORT = u.port || '5432';
-  process.env.DB_NAME = u.pathname.replace(/^\//, '');
+  process.env.DB_PORT = u.port || "5432";
+  process.env.DB_NAME = u.pathname.replace(/^\//, "");
   process.env.DB_USER = decodeURIComponent(u.username);
   process.env.DB_PASSWORD = decodeURIComponent(u.password);
-  process.env.DB_SSL = 'false';
+  process.env.DB_SSL = "false";
   if (TEST_REDIS_URL) process.env.REDIS_URL = TEST_REDIS_URL;
 }
 

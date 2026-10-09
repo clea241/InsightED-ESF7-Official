@@ -1,4 +1,4 @@
-const { prodPool } = require('../db');
+const { prodPool } = require("../db");
 
 async function inspectSample() {
   const r = await prodPool.query(`
@@ -11,7 +11,7 @@ async function inspectSample() {
     LIMIT 10
   `);
 
-  console.log('Sample Clustered/Reassigned personnel:');
+  console.log("Sample Clustered/Reassigned personnel:");
   console.log(JSON.stringify(r.rows, null, 2));
   await prodPool.end();
 }

@@ -1,4 +1,4 @@
-import { QR_VALIDITY_MS } from '@shared/scheduleRules.js';
+import { QR_VALIDITY_MS } from "@shared/scheduleRules.js";
 
 /**
  * Generates a deterministic 8-character 1-Day (24-hour) TOTP passcode for a personnel ID.
@@ -8,19 +8,23 @@ import { QR_VALIDITY_MS } from '@shared/scheduleRules.js';
  * @returns {string} 8-character uppercase passcode.
  */
 export function getDailyPasscode(personOrId, windowOffset = 0) {
-  if (!personOrId) return '00000000';
-  let key = '';
-  if (typeof personOrId === 'object' && personOrId !== null) {
+  if (!personOrId) return "00000000";
+  let key = "";
+  if (typeof personOrId === "object" && personOrId !== null) {
     if (personOrId.id) {
       key = String(personOrId.id).toUpperCase().trim();
     } else if (personOrId.prn) {
       key = String(personOrId.prn).toUpperCase().trim();
     } else {
-      const fn = (personOrId.firstName || personOrId.first_name || '').toUpperCase().trim();
-      const ln = (personOrId.lastName || personOrId.last_name || '').toUpperCase().trim();
-      key = fn && ln ? `${ln}_${fn}` : 'TEACHER';
+      const fn = (personOrId.firstName || personOrId.first_name || "")
+        .toUpperCase()
+        .trim();
+      const ln = (personOrId.lastName || personOrId.last_name || "")
+        .toUpperCase()
+        .trim();
+      key = fn && ln ? `${ln}_${fn}` : "TEACHER";
     }
-  } else if (typeof personOrId === 'string') {
+  } else if (typeof personOrId === "string") {
     key = personOrId.toUpperCase().trim();
   } else {
     key = String(personOrId).toUpperCase().trim();
@@ -34,12 +38,12 @@ export function getDailyPasscode(personOrId, windowOffset = 0) {
     hash = (hash << 5) - hash + str.charCodeAt(i);
     hash |= 0;
   }
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let code = '';
+  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  let code = "";
   let absHash = Math.abs(hash);
   for (let i = 0; i < 8; i++) {
     code += chars[(absHash + i * 7) % chars.length];
-    absHash = Math.floor(absHash / 31) + (str.charCodeAt(i % str.length) * 17);
+    absHash = Math.floor(absHash / 31) + str.charCodeAt(i % str.length) * 17;
   }
   return code;
 }
@@ -47,6 +51,3 @@ export function getDailyPasscode(personOrId, windowOffset = 0) {
 // Aliases for backwards compatibility with existing imports
 export const getHourlyPasscode = getDailyPasscode;
 export const get10MinPasscode = getDailyPasscode;
-
-
-

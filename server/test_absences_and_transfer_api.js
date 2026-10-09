@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testAbsencesAndTransferFlow() {
-  console.log('Testing overload_absences & esf7_workload_transfer insertion, linking, and cascading deletion...');
+  console.log(
+    "Testing overload_absences & esf7_workload_transfer insertion, linking, and cascading deletion...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id IN ('PER-TEST-010', 'PER-TEST-011')`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id IN ('PER-TEST-010', 'PER-TEST-011')`,
+  );
 
   // 1. Insert 2 Profiles (Absent Teacher & Relieving Teacher)
   await db.query(`
@@ -22,8 +26,15 @@ async function testAbsencesAndTransferFlow() {
       '2026-09-14', '2026-09-15', 'SICK_LEAVE', 2, '{"reason": "Sick Leave"}'::jsonb
     ) RETURNING *
   `);
-  console.log('✅ Created Absence Record:');
-  console.log('ID:', absRes.rows[0].id, '| Teacher:', absRes.rows[0].personnel_id, '| Leave:', absRes.rows[0].leave_type);
+  console.log("✅ Created Absence Record:");
+  console.log(
+    "ID:",
+    absRes.rows[0].id,
+    "| Teacher:",
+    absRes.rows[0].personnel_id,
+    "| Leave:",
+    absRes.rows[0].leave_type,
+  );
 
   // 3. Insert Workload Transfer to Apolinario Mabini (Relieving Teacher)
   const trfRes = await db.query(`
@@ -35,19 +46,38 @@ async function testAbsencesAndTransferFlow() {
       'WKL-108348-001', 'ELEM_JHS', 'MATHEMATICS', '2026-09-14', '2026-09-15', 1.00, '{"subject": "MATHEMATICS"}'::jsonb
     ) RETURNING *
   `);
-  console.log('✅ Created Workload Transfer Record (Relieving Duty):');
-  console.log('ID:', trfRes.rows[0].id, '| Relieving Teacher:', trfRes.rows[0].relieving_personnel_id, '| Subject:', trfRes.rows[0].subject, '| Hours:', trfRes.rows[0].relieving_hours);
+  console.log("✅ Created Workload Transfer Record (Relieving Duty):");
+  console.log(
+    "ID:",
+    trfRes.rows[0].id,
+    "| Relieving Teacher:",
+    trfRes.rows[0].relieving_personnel_id,
+    "| Subject:",
+    trfRes.rows[0].subject,
+    "| Hours:",
+    trfRes.rows[0].relieving_hours,
+  );
 
   // 4. Test CASCADE Deletion of Profile
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id IN ('PER-TEST-010', 'PER-TEST-011')`);
-  const checkAbs = await db.query(`SELECT COUNT(*) FROM overload_absences WHERE id = 'ABS-108348-010'`);
-  const checkTrf = await db.query(`SELECT COUNT(*) FROM esf7_workload_transfer WHERE id = 'TRF-108348-010'`);
-  console.log('✅ ON DELETE CASCADE check (Absences count & Transfer count should be 0):', checkAbs.rows[0].count, checkTrf.rows[0].count);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id IN ('PER-TEST-010', 'PER-TEST-011')`,
+  );
+  const checkAbs = await db.query(
+    `SELECT COUNT(*) FROM overload_absences WHERE id = 'ABS-108348-010'`,
+  );
+  const checkTrf = await db.query(
+    `SELECT COUNT(*) FROM esf7_workload_transfer WHERE id = 'TRF-108348-010'`,
+  );
+  console.log(
+    "✅ ON DELETE CASCADE check (Absences count & Transfer count should be 0):",
+    checkAbs.rows[0].count,
+    checkTrf.rows[0].count,
+  );
 
   process.exit(0);
 }
 
-testAbsencesAndTransferFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testAbsencesAndTransferFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

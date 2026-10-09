@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testClassSectionsFlow() {
-  console.log('Testing esf7_class_sections insertion, standard evaluation & FK join...');
+  console.log(
+    "Testing esf7_class_sections insertion, standard evaluation & FK join...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-007'`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-007'`,
+  );
   await db.query(`DELETE FROM esf7_class_sections WHERE id = 'SEC-108348-007'`);
 
   // 1. Insert Profile (Adviser)
@@ -37,27 +41,37 @@ async function testClassSectionsFlow() {
     WHERE s.id = 'SEC-108348-007'
   `);
 
-  console.log('✅ Successfully retrieved class section record:');
+  console.log("✅ Successfully retrieved class section record:");
   const row = res.rows[0];
-  console.log('Section ID:', row.id);
-  console.log('Grade & Section:', `${row.grade_level} - ${row.section_name}`);
-  console.log('Class Adviser:', `${row.first_name} ${row.last_name}`);
-  console.log('Advisory Minutes:', row.advisory_minutes);
-  console.log('Male / Female / Total Learners:', `${row.male_learners} / ${row.female_learners} / ${row.number_of_learners}`);
-  console.log('Section Size Standard Column:', row.standard);
+  console.log("Section ID:", row.id);
+  console.log("Grade & Section:", `${row.grade_level} - ${row.section_name}`);
+  console.log("Class Adviser:", `${row.first_name} ${row.last_name}`);
+  console.log("Advisory Minutes:", row.advisory_minutes);
+  console.log(
+    "Male / Female / Total Learners:",
+    `${row.male_learners} / ${row.female_learners} / ${row.number_of_learners}`,
+  );
+  console.log("Section Size Standard Column:", row.standard);
 
   // 4. Test ON DELETE SET NULL on advisor_id
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-007'`);
-  const checkSec = await db.query(`SELECT advisor_id FROM esf7_class_sections WHERE id = 'SEC-108348-007'`);
-  console.log('✅ ON DELETE SET NULL check (advisor_id should be null):', checkSec.rows[0].advisor_id === null);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-007'`,
+  );
+  const checkSec = await db.query(
+    `SELECT advisor_id FROM esf7_class_sections WHERE id = 'SEC-108348-007'`,
+  );
+  console.log(
+    "✅ ON DELETE SET NULL check (advisor_id should be null):",
+    checkSec.rows[0].advisor_id === null,
+  );
 
   // Clean up
   await db.query(`DELETE FROM esf7_class_sections WHERE id = 'SEC-108348-007'`);
-  console.log('🧹 Cleaned up test records.');
+  console.log("🧹 Cleaned up test records.");
   process.exit(0);
 }
 
-testClassSectionsFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testClassSectionsFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

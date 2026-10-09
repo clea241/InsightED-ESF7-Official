@@ -1,32 +1,34 @@
-const { stagingPool, prodPool } = require('../db');
-const { MCOC_ARCHETYPES } = require('../utils/divisionTestRegistry');
+const { stagingPool, prodPool } = require("../db");
+const { MCOC_ARCHETYPES } = require("../utils/divisionTestRegistry");
 
 async function seedStaging() {
-  console.log('=====================================================');
-  console.log('🌱 SEEDING 7 MCOC ARCHETYPES INTO STAGING DATABASE');
-  console.log('=====================================================\n');
+  console.log("=====================================================");
+  console.log("🌱 SEEDING 7 MCOC ARCHETYPES INTO STAGING DATABASE");
+  console.log("=====================================================\n");
 
   // 1. Safety Check: Verify connected database is staging
-  const dbRes = await stagingPool.query('SELECT current_database()');
+  const dbRes = await stagingPool.query("SELECT current_database()");
   const activeDb = dbRes.rows[0].current_database;
   console.log(`Connected Staging Target: [${activeDb}]`);
 
-  if (activeDb !== 'insighted_esf7_staging') {
-    console.error('❌ SAFETY ABORT: Connected DB is NOT insighted_esf7_staging!');
+  if (activeDb !== "insighted_esf7_staging") {
+    console.error(
+      "❌ SAFETY ABORT: Connected DB is NOT insighted_esf7_staging!",
+    );
     process.exit(1);
   }
 
   // 2. Define MCOC Archetype Configurations
   const ARCHETYPE_CONFIGS = [
     {
-      schoolId: '900223',
-      schoolName: 'MABINI ELEMENTARY SCHOOL (PURE ES)',
-      region: 'REGION V',
-      division: 'MCOC PURE ELEMENTARY',
-      district: 'LEGAZPI DISTRICT I',
-      schoolYear: 'SY 26-27',
+      schoolId: "900223",
+      schoolName: "MABINI ELEMENTARY SCHOOL (PURE ES)",
+      region: "REGION V",
+      division: "MCOC PURE ELEMENTARY",
+      district: "LEGAZPI DISTRICT I",
+      schoolYear: "SY 26-27",
       hasElemSpecialPrograms: true,
-      elemSpecialPrograms: ['SPECIAL SCIENCE ELEMENTARY SCHOOL'],
+      elemSpecialPrograms: ["SPECIAL SCIENCE ELEMENTARY SCHOOL"],
       hasJhsSpecialPrograms: false,
       jhsSpecialPrograms: [],
       shsCurriculumModel: null,
@@ -40,22 +42,22 @@ async function seedStaging() {
       hasSned: false,
       hasIped: false,
       hasMadrasah: false,
-      inclusivePrograms: []
+      inclusivePrograms: [],
     },
     {
-      schoolId: '900224',
-      schoolName: 'RIZAL MEMORIAL JUNIOR HIGH SCHOOL (PURE JHS)',
-      region: 'REGION V',
-      division: 'MCOC PURE JUNIOR HIGH',
-      district: 'NAGA DISTRICT II',
-      schoolYear: 'SY 26-27',
+      schoolId: "900224",
+      schoolName: "RIZAL MEMORIAL JUNIOR HIGH SCHOOL (PURE JHS)",
+      region: "REGION V",
+      division: "MCOC PURE JUNIOR HIGH",
+      district: "NAGA DISTRICT II",
+      schoolYear: "SY 26-27",
       hasElemSpecialPrograms: false,
       elemSpecialPrograms: [],
       hasJhsSpecialPrograms: true,
       jhsSpecialPrograms: [
-        'SPECIAL PROGRAM IN THE ARTS (SPA)',
-        'SPECIAL PROGRAM IN JOURNALISM (SPJ)',
-        'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM'
+        "SPECIAL PROGRAM IN THE ARTS (SPA)",
+        "SPECIAL PROGRAM IN JOURNALISM (SPJ)",
+        "SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM",
       ],
       shsCurriculumModel: null,
       hasElemInclusive: false,
@@ -68,20 +70,20 @@ async function seedStaging() {
       hasSned: false,
       hasIped: false,
       hasMadrasah: false,
-      inclusivePrograms: []
+      inclusivePrograms: [],
     },
     {
-      schoolId: '900225',
-      schoolName: 'ALBAY NATIONAL SENIOR HIGH SCHOOL (PURE SHS)',
-      region: 'REGION V',
-      division: 'MCOC PURE SENIOR HIGH',
-      district: 'TABACO DISTRICT I',
-      schoolYear: 'SY 26-27',
+      schoolId: "900225",
+      schoolName: "ALBAY NATIONAL SENIOR HIGH SCHOOL (PURE SHS)",
+      region: "REGION V",
+      division: "MCOC PURE SENIOR HIGH",
+      district: "TABACO DISTRICT I",
+      schoolYear: "SY 26-27",
       hasElemSpecialPrograms: false,
       elemSpecialPrograms: [],
       hasJhsSpecialPrograms: false,
       jhsSpecialPrograms: [],
-      shsCurriculumModel: 'Standard K-12 SHS Curriculum',
+      shsCurriculumModel: "Standard K-12 SHS Curriculum",
       hasElemInclusive: false,
       elemInclusivePrograms: [],
       hasJhsInclusive: false,
@@ -92,73 +94,22 @@ async function seedStaging() {
       hasSned: false,
       hasIped: false,
       hasMadrasah: false,
-      inclusivePrograms: []
+      inclusivePrograms: [],
     },
     {
-      schoolId: '900226',
-      schoolName: 'DARAGA INTEGRATED MEMORIAL SCHOOL (K-10)',
-      region: 'REGION V',
-      division: 'MCOC INTEGRATED SCHOOL',
-      district: 'DARAGA DISTRICT III',
-      schoolYear: 'SY 26-27',
+      schoolId: "900226",
+      schoolName: "DARAGA INTEGRATED MEMORIAL SCHOOL (K-10)",
+      region: "REGION V",
+      division: "MCOC INTEGRATED SCHOOL",
+      district: "DARAGA DISTRICT III",
+      schoolYear: "SY 26-27",
       hasElemSpecialPrograms: true,
-      elemSpecialPrograms: ['SPECIAL SCIENCE ELEMENTARY SCHOOL'],
-      hasJhsSpecialPrograms: true,
-      jhsSpecialPrograms: ['SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM'],
-      shsCurriculumModel: null,
-      hasElemInclusive: false,
-      elemInclusivePrograms: [],
-      hasJhsInclusive: false,
-      jhsInclusivePrograms: [],
-      hasShsInclusive: false,
-      shsInclusivePrograms: [],
-      hasAls: false,
-      hasSned: false,
-      hasIped: false,
-      hasMadrasah: false,
-      inclusivePrograms: []
-    },
-    {
-      schoolId: '900227',
-      schoolName: 'SAN ISIDRO MULTIGRADE SCHOOL (MG ES)',
-      region: 'REGION V',
-      division: 'MCOC MULTIGRADE SCHOOL',
-      district: 'POLANGUI DISTRICT II',
-      schoolYear: 'SY 26-27',
-      hasElemSpecialPrograms: false,
-      elemSpecialPrograms: [],
-      hasJhsSpecialPrograms: false,
-      jhsSpecialPrograms: [],
-      shsCurriculumModel: null,
-      hasElemInclusive: false,
-      elemInclusivePrograms: [],
-      hasJhsInclusive: false,
-      jhsInclusivePrograms: [],
-      hasShsInclusive: false,
-      shsInclusivePrograms: [],
-      hasAls: false,
-      hasSned: false,
-      hasIped: false,
-      hasMadrasah: false,
-      inclusivePrograms: []
-    },
-    {
-      schoolId: '900228',
-      schoolName: 'BICOL REGIONAL COMPREHENSIVE HIGH SCHOOL (K-12)',
-      region: 'REGION V',
-      division: 'MCOC K-12 COMPREHENSIVE',
-      district: 'LEGAZPI DISTRICT II',
-      schoolYear: 'SY 26-27',
-      hasElemSpecialPrograms: true,
-      elemSpecialPrograms: ['SPECIAL SCIENCE ELEMENTARY SCHOOL'],
+      elemSpecialPrograms: ["SPECIAL SCIENCE ELEMENTARY SCHOOL"],
       hasJhsSpecialPrograms: true,
       jhsSpecialPrograms: [
-        'SPECIAL PROGRAM IN THE ARTS (SPA)',
-        'SPECIAL PROGRAM IN SPORTS (SPS)',
-        'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM',
-        'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)'
+        "SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM",
       ],
-      shsCurriculumModel: 'Standard K-12 SHS Curriculum',
+      shsCurriculumModel: null,
       hasElemInclusive: false,
       elemInclusivePrograms: [],
       hasJhsInclusive: false,
@@ -169,69 +120,142 @@ async function seedStaging() {
       hasSned: false,
       hasIped: false,
       hasMadrasah: false,
-      inclusivePrograms: []
+      inclusivePrograms: [],
     },
     {
-      schoolId: '900229',
-      schoolName: 'ALBAY SPECIAL EDUCATION & INCLUSIVE CENTER',
-      region: 'REGION V',
-      division: 'MCOC INCLUSIVE SNED ALS',
-      district: 'ALBAY INCLUSIVE DISTRICT',
-      schoolYear: 'SY 26-27',
+      schoolId: "900227",
+      schoolName: "SAN ISIDRO MULTIGRADE SCHOOL (MG ES)",
+      region: "REGION V",
+      division: "MCOC MULTIGRADE SCHOOL",
+      district: "POLANGUI DISTRICT II",
+      schoolYear: "SY 26-27",
+      hasElemSpecialPrograms: false,
+      elemSpecialPrograms: [],
+      hasJhsSpecialPrograms: false,
+      jhsSpecialPrograms: [],
+      shsCurriculumModel: null,
+      hasElemInclusive: false,
+      elemInclusivePrograms: [],
+      hasJhsInclusive: false,
+      jhsInclusivePrograms: [],
+      hasShsInclusive: false,
+      shsInclusivePrograms: [],
+      hasAls: false,
+      hasSned: false,
+      hasIped: false,
+      hasMadrasah: false,
+      inclusivePrograms: [],
+    },
+    {
+      schoolId: "900228",
+      schoolName: "BICOL REGIONAL COMPREHENSIVE HIGH SCHOOL (K-12)",
+      region: "REGION V",
+      division: "MCOC K-12 COMPREHENSIVE",
+      district: "LEGAZPI DISTRICT II",
+      schoolYear: "SY 26-27",
+      hasElemSpecialPrograms: true,
+      elemSpecialPrograms: ["SPECIAL SCIENCE ELEMENTARY SCHOOL"],
+      hasJhsSpecialPrograms: true,
+      jhsSpecialPrograms: [
+        "SPECIAL PROGRAM IN THE ARTS (SPA)",
+        "SPECIAL PROGRAM IN SPORTS (SPS)",
+        "SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM",
+        "SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)",
+      ],
+      shsCurriculumModel: "Standard K-12 SHS Curriculum",
+      hasElemInclusive: false,
+      elemInclusivePrograms: [],
+      hasJhsInclusive: false,
+      jhsInclusivePrograms: [],
+      hasShsInclusive: false,
+      shsInclusivePrograms: [],
+      hasAls: false,
+      hasSned: false,
+      hasIped: false,
+      hasMadrasah: false,
+      inclusivePrograms: [],
+    },
+    {
+      schoolId: "900229",
+      schoolName: "ALBAY SPECIAL EDUCATION & INCLUSIVE CENTER",
+      region: "REGION V",
+      division: "MCOC INCLUSIVE SNED ALS",
+      district: "ALBAY INCLUSIVE DISTRICT",
+      schoolYear: "SY 26-27",
       hasElemSpecialPrograms: false,
       elemSpecialPrograms: [],
       hasJhsSpecialPrograms: false,
       jhsSpecialPrograms: [],
       shsCurriculumModel: null,
       hasElemInclusive: true,
-      elemInclusivePrograms: ['SNED-ES', 'ALS-ES', 'ARAL-ES'],
+      elemInclusivePrograms: ["SNED-ES", "ALS-ES", "ARAL-ES"],
       hasJhsInclusive: true,
-      jhsInclusivePrograms: ['SNED-JHS', 'ALS-JHS', 'ARAL-JHS'],
+      jhsInclusivePrograms: ["SNED-JHS", "ALS-JHS", "ARAL-JHS"],
       hasShsInclusive: false,
       shsInclusivePrograms: [],
       hasAls: true,
       hasSned: true,
       hasIped: false,
       hasMadrasah: false,
-      inclusivePrograms: ['SNED-ES', 'ALS-ES', 'ARAL-ES', 'SNED-JHS', 'ALS-JHS', 'ARAL-JHS']
+      inclusivePrograms: [
+        "SNED-ES",
+        "ALS-ES",
+        "ARAL-ES",
+        "SNED-JHS",
+        "ALS-JHS",
+        "ARAL-JHS",
+      ],
     },
     {
-      schoolId: '900230',
-      schoolName: 'BICOL NATIONAL COMPREHENSIVE SCHOOL (ALL OFFERINGS)',
-      region: 'REGION V',
-      division: 'MCOC ALL OFFERINGS',
-      district: 'LEGAZPI MEGA DISTRICT',
-      schoolYear: 'SY 26-27',
+      schoolId: "900230",
+      schoolName: "BICOL NATIONAL COMPREHENSIVE SCHOOL (ALL OFFERINGS)",
+      region: "REGION V",
+      division: "MCOC ALL OFFERINGS",
+      district: "LEGAZPI MEGA DISTRICT",
+      schoolYear: "SY 26-27",
       hasElemSpecialPrograms: true,
-      elemSpecialPrograms: ['SPECIAL SCIENCE ELEMENTARY SCHOOL'],
+      elemSpecialPrograms: ["SPECIAL SCIENCE ELEMENTARY SCHOOL"],
       hasJhsSpecialPrograms: true,
       jhsSpecialPrograms: [
-        'SPECIAL PROGRAM IN THE ARTS (SPA)',
-        'SPECIAL PROGRAM IN SPORTS (SPS)',
-        'SPECIAL PROGRAM IN JOURNALISM (SPJ)',
-        'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM',
-        'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)'
+        "SPECIAL PROGRAM IN THE ARTS (SPA)",
+        "SPECIAL PROGRAM IN SPORTS (SPS)",
+        "SPECIAL PROGRAM IN JOURNALISM (SPJ)",
+        "SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM",
+        "SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)",
       ],
-      shsCurriculumModel: 'Standard K-12 SHS Curriculum',
+      shsCurriculumModel: "Standard K-12 SHS Curriculum",
       hasElemInclusive: true,
-      elemInclusivePrograms: ['SNED-ES', 'ALS-ES', 'ARAL-ES'],
+      elemInclusivePrograms: ["SNED-ES", "ALS-ES", "ARAL-ES"],
       hasJhsInclusive: true,
-      jhsInclusivePrograms: ['SNED-JHS', 'ALS-JHS', 'ARAL-JHS'],
+      jhsInclusivePrograms: ["SNED-JHS", "ALS-JHS", "ARAL-JHS"],
       hasShsInclusive: true,
-      shsInclusivePrograms: ['SNED-SHS', 'ALS-SHS', 'ARAL-SHS'],
+      shsInclusivePrograms: ["SNED-SHS", "ALS-SHS", "ARAL-SHS"],
       hasAls: true,
       hasSned: true,
       hasIped: true,
       hasMadrasah: true,
-      inclusivePrograms: ['SNED-ES', 'ALS-ES', 'ARAL-ES', 'SNED-JHS', 'ALS-JHS', 'ARAL-JHS', 'SNED-SHS', 'ALS-SHS', 'ARAL-SHS']
-    }
+      inclusivePrograms: [
+        "SNED-ES",
+        "ALS-ES",
+        "ARAL-ES",
+        "SNED-JHS",
+        "ALS-JHS",
+        "ARAL-JHS",
+        "SNED-SHS",
+        "ALS-SHS",
+        "ARAL-SHS",
+      ],
+    },
   ];
 
   for (const config of ARCHETYPE_CONFIGS) {
-    console.log(`▶ Seeding Archetype [${config.schoolId}] ${config.schoolName}...`);
+    console.log(
+      `▶ Seeding Archetype [${config.schoolId}] ${config.schoolName}...`,
+    );
 
     const profileId = `SCH-PROFILE-${config.schoolId}`;
-    await stagingPool.query(`
+    await stagingPool.query(
+      `
       INSERT INTO esf7_school_profile (
         id, school_id, school_year,
         has_elem_special_programs, elem_special_programs,
@@ -264,52 +288,62 @@ async function seedStaging() {
         inclusive_programs = EXCLUDED.inclusive_programs,
         raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
-    `, [
-      profileId,
-      config.schoolId,
-      config.schoolYear,
-      config.hasElemSpecialPrograms,
-      JSON.stringify(config.elemSpecialPrograms),
-      config.hasJhsSpecialPrograms,
-      JSON.stringify(config.jhsSpecialPrograms),
-      config.shsCurriculumModel,
-      config.hasElemInclusive,
-      JSON.stringify(config.elemInclusivePrograms),
-      config.hasJhsInclusive,
-      JSON.stringify(config.jhsInclusivePrograms),
-      config.hasShsInclusive,
-      JSON.stringify(config.shsInclusivePrograms),
-      config.hasAls,
-      config.hasSned,
-      config.hasIped,
-      config.hasMadrasah,
-      JSON.stringify(config.inclusivePrograms),
-      JSON.stringify(config)
-    ]);
+    `,
+      [
+        profileId,
+        config.schoolId,
+        config.schoolYear,
+        config.hasElemSpecialPrograms,
+        JSON.stringify(config.elemSpecialPrograms),
+        config.hasJhsSpecialPrograms,
+        JSON.stringify(config.jhsSpecialPrograms),
+        config.shsCurriculumModel,
+        config.hasElemInclusive,
+        JSON.stringify(config.elemInclusivePrograms),
+        config.hasJhsInclusive,
+        JSON.stringify(config.jhsInclusivePrograms),
+        config.hasShsInclusive,
+        JSON.stringify(config.shsInclusivePrograms),
+        config.hasAls,
+        config.hasSned,
+        config.hasIped,
+        config.hasMadrasah,
+        JSON.stringify(config.inclusivePrograms),
+        JSON.stringify(config),
+      ],
+    );
 
-    console.log(`  ✅ Stored profile in esf7_school_profile for [${config.schoolId}]`);
+    console.log(
+      `  ✅ Stored profile in esf7_school_profile for [${config.schoolId}]`,
+    );
   }
 
   // 3. Staging database verification
-  const pCount = await stagingPool.query("SELECT COUNT(*) FROM esf7_school_profile WHERE school_id >= '900223' AND school_id <= '900230'");
-  console.log(`\nStaging verification: ${pCount.rows[0].count} rows in esf7_school_profile.`);
+  const pCount = await stagingPool.query(
+    "SELECT COUNT(*) FROM esf7_school_profile WHERE school_id >= '900223' AND school_id <= '900230'",
+  );
+  console.log(
+    `\nStaging verification: ${pCount.rows[0].count} rows in esf7_school_profile.`,
+  );
 
   // 4. Production database check (MUST BE ZERO)
-  const prodCheck = await prodPool.query("SELECT COUNT(*) FROM esf7_school_profile WHERE school_id >= '900223' AND school_id <= '900230'");
+  const prodCheck = await prodPool.query(
+    "SELECT COUNT(*) FROM esf7_school_profile WHERE school_id >= '900223' AND school_id <= '900230'",
+  );
   console.log(`Production check: ${prodCheck.rows[0].count} rows (MUST BE 0)`);
 
   if (parseInt(prodCheck.rows[0].count, 10) !== 0) {
-    console.error('❌ CRITICAL ERROR: Production database was modified!');
+    console.error("❌ CRITICAL ERROR: Production database was modified!");
     process.exit(1);
   }
 
-  console.log('\n=====================================================');
-  console.log('🎉 ALL 8 MCOC ARCHETYPES SEEDED INTO STAGING SUCCESSFULLY!');
-  console.log('=====================================================');
+  console.log("\n=====================================================");
+  console.log("🎉 ALL 8 MCOC ARCHETYPES SEEDED INTO STAGING SUCCESSFULLY!");
+  console.log("=====================================================");
   process.exit(0);
 }
 
-seedStaging().catch(err => {
-  console.error('Seed Error:', err);
+seedStaging().catch((err) => {
+  console.error("Seed Error:", err);
   process.exit(1);
 });

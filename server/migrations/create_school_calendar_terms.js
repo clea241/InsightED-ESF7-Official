@@ -1,8 +1,8 @@
 // Additive, idempotent migration: school_calendar_terms (per-school academic calendar blocks used by /api/reports/calendar-terms).
 // Safe to re-run; creates nothing destructive. Run with the target database set in the environment (server/.env or DB_* vars).
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-const db = require('../db');
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+const db = require("../db");
 
 (async () => {
   await db.query(`
@@ -17,7 +17,12 @@ const db = require('../db');
       is_teaching BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_school_calendar_terms_school_sy ON school_calendar_terms (school_id, school_year)`);
-  console.log('school_calendar_terms ready.');
+  await db.query(
+    `CREATE INDEX IF NOT EXISTS idx_school_calendar_terms_school_sy ON school_calendar_terms (school_id, school_year)`,
+  );
+  console.log("school_calendar_terms ready.");
   process.exit(0);
-})().catch((e) => { console.error(e); process.exit(1); });
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

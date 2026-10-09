@@ -1,12 +1,12 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
-const cacheService = require('../../services/cacheService');
+const db = require("../../db");
+const cacheService = require("../../services/cacheService");
 
 // Helper to determine term block & overload eligibility for SY 2026-2027
 function getTermCalendarStatus(currentDateStr) {
   const now = currentDateStr ? new Date(currentDateStr) : new Date();
-  
+
   // Term Ranges SY 2026-2027
   // Term 1: Instructional (June 8 – Sept 1), End-of-Term (Sept 2 – Sept 15)
   // Term 2: Instructional (Sept 16 – Dec 4), End-of-Term (Dec 7 – Dec 18)
@@ -17,73 +17,77 @@ function getTermCalendarStatus(currentDateStr) {
   const day = now.getDate();
   const dateNum = month * 100 + day; // e.g. June 8 = 608, Sept 1 = 901
 
-  let activeTerm = 'Term 1';
-  let blockType = 'INSTRUCTIONAL';
+  let activeTerm = "Term 1";
+  let blockType = "INSTRUCTIONAL";
   let overloadPayEligible = true;
-  let activeDateRange = 'June 8, 2026 - September 1, 2026';
+  let activeDateRange = "June 8, 2026 - September 1, 2026";
 
   if (dateNum >= 608 && dateNum <= 901) {
-    activeTerm = 'Term 1';
-    blockType = 'INSTRUCTIONAL';
+    activeTerm = "Term 1";
+    blockType = "INSTRUCTIONAL";
     overloadPayEligible = true;
-    activeDateRange = 'June 8, 2026 - September 1, 2026';
+    activeDateRange = "June 8, 2026 - September 1, 2026";
   } else if (dateNum >= 902 && dateNum <= 915) {
-    activeTerm = 'Term 1';
-    blockType = 'END_OF_TERM';
+    activeTerm = "Term 1";
+    blockType = "END_OF_TERM";
     overloadPayEligible = false;
-    activeDateRange = 'September 2, 2026 - September 15, 2026';
+    activeDateRange = "September 2, 2026 - September 15, 2026";
   } else if (dateNum >= 916 && dateNum <= 1204) {
-    activeTerm = 'Term 2';
-    blockType = 'INSTRUCTIONAL';
+    activeTerm = "Term 2";
+    blockType = "INSTRUCTIONAL";
     overloadPayEligible = true;
-    activeDateRange = 'September 16, 2026 - December 4, 2026';
+    activeDateRange = "September 16, 2026 - December 4, 2026";
   } else if (dateNum >= 1207 && dateNum <= 1218) {
-    activeTerm = 'Term 2';
-    blockType = 'END_OF_TERM';
+    activeTerm = "Term 2";
+    blockType = "END_OF_TERM";
     overloadPayEligible = false;
-    activeDateRange = 'December 7, 2026 - December 18, 2026';
+    activeDateRange = "December 7, 2026 - December 18, 2026";
   } else if (dateNum >= 104 && dateNum <= 323) {
-    activeTerm = 'Term 3';
-    blockType = 'INSTRUCTIONAL';
+    activeTerm = "Term 3";
+    blockType = "INSTRUCTIONAL";
     overloadPayEligible = true;
-    activeDateRange = 'January 4, 2027 - March 23, 2027';
+    activeDateRange = "January 4, 2027 - March 23, 2027";
   } else if (dateNum >= 324 && dateNum <= 408) {
-    activeTerm = 'Term 3';
-    blockType = 'END_OF_TERM';
+    activeTerm = "Term 3";
+    blockType = "END_OF_TERM";
     overloadPayEligible = false;
-    activeDateRange = 'March 24, 2027 - April 8, 2027';
+    activeDateRange = "March 24, 2027 - April 8, 2027";
   } else {
-    activeTerm = 'Vacation';
-    blockType = 'VACATION';
+    activeTerm = "Vacation";
+    blockType = "VACATION";
     overloadPayEligible = false;
-    activeDateRange = 'April 9, 2026 - June 6, 2026';
+    activeDateRange = "April 9, 2026 - June 6, 2026";
   }
 
   return {
-    current_school_year: 'SY 2026-2027',
+    current_school_year: "SY 2026-2027",
     active_term: activeTerm,
     block_type: blockType,
     overload_pay_eligible: overloadPayEligible,
-    active_date_range: activeDateRange
+    active_date_range: activeDateRange,
   };
 }
 
-const { insightEdPool } = require('../../db');
+const { insightEdPool } = require("../../db");
 function getInsightEdPool() {
   return insightEdPool;
 }
 
-const { getSchoolIdFromRequest } = require('../../utils/auth');
+const { getSchoolIdFromRequest } = require("../../utils/auth");
 
 // GET /api/dashboard/stats
-router.get('/stats', async (req, res) => {
+router.get("/stats", async (req, res) => {
   const startTime = Date.now();
   try {
-    const schoolId = getSchoolIdFromRequest(req) || req.query.school_id || req.headers['x-school-id'] || '199999';
+    const schoolId =
+      getSchoolIdFromRequest(req) ||
+      req.query.school_id ||
+      req.headers["x-school-id"] ||
+      "199999";
     const simulatedDate = req.query.simulated_date || null;
-    const cleanSchoolId = schoolId.replace('SCH-', '');
+    const cleanSchoolId = schoolId.replace("SCH-", "");
 
-    const cacheKey = `dashboard:stats:${cleanSchoolId}:${simulatedDate || 'default'}`;
+    const cacheKey = `dashboard:stats:${cleanSchoolId}:${simulatedDate || "default"}`;
     const cached = await cacheService.get(cacheKey);
     if (cached) {
       return res.json({ ...cached, response_time_ms: Date.now() - startTime });
@@ -98,27 +102,64 @@ router.get('/stats', async (req, res) => {
       workloadRes,
       sectionsRes,
       queueRes,
-      recentExportRes
+      recentExportRes,
     ] = await Promise.all([
-      db.query('SELECT school_id, school_name FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1', [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`
+      db
+        .query(
+          "SELECT school_id, school_name FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1",
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `
         SELECT p.id, p.sex_at_birth AS sex, p.type, p.is_school_head, e.position
         FROM esf7_personnel_profile p
         LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
         WHERE p.school_id = $1 OR p.school_id = $2
-      `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`
+      `,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `
         SELECT e.personnel_id, e.college_degree AS bachelors_degree 
         FROM esf7_perssonel_educ e
         JOIN esf7_personnel_profile p ON e.personnel_id = p.id
         WHERE p.school_id = $1 OR p.school_id = $2
-      `, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`SELECT personnel_id, subject AS subject_name, grade_level, duration_minutes FROM esf7_workload_rows WHERE school_id = $1 OR school_id = $2`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, adviser_id, number_of_learners FROM esf7_regular_sections WHERE school_id = $1 OR school_id = $2`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`SELECT status, COUNT(*) as count FROM esf7_submission_queue WHERE school_id = $1 OR school_id = $2 GROUP BY status`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] })),
-      db.query(`SELECT id, status, created_at FROM esf7_submission_queue WHERE school_id = $1 OR school_id = $2 ORDER BY created_at DESC LIMIT 1`, [cleanSchoolId, `SCH-${cleanSchoolId}`]).catch(() => ({ rows: [] }))
+      `,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `SELECT personnel_id, subject AS subject_name, grade_level, duration_minutes FROM esf7_workload_rows WHERE school_id = $1 OR school_id = $2`,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `SELECT id, adviser_id, number_of_learners FROM esf7_regular_sections WHERE school_id = $1 OR school_id = $2`,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `SELECT status, COUNT(*) as count FROM esf7_submission_queue WHERE school_id = $1 OR school_id = $2 GROUP BY status`,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `SELECT id, status, created_at FROM esf7_submission_queue WHERE school_id = $1 OR school_id = $2 ORDER BY created_at DESC LIMIT 1`,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] })),
     ]);
-    console.log(`[Dashboard Stats] Parallel DB queries took ${Date.now() - t0}ms`);
+    console.log(
+      `[Dashboard Stats] Parallel DB queries took ${Date.now() - t0}ms`,
+    );
 
     let personnelList = personnelRes.rows;
     // Only fall back to external insightEd database if local esf7_personnel_profile has 0 records
@@ -126,92 +167,124 @@ router.get('/stats', async (req, res) => {
       const t1 = Date.now();
       try {
         const insightEdPool = getInsightEdPool();
-        const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
+        const isTest =
+          db.isDivisionOrTestAccount &&
+          db.isDivisionOrTestAccount(cleanSchoolId);
         let masterPersonnelRes = { rows: [] };
         if (isTest) {
-          masterPersonnelRes = await insightEdPool.query(
-            `SELECT sex, position FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
-            [cleanSchoolId]
-          ).catch((err) => {
-            console.error('[Dashboard Master Fallback Error]:', err.message);
-            return { rows: [] };
-          });
+          masterPersonnelRes = await insightEdPool
+            .query(
+              `SELECT sex, position FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+              [cleanSchoolId],
+            )
+            .catch((err) => {
+              console.error("[Dashboard Master Fallback Error]:", err.message);
+              return { rows: [] };
+            });
         } else {
-          masterPersonnelRes = await insightEdPool.query(
-            `SELECT sex, position FROM esf7_database WHERE school_id = $1`,
-            [cleanSchoolId]
-          ).catch((err) => {
-            console.error('[Dashboard Master Fallback Error]:', err.message);
-            return { rows: [] };
-          });
+          masterPersonnelRes = await insightEdPool
+            .query(
+              `SELECT sex, position FROM esf7_database WHERE school_id = $1`,
+              [cleanSchoolId],
+            )
+            .catch((err) => {
+              console.error("[Dashboard Master Fallback Error]:", err.message);
+              return { rows: [] };
+            });
           if (masterPersonnelRes.rows.length === 0) {
-            masterPersonnelRes = await insightEdPool.query(
-              `SELECT sex, position FROM esf7_database WHERE schoool_id = $1`,
-              [cleanSchoolId]
-            ).catch(() => ({ rows: [] }));
+            masterPersonnelRes = await insightEdPool
+              .query(
+                `SELECT sex, position FROM esf7_database WHERE schoool_id = $1`,
+                [cleanSchoolId],
+              )
+              .catch(() => ({ rows: [] }));
           }
         }
 
-
         if (masterPersonnelRes.rows.length > 0) {
-          personnelList = masterPersonnelRes.rows.map(r => ({
-            sex: (r.sex || 'FEMALE').toUpperCase(),
-            type: 'teaching',
+          personnelList = masterPersonnelRes.rows.map((r) => ({
+            sex: (r.sex || "FEMALE").toUpperCase(),
+            type: "teaching",
             is_school_head: false,
-            position: r.position || 'TEACHER I'
+            position: r.position || "TEACHER I",
           }));
         }
       } catch (e) {
-        console.error('[Dashboard Master Fallback Error]:', e.message);
+        console.error("[Dashboard Master Fallback Error]:", e.message);
       }
-      console.log(`[Dashboard Stats] insightEd master personnel fallback took ${Date.now() - t1}ms`);
+      console.log(
+        `[Dashboard Stats] insightEd master personnel fallback took ${Date.now() - t1}ms`,
+      );
     }
 
     let schoolInfo = schoolRes.rows[0];
-    if (!schoolInfo || !schoolInfo.school_name || schoolInfo.school_name.includes('Sample National') || schoolInfo.school_name.includes('TEST K-12')) {
+    if (
+      !schoolInfo ||
+      !schoolInfo.school_name ||
+      schoolInfo.school_name.includes("Sample National") ||
+      schoolInfo.school_name.includes("TEST K-12")
+    ) {
       const t2 = Date.now();
       try {
         const insightEdPool = getInsightEdPool();
-        const identityRes = await insightEdPool.query('SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1', [cleanSchoolId]).catch(() => ({ rows: [] }));
+        const identityRes = await insightEdPool
+          .query(
+            "SELECT school_id, school_name FROM unit1_school_identity WHERE school_id = $1 LIMIT 1",
+            [cleanSchoolId],
+          )
+          .catch(() => ({ rows: [] }));
         if (identityRes.rows.length > 0 && identityRes.rows[0].school_name) {
           schoolInfo = identityRes.rows[0];
         } else if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
           schoolInfo = esfMatch.rows[0];
         }
       } catch (e) {}
-      console.log(`[Dashboard Stats] insightEd school identity fallback took ${Date.now() - t2}ms`);
+      console.log(
+        `[Dashboard Stats] insightEd school identity fallback took ${Date.now() - t2}ms`,
+      );
     }
 
     if (!schoolInfo || !schoolInfo.school_name) {
-      schoolInfo = { school_id: cleanSchoolId, school_name: `School ${cleanSchoolId}` };
+      schoolInfo = {
+        school_id: cleanSchoolId,
+        school_name: `School ${cleanSchoolId}`,
+      };
     }
 
     const personnel = personnelList;
 
-
     // 1. School Overview
     let males = 0;
     let females = 0;
-    personnel.forEach(p => {
-      const sexStr = String(p.sex || '').toUpperCase();
-      if (sexStr === 'MALE' || sexStr === 'M') males++;
-      else if (sexStr === 'FEMALE' || sexStr === 'F') females++;
+    personnel.forEach((p) => {
+      const sexStr = String(p.sex || "").toUpperCase();
+      if (sexStr === "MALE" || sexStr === "M") males++;
+      else if (sexStr === "FEMALE" || sexStr === "F") females++;
     });
 
     // 2. Qualifications check
-    const qualSet = new Set(qualificationsRes.rows.filter(q => q.bachelors_degree && q.bachelors_degree.trim() !== '').map(q => String(q.personnel_id)));
-    const incompleteQualificationsCount = personnel.filter(p => !qualSet.has(String(p.id))).length;
+    const qualSet = new Set(
+      qualificationsRes.rows
+        .filter((q) => q.bachelors_degree && q.bachelors_degree.trim() !== "")
+        .map((q) => String(q.personnel_id)),
+    );
+    const incompleteQualificationsCount = personnel.filter(
+      (p) => !qualSet.has(String(p.id)),
+    ).length;
 
     // 3. Workload calculations
     const workloadMap = new Map(); // personnel_id -> totalMinutes
     let slotOverloadExceededCount = 0;
 
-    workloadRes.rows.forEach(w => {
+    workloadRes.rows.forEach((w) => {
       const pId = String(w.personnel_id);
       const mins = Number(w.duration_minutes || 0);
-      const gLevel = String(w.grade_level || '').toUpperCase();
-      const isSHS = gLevel.includes('11') || gLevel.includes('12') || gLevel.includes('SHS');
-      
+      const gLevel = String(w.grade_level || "").toUpperCase();
+      const isSHS =
+        gLevel.includes("11") ||
+        gLevel.includes("12") ||
+        gLevel.includes("SHS");
+
       // Slot limit check: 60 mins for Elem/JHS, 360 mins for SHS
       const maxSlot = isSHS ? 360 : 60;
       if (mins > maxSlot) {
@@ -225,8 +298,10 @@ router.get('/stats', async (req, res) => {
     let standardCount = 0;
     let overloadedCount = 0;
 
-    personnel.forEach(p => {
-      const isTeaching = p.type === 'teaching' || (p.position && String(p.position).toUpperCase().includes('TEACHER'));
+    personnel.forEach((p) => {
+      const isTeaching =
+        p.type === "teaching" ||
+        (p.position && String(p.position).toUpperCase().includes("TEACHER"));
       if (isTeaching) {
         const totalMins = workloadMap.get(String(p.id)) || 0;
         if (totalMins < 300) underloadedCount++;
@@ -236,51 +311,65 @@ router.get('/stats', async (req, res) => {
     });
 
     // 4. Advisory HGP Check
-    const unassignedAdvisoryCount = sectionsRes.rows.filter(s => !s.adviser_id || Number(s.hgp_minutes || 0) === 0).length;
+    const unassignedAdvisoryCount = sectionsRes.rows.filter(
+      (s) => !s.adviser_id || Number(s.hgp_minutes || 0) === 0,
+    ).length;
 
     // 5. Readiness Audit
     const flaggedIssues = [];
     if (incompleteQualificationsCount > 0) {
       flaggedIssues.push({
-        type: 'QUALIFICATION_MISSING',
+        type: "QUALIFICATION_MISSING",
         count: incompleteQualificationsCount,
-        label: 'Personnel with incomplete degree profile'
+        label: "Personnel with incomplete degree profile",
       });
     }
     if (slotOverloadExceededCount > 0) {
       flaggedIssues.push({
-        type: 'OVERLOAD_EXCEEDED',
+        type: "OVERLOAD_EXCEEDED",
         count: slotOverloadExceededCount,
-        label: 'Teaching workload exceeds 360 mins/slot limit'
+        label: "Teaching workload exceeds 360 mins/slot limit",
       });
     }
     if (unassignedAdvisoryCount > 0) {
       flaggedIssues.push({
-        type: 'UNASSIGNED_ADVISORY',
+        type: "UNASSIGNED_ADVISORY",
         count: unassignedAdvisoryCount,
-        label: 'Sections without assigned HGP advisory block'
+        label: "Sections without assigned HGP advisory block",
       });
     }
 
     const totalPersonnelCount = personnel.length || 1;
-    const totalIssuesCount = incompleteQualificationsCount + slotOverloadExceededCount + unassignedAdvisoryCount;
-    const scorePercentage = Math.max(0, Math.min(100, Math.round(100 - (totalIssuesCount / (totalPersonnelCount * 2)) * 100)));
+    const totalIssuesCount =
+      incompleteQualificationsCount +
+      slotOverloadExceededCount +
+      unassignedAdvisoryCount;
+    const scorePercentage = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(100 - (totalIssuesCount / (totalPersonnelCount * 2)) * 100),
+      ),
+    );
 
     // 6. Queue Status
     let pendingQueue = 0;
     let processingQueue = 0;
-    queueRes.rows.forEach(q => {
-      if (q.status === 'pending') pendingQueue += Number(q.count);
-      if (q.status === 'processing') processingQueue += Number(q.count);
+    queueRes.rows.forEach((q) => {
+      if (q.status === "pending") pendingQueue += Number(q.count);
+      if (q.status === "processing") processingQueue += Number(q.count);
     });
 
     const recentRow = recentExportRes.rows[0];
-    const recentExport = recentRow ? {
-      id: recentRow.id,
-      status: recentRow.status,
-      file_path: recentRow.output_filepath || '/scratch/eSF7_2026_Report.xlsb',
-      created_at: recentRow.created_at
-    } : null;
+    const recentExport = recentRow
+      ? {
+          id: recentRow.id,
+          status: recentRow.status,
+          file_path:
+            recentRow.output_filepath || "/scratch/eSF7_2026_Report.xlsb",
+          created_at: recentRow.created_at,
+        }
+      : null;
 
     const calendarStatus = getTermCalendarStatus(simulatedDate);
 
@@ -289,30 +378,30 @@ router.get('/stats', async (req, res) => {
         school_id: String(schoolInfo.school_id),
         school_name: schoolInfo.school_name,
         total_personnel: personnel.length,
-        gender_ratio: { male: males, female: females }
+        gender_ratio: { male: males, female: females },
       },
       readiness_audit: {
         score_percentage: scorePercentage,
-        flagged_issues: flaggedIssues
+        flagged_issues: flaggedIssues,
       },
       workload_distribution: {
         underloaded: underloadedCount,
         standard: standardCount,
-        overloaded: overloadedCount
+        overloaded: overloadedCount,
       },
       term_calendar_status: calendarStatus,
       queue_status: {
         pending: pendingQueue,
         processing: processingQueue,
-        recent_export: recentExport
+        recent_export: recentExport,
       },
-      response_time_ms: Date.now() - startTime
+      response_time_ms: Date.now() - startTime,
     };
 
     await cacheService.set(cacheKey, responsePayload, 5);
     res.json(responsePayload);
   } catch (err) {
-    console.error('Error computing dashboard stats:', err);
+    console.error("Error computing dashboard stats:", err);
     res.status(500).json({ error: err.message });
   }
 });

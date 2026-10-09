@@ -1,6 +1,6 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
+const db = require("../../db");
 
 /**
  * Calculates duration in minutes between start_time (HH:MM) and end_time (HH:MM).
@@ -8,8 +8,8 @@ const db = require('../../db');
  */
 function calculateMinutesExcludingLunch(startTime, endTime) {
   if (!startTime || !endTime) return 0;
-  const [sh, sm] = String(startTime).split(':').map(Number);
-  const [eh, em] = String(endTime).split(':').map(Number);
+  const [sh, sm] = String(startTime).split(":").map(Number);
+  const [eh, em] = String(endTime).split(":").map(Number);
   if (isNaN(sh) || isNaN(eh)) return 0;
 
   const startMins = sh * 60 + (sm || 0);
@@ -35,7 +35,11 @@ function calculateMinutesExcludingLunch(startTime, endTime) {
 function formatWorkImmersionRecord(row) {
   if (!row) return null;
   const raw = row.raw_payload || {};
-  const vDate = row.visit_date ? (row.visit_date instanceof Date ? row.visit_date.toISOString().split('T')[0] : String(row.visit_date).split('T')[0]) : null;
+  const vDate = row.visit_date
+    ? row.visit_date instanceof Date
+      ? row.visit_date.toISOString().split("T")[0]
+      : String(row.visit_date).split("T")[0]
+    : null;
   const sTime = row.start_time ? String(row.start_time).substring(0, 5) : null;
   const eTime = row.end_time ? String(row.end_time).substring(0, 5) : null;
   const durMins = Number(row.duration_minutes || 0);
@@ -59,78 +63,100 @@ function formatWorkImmersionRecord(row) {
     durationMinutes: durMins,
     duration_minutes: durMins,
     hours: (durMins / 60).toFixed(1),
-    rawPayload: raw
+    rawPayload: raw,
   };
 }
 
 // GET all Work Immersion visit records for personnel
-router.get('/:personnel_id', async (req, res) => {
+router.get("/:personnel_id", async (req, res) => {
   try {
     const { personnel_id } = req.params;
-    const schoolYear = req.query.schoolYear || req.query.school_year || '2026-2027';
+    const schoolYear =
+      req.query.schoolYear || req.query.school_year || "2026-2027";
 
     const result = await db.query(
       `SELECT * FROM esf7_work_immersion WHERE personnel_id = $1 AND school_year = $2 ORDER BY visit_date ASC`,
-      [personnel_id, schoolYear]
+      [personnel_id, schoolYear],
     );
 
     res.json({
       success: true,
-      data: result.rows.map(formatWorkImmersionRecord)
+      data: result.rows.map(formatWorkImmersionRecord),
     });
   } catch (err) {
-    console.error('[WorkImmersion GET Error]:', err.message);
+    console.error("[WorkImmersion GET Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // GET all Work Immersion records for school
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const result = await db.query(`SELECT * FROM esf7_work_immersion ORDER BY visit_date ASC`);
+    const result = await db.query(
+      `SELECT * FROM esf7_work_immersion ORDER BY visit_date ASC`,
+    );
     res.json(result.rows.map(formatWorkImmersionRecord));
   } catch (err) {
-    console.error('[WorkImmersion GET ALL Error]:', err.message);
+    console.error("[WorkImmersion GET ALL Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // POST Add or update a Work Immersion visit entry
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const {
-      personnel_id, personnelId,
-      school_id, schoolId: bodySchoolId,
-      school_year, schoolYear: bodySchoolYear,
-      visit_date, visitDate, date,
-      start_time, startTime,
-      end_time, endTime
+      personnel_id,
+      personnelId,
+      school_id,
+      schoolId: bodySchoolId,
+      school_year,
+      schoolYear: bodySchoolYear,
+      visit_date,
+      visitDate,
+      date,
+      start_time,
+      startTime,
+      end_time,
+      endTime,
     } = req.body;
 
     const targetPersonnelId = personnel_id || personnelId;
     if (!targetPersonnelId) {
-      return res.status(400).json({ success: false, error: 'personnel_id is required' });
+      return res
+        .status(400)
+        .json({ success: false, error: "personnel_id is required" });
     }
 
     const personRes = await db.query(
       `SELECT school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [targetPersonnelId]
+      [targetPersonnelId],
     );
-    const targetSchoolId = school_id || bodySchoolId || (personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348');
-    const targetSchoolYear = school_year || bodySchoolYear || (personRes.rows.length > 0 ? personRes.rows[0].school_year : '2026-2027');
+    const targetSchoolId =
+      school_id ||
+      bodySchoolId ||
+      (personRes.rows.length > 0 ? personRes.rows[0].school_id : "108348");
+    const targetSchoolYear =
+      school_year ||
+      bodySchoolYear ||
+      (personRes.rows.length > 0 ? personRes.rows[0].school_year : "2026-2027");
     const targetDate = visit_date || visitDate || date;
     const targetStart = start_time || startTime;
     const targetEnd = end_time || endTime;
 
     if (!targetDate || !targetStart || !targetEnd) {
-      return res.status(400).json({ success: false, error: 'visit_date, start_time, and end_time are required' });
+      return res.status(400).json({
+        success: false,
+        error: "visit_date, start_time, and end_time are required",
+      });
     }
 
     const durationMins = calculateMinutesExcludingLunch(targetStart, targetEnd);
 
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_work_immersion`);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const wimId = req.body.id || `WIM-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+    const wimId =
+      req.body.id || `WIM-${targetSchoolId.replace("SCH-", "")}-${seq}`;
 
     const query = `
       INSERT INTO esf7_work_immersion (
@@ -155,30 +181,40 @@ router.post('/', async (req, res) => {
       targetStart,
       targetEnd,
       durationMins,
-      JSON.stringify(req.body)
+      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);
     res.status(201).json({
       success: true,
-      data: formatWorkImmersionRecord(result.rows[0])
+      data: formatWorkImmersionRecord(result.rows[0]),
     });
   } catch (err) {
-    console.error('[WorkImmersion POST Error]:', err.message);
+    console.error("[WorkImmersion POST Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // POST Batch save Work Immersion visit entries
-router.post('/batch', async (req, res) => {
+router.post("/batch", async (req, res) => {
   try {
-    const { personnelId, personnel_id, schoolId, schoolYear, school_year, schedules } = req.body;
+    const {
+      personnelId,
+      personnel_id,
+      schoolId,
+      schoolYear,
+      school_year,
+      schedules,
+    } = req.body;
     const targetPersonnelId = personnelId || personnel_id;
-    const targetSchoolYear = schoolYear || school_year || '2026-2027';
-    const targetSchoolId = schoolId || '108348';
+    const targetSchoolYear = schoolYear || school_year || "2026-2027";
+    const targetSchoolId = schoolId || "108348";
 
     if (!targetPersonnelId || !Array.isArray(schedules)) {
-      return res.status(400).json({ success: false, error: 'personnelId and schedules array are required' });
+      return res.status(400).json({
+        success: false,
+        error: "personnelId and schedules array are required",
+      });
     }
 
     const saved = [];
@@ -189,7 +225,9 @@ router.post('/batch', async (req, res) => {
       if (!vDate || !sTime || !eTime) continue;
 
       const durationMins = calculateMinutesExcludingLunch(sTime, eTime);
-      const wimId = sched.id || `WIM-${String(targetSchoolId).replace('SCH-', '')}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const wimId =
+        sched.id ||
+        `WIM-${String(targetSchoolId).replace("SCH-", "")}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
       const result = await db.query(
         `INSERT INTO esf7_work_immersion (
@@ -203,7 +241,17 @@ router.post('/batch', async (req, res) => {
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
         RETURNING *;`,
-        [wimId, targetPersonnelId, targetSchoolId, targetSchoolYear, vDate, sTime, eTime, durationMins, JSON.stringify(sched)]
+        [
+          wimId,
+          targetPersonnelId,
+          targetSchoolId,
+          targetSchoolYear,
+          vDate,
+          sTime,
+          eTime,
+          durationMins,
+          JSON.stringify(sched),
+        ],
       );
       if (result.rows.length > 0) {
         saved.push(formatWorkImmersionRecord(result.rows[0]));
@@ -212,40 +260,57 @@ router.post('/batch', async (req, res) => {
 
     res.json({ success: true, count: saved.length, data: saved });
   } catch (err) {
-    console.error('[WorkImmersion POST /batch Error]:', err.message);
+    console.error("[WorkImmersion POST /batch Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // DELETE a Work Immersion entry by date
-router.delete('/date', async (req, res) => {
+router.delete("/date", async (req, res) => {
   try {
-    const { personnelId, personnel_id, schoolYear, school_year, date, visit_date } = req.body;
+    const {
+      personnelId,
+      personnel_id,
+      schoolYear,
+      school_year,
+      date,
+      visit_date,
+    } = req.body;
     const targetPersonnelId = personnelId || personnel_id;
-    const targetSchoolYear = schoolYear || school_year || '2026-2027';
+    const targetSchoolYear = schoolYear || school_year || "2026-2027";
     const targetDate = date || visit_date;
 
     if (!targetPersonnelId || !targetDate) {
-      return res.status(400).json({ success: false, error: 'personnelId and date are required' });
+      return res
+        .status(400)
+        .json({ success: false, error: "personnelId and date are required" });
     }
 
     await db.query(
       `DELETE FROM esf7_work_immersion WHERE personnel_id = $1 AND school_year = $2 AND visit_date = $3`,
-      [targetPersonnelId, targetSchoolYear, targetDate]
+      [targetPersonnelId, targetSchoolYear, targetDate],
     );
 
-    res.json({ success: true, message: `Work Immersion entry for ${targetDate} deleted successfully.` });
+    res.json({
+      success: true,
+      message: `Work Immersion entry for ${targetDate} deleted successfully.`,
+    });
   } catch (err) {
-    console.error('[WorkImmersion DELETE /date Error]:', err.message);
+    console.error("[WorkImmersion DELETE /date Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // DELETE a Work Immersion entry by id
-router.delete('/:id', async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
-    await db.query(`DELETE FROM esf7_work_immersion WHERE id = $1`, [req.params.id]);
-    res.json({ success: true, message: `Work Immersion entry ${req.params.id} deleted successfully.` });
+    await db.query(`DELETE FROM esf7_work_immersion WHERE id = $1`, [
+      req.params.id,
+    ]);
+    res.json({
+      success: true,
+      message: `Work Immersion entry ${req.params.id} deleted successfully.`,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

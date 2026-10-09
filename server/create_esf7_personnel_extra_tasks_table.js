@@ -1,8 +1,10 @@
-const db = require('./db');
+const db = require("./db");
 
 async function createExtraTasksTable() {
   try {
-    console.log('🚀 Updating esf7_personnel_extra_tasks table (Dropping FK for draft compatibility)...');
+    console.log(
+      "🚀 Updating esf7_personnel_extra_tasks table (Dropping FK for draft compatibility)...",
+    );
 
     await db.query(`
       ALTER TABLE IF EXISTS esf7_personnel_extra_tasks 
@@ -36,10 +38,13 @@ async function createExtraTasksTable() {
       ON esf7_personnel_extra_tasks(school_id, school_year);
     `);
 
-    console.log('✅ esf7_personnel_extra_tasks table updated successfully!');
+    console.log("✅ esf7_personnel_extra_tasks table updated successfully!");
     process.exit(0);
   } catch (err) {
-    console.error('❌ Error updating esf7_personnel_extra_tasks table:', err.message);
+    console.error(
+      "❌ Error updating esf7_personnel_extra_tasks table:",
+      err.message,
+    );
     process.exit(1);
   }
 }

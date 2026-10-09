@@ -1,7 +1,9 @@
-const { prodPool } = require('../db');
+const { prodPool } = require("../db");
 
 async function populateActualSchoolRequests() {
-  console.log('=== Populating esf7_requests with Actual 1-to-1 DepEd School IDs ===');
+  console.log(
+    "=== Populating esf7_requests with Actual 1-to-1 DepEd School IDs ===",
+  );
 
   // 1. Unnest all teachers across drafts
   const teacherRowsRes = await prodPool.query(`
@@ -29,7 +31,9 @@ async function populateActualSchoolRequests() {
     HAVING count(DISTINCT school_id) > 1
   `);
 
-  console.log(`Found ${teacherRowsRes.rows.length} multi-school teachers across drafts.`);
+  console.log(
+    `Found ${teacherRowsRes.rows.length} multi-school teachers across drafts.`,
+  );
 
   // 2. Also get from esf7_clustered_ghost_sync
   const ghostRes = await prodPool.query(`
@@ -41,17 +45,23 @@ async function populateActualSchoolRequests() {
     HAVING count(DISTINCT school_id) > 1
   `);
 
-  console.log(`Found ${ghostRes.rows.length} multi-school rooms in ghost sync.`);
+  console.log(
+    `Found ${ghostRes.rows.length} multi-school rooms in ghost sync.`,
+  );
 
   const pairsToInsert = [];
   const seenPairKey = new Set();
 
   // Process multi-school teachers from drafts
   for (const t of teacherRowsRes.rows) {
-    const schools = t.schools.map(s => String(s).replace(/^SCH-/i, '').trim()).filter(s => /^\d{5,7}$/.test(s));
-    const isReassigned = t.statuses.some(st => String(st).toUpperCase() === 'REASSIGNED');
-    const reqType = isReassigned ? 'reassigned_personnel' : 'clustered_teacher';
-    const pName = t.teacher_name || 'TEACHER';
+    const schools = t.schools
+      .map((s) => String(s).replace(/^SCH-/i, "").trim())
+      .filter((s) => /^\d{5,7}$/.test(s));
+    const isReassigned = t.statuses.some(
+      (st) => String(st).toUpperCase() === "REASSIGNED",
+    );
+    const reqType = isReassigned ? "reassigned_personnel" : "clustered_teacher";
+    const pName = t.teacher_name || "TEACHER";
     const pId = t.teacher_key;
 
     // For every pair of schools (School A -> School B)
@@ -67,20 +77,20 @@ async function populateActualSchoolRequests() {
             pairsToInsert.push({
               requester_school_id: reqSchool,
               target_school_id: tgtSchool,
-              school_year: '2026-2027',
+              school_year: "2026-2027",
               request_type: reqType,
               personnel_id: pId,
               personnel_name: pName,
-              status: 'pending',
-              remarks: `${reqType === 'clustered_teacher' ? 'Clustered' : 'Reassigned'} teacher assignment: School ${reqSchool} ↔ School ${tgtSchool}`,
+              status: "pending",
+              remarks: `${reqType === "clustered_teacher" ? "Clustered" : "Reassigned"} teacher assignment: School ${reqSchool} ↔ School ${tgtSchool}`,
               raw_payload: {
                 personnelId: pId,
                 personnelName: pName,
                 requesterSchoolId: reqSchool,
                 targetSchoolId: tgtSchool,
                 requestType: reqType,
-                allAssignedSchools: schools
-              }
+                allAssignedSchools: schools,
+              },
             });
           }
         }
@@ -90,10 +100,12 @@ async function populateActualSchoolRequests() {
 
   // Process ghost sync rooms
   for (const g of ghostRes.rows) {
-    const schools = g.schools.map(s => String(s).replace(/^SCH-/i, '').trim()).filter(s => /^\d{5,7}$/.test(s));
-    const pId = g.room_key.replace(/^ROOM_/i, '');
+    const schools = g.schools
+      .map((s) => String(s).replace(/^SCH-/i, "").trim())
+      .filter((s) => /^\d{5,7}$/.test(s));
+    const pId = g.room_key.replace(/^ROOM_/i, "");
     const pName = `TEACHER (${pId})`;
-    const reqType = 'clustered_teacher';
+    const reqType = "clustered_teacher";
 
     for (let i = 0; i < schools.length; i++) {
       for (let j = 0; j < schools.length; j++) {
@@ -107,11 +119,11 @@ async function populateActualSchoolRequests() {
             pairsToInsert.push({
               requester_school_id: reqSchool,
               target_school_id: tgtSchool,
-              school_year: '2026-2027',
+              school_year: "2026-2027",
               request_type: reqType,
               personnel_id: pId,
               personnel_name: pName,
-              status: 'pending',
+              status: "pending",
               remarks: `Clustered ghost sync: School ${reqSchool} ↔ School ${tgtSchool}`,
               raw_payload: {
                 personnelId: pId,
@@ -119,8 +131,8 @@ async function populateActualSchoolRequests() {
                 requesterSchoolId: reqSchool,
                 targetSchoolId: tgtSchool,
                 requestType: reqType,
-                allAssignedSchools: schools
-              }
+                allAssignedSchools: schools,
+              },
             });
           }
         }
@@ -128,10 +140,12 @@ async function populateActualSchoolRequests() {
     }
   }
 
-  console.log(`\nGenerated ${pairsToInsert.length} exact 1-to-1 request rows with REAL DepEd School IDs.`);
+  console.log(
+    `\nGenerated ${pairsToInsert.length} exact 1-to-1 request rows with REAL DepEd School IDs.`,
+  );
 
   // 3. Truncate and insert all pairs
-  await prodPool.query('TRUNCATE TABLE esf7_requests CASCADE;');
+  await prodPool.query("TRUNCATE TABLE esf7_requests CASCADE;");
 
   const CHUNK_SIZE = 200;
   let totalInserted = 0;
@@ -146,7 +160,9 @@ async function populateActualSchoolRequests() {
       const c = chunk[cIdx];
       const reqId = `REQ-${c.requester_school_id}-${c.target_school_id}-${i + cIdx + 1}-${Math.floor(100 + Math.random() * 900)}`;
 
-      valuePlaceholders.push(`($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NULL, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NOW(), NOW())`);
+      valuePlaceholders.push(
+        `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NULL, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NOW(), NOW())`,
+      );
       values.push(
         reqId,
         c.requester_school_id,
@@ -156,7 +172,7 @@ async function populateActualSchoolRequests() {
         c.personnel_name,
         c.status,
         c.remarks,
-        JSON.stringify(c.raw_payload)
+        JSON.stringify(c.raw_payload),
       );
     }
 
@@ -166,7 +182,7 @@ async function populateActualSchoolRequests() {
         request_type, personnel_id, personnel_name, status, remarks, raw_payload,
         created_at, updated_at
       )
-      VALUES ${valuePlaceholders.join(',\n')}
+      VALUES ${valuePlaceholders.join(",\n")}
       ON CONFLICT (id) DO NOTHING
     `;
 
@@ -175,12 +191,18 @@ async function populateActualSchoolRequests() {
   }
 
   // Verification queries
-  const countRes = await prodPool.query('SELECT count(*)::int as count FROM esf7_requests');
-  const sampleRes = await prodPool.query('SELECT id, requester_school_id, target_school_id, personnel_name, request_type FROM esf7_requests LIMIT 10');
+  const countRes = await prodPool.query(
+    "SELECT count(*)::int as count FROM esf7_requests",
+  );
+  const sampleRes = await prodPool.query(
+    "SELECT id, requester_school_id, target_school_id, personnel_name, request_type FROM esf7_requests LIMIT 10",
+  );
 
   console.log(`\n=== Verification Results ===`);
-  console.log(`Total exact 1-to-1 rows in esf7_requests: ${countRes.rows[0].count}`);
-  console.log('\nSample Restored Requests:');
+  console.log(
+    `Total exact 1-to-1 rows in esf7_requests: ${countRes.rows[0].count}`,
+  );
+  console.log("\nSample Restored Requests:");
   console.log(sampleRes.rows);
 
   await prodPool.end();

@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testEducationFlow() {
-  console.log('Testing esf7_perssonel_educ insertion, RA 1080 preservation & 3-way JOIN...');
+  console.log(
+    "Testing esf7_perssonel_educ insertion, RA 1080 preservation & 3-way JOIN...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-002'`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-002'`,
+  );
 
   // Insert profile
   await db.query(`
@@ -24,8 +28,9 @@ async function testEducationFlow() {
   `);
 
   // Insert education with custom RA 1080 input
-  const customRa1080 = 'RA 1080 - REGISTERED GUIDANCE COUNSELOR';
-  await db.query(`
+  const customRa1080 = "RA 1080 - REGISTERED GUIDANCE COUNSELOR";
+  await db.query(
+    `
     INSERT INTO esf7_perssonel_educ (
       id, personnel_id, college_degree, major, minor, post_graduate_degree,
       post_graduate_discipline, eligibility, prc_specialization, raw_payload
@@ -35,10 +40,12 @@ async function testEducationFlow() {
       $1::jsonb, 'ENGLISH',
       $2::jsonb
     )
-  `, [
-    JSON.stringify(['LICENSURE EXAMINATION FOR TEACHERS', customRa1080]),
-    JSON.stringify({ customRa1080Text: customRa1080 })
-  ]);
+  `,
+    [
+      JSON.stringify(["LICENSURE EXAMINATION FOR TEACHERS", customRa1080]),
+      JSON.stringify({ customRa1080Text: customRa1080 }),
+    ],
+  );
 
   // Query 3-Way Join
   const res = await db.query(`
@@ -52,25 +59,29 @@ async function testEducationFlow() {
     WHERE p.id = 'PER-TEST-002'
   `);
 
-  console.log('✅ Successfully joined 3 tables:');
+  console.log("✅ Successfully joined 3 tables:");
   const row = res.rows[0];
-  console.log('Personnel:', `${row.first_name} ${row.last_name}`);
-  console.log('Position:', row.position);
-  console.log('Degree:', row.college_degree);
-  console.log('Major:', row.major);
-  console.log('Post-Grad Degree:', row.post_graduate_degree);
-  console.log('Eligibilities (JSONB):', row.eligibility);
+  console.log("Personnel:", `${row.first_name} ${row.last_name}`);
+  console.log("Position:", row.position);
+  console.log("Degree:", row.college_degree);
+  console.log("Major:", row.major);
+  console.log("Post-Grad Degree:", row.post_graduate_degree);
+  console.log("Eligibilities (JSONB):", row.eligibility);
 
   const hasRa1080 = row.eligibility.includes(customRa1080);
-  console.log('✅ RA 1080 Custom Input Preserved:', hasRa1080);
+  console.log("✅ RA 1080 Custom Input Preserved:", hasRa1080);
 
   // Clean up
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-002'`);
-  console.log('🧹 Cleaned up test records (ON DELETE CASCADE removed linked employment and educ records).');
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-002'`,
+  );
+  console.log(
+    "🧹 Cleaned up test records (ON DELETE CASCADE removed linked employment and educ records).",
+  );
   process.exit(0);
 }
 
-testEducationFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testEducationFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

@@ -1,7 +1,9 @@
-const { pool } = require('../db/index.js');
+const { pool } = require("../db/index.js");
 
 async function migrateNodeStatusTables() {
-  console.log('🚀 [Migration] Creating Node Status Tables & Views in insighted_esf7...');
+  console.log(
+    "🚀 [Migration] Creating Node Status Tables & Views in insighted_esf7...",
+  );
 
   try {
     // 1. Create esf7_school_node_status (1 School = 1 Row)
@@ -33,7 +35,7 @@ async function migrateNodeStatusTables() {
       CREATE INDEX IF NOT EXISTS idx_school_node_status_overall ON esf7_school_node_status (overall_status);
       CREATE INDEX IF NOT EXISTS idx_school_node_status_gin ON esf7_school_node_status USING GIN (personnel_summary, node_11_validation);
     `);
-    console.log('✅ Table `esf7_school_node_status` verified / created.');
+    console.log("✅ Table `esf7_school_node_status` verified / created.");
 
     // 2. Create esf7_personnel_node_status (1 Personnel = 1 Row)
     await pool.query(`
@@ -63,7 +65,7 @@ async function migrateNodeStatusTables() {
       CREATE INDEX IF NOT EXISTS idx_personnel_node_status_lookup ON esf7_personnel_node_status (school_id, school_year, personnel_id);
       CREATE INDEX IF NOT EXISTS idx_personnel_node_status_complete ON esf7_personnel_node_status (school_id, is_complete);
     `);
-    console.log('✅ Table `esf7_personnel_node_status` verified / created.');
+    console.log("✅ Table `esf7_personnel_node_status` verified / created.");
 
     // 2.5 Ensure schools_iern reference table exists
     await pool.query(`
@@ -81,7 +83,7 @@ async function migrateNodeStatusTables() {
       CREATE INDEX IF NOT EXISTS idx_schools_iern_division ON schools_iern(division);
       CREATE INDEX IF NOT EXISTS idx_schools_iern_district ON schools_iern(district);
     `);
-    console.log('✅ Table `schools_iern` verified / created.');
+    console.log("✅ Table `schools_iern` verified / created.");
 
     // 3. Create SQL Boolean View: vw_esf7_school_node_progress
     await pool.query(`
@@ -138,7 +140,7 @@ async function migrateNodeStatusTables() {
         OR REPLACE(s.school_id, 'SCH-', '') = CAST(i.school_id AS TEXT)
       );
     `);
-    console.log('✅ View `vw_esf7_school_node_progress` verified / created.');
+    console.log("✅ View `vw_esf7_school_node_progress` verified / created.");
 
     // 4. Create SQL Boolean View: vw_esf7_personnel_node_progress
     await pool.query(`
@@ -163,11 +165,15 @@ async function migrateNodeStatusTables() {
           p.updated_at
       FROM esf7_personnel_node_status p;
     `);
-    console.log('✅ View `vw_esf7_personnel_node_progress` verified / created.');
+    console.log(
+      "✅ View `vw_esf7_personnel_node_progress` verified / created.",
+    );
 
-    console.log('🎉 [Migration Complete] All Node Status tables and views successfully established in insighted_esf7.');
+    console.log(
+      "🎉 [Migration Complete] All Node Status tables and views successfully established in insighted_esf7.",
+    );
   } catch (err) {
-    console.error('❌ Migration error:', err.message);
+    console.error("❌ Migration error:", err.message);
   } finally {
     await pool.end();
   }

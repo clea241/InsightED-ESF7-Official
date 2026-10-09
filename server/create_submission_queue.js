@@ -1,8 +1,8 @@
-const db = require('./db');
+const db = require("./db");
 
 async function migrate() {
   try {
-    console.log('Migrating database schema for submission queue...');
+    console.log("Migrating database schema for submission queue...");
 
     // 1. Create submission_queue table
     await db.query(`
@@ -21,7 +21,7 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS idx_submission_queue_school_sy ON submission_queue (school_id, school_year);
       CREATE INDEX IF NOT EXISTS idx_submission_queue_status ON submission_queue (status);
     `);
-    console.log('submission_queue table created successfully!');
+    console.log("submission_queue table created successfully!");
 
     // 2. Add certification columns to schools table
     await db.query(`
@@ -29,12 +29,12 @@ async function migrate() {
       ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_signature TEXT;
       ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_at TIMESTAMPTZ;
     `);
-    console.log('Certification columns added to schools table!');
+    console.log("Certification columns added to schools table!");
 
-    console.log('Migration completed successfully!');
+    console.log("Migration completed successfully!");
     process.exit(0);
   } catch (err) {
-    console.error('Migration failed:', err);
+    console.error("Migration failed:", err);
     process.exit(1);
   }
 }

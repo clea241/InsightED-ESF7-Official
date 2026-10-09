@@ -1,4 +1,4 @@
-const { stagingPool } = require('../db');
+const { stagingPool } = require("../db");
 
 async function listTables() {
   const res = await stagingPool.query(`
@@ -7,8 +7,8 @@ async function listTables() {
     WHERE table_schema = 'public' 
     ORDER BY table_name;
   `);
-  console.log('Tables in insighted_esf7_staging:');
-  console.log(res.rows.map(r => r.table_name));
+  console.log("Tables in insighted_esf7_staging:");
+  console.log(res.rows.map((r) => r.table_name));
   process.exit(0);
 }
 

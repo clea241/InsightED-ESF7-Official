@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require("./db");
 
 async function createExtraTaskTables() {
   try {
@@ -46,7 +46,9 @@ async function createExtraTaskTables() {
       CREATE INDEX IF NOT EXISTS idx_esf7_admin_task_school ON esf7_admin_task (school_id, school_year);
     `);
 
-    console.log("✅ Tables 'esf7_related_task' and 'esf7_admin_task' created successfully!");
+    console.log(
+      "✅ Tables 'esf7_related_task' and 'esf7_admin_task' created successfully!",
+    );
     process.exit(0);
   } catch (err) {
     console.error("❌ Error creating task tables:", err);

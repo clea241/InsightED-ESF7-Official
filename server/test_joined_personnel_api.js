@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testJoinedFlow() {
-  console.log('Testing full joined flow for esf7_personnel_profile + esf7_personnel_employment...');
+  console.log(
+    "Testing full joined flow for esf7_personnel_profile + esf7_personnel_employment...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-108348-001'`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-108348-001'`,
+  );
 
   // Insert profile
   const profileRes = await db.query(`
@@ -56,25 +60,35 @@ async function testJoinedFlow() {
   `;
 
   const result = await db.query(joinQuery);
-  console.log('✅ Query Joined Result Count:', result.rows.length);
+  console.log("✅ Query Joined Result Count:", result.rows.length);
   const row = result.rows[0];
-  console.log('Personnel ID:', row.id);
-  console.log('Full Name:', `${row.salutation} ${row.first_name} ${row.last_name}`);
-  console.log('Position Category:', row.position_category);
-  console.log('Position:', row.position);
-  console.log('Step Increment:', row.step_increment);
-  console.log('Assigned Schools (JSONB):', row.assigned_schools);
-  console.log('Grade Levels Taught (JSONB):', row.grade_levels_taught);
+  console.log("Personnel ID:", row.id);
+  console.log(
+    "Full Name:",
+    `${row.salutation} ${row.first_name} ${row.last_name}`,
+  );
+  console.log("Position Category:", row.position_category);
+  console.log("Position:", row.position);
+  console.log("Step Increment:", row.step_increment);
+  console.log("Assigned Schools (JSONB):", row.assigned_schools);
+  console.log("Grade Levels Taught (JSONB):", row.grade_levels_taught);
 
   // Test ON DELETE CASCADE
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-108348-001'`);
-  const checkEmp = await db.query(`SELECT COUNT(*) FROM esf7_personnel_employment WHERE id = 'EMP-108348-001'`);
-  console.log('✅ ON DELETE CASCADE check (should be 0):', checkEmp.rows[0].count);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-108348-001'`,
+  );
+  const checkEmp = await db.query(
+    `SELECT COUNT(*) FROM esf7_personnel_employment WHERE id = 'EMP-108348-001'`,
+  );
+  console.log(
+    "✅ ON DELETE CASCADE check (should be 0):",
+    checkEmp.rows[0].count,
+  );
 
   process.exit(0);
 }
 
-testJoinedFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testJoinedFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

@@ -1,8 +1,8 @@
-const db = require('./db');
+const db = require("./db");
 
 async function migrate() {
   try {
-    console.log('Migrating database schema for school drafts...');
+    console.log("Migrating database schema for school drafts...");
 
     // 1. Create school_drafts table
     await db.query(`
@@ -14,13 +14,13 @@ async function migrate() {
         PRIMARY KEY (school_id, school_year)
       );
     `);
-    console.log('school_drafts table created successfully!');
+    console.log("school_drafts table created successfully!");
 
     // 2. Add to schema.sql for template tracking
-    console.log('Migration completed successfully!');
+    console.log("Migration completed successfully!");
     process.exit(0);
   } catch (err) {
-    console.error('Migration failed:', err);
+    console.error("Migration failed:", err);
     process.exit(1);
   }
 }

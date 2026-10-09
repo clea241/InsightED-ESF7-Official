@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  registerDirtyGuard, 
-  notifyDirtyStateChanged, 
-  showUnsavedChangesModal 
-} from '../services/dirtyGuard';
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  registerDirtyGuard,
+  notifyDirtyStateChanged,
+  showUnsavedChangesModal,
+} from "../services/dirtyGuard";
 
 /**
  * Reusable hook for setup screens to track dirty state and guard unsaved changes.
- * 
+ *
  * @param {Object} options
  * @param {string} options.screenId - Unique identifier for the screen (e.g. 'school_profile', 'roster')
  * @param {boolean} [options.isDirty] - Optional external boolean controlling dirty state
@@ -22,12 +22,13 @@ export function useDirtyGuard({
   onDiscard: externalOnDiscard,
   onSave: externalOnSave,
   getDirtyReasons: externalGetDirtyReasons,
-  initialSnapshot = null
+  initialSnapshot = null,
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [internalIsDirty, setInternalIsDirty] = useState(false);
 
-  const effectiveIsDirty = externalIsDirty !== undefined ? externalIsDirty : internalIsDirty;
+  const effectiveIsDirty =
+    externalIsDirty !== undefined ? externalIsDirty : internalIsDirty;
 
   const isDirtyRef = useRef(effectiveIsDirty);
   isDirtyRef.current = effectiveIsDirty;
@@ -40,24 +41,28 @@ export function useDirtyGuard({
 
   const onSaveRef = useRef(externalOnSave);
   onSaveRef.current = externalOnSave;
-  const supportsSave = typeof externalOnSave === 'function';
+  const supportsSave = typeof externalOnSave === "function";
 
   useEffect(() => {
     const unregister = registerDirtyGuard(screenId, {
       isDirty: () => isDirtyRef.current,
-      getDirtyReasons: () => (typeof reasonsRef.current === 'function' ? reasonsRef.current() : null),
+      getDirtyReasons: () =>
+        typeof reasonsRef.current === "function" ? reasonsRef.current() : null,
       screenId,
       onDiscard: () => {
-        if (typeof onDiscardRef.current === 'function') {
+        if (typeof onDiscardRef.current === "function") {
           try {
             onDiscardRef.current();
           } catch (err) {
-            console.warn(`[useDirtyGuard] Error in onDiscard for ${screenId}:`, err);
+            console.warn(
+              `[useDirtyGuard] Error in onDiscard for ${screenId}:`,
+              err,
+            );
           }
         }
         setInternalIsDirty(false);
       },
-      ...(supportsSave ? { onSave: () => onSaveRef.current() } : {})
+      ...(supportsSave ? { onSave: () => onSaveRef.current() } : {}),
     });
 
     return unregister;
@@ -87,38 +92,41 @@ export function useDirtyGuard({
    * Prompts user with SweetAlert modal if dirty.
    * If confirmed discard, runs onDiscard and invokes actionFn.
    */
-  const confirmAction = useCallback(async (actionFn, { actionType = 'tab' } = {}) => {
-    if (!isDirtyRef.current) {
-      if (typeof actionFn === 'function') actionFn();
-      return true;
-    }
-
-    const outcome = await showUnsavedChangesModal({
-      actionType,
-      onSave: onSaveRef.current ? () => onSaveRef.current() : undefined
-    });
-    if (outcome === 'saved') {
-      // The save was confirmed by the server inside the dialog; nothing to discard.
-      notifyDirtyStateChanged();
-      if (typeof actionFn === 'function') actionFn();
-      return true;
-    }
-    if (outcome === 'discard') {
-      if (typeof onDiscardRef.current === 'function') {
-        try {
-          onDiscardRef.current();
-        } catch (e) {}
+  const confirmAction = useCallback(
+    async (actionFn, { actionType = "tab" } = {}) => {
+      if (!isDirtyRef.current) {
+        if (typeof actionFn === "function") actionFn();
+        return true;
       }
-      setInternalIsDirty(false);
-      isDirtyRef.current = false;
-      notifyDirtyStateChanged();
 
-      if (typeof actionFn === 'function') actionFn();
-      return true;
-    }
+      const outcome = await showUnsavedChangesModal({
+        actionType,
+        onSave: onSaveRef.current ? () => onSaveRef.current() : undefined,
+      });
+      if (outcome === "saved") {
+        // The save was confirmed by the server inside the dialog; nothing to discard.
+        notifyDirtyStateChanged();
+        if (typeof actionFn === "function") actionFn();
+        return true;
+      }
+      if (outcome === "discard") {
+        if (typeof onDiscardRef.current === "function") {
+          try {
+            onDiscardRef.current();
+          } catch (e) {}
+        }
+        setInternalIsDirty(false);
+        isDirtyRef.current = false;
+        notifyDirtyStateChanged();
 
-    return false;
-  }, []);
+        if (typeof actionFn === "function") actionFn();
+        return true;
+      }
+
+      return false;
+    },
+    [],
+  );
 
   return {
     isDirty: effectiveIsDirty,
@@ -127,7 +135,7 @@ export function useDirtyGuard({
     markDirty,
     snapshot,
     setSnapshot,
-    confirmAction
+    confirmAction,
   };
 }
 

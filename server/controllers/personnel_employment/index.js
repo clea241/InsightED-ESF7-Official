@@ -1,35 +1,58 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
+const db = require("../../db");
 
-const sanitizeGradeLevel = (rawLvl, secName = '') => {
+const sanitizeGradeLevel = (rawLvl, secName = "") => {
   if (!rawLvl && !secName) return null;
-  const str = String(rawLvl || '').trim();
+  const str = String(rawLvl || "").trim();
   const upper = str.toUpperCase();
 
   if (
-    upper.includes('MULTI-GRADE') || upper.includes('MULTIGRADE') || upper.includes('MULTI GRADE') ||
-    upper.includes('MONO-GRADE') || upper.includes('MONOGRADE') || upper.includes('MONO GRADE') ||
-    upper.includes('PHIL-IRI') || upper.includes('PHIL IRI') ||
-    upper.includes('CRLA') || upper.includes('RMA') ||
-    upper === 'ARAL' || upper.startsWith('ARAL ') ||
-    upper.includes('INDEPENDENT') || upper.includes('INSTRUCTIONAL') || upper.includes('FRUSTRATION')
+    upper.includes("MULTI-GRADE") ||
+    upper.includes("MULTIGRADE") ||
+    upper.includes("MULTI GRADE") ||
+    upper.includes("MONO-GRADE") ||
+    upper.includes("MONOGRADE") ||
+    upper.includes("MONO GRADE") ||
+    upper.includes("PHIL-IRI") ||
+    upper.includes("PHIL IRI") ||
+    upper.includes("CRLA") ||
+    upper.includes("RMA") ||
+    upper === "ARAL" ||
+    upper.startsWith("ARAL ") ||
+    upper.includes("INDEPENDENT") ||
+    upper.includes("INSTRUCTIONAL") ||
+    upper.includes("FRUSTRATION")
   ) {
     if (secName) {
       const secMatch = String(secName).match(/(?:Grade\s*|G)(\d{1,2})/i);
       if (secMatch) return `Grade ${secMatch[1]}`;
-      if (String(secName).toUpperCase().includes('KINDER')) return 'Kinder';
-      if (String(secName).toUpperCase().includes('SNED') || String(secName).toUpperCase().includes('NON-GRADED') || String(secName).toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
-      if (String(secName).toUpperCase().includes('ALS')) return 'ALS';
+      if (String(secName).toUpperCase().includes("KINDER")) return "Kinder";
+      if (
+        String(secName).toUpperCase().includes("SNED") ||
+        String(secName).toUpperCase().includes("NON-GRADED") ||
+        String(secName).toUpperCase().includes("SPED")
+      )
+        return "SNED (NON-GRADED)";
+      if (String(secName).toUpperCase().includes("ALS")) return "ALS";
     }
     return null;
   }
 
-  if (upper.includes('KINDER') || upper === 'K') return 'Kinder';
-  if (upper === 'SNED' || upper === 'SPED' || upper === 'NON-GRADED' || upper === 'NON GRADED' || upper.includes('SNED') || upper.includes('NON-GRADED') || upper.includes('NON GRADED')) {
-    return 'SNED (NON-GRADED)';
+  if (upper.includes("KINDER") || upper === "K") return "Kinder";
+  if (
+    upper === "SNED" ||
+    upper === "SPED" ||
+    upper === "NON-GRADED" ||
+    upper === "NON GRADED" ||
+    upper.includes("SNED") ||
+    upper.includes("NON-GRADED") ||
+    upper.includes("NON GRADED")
+  ) {
+    return "SNED (NON-GRADED)";
   }
-  if (upper === 'ALS' || upper.startsWith('ALS-') || upper.startsWith('ALS ')) return 'ALS';
+  if (upper === "ALS" || upper.startsWith("ALS-") || upper.startsWith("ALS "))
+    return "ALS";
 
   const numMatch = str.match(/^(?:Grade\s*|G\s*)?(\d{1,2})$/i);
   if (numMatch) {
@@ -37,11 +60,20 @@ const sanitizeGradeLevel = (rawLvl, secName = '') => {
     if (num >= 1 && num <= 12) return `Grade ${num}`;
   }
 
-  if (upper.startsWith('GRADE ')) {
+  if (upper.startsWith("GRADE ")) {
     const rest = str.substring(6).trim();
-    if (rest.toUpperCase().includes('KINDER')) return 'Kinder';
-    if (rest.toUpperCase().includes('MULTI') || rest.toUpperCase().includes('MONO')) return null;
-    if (rest.toUpperCase().includes('SNED') || rest.toUpperCase().includes('NON-GRADED') || rest.toUpperCase().includes('SPED')) return 'SNED (NON-GRADED)';
+    if (rest.toUpperCase().includes("KINDER")) return "Kinder";
+    if (
+      rest.toUpperCase().includes("MULTI") ||
+      rest.toUpperCase().includes("MONO")
+    )
+      return null;
+    if (
+      rest.toUpperCase().includes("SNED") ||
+      rest.toUpperCase().includes("NON-GRADED") ||
+      rest.toUpperCase().includes("SPED")
+    )
+      return "SNED (NON-GRADED)";
     const subMatch = rest.match(/^(\d{1,2})$/);
     if (subMatch) {
       const num = parseInt(subMatch[1], 10);
@@ -70,8 +102,15 @@ function formatEmploymentRecord(row) {
   if (!row) return null;
   const raw = row.raw_payload || {};
   const grades = sanitizeGradeArray(row.grade_levels_taught || []);
-  const hasShsGrade = Array.isArray(grades) && grades.some(g => String(g).includes('11') || String(g).includes('12'));
-  const teachesShsFlag = raw.teachesShs !== undefined ? !!raw.teachesShs : (raw.teaches_shs !== undefined ? !!raw.teaches_shs : hasShsGrade);
+  const hasShsGrade =
+    Array.isArray(grades) &&
+    grades.some((g) => String(g).includes("11") || String(g).includes("12"));
+  const teachesShsFlag =
+    raw.teachesShs !== undefined
+      ? !!raw.teachesShs
+      : raw.teaches_shs !== undefined
+        ? !!raw.teaches_shs
+        : hasShsGrade;
 
   return {
     ...raw,
@@ -99,24 +138,40 @@ function formatEmploymentRecord(row) {
     assigned_grade_levels: grades,
     teachesShs: teachesShsFlag,
     teaches_shs: teachesShsFlag,
-    firstServiceDate: row.first_service_date ? (row.first_service_date instanceof Date ? row.first_service_date.toISOString().split('T')[0] : String(row.first_service_date).split('T')[0]) : null,
-    lastPromotionDate: row.last_promotion_date ? (row.last_promotion_date instanceof Date ? row.last_promotion_date.toISOString().split('T')[0] : String(row.last_promotion_date).split('T')[0]) : null,
-    newStationDate: row.new_station_date ? (row.new_station_date instanceof Date ? row.new_station_date.toISOString().split('T')[0] : String(row.new_station_date).split('T')[0]) : null,
-    lastLateralMovementDate: row.last_lateral_movement_date ? (row.last_lateral_movement_date instanceof Date ? row.last_lateral_movement_date.toISOString().split('T')[0] : String(row.last_lateral_movement_date).split('T')[0]) : null,
-    rawPayload: raw
+    firstServiceDate: row.first_service_date
+      ? row.first_service_date instanceof Date
+        ? row.first_service_date.toISOString().split("T")[0]
+        : String(row.first_service_date).split("T")[0]
+      : null,
+    lastPromotionDate: row.last_promotion_date
+      ? row.last_promotion_date instanceof Date
+        ? row.last_promotion_date.toISOString().split("T")[0]
+        : String(row.last_promotion_date).split("T")[0]
+      : null,
+    newStationDate: row.new_station_date
+      ? row.new_station_date instanceof Date
+        ? row.new_station_date.toISOString().split("T")[0]
+        : String(row.new_station_date).split("T")[0]
+      : null,
+    lastLateralMovementDate: row.last_lateral_movement_date
+      ? row.last_lateral_movement_date instanceof Date
+        ? row.last_lateral_movement_date.toISOString().split("T")[0]
+        : String(row.last_lateral_movement_date).split("T")[0]
+      : null,
+    rawPayload: raw,
   };
 }
 
 // GET employment record by personnel_id
-router.get('/:personnel_id', async (req, res) => {
+router.get("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const result = await db.query(
       `SELECT * FROM esf7_personnel_employment WHERE personnel_id = $1 LIMIT 1`,
-      [personnel_id]
+      [personnel_id],
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Employment record not found' });
+      return res.status(404).json({ error: "Employment record not found" });
     }
     res.json(formatEmploymentRecord(result.rows[0]));
   } catch (err) {
@@ -125,41 +180,88 @@ router.get('/:personnel_id', async (req, res) => {
 });
 
 // POST / PUT Upsert employment details for a personnel record
-router.post('/:personnel_id', async (req, res) => {
+router.post("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const {
-      position_category, positionCategory, position, step_increment, stepIncrement,
-      fund_source, fundSource, nature_of_appointment, natureOfAppointment,
-      hiring_arrangement, hiringArrangement, deployment_status, deploymentStatus,
-      assigned_schools, assignedSchools, grade_levels_taught, gradeLevelsTaught, assignedGradeLevels, assigned_grade_levels,
-      first_service_date, firstServiceDate, last_promotion_date, lastPromotionDate,
-      new_station_date, newStationDate, last_lateral_movement_date, lastLateralMovementDate
+      position_category,
+      positionCategory,
+      position,
+      step_increment,
+      stepIncrement,
+      fund_source,
+      fundSource,
+      nature_of_appointment,
+      natureOfAppointment,
+      hiring_arrangement,
+      hiringArrangement,
+      deployment_status,
+      deploymentStatus,
+      assigned_schools,
+      assignedSchools,
+      grade_levels_taught,
+      gradeLevelsTaught,
+      assignedGradeLevels,
+      assigned_grade_levels,
+      first_service_date,
+      firstServiceDate,
+      last_promotion_date,
+      lastPromotionDate,
+      new_station_date,
+      newStationDate,
+      last_lateral_movement_date,
+      lastLateralMovementDate,
     } = req.body;
 
     // Get school_id from linked personnel profile to construct EMP ID
     const personRes = await db.query(
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [personnel_id]
+      [personnel_id],
     );
 
-    const schoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348';
-    
+    const schoolId =
+      personRes.rows.length > 0 ? personRes.rows[0].school_id : "108348";
+
     // Count existing for sequence ID
-    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_employment`);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const empId = `EMP-${schoolId.replace('SCH-', '')}-${seq}`;
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM esf7_personnel_employment`,
+    );
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+    const empId = `EMP-${schoolId.replace("SCH-", "")}-${seq}`;
 
-    const cat = (position_category || positionCategory || 'TEACHING').toUpperCase();
-    const pos = (position || 'TEACHER I').toUpperCase();
+    const cat = (
+      position_category ||
+      positionCategory ||
+      "TEACHING"
+    ).toUpperCase();
+    const pos = (position || "TEACHER I").toUpperCase();
     const step = Number(step_increment || stepIncrement || 1);
-    const fund = (fund_source || fundSource || 'NATIONAL').toUpperCase();
-    const appt = (nature_of_appointment || natureOfAppointment || 'REGULAR PERMANENT').toUpperCase();
-    const hire = (hiring_arrangement || hiringArrangement || 'PERMANENT').toUpperCase();
-    const deploy = (deployment_status || deploymentStatus || 'OWN STATION').toUpperCase();
+    const fund = (fund_source || fundSource || "NATIONAL").toUpperCase();
+    const appt = (
+      nature_of_appointment ||
+      natureOfAppointment ||
+      "REGULAR PERMANENT"
+    ).toUpperCase();
+    const hire = (
+      hiring_arrangement ||
+      hiringArrangement ||
+      "PERMANENT"
+    ).toUpperCase();
+    const deploy = (
+      deployment_status ||
+      deploymentStatus ||
+      "OWN STATION"
+    ).toUpperCase();
 
-    const targetGrades = assignedGradeLevels || assigned_grade_levels || grade_levels_taught || gradeLevelsTaught || [];
-    const schoolsJson = JSON.stringify(assigned_schools || assignedSchools || []);
+    const targetGrades =
+      assignedGradeLevels ||
+      assigned_grade_levels ||
+      grade_levels_taught ||
+      gradeLevelsTaught ||
+      [];
+    const schoolsJson = JSON.stringify(
+      assigned_schools || assignedSchools || [],
+    );
     const gradesJson = JSON.stringify(sanitizeGradeArray(targetGrades));
 
     const query = `
@@ -204,20 +306,20 @@ router.post('/:personnel_id', async (req, res) => {
       last_promotion_date || lastPromotionDate || null,
       new_station_date || newStationDate || null,
       last_lateral_movement_date || lastLateralMovementDate || null,
-      JSON.stringify(req.body)
+      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);
     res.json(formatEmploymentRecord(result.rows[0]));
   } catch (err) {
-    console.error('Error upserting esf7_personnel_employment:', err);
+    console.error("Error upserting esf7_personnel_employment:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // PUT Single update route
-router.put('/:personnel_id', async (req, res) => {
-  return router.handle({ ...req, method: 'POST' }, res);
+router.put("/:personnel_id", async (req, res) => {
+  return router.handle({ ...req, method: "POST" }, res);
 });
 
 module.exports = router;

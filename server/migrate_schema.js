@@ -1,52 +1,72 @@
-const db = require('./db');
+const db = require("./db");
 
 async function run() {
   try {
-    console.log('Running schema migrations...');
+    console.log("Running schema migrations...");
 
     // Add missing certification columns to schools table
-    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_by TEXT`);
-    console.log('✅ Added certified_by column');
-    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_signature TEXT`);
-    console.log('✅ Added certified_signature column');
-    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_at TIMESTAMPTZ`);
-    console.log('✅ Added certified_at column');
+    await db.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_by TEXT`,
+    );
+    console.log("✅ Added certified_by column");
+    await db.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_signature TEXT`,
+    );
+    console.log("✅ Added certified_signature column");
+    await db.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS certified_at TIMESTAMPTZ`,
+    );
+    console.log("✅ Added certified_at column");
 
     // Add special_programs and shs_curriculum_model columns to schools table
-    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS special_programs JSONB`);
-    console.log('✅ Added special_programs column to schools table');
-    await db.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS shs_curriculum_model TEXT`);
-    console.log('✅ Added shs_curriculum_model column to schools table');
+    await db.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS special_programs JSONB`,
+    );
+    console.log("✅ Added special_programs column to schools table");
+    await db.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS shs_curriculum_model TEXT`,
+    );
+    console.log("✅ Added shs_curriculum_model column to schools table");
 
     // Fix deped_email constraint - make it allow empty string
     try {
-      await db.query(`ALTER TABLE personnel DROP CONSTRAINT IF EXISTS personnel_deped_email_check`);
-      console.log('✅ Dropped old deped_email check constraint');
+      await db.query(
+        `ALTER TABLE personnel DROP CONSTRAINT IF EXISTS personnel_deped_email_check`,
+      );
+      console.log("✅ Dropped old deped_email check constraint");
     } catch (e) {
-      console.log('ℹ️  No deped_email check constraint to drop (or different name)');
+      console.log(
+        "ℹ️  No deped_email check constraint to drop (or different name)",
+      );
     }
 
     // Fix section_type check constraint to allow 'Regular'
     try {
-      await db.query(`ALTER TABLE class_sections DROP CONSTRAINT IF EXISTS class_sections_section_type_check`);
+      await db.query(
+        `ALTER TABLE class_sections DROP CONSTRAINT IF EXISTS class_sections_section_type_check`,
+      );
       await db.query(`ALTER TABLE class_sections ADD CONSTRAINT class_sections_section_type_check 
         CHECK (section_type IN ('MULTIGRADE', 'MONO GRADE', 'NON GRADED', 'Regular', 'regular'))`);
-      console.log('✅ Updated section_type constraint');
+      console.log("✅ Updated section_type constraint");
     } catch (e) {
-      console.log('ℹ️  section_type constraint update:', e.message);
+      console.log("ℹ️  section_type constraint update:", e.message);
     }
 
     // Make deped_email NOT unique (allow blanks for multiple personnel without deped email)
     try {
-      await db.query(`ALTER TABLE personnel DROP CONSTRAINT IF EXISTS personnel_deped_email_key`);
-      console.log('✅ Dropped deped_email unique constraint');
+      await db.query(
+        `ALTER TABLE personnel DROP CONSTRAINT IF EXISTS personnel_deped_email_key`,
+      );
+      console.log("✅ Dropped deped_email unique constraint");
     } catch (e) {
-      console.log('ℹ️  No deped_email unique constraint found:', e.message);
+      console.log("ℹ️  No deped_email unique constraint found:", e.message);
     }
 
     // Ensure workload_rows.section_id column exists with ON DELETE CASCADE and index
     try {
-      await db.query(`ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS section_id VARCHAR(50) REFERENCES class_sections(id) ON DELETE CASCADE`);
+      await db.query(
+        `ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS section_id VARCHAR(50) REFERENCES class_sections(id) ON DELETE CASCADE`,
+      );
       // Find foreign key constraint name for section_id in workload_rows and update to ON DELETE CASCADE
       const fkRes = await db.query(`
         SELECT constraint_name 
@@ -55,35 +75,45 @@ async function run() {
         AND constraint_name LIKE '%section_id%'
       `);
       for (const row of fkRes.rows) {
-        await db.query(`ALTER TABLE workload_rows DROP CONSTRAINT IF EXISTS "${row.constraint_name}"`);
+        await db.query(
+          `ALTER TABLE workload_rows DROP CONSTRAINT IF EXISTS "${row.constraint_name}"`,
+        );
       }
       await db.query(`
         ALTER TABLE workload_rows 
         ADD CONSTRAINT workload_rows_section_id_fkey 
         FOREIGN KEY (section_id) REFERENCES class_sections(id) ON DELETE CASCADE
       `);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_workload_rows_section_id ON workload_rows(section_id)`);
-      console.log('✅ Updated workload_rows section_id FK to ON DELETE CASCADE and created index');
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_workload_rows_section_id ON workload_rows(section_id)`,
+      );
+      console.log(
+        "✅ Updated workload_rows section_id FK to ON DELETE CASCADE and created index",
+      );
     } catch (e) {
-      console.log('ℹ️  workload_rows section_id migration:', e.message);
+      console.log("ℹ️  workload_rows section_id migration:", e.message);
     }
 
     // Ensure workload_rows.designated_by_sds column exists
     try {
-      await db.query(`ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS designated_by_sds BOOLEAN DEFAULT FALSE`);
-      console.log('✅ Added designated_by_sds column to workload_rows');
+      await db.query(
+        `ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS designated_by_sds BOOLEAN DEFAULT FALSE`,
+      );
+      console.log("✅ Added designated_by_sds column to workload_rows");
     } catch (e) {
-      console.log('ℹ️  workload_rows designated_by_sds migration:', e.message);
+      console.log("ℹ️  workload_rows designated_by_sds migration:", e.message);
     }
 
     // === SHS WORKLOAD SEPARATION MIGRATION ===
 
     // Add teaches_shs flag to personnel_employment
     try {
-      await db.query(`ALTER TABLE personnel_employment ADD COLUMN IF NOT EXISTS teaches_shs BOOLEAN DEFAULT FALSE`);
-      console.log('✅ Added teaches_shs column to personnel_employment');
+      await db.query(
+        `ALTER TABLE personnel_employment ADD COLUMN IF NOT EXISTS teaches_shs BOOLEAN DEFAULT FALSE`,
+      );
+      console.log("✅ Added teaches_shs column to personnel_employment");
     } catch (e) {
-      console.log('ℹ️  teaches_shs migration:', e.message);
+      console.log("ℹ️  teaches_shs migration:", e.message);
     }
 
     // Create shs_workload_rows table
@@ -109,12 +139,18 @@ async function run() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_personnel ON shs_workload_rows(personnel_id)`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_school ON shs_workload_rows(school_id)`);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_term ON shs_workload_rows(term)`);
-      console.log('✅ Created shs_workload_rows table and indexes');
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_personnel ON shs_workload_rows(personnel_id)`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_school ON shs_workload_rows(school_id)`,
+      );
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_shs_workload_rows_term ON shs_workload_rows(term)`,
+      );
+      console.log("✅ Created shs_workload_rows table and indexes");
     } catch (e) {
-      console.log('ℹ️  shs_workload_rows migration:', e.message);
+      console.log("ℹ️  shs_workload_rows migration:", e.message);
     }
 
     // Create shs_workload_transfers table
@@ -137,9 +173,9 @@ async function run() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      console.log('✅ Created shs_workload_transfers table');
+      console.log("✅ Created shs_workload_transfers table");
     } catch (e) {
-      console.log('ℹ️  shs_workload_transfers migration:', e.message);
+      console.log("ℹ️  shs_workload_transfers migration:", e.message);
     }
 
     // Create shs_workload_row_dates table
@@ -155,10 +191,12 @@ async function run() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_shs_row_dates_row ON shs_workload_row_dates(shs_workload_row_id)`);
-      console.log('✅ Created shs_workload_row_dates table and index');
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_shs_row_dates_row ON shs_workload_row_dates(shs_workload_row_id)`,
+      );
+      console.log("✅ Created shs_workload_row_dates table and index");
     } catch (e) {
-      console.log('ℹ️  shs_workload_row_dates migration:', e.message);
+      console.log("ℹ️  shs_workload_row_dates migration:", e.message);
     }
     // Create personnel_designations table & migration
     try {
@@ -178,18 +216,22 @@ async function run() {
           CONSTRAINT unique_personnel_designation UNIQUE (personnel_id, designation_name, grade_level, learning_area, track)
         )
       `);
-      await db.query(`CREATE INDEX IF NOT EXISTS idx_personnel_designations_lookup ON personnel_designations (school_id, school_year, personnel_id)`);
-      console.log('✅ Created personnel_designations table and index');
+      await db.query(
+        `CREATE INDEX IF NOT EXISTS idx_personnel_designations_lookup ON personnel_designations (school_id, school_year, personnel_id)`,
+      );
+      console.log("✅ Created personnel_designations table and index");
     } catch (e) {
-      console.log('ℹ️  personnel_designations creation:', e.message);
+      console.log("ℹ️  personnel_designations creation:", e.message);
     }
 
     // Add designation_id column to workload_rows
     try {
-      await db.query(`ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS designation_id VARCHAR(50) REFERENCES personnel_designations(id) ON DELETE CASCADE`);
-      console.log('✅ Added designation_id column to workload_rows');
+      await db.query(
+        `ALTER TABLE workload_rows ADD COLUMN IF NOT EXISTS designation_id VARCHAR(50) REFERENCES personnel_designations(id) ON DELETE CASCADE`,
+      );
+      console.log("✅ Added designation_id column to workload_rows");
     } catch (e) {
-      console.log('ℹ️  workload_rows designation_id migration:', e.message);
+      console.log("ℹ️  workload_rows designation_id migration:", e.message);
     }
 
     // Backfill legacy personnel_employment.designation into personnel_designations
@@ -202,22 +244,27 @@ async function run() {
       `);
       for (const row of legacyRes.rows) {
         const rawDesig = row.designation;
-        const desigItems = rawDesig.split(',').map(s => s.trim()).filter(Boolean);
+        const desigItems = rawDesig
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
         for (const item of desigItems) {
-          const isApproved = item.includes('::APPROVED_SDS');
-          const cleanItem = item.replace('::APPROVED_SDS', '').trim();
-          
+          const isApproved = item.includes("::APPROVED_SDS");
+          const cleanItem = item.replace("::APPROVED_SDS", "").trim();
+
           let designationName = cleanItem;
           let gradeLevel = null;
           let learningArea = null;
           let track = null;
 
-          if (cleanItem.includes(' - ')) {
-            const parts = cleanItem.split(' - ').map(s => s.trim());
+          if (cleanItem.includes(" - ")) {
+            const parts = cleanItem.split(" - ").map((s) => s.trim());
             designationName = parts[0];
             if (parts.length >= 2) gradeLevel = parts[1];
             if (parts.length >= 3) {
-              if (['ACADEMIC', 'TECHPRO', 'SPORTS', 'ARTS'].includes(parts[2])) {
+              if (
+                ["ACADEMIC", "TECHPRO", "SPORTS", "ARTS"].includes(parts[2])
+              ) {
                 track = parts[2];
               } else {
                 learningArea = parts[2];
@@ -226,33 +273,52 @@ async function run() {
           }
 
           const desigId = `DSG-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
-          await db.query(`
+          await db.query(
+            `
             INSERT INTO personnel_designations 
               (id, personnel_id, school_id, school_year, designation_name, grade_level, learning_area, track, approved_by_sds)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (personnel_id, designation_name, grade_level, learning_area, track) 
             DO UPDATE SET approved_by_sds = EXCLUDED.approved_by_sds, updated_at = NOW()
-          `, [desigId, row.personnel_id, row.school_id, row.school_year, designationName, gradeLevel, learningArea, track, isApproved]);
+          `,
+            [
+              desigId,
+              row.personnel_id,
+              row.school_id,
+              row.school_year,
+              designationName,
+              gradeLevel,
+              learningArea,
+              track,
+              isApproved,
+            ],
+          );
         }
       }
-      console.log('✅ Legacy designations backfill completed');
+      console.log("✅ Legacy designations backfill completed");
     } catch (e) {
-      console.log('ℹ️  Legacy designation backfill:', e.message);
+      console.log("ℹ️  Legacy designation backfill:", e.message);
     }
 
     // Automatically normalize legacy HOMEROOM GUIDANCE entries in database to HGP
     try {
-      await db.query(`UPDATE workload_rows SET subject = 'HGP' WHERE UPPER(subject) LIKE '%HOMEROOM GUIDANCE%'`);
-      await db.query(`UPDATE shs_workload_rows SET subject = 'HGP' WHERE UPPER(subject) LIKE '%HOMEROOM GUIDANCE%'`);
-      await db.query(`UPDATE personnel_learning_areas SET learning_area = 'HGP' WHERE UPPER(learning_area) LIKE '%HOMEROOM GUIDANCE%'`);
-      console.log('✅ Normalized HOMEROOM GUIDANCE to HGP in database');
+      await db.query(
+        `UPDATE workload_rows SET subject = 'HGP' WHERE UPPER(subject) LIKE '%HOMEROOM GUIDANCE%'`,
+      );
+      await db.query(
+        `UPDATE shs_workload_rows SET subject = 'HGP' WHERE UPPER(subject) LIKE '%HOMEROOM GUIDANCE%'`,
+      );
+      await db.query(
+        `UPDATE personnel_learning_areas SET learning_area = 'HGP' WHERE UPPER(learning_area) LIKE '%HOMEROOM GUIDANCE%'`,
+      );
+      console.log("✅ Normalized HOMEROOM GUIDANCE to HGP in database");
     } catch (e) {
-      console.log('ℹ️  HGP DB normalization:', e.message);
+      console.log("ℹ️  HGP DB normalization:", e.message);
     }
 
-    console.log('\nAll migrations completed!');
+    console.log("\nAll migrations completed!");
   } catch (e) {
-    console.error('Migration failed:', e.message);
+    console.error("Migration failed:", e.message);
   }
   process.exit(0);
 }

@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testOverloadPayAndReasonFlow() {
-  console.log('Testing overload_pay_and_reason insertion, JSONB reasons array, month, net_term_pay, and CASCADE deletion...');
+  console.log(
+    "Testing overload_pay_and_reason insertion, JSONB reasons array, month, net_term_pay, and CASCADE deletion...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-014'`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-014'`,
+  );
 
   // 1. Insert Profile
   await db.query(`
@@ -22,25 +26,48 @@ async function testOverloadPayAndReasonFlow() {
     ) RETURNING *
   `);
 
-  console.log('✅ Created Overload Pay and Reason Record:');
+  console.log("✅ Created Overload Pay and Reason Record:");
   const row = oprRes.rows[0];
-  console.log('ID:', row.id, '| Teacher:', row.personnel_id, '| Term:', row.term, '| Month:', row.month);
-  console.log('Hours:', row.overload_hours, '| Gross Pay: ₱' + row.overload_pay, '| Net Term Pay: ₱' + row.net_term_pay);
-  console.log('Reasons JSONB:', row.reasons);
+  console.log(
+    "ID:",
+    row.id,
+    "| Teacher:",
+    row.personnel_id,
+    "| Term:",
+    row.term,
+    "| Month:",
+    row.month,
+  );
+  console.log(
+    "Hours:",
+    row.overload_hours,
+    "| Gross Pay: ₱" + row.overload_pay,
+    "| Net Term Pay: ₱" + row.net_term_pay,
+  );
+  console.log("Reasons JSONB:", row.reasons);
 
   // 3. Query record
-  const checkRes = await db.query(`SELECT * FROM overload_pay_and_reason WHERE personnel_id = 'PER-TEST-014'`);
-  console.log('✅ Retrieved Overload Record Count:', checkRes.rows.length);
+  const checkRes = await db.query(
+    `SELECT * FROM overload_pay_and_reason WHERE personnel_id = 'PER-TEST-014'`,
+  );
+  console.log("✅ Retrieved Overload Record Count:", checkRes.rows.length);
 
   // 4. Test CASCADE Deletion
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-014'`);
-  const checkDel = await db.query(`SELECT COUNT(*) FROM overload_pay_and_reason WHERE personnel_id = 'PER-TEST-014'`);
-  console.log('✅ ON DELETE CASCADE check (should be 0):', checkDel.rows[0].count);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-014'`,
+  );
+  const checkDel = await db.query(
+    `SELECT COUNT(*) FROM overload_pay_and_reason WHERE personnel_id = 'PER-TEST-014'`,
+  );
+  console.log(
+    "✅ ON DELETE CASCADE check (should be 0):",
+    checkDel.rows[0].count,
+  );
 
   process.exit(0);
 }
 
-testOverloadPayAndReasonFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testOverloadPayAndReasonFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

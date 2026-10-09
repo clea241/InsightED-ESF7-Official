@@ -1,8 +1,10 @@
-const db = require('./db');
+const db = require("./db");
 
 async function migrate() {
   try {
-    console.log('Running migrations for Clustered Connections and School Mergers...');
+    console.log(
+      "Running migrations for Clustered Connections and School Mergers...",
+    );
 
     // 1. Create clustered_connections
     await db.query(`
@@ -37,10 +39,10 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS idx_school_merger_registry_child ON school_merger_registry (child_school_id);
     `);
 
-    console.log('✅ Request Center migrations applied successfully.');
+    console.log("✅ Request Center migrations applied successfully.");
     process.exit(0);
   } catch (err) {
-    console.error('❌ Migration failed:', err.message);
+    console.error("❌ Migration failed:", err.message);
     process.exit(1);
   }
 }

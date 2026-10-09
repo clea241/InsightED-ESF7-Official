@@ -1,22 +1,27 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { insightEdPool: pool } = require('../../db');
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const { insightEdPool: pool } = require("../../db");
 
 // Configure draft directory
-const VM_DRAFT_DIR = '/mnt/esf7_draft';
-const LOCAL_DRAFT_DIR = path.resolve(__dirname, '../../uploads/esf7_drafts');
-const DRAFT_DIR = (process.platform !== 'win32' && fs.existsSync(VM_DRAFT_DIR)) 
-  ? VM_DRAFT_DIR 
-  : LOCAL_DRAFT_DIR;
+const VM_DRAFT_DIR = "/mnt/esf7_draft";
+const LOCAL_DRAFT_DIR = path.resolve(__dirname, "../../uploads/esf7_drafts");
+const DRAFT_DIR =
+  process.platform !== "win32" && fs.existsSync(VM_DRAFT_DIR)
+    ? VM_DRAFT_DIR
+    : LOCAL_DRAFT_DIR;
 
 if (!fs.existsSync(DRAFT_DIR)) {
   try {
     fs.mkdirSync(DRAFT_DIR, { recursive: true });
   } catch (err) {
-    console.warn('[ESF7 Upload] Could not create draft dir:', DRAFT_DIR, err.message);
+    console.warn(
+      "[ESF7 Upload] Could not create draft dir:",
+      DRAFT_DIR,
+      err.message,
+    );
   }
 }
 
@@ -26,11 +31,15 @@ const storage = multer.diskStorage({
     cb(null, DRAFT_DIR);
   },
   filename: (req, file, cb) => {
-    const rawSchoolId = (req.body.school_id || req.body.schoolId || 'UNKNOWN').replace(/^SCH-/i, '').trim();
-    const safeBaseName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const rawSchoolId = (req.body.school_id || req.body.schoolId || "UNKNOWN")
+      .replace(/^SCH-/i, "")
+      .trim();
+    const safeBaseName = path
+      .basename(file.originalname)
+      .replace(/[^a-zA-Z0-9._-]/g, "_");
     const finalName = `${rawSchoolId}_ESF7_${Date.now()}_${safeBaseName}`;
     cb(null, finalName);
-  }
+  },
 });
 
 const upload = multer({
@@ -38,112 +47,135 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (ext === '.xlsb' || ext === '.xlsx') {
+    if (ext === ".xlsb" || ext === ".xlsx") {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only DepEd eSF7 spreadsheet files (.xlsb or .xlsx) are permitted.'));
+      cb(
+        new Error(
+          "Invalid file type. Only DepEd eSF7 spreadsheet files (.xlsb or .xlsx) are permitted.",
+        ),
+      );
     }
-  }
+  },
 });
 
 // ── GET /api/esf7-upload/check/:schoolId ──────────────────────────────────
 // Returns whether the school has existing records or an active queuing job
-router.get('/check/:schoolId', async (req, res) => {
-  const cleanSchoolId = String(req.params.schoolId).replace(/^SCH-/i, '').trim();
+router.get("/check/:schoolId", async (req, res) => {
+  const cleanSchoolId = String(req.params.schoolId)
+    .replace(/^SCH-/i, "")
+    .trim();
 
   try {
-    const mainDb = require('../../db');
+    const mainDb = require("../../db");
 
     // 0. Test accounts exemption
-    if (mainDb.isDivisionOrTestAccount && mainDb.isDivisionOrTestAccount(cleanSchoolId)) {
+    if (
+      mainDb.isDivisionOrTestAccount &&
+      mainDb.isDivisionOrTestAccount(cleanSchoolId)
+    ) {
       return res.json({
         hasData: true,
         dataCount: 8,
-        sourceTable: 'esf7_database_dummy',
+        sourceTable: "esf7_database_dummy",
         queueStatus: null,
         requiresForceUpload: false,
-        isExempted: true
+        isExempted: true,
       });
     }
 
     // 1. Check active operational database (insighted_esf7)
-    const activeRes = await mainDb.query(
-      'SELECT count(*) FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2',
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [{ count: '0' }] }));
+    const activeRes = await mainDb
+      .query(
+        "SELECT count(*) FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2",
+        [cleanSchoolId, `SCH-${cleanSchoolId}`],
+      )
+      .catch(() => ({ rows: [{ count: "0" }] }));
 
-
-    const activeCount = parseInt(activeRes.rows[0]?.count || '0', 10);
+    const activeCount = parseInt(activeRes.rows[0]?.count || "0", 10);
     if (activeCount > 0) {
       return res.json({
         hasData: true,
         dataCount: activeCount,
-        sourceTable: 'esf7_personnel_profile',
-        queueStatus: null
+        sourceTable: "esf7_personnel_profile",
+        queueStatus: null,
       });
     }
 
     // 2. Check production esf7_database (historical repository in insightEd)
-    const prodRes = await pool.query(
-      'SELECT count(*) FROM esf7_database WHERE school_id = $1 OR school_id = $2',
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [{ count: '0' }] }));
+    const prodRes = await pool
+      .query(
+        "SELECT count(*) FROM esf7_database WHERE school_id = $1 OR school_id = $2",
+        [cleanSchoolId, `SCH-${cleanSchoolId}`],
+      )
+      .catch(() => ({ rows: [{ count: "0" }] }));
 
-    const prodCount = parseInt(prodRes.rows[0]?.count || '0', 10);
+    const prodCount = parseInt(prodRes.rows[0]?.count || "0", 10);
     if (prodCount > 0) {
       return res.json({
         hasData: true,
         dataCount: prodCount,
-        sourceTable: 'esf7_database',
-        queueStatus: null
+        sourceTable: "esf7_database",
+        queueStatus: null,
       });
     }
 
     // 3. Check test sandbox esf7_database_dummy
-    const dummyRes = await pool.query(
-      'SELECT count(*) FROM esf7_database_dummy WHERE school_id = $1 OR school_id = $2',
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [{ count: '0' }] }));
+    const dummyRes = await pool
+      .query(
+        "SELECT count(*) FROM esf7_database_dummy WHERE school_id = $1 OR school_id = $2",
+        [cleanSchoolId, `SCH-${cleanSchoolId}`],
+      )
+      .catch(() => ({ rows: [{ count: "0" }] }));
 
-    const dummyCount = parseInt(dummyRes.rows[0]?.count || '0', 10);
+    const dummyCount = parseInt(dummyRes.rows[0]?.count || "0", 10);
     if (dummyCount > 0) {
       return res.json({
         hasData: true,
         dataCount: dummyCount,
-        sourceTable: 'esf7_database_dummy',
-        queueStatus: null
+        sourceTable: "esf7_database_dummy",
+        queueStatus: null,
       });
     }
 
     // 4. Check pending_schools table in insightEd
-    const pendingRes = await pool.query(
-      `SELECT pending_id, registration_type, old_school_id, mother_school_id, status 
+    const pendingRes = await pool
+      .query(
+        `SELECT pending_id, registration_type, old_school_id, mother_school_id, status 
        FROM pending_schools 
        WHERE (school_id = $1 OR school_id = $2) AND is_deleted = false 
        LIMIT 1`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
-    ).catch(() => ({ rows: [] }));
+        [cleanSchoolId, `SCH-${cleanSchoolId}`],
+      )
+      .catch(() => ({ rows: [] }));
 
     const pendingRow = pendingRes.rows[0] || null;
     let oldSchoolDataCount = 0;
 
     if (pendingRow && pendingRow.old_school_id) {
-      const cleanOldId = String(pendingRow.old_school_id).replace(/^SCH-/i, '').trim();
-      const oldProdRes = await pool.query(
-        'SELECT count(*) FROM esf7_database WHERE school_id = $1 OR school_id = $2',
-        [cleanOldId, `SCH-${cleanOldId}`]
-      ).catch(() => ({ rows: [{ count: '0' }] }));
-      oldSchoolDataCount = parseInt(oldProdRes.rows[0]?.count || '0', 10);
+      const cleanOldId = String(pendingRow.old_school_id)
+        .replace(/^SCH-/i, "")
+        .trim();
+      const oldProdRes = await pool
+        .query(
+          "SELECT count(*) FROM esf7_database WHERE school_id = $1 OR school_id = $2",
+          [cleanOldId, `SCH-${cleanOldId}`],
+        )
+        .catch(() => ({ rows: [{ count: "0" }] }));
+      oldSchoolDataCount = parseInt(oldProdRes.rows[0]?.count || "0", 10);
     }
 
-    const isNewlyEstablished = pendingRow?.registration_type === 'newly-established';
-    const isConversion = pendingRow?.registration_type === 'conversion';
+    const isNewlyEstablished =
+      pendingRow?.registration_type === "newly-established";
+    const isConversion = pendingRow?.registration_type === "conversion";
 
     // 5. Check queue table esf7_link for active harvesting
-    const queueRes = await pool.query(
-      'SELECT status, row_count, uploaded_at, updated_at, audit_remarks FROM esf7_link WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1',
-      [cleanSchoolId]
-    ).catch(() => ({ rows: [] }));
+    const queueRes = await pool
+      .query(
+        "SELECT status, row_count, uploaded_at, updated_at, audit_remarks FROM esf7_link WHERE school_id = $1 ORDER BY updated_at DESC LIMIT 1",
+        [cleanSchoolId],
+      )
+      .catch(() => ({ rows: [] }));
 
     const queueRow = queueRes.rows[0] || null;
 
@@ -151,41 +183,45 @@ router.get('/check/:schoolId', async (req, res) => {
       hasData: false,
       dataCount: 0,
       sourceTable: null,
-      pendingSchool: pendingRow ? {
-        registrationType: pendingRow.registration_type,
-        oldSchoolId: pendingRow.old_school_id,
-        motherSchoolId: pendingRow.mother_school_id,
-        status: pendingRow.status,
-        oldSchoolDataCount
-      } : null,
+      pendingSchool: pendingRow
+        ? {
+            registrationType: pendingRow.registration_type,
+            oldSchoolId: pendingRow.old_school_id,
+            motherSchoolId: pendingRow.mother_school_id,
+            status: pendingRow.status,
+            oldSchoolDataCount,
+          }
+        : null,
       isExempted: isNewlyEstablished,
       requiresForceUpload: !isNewlyEstablished,
       queueStatus: queueRow ? queueRow.status : null,
-      queueRow
+      queueRow,
     });
   } catch (err) {
-    console.error('[ESF7 Check Error]:', err.message);
+    console.error("[ESF7 Check Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── GET /api/esf7-upload/status/:schoolId ─────────────────────────────────
 // Polls the status of the school's background harvesting job in esf7_link
-router.get('/status/:schoolId', async (req, res) => {
-  const cleanSchoolId = String(req.params.schoolId).replace(/^SCH-/i, '').trim();
+router.get("/status/:schoolId", async (req, res) => {
+  const cleanSchoolId = String(req.params.schoolId)
+    .replace(/^SCH-/i, "")
+    .trim();
 
   try {
     const queueRes = await pool.query(
       `SELECT school_id, iern, semester, status, row_count, summary, uploaded_at, updated_at, audit_remarks 
        FROM esf7_link WHERE school_id = $1 
        ORDER BY updated_at DESC LIMIT 1`,
-      [cleanSchoolId]
+      [cleanSchoolId],
     );
 
     if (queueRes.rows.length === 0) {
       return res.json({
-        status: 'NOT_FOUND',
-        message: 'No harvest record queued for this school.'
+        status: "NOT_FOUND",
+        message: "No harvest record queued for this school.",
       });
     }
 
@@ -197,38 +233,47 @@ router.get('/status/:schoolId', async (req, res) => {
       summary: row.summary || null,
       auditRemarks: row.audit_remarks || null,
       uploadedAt: row.uploaded_at,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
     });
   } catch (err) {
-    console.error('[ESF7 Status Polling Error]:', err.message);
+    console.error("[ESF7 Status Polling Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── POST /api/esf7-upload ─────────────────────────────────────────────────
 // Accepts .xlsb/.xlsx binary and inserts/upserts into esf7_link with status 'QUEUED'
-router.post('/', upload.single('file'), async (req, res) => {
+router.post("/", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No eSF7 file was uploaded.' });
+      return res.status(400).json({ error: "No eSF7 file was uploaded." });
     }
 
-    const rawSchoolId = (req.body.school_id || req.body.schoolId || '').replace(/^SCH-/i, '').trim();
+    const rawSchoolId = (req.body.school_id || req.body.schoolId || "")
+      .replace(/^SCH-/i, "")
+      .trim();
     if (!rawSchoolId) {
-      return res.status(400).json({ error: 'School ID is required for eSF7 queueing.' });
+      return res
+        .status(400)
+        .json({ error: "School ID is required for eSF7 queueing." });
     }
 
     const filePath = req.file.path;
     const fileName = req.file.filename;
-    console.log(`📥 [ESF7 Upload] File received for School [${rawSchoolId}]: ${fileName} (${req.file.size} bytes)`);
+    console.log(
+      `📥 [ESF7 Upload] File received for School [${rawSchoolId}]: ${fileName} (${req.file.size} bytes)`,
+    );
 
     // Sync copy to ESF7 Official uploads/esf7_drafts if available locally
-    const esf7OfficialDraftDir = 'E:\\ESF7 Official\\uploads\\esf7_drafts';
+    const esf7OfficialDraftDir = "E:\\ESF7 Official\\uploads\\esf7_drafts";
     if (fs.existsSync(esf7OfficialDraftDir)) {
       try {
         fs.copyFileSync(filePath, path.join(esf7OfficialDraftDir, fileName));
       } catch (copyErr) {
-        console.warn('[ESF7 Upload] Local mirror copy warning:', copyErr.message);
+        console.warn(
+          "[ESF7 Upload] Local mirror copy warning:",
+          copyErr.message,
+        );
       }
     }
 
@@ -237,7 +282,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     try {
       const iernRes = await pool.query(
         'SELECT "IERN" FROM "schools_IERN" WHERE "SchoolID" = $1 LIMIT 1',
-        [rawSchoolId]
+        [rawSchoolId],
       );
       if (iernRes.rows.length > 0 && iernRes.rows[0].IERN) {
         realIern = iernRes.rows[0].IERN;
@@ -265,57 +310,74 @@ router.post('/', upload.single('file'), async (req, res) => {
       RETURNING *;
     `;
 
-    const result = await pool.query(query, [rawSchoolId, realIern, fileName, vmFilePath]);
+    const result = await pool.query(query, [
+      rawSchoolId,
+      realIern,
+      fileName,
+      vmFilePath,
+    ]);
 
-    console.log(`🚀 [ESF7 Queue] School [${rawSchoolId}] queued in esf7_link for VM harvester.`);
+    console.log(
+      `🚀 [ESF7 Queue] School [${rawSchoolId}] queued in esf7_link for VM harvester.`,
+    );
 
     res.json({
       success: true,
-      message: 'eSF7 spreadsheet successfully uploaded and queued for VM harvesting.',
+      message:
+        "eSF7 spreadsheet successfully uploaded and queued for VM harvesting.",
       schoolId: rawSchoolId,
       fileName,
-      status: 'QUEUED',
-      queuedAt: result.rows[0].uploaded_at
+      status: "QUEUED",
+      queuedAt: result.rows[0].uploaded_at,
     });
   } catch (err) {
-    console.error('❌ [ESF7 Upload Error]:', err.message);
+    console.error("❌ [ESF7 Upload Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── POST /api/esf7-upload/import-converted ───────────────────────────────
 // For converted schools: Copies historical faculty from old_school_id to new school_id
-router.post('/import-converted', async (req, res) => {
+router.post("/import-converted", async (req, res) => {
   try {
     const { school_id, old_school_id } = req.body;
-    const targetSchoolId = String(school_id || '').replace(/^SCH-/i, '').trim();
-    const sourceOldId = String(old_school_id || '').replace(/^SCH-/i, '').trim();
+    const targetSchoolId = String(school_id || "")
+      .replace(/^SCH-/i, "")
+      .trim();
+    const sourceOldId = String(old_school_id || "")
+      .replace(/^SCH-/i, "")
+      .trim();
 
     if (!targetSchoolId || !sourceOldId) {
-      return res.status(400).json({ error: 'Both school_id and old_school_id are required.' });
+      return res
+        .status(400)
+        .json({ error: "Both school_id and old_school_id are required." });
     }
 
     // Determine target table: if target school is test account (800000-800100), write to dummy, else esf7_database
     const numericTargetId = parseInt(targetSchoolId, 10);
-    const isTest = (numericTargetId >= 800000 && numericTargetId <= 800100) || targetSchoolId.startsWith('1999');
-    const targetTable = isTest ? 'esf7_database_dummy' : 'esf7_database';
+    const isTest =
+      (numericTargetId >= 800000 && numericTargetId <= 800100) ||
+      targetSchoolId.startsWith("1999");
+    const targetTable = isTest ? "esf7_database_dummy" : "esf7_database";
 
     // Verify source records in esf7_database or dummy
     let sourceRes = await pool.query(
       `SELECT * FROM esf7_database WHERE schoool_id = $1 OR school_id = $1`,
-      [sourceOldId]
+      [sourceOldId],
     );
 
     if (sourceRes.rows.length === 0) {
       sourceRes = await pool.query(
         `SELECT * FROM esf7_database_dummy WHERE schoool_id = $1 OR school_id = $1`,
-        [sourceOldId]
+        [sourceOldId],
       );
     }
 
-
     if (sourceRes.rows.length === 0) {
-      return res.status(404).json({ error: `No historical personnel records found under previous School ID [${sourceOldId}].` });
+      return res.status(404).json({
+        error: `No historical personnel records found under previous School ID [${sourceOldId}].`,
+      });
     }
 
     // Copy rows with new school_id
@@ -327,27 +389,31 @@ router.post('/import-converted', async (req, res) => {
       if (cloned.schoool_id !== undefined) cloned.schoool_id = targetSchoolId;
       cloned.submitted_at = new Date();
 
-      const cols = Object.keys(cloned).map(c => `"${c}"`);
+      const cols = Object.keys(cloned).map((c) => `"${c}"`);
       const vals = Object.values(cloned);
       const placeholders = vals.map((_, i) => `$${i + 1}`);
 
-      await pool.query(
-        `INSERT INTO ${targetTable} (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) ON CONFLICT DO NOTHING`,
-        vals
-      ).catch(e => console.warn('Row clone warning:', e.message));
+      await pool
+        .query(
+          `INSERT INTO ${targetTable} (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) ON CONFLICT DO NOTHING`,
+          vals,
+        )
+        .catch((e) => console.warn("Row clone warning:", e.message));
       importedCount++;
     }
 
-    console.log(`✅ [Converted School Import] Copied ${importedCount} records from Old ID [${sourceOldId}] to New Station [${targetSchoolId}] in ${targetTable}`);
+    console.log(
+      `✅ [Converted School Import] Copied ${importedCount} records from Old ID [${sourceOldId}] to New Station [${targetSchoolId}] in ${targetTable}`,
+    );
 
     res.json({
       success: true,
       message: `Successfully imported ${importedCount} faculty records from previous School ID [${sourceOldId}].`,
       importedCount,
-      targetTable
+      targetTable,
     });
   } catch (err) {
-    console.error('❌ [Import Converted Error]:', err.message);
+    console.error("❌ [Import Converted Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

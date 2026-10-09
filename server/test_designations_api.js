@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testDesignationsFlow() {
-  console.log('Testing esf7_personnel_designations insertion & sds_confirmed column...');
+  console.log(
+    "Testing esf7_personnel_designations insertion & sds_confirmed column...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-006'`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-006'`,
+  );
 
   // 1. Insert Profile
   await db.query(`
@@ -36,24 +40,31 @@ async function testDesignationsFlow() {
     WHERE p.id = 'PER-TEST-006'
   `);
 
-  console.log('✅ Successfully retrieved designation record:');
+  console.log("✅ Successfully retrieved designation record:");
   const row = res.rows[0];
-  console.log('Personnel:', `${row.first_name} ${row.last_name}`);
-  console.log('DSG ID:', row.dsg_id);
-  console.log('Designation Name:', row.designation_name);
-  console.log('Serialized Key:', row.serialized_key);
-  console.log('IS SDS APPROVED:', row.is_sds_approved);
-  console.log('SDS CONFIRMED Column (External Repo):', row.sds_confirmed);
+  console.log("Personnel:", `${row.first_name} ${row.last_name}`);
+  console.log("DSG ID:", row.dsg_id);
+  console.log("Designation Name:", row.designation_name);
+  console.log("Serialized Key:", row.serialized_key);
+  console.log("IS SDS APPROVED:", row.is_sds_approved);
+  console.log("SDS CONFIRMED Column (External Repo):", row.sds_confirmed);
 
   // 4. Test ON DELETE CASCADE
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-006'`);
-  const checkDSG = await db.query(`SELECT COUNT(*) FROM esf7_personnel_designations WHERE personnel_id = 'PER-TEST-006'`);
-  console.log('✅ ON DELETE CASCADE check (should be 0):', checkDSG.rows[0].count);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-006'`,
+  );
+  const checkDSG = await db.query(
+    `SELECT COUNT(*) FROM esf7_personnel_designations WHERE personnel_id = 'PER-TEST-006'`,
+  );
+  console.log(
+    "✅ ON DELETE CASCADE check (should be 0):",
+    checkDSG.rows[0].count,
+  );
 
   process.exit(0);
 }
 
-testDesignationsFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testDesignationsFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

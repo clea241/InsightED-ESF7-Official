@@ -1,21 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { FiKey, FiAlertTriangle, FiArrowRight } from 'react-icons/fi';
-import { api } from '../services/api';
-import { flushDrafts } from '../services/draftSaver';
+import React, { useState, useEffect, useRef } from "react";
+import { useAuth } from "../context/AuthContext";
+import { FiKey, FiAlertTriangle, FiArrowRight } from "react-icons/fi";
+import { api } from "../services/api";
+import { flushDrafts } from "../services/draftSaver";
 
 export default function LogoutPasscodeModal({ isOpen, onClose }) {
   const { user, logout } = useAuth();
-  const [passcode, setPasscode] = useState(['', '', '', '', '', '']);
-  const [error, setError] = useState('');
+  const [passcode, setPasscode] = useState(["", "", "", "", "", ""]);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [saveBlocked, setSaveBlocked] = useState(false);
   const inputRefs = useRef([]);
 
   useEffect(() => {
     if (isOpen) {
-      setPasscode(['', '', '', '', '', '']);
-      setError('');
+      setPasscode(["", "", "", "", "", ""]);
+      setError("");
       setLoading(false);
       setSaveBlocked(false);
       setTimeout(() => {
@@ -33,7 +33,7 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
     const newPasscode = [...passcode];
     newPasscode[index] = value.slice(-1);
     setPasscode(newPasscode);
-    setError('');
+    setError("");
 
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
@@ -41,39 +41,44 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
   };
 
   const handleKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !passcode[index] && index > 0) {
+    if (e.key === "Backspace" && !passcode[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
   const handlePaste = (e) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').trim();
+    const pastedData = e.clipboardData.getData("text").trim();
     if (/^\d{6}$/.test(pastedData)) {
-      const digits = pastedData.split('');
+      const digits = pastedData.split("");
       setPasscode(digits);
-      setError('');
+      setError("");
       inputRefs.current[5]?.focus();
     }
   };
 
   const handleVerifyAndLogout = async (e) => {
     if (e) e.preventDefault();
-    const enteredPin = passcode.join('');
+    const enteredPin = passcode.join("");
 
     if (enteredPin.length !== 6) {
-      setError('Please enter your full 6-digit passcode.');
+      setError("Please enter your full 6-digit passcode.");
       return;
     }
 
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const schoolId = user?.school_id || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || '';
-      const storedUser = localStorage.getItem('remembered_user');
+      const schoolId =
+        user?.school_id ||
+        localStorage.getItem("school_id") ||
+        localStorage.getItem("schoolId") ||
+        "";
+      const storedUser = localStorage.getItem("remembered_user");
       const parsedUser = storedUser ? JSON.parse(storedUser) : null;
-      const expectedPin = user?.pin || user?.passcode || parsedUser?.pin || parsedUser?.passcode;
+      const expectedPin =
+        user?.pin || user?.passcode || parsedUser?.pin || parsedUser?.passcode;
 
       let isValid = false;
 
@@ -84,7 +89,7 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
         // 2. Verify via API endpoint if online
         const data = await api.pinLogin({
           school_id: schoolId,
-          pin: enteredPin
+          pin: enteredPin,
         });
         if (data.ok && data.success) {
           isValid = true;
@@ -96,22 +101,29 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
         try {
           await flushDrafts();
         } catch (saveErr) {
-          console.warn('[Logout] blocked: draft not saved yet:', saveErr.message);
+          console.warn(
+            "[Logout] blocked: draft not saved yet:",
+            saveErr.message,
+          );
           setSaveBlocked(true);
-          setError('Your latest changes could not be saved to the server yet, so you were not logged out. Retry, or log out anyway: your work stays safely on this device.');
+          setError(
+            "Your latest changes could not be saved to the server yet, so you were not logged out. Retry, or log out anyway: your work stays safely on this device.",
+          );
           return;
         }
         onClose();
         logout();
       } else {
-        setError('Incorrect passcode. Please enter your valid 6-digit passcode.');
-        setPasscode(['', '', '', '', '', '']);
+        setError(
+          "Incorrect passcode. Please enter your valid 6-digit passcode.",
+        );
+        setPasscode(["", "", "", "", "", ""]);
         inputRefs.current[0]?.focus();
       }
     } catch (err) {
-      console.error('Logout passcode error:', err);
-      setError('Incorrect passcode. Please check your credentials.');
-      setPasscode(['', '', '', '', '', '']);
+      console.error("Logout passcode error:", err);
+      setError("Incorrect passcode. Please check your credentials.");
+      setPasscode(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
     } finally {
       setLoading(false);
@@ -119,80 +131,114 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(15, 23, 42, 0.65)',
-      backdropFilter: 'blur(8px)',
-      WebkitBackdropFilter: 'blur(8px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 99999,
-      padding: '20px'
-    }}>
-      <div style={{
-        background: '#FFFFFF',
-        borderRadius: '24px',
-        padding: '32px',
-        maxWidth: '440px',
-        width: '100%',
-        boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.35)',
-        border: '1.5px solid rgba(226, 232, 240, 0.8)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        animation: 'modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(15, 23, 42, 0.65)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: "20px",
+      }}
+    >
+      <div
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "24px",
+          padding: "32px",
+          maxWidth: "440px",
+          width: "100%",
+          boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.35)",
+          border: "1.5px solid rgba(226, 232, 240, 0.8)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          textAlign: "center",
+          animation: "modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
+      >
         {/* Lock Icon Header */}
-        <div style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '16px',
-          background: '#FEF2F2',
-          border: '1.5px solid #FECACA',
-          color: '#DC2626',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '24px',
-          marginBottom: '16px'
-        }}>
+        <div
+          style={{
+            width: "56px",
+            height: "56px",
+            borderRadius: "16px",
+            background: "#FEF2F2",
+            border: "1.5px solid #FECACA",
+            color: "#DC2626",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "24px",
+            marginBottom: "16px",
+          }}
+        >
           <FiKey />
         </div>
 
-        <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
+        <h3
+          style={{
+            margin: "0 0 6px 0",
+            fontSize: "20px",
+            fontWeight: "800",
+            color: "#0F172A",
+          }}
+        >
           Passcode Required to Logout
         </h3>
 
-        <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#475569', lineHeight: '1.5' }}>
-          Please enter your 6-digit security passcode to authenticate logout and lock your station.
+        <p
+          style={{
+            margin: "0 0 20px 0",
+            fontSize: "13px",
+            color: "#475569",
+            lineHeight: "1.5",
+          }}
+        >
+          Please enter your 6-digit security passcode to authenticate logout and
+          lock your station.
         </p>
 
         {error && (
-          <div style={{
-            width: '100%',
-            background: '#FEF2F2',
-            border: '1px solid #FECACA',
-            borderRadius: '10px',
-            padding: '10px 14px',
-            color: '#DC2626',
-            fontSize: '12.5px',
-            fontWeight: '700',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px'
-          }}>
+          <div
+            style={{
+              width: "100%",
+              background: "#FEF2F2",
+              border: "1px solid #FECACA",
+              borderRadius: "10px",
+              padding: "10px 14px",
+              color: "#DC2626",
+              fontSize: "12.5px",
+              fontWeight: "700",
+              marginBottom: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+            }}
+          >
             <FiAlertTriangle size={14} /> {error}
           </div>
         )}
 
-        <form onSubmit={handleVerifyAndLogout} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <form
+          onSubmit={handleVerifyAndLogout}
+          style={{
+            width: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: "20px",
+          }}
+        >
           {/* 6-Digit Input Row */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }} onPaste={handlePaste}>
+          <div
+            style={{ display: "flex", justifyContent: "center", gap: "8px" }}
+            onPaste={handlePaste}
+          >
             {passcode.map((digit, index) => (
               <input
                 key={index}
@@ -203,40 +249,49 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
                 onChange={(e) => handlePasscodeChange(index, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 style={{
-                  width: '44px',
-                  height: '50px',
-                  fontSize: '22px',
-                  textAlign: 'center',
-                  fontWeight: '800',
-                  borderRadius: '12px',
-                  border: error ? '2px solid #FCA5A5' : '2px solid #CBD5E1',
-                  outline: 'none',
-                  background: '#F8FAFC',
-                  color: '#0F172A',
-                  transition: 'all 0.2s ease'
+                  width: "44px",
+                  height: "50px",
+                  fontSize: "22px",
+                  textAlign: "center",
+                  fontWeight: "800",
+                  borderRadius: "12px",
+                  border: error ? "2px solid #FCA5A5" : "2px solid #CBD5E1",
+                  outline: "none",
+                  background: "#F8FAFC",
+                  color: "#0F172A",
+                  transition: "all 0.2s ease",
                 }}
-                onFocus={(e) => (e.target.style.borderColor = '#2563EB')}
-                onBlur={(e) => (e.target.style.borderColor = error ? '#FCA5A5' : '#CBD5E1')}
+                onFocus={(e) => (e.target.style.borderColor = "#2563EB")}
+                onBlur={(e) =>
+                  (e.target.style.borderColor = error ? "#FCA5A5" : "#CBD5E1")
+                }
               />
             ))}
           </div>
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '8px' }}>
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              width: "100%",
+              marginTop: "8px",
+            }}
+          >
             <button
               type="button"
               onClick={onClose}
               style={{
                 flex: 1,
-                padding: '12px',
-                borderRadius: '12px',
-                border: '1.5px solid #CBD5E1',
-                background: '#FFFFFF',
-                color: '#475569',
-                fontSize: '13px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                padding: "12px",
+                borderRadius: "12px",
+                border: "1.5px solid #CBD5E1",
+                background: "#FFFFFF",
+                color: "#475569",
+                fontSize: "13px",
+                fontWeight: "800",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
               }}
             >
               Cancel
@@ -247,39 +302,56 @@ export default function LogoutPasscodeModal({ isOpen, onClose }) {
               disabled={loading}
               style={{
                 flex: 1,
-                padding: '12px',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)',
-                color: '#FFFFFF',
-                fontSize: '13px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)',
-                transition: 'all 0.2s ease',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px'
+                padding: "12px",
+                borderRadius: "12px",
+                border: "none",
+                background: "linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)",
+                color: "#FFFFFF",
+                fontSize: "13px",
+                fontWeight: "800",
+                cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(220, 38, 38, 0.35)",
+                transition: "all 0.2s ease",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
               }}
             >
-              {loading ? (saveBlocked ? 'Saving...' : 'Verifying...') : (saveBlocked ? <>Retry save & Logout <FiArrowRight /></> : <>Confirm & Logout <FiArrowRight /></>)}
+              {loading ? (
+                saveBlocked ? (
+                  "Saving..."
+                ) : (
+                  "Verifying..."
+                )
+              ) : saveBlocked ? (
+                <>
+                  Retry save & Logout <FiArrowRight />
+                </>
+              ) : (
+                <>
+                  Confirm & Logout <FiArrowRight />
+                </>
+              )}
             </button>
           </div>
           {saveBlocked && (
             <button
               type="button"
-              onClick={() => { onClose(); logout(); }}
+              onClick={() => {
+                onClose();
+                logout();
+              }}
               style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '12px',
-                border: '1.5px solid #CBD5E1',
-                background: '#FFFFFF',
-                color: '#475569',
-                fontSize: '13px',
-                fontWeight: '800',
-                cursor: 'pointer'
+                width: "100%",
+                padding: "12px",
+                borderRadius: "12px",
+                border: "1.5px solid #CBD5E1",
+                background: "#FFFFFF",
+                color: "#475569",
+                fontSize: "13px",
+                fontWeight: "800",
+                cursor: "pointer",
               }}
             >
               Log out anyway (keep local copy)

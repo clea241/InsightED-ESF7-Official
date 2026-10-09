@@ -1,11 +1,12 @@
-const { Client } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Client } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const sslConfig = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+const sslConfig =
+  process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;
 
 async function createRequestsTable() {
-  const targetDbName = 'insighted_esf7';
+  const targetDbName = "insighted_esf7";
   console.log(`Connecting to '${targetDbName}'...`);
 
   const client = new Client({
@@ -14,7 +15,7 @@ async function createRequestsTable() {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: targetDbName,
-    ssl: sslConfig
+    ssl: sslConfig,
   });
 
   await client.connect();
@@ -54,16 +55,17 @@ async function createRequestsTable() {
       ORDER BY table_name;
     `);
 
-    console.log('\n--- Verified Tables in insighted_esf7 ---');
-    res.rows.forEach((row, idx) => console.log(`${idx + 1}. ${row.table_name}`));
-    console.log('-----------------------------------------\n');
-
+    console.log("\n--- Verified Tables in insighted_esf7 ---");
+    res.rows.forEach((row, idx) =>
+      console.log(`${idx + 1}. ${row.table_name}`),
+    );
+    console.log("-----------------------------------------\n");
   } finally {
     await client.end();
   }
 }
 
-createRequestsTable().catch(err => {
-  console.error('Error creating table:', err);
+createRequestsTable().catch((err) => {
+  console.error("Error creating table:", err);
   process.exit(1);
 });

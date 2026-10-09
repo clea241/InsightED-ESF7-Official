@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import PortalHeader from '../components/PortalHeader';
-import ESF7UploadModal from '../components/ESF7UploadModal';
-import SettingsModal from '../components/SettingsModal';
-import { 
-  FiCheckCircle, 
-  FiLock, 
-  FiUnlock, 
-  FiPlay, 
-  FiMap, 
+import React, { useState } from "react";
+import { useApp } from "../context/AppContext";
+import PortalHeader from "../components/PortalHeader";
+import ESF7UploadModal from "../components/ESF7UploadModal";
+import SettingsModal from "../components/SettingsModal";
+import {
+  FiCheckCircle,
+  FiLock,
+  FiUnlock,
+  FiPlay,
+  FiMap,
   FiUploadCloud,
   FiBookOpen,
   FiUsers,
@@ -23,194 +23,249 @@ import {
   FiShield,
   FiArrowRight,
   FiCheck,
-  FiSettings
-} from 'react-icons/fi';
+  FiSettings,
+} from "react-icons/fi";
 
 export default function NodeMap() {
-  const { personnel, classSections, schoolInfo, setActiveView, isNodeUnlocked, isNodeCompleted, bypassNodeLocks, setBypassNodeLocks, incomingRequests, isInitialized } = useApp();
+  const {
+    personnel,
+    classSections,
+    schoolInfo,
+    setActiveView,
+    isNodeUnlocked,
+    isNodeCompleted,
+    bypassNodeLocks,
+    setBypassNodeLocks,
+    incomingRequests,
+    isInitialized,
+  } = useApp();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-  const schoolName = schoolInfo?.schoolName || 'DepEd Integrated School';
+  const schoolName = schoolInfo?.schoolName || "DepEd Integrated School";
 
   const NODE_SECTIONS = [
     {
-      key: 'phase1',
-      title: 'Phase 1: School Setup & Faculty Profiling',
-      subtitle: 'School metadata, staffing roster, Room QR passcode posters & teacher profiling',
+      key: "phase1",
+      title: "Phase 1: School Setup & Faculty Profiling",
+      subtitle:
+        "School metadata, staffing roster, Room QR passcode posters & teacher profiling",
       nodes: [
         {
-          id: 'school',
-          nodeNumber: '01',
-          title: 'School Profile',
-          subtitle: 'School identity & curricular offerings',
+          id: "school",
+          nodeNumber: "01",
+          title: "School Profile",
+          subtitle: "School identity & curricular offerings",
           Icon: FiBookOpen,
-          view: 'school',
-          summary: schoolInfo?.schoolId ? `School ID: ${schoolInfo.schoolId}` : 'Configure school identity'
+          view: "school",
+          summary: schoolInfo?.schoolId
+            ? `School ID: ${schoolInfo.schoolId}`
+            : "Configure school identity",
         },
         {
-          id: 'roster',
-          nodeNumber: '02',
-          title: 'Personnel Roster',
-          subtitle: 'Master personnel list & appointment status',
+          id: "roster",
+          nodeNumber: "02",
+          title: "Personnel Roster",
+          subtitle: "Master personnel list & appointment status",
           Icon: FiUsers,
-          view: 'roster',
-          summary: !isInitialized ? 'Loading roster...' : `${personnel.length} Registered Personnel`
-        },
-        {
-          id: 'room-qr',
-          nodeNumber: '03',
-          title: 'Room QR Portal',
-          subtitle: 'Teacher passcode identity & self-profiling QR scanner',
-          Icon: FiMaximize,
-          view: 'room-qr',
-          summary: 'QR Posters & Teacher Self-Profiling'
-        },
-        {
-          id: 'profile',
-          nodeNumber: '04',
-          title: 'Personnel Profiling',
-          subtitle: 'Educational qualifications, LET & eligibility',
-          Icon: FiUserCheck,
-          view: 'profile',
+          view: "roster",
           summary: !isInitialized
-            ? 'Loading profiles...'
-            : `${personnel.filter(p => {
-                const hasDegree = Boolean(p.degreeMajor || p.major || p.collegeDegree || p.college_degree);
-                const hasDegreeRows = Boolean((Array.isArray(p.degreeRows) && p.degreeRows.length > 0) || (Array.isArray(p.collegeDegrees) && p.collegeDegrees.length > 0));
-                const hasAttainment = Boolean(p.highestEducationalAttainment || p.highest_educational_attainment);
-                const isCompleted = Boolean(p.isProfileCompleted || p.is_profile_completed);
-                return hasDegree || hasDegreeRows || hasAttainment || isCompleted;
-              }).length} Profiles Configured`
-        }
-      ]
+            ? "Loading roster..."
+            : `${personnel.length} Registered Personnel`,
+        },
+        {
+          id: "room-qr",
+          nodeNumber: "03",
+          title: "Room QR Portal",
+          subtitle: "Teacher passcode identity & self-profiling QR scanner",
+          Icon: FiMaximize,
+          view: "room-qr",
+          summary: "QR Posters & Teacher Self-Profiling",
+        },
+        {
+          id: "profile",
+          nodeNumber: "04",
+          title: "Personnel Profiling",
+          subtitle: "Educational qualifications, LET & eligibility",
+          Icon: FiUserCheck,
+          view: "profile",
+          summary: !isInitialized
+            ? "Loading profiles..."
+            : `${
+                personnel.filter((p) => {
+                  const hasDegree = Boolean(
+                    p.degreeMajor ||
+                    p.major ||
+                    p.collegeDegree ||
+                    p.college_degree,
+                  );
+                  const hasDegreeRows = Boolean(
+                    (Array.isArray(p.degreeRows) && p.degreeRows.length > 0) ||
+                    (Array.isArray(p.collegeDegrees) &&
+                      p.collegeDegrees.length > 0),
+                  );
+                  const hasAttainment = Boolean(
+                    p.highestEducationalAttainment ||
+                    p.highest_educational_attainment,
+                  );
+                  const isCompleted = Boolean(
+                    p.isProfileCompleted || p.is_profile_completed,
+                  );
+                  return (
+                    hasDegree || hasDegreeRows || hasAttainment || isCompleted
+                  );
+                }).length
+              } Profiles Configured`,
+        },
+      ],
     },
     {
-      key: 'phase2',
-      title: 'Phase 2: Academic Structuring & Timetable',
-      subtitle: 'Inter-school requests, class sections, ancillary designations, and teaching workloads',
+      key: "phase2",
+      title: "Phase 2: Academic Structuring & Timetable",
+      subtitle:
+        "Inter-school requests, class sections, ancillary designations, and teaching workloads",
       nodes: [
         {
-          id: 'requests',
-          nodeNumber: '05',
-          title: 'Request Center',
-          subtitle: 'Incoming and outgoing personnel transfer requests',
+          id: "requests",
+          nodeNumber: "05",
+          title: "Request Center",
+          subtitle: "Incoming and outgoing personnel transfer requests",
           Icon: FiMail,
-          view: 'requests',
-          summary: !isInitialized ? 'Loading requests...' : `${incomingRequests?.length || 0} Pending Inter-School Requests`
+          view: "requests",
+          summary: !isInitialized
+            ? "Loading requests..."
+            : `${incomingRequests?.length || 0} Pending Inter-School Requests`,
         },
         {
-          id: 'classes',
-          nodeNumber: '06',
-          title: 'Organized Classes',
-          subtitle: 'Section setup, advisers & learner counts',
+          id: "classes",
+          nodeNumber: "06",
+          title: "Organized Classes",
+          subtitle: "Section setup, advisers & learner counts",
           Icon: FiGrid,
-          view: 'classes',
-          summary: !isInitialized ? 'Loading sections...' : `${classSections.length} Class Sections`
+          view: "classes",
+          summary: !isInitialized
+            ? "Loading sections..."
+            : `${classSections.length} Class Sections`,
         },
         {
-          id: 'designation',
-          nodeNumber: '07',
-          title: 'Designations & Duties',
-          subtitle: 'Ancillary roles, grade chairpersons & SDS approvals',
+          id: "designation",
+          nodeNumber: "07",
+          title: "Designations & Duties",
+          subtitle: "Ancillary roles, grade chairpersons & SDS approvals",
           Icon: FiBookmark,
-          view: 'designation',
-          summary: !isInitialized ? 'Loading roles...' : `${personnel.filter(p => p.designation && p.designation !== 'N/A').length} Assigned Roles`
+          view: "designation",
+          summary: !isInitialized
+            ? "Loading roles..."
+            : `${personnel.filter((p) => p.designation && p.designation !== "N/A").length} Assigned Roles`,
         },
         {
-          id: 'workload',
-          nodeNumber: '08',
-          title: 'Workload & Timetable',
-          subtitle: 'Teaching schedules, period durations & timetable',
+          id: "workload",
+          nodeNumber: "08",
+          title: "Workload & Timetable",
+          subtitle: "Teaching schedules, period durations & timetable",
           Icon: FiClock,
-          view: 'workload',
-          summary: !isInitialized ? 'Loading slots...' : `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`
-        }
-      ]
+          view: "workload",
+          summary: !isInitialized
+            ? "Loading slots..."
+            : `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`,
+        },
+      ],
     },
     {
-      key: 'phase3',
-      title: 'Phase 3: Compensation & Final Submission',
-      subtitle: 'Financial incentives, 3-term overload computation, error audits & digital certification',
+      key: "phase3",
+      title: "Phase 3: Compensation & Final Submission",
+      subtitle:
+        "Financial incentives, 3-term overload computation, error audits & digital certification",
       nodes: [
         {
-          id: 'allowances',
-          nodeNumber: '09',
-          title: 'Allowances & Incentives',
-          subtitle: 'Special Hardship Allowances, Honorarium & DepEd Compensation Incentives',
+          id: "allowances",
+          nodeNumber: "09",
+          title: "Allowances & Incentives",
+          subtitle:
+            "Special Hardship Allowances, Honorarium & DepEd Compensation Incentives",
           Icon: FiDollarSign,
-          view: 'allowances',
-          summary: 'Special Hardship & DepEd Incentives'
+          view: "allowances",
+          summary: "Special Hardship & DepEd Incentives",
         },
         {
-          id: 'overload',
-          nodeNumber: '10',
-          title: 'Teaching Overload Center',
-          subtitle: 'Module temporarily locked for DepEd policy alignment',
+          id: "overload",
+          nodeNumber: "10",
+          title: "Teaching Overload Center",
+          subtitle: "Module temporarily locked for DepEd policy alignment",
           Icon: FiRepeat,
-          view: 'overload',
+          view: "overload",
           isLockedNode: true,
-          summary: 'Locked for DepEd Policy Review'
+          summary: "Locked for DepEd Policy Review",
         },
         {
-          id: 'validation',
-          nodeNumber: '11',
-          title: 'Validation Center',
-          subtitle: 'Validation rules, error auditing & quality flags',
+          id: "validation",
+          nodeNumber: "11",
+          title: "Validation Center",
+          subtitle: "Validation rules, error auditing & quality flags",
           Icon: FiShield,
-          view: 'validation',
-          summary: 'Error & Warning Quality Checks & Digital Certification'
-        }
-      ]
-    }
+          view: "validation",
+          summary: "Error & Warning Quality Checks & Digital Certification",
+        },
+      ],
+    },
   ];
 
-  const allNodes = NODE_SECTIONS.flatMap(sec => sec.nodes);
-  const completedCount = allNodes.filter(n => isNodeCompleted(n.id)).length;
+  const allNodes = NODE_SECTIONS.flatMap((sec) => sec.nodes);
+  const completedCount = allNodes.filter((n) => isNodeCompleted(n.id)).length;
 
   return (
-    <section id="node-map-page" className="view" style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      
+    <section
+      id="node-map-page"
+      className="view"
+      style={{
+        padding: "14px 20px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "14px",
+      }}
+    >
       {/* TYPOGRAPHIC PORTAL HEADER SYSTEM */}
       <PortalHeader
         departmentText="DEPARTMENT OF EDUCATION"
         bureauText={`PROGRESSIVE JOURNEY ROADMAP • ${schoolName}`}
         title="eSF7 School Head Journey Map"
         description="Access, audit, and complete personnel registries sequentially across all journey nodes in a unified visual system matching sidebar sections."
-        onBack={() => setActiveView('dashboard')}
+        onBack={() => setActiveView("dashboard")}
         backText="Back to Dashboard"
         actionButton={
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <button
               type="button"
               onClick={() => setIsUploadModalOpen(true)}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '7px 14px',
-                borderRadius: '10px',
-                fontSize: '11.5px',
-                fontWeight: '800',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                color: '#FFFFFF',
-                background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
-                border: 'none',
-                boxShadow: '0 3px 8px rgba(37, 99, 235, 0.3)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "7px 14px",
+                borderRadius: "10px",
+                fontSize: "11.5px",
+                fontWeight: "800",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                color: "#FFFFFF",
+                background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
+                border: "none",
+                boxShadow: "0 3px 8px rgba(37, 99, 235, 0.3)",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 5px 12px rgba(37, 99, 235, 0.4)';
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.boxShadow =
+                  "0 5px 12px rgba(37, 99, 235, 0.4)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 3px 8px rgba(37, 99, 235, 0.3)';
+                e.currentTarget.style.transform = "none";
+                e.currentTarget.style.boxShadow =
+                  "0 3px 8px rgba(37, 99, 235, 0.3)";
               }}
             >
-              <FiUploadCloud style={{ fontSize: '14px' }} />
+              <FiUploadCloud style={{ fontSize: "14px" }} />
               <span>Import eSF7 Spreadsheet</span>
             </button>
           </div>
@@ -218,211 +273,323 @@ export default function NodeMap() {
       />
 
       {/* TOP PROGRESS BAR */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.9)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid var(--line)',
-        borderRadius: '12px',
-        padding: '10px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            background: 'var(--blue-50)',
-            color: 'var(--blue)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '15px',
-            border: '1px solid var(--blue-100)'
-          }}>
+      <div
+        style={{
+          background: "rgba(255, 255, 255, 0.9)",
+          backdropFilter: "blur(10px)",
+          border: "1px solid var(--line)",
+          borderRadius: "12px",
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "12px",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div
+            style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "8px",
+              background: "var(--blue-50)",
+              color: "var(--blue)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "15px",
+              border: "1px solid var(--blue-100)",
+            }}
+          >
             <FiMap size={15} />
           </div>
           <div>
-            <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--navy)', lineHeight: 1.2 }}>
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: "800",
+                color: "var(--navy)",
+                lineHeight: 1.2,
+              }}
+            >
               Registry Completion Status
             </div>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '600' }}>
-              {completedCount} of {allNodes.length} Nodes Certified Complete ({Math.round((completedCount / allNodes.length) * 100)}%)
+            <div
+              style={{
+                fontSize: "11px",
+                color: "var(--muted)",
+                fontWeight: "600",
+              }}
+            >
+              {completedCount} of {allNodes.length} Nodes Certified Complete (
+              {Math.round((completedCount / allNodes.length) * 100)}%)
             </div>
           </div>
         </div>
 
-        <div style={{ flex: '1 1 180px', maxWidth: '240px' }}>
-          <div style={{ height: '6px', background: '#E2E8F0', borderRadius: '999px', overflow: 'hidden' }}>
-            <div style={{
-              width: `${(completedCount / allNodes.length) * 100}%`,
-              height: '100%',
-              background: 'linear-gradient(90deg, var(--blue) 0%, #10B981 100%)',
-              borderRadius: '999px',
-              transition: 'width 0.4s ease'
-            }} />
+        <div style={{ flex: "1 1 180px", maxWidth: "240px" }}>
+          <div
+            style={{
+              height: "6px",
+              background: "#E2E8F0",
+              borderRadius: "999px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${(completedCount / allNodes.length) * 100}%`,
+                height: "100%",
+                background:
+                  "linear-gradient(90deg, var(--blue) 0%, #10B981 100%)",
+                borderRadius: "999px",
+                transition: "width 0.4s ease",
+              }}
+            />
           </div>
         </div>
       </div>
 
       {/* SECTIONS LIST */}
       {NODE_SECTIONS.map((sec, secIdx) => (
-        <div key={sec.key} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: secIdx > 0 ? '6px' : '0' }}>
-          
+        <div
+          key={sec.key}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            marginTop: secIdx > 0 ? "6px" : "0",
+          }}
+        >
           {/* SECTION HEADER CHIP */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '6px 12px',
-            background: 'rgba(241, 245, 249, 0.8)',
-            borderRadius: '10px',
-            border: '1px solid #E2E8F0',
-            width: 'fit-content'
-          }}>
-            <div style={{
-              width: '7px',
-              height: '7px',
-              borderRadius: '50%',
-              background: sec.key === 'phase1' ? '#2563EB' : sec.key === 'phase2' ? '#059669' : '#D97706'
-            }} />
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11.5px', fontWeight: '900', color: 'var(--navy)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "6px 12px",
+              background: "rgba(241, 245, 249, 0.8)",
+              borderRadius: "10px",
+              border: "1px solid #E2E8F0",
+              width: "fit-content",
+            }}
+          >
+            <div
+              style={{
+                width: "7px",
+                height: "7px",
+                borderRadius: "50%",
+                background:
+                  sec.key === "phase1"
+                    ? "#2563EB"
+                    : sec.key === "phase2"
+                      ? "#059669"
+                      : "#D97706",
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: "6px",
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "11.5px",
+                  fontWeight: "900",
+                  color: "var(--navy)",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
                 {sec.title}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: '500' }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "var(--muted)",
+                  fontWeight: "500",
+                }}
+              >
                 • {sec.subtitle}
               </span>
             </div>
           </div>
 
           {/* RESPONSIVE NODE CARDS GRID */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: sec.nodes.length <= 3 
-              ? 'repeat(auto-fit, minmax(320px, 1fr))' 
-              : 'repeat(auto-fit, minmax(270px, 1fr))',
-            gap: '14px',
-            width: '100%'
-          }}>
-            {sec.nodes.map(node => {
-              const isAlwaysUnlocked = ['school', 'roster', 'room-qr', 'profile', 'requests', 'classes', 'designation', 'workload', 'allowances', 'validation'].includes(node.id);
-              const isExplicitlyLocked = !bypassNodeLocks && (node.id === 'overload' || Boolean(node.isLockedNode));
-              const isUnlocked = !isExplicitlyLocked && (isAlwaysUnlocked || isNodeUnlocked(node.id));
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                sec.nodes.length <= 3
+                  ? "repeat(auto-fit, minmax(320px, 1fr))"
+                  : "repeat(auto-fit, minmax(270px, 1fr))",
+              gap: "14px",
+              width: "100%",
+            }}
+          >
+            {sec.nodes.map((node) => {
+              const isAlwaysUnlocked = [
+                "school",
+                "roster",
+                "room-qr",
+                "profile",
+                "requests",
+                "classes",
+                "designation",
+                "workload",
+                "allowances",
+                "validation",
+              ].includes(node.id);
+              const isExplicitlyLocked =
+                !bypassNodeLocks &&
+                (node.id === "overload" || Boolean(node.isLockedNode));
+              const isUnlocked =
+                !isExplicitlyLocked &&
+                (isAlwaysUnlocked || isNodeUnlocked(node.id));
               const isCompleted = isNodeCompleted(node.id);
               const isActive = isUnlocked && !isCompleted;
               const IconComp = node.Icon;
 
-              let cardBg = '#FFFFFF';
-              let borderColor = '#E2E8F0';
-              let boxShadow = '0 2px 6px rgba(0, 0, 0, 0.04)';
-              let nodeNumColor = '#64748B';
-              let titleColor = '#0F172A';
-              let subtitleColor = '#64748B';
-              let iconBg = '#F8FAFC';
-              let iconColor = '#475569';
-              let iconBorder = '1px solid #E2E8F0';
-              let summaryBg = '#F8FAFC';
-              let summaryColor = '#334155';
-              let summaryBorder = '1px solid #E2E8F0';
-              let badgeBg = '#F1F5F9';
-              let badgeColor = '#64748B';
-              let badgeBorder = '1px solid #CBD5E1';
-              let badgeContent = <><FiLock size={10} style={{ marginRight: '3px' }} /> Locked</>;
+              let cardBg = "#FFFFFF";
+              let borderColor = "#E2E8F0";
+              let boxShadow = "0 2px 6px rgba(0, 0, 0, 0.04)";
+              let nodeNumColor = "#64748B";
+              let titleColor = "#0F172A";
+              let subtitleColor = "#64748B";
+              let iconBg = "#F8FAFC";
+              let iconColor = "#475569";
+              let iconBorder = "1px solid #E2E8F0";
+              let summaryBg = "#F8FAFC";
+              let summaryColor = "#334155";
+              let summaryBorder = "1px solid #E2E8F0";
+              let badgeBg = "#F1F5F9";
+              let badgeColor = "#64748B";
+              let badgeBorder = "1px solid #CBD5E1";
+              let badgeContent = (
+                <>
+                  <FiLock size={10} style={{ marginRight: "3px" }} /> Locked
+                </>
+              );
 
               if (isCompleted) {
-                cardBg = 'linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(209, 250, 229, 0.85) 100%)';
-                borderColor = '#10B981';
-                boxShadow = '0 4px 14px rgba(16, 185, 129, 0.15)';
-                nodeNumColor = '#065F46';
-                titleColor = '#064E3B';
-                subtitleColor = '#166534';
-                iconBg = '#D1FAE5';
-                iconColor = '#047857';
-                iconBorder = '1px solid #A7F3D0';
-                summaryBg = 'rgba(255, 255, 255, 0.95)';
-                summaryColor = '#065F46';
-                summaryBorder = '1px solid #6EE7B7';
-                badgeBg = '#059669';
-                badgeColor = '#FFFFFF';
-                badgeBorder = 'none';
-                badgeContent = <><FiCheck size={10} style={{ marginRight: '3px' }} /> Completed</>;
+                cardBg =
+                  "linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(209, 250, 229, 0.85) 100%)";
+                borderColor = "#10B981";
+                boxShadow = "0 4px 14px rgba(16, 185, 129, 0.15)";
+                nodeNumColor = "#065F46";
+                titleColor = "#064E3B";
+                subtitleColor = "#166534";
+                iconBg = "#D1FAE5";
+                iconColor = "#047857";
+                iconBorder = "1px solid #A7F3D0";
+                summaryBg = "rgba(255, 255, 255, 0.95)";
+                summaryColor = "#065F46";
+                summaryBorder = "1px solid #6EE7B7";
+                badgeBg = "#059669";
+                badgeColor = "#FFFFFF";
+                badgeBorder = "none";
+                badgeContent = (
+                  <>
+                    <FiCheck size={10} style={{ marginRight: "3px" }} />{" "}
+                    Completed
+                  </>
+                );
               } else if (isExplicitlyLocked) {
                 // Explicitly Locked Module (Node 10 Teaching Overload Center)
-                cardBg = '#FFFFFF';
-                borderColor = '#E2E8F0';
-                boxShadow = '0 2px 5px rgba(0, 0, 0, 0.03)';
-                nodeNumColor = '#94A3B8';
-                titleColor = '#64748B';
-                subtitleColor = '#94A3B8';
-                iconBg = '#F8FAFC';
-                iconColor = '#94A3B8';
-                iconBorder = '1px solid #E2E8F0';
-                summaryBg = '#F8FAFC';
-                summaryColor = '#94A3B8';
-                summaryBorder = '1px solid #E2E8F0';
-                badgeBg = '#F1F5F9';
-                badgeColor = '#64748B';
-                badgeBorder = '1px solid #CBD5E1';
-                badgeContent = <><FiLock size={10} style={{ marginRight: '3px' }} /> Locked</>;
+                cardBg = "#FFFFFF";
+                borderColor = "#E2E8F0";
+                boxShadow = "0 2px 5px rgba(0, 0, 0, 0.03)";
+                nodeNumColor = "#94A3B8";
+                titleColor = "#64748B";
+                subtitleColor = "#94A3B8";
+                iconBg = "#F8FAFC";
+                iconColor = "#94A3B8";
+                iconBorder = "1px solid #E2E8F0";
+                summaryBg = "#F8FAFC";
+                summaryColor = "#94A3B8";
+                summaryBorder = "1px solid #E2E8F0";
+                badgeBg = "#F1F5F9";
+                badgeColor = "#64748B";
+                badgeBorder = "1px solid #CBD5E1";
+                badgeContent = (
+                  <>
+                    <FiLock size={10} style={{ marginRight: "3px" }} /> Locked
+                  </>
+                );
               } else if (isAlwaysUnlocked) {
                 // Unlocked Nodes (Nodes 01-09 & 11)
-                cardBg = 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)';
-                borderColor = '#93C5FD';
-                boxShadow = '0 4px 12px rgba(37, 99, 235, 0.08)';
-                nodeNumColor = '#2563EB';
-                titleColor = '#0F172A';
-                subtitleColor = '#475569';
-                iconBg = '#EFF6FF';
-                iconColor = '#2563EB';
-                iconBorder = '1px solid #BFDBFE';
-                summaryBg = '#F0F9FF';
-                summaryColor = '#0369A1';
-                summaryBorder = '1px solid #BAE6FD';
-                badgeBg = '#EFF6FF';
-                badgeColor = '#1D4ED8';
-                badgeBorder = '1px solid #BFDBFE';
-                badgeContent = <><FiUnlock size={10} style={{ marginRight: '3px' }} /> Available</>;
+                cardBg = "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)";
+                borderColor = "#93C5FD";
+                boxShadow = "0 4px 12px rgba(37, 99, 235, 0.08)";
+                nodeNumColor = "#2563EB";
+                titleColor = "#0F172A";
+                subtitleColor = "#475569";
+                iconBg = "#EFF6FF";
+                iconColor = "#2563EB";
+                iconBorder = "1px solid #BFDBFE";
+                summaryBg = "#F0F9FF";
+                summaryColor = "#0369A1";
+                summaryBorder = "1px solid #BAE6FD";
+                badgeBg = "#EFF6FF";
+                badgeColor = "#1D4ED8";
+                badgeBorder = "1px solid #BFDBFE";
+                badgeContent = (
+                  <>
+                    <FiUnlock size={10} style={{ marginRight: "3px" }} />{" "}
+                    Available
+                  </>
+                );
               } else if (isActive) {
                 // Active Current Step
-                cardBg = 'linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(219, 234, 254, 0.85) 100%)';
-                borderColor = '#2563EB';
-                boxShadow = '0 5px 16px rgba(37, 99, 235, 0.18)';
-                nodeNumColor = '#1E40AF';
-                titleColor = '#0F172A';
-                subtitleColor = '#1E3A8A';
-                iconBg = '#DBEAFE';
-                iconColor = '#1D4ED8';
-                iconBorder = '1px solid #BFDBFE';
-                summaryBg = 'rgba(255, 255, 255, 0.95)';
-                summaryColor = '#1E3A8A';
-                summaryBorder = '1px solid #93C5FD';
-                badgeBg = '#2563EB';
-                badgeColor = '#FFFFFF';
-                badgeBorder = 'none';
-                badgeContent = <><FiArrowRight size={10} style={{ marginRight: '3px' }} /> Active Step</>;
+                cardBg =
+                  "linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(219, 234, 254, 0.85) 100%)";
+                borderColor = "#2563EB";
+                boxShadow = "0 5px 16px rgba(37, 99, 235, 0.18)";
+                nodeNumColor = "#1E40AF";
+                titleColor = "#0F172A";
+                subtitleColor = "#1E3A8A";
+                iconBg = "#DBEAFE";
+                iconColor = "#1D4ED8";
+                iconBorder = "1px solid #BFDBFE";
+                summaryBg = "rgba(255, 255, 255, 0.95)";
+                summaryColor = "#1E3A8A";
+                summaryBorder = "1px solid #93C5FD";
+                badgeBg = "#2563EB";
+                badgeColor = "#FFFFFF";
+                badgeBorder = "none";
+                badgeContent = (
+                  <>
+                    <FiArrowRight size={10} style={{ marginRight: "3px" }} />{" "}
+                    Active Step
+                  </>
+                );
               } else {
                 // Locked Node
-                cardBg = '#FFFFFF';
-                borderColor = '#E2E8F0';
-                boxShadow = '0 2px 5px rgba(0, 0, 0, 0.03)';
-                nodeNumColor = '#94A3B8';
-                titleColor = '#64748B';
-                subtitleColor = '#94A3B8';
-                iconBg = '#F8FAFC';
-                iconColor = '#94A3B8';
-                iconBorder = '1px solid #E2E8F0';
-                summaryBg = '#F8FAFC';
-                summaryColor = '#94A3B8';
-                summaryBorder = '1px solid #E2E8F0';
-                badgeBg = '#F1F5F9';
-                badgeColor = '#64748B';
-                badgeBorder = '1px solid #CBD5E1';
-                badgeContent = <><FiLock size={10} style={{ marginRight: '3px' }} /> Locked</>;
+                cardBg = "#FFFFFF";
+                borderColor = "#E2E8F0";
+                boxShadow = "0 2px 5px rgba(0, 0, 0, 0.03)";
+                nodeNumColor = "#94A3B8";
+                titleColor = "#64748B";
+                subtitleColor = "#94A3B8";
+                iconBg = "#F8FAFC";
+                iconColor = "#94A3B8";
+                iconBorder = "1px solid #E2E8F0";
+                summaryBg = "#F8FAFC";
+                summaryColor = "#94A3B8";
+                summaryBorder = "1px solid #E2E8F0";
+                badgeBg = "#F1F5F9";
+                badgeColor = "#64748B";
+                badgeBorder = "1px solid #CBD5E1";
+                badgeContent = (
+                  <>
+                    <FiLock size={10} style={{ marginRight: "3px" }} /> Locked
+                  </>
+                );
               }
 
               return (
@@ -430,82 +597,136 @@ export default function NodeMap() {
                   key={node.id}
                   style={{
                     background: cardBg,
-                    backdropFilter: 'blur(10px)',
+                    backdropFilter: "blur(10px)",
                     border: `1.5px solid ${borderColor}`,
-                    borderRadius: '14px',
-                    padding: '16px 18px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: '190px',
-                    gap: '12px',
+                    borderRadius: "14px",
+                    padding: "16px 18px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minHeight: "190px",
+                    gap: "12px",
                     boxShadow: boxShadow,
-                    transition: 'all 0.2s ease',
-                    position: 'relative'
+                    transition: "all 0.2s ease",
+                    position: "relative",
                   }}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
                     {/* Top Row: Node Number + Status Badge */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', fontWeight: '900', color: nodeNumColor, letterSpacing: '0.06em' }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: "900",
+                          color: nodeNumColor,
+                          letterSpacing: "0.06em",
+                        }}
+                      >
                         NODE {node.nodeNumber}
                       </span>
-                      <span style={{
-                        background: badgeBg,
-                        color: badgeColor,
-                        border: badgeBorder,
-                        padding: '3px 9px',
-                        borderRadius: '999px',
-                        fontSize: '10.5px',
-                        fontWeight: '800',
-                        display: 'inline-flex',
-                        alignItems: 'center'
-                      }}>
+                      <span
+                        style={{
+                          background: badgeBg,
+                          color: badgeColor,
+                          border: badgeBorder,
+                          padding: "3px 9px",
+                          borderRadius: "999px",
+                          fontSize: "10.5px",
+                          fontWeight: "800",
+                          display: "inline-flex",
+                          alignItems: "center",
+                        }}
+                      >
                         {badgeContent}
                       </span>
                     </div>
 
                     {/* Node Info: Icon + Title + Subtitle */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                      <div style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '10px',
-                        background: iconBg,
-                        color: iconColor,
-                        border: iconBorder,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.03)'
-                      }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "38px",
+                          height: "38px",
+                          borderRadius: "10px",
+                          background: iconBg,
+                          color: iconColor,
+                          border: iconBorder,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
+                        }}
+                      >
                         {IconComp && <IconComp size={18} />}
                       </div>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: titleColor, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <h3
+                          style={{
+                            margin: 0,
+                            fontSize: "15px",
+                            fontWeight: "800",
+                            color: titleColor,
+                            letterSpacing: "-0.01em",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
                           {node.title}
                         </h3>
-                        <p style={{ margin: '3px 0 0', fontSize: '11.5px', color: subtitleColor, lineHeight: '1.35', fontWeight: '500', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        <p
+                          style={{
+                            margin: "3px 0 0",
+                            fontSize: "11.5px",
+                            color: subtitleColor,
+                            lineHeight: "1.35",
+                            fontWeight: "500",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
                           {node.subtitle}
                         </p>
                       </div>
                     </div>
 
                     {/* Summary Chip */}
-                    <div style={{
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      color: summaryColor,
-                      background: summaryBg,
-                      border: summaryBorder,
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      fontFamily: 'monospace',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        color: summaryColor,
+                        background: summaryBg,
+                        border: summaryBorder,
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        fontFamily: "monospace",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {node.summary}
                     </div>
                   </div>
@@ -516,47 +737,47 @@ export default function NodeMap() {
                     disabled={!isUnlocked}
                     onClick={() => setActiveView(node.view)}
                     style={{
-                      width: '100%',
-                      padding: '8.5px 14px',
-                      borderRadius: '10px',
-                      fontSize: '12px',
-                      fontWeight: '800',
-                      letterSpacing: '0.02em',
-                      border: 'none',
-                      cursor: isUnlocked ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      transition: 'all 0.15s ease',
-                      background: isCompleted 
-                        ? '#059669' 
-                        : isActive 
-                          ? '#2563EB' 
+                      width: "100%",
+                      padding: "8.5px 14px",
+                      borderRadius: "10px",
+                      fontSize: "12px",
+                      fontWeight: "800",
+                      letterSpacing: "0.02em",
+                      border: "none",
+                      cursor: isUnlocked ? "pointer" : "not-allowed",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      transition: "all 0.15s ease",
+                      background: isCompleted
+                        ? "#059669"
+                        : isActive
+                          ? "#2563EB"
                           : isAlwaysUnlocked
-                            ? '#1D4ED8'
-                            : '#E2E8F0',
-                      color: isUnlocked ? '#FFFFFF' : '#94A3B8',
-                      boxShadow: isCompleted 
-                        ? '0 2px 6px rgba(5, 150, 105, 0.25)' 
+                            ? "#1D4ED8"
+                            : "#E2E8F0",
+                      color: isUnlocked ? "#FFFFFF" : "#94A3B8",
+                      boxShadow: isCompleted
+                        ? "0 2px 6px rgba(5, 150, 105, 0.25)"
                         : isActive || isAlwaysUnlocked
-                          ? '0 2px 8px rgba(37, 99, 235, 0.25)' 
-                          : 'none'
+                          ? "0 2px 8px rgba(37, 99, 235, 0.25)"
+                          : "none",
                     }}
                     onMouseEnter={(e) => {
                       if (isUnlocked) {
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.boxShadow = isCompleted 
-                          ? '0 4px 10px rgba(5, 150, 105, 0.35)' 
-                          : '0 4px 12px rgba(37, 99, 235, 0.35)';
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                        e.currentTarget.style.boxShadow = isCompleted
+                          ? "0 4px 10px rgba(5, 150, 105, 0.35)"
+                          : "0 4px 12px rgba(37, 99, 235, 0.35)";
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (isUnlocked) {
-                        e.currentTarget.style.transform = 'none';
-                        e.currentTarget.style.boxShadow = isCompleted 
-                          ? '0 2px 6px rgba(5, 150, 105, 0.25)' 
-                          : '0 2px 8px rgba(37, 99, 235, 0.25)';
+                        e.currentTarget.style.transform = "none";
+                        e.currentTarget.style.boxShadow = isCompleted
+                          ? "0 2px 6px rgba(5, 150, 105, 0.25)"
+                          : "0 2px 8px rgba(37, 99, 235, 0.25)";
                       }
                     }}
                   >
@@ -585,38 +806,42 @@ export default function NodeMap() {
       ))}
 
       {/* FOOTER AUDIT NOTICE */}
-      <div style={{
-        marginTop: '12px',
-        padding: '16px 20px',
-        borderRadius: '16px',
-        background: '#F8FAFC',
-        border: '1.5px solid var(--line)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px',
-        fontSize: '12.5px',
-        color: 'var(--muted)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div
+        style={{
+          marginTop: "12px",
+          padding: "16px 20px",
+          borderRadius: "16px",
+          background: "#F8FAFC",
+          border: "1.5px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "12px",
+          fontSize: "12.5px",
+          color: "var(--muted)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <FiShield size={16} color="var(--navy)" />
           <span>
-            DepEd Electronic School Form 7 (eSF7) progressive registry journey enforces cross-registry validation integrity prior to final submission.
+            DepEd Electronic School Form 7 (eSF7) progressive registry journey
+            enforces cross-registry validation integrity prior to final
+            submission.
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <button
             type="button"
-            onClick={() => setActiveView('validation')}
+            onClick={() => setActiveView("validation")}
             style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--blue)',
-              fontWeight: '800',
-              cursor: 'pointer',
+              background: "none",
+              border: "none",
+              color: "var(--blue)",
+              fontWeight: "800",
+              cursor: "pointer",
               padding: 0,
-              fontSize: '12.5px'
+              fontSize: "12.5px",
             }}
           >
             View Quality Check Rules ➔
@@ -626,27 +851,27 @@ export default function NodeMap() {
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              border: 'none',
-              color: '#94a3b8',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '6px',
-              transition: 'all 0.2s ease',
-              opacity: 0.5
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "transparent",
+              border: "none",
+              color: "#94a3b8",
+              cursor: "pointer",
+              padding: "4px",
+              borderRadius: "6px",
+              transition: "all 0.2s ease",
+              opacity: 0.5,
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '1';
-              e.currentTarget.style.color = '#475569';
-              e.currentTarget.style.background = '#e2e8f0';
+              e.currentTarget.style.opacity = "1";
+              e.currentTarget.style.color = "#475569";
+              e.currentTarget.style.background = "#e2e8f0";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '0.5';
-              e.currentTarget.style.color = '#94a3b8';
-              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.opacity = "0.5";
+              e.currentTarget.style.color = "#94a3b8";
+              e.currentTarget.style.background = "transparent";
             }}
             title="Database & Storage Settings (Clear IndexedDB / Local Cache)"
           >

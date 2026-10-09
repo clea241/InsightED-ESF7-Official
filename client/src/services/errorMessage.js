@@ -7,9 +7,15 @@
  * @returns {string}
  */
 export function errorMessage(err, fallback) {
-  const status = err && typeof err.status === 'number' ? err.status : 0;
+  const status = err && typeof err.status === "number" ? err.status : 0;
   const fromBody = err && err.body && (err.body.error || err.body.message);
-  if (typeof fromBody === 'string' && fromBody.trim() && status >= 400 && status < 500) return fromBody;
+  if (
+    typeof fromBody === "string" &&
+    fromBody.trim() &&
+    status >= 400 &&
+    status < 500
+  )
+    return fromBody;
   if (status >= 400 && status < 500 && err.message) return err.message;
   return fallback;
 }

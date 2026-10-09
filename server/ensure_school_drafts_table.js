@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require("./db");
 
 async function ensureDraftsTable() {
   try {
@@ -11,10 +11,10 @@ async function ensureDraftsTable() {
         PRIMARY KEY (school_id, school_year)
       );
     `);
-    console.log('✓ school_drafts table verified/created');
+    console.log("✓ school_drafts table verified/created");
     process.exit(0);
   } catch (err) {
-    console.error('Error creating school_drafts table:', err);
+    console.error("Error creating school_drafts table:", err);
     process.exit(1);
   }
 }

@@ -1,4 +1,4 @@
-const { stagingPool } = require('../db');
+const { stagingPool } = require("../db");
 
 async function inspectDraftCols() {
   const res = await stagingPool.query(`
@@ -7,7 +7,7 @@ async function inspectDraftCols() {
     WHERE table_name = 'school_drafts' 
     ORDER BY ordinal_position;
   `);
-  console.log('Columns in school_drafts:');
+  console.log("Columns in school_drafts:");
   console.log(res.rows);
   process.exit(0);
 }

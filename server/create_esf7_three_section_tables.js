@@ -1,7 +1,9 @@
-const db = require('./db');
+const db = require("./db");
 
 async function createThreeSectionTables() {
-  console.log('🚀 Creating 3 tailored section tables in insighted_esf7 database...');
+  console.log(
+    "🚀 Creating 3 tailored section tables in insighted_esf7 database...",
+  );
   try {
     // 1. Create esf7_regular_sections
     await db.query(`
@@ -22,9 +24,13 @@ async function createThreeSectionTables() {
         CONSTRAINT uq_regular_section_school_sy UNIQUE (school_id, school_year, grade_level, section_name)
       );
     `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_regular_sections_school_sy ON esf7_regular_sections (school_id, school_year);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_regular_sections_adviser ON esf7_regular_sections (adviser_id);`);
-    console.log('✓ Created esf7_regular_sections');
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_regular_sections_school_sy ON esf7_regular_sections (school_id, school_year);`,
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_regular_sections_adviser ON esf7_regular_sections (adviser_id);`,
+    );
+    console.log("✓ Created esf7_regular_sections");
 
     // 2. Create esf7_aral_sections
     await db.query(`
@@ -46,9 +52,13 @@ async function createThreeSectionTables() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_aral_sections_school_sy ON esf7_aral_sections (school_id, school_year);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_aral_sections_tutor ON esf7_aral_sections (tutor_id);`);
-    console.log('✓ Created esf7_aral_sections');
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_aral_sections_school_sy ON esf7_aral_sections (school_id, school_year);`,
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_aral_sections_tutor ON esf7_aral_sections (tutor_id);`,
+    );
+    console.log("✓ Created esf7_aral_sections");
 
     // 3. Create esf7_remedial_enrichment_sections
     await db.query(`
@@ -68,18 +78,22 @@ async function createThreeSectionTables() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_remedial_sections_school_sy ON esf7_remedial_enrichment_sections (school_id, school_year);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_remedial_sections_teacher ON esf7_remedial_enrichment_sections (assigned_teacher_id);`);
-    console.log('✓ Created esf7_remedial_enrichment_sections');
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_remedial_sections_school_sy ON esf7_remedial_enrichment_sections (school_id, school_year);`,
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_remedial_sections_teacher ON esf7_remedial_enrichment_sections (assigned_teacher_id);`,
+    );
+    console.log("✓ Created esf7_remedial_enrichment_sections");
 
     // 4. Safely drop legacy esf7_class_sections table
     await db.query(`DROP TABLE IF EXISTS esf7_class_sections CASCADE;`);
-    console.log('✓ Dropped legacy esf7_class_sections');
+    console.log("✓ Dropped legacy esf7_class_sections");
 
-    console.log('🎉 All 3 section tables created successfully!');
+    console.log("🎉 All 3 section tables created successfully!");
     process.exit(0);
   } catch (err) {
-    console.error('❌ Error creating 3 section tables:', err.message);
+    console.error("❌ Error creating 3 section tables:", err.message);
     process.exit(1);
   }
 }

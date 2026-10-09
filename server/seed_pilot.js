@@ -1,32 +1,34 @@
 /**
  * ESF7 Pilot Seeder
- * 
+ *
  * 1. Picks 10 random schools from insightEd.esf7_database (READ-ONLY)
  * 2. Clones their personnel rows into insighted_esf7.insighted_esf7_pilot with anonymized names
  * 3. Randomizes curricular offering per school
  * 4. Prints hardcoded pilot credentials at the end
- * 
+ *
  * SAFE: Does NOT modify insightEd or insighted_esf7 main tables.
  */
 
-const { Pool } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Pool } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 // ── Connection to insightEd (READ-ONLY source) ─────────────────────────────
 const sourcePoolString = process.env.DATABASE_URL
-  ? process.env.DATABASE_URL.replace('insighted_esf7', 'insightEd')
+  ? process.env.DATABASE_URL.replace("insighted_esf7", "insightEd")
   : `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insightEd`;
 
 const sourcePool = new Pool({
   connectionString: sourcePoolString,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
 // ── Connection to insighted_esf7 (target database) ────────────────────────
 const targetPool = new Pool({
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insighted_esf7`,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+  connectionString:
+    process.env.DATABASE_URL ||
+    `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insighted_esf7`,
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -37,15 +39,15 @@ function randomFrom(arr) {
 // ── Curricular Offering mapping by school_id prefix ──────────────────────
 function getOfferingByPrefix(schoolId) {
   const prefix = String(schoolId)[0];
-  if (prefix === '1') return ['Elementary'];
-  if (prefix === '3') {
+  if (prefix === "1") return ["Elementary"];
+  if (prefix === "3") {
     // JHS or SHS or both — randomly pick one
-    const jhs_shs = [['JHS'], ['SHS'], ['JHS', 'SHS']];
+    const jhs_shs = [["JHS"], ["SHS"], ["JHS", "SHS"]];
     return randomFrom(jhs_shs);
   }
-  if (prefix === '5') return ['Elementary', 'JHS', 'SHS'];
+  if (prefix === "5") return ["Elementary", "JHS", "SHS"];
   // Fallback for other prefixes
-  return ['Elementary', 'JHS', 'SHS'];
+  return ["Elementary", "JHS", "SHS"];
 }
 
 // ── Main Seeder ───────────────────────────────────────────────────────────
@@ -53,7 +55,9 @@ async function seed() {
   const client = await targetPool.connect();
 
   try {
-    console.log('\n🌱 Starting ESF7 Pilot Seeder (with school_id prefix-based curricular offering)...\n');
+    console.log(
+      "\n🌱 Starting ESF7 Pilot Seeder (with school_id prefix-based curricular offering)...\n",
+    );
 
     // ── Step 1: Create insighted_esf7_pilot table ───────────────────────────
     await client.query(`
@@ -108,14 +112,17 @@ async function seed() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
-    console.log('✅ Table insighted_esf7_pilot ready.\n');
+    console.log("✅ Table insighted_esf7_pilot ready.\n");
 
     // ── Step 2: Pick 10 random schools by prefix groups ────────────────────
     // 4 Elementary (prefix 1), 3 JHS/SHS (prefix 3), 3 All offering (prefix 5)
-    console.log('📋 Picking pilot schools by school_id prefix from insightEd.esf7_database...');
+    console.log(
+      "📋 Picking pilot schools by school_id prefix from insightEd.esf7_database...",
+    );
 
     async function pickSchoolsByPrefix(prefix, limit) {
-      const res = await sourcePool.query(`
+      const res = await sourcePool.query(
+        `
         SELECT school_id, COUNT(*) as personnel_count
         FROM esf7_database
         WHERE school_id LIKE $1 AND school_id IS NOT NULL AND school_id != ''
@@ -123,42 +130,82 @@ async function seed() {
         HAVING COUNT(*) BETWEEN 5 AND 60
         ORDER BY RANDOM()
         LIMIT $2
-      `, [`${prefix}%`, limit]);
+      `,
+        [`${prefix}%`, limit],
+      );
       return res.rows;
     }
 
-    const elem    = await pickSchoolsByPrefix('1', 4);
-    const jhsShs  = await pickSchoolsByPrefix('3', 3);
-    const allOff  = await pickSchoolsByPrefix('5', 3);
+    const elem = await pickSchoolsByPrefix("1", 4);
+    const jhsShs = await pickSchoolsByPrefix("3", 3);
+    const allOff = await pickSchoolsByPrefix("5", 3);
     const pilotSchools = [...elem, ...jhsShs, ...allOff];
 
     console.log(`→ Selected ${pilotSchools.length} pilot schools:\n`);
-    pilotSchools.forEach(s => {
+    pilotSchools.forEach((s) => {
       const offering = getOfferingByPrefix(s.school_id);
-      console.log(`   School ID: ${s.school_id} (prefix ${s.school_id[0]}) | Personnel: ${s.personnel_count} | Offering: ${offering.join(', ')}`);
+      console.log(
+        `   School ID: ${s.school_id} (prefix ${s.school_id[0]}) | Personnel: ${s.personnel_count} | Offering: ${offering.join(", ")}`,
+      );
     });
 
-    const PILOT_PASSWORD = 'Pilot2026!';
+    const PILOT_PASSWORD = "Pilot2026!";
     const credentials = [];
 
     // ── Step 3: Clear old pilot data ───────────────────────────────────────
     await client.query(`DELETE FROM insighted_esf7_pilot`);
-    console.log('\n🗑️  Cleared old pilot data.\n');
+    console.log("\n🗑️  Cleared old pilot data.\n");
 
     // ── Step 4: Seed each school ───────────────────────────────────────────
     const DUMMY_FIRST_NAMES = [
-      'Maria', 'Jose', 'Ana', 'Juan', 'Rosa', 'Carlo', 'Linda', 'Ramon',
-      'Grace', 'Miguel', 'Elena', 'Eduardo', 'Liza', 'Fernando', 'Cristina',
-      'Antonio', 'Maricel', 'Roberto', 'Teresita', 'Danilo'
+      "Maria",
+      "Jose",
+      "Ana",
+      "Juan",
+      "Rosa",
+      "Carlo",
+      "Linda",
+      "Ramon",
+      "Grace",
+      "Miguel",
+      "Elena",
+      "Eduardo",
+      "Liza",
+      "Fernando",
+      "Cristina",
+      "Antonio",
+      "Maricel",
+      "Roberto",
+      "Teresita",
+      "Danilo",
     ];
     const DUMMY_LAST_NAMES = [
-      'Santos', 'Reyes', 'Cruz', 'Garcia', 'Mendoza', 'Torres', 'Flores',
-      'Bautista', 'Ramos', 'Lopez', 'Gonzales', 'Castillo', 'Villanueva',
-      'Rivera', 'Aquino', 'De Leon', 'Soriano', 'Pascual', 'Dela Cruz', 'Hernandez'
+      "Santos",
+      "Reyes",
+      "Cruz",
+      "Garcia",
+      "Mendoza",
+      "Torres",
+      "Flores",
+      "Bautista",
+      "Ramos",
+      "Lopez",
+      "Gonzales",
+      "Castillo",
+      "Villanueva",
+      "Rivera",
+      "Aquino",
+      "De Leon",
+      "Soriano",
+      "Pascual",
+      "Dela Cruz",
+      "Hernandez",
     ];
     function randomDummyName() {
-      const first = DUMMY_FIRST_NAMES[Math.floor(Math.random() * DUMMY_FIRST_NAMES.length)];
-      const last  = DUMMY_LAST_NAMES[Math.floor(Math.random() * DUMMY_LAST_NAMES.length)];
+      const first =
+        DUMMY_FIRST_NAMES[Math.floor(Math.random() * DUMMY_FIRST_NAMES.length)];
+      const last =
+        DUMMY_LAST_NAMES[Math.floor(Math.random() * DUMMY_LAST_NAMES.length)];
       return { full: `${last}, ${first}` };
     }
 
@@ -167,11 +214,14 @@ async function seed() {
       const currOffer = getOfferingByPrefix(schoolId);
 
       // Fetch all personnel rows for this school from source
-      const personnelRes = await sourcePool.query(`
+      const personnelRes = await sourcePool.query(
+        `
         SELECT *
         FROM esf7_database
         WHERE school_id = $1
-      `, [schoolId]);
+      `,
+        [schoolId],
+      );
 
       const rows = personnelRes.rows;
       let insertedCount = 0;
@@ -180,7 +230,8 @@ async function seed() {
         const row = rows[i];
         const dummyName = randomDummyName(i);
 
-        await client.query(`
+        await client.query(
+          `
           INSERT INTO insighted_esf7_pilot (
             esf7_id, school_id, iern, semester,
             name, sex, civil_status,
@@ -210,91 +261,102 @@ async function seed() {
             $34, $35, $36, $37,
             $38, $39, $40
           )
-        `, [
-          row.esf7_id,                   // $1
-          schoolId,                       // $2
-          row.iern,                       // $3
-          row.semester,                   // $4
-          // Anonymized personal info
-          dummyName.full,                 // $5 name
-          row.sex || (Math.random() > 0.5 ? 'M' : 'F'), // $6
-          row.civil_status || 'SINGLE',   // $7
-          row.birthday_mm || 'JANUARY',   // $8
-          row.birthday_dd || '01',        // $9
-          row.birthday_yyyy || '1990',    // $10
-          'PILOT-XXXX-XXXX',             // $11 phylsys_num - anonymized
-          // Employment (kept realistic)
-          row.position,                   // $12
-          row.nature_of_appointment,      // $13
-          row.fund_source,               // $14
-          row['status__item_'],           // $15
-          row.eligibility,               // $16
-          row.appt_mm,                   // $17
-          row.appt_dd,                   // $18
-          row.appt_yyyy,                 // $19
-          row.station_mm,                // $20
-          row.station_dd,                // $21
-          row.station_yyyy,              // $22
-          row.major_specialization,      // $23
-          // Time allocations
-          row.time_major,                // $24
-          row.time_nonmajor,             // $25
-          row.time_ancillary_curriculum, // $26
-          row.time_ancillary_admin_management,             // $27
-          row.time_ancillary_professional_development,     // $28
-          row['time_ancillary_program__project'],          // $29
-          row['time_ancillary_inter__agency'],             // $30
-          row.time_advisory,             // $31
-          row.time_related_tasks,        // $32
-          row.time_administrative,       // $33
-          row.time_home_guidance,        // $34
-          row.time_gmrc,                 // $35
-          row.all_time,                  // $36
-          row.total_trainings,           // $37
-          // Randomized curricular offering
-          currOffer,                     // $38
-          true,                          // $39 is_pilot
-          PILOT_PASSWORD                 // $40 pilot_password
-        ]);
+        `,
+          [
+            row.esf7_id, // $1
+            schoolId, // $2
+            row.iern, // $3
+            row.semester, // $4
+            // Anonymized personal info
+            dummyName.full, // $5 name
+            row.sex || (Math.random() > 0.5 ? "M" : "F"), // $6
+            row.civil_status || "SINGLE", // $7
+            row.birthday_mm || "JANUARY", // $8
+            row.birthday_dd || "01", // $9
+            row.birthday_yyyy || "1990", // $10
+            "PILOT-XXXX-XXXX", // $11 phylsys_num - anonymized
+            // Employment (kept realistic)
+            row.position, // $12
+            row.nature_of_appointment, // $13
+            row.fund_source, // $14
+            row["status__item_"], // $15
+            row.eligibility, // $16
+            row.appt_mm, // $17
+            row.appt_dd, // $18
+            row.appt_yyyy, // $19
+            row.station_mm, // $20
+            row.station_dd, // $21
+            row.station_yyyy, // $22
+            row.major_specialization, // $23
+            // Time allocations
+            row.time_major, // $24
+            row.time_nonmajor, // $25
+            row.time_ancillary_curriculum, // $26
+            row.time_ancillary_admin_management, // $27
+            row.time_ancillary_professional_development, // $28
+            row["time_ancillary_program__project"], // $29
+            row["time_ancillary_inter__agency"], // $30
+            row.time_advisory, // $31
+            row.time_related_tasks, // $32
+            row.time_administrative, // $33
+            row.time_home_guidance, // $34
+            row.time_gmrc, // $35
+            row.all_time, // $36
+            row.total_trainings, // $37
+            // Randomized curricular offering
+            currOffer, // $38
+            true, // $39 is_pilot
+            PILOT_PASSWORD, // $40 pilot_password
+          ],
+        );
 
         insertedCount++;
       }
 
-      console.log(`✅ School ${schoolId}: Seeded ${insertedCount} dummy personnel | Offering: [${currOffer.join(', ')}]`);
+      console.log(
+        `✅ School ${schoolId}: Seeded ${insertedCount} dummy personnel | Offering: [${currOffer.join(", ")}]`,
+      );
       credentials.push({
         schoolId,
         personnelCount: insertedCount,
         curricularOffering: currOffer,
-        password: PILOT_PASSWORD
+        password: PILOT_PASSWORD,
       });
     }
 
     // ── Step 5: Print pilot credentials ───────────────────────────────────
-    console.log('\n\n' + '='.repeat(60));
-    console.log('🔑  PILOT SCHOOL HARDCODED CREDENTIALS');
-    console.log('='.repeat(60));
+    console.log("\n\n" + "=".repeat(60));
+    console.log("🔑  PILOT SCHOOL HARDCODED CREDENTIALS");
+    console.log("=".repeat(60));
     credentials.forEach((c, i) => {
       console.log(`\n[${i + 1}] School ID : ${c.schoolId}`);
       console.log(`    Password  : ${c.password}`);
       console.log(`    Personnel : ${c.personnelCount} dummy records`);
-      console.log(`    Offering  : ${c.curricularOffering.join(', ')}`);
+      console.log(`    Offering  : ${c.curricularOffering.join(", ")}`);
     });
-    console.log('\n' + '='.repeat(60));
-    console.log('\n✅ Pilot seeding complete!');
+    console.log("\n" + "=".repeat(60));
+    console.log("\n✅ Pilot seeding complete!");
 
     // ── Step 6: Write credentials to a local JSON file for reference ───────
-    const fs = require('fs');
-    const credPath = path.join(__dirname, 'pilot_credentials.json');
-    fs.writeFileSync(credPath, JSON.stringify({ 
-      generatedAt: new Date().toISOString(),
-      pilotPassword: PILOT_PASSWORD,
-      schools: credentials 
-    }, null, 2));
+    const fs = require("fs");
+    const credPath = path.join(__dirname, "pilot_credentials.json");
+    fs.writeFileSync(
+      credPath,
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          pilotPassword: PILOT_PASSWORD,
+          schools: credentials,
+        },
+        null,
+        2,
+      ),
+    );
     console.log(`\n📄 Credentials saved to: ${credPath}`);
 
     process.exit(0);
   } catch (err) {
-    console.error('\n❌ Seeder failed:', err.message);
+    console.error("\n❌ Seeder failed:", err.message);
     console.error(err);
     process.exit(1);
   } finally {

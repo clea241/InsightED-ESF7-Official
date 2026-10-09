@@ -13,7 +13,7 @@ async function claimJob(client, jobId) {
         SET status = 'processing', updated_at = NOW()
       WHERE id = $1 AND status <> 'processing' AND status <> 'completed'
       RETURNING id`,
-    [jobId]
+    [jobId],
   );
   return res.rows.length > 0;
 }
@@ -27,7 +27,7 @@ async function recoverStaleJobs(client) {
     `UPDATE esf7_submission_queue
         SET status = 'pending', updated_at = NOW()
       WHERE status = 'processing'
-        AND updated_at < NOW() - INTERVAL '1 minute'`
+        AND updated_at < NOW() - INTERVAL '1 minute'`,
   );
 }
 
@@ -43,7 +43,7 @@ async function pickNextPendingJob(client) {
       WHERE status = 'pending'
       ORDER BY id ASC
       LIMIT 1
-      FOR UPDATE SKIP LOCKED`
+      FOR UPDATE SKIP LOCKED`,
   );
   return res.rows.length > 0 ? res.rows[0].id : null;
 }

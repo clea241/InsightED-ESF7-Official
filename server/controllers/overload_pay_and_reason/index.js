@@ -1,13 +1,13 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
+const db = require("../../db");
 
 const VALID_REASONS = [
-  'Teacher Shortage',
-  'Relieving Duty',
-  'Remediation or Enhancement Class',
-  'Class Advising Duty',
-  'ARAL Tutor'
+  "Teacher Shortage",
+  "Relieving Duty",
+  "Remediation or Enhancement Class",
+  "Class Advising Duty",
+  "ARAL Tutor",
 ];
 
 function formatOverloadPayRecord(row) {
@@ -30,17 +30,18 @@ function formatOverloadPayRecord(row) {
     overload_pay: Number(row.overload_pay || 0),
     netTermPay: Number(row.net_term_pay || 0),
     net_term_pay: Number(row.net_term_pay || 0),
-    reasons: Array.isArray(row.reasons) ? row.reasons : ['Teacher Shortage'],
-    rawPayload: raw
+    reasons: Array.isArray(row.reasons) ? row.reasons : ["Teacher Shortage"],
+    rawPayload: raw,
   };
 }
 
 // GET /api/overload-pay-and-reason
 // Retrieves all overload pay and reason records (or mapped by personnel_id)
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { schoolYear, school_year, term, month, personnel_id, personnelId } = req.query;
-    const targetSy = schoolYear || school_year || '2026-2027';
+    const { schoolYear, school_year, term, month, personnel_id, personnelId } =
+      req.query;
+    const targetSy = schoolYear || school_year || "2026-2027";
 
     let query = `SELECT * FROM overload_pay_and_reason WHERE school_year = $1 OR school_year = 'SY 26-27'`;
     const values = [targetSy];
@@ -70,7 +71,7 @@ router.get('/', async (req, res) => {
     const records = result.rows.map(formatOverloadPayRecord);
 
     const reasonsMap = {};
-    records.forEach(r => {
+    records.forEach((r) => {
       reasonsMap[r.personnel_id] = r.reasons;
     });
 
@@ -80,48 +81,60 @@ router.get('/', async (req, res) => {
       term,
       month,
       data: reasonsMap,
-      raw: records
+      raw: records,
     });
   } catch (err) {
-    console.error('[OverloadPayAndReason GET Error]:', err.message);
+    console.error("[OverloadPayAndReason GET Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // POST /api/overload-pay-and-reason/save
 // Body: { personnelId, schoolYear, term, month, overloadHours, overloadPay, netTermPay, reasons }
-router.post('/save', async (req, res) => {
+router.post("/save", async (req, res) => {
   try {
     const {
-      personnelId, personnel_id,
-      schoolYear = '2026-2027', school_year,
-      term = 'Term 1',
-      month = 'All',
-      overloadHours = 0, overload_hours,
-      overloadPay = 0, overload_pay,
-      netTermPay = 0, net_term_pay,
-      reasons
+      personnelId,
+      personnel_id,
+      schoolYear = "2026-2027",
+      school_year,
+      term = "Term 1",
+      month = "All",
+      overloadHours = 0,
+      overload_hours,
+      overloadPay = 0,
+      overload_pay,
+      netTermPay = 0,
+      net_term_pay,
+      reasons,
     } = req.body;
 
     const targetPersonnelId = personnelId || personnel_id;
     if (!targetPersonnelId) {
-      return res.status(400).json({ success: false, error: 'personnelId is required.' });
+      return res
+        .status(400)
+        .json({ success: false, error: "personnelId is required." });
     }
 
     const personRes = await db.query(
       `SELECT school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [targetPersonnelId]
+      [targetPersonnelId],
     );
-    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : '108348';
-    const targetSy = schoolYear || school_year || '2026-2027';
+    const targetSchoolId =
+      personRes.rows.length > 0 ? personRes.rows[0].school_id : "108348";
+    const targetSy = schoolYear || school_year || "2026-2027";
 
-    const cleanedReasons = Array.isArray(reasons) && reasons.length > 0 
-      ? reasons.filter(r => VALID_REASONS.includes(r))
-      : ['Teacher Shortage'];
+    const cleanedReasons =
+      Array.isArray(reasons) && reasons.length > 0
+        ? reasons.filter((r) => VALID_REASONS.includes(r))
+        : ["Teacher Shortage"];
 
-    const countRes = await db.query(`SELECT COUNT(*) FROM overload_pay_and_reason`);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const oprId = req.body.id || `OPR-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM overload_pay_and_reason`,
+    );
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+    const oprId =
+      req.body.id || `OPR-${targetSchoolId.replace("SCH-", "")}-${seq}`;
 
     const sql = `
       INSERT INTO overload_pay_and_reason (
@@ -140,9 +153,30 @@ router.post('/save', async (req, res) => {
       RETURNING *;
     `;
 
-    const numOverloadHours = parseFloat(overloadHours !== undefined ? overloadHours : (overload_hours !== undefined ? overload_hours : 0)) || 0;
-    const numOverloadPay = parseFloat(overloadPay !== undefined ? overloadPay : (overload_pay !== undefined ? overload_pay : 0)) || 0;
-    const numNetTermPay = parseFloat(netTermPay !== undefined ? netTermPay : (net_term_pay !== undefined ? net_term_pay : numOverloadPay)) || 0;
+    const numOverloadHours =
+      parseFloat(
+        overloadHours !== undefined
+          ? overloadHours
+          : overload_hours !== undefined
+            ? overload_hours
+            : 0,
+      ) || 0;
+    const numOverloadPay =
+      parseFloat(
+        overloadPay !== undefined
+          ? overloadPay
+          : overload_pay !== undefined
+            ? overload_pay
+            : 0,
+      ) || 0;
+    const numNetTermPay =
+      parseFloat(
+        netTermPay !== undefined
+          ? netTermPay
+          : net_term_pay !== undefined
+            ? net_term_pay
+            : numOverloadPay,
+      ) || 0;
 
     const result = await db.query(sql, [
       oprId,
@@ -155,53 +189,71 @@ router.post('/save', async (req, res) => {
       numOverloadPay,
       numNetTermPay,
       JSON.stringify(cleanedReasons),
-      JSON.stringify(req.body)
+      JSON.stringify(req.body),
     ]);
 
     res.json({
       success: true,
       message: `Saved overload pay and reasons for ${targetPersonnelId}`,
-      record: formatOverloadPayRecord(result.rows[0])
+      record: formatOverloadPayRecord(result.rows[0]),
     });
   } catch (err) {
-    console.error('[OverloadPayAndReason SAVE Error]:', err.message);
+    console.error("[OverloadPayAndReason SAVE Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // POST /api/overload-pay-and-reason/batch
-router.post('/batch', async (req, res) => {
+router.post("/batch", async (req, res) => {
   try {
-    const { items = [], schoolYear = '2026-2027', term = 'Term 1' } = req.body;
+    const { items = [], schoolYear = "2026-2027", term = "Term 1" } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, error: 'Items array is required.' });
+      return res
+        .status(400)
+        .json({ success: false, error: "Items array is required." });
     }
 
     const savedRecords = [];
     for (const item of items) {
-      const targetPersonnelId = item.personnelId || item.personnel_id || item.teacherId || item.teacher_id;
+      const targetPersonnelId =
+        item.personnelId ||
+        item.personnel_id ||
+        item.teacherId ||
+        item.teacher_id;
       if (!targetPersonnelId) continue;
 
-      const reasons = Array.isArray(item.reasons) && item.reasons.length > 0
-        ? item.reasons.filter(r => VALID_REASONS.includes(r))
-        : ['Teacher Shortage'];
+      const reasons =
+        Array.isArray(item.reasons) && item.reasons.length > 0
+          ? item.reasons.filter((r) => VALID_REASONS.includes(r))
+          : ["Teacher Shortage"];
 
       const personRes = await db.query(
         `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-        [targetPersonnelId]
+        [targetPersonnelId],
       );
-      const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : (item.schoolId || item.school_id || '108348');
+      const targetSchoolId =
+        personRes.rows.length > 0
+          ? personRes.rows[0].school_id
+          : item.schoolId || item.school_id || "108348";
       const targetSy = item.schoolYear || item.school_year || schoolYear;
       const targetTerm = item.term || term;
-      const targetMonth = item.month || 'All';
+      const targetMonth = item.month || "All";
 
-      const countRes = await db.query(`SELECT COUNT(*) FROM overload_pay_and_reason`);
-      const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-      const oprId = item.id || `OPR-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+      const countRes = await db.query(
+        `SELECT COUNT(*) FROM overload_pay_and_reason`,
+      );
+      const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+      const oprId =
+        item.id || `OPR-${targetSchoolId.replace("SCH-", "")}-${seq}`;
 
-      const numOverloadHours = parseFloat(item.overloadHours || item.overload_hours || item.hours || 0) || 0;
-      const numOverloadPay = parseFloat(item.overloadPay || item.overload_pay || item.pay || 0) || 0;
-      const numNetTermPay = parseFloat(item.netTermPay || item.net_term_pay || numOverloadPay) || 0;
+      const numOverloadHours =
+        parseFloat(
+          item.overloadHours || item.overload_hours || item.hours || 0,
+        ) || 0;
+      const numOverloadPay =
+        parseFloat(item.overloadPay || item.overload_pay || item.pay || 0) || 0;
+      const numNetTermPay =
+        parseFloat(item.netTermPay || item.net_term_pay || numOverloadPay) || 0;
 
       const sql = `
         INSERT INTO overload_pay_and_reason (
@@ -231,8 +283,8 @@ router.post('/batch', async (req, res) => {
         numOverloadHours,
         numOverloadPay,
         numNetTermPay,
-        JSON.stringify(reasons.length > 0 ? reasons : ['Teacher Shortage']),
-        JSON.stringify(item)
+        JSON.stringify(reasons.length > 0 ? reasons : ["Teacher Shortage"]),
+        JSON.stringify(item),
       ]);
 
       savedRecords.push(formatOverloadPayRecord(result.rows[0]));
@@ -241,28 +293,32 @@ router.post('/batch', async (req, res) => {
     res.json({
       success: true,
       message: `Batch saved ${savedRecords.length} overload records`,
-      records: savedRecords
+      records: savedRecords,
     });
   } catch (error) {
-    console.error('[OverloadPayAndReason BATCH Error]:', error.message);
-    res.status(500).json({ success: false, error: 'Failed to batch save overload records.' });
+    console.error("[OverloadPayAndReason BATCH Error]:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to batch save overload records.",
+    });
   }
 });
 
 /**
  * POST /api/overload-pay-and-reason/sync
  */
-router.post('/sync', async (req, res) => {
+router.post("/sync", async (req, res) => {
   try {
     const { schoolId, schoolYear } = req.body || {};
-    const { syncAllOverloadPayAndReasons } = require('../../services/overloadSync');
+    const {
+      syncAllOverloadPayAndReasons,
+    } = require("../../services/overloadSync");
     const result = await syncAllOverloadPayAndReasons(schoolId, schoolYear);
     res.json(result);
   } catch (err) {
-    console.error('[OverloadPayAndReason Sync Error]:', err.message);
+    console.error("[OverloadPayAndReason Sync Error]:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 module.exports = router;
-

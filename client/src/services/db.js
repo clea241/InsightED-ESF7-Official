@@ -1,7 +1,7 @@
-import { openDB } from 'idb';
+import { openDB } from "idb";
 
-const DB_NAME = 'esf7_drafts_db';
-const STORE_NAME = 'drafts_store';
+const DB_NAME = "esf7_drafts_db";
+const STORE_NAME = "drafts_store";
 
 let cachedDbPromise = null;
 
@@ -15,8 +15,8 @@ function getDB() {
       },
       terminated() {
         cachedDbPromise = null;
-      }
-    }).catch(err => {
+      },
+    }).catch((err) => {
       cachedDbPromise = null;
       throw err;
     });
@@ -29,7 +29,10 @@ export async function getLocalDraft(key) {
     const db = await getDB();
     return await db.get(STORE_NAME, key);
   } catch (err) {
-    console.error('Failed to get local draft from IndexedDB, retrying connection:', err);
+    console.error(
+      "Failed to get local draft from IndexedDB, retrying connection:",
+      err,
+    );
     try {
       cachedDbPromise = null;
       const retryDb = await getDB();
@@ -46,7 +49,10 @@ export async function setLocalDraft(key, val) {
     await db.put(STORE_NAME, val, key);
     return true;
   } catch (err) {
-    console.error('Failed to set local draft in IndexedDB, retrying connection:', err);
+    console.error(
+      "Failed to set local draft in IndexedDB, retrying connection:",
+      err,
+    );
     try {
       cachedDbPromise = null;
       const retryDb = await getDB();
@@ -64,7 +70,10 @@ export async function deleteLocalDraft(key) {
     await db.delete(STORE_NAME, key);
     return true;
   } catch (err) {
-    console.error('Failed to delete local draft from IndexedDB, retrying connection:', err);
+    console.error(
+      "Failed to delete local draft from IndexedDB, retrying connection:",
+      err,
+    );
     try {
       cachedDbPromise = null;
       const retryDb = await getDB();
@@ -85,7 +94,7 @@ export async function clearAllLocalDatabases() {
       } catch (e) {}
       cachedDbPromise = null;
     }
-    if (typeof window !== 'undefined' && window.indexedDB) {
+    if (typeof window !== "undefined" && window.indexedDB) {
       if (indexedDB.databases) {
         try {
           const dbs = await indexedDB.databases();
@@ -101,19 +110,17 @@ export async function clearAllLocalDatabases() {
         indexedDB.deleteDatabase(DB_NAME);
       }
     }
-    if (typeof localStorage !== 'undefined') {
+    if (typeof localStorage !== "undefined") {
       localStorage.clear();
     }
-    if (typeof sessionStorage !== 'undefined') {
+    if (typeof sessionStorage !== "undefined") {
       sessionStorage.clear();
     }
     return true;
   } catch (err) {
-    console.error('Failed to clear local databases:', err);
-    if (typeof localStorage !== 'undefined') localStorage.clear();
-    if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
+    console.error("Failed to clear local databases:", err);
+    if (typeof localStorage !== "undefined") localStorage.clear();
+    if (typeof sessionStorage !== "undefined") sessionStorage.clear();
     return false;
   }
 }
-
-

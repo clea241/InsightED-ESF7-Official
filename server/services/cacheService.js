@@ -1,13 +1,13 @@
-const Redis = require('ioredis');
-const { parseRedisConfig } = require('../utils/redisConfig');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const Redis = require("ioredis");
+const { parseRedisConfig } = require("../utils/redisConfig");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 // In-memory fallback map in case Redis is momentarily reconnecting
 const memoryCache = new Map();
 const memoryExpiry = new Map();
 
-const CACHE_INVALIDATION_CHANNEL = 'esf7:cache_invalidation';
+const CACHE_INVALIDATION_CHANNEL = "esf7:cache_invalidation";
 
 let redisClient = null;
 let subClient = null;
@@ -19,7 +19,7 @@ function clearLocalMemoryKey(key) {
 }
 
 function clearLocalMemoryPattern(pattern) {
-  const cleanRegex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+  const cleanRegex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
   for (const key of memoryCache.keys()) {
     if (cleanRegex.test(key)) {
       memoryCache.delete(key);
@@ -43,7 +43,7 @@ function initRedis() {
       retryStrategy(times) {
         if (times > 3) return null;
         return Math.min(times * 500, 2000);
-      }
+      },
     };
 
     if (cfg.url) {
@@ -52,20 +52,20 @@ function initRedis() {
       redisClient = new Redis(redisOptions);
     }
 
-    redisClient.on('connect', () => {
+    redisClient.on("connect", () => {
       isRedisReady = true;
-      console.log('⚡ [CacheService] Connected to Redis Cache Engine.');
+      console.log("⚡ [CacheService] Connected to Redis Cache Engine.");
     });
 
-    redisClient.on('ready', () => {
+    redisClient.on("ready", () => {
       isRedisReady = true;
     });
 
-    redisClient.on('error', () => {
+    redisClient.on("error", () => {
       isRedisReady = false;
     });
 
-    redisClient.on('close', () => {
+    redisClient.on("close", () => {
       isRedisReady = false;
     });
 
@@ -75,26 +75,28 @@ function initRedis() {
 
     // Subscriber client for inter-worker cache invalidation broadcasts
     const subOptions = { ...redisOptions, maxRetriesPerRequest: null };
-    subClient = cfg.url ? new Redis(cfg.url, subOptions) : new Redis(subOptions);
+    subClient = cfg.url
+      ? new Redis(cfg.url, subOptions)
+      : new Redis(subOptions);
 
-    subClient.on('ready', () => {
+    subClient.on("ready", () => {
       subClient.subscribe(CACHE_INVALIDATION_CHANNEL).catch(() => {});
     });
 
-    subClient.on('message', (channel, message) => {
+    subClient.on("message", (channel, message) => {
       if (channel === CACHE_INVALIDATION_CHANNEL) {
         try {
           const data = JSON.parse(message);
-          if (data.action === 'del' && data.key) {
+          if (data.action === "del" && data.key) {
             clearLocalMemoryKey(data.key);
-          } else if (data.action === 'delPattern' && data.pattern) {
+          } else if (data.action === "delPattern" && data.pattern) {
             clearLocalMemoryPattern(data.pattern);
           }
         } catch {}
       }
     });
 
-    subClient.on('error', () => {});
+    subClient.on("error", () => {});
     subClient.connect().catch(() => {});
   } catch {
     isRedisReady = false;
@@ -143,14 +145,14 @@ const cacheService = {
 
     if (isRedisReady && redisClient) {
       try {
-        await redisClient.set(key, serialized, 'EX', ttlSeconds);
+        await redisClient.set(key, serialized, "EX", ttlSeconds);
       } catch {
         // Fallback to memoryCache
       }
     }
 
     memoryCache.set(key, value);
-    memoryExpiry.set(key, Date.now() + (ttlSeconds * 1000));
+    memoryExpiry.set(key, Date.now() + ttlSeconds * 1000);
   },
 
   /**
@@ -160,10 +162,12 @@ const cacheService = {
     if (isRedisReady && redisClient) {
       try {
         await redisClient.del(key);
-        redisClient.publish(
-          CACHE_INVALIDATION_CHANNEL,
-          JSON.stringify({ action: 'del', key })
-        ).catch(() => {});
+        redisClient
+          .publish(
+            CACHE_INVALIDATION_CHANNEL,
+            JSON.stringify({ action: "del", key }),
+          )
+          .catch(() => {});
       } catch {}
     }
     clearLocalMemoryKey(key);
@@ -176,19 +180,27 @@ const cacheService = {
   async delPattern(pattern) {
     if (isRedisReady && redisClient) {
       try {
-        let cursor = '0';
+        let cursor = "0";
         do {
-          const [nextCursor, keys] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+          const [nextCursor, keys] = await redisClient.scan(
+            cursor,
+            "MATCH",
+            pattern,
+            "COUNT",
+            100,
+          );
           cursor = nextCursor;
           if (keys && keys.length > 0) {
             await redisClient.del(...keys);
           }
-        } while (cursor !== '0');
+        } while (cursor !== "0");
 
-        redisClient.publish(
-          CACHE_INVALIDATION_CHANNEL,
-          JSON.stringify({ action: 'delPattern', pattern })
-        ).catch(() => {});
+        redisClient
+          .publish(
+            CACHE_INVALIDATION_CHANNEL,
+            JSON.stringify({ action: "delPattern", pattern }),
+          )
+          .catch(() => {});
       } catch {}
     }
 
@@ -198,7 +210,10 @@ const cacheService = {
   // Exported for testing / debugging
   _getMemoryCache: () => memoryCache,
   _getMemoryExpiry: () => memoryExpiry,
-  _clearLocalMemory: () => { memoryCache.clear(); memoryExpiry.clear(); }
+  _clearLocalMemory: () => {
+    memoryCache.clear();
+    memoryExpiry.clear();
+  },
 };
 
 module.exports = cacheService;

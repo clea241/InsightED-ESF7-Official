@@ -1,18 +1,20 @@
 /**
  * Truncate all tables in insighted_esf7 database and re-seed 199999 with ALL OFFERINGS (K-12)
  */
-const { Pool } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Pool } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const db = new Pool({
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insighted_esf7`,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+  connectionString:
+    process.env.DATABASE_URL ||
+    `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insighted_esf7`,
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
 async function main() {
   try {
-    console.log('🔄 Connected to insighted_esf7 database...');
+    console.log("🔄 Connected to insighted_esf7 database...");
 
     // 1. Get user table names in public schema (excluding static system reference tables)
     const res = await db.query(`
@@ -23,17 +25,22 @@ async function main() {
         AND table_name NOT IN ('salary_matrix', 'insighted_esf7_pilot');
     `);
 
-    const tableNames = res.rows.map(r => r.table_name);
-    console.log(`📋 Found ${tableNames.length} user testing tables to truncate:`, tableNames.join(', '));
+    const tableNames = res.rows.map((r) => r.table_name);
+    console.log(
+      `📋 Found ${tableNames.length} user testing tables to truncate:`,
+      tableNames.join(", "),
+    );
 
     if (tableNames.length > 0) {
-      const truncateQuery = `TRUNCATE TABLE ${tableNames.map(t => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE;`;
+      const truncateQuery = `TRUNCATE TABLE ${tableNames.map((t) => `"${t}"`).join(", ")} RESTART IDENTITY CASCADE;`;
       await db.query(truncateQuery);
-      console.log('✅ All tables successfully truncated.');
+      console.log("✅ All tables successfully truncated.");
     }
 
     // 2. Insert test school 199999 with ALL OFFERINGS (K-12)
-    console.log('🏫 Seeding Test School 199999 (K-12 Offerings) with 0 personnel...');
+    console.log(
+      "🏫 Seeding Test School 199999 (K-12 Offerings) with 0 personnel...",
+    );
     await db.query(`
       INSERT INTO schools (
         id, school_id, school_name, region, division, district, school_year, number_of_shifts, curricular_offering
@@ -49,7 +56,7 @@ async function main() {
         ARRAY['Kindergarten', 'Elementary', 'Junior High School', 'Senior High School', 'K-12', 'Kinder', 'Elementary', 'JHS', 'SHS']
       )
     `);
-    console.log('✅ School 199999 created.');
+    console.log("✅ School 199999 created.");
 
     // 3. Seed pilot personnel entries for 199999
     await db.query(`
@@ -72,14 +79,18 @@ async function main() {
         'GENERAL EDUCATION', '2026-99992'
       )
     `);
-    console.log('✅ Seeded 2 pilot teachers in insighted_esf7_pilot.');
+    console.log("✅ Seeded 2 pilot teachers in insighted_esf7_pilot.");
 
-    console.log('✅ Seeded 2 pilot teachers in insighted_esf7_pilot ONLY. Personnel table is 100% empty.');
+    console.log(
+      "✅ Seeded 2 pilot teachers in insighted_esf7_pilot ONLY. Personnel table is 100% empty.",
+    );
 
-    console.log('🎉 Database reset & 199999 K-12 pilot re-seeding completed successfully!');
+    console.log(
+      "🎉 Database reset & 199999 K-12 pilot re-seeding completed successfully!",
+    );
     process.exit(0);
   } catch (e) {
-    console.error('❌ Database truncate error:', e.message);
+    console.error("❌ Database truncate error:", e.message);
     process.exit(1);
   }
 }

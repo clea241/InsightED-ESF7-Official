@@ -1,7 +1,7 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testPersonnelFlow() {
-  console.log('Testing esf7_personnel_profile insertion & retrieval...');
+  console.log("Testing esf7_personnel_profile insertion & retrieval...");
 
   const insertQuery = `
     INSERT INTO esf7_personnel_profile (
@@ -15,23 +15,32 @@ async function testPersonnelFlow() {
     RETURNING *;
   `;
 
-  await db.query('DELETE FROM esf7_personnel_profile WHERE id = \'PER-108348-001\'');
+  await db.query(
+    "DELETE FROM esf7_personnel_profile WHERE id = 'PER-108348-001'",
+  );
   const res = await db.query(insertQuery);
-  console.log('✅ Successfully inserted sample personnel record:');
-  console.log('ID:', res.rows[0].id);
-  console.log('Name:', `${res.rows[0].salutation} ${res.rows[0].first_name} ${res.rows[0].last_name}`);
-  console.log('PRN:', res.rows[0].prn);
-  console.log('Raw Payload:', res.rows[0].raw_payload);
+  console.log("✅ Successfully inserted sample personnel record:");
+  console.log("ID:", res.rows[0].id);
+  console.log(
+    "Name:",
+    `${res.rows[0].salutation} ${res.rows[0].first_name} ${res.rows[0].last_name}`,
+  );
+  console.log("PRN:", res.rows[0].prn);
+  console.log("Raw Payload:", res.rows[0].raw_payload);
 
-  const fetchRes = await db.query('SELECT * FROM esf7_personnel_profile WHERE id = \'PER-108348-001\'');
-  console.log('✅ Successfully queried record. Count:', fetchRes.rows.length);
+  const fetchRes = await db.query(
+    "SELECT * FROM esf7_personnel_profile WHERE id = 'PER-108348-001'",
+  );
+  console.log("✅ Successfully queried record. Count:", fetchRes.rows.length);
 
-  await db.query('DELETE FROM esf7_personnel_profile WHERE id = \'PER-108348-001\'');
-  console.log('🧹 Cleaned up sample record.');
+  await db.query(
+    "DELETE FROM esf7_personnel_profile WHERE id = 'PER-108348-001'",
+  );
+  console.log("🧹 Cleaned up sample record.");
   process.exit(0);
 }
 
-testPersonnelFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testPersonnelFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

@@ -1,19 +1,20 @@
-const jwt = require('jsonwebtoken');
-require('dotenv').config();
-const { getJwtSecret } = require('./jwtSecret');
+const jwt = require("jsonwebtoken");
+require("dotenv").config();
+const { getJwtSecret } = require("./jwtSecret");
 
 function isDepEdSchoolId(val) {
   if (!val) return false;
-  const s = String(val).replace(/^SCH-/i, '').trim();
+  const s = String(val).replace(/^SCH-/i, "").trim();
   if (/^\d{5,7}$/.test(s)) return true;
-  if (/^900\d{3}$/.test(s) || /^800\d{3}$/.test(s) || /^199\d{3}$/.test(s)) return true;
-  if (s.startsWith('divtest-') || s.startsWith('pilot-')) return true;
+  if (/^900\d{3}$/.test(s) || /^800\d{3}$/.test(s) || /^199\d{3}$/.test(s))
+    return true;
+  if (s.startsWith("divtest-") || s.startsWith("pilot-")) return true;
   return false;
 }
 
 function cleanSchoolId(val) {
   if (!val) return null;
-  return String(val).replace(/^SCH-/i, '').trim();
+  return String(val).replace(/^SCH-/i, "").trim();
 }
 
 function getSchoolIdFromRequest(req) {
@@ -30,29 +31,40 @@ function getSchoolIdFromRequest(req) {
 
   // 2. Check explicit request body & nested payload
   if (req.body) {
-    const b = req.body.school_id || req.body.schoolId || req.body.schoolID ||
-              (req.body.school && (req.body.school.schoolId || req.body.school.school_id)) ||
-              (req.body.schoolHead && (req.body.schoolHead.school_id || req.body.schoolHead.schoolId)) ||
-              (req.body.payload && req.body.payload.schoolInfo && (req.body.payload.schoolInfo.schoolId || req.body.payload.schoolInfo.school_id));
+    const b =
+      req.body.school_id ||
+      req.body.schoolId ||
+      req.body.schoolID ||
+      (req.body.school &&
+        (req.body.school.schoolId || req.body.school.school_id)) ||
+      (req.body.schoolHead &&
+        (req.body.schoolHead.school_id || req.body.schoolHead.schoolId)) ||
+      (req.body.payload &&
+        req.body.payload.schoolInfo &&
+        (req.body.payload.schoolInfo.schoolId ||
+          req.body.payload.schoolInfo.school_id));
     if (isDepEdSchoolId(b)) return cleanSchoolId(b);
   }
 
   // 3. Check explicit header
-  if (req.headers && req.headers['x-school-id']) {
-    const h = req.headers['x-school-id'];
+  if (req.headers && req.headers["x-school-id"]) {
+    const h = req.headers["x-school-id"];
     if (isDepEdSchoolId(h)) return cleanSchoolId(h);
   }
 
   // 4. Check request params
   if (req.params) {
-    const p = req.params.school_id || req.params.schoolId || req.params.schoolID;
+    const p =
+      req.params.school_id || req.params.schoolId || req.params.schoolID;
     if (isDepEdSchoolId(p)) return cleanSchoolId(p);
   }
 
   // 5. Check JWT authorization token
-  const authHeader = req.headers ? (req.headers.authorization || req.headers.Authorization) : null;
+  const authHeader = req.headers
+    ? req.headers.authorization || req.headers.Authorization
+    : null;
   if (authHeader) {
-    const parts = authHeader.split(' ');
+    const parts = authHeader.split(" ");
     const token = parts.length === 2 ? parts[1] : authHeader;
     if (token) {
       try {
@@ -64,13 +76,17 @@ function getSchoolIdFromRequest(req) {
           decoded = null;
         }
         if (decoded) {
-          const directSchool = decoded.school_id || decoded.schoolId ||
-                               (decoded.user && (decoded.user.school_id || decoded.user.schoolId));
+          const directSchool =
+            decoded.school_id ||
+            decoded.schoolId ||
+            (decoded.user && (decoded.user.school_id || decoded.user.schoolId));
           if (isDepEdSchoolId(directSchool)) return cleanSchoolId(directSchool);
 
           if (decoded.uid) {
-            if (decoded.uid.startsWith('divtest-')) return cleanSchoolId(decoded.uid.replace('divtest-', ''));
-            if (decoded.uid.startsWith('pilot-')) return cleanSchoolId(decoded.uid.replace('pilot-', ''));
+            if (decoded.uid.startsWith("divtest-"))
+              return cleanSchoolId(decoded.uid.replace("divtest-", ""));
+            if (decoded.uid.startsWith("pilot-"))
+              return cleanSchoolId(decoded.uid.replace("pilot-", ""));
             if (isDepEdSchoolId(decoded.uid)) return cleanSchoolId(decoded.uid);
           }
         }
@@ -92,6 +108,5 @@ function getSchoolIdFromRequest(req) {
 }
 
 module.exports = {
-  getSchoolIdFromRequest
+  getSchoolIdFromRequest,
 };
-

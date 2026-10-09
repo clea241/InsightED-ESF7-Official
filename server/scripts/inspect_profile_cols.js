@@ -1,4 +1,4 @@
-const { stagingPool } = require('../db');
+const { stagingPool } = require("../db");
 
 async function inspectProfileCols() {
   const res = await stagingPool.query(`
@@ -7,7 +7,7 @@ async function inspectProfileCols() {
     WHERE table_name = 'esf7_school_profile' 
     ORDER BY ordinal_position;
   `);
-  console.log('Columns in esf7_school_profile:');
+  console.log("Columns in esf7_school_profile:");
   console.log(res.rows);
   process.exit(0);
 }

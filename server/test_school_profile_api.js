@@ -1,7 +1,7 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testSchoolProfileFlow() {
-  console.log('Testing esf7_school_profile insertion and querying...');
+  console.log("Testing esf7_school_profile insertion and querying...");
 
   await db.query(`DELETE FROM esf7_school_profile WHERE school_id = '108348'`);
 
@@ -16,24 +16,26 @@ async function testSchoolProfileFlow() {
     ) RETURNING *
   `);
 
-  console.log('✅ Created School Profile Record:');
+  console.log("✅ Created School Profile Record:");
   const row = res.rows[0];
-  console.log('ID:', row.id, '| School ID:', row.school_id);
-  console.log('Elem Programs:', row.has_elem_special_programs);
-  console.log('JHS Programs Flag:', row.has_jhs_special_programs);
-  console.log('JHS Programs JSONB:', row.jhs_special_programs);
-  console.log('SHS Model:', row.shs_curriculum_model);
+  console.log("ID:", row.id, "| School ID:", row.school_id);
+  console.log("Elem Programs:", row.has_elem_special_programs);
+  console.log("JHS Programs Flag:", row.has_jhs_special_programs);
+  console.log("JHS Programs JSONB:", row.jhs_special_programs);
+  console.log("SHS Model:", row.shs_curriculum_model);
 
   // 2. Query
-  const checkRes = await db.query(`SELECT * FROM esf7_school_profile WHERE school_id = '108348'`);
-  console.log('✅ Retrieved School Profile Count:', checkRes.rows.length);
+  const checkRes = await db.query(
+    `SELECT * FROM esf7_school_profile WHERE school_id = '108348'`,
+  );
+  console.log("✅ Retrieved School Profile Count:", checkRes.rows.length);
 
   // Cleanup
   await db.query(`DELETE FROM esf7_school_profile WHERE school_id = '108348'`);
   process.exit(0);
 }
 
-testSchoolProfileFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testSchoolProfileFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

@@ -1,7 +1,7 @@
 // Request Validation Middleware using Zod
 // Validates req.body, req.query, and req.params before controller execution.
 
-const { z } = require('zod');
+const { z } = require("zod");
 
 /**
  * Higher-order middleware to validate incoming request data against a Zod schema.
@@ -26,11 +26,11 @@ function validateRequest(schemas = {}) {
       if (err instanceof z.ZodError) {
         const issues = err.issues || err.errors || [];
         return res.status(400).json({
-          error: 'Validation error: invalid request payload',
+          error: "Validation error: invalid request payload",
           details: issues.map((e) => ({
-            field: Array.isArray(e.path) ? e.path.join('.') : '',
-            message: e.message
-          }))
+            field: Array.isArray(e.path) ? e.path.join(".") : "",
+            message: e.message,
+          })),
         });
       }
       next(err);
@@ -40,5 +40,5 @@ function validateRequest(schemas = {}) {
 
 module.exports = {
   validateRequest,
-  z
+  z,
 };

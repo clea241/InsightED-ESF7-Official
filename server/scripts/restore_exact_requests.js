@@ -1,7 +1,9 @@
-const { prodPool } = require('../db');
+const { prodPool } = require("../db");
 
 async function restoreActualSchoolIdRequests() {
-  console.log('=== Normalizing and Expanding All Requests to Real 1-to-1 School IDs ===');
+  console.log(
+    "=== Normalizing and Expanding All Requests to Real 1-to-1 School IDs ===",
+  );
 
   // 1. Fetch all draft personnel who are Clustered or have assignedSchools
   const draftPersonnelRes = await prodPool.query(`
@@ -20,21 +22,28 @@ async function restoreActualSchoolIdRequests() {
     )
   `);
 
-  console.log(`Found ${draftPersonnelRes.rows.length} relevant teacher entries in drafts`);
+  console.log(
+    `Found ${draftPersonnelRes.rows.length} relevant teacher entries in drafts`,
+  );
 
   const rowsToInsert = [];
   const seenPair = new Set();
 
   for (const r of draftPersonnelRes.rows) {
-    const sId = String(r.school_id || '').replace(/^SCH-/i, '').trim();
+    const sId = String(r.school_id || "")
+      .replace(/^SCH-/i, "")
+      .trim();
     if (!/^\d{5,7}$/.test(sId)) continue; // Must be valid DepEd ID
 
     const p = r.p || {};
-    const sy = r.school_year || '2026-2027';
-    const depStatus = String(p.deploymentStatus || p.deployment_status || '').toUpperCase();
-    const isClustered = depStatus === 'CLUSTERED' || p.isClustered === true;
-    const isReassigned = depStatus === 'REASSIGNED' || p.isReassigned === true;
-    const pName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.name || 'TEACHER';
+    const sy = r.school_year || "2026-2027";
+    const depStatus = String(
+      p.deploymentStatus || p.deployment_status || "",
+    ).toUpperCase();
+    const isClustered = depStatus === "CLUSTERED" || p.isClustered === true;
+    const isReassigned = depStatus === "REASSIGNED" || p.isReassigned === true;
+    const pName =
+      `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.name || "TEACHER";
     const pId = p.id || p.prn;
 
     // Collect all assigned schools
@@ -44,20 +53,20 @@ async function restoreActualSchoolIdRequests() {
       p.otherSchoolId,
       p.borrowingSchoolId,
       p.motherSchoolId,
-      p.targetSchoolId
+      p.targetSchoolId,
     ].filter(Boolean);
 
     // Clean and deduplicate target school IDs
     const otherSchoolIds = new Set();
     for (const raw of rawAssigned) {
-      const clean = String(raw).replace(/^SCH-/i, '').trim();
+      const clean = String(raw).replace(/^SCH-/i, "").trim();
       if (/^\d{5,7}$/.test(clean) && clean !== sId) {
         otherSchoolIds.add(clean);
       }
     }
 
     // Determine request type
-    const reqType = isReassigned ? 'reassigned_personnel' : 'clustered_teacher';
+    const reqType = isReassigned ? "reassigned_personnel" : "clustered_teacher";
 
     // Create 1 distinct row per target school ID
     for (const targetSchoolId of otherSchoolIds) {
@@ -70,25 +79,27 @@ async function restoreActualSchoolIdRequests() {
           school_year: sy,
           request_type: reqType,
           personnel_name: pName,
-          status: p.requestStatus || 'pending',
-          remarks: `${reqType === 'clustered_teacher' ? 'Clustered' : 'Reassigned'} teacher assignment: School ${sId} ↔ School ${targetSchoolId}`,
+          status: p.requestStatus || "pending",
+          remarks: `${reqType === "clustered_teacher" ? "Clustered" : "Reassigned"} teacher assignment: School ${sId} ↔ School ${targetSchoolId}`,
           raw_payload: {
             personnelId: pId,
             personnelName: pName,
             requesterSchoolId: sId,
             targetSchoolId: targetSchoolId,
             requestType: reqType,
-            deploymentStatus: depStatus
-          }
+            deploymentStatus: depStatus,
+          },
         });
       }
     }
   }
 
-  console.log(`Generated ${rowsToInsert.length} exact 1-to-1 request rows with actual numeric DepEd School IDs.`);
+  console.log(
+    `Generated ${rowsToInsert.length} exact 1-to-1 request rows with actual numeric DepEd School IDs.`,
+  );
 
   // Clear table and re-populate cleanly
-  await prodPool.query('TRUNCATE TABLE esf7_requests CASCADE;');
+  await prodPool.query("TRUNCATE TABLE esf7_requests CASCADE;");
 
   // Batch insert in chunks of 200
   const CHUNK_SIZE = 200;
@@ -104,7 +115,9 @@ async function restoreActualSchoolIdRequests() {
       const c = chunk[cIdx];
       const reqId = `REQ-${c.requester_school_id}-${c.target_school_id}-${i + cIdx + 1}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      valuePlaceholders.push(`($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NULL, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NOW(), NOW())`);
+      valuePlaceholders.push(
+        `($${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NULL, $${pIdx++}, $${pIdx++}, $${pIdx++}, $${pIdx++}, NOW(), NOW())`,
+      );
       values.push(
         reqId,
         c.requester_school_id,
@@ -114,7 +127,7 @@ async function restoreActualSchoolIdRequests() {
         c.personnel_name,
         c.status,
         c.remarks,
-        JSON.stringify(c.raw_payload)
+        JSON.stringify(c.raw_payload),
       );
     }
 
@@ -124,7 +137,7 @@ async function restoreActualSchoolIdRequests() {
         request_type, personnel_id, personnel_name, status, remarks, raw_payload,
         created_at, updated_at
       )
-      VALUES ${valuePlaceholders.join(',\n')}
+      VALUES ${valuePlaceholders.join(",\n")}
       ON CONFLICT (id) DO NOTHING
     `;
 
@@ -150,7 +163,9 @@ async function restoreActualSchoolIdRequests() {
     FROM esf7_requests 
     WHERE requester_school_id !~ '^\\d{5,7}$' OR target_school_id !~ '^\\d{5,7}$'
   `);
-  console.log(`Non-numeric School ID count: ${badRows.rows.length} (Expected: 0)`);
+  console.log(
+    `Non-numeric School ID count: ${badRows.rows.length} (Expected: 0)`,
+  );
 
   await prodPool.end();
 }

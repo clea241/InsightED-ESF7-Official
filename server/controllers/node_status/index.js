@@ -1,23 +1,23 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
-const { getSchoolIdFromRequest } = require('../../utils/auth');
+const db = require("../../db");
+const { getSchoolIdFromRequest } = require("../../utils/auth");
 
 const VALID_SCHOOL_NODES = [
-  'node_01_school',
-  'node_02_roster',
-  'node_05_requests',
-  'node_06_classes',
-  'node_10_overload',
-  'node_11_validation'
+  "node_01_school",
+  "node_02_roster",
+  "node_05_requests",
+  "node_06_classes",
+  "node_10_overload",
+  "node_11_validation",
 ];
 
 const VALID_PERSONNEL_NODES = [
-  'node_03_room_qr',
-  'node_04_profile',
-  'node_07_designation',
-  'node_08_workload',
-  'node_09_allowances'
+  "node_03_room_qr",
+  "node_04_profile",
+  "node_07_designation",
+  "node_08_workload",
+  "node_09_allowances",
 ];
 
 /**
@@ -25,7 +25,8 @@ const VALID_PERSONNEL_NODES = [
  */
 async function updateSchoolPersonnelRollup(schoolId, schoolYear) {
   try {
-    const statsRes = await db.query(`
+    const statsRes = await db.query(
+      `
       SELECT 
         COUNT(*)::int AS total_personnel,
         COUNT(CASE WHEN (node_04_profile->>'status') = 'COMPLETED' THEN 1 END)::int AS profiling_completed,
@@ -33,28 +34,44 @@ async function updateSchoolPersonnelRollup(schoolId, schoolYear) {
         COUNT(CASE WHEN is_complete = true THEN 1 END)::int AS total_fully_completed
       FROM esf7_personnel_node_status
       WHERE school_id = $1 AND school_year = $2
-    `, [schoolId, schoolYear]);
+    `,
+      [schoolId, schoolYear],
+    );
 
-    const stats = statsRes.rows[0] || { total_personnel: 0, profiling_completed: 0, workload_completed: 0, total_fully_completed: 0 };
-    const allReady = stats.total_personnel > 0 && stats.profiling_completed === stats.total_personnel && stats.workload_completed === stats.total_personnel;
+    const stats = statsRes.rows[0] || {
+      total_personnel: 0,
+      profiling_completed: 0,
+      workload_completed: 0,
+      total_fully_completed: 0,
+    };
+    const allReady =
+      stats.total_personnel > 0 &&
+      stats.profiling_completed === stats.total_personnel &&
+      stats.workload_completed === stats.total_personnel;
 
     const summaryJson = {
       total_personnel: stats.total_personnel,
       profiling_completed: stats.profiling_completed,
       workload_completed: stats.workload_completed,
       all_personnel_ready: allReady,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
 
-    await db.query(`
+    await db.query(
+      `
       UPDATE esf7_school_node_status
       SET personnel_summary = $3, updated_at = NOW()
       WHERE school_id = $1 AND school_year = $2
-    `, [schoolId, schoolYear, JSON.stringify(summaryJson)]);
+    `,
+      [schoolId, schoolYear, JSON.stringify(summaryJson)],
+    );
 
     return summaryJson;
   } catch (err) {
-    console.error('[NodeStatus] Error updating school personnel rollup:', err.message);
+    console.error(
+      "[NodeStatus] Error updating school personnel rollup:",
+      err.message,
+    );
     return null;
   }
 }
@@ -62,29 +79,37 @@ async function updateSchoolPersonnelRollup(schoolId, schoolYear) {
 // -----------------------------------------------------------------------------
 // 1. GET /api/node-status/school - Fetch school node status & boolean progress
 // -----------------------------------------------------------------------------
-router.get('/school', async (req, res) => {
+router.get("/school", async (req, res) => {
   try {
-    const rawSchoolId = req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '199999';
-    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
-    const schoolYear = req.query.schoolYear || 'SY 26-27';
+    const rawSchoolId =
+      req.query.schoolId ||
+      req.query.school_id ||
+      getSchoolIdFromRequest(req) ||
+      "199999";
+    const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
+    const schoolYear = req.query.schoolYear || "SY 26-27";
 
     // Query physical table and boolean view
-    const statusRes = await db.query(
-      'SELECT * FROM esf7_school_node_status WHERE school_id = $1 AND school_year = $2',
-      [schoolId, schoolYear]
-    ).catch(() => ({ rows: [] }));
+    const statusRes = await db
+      .query(
+        "SELECT * FROM esf7_school_node_status WHERE school_id = $1 AND school_year = $2",
+        [schoolId, schoolYear],
+      )
+      .catch(() => ({ rows: [] }));
 
-    const viewRes = await db.query(
-      'SELECT * FROM vw_esf7_school_node_progress WHERE school_id = $1 AND school_year = $2',
-      [schoolId, schoolYear]
-    ).catch(() => ({ rows: [] }));
+    const viewRes = await db
+      .query(
+        "SELECT * FROM vw_esf7_school_node_progress WHERE school_id = $1 AND school_year = $2",
+        [schoolId, schoolYear],
+      )
+      .catch(() => ({ rows: [] }));
 
     if (statusRes.rows.length === 0) {
       return res.json({
         exists: false,
         schoolId,
         schoolYear,
-        overallStatus: 'NOT_STARTED',
+        overallStatus: "NOT_STARTED",
         overallPercentage: 0,
         nodes: {},
         booleans: {
@@ -95,9 +120,14 @@ router.get('/school', async (req, res) => {
           isNode10OverloadCompleted: false,
           isNode11ValidationCompleted: false,
           isAllPersonnelCompleted: false,
-          isAllNodesCompleted: false
+          isAllNodesCompleted: false,
         },
-        personnelSummary: { total_personnel: 0, profiling_completed: 0, workload_completed: 0, all_personnel_ready: false }
+        personnelSummary: {
+          total_personnel: 0,
+          profiling_completed: 0,
+          workload_completed: 0,
+          all_personnel_ready: false,
+        },
       });
     }
 
@@ -120,23 +150,26 @@ router.get('/school', async (req, res) => {
         node_05_requests: row.node_05_requests,
         node_06_classes: row.node_06_classes,
         node_10_overload: row.node_10_overload,
-        node_11_validation: row.node_11_validation
+        node_11_validation: row.node_11_validation,
       },
       booleans: {
         isNode01SchoolCompleted: viewRow.is_node_01_school_completed || false,
         isNode02RosterCompleted: viewRow.is_node_02_roster_completed || false,
-        isNode05RequestsCompleted: viewRow.is_node_05_requests_completed || false,
+        isNode05RequestsCompleted:
+          viewRow.is_node_05_requests_completed || false,
         isNode06ClassesCompleted: viewRow.is_node_06_classes_completed || false,
-        isNode10OverloadCompleted: viewRow.is_node_10_overload_completed || false,
-        isNode11ValidationCompleted: viewRow.is_node_11_validation_completed || false,
+        isNode10OverloadCompleted:
+          viewRow.is_node_10_overload_completed || false,
+        isNode11ValidationCompleted:
+          viewRow.is_node_11_validation_completed || false,
         isAllPersonnelCompleted: viewRow.is_all_personnel_completed || false,
-        isAllNodesCompleted: viewRow.is_all_nodes_completed || false
+        isAllNodesCompleted: viewRow.is_all_nodes_completed || false,
       },
       personnelSummary: row.personnel_summary,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
     });
   } catch (err) {
-    console.error('[NodeStatus] Error in GET /school:', err.message);
+    console.error("[NodeStatus] Error in GET /school:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -144,22 +177,34 @@ router.get('/school', async (req, res) => {
 // -----------------------------------------------------------------------------
 // 2. PUT /api/node-status/school/:nodeId - Upsert school node snapshot
 // -----------------------------------------------------------------------------
-router.put('/school/:nodeId', async (req, res) => {
+router.put("/school/:nodeId", async (req, res) => {
   try {
     const { nodeId } = req.params;
     if (!VALID_SCHOOL_NODES.includes(nodeId)) {
-      return res.status(400).json({ error: `Invalid school nodeId. Must be one of: ${VALID_SCHOOL_NODES.join(', ')}` });
+      return res.status(400).json({
+        error: `Invalid school nodeId. Must be one of: ${VALID_SCHOOL_NODES.join(", ")}`,
+      });
     }
 
-    const { schoolId: bodySchoolId, schoolYear = 'SY 26-27', payload = {}, overallStatus, overallPercentage } = req.body;
-    const rawSchoolId = bodySchoolId || req.query.schoolId || getSchoolIdFromRequest(req) || '199999';
-    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
+    const {
+      schoolId: bodySchoolId,
+      schoolYear = "SY 26-27",
+      payload = {},
+      overallStatus,
+      overallPercentage,
+    } = req.body;
+    const rawSchoolId =
+      bodySchoolId ||
+      req.query.schoolId ||
+      getSchoolIdFromRequest(req) ||
+      "199999";
+    const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
 
     // Ensure status is marked inside JSON if not present
     const nodeData = {
-      status: payload.status || 'COMPLETED',
+      status: payload.status || "COMPLETED",
       completed_at: payload.completed_at || new Date().toISOString(),
-      ...payload
+      ...payload,
     };
 
     const query = `
@@ -183,7 +228,7 @@ router.put('/school/:nodeId', async (req, res) => {
       schoolYear,
       JSON.stringify(nodeData),
       overallStatus || null,
-      overallPercentage !== undefined ? overallPercentage : null
+      overallPercentage !== undefined ? overallPercentage : null,
     ]);
 
     res.json({
@@ -191,7 +236,7 @@ router.put('/school/:nodeId', async (req, res) => {
       nodeId,
       schoolId,
       schoolYear,
-      data: result.rows[0]
+      data: result.rows[0],
     });
   } catch (err) {
     console.error(`[NodeStatus] Error updating school node:`, err.message);
@@ -202,13 +247,18 @@ router.put('/school/:nodeId', async (req, res) => {
 // -----------------------------------------------------------------------------
 // 3. GET /api/node-status/personnel - Fetch all personnel node statuses for a school
 // -----------------------------------------------------------------------------
-router.get('/personnel', async (req, res) => {
+router.get("/personnel", async (req, res) => {
   try {
-    const rawSchoolId = req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '199999';
-    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
-    const schoolYear = req.query.schoolYear || 'SY 26-27';
+    const rawSchoolId =
+      req.query.schoolId ||
+      req.query.school_id ||
+      getSchoolIdFromRequest(req) ||
+      "199999";
+    const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
+    const schoolYear = req.query.schoolYear || "SY 26-27";
 
-    const result = await db.query(`
+    const result = await db.query(
+      `
       SELECT 
         p.*,
         v.is_room_qr_completed,
@@ -224,17 +274,19 @@ router.get('/personnel', async (req, res) => {
         AND p.personnel_id = v.personnel_id
       WHERE p.school_id = $1 AND p.school_year = $2
       ORDER BY p.personnel_name ASC
-    `, [schoolId, schoolYear]);
+    `,
+      [schoolId, schoolYear],
+    );
 
     res.json({
       success: true,
       schoolId,
       schoolYear,
       count: result.rows.length,
-      data: result.rows
+      data: result.rows,
     });
   } catch (err) {
-    console.error('[NodeStatus] Error in GET /personnel:', err.message);
+    console.error("[NodeStatus] Error in GET /personnel:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -242,31 +294,37 @@ router.get('/personnel', async (req, res) => {
 // -----------------------------------------------------------------------------
 // 4. PUT /api/node-status/personnel/:personnelId/:nodeId - Upsert teacher node snapshot
 // -----------------------------------------------------------------------------
-router.put('/personnel/:personnelId/:nodeId', async (req, res) => {
+router.put("/personnel/:personnelId/:nodeId", async (req, res) => {
   try {
     const { personnelId, nodeId } = req.params;
     if (!VALID_PERSONNEL_NODES.includes(nodeId)) {
-      return res.status(400).json({ error: `Invalid personnel nodeId. Must be one of: ${VALID_PERSONNEL_NODES.join(', ')}` });
+      return res.status(400).json({
+        error: `Invalid personnel nodeId. Must be one of: ${VALID_PERSONNEL_NODES.join(", ")}`,
+      });
     }
 
-    const { 
-      schoolId: bodySchoolId, 
-      schoolYear = 'SY 26-27', 
-      personnelName = 'TEACHER', 
-      positionTitle = '', 
-      category = 'TEACHING', 
-      isSchoolHead = false, 
+    const {
+      schoolId: bodySchoolId,
+      schoolYear = "SY 26-27",
+      personnelName = "TEACHER",
+      positionTitle = "",
+      category = "TEACHING",
+      isSchoolHead = false,
       isComplete = false,
-      payload = {} 
+      payload = {},
     } = req.body;
 
-    const rawSchoolId = bodySchoolId || req.query.schoolId || getSchoolIdFromRequest(req) || '199999';
-    const schoolId = String(rawSchoolId).replace(/^SCH-/i, '').trim();
+    const rawSchoolId =
+      bodySchoolId ||
+      req.query.schoolId ||
+      getSchoolIdFromRequest(req) ||
+      "199999";
+    const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
 
     const nodeData = {
-      status: payload.status || 'COMPLETED',
+      status: payload.status || "COMPLETED",
       completed_at: payload.completed_at || new Date().toISOString(),
-      ...payload
+      ...payload,
     };
 
     const query = `
@@ -297,7 +355,7 @@ router.put('/personnel/:personnelId/:nodeId', async (req, res) => {
       category,
       Boolean(isSchoolHead),
       Boolean(isComplete),
-      JSON.stringify(nodeData)
+      JSON.stringify(nodeData),
     ]);
 
     // Recalculate school summary rollup in background
@@ -309,7 +367,7 @@ router.put('/personnel/:personnelId/:nodeId', async (req, res) => {
       nodeId,
       schoolId,
       schoolYear,
-      data: result.rows[0]
+      data: result.rows[0],
     });
   } catch (err) {
     console.error(`[NodeStatus] Error updating personnel node:`, err.message);

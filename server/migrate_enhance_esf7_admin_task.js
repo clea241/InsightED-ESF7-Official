@@ -1,11 +1,12 @@
-const { Client } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Client } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const sslConfig = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+const sslConfig =
+  process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;
 
 async function migrateEnhanceAdminTask() {
-  const targetDbName = 'insighted_esf7';
+  const targetDbName = "insighted_esf7";
   console.log(`[Migration] Connecting to '${targetDbName}'...`);
 
   const client = new Client({
@@ -14,14 +15,16 @@ async function migrateEnhanceAdminTask() {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: targetDbName,
-    ssl: sslConfig
+    ssl: sslConfig,
   });
 
   await client.connect();
 
   try {
-    console.log("[Migration] Enhancing 'esf7_admin_task' table for Gantt chart & timetable integration...");
-    
+    console.log(
+      "[Migration] Enhancing 'esf7_admin_task' table for Gantt chart & timetable integration...",
+    );
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS esf7_admin_task (
           id VARCHAR(50) PRIMARY KEY,
@@ -78,16 +81,19 @@ async function migrateEnhanceAdminTask() {
       ORDER BY ordinal_position;
     `);
 
-    console.log('\n--- Verified esf7_admin_task Columns in insighted_esf7 ---');
-    checkRes.rows.forEach(r => console.log(`• ${r.column_name} (${r.data_type})`));
-    console.log('-----------------------------------------------------------\n');
-
+    console.log("\n--- Verified esf7_admin_task Columns in insighted_esf7 ---");
+    checkRes.rows.forEach((r) =>
+      console.log(`• ${r.column_name} (${r.data_type})`),
+    );
+    console.log(
+      "-----------------------------------------------------------\n",
+    );
   } finally {
     await client.end();
   }
 }
 
-migrateEnhanceAdminTask().catch(err => {
-  console.error('[Migration Error]:', err);
+migrateEnhanceAdminTask().catch((err) => {
+  console.error("[Migration Error]:", err);
   process.exit(1);
 });

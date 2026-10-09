@@ -1,30 +1,31 @@
 /**
  * find_section_count_drops.js
- * 
+ *
  * Read-only audit script to identify schools whose organized class section count
  * dropped sharply between backup snapshots and live database drafts, or exhibit
  * anomalous section-to-personnel ratios (e.g., large faculty with 0-2 sections).
- * 
+ *
  * Usage:
  *   node server/scripts/find_section_count_drops.js [--dump=/path/to/dump] [--threshold=5]
  */
 
-const fs = require('fs');
-const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const fs = require("fs");
+const path = require("path");
+const { spawn, spawnSync } = require("child_process");
 
-const pyScript = path.join(__dirname, 'scan_dump_drops.py');
+const pyScript = path.join(__dirname, "scan_dump_drops.py");
 if (fs.existsSync(pyScript)) {
-  const result = spawnSync('python3', [pyScript, ...process.argv.slice(2)], {
-    stdio: 'inherit',
-    env: process.env
+  const result = spawnSync("python3", [pyScript, ...process.argv.slice(2)], {
+    stdio: "inherit",
+    env: process.env,
   });
   process.exit(result.status || 0);
 }
 
-const { prodPool, getPool } = require('../db');
+const { prodPool, getPool } = require("../db");
 
-const DEFAULT_BACKUP_DUMP = '/mnt/esf7_backups/20261008_snapshot/db/insighted_esf7.dump';
+const DEFAULT_BACKUP_DUMP =
+  "/mnt/esf7_backups/20261008_snapshot/db/insighted_esf7.dump";
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -32,54 +33,70 @@ let dumpPath = DEFAULT_BACKUP_DUMP;
 let dropThreshold = 5;
 
 for (const arg of args) {
-  if (arg.startsWith('--dump=')) dumpPath = arg.split('=')[1];
-  if (arg.startsWith('--threshold=')) dropThreshold = parseInt(arg.split('=')[1], 10) || 5;
+  if (arg.startsWith("--dump=")) dumpPath = arg.split("=")[1];
+  if (arg.startsWith("--threshold="))
+    dropThreshold = parseInt(arg.split("=")[1], 10) || 5;
 }
 
 // Helper: Extract section counts per school from a PostgreSQL custom dump
 async function extractSectionCountsFromDump(dumpFile) {
   if (!fs.existsSync(dumpFile)) {
-    console.warn(`[Audit] Backup dump not found at ${dumpFile}. Skipping backup diff analysis.`);
+    console.warn(
+      `[Audit] Backup dump not found at ${dumpFile}. Skipping backup diff analysis.`,
+    );
     return null;
   }
 
-  const readline = require('readline');
-  const pgRestoreBin = fs.existsSync('/usr/lib/postgresql/17/bin/pg_restore')
-    ? '/usr/lib/postgresql/17/bin/pg_restore'
-    : 'pg_restore';
+  const readline = require("readline");
+  const pgRestoreBin = fs.existsSync("/usr/lib/postgresql/17/bin/pg_restore")
+    ? "/usr/lib/postgresql/17/bin/pg_restore"
+    : "pg_restore";
 
-  console.log(`[Audit] Scanning backup dump with ${pgRestoreBin}: ${dumpFile}...`);
+  console.log(
+    `[Audit] Scanning backup dump with ${pgRestoreBin}: ${dumpFile}...`,
+  );
   return new Promise((resolve) => {
     const dumpMap = new Map();
-    const proc = spawn(pgRestoreBin, ['-f', '-', '-a', '-t', 'school_drafts', dumpFile]);
-    const rl = readline.createInterface({ input: proc.stdout, crlfDelay: Infinity });
+    const proc = spawn(pgRestoreBin, [
+      "-f",
+      "-",
+      "-a",
+      "-t",
+      "school_drafts",
+      dumpFile,
+    ]);
+    const rl = readline.createInterface({
+      input: proc.stdout,
+      crlfDelay: Infinity,
+    });
 
-    rl.on('line', (line) => {
-      if (!line || line.startsWith('\\.')) return;
-      const tab1 = line.indexOf('\t');
+    rl.on("line", (line) => {
+      if (!line || line.startsWith("\\.")) return;
+      const tab1 = line.indexOf("\t");
       if (tab1 === -1) return;
-      const tab2 = line.indexOf('\t', tab1 + 1);
+      const tab2 = line.indexOf("\t", tab1 + 1);
       if (tab2 === -1) return;
-      const tab3 = line.indexOf('\t', tab2 + 1);
+      const tab3 = line.indexOf("\t", tab2 + 1);
 
       const schoolId = line.substring(0, tab1);
       const schoolYear = line.substring(tab1 + 1, tab2);
-      const jsonText = tab3 !== -1 ? line.substring(tab2 + 1, tab3) : line.substring(tab2 + 1);
-      const updatedAt = tab3 !== -1 ? line.substring(tab3 + 1) : 'N/A';
+      const jsonText =
+        tab3 !== -1 ? line.substring(tab2 + 1, tab3) : line.substring(tab2 + 1);
+      const updatedAt = tab3 !== -1 ? line.substring(tab3 + 1) : "N/A";
 
       // Memory-efficient extraction of classSections count without parsing full 2MB+ json blobs
       let sectionCount = 0;
       let personnelCount = 0;
       const secIdx = jsonText.indexOf('"classSections"');
       if (secIdx !== -1) {
-        const startBracket = jsonText.indexOf('[', secIdx);
+        const startBracket = jsonText.indexOf("[", secIdx);
         if (startBracket !== -1) {
           // Find rough end or count section occurrences
-          const endBracket = jsonText.indexOf(']', startBracket);
+          const endBracket = jsonText.indexOf("]", startBracket);
           if (endBracket !== -1) {
             const secSlice = jsonText.substring(startBracket, endBracket + 1);
             try {
-              const parsedSec = JSON.parse(secSlice.replace(/\\\\/g, '\\'));
+              const parsedSec = JSON.parse(secSlice.replace(/\\\\/g, "\\"));
               sectionCount = Array.isArray(parsedSec) ? parsedSec.length : 0;
             } catch (e) {
               // Regex fallback
@@ -92,9 +109,9 @@ async function extractSectionCountsFromDump(dumpFile) {
 
       const perIdx = jsonText.indexOf('"personnel"');
       if (perIdx !== -1) {
-        const startP = jsonText.indexOf('[', perIdx);
+        const startP = jsonText.indexOf("[", perIdx);
         if (startP !== -1) {
-          const endP = jsonText.indexOf(']', startP);
+          const endP = jsonText.indexOf("]", startP);
           if (endP !== -1) {
             const perSlice = jsonText.substring(startP, endP + 1);
             const matches = perSlice.match(/"id"\s*:/g);
@@ -108,16 +125,18 @@ async function extractSectionCountsFromDump(dumpFile) {
         schoolYear,
         sectionCount,
         personnelCount,
-        updatedAt
+        updatedAt,
       });
     });
 
-    rl.on('close', () => {
-      console.log(`[Audit] Indexed ${dumpMap.size} school drafts from backup dump.`);
+    rl.on("close", () => {
+      console.log(
+        `[Audit] Indexed ${dumpMap.size} school drafts from backup dump.`,
+      );
       resolve(dumpMap);
     });
 
-    proc.on('error', (err) => {
+    proc.on("error", (err) => {
       console.warn(`[Audit] pg_restore execution note: ${err.message}.`);
       resolve(null);
     });
@@ -126,13 +145,17 @@ async function extractSectionCountsFromDump(dumpFile) {
 
 async function runAudit() {
   const pool = prodPool || getPool();
-  console.log('\n========================================================================');
-  console.log('      READ-ONLY AUDIT: ORGANIZED CLASS SECTION COUNT DROPS');
-  console.log('========================================================================\n');
+  console.log(
+    "\n========================================================================",
+  );
+  console.log("      READ-ONLY AUDIT: ORGANIZED CLASS SECTION COUNT DROPS");
+  console.log(
+    "========================================================================\n",
+  );
 
   try {
     // 1. Fetch live school drafts
-    console.log('[Audit] Querying live database school_drafts table...');
+    console.log("[Audit] Querying live database school_drafts table...");
     const liveRes = await pool.query(`
       SELECT 
         school_id, 
@@ -145,7 +168,9 @@ async function runAudit() {
       ORDER BY live_sections_count ASC, live_personnel_count DESC
     `);
 
-    console.log(`[Audit] Retrieved ${liveRes.rows.length} active school drafts in database.\n`);
+    console.log(
+      `[Audit] Retrieved ${liveRes.rows.length} active school drafts in database.\n`,
+    );
 
     // 2. Extract backup counts if dump exists
     const dumpMap = await extractSectionCountsFromDump(dumpPath);
@@ -174,7 +199,7 @@ async function runAudit() {
             personnelCount: livePer,
             liveUpdatedAt: row.updated_at,
             backupUpdatedAt: backup.updatedAt,
-            type: 'BACKUP_DIFF_DROP'
+            type: "BACKUP_DIFF_DROP",
           });
         }
       } else {
@@ -187,7 +212,7 @@ async function runAudit() {
             liveSections: liveSec,
             personnelCount: livePer,
             liveUpdatedAt: row.updated_at,
-            type: 'ANOMALOUS_LOW_SECTIONS'
+            type: "ANOMALOUS_LOW_SECTIONS",
           });
         }
       }
@@ -195,38 +220,58 @@ async function runAudit() {
 
     // 4. Output Results
     if (droppedSchools.length > 0) {
-      console.log(`🚨 FOUND ${droppedSchools.length} SCHOOL(S) WITH SHARP SECTION COUNT DROPS:`);
-      console.log('------------------------------------------------------------------------');
-      console.table(droppedSchools.map(s => ({
-        'School ID': s.schoolId,
-        'School Name': s.schoolName.substring(0, 30),
-        'SY': s.schoolYear,
-        'Backup Sec': s.backupSections,
-        'Live Sec': s.liveSections,
-        'Drop': `-${s.dropCount}`,
-        'Personnel': s.personnelCount,
-        'Last Live Update': s.liveUpdatedAt ? new Date(s.liveUpdatedAt).toISOString() : 'N/A'
-      })));
+      console.log(
+        `🚨 FOUND ${droppedSchools.length} SCHOOL(S) WITH SHARP SECTION COUNT DROPS:`,
+      );
+      console.log(
+        "------------------------------------------------------------------------",
+      );
+      console.table(
+        droppedSchools.map((s) => ({
+          "School ID": s.schoolId,
+          "School Name": s.schoolName.substring(0, 30),
+          SY: s.schoolYear,
+          "Backup Sec": s.backupSections,
+          "Live Sec": s.liveSections,
+          Drop: `-${s.dropCount}`,
+          Personnel: s.personnelCount,
+          "Last Live Update": s.liveUpdatedAt
+            ? new Date(s.liveUpdatedAt).toISOString()
+            : "N/A",
+        })),
+      );
     } else {
-      console.log('✓ No schools detected with sharp section count drops against backup dump.');
+      console.log(
+        "✓ No schools detected with sharp section count drops against backup dump.",
+      );
     }
 
     if (anomalousSchools.length > 0) {
-      console.log(`\n⚠️  FOUND ${anomalousSchools.length} SCHOOL(S) WITH ANOMALOUSLY LOW SECTIONS RELATIVE TO PERSONNEL:`);
-      console.log('------------------------------------------------------------------------');
-      console.table(anomalousSchools.map(s => ({
-        'School ID': s.schoolId,
-        'School Name': s.schoolName.substring(0, 30),
-        'SY': s.schoolYear,
-        'Live Sec': s.liveSections,
-        'Personnel': s.personnelCount,
-        'Last Live Update': s.liveUpdatedAt ? new Date(s.liveUpdatedAt).toISOString() : 'N/A'
-      })));
+      console.log(
+        `\n⚠️  FOUND ${anomalousSchools.length} SCHOOL(S) WITH ANOMALOUSLY LOW SECTIONS RELATIVE TO PERSONNEL:`,
+      );
+      console.log(
+        "------------------------------------------------------------------------",
+      );
+      console.table(
+        anomalousSchools.map((s) => ({
+          "School ID": s.schoolId,
+          "School Name": s.schoolName.substring(0, 30),
+          SY: s.schoolYear,
+          "Live Sec": s.liveSections,
+          Personnel: s.personnelCount,
+          "Last Live Update": s.liveUpdatedAt
+            ? new Date(s.liveUpdatedAt).toISOString()
+            : "N/A",
+        })),
+      );
     }
 
-    console.log('\n[Audit] Completed successfully. (Read-only execution: 0 rows modified).\n');
+    console.log(
+      "\n[Audit] Completed successfully. (Read-only execution: 0 rows modified).\n",
+    );
   } catch (err) {
-    console.error('[Audit Error]:', err.message);
+    console.error("[Audit Error]:", err.message);
   } finally {
     process.exit(0);
   }

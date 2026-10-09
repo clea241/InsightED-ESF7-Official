@@ -1,8 +1,8 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
-const redisQueue = require('../../services/redisQueue');
-const queueWorker = require('../../queue_worker');
+const db = require("../../db");
+const redisQueue = require("../../services/redisQueue");
+const queueWorker = require("../../queue_worker");
 
 // Ensure table exists on first hit if not already initialized
 let tableEnsured = false;
@@ -29,37 +29,40 @@ async function ensureValidationTable() {
     `);
     tableEnsured = true;
   } catch (err) {
-    console.error('[esf7_validation] Table init error (non-fatal):', err.message);
+    console.error(
+      "[esf7_validation] Table init error (non-fatal):",
+      err.message,
+    );
   }
 }
 
 // GET /api/validation/status/:schoolId
-router.get('/status/:schoolId', async (req, res) => {
+router.get("/status/:schoolId", async (req, res) => {
   try {
     await ensureValidationTable();
     const rawSchoolId = req.params.schoolId;
     if (!rawSchoolId) {
-      return res.status(400).json({ error: 'Missing schoolId parameter' });
+      return res.status(400).json({ error: "Missing schoolId parameter" });
     }
 
-    const cleanSchoolId = String(rawSchoolId).replace(/^SCH-/, '').trim();
+    const cleanSchoolId = String(rawSchoolId).replace(/^SCH-/, "").trim();
     const result = await db.query(
       `SELECT * FROM esf7_validation WHERE school_id = $1 OR school_id = $2 LIMIT 1`,
-      [cleanSchoolId, `SCH-${cleanSchoolId}`]
+      [cleanSchoolId, `SCH-${cleanSchoolId}`],
     );
 
     if (result.rows.length === 0) {
       return res.json({
         exists: false,
         schoolId: cleanSchoolId,
-        po3Validation: 'PENDING',
-        hrmoValidation: 'PENDING',
-        specialProgramValidation: 'PENDING',
-        sectionsDensityValidation: 'PENDING',
-        staffingCompositionValidation: 'PENDING',
+        po3Validation: "PENDING",
+        hrmoValidation: "PENDING",
+        specialProgramValidation: "PENDING",
+        sectionsDensityValidation: "PENDING",
+        staffingCompositionValidation: "PENDING",
         validationDetails: {},
         validatedBy: {},
-        updatedAt: null
+        updatedAt: null,
       });
     }
 
@@ -67,43 +70,54 @@ router.get('/status/:schoolId', async (req, res) => {
     res.json({
       exists: true,
       schoolId: row.school_id,
-      schoolYear: row.school_year || 'SY 26-27',
-      po3Validation: row.po3_validation || 'PENDING',
-      hrmoValidation: row.hrmo_validation || 'PENDING',
-      specialProgramValidation: row.special_program_validation || row.po3_validation || 'PENDING',
-      sectionsDensityValidation: row.sections_density_validation || row.po3_validation || 'PENDING',
-      staffingCompositionValidation: row.staffing_composition_validation || row.hrmo_validation || 'PENDING',
+      schoolYear: row.school_year || "SY 26-27",
+      po3Validation: row.po3_validation || "PENDING",
+      hrmoValidation: row.hrmo_validation || "PENDING",
+      specialProgramValidation:
+        row.special_program_validation || row.po3_validation || "PENDING",
+      sectionsDensityValidation:
+        row.sections_density_validation || row.po3_validation || "PENDING",
+      staffingCompositionValidation:
+        row.staffing_composition_validation || row.hrmo_validation || "PENDING",
       validationDetails: row.validation_details || {},
       validatedBy: row.validated_by || {},
-      updatedAt: row.updated_at || row.created_at
+      updatedAt: row.updated_at || row.created_at,
     });
   } catch (err) {
-    console.error('Error fetching esf7_validation status:', err);
+    console.error("Error fetching esf7_validation status:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/validation (fallback with query string ?schoolId=xxx)
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   const schoolId = req.query.schoolId || req.query.school_id;
   if (!schoolId) {
-    return res.status(400).json({ error: 'schoolId is required' });
+    return res.status(400).json({ error: "schoolId is required" });
   }
   req.params.schoolId = schoolId;
   return router.handle(req, res);
 });
 
 // POST /api/validation/resubmit
-router.post('/resubmit', async (req, res) => {
+router.post("/resubmit", async (req, res) => {
   try {
     await ensureValidationTable();
-    const { schoolId, schoolYear = 'SY 26-27', payload, signature, certifiedBy } = req.body;
+    const {
+      schoolId,
+      schoolYear = "SY 26-27",
+      payload,
+      signature,
+      certifiedBy,
+    } = req.body;
 
     if (!schoolId) {
-      return res.status(400).json({ error: 'Missing schoolId in resubmission payload' });
+      return res
+        .status(400)
+        .json({ error: "Missing schoolId in resubmission payload" });
     }
 
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/, '').trim();
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/, "").trim();
 
     // 1. Enqueue into esf7_submission_queue for master data overwrite
     const queueInsertRes = await db.query(
@@ -113,26 +127,28 @@ router.post('/resubmit', async (req, res) => {
       [
         cleanSchoolId,
         schoolYear,
-        typeof payload === 'string' ? payload : JSON.stringify(payload || {}),
+        typeof payload === "string" ? payload : JSON.stringify(payload || {}),
         signature || null,
-        certifiedBy || 'School Head'
-      ]
+        certifiedBy || "School Head",
+      ],
     );
 
     const jobId = queueInsertRes.rows[0]?.id;
 
     // 2. Publish lightweight job pointer to Redis Stream (non-blocking, falls back to DB worker if offline)
-    redisQueue.publishSubmissionJob({
-      jobId,
-      schoolId: cleanSchoolId,
-      schoolYear
-    }).catch(err => {
-      console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
-    });
+    redisQueue
+      .publishSubmissionJob({
+        jobId,
+        schoolId: cleanSchoolId,
+        schoolYear,
+      })
+      .catch((err) => {
+        console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
+      });
 
     // 3. Trigger immediate worker execution asynchronously (instant processing)
     setImmediate(() => {
-      queueWorker.processNextJob().catch(err => {
+      queueWorker.processNextJob().catch((err) => {
         console.warn(`[Queue Immediate Trigger Notice]: ${err.message}`);
       });
     });
@@ -153,17 +169,18 @@ router.post('/resubmit', async (req, res) => {
         sections_density_validation = 'RESUBMITTED',
         staffing_composition_validation = 'RESUBMITTED',
         updated_at = NOW()`,
-      [cleanSchoolId, schoolYear]
+      [cleanSchoolId, schoolYear],
     );
 
     res.json({
       success: true,
       jobId,
-      status: 'RESUBMITTED',
-      message: 'eSF7 resubmission enqueued successfully and status updated to RESUBMITTED.'
+      status: "RESUBMITTED",
+      message:
+        "eSF7 resubmission enqueued successfully and status updated to RESUBMITTED.",
     });
   } catch (err) {
-    console.error('Error during validation resubmit:', err);
+    console.error("Error during validation resubmit:", err);
     res.status(500).json({ error: err.message });
   }
 });

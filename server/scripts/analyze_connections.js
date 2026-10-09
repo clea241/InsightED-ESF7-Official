@@ -1,7 +1,7 @@
-const { prodPool, insightEdPool } = require('../db');
+const { prodPool, insightEdPool } = require("../db");
 
 async function analyzeAllInterSchoolConnections() {
-  console.log('=== Analyzing All Inter-School Teacher Connections ===');
+  console.log("=== Analyzing All Inter-School Teacher Connections ===");
 
   // 1. From esf7_clustered_ghost_sync:
   // Each room_key represents a teacher (e.g. ROOM_<prn_or_id>). If multiple schools have the same room_key, they are clustered!
@@ -16,9 +16,13 @@ async function analyzeAllInterSchoolConnections() {
     HAVING count(DISTINCT school_id) > 1
   `);
 
-  console.log(`\nFound ${ghostMultiSchools.rows.length} teachers co-edited across multiple schools in esf7_clustered_ghost_sync:`);
-  ghostMultiSchools.rows.slice(0, 5).forEach(r => {
-    console.log(`- Room ${r.room_key}: Schools [${r.schools.join(', ')}] (${r.school_names.join(', ')})`);
+  console.log(
+    `\nFound ${ghostMultiSchools.rows.length} teachers co-edited across multiple schools in esf7_clustered_ghost_sync:`,
+  );
+  ghostMultiSchools.rows.slice(0, 5).forEach((r) => {
+    console.log(
+      `- Room ${r.room_key}: Schools [${r.schools.join(", ")}] (${r.school_names.join(", ")})`,
+    );
   });
 
   // 2. From school_drafts where a teacher appears in multiple schools' drafts
@@ -44,9 +48,13 @@ async function analyzeAllInterSchoolConnections() {
     HAVING count(DISTINCT school_id) > 1
   `);
 
-  console.log(`\nFound ${teacherMultiDrafts.rows.length} teachers sharing drafts across multiple actual DepEd schools:`);
-  teacherMultiDrafts.rows.slice(0, 5).forEach(r => {
-    console.log(`- Teacher ${r.teacher_name} (${r.teacher_key}): Schools [${r.schools.join(', ')}]`);
+  console.log(
+    `\nFound ${teacherMultiDrafts.rows.length} teachers sharing drafts across multiple actual DepEd schools:`,
+  );
+  teacherMultiDrafts.rows.slice(0, 5).forEach((r) => {
+    console.log(
+      `- Teacher ${r.teacher_name} (${r.teacher_key}): Schools [${r.schools.join(", ")}]`,
+    );
   });
 
   // 3. From drafts with explicit assignedSchools arrays with real school IDs
@@ -67,7 +75,9 @@ async function analyzeAllInterSchoolConnections() {
       )
   `);
 
-  console.log(`\nFound ${explicitAssigned.rows.length} teachers with multi-school assignedSchools arrays in drafts.`);
+  console.log(
+    `\nFound ${explicitAssigned.rows.length} teachers with multi-school assignedSchools arrays in drafts.`,
+  );
 
   await prodPool.end();
 }

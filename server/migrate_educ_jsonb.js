@@ -1,8 +1,9 @@
-const { Client } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Client } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const sslConfig = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false;
+const sslConfig =
+  process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;
 
 async function migrateDatabase(dbName) {
   console.log(`Connecting to '${dbName}' for education JSONB migration...`);
@@ -13,7 +14,7 @@ async function migrateDatabase(dbName) {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: dbName,
-    ssl: sslConfig
+    ssl: sslConfig,
   });
 
   try {
@@ -69,7 +70,9 @@ async function migrateDatabase(dbName) {
         END IF;
       END $$;
     `);
-    console.log(`- Column 'post_graduate_discipline' successfully converted to JSONB in ${dbName}.`);
+    console.log(
+      `- Column 'post_graduate_discipline' successfully converted to JSONB in ${dbName}.`,
+    );
 
     // 4. Create GIN Indexes for high-performance JSON querying
     await client.query(`
@@ -80,7 +83,6 @@ async function migrateDatabase(dbName) {
       ON esf7_perssonel_educ USING gin (post_graduate_discipline);
     `);
     console.log(`- GIN Indexes created successfully in ${dbName}.`);
-
   } catch (err) {
     console.error(`Error migrating database '${dbName}':`, err.message);
   } finally {
@@ -89,11 +91,11 @@ async function migrateDatabase(dbName) {
 }
 
 async function run() {
-  const databases = ['insighted_esf7', 'esf7_database_dummy'];
+  const databases = ["insighted_esf7", "esf7_database_dummy"];
   for (const db of databases) {
     await migrateDatabase(db);
   }
-  console.log('Migration process completed!');
+  console.log("Migration process completed!");
 }
 
 run();

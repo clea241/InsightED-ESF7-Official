@@ -1,33 +1,39 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import { checkBeforeLeave, isAnyScreenDirty } from '../services/dirtyGuard';
-import LogoutPasscodeModal from './LogoutPasscodeModal';
-import { 
-  FiHome, 
-  FiBookOpen, 
-  FiUsers, 
-  FiUserCheck, 
-  FiBookmark, 
-  FiGrid, 
-  FiClock, 
-  FiMaximize, 
-  FiMail, 
-  FiRepeat, 
-  FiDollarSign, 
-  FiShield, 
+import React, { useState } from "react";
+import { useApp } from "../context/AppContext";
+import { checkBeforeLeave, isAnyScreenDirty } from "../services/dirtyGuard";
+import LogoutPasscodeModal from "./LogoutPasscodeModal";
+import {
+  FiHome,
+  FiBookOpen,
+  FiUsers,
+  FiUserCheck,
+  FiBookmark,
+  FiGrid,
+  FiClock,
+  FiMaximize,
+  FiMail,
+  FiRepeat,
+  FiDollarSign,
+  FiShield,
   FiLogOut,
   FiChevronDown,
   FiLock,
-  FiUnlock
-} from 'react-icons/fi';
+  FiUnlock,
+} from "react-icons/fi";
 
 export default function Sidebar() {
-  const { activeView, setActiveView, incomingRequests, bypassNodeLocks, setBypassNodeLocks } = useApp();
+  const {
+    activeView,
+    setActiveView,
+    incomingRequests,
+    bypassNodeLocks,
+    setBypassNodeLocks,
+  } = useApp();
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   const handleLogoutClick = async () => {
     if (isAnyScreenDirty()) {
-      const canProceed = await checkBeforeLeave({ actionType: 'logout' });
+      const canProceed = await checkBeforeLeave({ actionType: "logout" });
       if (!canProceed) return;
     }
     setIsLogoutModalOpen(true);
@@ -37,51 +43,65 @@ export default function Sidebar() {
     general: true,
     phase1: true,
     phase2: true,
-    phase3: true
+    phase3: true,
   });
 
   const toggleSection = (key) => {
-    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const sections = [
     {
-      key: 'general',
-      title: 'Navigation & Overview',
+      key: "general",
+      title: "Navigation & Overview",
       items: [
-        { view: 'landing', label: 'Welcome Page', Icon: FiHome },
-        { view: 'dashboard', label: 'Dashboard', Icon: FiGrid }
-      ]
+        { view: "landing", label: "Welcome Page", Icon: FiHome },
+        { view: "dashboard", label: "Dashboard", Icon: FiGrid },
+      ],
     },
     {
-      key: 'phase1',
-      title: 'Phase 1: Setup & Profiling',
+      key: "phase1",
+      title: "Phase 1: Setup & Profiling",
       items: [
-        { view: 'school', label: '01. School Profile', Icon: FiBookOpen },
-        { view: 'roster', label: '02. Personnel Roster', Icon: FiUsers },
-        { view: 'room-qr', label: '03. Room QR Portal', Icon: FiMaximize },
-        { view: 'profile', label: '04. Personnel Profiling', Icon: FiUserCheck }
-      ]
+        { view: "school", label: "01. School Profile", Icon: FiBookOpen },
+        { view: "roster", label: "02. Personnel Roster", Icon: FiUsers },
+        { view: "room-qr", label: "03. Room QR Portal", Icon: FiMaximize },
+        {
+          view: "profile",
+          label: "04. Personnel Profiling",
+          Icon: FiUserCheck,
+        },
+      ],
     },
     {
-      key: 'phase2',
-      title: 'Phase 2: Classes & Workload',
+      key: "phase2",
+      title: "Phase 2: Classes & Workload",
       items: [
-        { view: 'requests', label: '05. Request Center', Icon: FiMail, badge: incomingRequests?.length > 0 ? incomingRequests.length : null },
-        { view: 'classes', label: '06. Organized Classes', Icon: FiGrid },
-        { view: 'designation', label: '07. Designations', Icon: FiBookmark },
-        { view: 'workload', label: '08. Workload & Timetable', Icon: FiClock }
-      ]
+        {
+          view: "requests",
+          label: "05. Request Center",
+          Icon: FiMail,
+          badge: incomingRequests?.length > 0 ? incomingRequests.length : null,
+        },
+        { view: "classes", label: "06. Organized Classes", Icon: FiGrid },
+        { view: "designation", label: "07. Designations", Icon: FiBookmark },
+        { view: "workload", label: "08. Workload & Timetable", Icon: FiClock },
+      ],
     },
     {
-      key: 'phase3',
-      title: 'Phase 3: Benefits & Submission',
+      key: "phase3",
+      title: "Phase 3: Benefits & Submission",
       items: [
-        { view: 'allowances', label: '09. Allowances & Incentives', Icon: FiDollarSign, isLocked: !bypassNodeLocks },
-        { view: 'overload', label: '10. Overload Center', Icon: FiRepeat },
-        { view: 'validation', label: '11. Validation Center', Icon: FiShield }
-      ]
-    }
+        {
+          view: "allowances",
+          label: "09. Allowances & Incentives",
+          Icon: FiDollarSign,
+          isLocked: !bypassNodeLocks,
+        },
+        { view: "overload", label: "10. Overload Center", Icon: FiRepeat },
+        { view: "validation", label: "11. Validation Center", Icon: FiShield },
+      ],
+    },
   ];
 
   return (
@@ -89,9 +109,9 @@ export default function Sidebar() {
       <aside className="sidebar">
         {/* Brand Logos */}
         <div className="brand-container">
-          <img 
-            src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/InsightED logo 5 x 3 in white outline.png`} 
-            alt="InsightED Logo" 
+          <img
+            src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/InsightED logo 5 x 3 in white outline.png`}
+            alt="InsightED Logo"
             className="brand-logo brand-logo-landscape"
             onError={(e) => {
               e.target.onerror = null;
@@ -99,9 +119,9 @@ export default function Sidebar() {
             }}
           />
           <div className="brand-divider"></div>
-          <img 
-            src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo02.png`} 
-            alt="ESF7 Logo" 
+          <img
+            src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo02.png`}
+            alt="ESF7 Logo"
             className="brand-logo"
             onError={(e) => {
               e.target.onerror = null;
@@ -121,9 +141,15 @@ export default function Sidebar() {
                 onClick={() => toggleSection(sec.key)}
               >
                 <span className="sidebar-section-title">{sec.title}</span>
-                <span 
-                  className="sidebar-chevron" 
-                  style={{ transform: openSections[sec.key] ? 'rotate(0deg)' : 'rotate(-90deg)', display: 'inline-flex', alignItems: 'center' }}
+                <span
+                  className="sidebar-chevron"
+                  style={{
+                    transform: openSections[sec.key]
+                      ? "rotate(0deg)"
+                      : "rotate(-90deg)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                  }}
                 >
                   <FiChevronDown size={14} />
                 </span>
@@ -137,33 +163,39 @@ export default function Sidebar() {
                     return (
                       <button
                         key={item.view}
-                        className={activeView === item.view ? 'active' : ''}
+                        className={activeView === item.view ? "active" : ""}
                         onClick={() => setActiveView(item.view)}
                         type="button"
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
                       >
-                        {IconComponent && <IconComponent size={16} style={{ flexShrink: 0 }} />}
+                        {IconComponent && (
+                          <IconComponent size={16} style={{ flexShrink: 0 }} />
+                        )}
                         <span>{item.label}</span>
                         {item.isLocked && (
-                          <span style={{
-                            marginLeft: 'auto',
-                            fontSize: '9px',
-                            fontWeight: '800',
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            background: '#F1F5F9',
-                            color: '#64748B',
-                            border: '1px solid #CBD5E1',
-                            letterSpacing: '0.04em',
-                            textTransform: 'uppercase'
-                          }}>
+                          <span
+                            style={{
+                              marginLeft: "auto",
+                              fontSize: "9px",
+                              fontWeight: "800",
+                              padding: "1px 6px",
+                              borderRadius: "4px",
+                              background: "#F1F5F9",
+                              color: "#64748B",
+                              border: "1px solid #CBD5E1",
+                              letterSpacing: "0.04em",
+                              textTransform: "uppercase",
+                            }}
+                          >
                             Locked
                           </span>
                         )}
                         {item.badge && (
-                          <span className="nav-badge">
-                            {item.badge}
-                          </span>
+                          <span className="nav-badge">{item.badge}</span>
                         )}
                       </button>
                     );
@@ -177,10 +209,10 @@ export default function Sidebar() {
           <div className="sidebar-bottom-section">
             {/* Validation Center Button - Quality Assurance */}
             <button
-              className={activeView === 'validation' ? 'active' : ''}
-              onClick={() => setActiveView('validation')}
+              className={activeView === "validation" ? "active" : ""}
+              onClick={() => setActiveView("validation")}
               type="button"
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: "flex", alignItems: "center", gap: "10px" }}
             >
               <FiShield size={16} style={{ flexShrink: 0 }} />
               <span>Validation Center</span>
@@ -191,7 +223,7 @@ export default function Sidebar() {
               className="signout-btn"
               onClick={handleLogoutClick}
               type="button"
-              style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+              style={{ display: "flex", alignItems: "center", gap: "10px" }}
             >
               <FiLogOut size={16} style={{ flexShrink: 0 }} />
               <span>Sign Out</span>

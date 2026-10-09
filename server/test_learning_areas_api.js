@@ -1,9 +1,13 @@
-const db = require('./db');
+const db = require("./db");
 
 async function testLearningAreasFlow() {
-  console.log('Testing esf7_personnel_learning_areas insertion & 4-way JOIN...');
+  console.log(
+    "Testing esf7_personnel_learning_areas insertion & 4-way JOIN...",
+  );
 
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-004'`);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-004'`,
+  );
 
   // 1. Insert Profile
   await db.query(`
@@ -16,18 +20,21 @@ async function testLearningAreasFlow() {
 
   // 2. Insert Learning Area Matrix
   const sampleMatrix = {
-    'RBEC 2002-2011||MATHEMATICS': { checked: true, years: 8 },
-    'K-12 2012-2023||MATHEMATICS': { checked: true, years: 10 },
-    'MATATAG 2024+||MATHEMATICS': { checked: true, years: 2 }
+    "RBEC 2002-2011||MATHEMATICS": { checked: true, years: 8 },
+    "K-12 2012-2023||MATHEMATICS": { checked: true, years: 10 },
+    "MATATAG 2024+||MATHEMATICS": { checked: true, years: 2 },
   };
 
-  await db.query(`
+  await db.query(
+    `
     INSERT INTO esf7_personnel_learning_areas (
       id, personnel_id, matrix_data, raw_payload
     ) VALUES (
       'LA-108348-004', 'PER-TEST-004', $1::jsonb, $2::jsonb
     )
-  `, [JSON.stringify(sampleMatrix), JSON.stringify({ sampleMatrix })]);
+  `,
+    [JSON.stringify(sampleMatrix), JSON.stringify({ sampleMatrix })],
+  );
 
   // 3. Query 4-Way Join
   const res = await db.query(`
@@ -39,21 +46,28 @@ async function testLearningAreasFlow() {
     WHERE p.id = 'PER-TEST-004'
   `);
 
-  console.log('✅ Successfully queried joined record:');
+  console.log("✅ Successfully queried joined record:");
   const row = res.rows[0];
-  console.log('Personnel:', `${row.first_name} ${row.last_name}`);
-  console.log('LA ID:', row.la_id);
-  console.log('Matrix Data (JSONB):', row.matrix_data);
+  console.log("Personnel:", `${row.first_name} ${row.last_name}`);
+  console.log("LA ID:", row.la_id);
+  console.log("Matrix Data (JSONB):", row.matrix_data);
 
   // 4. Test ON DELETE CASCADE
-  await db.query(`DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-004'`);
-  const checkLA = await db.query(`SELECT COUNT(*) FROM esf7_personnel_learning_areas WHERE personnel_id = 'PER-TEST-004'`);
-  console.log('✅ ON DELETE CASCADE check (should be 0):', checkLA.rows[0].count);
+  await db.query(
+    `DELETE FROM esf7_personnel_profile WHERE id = 'PER-TEST-004'`,
+  );
+  const checkLA = await db.query(
+    `SELECT COUNT(*) FROM esf7_personnel_learning_areas WHERE personnel_id = 'PER-TEST-004'`,
+  );
+  console.log(
+    "✅ ON DELETE CASCADE check (should be 0):",
+    checkLA.rows[0].count,
+  );
 
   process.exit(0);
 }
 
-testLearningAreasFlow().catch(err => {
-  console.error('❌ Test failed:', err);
+testLearningAreasFlow().catch((err) => {
+  console.error("❌ Test failed:", err);
   process.exit(1);
 });

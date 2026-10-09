@@ -1,7 +1,9 @@
-const db = require('../db/index.js');
+const db = require("../db/index.js");
 
 async function testFeaturesAB() {
-  console.log('🧪 Testing Feature A (Learning Areas) & Feature B (Work Immersion) Backend Integration...');
+  console.log(
+    "🧪 Testing Feature A (Learning Areas) & Feature B (Work Immersion) Backend Integration...",
+  );
   try {
     // 0. Init DB tables if not present
     await db.query(`
@@ -29,13 +31,13 @@ async function testFeaturesAB() {
       FROM information_schema.tables 
       WHERE table_name IN ('personnel_learning_areas', 'work_immersion_minutes');
     `);
-    const tableNames = tablesRes.rows.map(r => r.table_name);
-    console.log('📋 Target tables initialized:', tableNames);
+    const tableNames = tablesRes.rows.map((r) => r.table_name);
+    console.log("📋 Target tables initialized:", tableNames);
 
     // 2. Fetch sample personnel
-    const personnelRes = await db.query('SELECT id FROM personnel LIMIT 1');
+    const personnelRes = await db.query("SELECT id FROM personnel LIMIT 1");
     if (personnelRes.rows.length === 0) {
-      console.log('ℹ️ No personnel records found for DB tests.');
+      console.log("ℹ️ No personnel records found for DB tests.");
       process.exit(0);
     }
 
@@ -43,33 +45,36 @@ async function testFeaturesAB() {
     console.log(`👤 Running test queries on personnel ID: ${testPersonnelId}`);
 
     // 3. Test Feature A (Learning Areas) Toggle
-    const sy = 'SY 26-27';
-    const la = 'Mathematics';
+    const sy = "SY 26-27";
+    const la = "Mathematics";
 
     // Insert (check)
     await db.query(
-      'INSERT INTO personnel_learning_areas (personnel_id, school_year, learning_area) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-      [testPersonnelId, sy, la]
+      "INSERT INTO personnel_learning_areas (personnel_id, school_year, learning_area) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+      [testPersonnelId, sy, la],
     );
     const laCheckRes = await db.query(
-      'SELECT * FROM personnel_learning_areas WHERE personnel_id = $1 AND school_year = $2 AND learning_area = $3',
-      [testPersonnelId, sy, la]
+      "SELECT * FROM personnel_learning_areas WHERE personnel_id = $1 AND school_year = $2 AND learning_area = $3",
+      [testPersonnelId, sy, la],
     );
-    console.log('✅ Feature A INSERT result:', laCheckRes.rows[0]);
+    console.log("✅ Feature A INSERT result:", laCheckRes.rows[0]);
 
     // Delete (uncheck)
     await db.query(
-      'DELETE FROM personnel_learning_areas WHERE personnel_id = $1 AND school_year = $2 AND learning_area = $3',
-      [testPersonnelId, sy, la]
+      "DELETE FROM personnel_learning_areas WHERE personnel_id = $1 AND school_year = $2 AND learning_area = $3",
+      [testPersonnelId, sy, la],
     );
     const laDeleteCheckRes = await db.query(
-      'SELECT * FROM personnel_learning_areas WHERE personnel_id = $1 AND school_year = $2 AND learning_area = $3',
-      [testPersonnelId, sy, la]
+      "SELECT * FROM personnel_learning_areas WHERE personnel_id = $1 AND school_year = $2 AND learning_area = $3",
+      [testPersonnelId, sy, la],
     );
-    console.log('✅ Feature A DELETE result count:', laDeleteCheckRes.rows.length);
+    console.log(
+      "✅ Feature A DELETE result count:",
+      laDeleteCheckRes.rows.length,
+    );
 
     // 4. Test Feature B (Work Immersion) UPSERT
-    const month = 'June';
+    const month = "June";
     const day = 15;
     const minutes = 120;
 
@@ -79,13 +84,13 @@ async function testFeaturesAB() {
        ON CONFLICT (personnel_id, school_year, month, day)
        DO UPDATE SET minutes = EXCLUDED.minutes
        RETURNING *`,
-      [testPersonnelId, sy, month, day, minutes]
+      [testPersonnelId, sy, month, day, minutes],
     );
-    console.log('✅ Feature B UPSERT result:', wiUpsertRes.rows[0]);
+    console.log("✅ Feature B UPSERT result:", wiUpsertRes.rows[0]);
 
-    console.log('🎉 All Backend Integration Tests Passed!');
+    console.log("🎉 All Backend Integration Tests Passed!");
   } catch (err) {
-    console.error('❌ Integration Test Error:', err.message);
+    console.error("❌ Integration Test Error:", err.message);
   } finally {
     process.exit(0);
   }

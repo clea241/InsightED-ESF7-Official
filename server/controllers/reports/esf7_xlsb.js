@@ -1,11 +1,17 @@
-const fs         = require('fs');
-const path       = require('path');
-const { Worker } = require('worker_threads');
-const db         = require('../../db');
+const fs = require("fs");
+const path = require("path");
+const { Worker } = require("worker_threads");
+const db = require("../../db");
 
-const PURE_VIEW_TEMPLATE = path.join(__dirname, '../../esf7_view_pure_template.xlsb');
-const BASE_TEMPLATE_PATH = path.join(__dirname, '../../../eSF7-R04A-Laguna-108348_MAJAYJAY-ES-UPDATED.xlsb');
-const WORKER_PATH        = path.resolve(__dirname, 'esf7_worker_thread.js');
+const PURE_VIEW_TEMPLATE = path.join(
+  __dirname,
+  "../../esf7_view_pure_template.xlsb",
+);
+const BASE_TEMPLATE_PATH = path.join(
+  __dirname,
+  "../../../eSF7-R04A-Laguna-108348_MAJAYJAY-ES-UPDATED.xlsb",
+);
+const WORKER_PATH = path.resolve(__dirname, "esf7_worker_thread.js");
 
 const getTemplatePath = () => {
   if (fs.existsSync(PURE_VIEW_TEMPLATE)) return PURE_VIEW_TEMPLATE;
@@ -16,65 +22,75 @@ const getTemplatePath = () => {
 /**
  * Execute XLSB generation in worker thread.
  */
-const generateWithWorker = (templatePath, school, personnelList) => new Promise((resolve, reject) => {
-  const worker = new Worker(WORKER_PATH, {
-    workerData: { templatePath, school, personnelList }
-  });
+const generateWithWorker = (templatePath, school, personnelList) =>
+  new Promise((resolve, reject) => {
+    const worker = new Worker(WORKER_PATH, {
+      workerData: { templatePath, school, personnelList },
+    });
 
-  let finished = false;
+    let finished = false;
 
-  const timer = setTimeout(() => {
-    if (!finished) {
+    const timer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        worker.terminate();
+        reject(new Error("WORKER_TIMEOUT"));
+      }
+    }, 45000);
+
+    worker.once("message", (msg) => {
+      if (finished) return;
       finished = true;
-      worker.terminate();
-      reject(new Error('WORKER_TIMEOUT'));
-    }
-  }, 45000);
+      clearTimeout(timer);
+      if (msg.ok) {
+        resolve(Buffer.from(msg.buffer));
+      } else {
+        reject(new Error(msg.error));
+      }
+    });
 
-  worker.once('message', (msg) => {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timer);
-    if (msg.ok) {
-      resolve(Buffer.from(msg.buffer));
-    } else {
-      reject(new Error(msg.error));
-    }
-  });
+    worker.once("error", (err) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      reject(err);
+    });
 
-  worker.once('error', (err) => {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timer);
-    reject(err);
+    worker.once("exit", (code) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (code !== 0) reject(new Error(`Worker exited with code ${code}`));
+    });
   });
-
-  worker.once('exit', (code) => {
-    if (finished) return;
-    finished = true;
-    clearTimeout(timer);
-    if (code !== 0) reject(new Error(`Worker exited with code ${code}`));
-  });
-});
 
 const generateESF7Xlsb = async (req, res) => {
   try {
     let school = {
-      school_id: '199999',
-      school_name: 'TEST ELEMENTARY SCHOOL',
-      region: 'REGION VIII',
-      division: 'SAMAR (WESTERN SAMAR)',
-      district: 'BASEY I',
-      school_year: 'SY 26-27'
+      school_id: "199999",
+      school_name: "TEST ELEMENTARY SCHOOL",
+      region: "REGION VIII",
+      division: "SAMAR (WESTERN SAMAR)",
+      district: "BASEY I",
+      school_year: "SY 26-27",
     };
     let personnelList = [];
 
     // 1. Check school_drafts for active payload
     try {
       // Scoped to the requesting school (an unscoped LIMIT 1 could use another school's draft); no school = no draft lookup.
-      const reqSchool = String(req.params?.schoolId || req.query?.schoolId || req.headers['x-school-id'] || (req.auth && req.auth.schoolId) || '').replace(/^SCH-/i, '');
+      const reqSchool = String(
+        req.params?.schoolId ||
+          req.query?.schoolId ||
+          req.headers["x-school-id"] ||
+          (req.auth && req.auth.schoolId) ||
+          "",
+      ).replace(/^SCH-/i, "");
       const draftRes = reqSchool
-        ? await db.query('SELECT payload FROM school_drafts WHERE school_id = $1 OR school_id = $2 ORDER BY updated_at DESC LIMIT 1', [reqSchool, `SCH-${reqSchool}`])
+        ? await db.query(
+            "SELECT payload FROM school_drafts WHERE school_id = $1 OR school_id = $2 ORDER BY updated_at DESC LIMIT 1",
+            [reqSchool, `SCH-${reqSchool}`],
+          )
         : { rows: [] };
       if (draftRes.rows.length > 0 && draftRes.rows[0].payload) {
         const payload = draftRes.rows[0].payload;
@@ -82,13 +98,13 @@ const generateESF7Xlsb = async (req, res) => {
         if (Array.isArray(payload.personnel)) personnelList = payload.personnel;
       }
     } catch (draftErr) {
-      console.warn('[eSF7] school_drafts lookup failed:', draftErr.message);
+      console.warn("[eSF7] school_drafts lookup failed:", draftErr.message);
     }
 
     // 2. Fallback to DB tables if draft is empty
     if (personnelList.length === 0) {
       try {
-        const schoolRes = await db.query('SELECT * FROM schools LIMIT 1');
+        const schoolRes = await db.query("SELECT * FROM schools LIMIT 1");
         if (schoolRes.rows[0]) school = schoolRes.rows[0];
 
         const pRes = await db.query(`
@@ -101,7 +117,7 @@ const generateESF7Xlsb = async (req, res) => {
         `);
 
         const pMap = {};
-        pRes.rows.forEach(p => {
+        pRes.rows.forEach((p) => {
           pMap[p.id] = { ...p, workloadRows: [] };
         });
 
@@ -111,7 +127,7 @@ const generateESF7Xlsb = async (req, res) => {
           LEFT JOIN class_sections cs ON cs.id = w.section_id
         `);
 
-        wRes.rows.forEach(w => {
+        wRes.rows.forEach((w) => {
           if (pMap[w.personnel_id]) {
             pMap[w.personnel_id].workloadRows.push(w);
           }
@@ -119,33 +135,43 @@ const generateESF7Xlsb = async (req, res) => {
 
         personnelList = Object.values(pMap);
       } catch (dbErr) {
-        console.warn('[eSF7] DB lookup fallback failed:', dbErr.message);
+        console.warn("[eSF7] DB lookup fallback failed:", dbErr.message);
       }
     }
 
     const tplPath = getTemplatePath();
     if (!tplPath) {
-      return res.status(404).json({ error: 'eSF7 template file missing on server' });
+      return res
+        .status(404)
+        .json({ error: "eSF7 template file missing on server" });
     }
 
-    console.log(`[eSF7] Generating PURE 1-SHEET VIEW report for School ID: ${school.schoolId || school.school_id} (${personnelList.length} personnel)...`);
+    console.log(
+      `[eSF7] Generating PURE 1-SHEET VIEW report for School ID: ${school.schoolId || school.school_id} (${personnelList.length} personnel)...`,
+    );
     const t0 = Date.now();
 
     const fileBuffer = await generateWithWorker(tplPath, school, personnelList);
-    console.log(`[eSF7] Single VIEW sheet report generated in ${Date.now() - t0} ms — ${fileBuffer.length} bytes`);
+    console.log(
+      `[eSF7] Single VIEW sheet report generated in ${Date.now() - t0} ms — ${fileBuffer.length} bytes`,
+    );
 
-    const safeSchoolId = String(school.schoolId || school.school_id || '199999').replace(/[^\w-]/g, '');
-    const filename = `eSF7_${safeSchoolId}_${String(school.schoolYear || school.school_year || 'SY26-27').replace(/[^\w-]/g, '')}.xlsb`;
+    const safeSchoolId = String(
+      school.schoolId || school.school_id || "199999",
+    ).replace(/[^\w-]/g, "");
+    const filename = `eSF7_${safeSchoolId}_${String(school.schoolYear || school.school_year || "SY26-27").replace(/[^\w-]/g, "")}.xlsb`;
 
-    res.setHeader('Content-Type', 'application/vnd.ms-excel.sheet.binary.macroEnabled.12');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send(fileBuffer);
-
   } catch (error) {
-    console.error('Error generating eSF7 XLSB:', error);
+    console.error("Error generating eSF7 XLSB:", error);
     return res.status(500).json({
-      error: 'Failed to generate eSF7 XLSB report',
-      message: error.message
+      error: "Failed to generate eSF7 XLSB report",
+      message: error.message,
     });
   }
 };

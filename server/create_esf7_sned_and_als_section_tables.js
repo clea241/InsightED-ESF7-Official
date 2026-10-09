@@ -1,7 +1,9 @@
-const db = require('./db');
+const db = require("./db");
 
 async function createSnedAndAlsSectionTables() {
-  console.log('🚀 Creating esf7_sned_sections and esf7_als_sections tables in insighted_esf7 database...');
+  console.log(
+    "🚀 Creating esf7_sned_sections and esf7_als_sections tables in insighted_esf7 database...",
+  );
   try {
     // 1. Create esf7_sned_sections
     await db.query(`
@@ -23,9 +25,13 @@ async function createSnedAndAlsSectionTables() {
         CONSTRAINT uq_sned_section_school_sy UNIQUE (school_id, school_year, section_name)
       );
     `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_sned_sections_school_sy ON esf7_sned_sections (school_id, school_year);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_sned_sections_adviser ON esf7_sned_sections (adviser_id);`);
-    console.log('✓ Created esf7_sned_sections table');
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_sned_sections_school_sy ON esf7_sned_sections (school_id, school_year);`,
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_sned_sections_adviser ON esf7_sned_sections (adviser_id);`,
+    );
+    console.log("✓ Created esf7_sned_sections table");
 
     // 2. Create esf7_als_sections
     await db.query(`
@@ -48,14 +54,18 @@ async function createSnedAndAlsSectionTables() {
         CONSTRAINT uq_als_section_school_sy UNIQUE (school_id, school_year, section_name)
       );
     `);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_als_sections_school_sy ON esf7_als_sections (school_id, school_year);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS idx_als_sections_adviser ON esf7_als_sections (adviser_id);`);
-    console.log('✓ Created esf7_als_sections table');
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_als_sections_school_sy ON esf7_als_sections (school_id, school_year);`,
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS idx_als_sections_adviser ON esf7_als_sections (adviser_id);`,
+    );
+    console.log("✓ Created esf7_als_sections table");
 
-    console.log('🎉 Both SNED and ALS section tables created successfully!');
+    console.log("🎉 Both SNED and ALS section tables created successfully!");
     process.exit(0);
   } catch (err) {
-    console.error('❌ Error creating SNED/ALS section tables:', err.message);
+    console.error("❌ Error creating SNED/ALS section tables:", err.message);
     process.exit(1);
   }
 }

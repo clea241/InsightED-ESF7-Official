@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
-import { 
-  FiArrowRight, 
-  FiUser, 
-  FiGrid, 
-  FiShield, 
-  FiCheckCircle, 
-  FiLayers, 
-  FiClock, 
+import React, { useState } from "react";
+import { useApp } from "../context/AppContext";
+import { useAuth } from "../context/AuthContext";
+import {
+  FiArrowRight,
+  FiUser,
+  FiGrid,
+  FiShield,
+  FiCheckCircle,
+  FiLayers,
+  FiClock,
   FiFileText,
-  FiX
-} from 'react-icons/fi';
+  FiX,
+} from "react-icons/fi";
 
 export default function Landing({ onGetStarted }) {
   const { setActiveView } = useApp() || {};
@@ -19,15 +19,15 @@ export default function Landing({ onGetStarted }) {
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
   const handleStart = () => {
-    if (typeof onGetStarted === 'function') {
+    if (typeof onGetStarted === "function") {
       onGetStarted();
     } else if (setActiveView) {
-      setActiveView('dashboard');
+      setActiveView("dashboard");
     }
   };
 
-  const rawBase = import.meta.env.BASE_URL || '/';
-  const baseUrl = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+  const rawBase = import.meta.env.BASE_URL || "/";
+  const baseUrl = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
 
   return (
     <div className="esf7-landing-wrapper">
@@ -396,8 +396,8 @@ export default function Landing({ onGetStarted }) {
       <div className="esf7-glass-card">
         {/* Top Header Bar */}
         <header className="esf7-glass-topbar">
-          <button 
-            className="esf7-glass-icon-btn" 
+          <button
+            className="esf7-glass-icon-btn"
             title="Quick Options"
             onClick={() => setShowQuickMenu(!showQuickMenu)}
           >
@@ -409,12 +409,12 @@ export default function Landing({ onGetStarted }) {
             <span className="esf7-glass-brand-sub">eSF7 Workspace</span>
           </div>
 
-          <button 
+          <button
             className="esf7-glass-portal-btn"
             onClick={handleStart}
             title="Access School Head Portal"
           >
-            <span>{user ? 'Dashboard' : 'Portal Access'}</span>
+            <span>{user ? "Dashboard" : "Portal Access"}</span>
             <div className="esf7-portal-avatar">
               <FiUser size={14} />
             </div>
@@ -424,30 +424,42 @@ export default function Landing({ onGetStarted }) {
         {/* Quick Dropdown / Options Menu */}
         {showQuickMenu && (
           <div className="esf7-quick-menu-modal">
-            <div 
+            <div
               className="esf7-quick-menu-item"
-              onClick={() => { setShowQuickMenu(false); handleStart(); }}
+              onClick={() => {
+                setShowQuickMenu(false);
+                handleStart();
+              }}
             >
               <FiShield size={16} color="#7DD3FC" />
               <span>School Dashboard</span>
             </div>
-            <div 
+            <div
               className="esf7-quick-menu-item"
-              onClick={() => { setShowQuickMenu(false); setActiveView('roster'); }}
+              onClick={() => {
+                setShowQuickMenu(false);
+                setActiveView("roster");
+              }}
             >
               <FiLayers size={16} color="#7DD3FC" />
               <span>Personnel Roster</span>
             </div>
-            <div 
+            <div
               className="esf7-quick-menu-item"
-              onClick={() => { setShowQuickMenu(false); setActiveView('workload'); }}
+              onClick={() => {
+                setShowQuickMenu(false);
+                setActiveView("workload");
+              }}
             >
               <FiClock size={16} color="#7DD3FC" />
               <span>Workload Timetable</span>
             </div>
-            <div 
+            <div
               className="esf7-quick-menu-item"
-              onClick={() => { setShowQuickMenu(false); setActiveView('validation'); }}
+              onClick={() => {
+                setShowQuickMenu(false);
+                setActiveView("validation");
+              }}
             >
               <FiFileText size={16} color="#7DD3FC" />
               <span>eSF7 Report Generator</span>
@@ -458,26 +470,26 @@ export default function Landing({ onGetStarted }) {
         {/* Center Hero Area */}
         <section className="esf7-glass-hero">
           <div className="esf7-glass-badge">
-            <img src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo.png`} alt="eSF7 Logo" style={{ height: '16px', width: 'auto', objectFit: 'contain' }} />
+            <img
+              src={`${import.meta.env.BASE_URL}OFFICIAL LOGO/ESF7_logo.png`}
+              alt="eSF7 Logo"
+              style={{ height: "16px", width: "auto", objectFit: "contain" }}
+            />
             <span>DepEd Electronic School Form 7</span>
           </div>
 
-          <h1 className="esf7-glass-title">
-            eSF7
-          </h1>
+          <h1 className="esf7-glass-title">eSF7</h1>
 
           <p className="esf7-glass-tagline">
             Faculty &amp; Workload Intelligence
           </p>
 
           <p className="esf7-glass-desc">
-            Unified DepEd teacher profiling, national plantilla compliance, automated timetable matrix, and 3-Term overload computation.
+            Unified DepEd teacher profiling, national plantilla compliance,
+            automated timetable matrix, and 3-Term overload computation.
           </p>
 
-          <button 
-            className="esf7-glass-cta-btn"
-            onClick={handleStart}
-          >
+          <button className="esf7-glass-cta-btn" onClick={handleStart}>
             <span>Let's Get Started</span>
             <div className="esf7-cta-icon-wrapper">
               <FiArrowRight size={17} />

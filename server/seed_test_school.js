@@ -1,32 +1,36 @@
 /**
  * Create a new pilot school with exactly 2 personnel for testing
  */
-const { Pool } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { Pool } = require("pg");
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const db = new Pool({
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insighted_esf7`,
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+  connectionString:
+    process.env.DATABASE_URL ||
+    `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/insighted_esf7`,
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
 async function main() {
   try {
-    console.log('Seeding new pilot school 199999...');
+    console.log("Seeding new pilot school 199999...");
     // 1. Create the school entry directly in the insighted_esf7 schools table
     await db.query(`DELETE FROM schools WHERE school_id = '199999'`);
     await db.query(`
       INSERT INTO schools (id, school_id, school_name, region, division, district, school_year, number_of_shifts, curricular_offering)
       VALUES ('sch-199999', '199999', 'TEST K-12 INTEGRATED SCHOOL', 'REGION VIII', 'SAMAR (WESTERN SAMAR)', 'BASEY I', 'SY 26-27', 1, ARRAY['Kindergarten', 'Elementary', 'Junior High School', 'Senior High School', 'K-12', 'Kinder', 'Elementary', 'JHS', 'SHS'])
     `);
-    console.log('✅ School created directly in insighted_esf7 database.');
+    console.log("✅ School created directly in insighted_esf7 database.");
 
     // 3. Clear local draft overrides if any
     await db.query(`DELETE FROM school_drafts WHERE school_id = '199999'`);
 
     // 4. Create the pilot personnel table entries (2 teachers) in insighted_esf7_pilot
-    await db.query(`DELETE FROM insighted_esf7_pilot WHERE school_id = '199999'`);
-    
+    await db.query(
+      `DELETE FROM insighted_esf7_pilot WHERE school_id = '199999'`,
+    );
+
     // Teacher 1
     await db.query(`
       INSERT INTO insighted_esf7_pilot (
@@ -57,7 +61,7 @@ async function main() {
       )
     `);
 
-    console.log('✅ Seeded 2 pilot teachers in insighted_esf7_pilot.');
+    console.log("✅ Seeded 2 pilot teachers in insighted_esf7_pilot.");
 
     // 5. Create active personnel table entries for school 199999
     await db.query(`DELETE FROM personnel WHERE school_id = '199999'`);
@@ -80,10 +84,12 @@ async function main() {
       ('emp-199999-2', 'p-199999-2', 'TEACHER III', 'NATIONAL', 'REGULAR PERMANENT', 'Permanent', '2012-09-01', '2012-09-01', '2012-09-01')
     `);
 
-    console.log('✅ Seeded 2 active teachers in personnel & personnel_employment tables.');
+    console.log(
+      "✅ Seeded 2 active teachers in personnel & personnel_employment tables.",
+    );
     process.exit(0);
   } catch (e) {
-    console.error('❌ Failed:', e.message);
+    console.error("❌ Failed:", e.message);
     process.exit(1);
   }
 }

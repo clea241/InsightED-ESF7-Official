@@ -1,66 +1,202 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { api } from '../services/api';
-import { reportDraftError, clearDraftError, DRAFT_ACTIONS } from '../services/draftErrorReporter';
-import { useAuth } from './AuthContext';
-import { markUnsynced, markSynced, hasUnsynced, onServerLock, onServerRecover } from '../services/serverHealth';
-import { chooseDraftSource } from '../services/draftSync';
-import { getSessionSchoolId, resolveSchoolId } from '../services/session';
-import { saveDraft, flushDrafts, markDraftDirty, registerSnapshotProvider, subscribeDraftSave, getSyncedVersion, setSyncedVersion, acceptServerVersion, retryNow, DraftConflictError } from '../services/draftSaver';
-import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
-import { dedupeSections, dedupePersonnel } from '../services/dedupe';
-import { mergeSectionsByKey, inSchoolYear } from '../services/sectionMerge';
-import { cleanPersonnelDates } from '../services/dateFields';
-import { reportError, takeRecentApiError } from '../services/errorAlert';
-import { overlayDatabaseWorkload } from '../services/workloadMerge';
-import { retryTransient } from '../services/workloadSave';
-import { validateTimeAllotment, isPerGradeSharedSlot, rowSubjectGrade } from '@shared/timeAllotment.js';
-import { hasActiveAllowance, isAllowanceDisabled } from '@shared/allowances.js';
-import { isRosterSchoolHead } from '@shared/schoolHead.js';
-import { requiresDepartmentHead } from '@shared/schoolLevel.js';
-import { checkBeforeLeave, checkBeforeLeaveDetailed, allowNextUnload, isAnyScreenDirty, discardAllDirtyScreens } from '../services/dirtyGuard';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
+import { api } from "../services/api";
+import {
+  reportDraftError,
+  clearDraftError,
+  DRAFT_ACTIONS,
+} from "../services/draftErrorReporter";
+import { useAuth } from "./AuthContext";
+import {
+  markUnsynced,
+  markSynced,
+  hasUnsynced,
+  onServerLock,
+  onServerRecover,
+} from "../services/serverHealth";
+import { chooseDraftSource } from "../services/draftSync";
+import { getSessionSchoolId, resolveSchoolId } from "../services/session";
+import {
+  saveDraft,
+  flushDrafts,
+  markDraftDirty,
+  registerSnapshotProvider,
+  subscribeDraftSave,
+  getSyncedVersion,
+  setSyncedVersion,
+  acceptServerVersion,
+  retryNow,
+  DraftConflictError,
+} from "../services/draftSaver";
+import { getLocalDraft, setLocalDraft, deleteLocalDraft } from "../services/db";
+import { dedupeSections, dedupePersonnel } from "../services/dedupe";
+import { mergeSectionsByKey, inSchoolYear } from "../services/sectionMerge";
+import { cleanPersonnelDates } from "../services/dateFields";
+import { reportError, takeRecentApiError } from "../services/errorAlert";
+import { overlayDatabaseWorkload } from "../services/workloadMerge";
+import { retryTransient } from "../services/workloadSave";
+import {
+  validateTimeAllotment,
+  isPerGradeSharedSlot,
+  rowSubjectGrade,
+} from "@shared/timeAllotment.js";
+import { hasActiveAllowance, isAllowanceDisabled } from "@shared/allowances.js";
+import { isRosterSchoolHead } from "@shared/schoolHead.js";
+import { requiresDepartmentHead } from "@shared/schoolLevel.js";
+import {
+  checkBeforeLeave,
+  checkBeforeLeaveDetailed,
+  allowNextUnload,
+  isAnyScreenDirty,
+  discardAllDirtyScreens,
+} from "../services/dirtyGuard";
 
 const AppContext = createContext();
 
 export const DEFAULT_PH_HOLIDAYS = [
-  { id: 'ph-hol-1', date: '2026-06-12', type: 'National Holiday', description: 'Independence Day' },
-  { id: 'ph-hol-2', date: '2026-08-21', type: 'National Holiday', description: 'Ninoy Aquino Day' },
-  { id: 'ph-hol-3', date: '2026-08-31', type: 'National Holiday', description: 'National Heroes Day' },
-  { id: 'ph-hol-4', date: '2026-11-01', type: 'National Holiday', description: "All Saints' Day" },
-  { id: 'ph-hol-5', date: '2026-11-02', type: 'National Holiday', description: "All Souls' Day" },
-  { id: 'ph-hol-6', date: '2026-11-30', type: 'National Holiday', description: 'Bonifacio Day' },
-  { id: 'ph-hol-7', date: '2026-12-08', type: 'National Holiday', description: 'Feast of the Immaculate Conception' },
-  { id: 'ph-hol-8', date: '2026-12-24', type: 'National Holiday', description: 'Christmas Eve' },
-  { id: 'ph-hol-9', date: '2026-12-25', type: 'National Holiday', description: 'Christmas Day' },
-  { id: 'ph-hol-10', date: '2026-12-30', type: 'National Holiday', description: 'Rizal Day' },
-  { id: 'ph-hol-11', date: '2026-12-31', type: 'National Holiday', description: 'Last Day of the Year' },
-  { id: 'ph-hol-12', date: '2027-01-01', type: 'National Holiday', description: "New Year's Day" },
-  { id: 'ph-hol-13', date: '2027-02-10', type: 'National Holiday', description: 'Chinese New Year' },
-  { id: 'ph-hol-14', date: '2027-03-25', type: 'National Holiday', description: 'Maundy Thursday' },
-  { id: 'ph-hol-15', date: '2027-03-26', type: 'National Holiday', description: 'Good Friday' },
-  { id: 'ph-hol-16', date: '2027-03-27', type: 'National Holiday', description: 'Black Saturday' },
-  { id: 'ph-hol-17', date: '2027-04-09', type: 'National Holiday', description: 'Araw ng Kagitingan' },
-  { id: 'ph-hol-18', date: '2027-05-01', type: 'National Holiday', description: 'Labor Day' }
+  {
+    id: "ph-hol-1",
+    date: "2026-06-12",
+    type: "National Holiday",
+    description: "Independence Day",
+  },
+  {
+    id: "ph-hol-2",
+    date: "2026-08-21",
+    type: "National Holiday",
+    description: "Ninoy Aquino Day",
+  },
+  {
+    id: "ph-hol-3",
+    date: "2026-08-31",
+    type: "National Holiday",
+    description: "National Heroes Day",
+  },
+  {
+    id: "ph-hol-4",
+    date: "2026-11-01",
+    type: "National Holiday",
+    description: "All Saints' Day",
+  },
+  {
+    id: "ph-hol-5",
+    date: "2026-11-02",
+    type: "National Holiday",
+    description: "All Souls' Day",
+  },
+  {
+    id: "ph-hol-6",
+    date: "2026-11-30",
+    type: "National Holiday",
+    description: "Bonifacio Day",
+  },
+  {
+    id: "ph-hol-7",
+    date: "2026-12-08",
+    type: "National Holiday",
+    description: "Feast of the Immaculate Conception",
+  },
+  {
+    id: "ph-hol-8",
+    date: "2026-12-24",
+    type: "National Holiday",
+    description: "Christmas Eve",
+  },
+  {
+    id: "ph-hol-9",
+    date: "2026-12-25",
+    type: "National Holiday",
+    description: "Christmas Day",
+  },
+  {
+    id: "ph-hol-10",
+    date: "2026-12-30",
+    type: "National Holiday",
+    description: "Rizal Day",
+  },
+  {
+    id: "ph-hol-11",
+    date: "2026-12-31",
+    type: "National Holiday",
+    description: "Last Day of the Year",
+  },
+  {
+    id: "ph-hol-12",
+    date: "2027-01-01",
+    type: "National Holiday",
+    description: "New Year's Day",
+  },
+  {
+    id: "ph-hol-13",
+    date: "2027-02-10",
+    type: "National Holiday",
+    description: "Chinese New Year",
+  },
+  {
+    id: "ph-hol-14",
+    date: "2027-03-25",
+    type: "National Holiday",
+    description: "Maundy Thursday",
+  },
+  {
+    id: "ph-hol-15",
+    date: "2027-03-26",
+    type: "National Holiday",
+    description: "Good Friday",
+  },
+  {
+    id: "ph-hol-16",
+    date: "2027-03-27",
+    type: "National Holiday",
+    description: "Black Saturday",
+  },
+  {
+    id: "ph-hol-17",
+    date: "2027-04-09",
+    type: "National Holiday",
+    description: "Araw ng Kagitingan",
+  },
+  {
+    id: "ph-hol-18",
+    date: "2027-05-01",
+    type: "National Holiday",
+    description: "Labor Day",
+  },
 ];
 
-export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections = []) {
+export function checkPersonnelWorkloadErrors(
+  p,
+  allPersonnel = [],
+  classSections = [],
+) {
   if (!p) return false;
   const rows = p.workloadRows || [];
   if (!Array.isArray(rows) || rows.length === 0) return false;
 
   const timeToMins = (t) => {
-    if (!t || typeof t !== 'string' || !t.includes(':')) return null;
-    const [h, m] = t.split(':').map(Number);
+    if (!t || typeof t !== "string" || !t.includes(":")) return null;
+    const [h, m] = t.split(":").map(Number);
     if (isNaN(h) || isNaN(m)) return null;
     return h * 60 + m;
   };
 
   const isAdvisoryOrHgpPair = (r1, r2) => {
-    const s1 = String(r1?.subject || r1?.subjectName || '').trim().toUpperCase();
-    const s2 = String(r2?.subject || r2?.subjectName || '').trim().toUpperCase();
-    const isAdv1 = s1 === 'ADVISORY' || s1.includes('HOMEROOM ADVISORY');
-    const isAdv2 = s2 === 'ADVISORY' || s2.includes('HOMEROOM ADVISORY');
-    const isHgp1 = s1 === 'HGP' || s1.includes('HOMEROOM GUIDANCE');
-    const isHgp2 = s2 === 'HGP' || s2.includes('HOMEROOM GUIDANCE');
+    const s1 = String(r1?.subject || r1?.subjectName || "")
+      .trim()
+      .toUpperCase();
+    const s2 = String(r2?.subject || r2?.subjectName || "")
+      .trim()
+      .toUpperCase();
+    const isAdv1 = s1 === "ADVISORY" || s1.includes("HOMEROOM ADVISORY");
+    const isAdv2 = s2 === "ADVISORY" || s2.includes("HOMEROOM ADVISORY");
+    const isHgp1 = s1 === "HGP" || s1.includes("HOMEROOM GUIDANCE");
+    const isHgp2 = s2 === "HGP" || s2.includes("HOMEROOM GUIDANCE");
     return (isAdv1 && isHgp2) || (isHgp1 && isAdv2);
   };
 
@@ -74,22 +210,34 @@ export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections
     // 1. Time Slot Duration Limits (>60 mins elem/JHS or >360 mins SHS)
     if (sMins !== null && eMins !== null && eMins > sMins) {
       const diffMins = eMins - sMins;
-      const subStr = String(row.subject || row.task || '').toUpperCase();
-      const isAdminOrNonTeaching = subStr.startsWith('ADMIN') || subStr.includes('ADMIN') || subStr.includes('ADMINISTRATIVE') || Boolean(row.is_admin_task || row.isAdminTask);
-      const isKinder = subStr.includes('KINDER');
+      const subStr = String(row.subject || row.task || "").toUpperCase();
+      const isAdminOrNonTeaching =
+        subStr.startsWith("ADMIN") ||
+        subStr.includes("ADMIN") ||
+        subStr.includes("ADMINISTRATIVE") ||
+        Boolean(row.is_admin_task || row.isAdminTask);
+      const isKinder = subStr.includes("KINDER");
 
       if (!isKinder && !isAdminOrNonTeaching) {
-        const gStr = String(row.gradeLevel || '').toUpperCase();
-        const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
+        const gStr = String(row.gradeLevel || "").toUpperCase();
+        const isSHS =
+          gStr.includes("GRADE 11") ||
+          gStr.includes("GRADE 12") ||
+          gStr.includes("SHS");
         const maxMins = isSHS ? 360 : 60;
         if (diffMins > maxMins) return true;
       }
     }
 
     // 2. Schedule Conflict (Overlap on same day for same person)
-    const rowDays = (Array.isArray(row.days) && row.days.length > 0)
-      ? row.days
-      : (row.daySchedule ? String(row.daySchedule).split(',').map(s => s.trim()) : []);
+    const rowDays =
+      Array.isArray(row.days) && row.days.length > 0
+        ? row.days
+        : row.daySchedule
+          ? String(row.daySchedule)
+              .split(",")
+              .map((s) => s.trim())
+          : [];
 
     if (sMins !== null && eMins !== null && rowDays.length > 0) {
       const hasOverlap = rows.some((otherRow, oIdx) => {
@@ -98,11 +246,16 @@ export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections
         const oeMins = timeToMins(otherRow.endTime);
         if (osMins === null || oeMins === null) return false;
 
-        const otherDays = (Array.isArray(otherRow.days) && otherRow.days.length > 0)
-          ? otherRow.days
-          : (otherRow.daySchedule ? String(otherRow.daySchedule).split(',').map(s => s.trim()) : []);
+        const otherDays =
+          Array.isArray(otherRow.days) && otherRow.days.length > 0
+            ? otherRow.days
+            : otherRow.daySchedule
+              ? String(otherRow.daySchedule)
+                  .split(",")
+                  .map((s) => s.trim())
+              : [];
 
-        const dayOverlap = rowDays.some(d => otherDays.includes(d));
+        const dayOverlap = rowDays.some((d) => otherDays.includes(d));
         if (!dayOverlap) return false;
 
         if (sMins < oeMins && eMins > osMins) {
@@ -118,31 +271,45 @@ export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections
     // 3. Duplicate Subject Assignment in Section
     if (row.subject) {
       const normSub = String(row.subject).trim().toUpperCase();
-      if (normSub !== 'ADVISORY') {
-        const secId = String(row.sectionId || row.section_id || '');
-        const secName = String(row.sectionName || row.section_name || '').trim().toUpperCase();
+      if (normSub !== "ADVISORY") {
+        const secId = String(row.sectionId || row.section_id || "");
+        const secName = String(row.sectionName || row.section_name || "")
+          .trim()
+          .toUpperCase();
         if (secId || secName) {
-          const gStr = String(row.gradeLevel || '').toUpperCase();
-          const isSHS = gStr.includes('GRADE 11') || gStr.includes('GRADE 12') || gStr.includes('SHS');
-          const term = isSHS ? (row.term || row.semester || '1st') : null;
+          const gStr = String(row.gradeLevel || "").toUpperCase();
+          const isSHS =
+            gStr.includes("GRADE 11") ||
+            gStr.includes("GRADE 12") ||
+            gStr.includes("SHS");
+          const term = isSHS ? row.term || row.semester || "1st" : null;
 
           // Scan other personnel in school
-          for (const otherP of (allPersonnel || [])) {
+          for (const otherP of allPersonnel || []) {
             if (String(otherP.id) === String(p.id)) continue;
             if (otherP.isDraft || !Array.isArray(otherP.workloadRows)) continue;
 
             for (const r of otherP.workloadRows) {
-              const rSecId = String(r.sectionId || r.section_id || '');
-              const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-              const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+              const rSecId = String(r.sectionId || r.section_id || "");
+              const rSecName = String(r.sectionName || r.section_name || "")
+                .trim()
+                .toUpperCase();
+              const rSub = String(r.subject || r.subjectName || "")
+                .trim()
+                .toUpperCase();
 
-              const matchSec = (secId && rSecId && secId === rSecId) || (secName && rSecName && secName === rSecName);
+              const matchSec =
+                (secId && rSecId && secId === rSecId) ||
+                (secName && rSecName && secName === rSecName);
               if (!matchSec) continue;
 
-              const rGradeStr = String(r.gradeLevel || '').toUpperCase();
-              const rIsSHS = rGradeStr.includes('GRADE 11') || rGradeStr.includes('GRADE 12') || rGradeStr.includes('SHS');
+              const rGradeStr = String(r.gradeLevel || "").toUpperCase();
+              const rIsSHS =
+                rGradeStr.includes("GRADE 11") ||
+                rGradeStr.includes("GRADE 12") ||
+                rGradeStr.includes("SHS");
               if (term && rIsSHS) {
-                const rTerm = r.term || r.semester || '1st';
+                const rTerm = r.term || r.semester || "1st";
                 if (rTerm !== term) continue;
               }
 
@@ -154,17 +321,26 @@ export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections
           for (let oIdx = 0; oIdx < rows.length; oIdx++) {
             if (oIdx === idx) continue;
             const r = rows[oIdx];
-            const rSecId = String(r.sectionId || r.section_id || '');
-            const rSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-            const rSub = String(r.subject || r.subjectName || '').trim().toUpperCase();
+            const rSecId = String(r.sectionId || r.section_id || "");
+            const rSecName = String(r.sectionName || r.section_name || "")
+              .trim()
+              .toUpperCase();
+            const rSub = String(r.subject || r.subjectName || "")
+              .trim()
+              .toUpperCase();
 
-            const matchSec = (secId && rSecId && secId === rSecId) || (secName && rSecName && secName === rSecName);
+            const matchSec =
+              (secId && rSecId && secId === rSecId) ||
+              (secName && rSecName && secName === rSecName);
             if (!matchSec) continue;
 
-            const rGradeStr = String(r.gradeLevel || '').toUpperCase();
-            const rIsSHS = rGradeStr.includes('GRADE 11') || rGradeStr.includes('GRADE 12') || rGradeStr.includes('SHS');
+            const rGradeStr = String(r.gradeLevel || "").toUpperCase();
+            const rIsSHS =
+              rGradeStr.includes("GRADE 11") ||
+              rGradeStr.includes("GRADE 12") ||
+              rGradeStr.includes("SHS");
             if (term && rIsSHS) {
-              const rTerm = r.term || r.semester || '1st';
+              const rTerm = r.term || r.semester || "1st";
               if (rTerm !== term) continue;
             }
 
@@ -175,17 +351,24 @@ export function checkPersonnelWorkloadErrors(p, allPersonnel = [], classSections
     }
 
     // 4. HGP Weekly Duration Rule
-    const subStr = String(row.subject || row.subjectName || '').trim().toUpperCase();
-    if (subStr === 'HGP' || subStr.includes('HOMEROOM GUIDANCE')) {
+    const subStr = String(row.subject || row.subjectName || "")
+      .trim()
+      .toUpperCase();
+    if (subStr === "HGP" || subStr.includes("HOMEROOM GUIDANCE")) {
       if (!row.startTime || !row.endTime) return true;
-      if (sMins !== null && eMins !== null && eMins > sMins && rowDays.length > 0) {
+      if (
+        sMins !== null &&
+        eMins !== null &&
+        eMins > sMins &&
+        rowDays.length > 0
+      ) {
         if ((eMins - sMins) * rowDays.length !== 60) return true;
       }
     }
   }
 
   return false;
-};
+}
 
 export const NEAP_TRAINING_OPTIONS = [
   "HIGHER ORDER THINKING SKILLS PROFESSIONAL LEARNING PACKAGES FOR MATHEMATICS, SCIENCE, AND ENGLISH TEACHERS",
@@ -213,7 +396,7 @@ export const NEAP_TRAINING_OPTIONS = [
   "INCLUSIVE EDUCATION",
   "READING REMEDIATION",
   "SCHOOL LEADERSHIP PROGRAM",
-  "LEARNING RECOVERY PROGRAM"
+  "LEARNING RECOVERY PROGRAM",
 ];
 
 export const TESDA_CERTIFICATION_OPTIONS = [
@@ -550,7 +733,7 @@ export const TESDA_CERTIFICATION_OPTIONS = [
   "TRANSMISSION LINE INSTALLATION AND MAINTENANCE",
   "ILLUSTRATION",
   "PHOTOGRAPHY",
-  "CUSTOMER SERVICES"
+  "CUSTOMER SERVICES",
 ];
 
 // Default constants from the prototype
@@ -579,7 +762,7 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "MASTER TEACHER IV",
     "MASTER TEACHER V",
     "LEARNER SUPPORT AIDE",
-    "ALIVE TEACHER"
+    "ALIVE TEACHER",
   ],
   "teaching-related": [
     "TIC - HEAD TEACHER I",
@@ -628,7 +811,7 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "SCHOOL LIBRARIAN",
     "COLLEGE LIBRARIAN",
     "VOCATIONAL SCHOOL ADMINISTRATOR",
-    "VOCATIONAL SCHOOL SUPERINTENDENT"
+    "VOCATIONAL SCHOOL SUPERINTENDENT",
   ],
   "non-teaching": [
     "ACCOUNTANT",
@@ -709,35 +892,38 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "VOCATIONAL PLACEMENT COORDINATOR",
     "WATCHMAN",
     "INTERN",
-    "OTHERS"
-  ]
+    "OTHERS",
+  ],
 };
 
 export const isCanonicalPosition = (positionName) => {
-  if (!positionName || typeof positionName !== 'string') return false;
+  if (!positionName || typeof positionName !== "string") return false;
   const pos = positionName.trim();
-  if (pos.startsWith('OTHERS')) return true;
+  if (pos.startsWith("OTHERS")) return true;
   return (
     (POSITION_OPTIONS_BY_CATEGORY.teaching || []).includes(pos) ||
-    (POSITION_OPTIONS_BY_CATEGORY['teaching-related'] || []).includes(pos) ||
-    (POSITION_OPTIONS_BY_CATEGORY['non-teaching'] || []).includes(pos)
+    (POSITION_OPTIONS_BY_CATEGORY["teaching-related"] || []).includes(pos) ||
+    (POSITION_OPTIONS_BY_CATEGORY["non-teaching"] || []).includes(pos)
   );
 };
 
 export const getCategoryForCanonicalPosition = (positionName) => {
-  if (!positionName || typeof positionName !== 'string') return '';
+  if (!positionName || typeof positionName !== "string") return "";
   const pos = positionName.trim();
-  if (pos.startsWith('OTHERS')) return 'non-teaching';
-  if ((POSITION_OPTIONS_BY_CATEGORY.teaching || []).includes(pos)) return 'teaching';
-  if ((POSITION_OPTIONS_BY_CATEGORY['teaching-related'] || []).includes(pos)) return 'teaching-related';
-  if ((POSITION_OPTIONS_BY_CATEGORY['non-teaching'] || []).includes(pos)) return 'non-teaching';
-  return '';
+  if (pos.startsWith("OTHERS")) return "non-teaching";
+  if ((POSITION_OPTIONS_BY_CATEGORY.teaching || []).includes(pos))
+    return "teaching";
+  if ((POSITION_OPTIONS_BY_CATEGORY["teaching-related"] || []).includes(pos))
+    return "teaching-related";
+  if ((POSITION_OPTIONS_BY_CATEGORY["non-teaching"] || []).includes(pos))
+    return "non-teaching";
+  return "";
 };
 
 export const detectPersonnelTypeFromPosition = (positionName) => {
-  if (!positionName || typeof positionName !== 'string') return '';
+  if (!positionName || typeof positionName !== "string") return "";
   const pos = positionName.trim();
-  if (!isCanonicalPosition(pos)) return '';
+  if (!isCanonicalPosition(pos)) return "";
   return getCategoryForCanonicalPosition(pos);
 };
 
@@ -758,7 +944,7 @@ export const SUBJECT_OPTIONS = [
   "ADVISORY",
   "Practical Research",
   "General Mathematics",
-  "Oral Communication"
+  "Oral Communication",
 ];
 
 export const TEACHING_RELATED_TASK_OPTIONS = [
@@ -773,7 +959,7 @@ export const TEACHING_RELATED_TASK_OPTIONS = [
   "TR - SELG / SSLG TRAINER/ADVISER",
   "TR - GRADE LEVEL CHAIRPERSON",
   "TR - LEARNING AREA CHAIRPERSON",
-  "COACHING AND MENTORING"
+  "COACHING AND MENTORING",
 ];
 
 export const ADMINISTRATIVE_TASK_OPTIONS = [
@@ -782,15 +968,304 @@ export const ADMINISTRATIVE_TASK_OPTIONS = [
   "ADMIN TASK - GENERAL ADMINISTRATIVE SUPPORT",
   "ADMIN TASK - FINANCIAL MANAGEMENT",
   "ADMIN TASK - RECORDS MANAGEMENT",
-  "ADMIN TASK - PROGRAM MANAGEMENT"
+  "ADMIN TASK - PROGRAM MANAGEMENT",
 ];
 
-export const RELIGION_OPTIONS = ["BUDDHISM", "CHRISTIANITY", "HINDUISM", "INDIGENOUS RELIGION", "ISLAM", "JUDAISM", "SIKHISM", "TAOISM", "NO RELIGION", "NOT DISCLOSED"];
-export const ETHNIC_GROUP_OPTIONS = [
-  "ABELING", "ABELLEN", "ABELLING", "ABERLING", "ABIYAN (AETA)", "ADASEN", "AETA", "AGTA-AGAY", "AGTA-CIMARON", "AGTA-DUMAGAT", "AGTA-TABANGNON", "AGTA-TABOY", "AGUTAYNON", "AKEANON", "ALAB", "ALANGAN", "ALANGAN MANGYAN", "AMBALA", "APAYAO", "AROMANEN-MANOBO", "AROMANON", "ATA", "ATA-MANOBO", "ATI", "BADJAO", "BADJAO, SAMA LAUT", "BAGKALOT", "BAGO", "BAGOBO", "BAGOBO-TAGABAWA", "BALATOC", "BALIWON", "BALUGA", "BANAO", "BANGON", "BANTOANON", "BANWAON", "BARLIG", "BASAO", "BATAK", "BATANGAN", "BATANGAN MANGYAN", "BELWANG", "BIKOL/BICOL", "BINONGAN", "BISAYA/BINISAYA", "BLAAN", "BOHOLANO", "BONTOK", "BUGKALOT", "BUHID", "BUHID MANGYAN", "BUKIDNON", "BUTBUT", "CAGALUAN", "CAGAYANEN", "CALINGA", "CAPIZEÑO", "CAVITEÑO", "CEBUANO", "CHAVACANO", "CHINESE", "CIMARON", "COTABATEÑO", "COTABATEÑO-CHAVACANO", "CUYONEN", "CUYUNON", "DACALAN", "DAGAYNEN", "DANAK", "DANANAO", "DAVAO-CHAVACANO", "DAVAWEÑO", "DIANGAN", "DIBABAWON", "DIBABEEN MULITAAN", "DIBABEN", "DIRERAYAAN", "DULANGAN", "DUMAGAT-ALTA", "DUMAGAT-REMONTADO", "ESCAYA", "GADDANG", "GUBANG", "GUBATNON", "GUBATNON MANGYAN", "GUIANGAN", "GUILAYON", "GUINAANG", "HALAWODNON", "HANUNUO", "HANUNUO MANGYAN", "HENANGA", "HIGAONON", "HILIGAYNON/LLONGGO", "IABANAG", "IBALOY", "IBATAN", "IFUGAO", "IKALAHAN", "ILAUD", "ILIANEN", "ILOCANO", "IRANON", "IRAYA", "IRAYA MANGYAN", "ISAROG", "ISINAI", "ISOROKEN", "ITAWES", "ITAWIA", "ITNEG", "ITOM", "IVATAN", "JAMA MAPON", "KABAYUKAN", "KABIHUG", "KADAKLAN/KACHAKRAN", "KAILAWAN/KAYLAWAN", "KALAGAN", "KALANGUYA", "KALIBUGAN", "KALIBUGAN/KOLIBUGAN", "KALINGA", "KAMAYO", "KAMIGIN", "KAMIGUIN", "KANKANAEY", "KANKANAEY IBENGUET", "KANKANAEY IYAPLAY", "KAPAMPANGAN", "KARINTIK", "KARULANO", "KAUNANA", "KEN-EY", "KIRENTEKEN", "KLATA", "KONGKING", "KOROLANON", "LAHITANEN", "LAMBANGIAN", "LAMBANGLAN", "LANGILAN", "LIVUNGANEN", "LLONGOT", "LUBO", "LUBUAGAN", "MABAKA", "MAENG", "MAG-ANTI", "MAG-ANTSI", "MAG-INDI", "MAGAHAT", "MAGBEKIN", "MAGBUKON", "MAGKUNANA", "MAGUINDANAO", "MAJOKAYONG", "MALAWEG/MALAUEG", "MALBONG", "MAMANWA", "MANDAYA", "MANDEK-EY", "MANDUKAYAN", "MANGALI", "MANGGUANGAN", "MANOBO", "MANOBO B\"LIT", "MANOBO-DULANGAN", "MANOBO-UBO", "MANSAKA", "MARANAO", "MASADIIT", "MASBATEÑO/MASBATENON", "MATIGSALOG", "MAYUDAN", "MOLBOG", "NANENG", "NEGRITO", "OBU-MANUVU", "PALA WAN", "PALAWAN-O", "PALAWANI", "PALAWANON", "PAN-AYANON", "PANAY-BUKIDNON", "PANGASINAN/PANGGALATO", "PARANANUM", "PUGOT", "PULANGIEN", "PULANGIYEN", "PULLON", "RATAGNON", "RATAGNON MANGYAN", "REMONTADO", "SADANGA", "SAKKI", "SALEGSEG", "SAMA", "SAMA BADJAO", "SAMA BANGINGI", "SAMA LAUT", "SAMAL", "SANGIL", "SIBUYAN MANGYAN-TAGABUKID", "SUBANEN", "SULOD/BUDIKNON", "SUMADEL", "T-BOLI", "TABANGON", "TADYAWAN", "TADYAWAN MANGYAN", "TAGABAWA", "TAGAKAOLO", "TAGALOG", "TAGANUA", "TAGAWAHANON", "TAGBANUA", "TAGBANUA/KALAMIANEN", "TALAANDIG", "TALAINGOD", "TALAINGOD, LANGILAN", "TALOCTOK", "TAO'T BATO", "TAU-BUID", "TAUSUG", "TAUT-BATO", "TBOLI", "TEDURAY", "TIGWAHANON", "TINANANEN", "TINGGLAN", "TINGGUIAN", "TINGLAYAN", "TIRURAY", "TONGLAYAN", "TULGAO", "UBO MANOBO", "UBO-MANOBO", "UMAYAMNON", "WARAY", "YAKAN", "YAPAYAO", "YBANAG", "YOGAD", "ZAMBAL"
+export const RELIGION_OPTIONS = [
+  "BUDDHISM",
+  "CHRISTIANITY",
+  "HINDUISM",
+  "INDIGENOUS RELIGION",
+  "ISLAM",
+  "JUDAISM",
+  "SIKHISM",
+  "TAOISM",
+  "NO RELIGION",
+  "NOT DISCLOSED",
 ];
-export const MAJOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS"];
-export const MINOR_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS", "N/A"];
+export const ETHNIC_GROUP_OPTIONS = [
+  "ABELING",
+  "ABELLEN",
+  "ABELLING",
+  "ABERLING",
+  "ABIYAN (AETA)",
+  "ADASEN",
+  "AETA",
+  "AGTA-AGAY",
+  "AGTA-CIMARON",
+  "AGTA-DUMAGAT",
+  "AGTA-TABANGNON",
+  "AGTA-TABOY",
+  "AGUTAYNON",
+  "AKEANON",
+  "ALAB",
+  "ALANGAN",
+  "ALANGAN MANGYAN",
+  "AMBALA",
+  "APAYAO",
+  "AROMANEN-MANOBO",
+  "AROMANON",
+  "ATA",
+  "ATA-MANOBO",
+  "ATI",
+  "BADJAO",
+  "BADJAO, SAMA LAUT",
+  "BAGKALOT",
+  "BAGO",
+  "BAGOBO",
+  "BAGOBO-TAGABAWA",
+  "BALATOC",
+  "BALIWON",
+  "BALUGA",
+  "BANAO",
+  "BANGON",
+  "BANTOANON",
+  "BANWAON",
+  "BARLIG",
+  "BASAO",
+  "BATAK",
+  "BATANGAN",
+  "BATANGAN MANGYAN",
+  "BELWANG",
+  "BIKOL/BICOL",
+  "BINONGAN",
+  "BISAYA/BINISAYA",
+  "BLAAN",
+  "BOHOLANO",
+  "BONTOK",
+  "BUGKALOT",
+  "BUHID",
+  "BUHID MANGYAN",
+  "BUKIDNON",
+  "BUTBUT",
+  "CAGALUAN",
+  "CAGAYANEN",
+  "CALINGA",
+  "CAPIZEÑO",
+  "CAVITEÑO",
+  "CEBUANO",
+  "CHAVACANO",
+  "CHINESE",
+  "CIMARON",
+  "COTABATEÑO",
+  "COTABATEÑO-CHAVACANO",
+  "CUYONEN",
+  "CUYUNON",
+  "DACALAN",
+  "DAGAYNEN",
+  "DANAK",
+  "DANANAO",
+  "DAVAO-CHAVACANO",
+  "DAVAWEÑO",
+  "DIANGAN",
+  "DIBABAWON",
+  "DIBABEEN MULITAAN",
+  "DIBABEN",
+  "DIRERAYAAN",
+  "DULANGAN",
+  "DUMAGAT-ALTA",
+  "DUMAGAT-REMONTADO",
+  "ESCAYA",
+  "GADDANG",
+  "GUBANG",
+  "GUBATNON",
+  "GUBATNON MANGYAN",
+  "GUIANGAN",
+  "GUILAYON",
+  "GUINAANG",
+  "HALAWODNON",
+  "HANUNUO",
+  "HANUNUO MANGYAN",
+  "HENANGA",
+  "HIGAONON",
+  "HILIGAYNON/LLONGGO",
+  "IABANAG",
+  "IBALOY",
+  "IBATAN",
+  "IFUGAO",
+  "IKALAHAN",
+  "ILAUD",
+  "ILIANEN",
+  "ILOCANO",
+  "IRANON",
+  "IRAYA",
+  "IRAYA MANGYAN",
+  "ISAROG",
+  "ISINAI",
+  "ISOROKEN",
+  "ITAWES",
+  "ITAWIA",
+  "ITNEG",
+  "ITOM",
+  "IVATAN",
+  "JAMA MAPON",
+  "KABAYUKAN",
+  "KABIHUG",
+  "KADAKLAN/KACHAKRAN",
+  "KAILAWAN/KAYLAWAN",
+  "KALAGAN",
+  "KALANGUYA",
+  "KALIBUGAN",
+  "KALIBUGAN/KOLIBUGAN",
+  "KALINGA",
+  "KAMAYO",
+  "KAMIGIN",
+  "KAMIGUIN",
+  "KANKANAEY",
+  "KANKANAEY IBENGUET",
+  "KANKANAEY IYAPLAY",
+  "KAPAMPANGAN",
+  "KARINTIK",
+  "KARULANO",
+  "KAUNANA",
+  "KEN-EY",
+  "KIRENTEKEN",
+  "KLATA",
+  "KONGKING",
+  "KOROLANON",
+  "LAHITANEN",
+  "LAMBANGIAN",
+  "LAMBANGLAN",
+  "LANGILAN",
+  "LIVUNGANEN",
+  "LLONGOT",
+  "LUBO",
+  "LUBUAGAN",
+  "MABAKA",
+  "MAENG",
+  "MAG-ANTI",
+  "MAG-ANTSI",
+  "MAG-INDI",
+  "MAGAHAT",
+  "MAGBEKIN",
+  "MAGBUKON",
+  "MAGKUNANA",
+  "MAGUINDANAO",
+  "MAJOKAYONG",
+  "MALAWEG/MALAUEG",
+  "MALBONG",
+  "MAMANWA",
+  "MANDAYA",
+  "MANDEK-EY",
+  "MANDUKAYAN",
+  "MANGALI",
+  "MANGGUANGAN",
+  "MANOBO",
+  'MANOBO B"LIT',
+  "MANOBO-DULANGAN",
+  "MANOBO-UBO",
+  "MANSAKA",
+  "MARANAO",
+  "MASADIIT",
+  "MASBATEÑO/MASBATENON",
+  "MATIGSALOG",
+  "MAYUDAN",
+  "MOLBOG",
+  "NANENG",
+  "NEGRITO",
+  "OBU-MANUVU",
+  "PALA WAN",
+  "PALAWAN-O",
+  "PALAWANI",
+  "PALAWANON",
+  "PAN-AYANON",
+  "PANAY-BUKIDNON",
+  "PANGASINAN/PANGGALATO",
+  "PARANANUM",
+  "PUGOT",
+  "PULANGIEN",
+  "PULANGIYEN",
+  "PULLON",
+  "RATAGNON",
+  "RATAGNON MANGYAN",
+  "REMONTADO",
+  "SADANGA",
+  "SAKKI",
+  "SALEGSEG",
+  "SAMA",
+  "SAMA BADJAO",
+  "SAMA BANGINGI",
+  "SAMA LAUT",
+  "SAMAL",
+  "SANGIL",
+  "SIBUYAN MANGYAN-TAGABUKID",
+  "SUBANEN",
+  "SULOD/BUDIKNON",
+  "SUMADEL",
+  "T-BOLI",
+  "TABANGON",
+  "TADYAWAN",
+  "TADYAWAN MANGYAN",
+  "TAGABAWA",
+  "TAGAKAOLO",
+  "TAGALOG",
+  "TAGANUA",
+  "TAGAWAHANON",
+  "TAGBANUA",
+  "TAGBANUA/KALAMIANEN",
+  "TALAANDIG",
+  "TALAINGOD",
+  "TALAINGOD, LANGILAN",
+  "TALOCTOK",
+  "TAO'T BATO",
+  "TAU-BUID",
+  "TAUSUG",
+  "TAUT-BATO",
+  "TBOLI",
+  "TEDURAY",
+  "TIGWAHANON",
+  "TINANANEN",
+  "TINGGLAN",
+  "TINGGUIAN",
+  "TINGLAYAN",
+  "TIRURAY",
+  "TONGLAYAN",
+  "TULGAO",
+  "UBO MANOBO",
+  "UBO-MANOBO",
+  "UMAYAMNON",
+  "WARAY",
+  "YAKAN",
+  "YAPAYAO",
+  "YBANAG",
+  "YOGAD",
+  "ZAMBAL",
+];
+export const MAJOR_OPTIONS = [
+  "GENERAL EDUCATION",
+  "FAMILY LIFE AND CHILD DEVELOPMENT",
+  "SPECIAL NEEDS EDUCATION",
+  "EARLY CHILDHOOD EDUCATION",
+  "FILIPINO",
+  "ENGLISH",
+  "MATHEMATICS",
+  "SCIENCE",
+  "ARALING PANLIPUNAN",
+  "TLE/EPP",
+  "MAPEH",
+  "ESP/VALUES EDUCATION",
+  "BIOLOGICAL SCIENCES",
+  "PHYSICAL SCIENCES",
+  "AGRICULTURE AND FISHERY ARTS",
+];
+export const MINOR_OPTIONS = [
+  "GENERAL EDUCATION",
+  "FAMILY LIFE AND CHILD DEVELOPMENT",
+  "SPECIAL NEEDS EDUCATION",
+  "EARLY CHILDHOOD EDUCATION",
+  "FILIPINO",
+  "ENGLISH",
+  "MATHEMATICS",
+  "SCIENCE",
+  "ARALING PANLIPUNAN",
+  "TLE/EPP",
+  "MAPEH",
+  "ESP/VALUES EDUCATION",
+  "BIOLOGICAL SCIENCES",
+  "PHYSICAL SCIENCES",
+  "AGRICULTURE AND FISHERY ARTS",
+  "N/A",
+];
 export const DISCIPLINE_OPTIONS = [
   "BUSINESS ADMINISTRATION AND RELATED",
   "EDUCATION SCIENCE AND TEACHER TRAINING",
@@ -812,19 +1287,50 @@ export const DISCIPLINE_OPTIONS = [
   "FINE AND APPLIED ARTS",
   "MARITIME",
   "SERVICE TRADES",
-  "ARCHITECTURE AND TOWN PLANNING"
+  "ARCHITECTURE AND TOWN PLANNING",
 ];
-export const PRC_SPECIALIZATION_OPTIONS = ["GENERAL EDUCATION", "FAMILY LIFE AND CHILD DEVELOPMENT", "SPECIAL NEEDS EDUCATION", "EARLY CHILDHOOD EDUCATION", "FILIPINO", "ENGLISH", "MATHEMATICS", "SCIENCE", "ARALING PANLIPUNAN", "TLE/EPP", "MAPEH", "ESP/VALUES EDUCATION", "BIOLOGICAL SCIENCES", "PHYSICAL SCIENCES", "AGRICULTURE AND FISHERY ARTS"];
+export const PRC_SPECIALIZATION_OPTIONS = [
+  "GENERAL EDUCATION",
+  "FAMILY LIFE AND CHILD DEVELOPMENT",
+  "SPECIAL NEEDS EDUCATION",
+  "EARLY CHILDHOOD EDUCATION",
+  "FILIPINO",
+  "ENGLISH",
+  "MATHEMATICS",
+  "SCIENCE",
+  "ARALING PANLIPUNAN",
+  "TLE/EPP",
+  "MAPEH",
+  "ESP/VALUES EDUCATION",
+  "BIOLOGICAL SCIENCES",
+  "PHYSICAL SCIENCES",
+  "AGRICULTURE AND FISHERY ARTS",
+];
 
-export const NATURE_OF_APPOINTMENT_OPTIONS = ["REGULAR PERMANENT", "PROVISIONAL", "CONTRACTUAL", "SUBSTITUTE", "CASUAL/EMERGENCY", "JOB ORDER/CONTRACT OF SERVICE", "VOLUNTEER"];
-export const HIRING_ARRANGEMENT_OPTIONS = ["REGULAR", "SPIMS", "DOST", "4PS", "N/A", "OTHERS"];
+export const NATURE_OF_APPOINTMENT_OPTIONS = [
+  "REGULAR PERMANENT",
+  "PROVISIONAL",
+  "CONTRACTUAL",
+  "SUBSTITUTE",
+  "CASUAL/EMERGENCY",
+  "JOB ORDER/CONTRACT OF SERVICE",
+  "VOLUNTEER",
+];
+export const HIRING_ARRANGEMENT_OPTIONS = [
+  "REGULAR",
+  "SPIMS",
+  "DOST",
+  "4PS",
+  "N/A",
+  "OTHERS",
+];
 // Degree-level attainments (College/Baccalaureate, Master's, Doctorate) are no longer picked from a
 // single top-level "highest attainment" field — they are selected per-entry from the "+ Add Degree"
 // control in the Educational Attainment section (see DEGREE_LEVEL_OPTIONS). This list only covers
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS = [
   "COLLEGE GRADUATE / BACCALAUREATE",
   "MASTER'S DEGREE",
-  "DOCTORATE DEGREE"
+  "DOCTORATE DEGREE",
 ];
 
 export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
@@ -836,475 +1342,200 @@ export const HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS = [
   "COLLEGE UNDERGRADUATE",
   "COLLEGE GRADUATE / BACCALAUREATE",
   "MASTER'S DEGREE",
-  "DOCTORATE DEGREE"
+  "DOCTORATE DEGREE",
 ];
 
-export const HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS = HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
+export const HIGHEST_EDUCATIONAL_ATTAINMENT_OPTIONS =
+  HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
 
 export const SHS_TRACK_OPTIONS = [
   "ACADEMIC TRACK",
   "TECHNICAL-VOCATIONAL-LIVELIHOOD (TVL / TECH-PRO) TRACK",
   "SPORTS TRACK",
-  "ARTS AND DESIGN TRACK"
+  "ARTS AND DESIGN TRACK",
 ];
 
 export const TESDA_COURSE_TO_LEVELS_MAP = {
-  "AGRICULTURAL CROPS PRODUCTION": [
-    "NC I",
-    "NC II",
-    "NC III"
-  ],
-  "AGROENTREPRENEURSHIP": [
-    "NC II",
-    "NC III",
-    "NC IV"
-  ],
-  "AQUACULTURE (GROW-OUT OPERATION)": [
-    "NC II"
-  ],
-  "ANIMAL HEALTH CARE AND MANAGEMENT": [
-    "NC III"
-  ],
-  "AQUACULTURE (HATCHERY OPERATION)": [
-    "NC II"
-  ],
-  "ARTIFICIAL INSEMINATION (LARGE RUMINANTS)": [
-    "NC II"
-  ],
-  "ARTIFICIAL INSEMINATION (SWINE)": [
-    "NC II"
-  ],
-  "AGRICULTURAL MACHINERY OPERATION": [
-    "NC II"
-  ],
-  "AGRICULTURAL MACHINERY SERVICING (4-WHEEL TRACTOR)": [
-    "NC III"
-  ],
-  "ANIMAL PRODUCTION": [
-    "NC II (SUPERSEDED)"
-  ],
-  "ANIMAL PRODUCTION (POULTRY-CHICKEN)": [
-    "NC II"
-  ],
-  "ANIMAL PRODUCTION (RUMINANTS)": [
-    "NC II"
-  ],
-  "ANIMAL PRODUCTION (SWINE)": [
-    "NC II"
-  ],
-  "AQUACULTURE": [
-    "NC II (SUPERSEDED)"
-  ],
-  "AQUACULTURE (TILAPIA CULTURE)": [
-    "NC II"
-  ],
-  "BEEKEEPING": [
-    "NC II"
-  ],
-  "BAMBOO PROCESSING (ENGINEERED BAMBOO)": [
-    "NC II"
-  ],
-  "BIOGAS PLANT INSTALLATION": [
-    "NC III"
-  ],
-  "BAMBOO PRODUCTION": [
-    "NC II"
-  ],
-  "DRYING AND MILLING PLANT SERVICING": [
-    "NC III"
-  ],
-  "FISHING GEAR REPAIR AND MAINTENANCE": [
-    "NC III"
-  ],
-  "FISH CAPTURE": [
-    "NC I",
-    "NC II"
-  ],
-  "FISHPORT/WHARF OPERATION": [
-    "NC I"
-  ],
-  "GRAINS PRODUCTION": [
-    "NC II"
-  ],
-  "HORTICULTURE": [
-    "NC II (SUPERSEDED)",
-    "NC III"
-  ],
-  "LANDSCAPE INSTALLATION AND MAINTENANCE (SOFTSCAPE)": [
-    "NC II (SUPERSEDED)"
-  ],
-  "LANDSCAPE INSTALLATION AND MAINTENANCE": [
-    "NC II"
-  ],
-  "MILKING OPERATION": [
-    "NC II"
-  ],
-  "ORGANIC AGRICULTURE PRODUCTION": [
-    "NC II"
-  ],
-  "PRESSURIZED IRRIGATION SYSTEM INSTALLATION AND MAINTENANCE": [
-    "NC II"
-  ],
-  "PEST MANAGEMENT (VEGETABLES)": [
-    "NC II"
-  ],
-  "RICE MACHINERY OPERATIONS": [
-    "NC II"
-  ],
-  "RUBBER PROCESSING": [
-    "NC II"
-  ],
-  "RUBBER PRODUCTION": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "SUGARCANE PRODUCTION": [
-    "NC II"
-  ],
-  "SEAWEED PRODUCTION": [
-    "NC II"
-  ],
+  "AGRICULTURAL CROPS PRODUCTION": ["NC I", "NC II", "NC III"],
+  AGROENTREPRENEURSHIP: ["NC II", "NC III", "NC IV"],
+  "AQUACULTURE (GROW-OUT OPERATION)": ["NC II"],
+  "ANIMAL HEALTH CARE AND MANAGEMENT": ["NC III"],
+  "AQUACULTURE (HATCHERY OPERATION)": ["NC II"],
+  "ARTIFICIAL INSEMINATION (LARGE RUMINANTS)": ["NC II"],
+  "ARTIFICIAL INSEMINATION (SWINE)": ["NC II"],
+  "AGRICULTURAL MACHINERY OPERATION": ["NC II"],
+  "AGRICULTURAL MACHINERY SERVICING (4-WHEEL TRACTOR)": ["NC III"],
+  "ANIMAL PRODUCTION": ["NC II (SUPERSEDED)"],
+  "ANIMAL PRODUCTION (POULTRY-CHICKEN)": ["NC II"],
+  "ANIMAL PRODUCTION (RUMINANTS)": ["NC II"],
+  "ANIMAL PRODUCTION (SWINE)": ["NC II"],
+  AQUACULTURE: ["NC II (SUPERSEDED)"],
+  "AQUACULTURE (TILAPIA CULTURE)": ["NC II"],
+  BEEKEEPING: ["NC II"],
+  "BAMBOO PROCESSING (ENGINEERED BAMBOO)": ["NC II"],
+  "BIOGAS PLANT INSTALLATION": ["NC III"],
+  "BAMBOO PRODUCTION": ["NC II"],
+  "DRYING AND MILLING PLANT SERVICING": ["NC III"],
+  "FISHING GEAR REPAIR AND MAINTENANCE": ["NC III"],
+  "FISH CAPTURE": ["NC I", "NC II"],
+  "FISHPORT/WHARF OPERATION": ["NC I"],
+  "GRAINS PRODUCTION": ["NC II"],
+  HORTICULTURE: ["NC II (SUPERSEDED)", "NC III"],
+  "LANDSCAPE INSTALLATION AND MAINTENANCE (SOFTSCAPE)": ["NC II (SUPERSEDED)"],
+  "LANDSCAPE INSTALLATION AND MAINTENANCE": ["NC II"],
+  "MILKING OPERATION": ["NC II"],
+  "ORGANIC AGRICULTURE PRODUCTION": ["NC II"],
+  "PRESSURIZED IRRIGATION SYSTEM INSTALLATION AND MAINTENANCE": ["NC II"],
+  "PEST MANAGEMENT (VEGETABLES)": ["NC II"],
+  "RICE MACHINERY OPERATIONS": ["NC II"],
+  "RUBBER PROCESSING": ["NC II"],
+  "RUBBER PRODUCTION": ["NC II (SUPERSEDED)", "NC II"],
+  "SUGARCANE PRODUCTION": ["NC II"],
+  "SEAWEED PRODUCTION": ["NC II"],
   "AUTOMOTIVE BODY PAINTING/FINISHING": [
     "NC I",
     "NC II (SUPERSEDED)",
-    "NC III (SUPERSEDED)"
+    "NC III (SUPERSEDED)",
   ],
-  "AUTOMOTIVE BODY REPAIRING": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "AUTOMOTIVE DIAGNOSIS (CHASSIS)": [
-    "NC III"
-  ],
-  "AUTOMOTIVE DIAGNOSIS (ELECTRICAL)": [
-    "NC III"
-  ],
-  "AUTOMOTIVE DIAGNOSIS (ENGINE)": [
-    "NC III"
-  ],
-  "AUTOMOTIVE ELECTRICAL ASSEMBLY": [
-    "NC II",
-    "NC III"
-  ],
-  "AUTO ENGINE REBUILDING": [
-    "NC II"
-  ],
-  "AUTOMOTIVE MECHANICAL ASSEMBLY": [
-    "NC II",
-    "NC III"
-  ],
-  "AUTOMOTIVE SERVICING (CHASSIS REPAIR)": [
-    "NC II"
-  ],
-  "AUTOMOTIVE SERVICING (ELECTRICAL REPAIR)": [
-    "NC II"
-  ],
-  "AUTOMOTIVE SERVICING (ENGINE REPAIR)": [
-    "NC II"
-  ],
-  "AUTOMOTIVE PAINTING": [
-    "NC II"
-  ],
+  "AUTOMOTIVE BODY REPAIRING": ["NC II (SUPERSEDED)", "NC II"],
+  "AUTOMOTIVE DIAGNOSIS (CHASSIS)": ["NC III"],
+  "AUTOMOTIVE DIAGNOSIS (ELECTRICAL)": ["NC III"],
+  "AUTOMOTIVE DIAGNOSIS (ENGINE)": ["NC III"],
+  "AUTOMOTIVE ELECTRICAL ASSEMBLY": ["NC II", "NC III"],
+  "AUTO ENGINE REBUILDING": ["NC II"],
+  "AUTOMOTIVE MECHANICAL ASSEMBLY": ["NC II", "NC III"],
+  "AUTOMOTIVE SERVICING (CHASSIS REPAIR)": ["NC II"],
+  "AUTOMOTIVE SERVICING (ELECTRICAL REPAIR)": ["NC II"],
+  "AUTOMOTIVE SERVICING (ENGINE REPAIR)": ["NC II"],
+  "AUTOMOTIVE PAINTING": ["NC II"],
   "AUTOMOTIVE SERVICING": [
     "NC I (SUPERSEDED)",
     "NC I",
     "NC II (SUPERSEDED)",
     "NC III (SUPERSEDED)",
-    "NC IV"
+    "NC IV",
   ],
-  "COMPLEX PAINT REFINISHING": [
-    "NC III"
-  ],
-  "DRIVING (ARTICULATED VEHICLE)": [
-    "NC III"
-  ],
-  "DRIVING (PASSENGER BUS/STRAIGHT TRUCK)": [
-    "NC III"
-  ],
-  "DRIVING": [
-    "NC II",
-    "NC III (SUPERSEDED)"
-  ],
-  "FOUNDRY MELTING/CASTING": [
-    "NC II",
-    "NC III"
-  ],
-  "FOUNDRY MOLDING": [
-    "NC II",
-    "NC III"
-  ],
-  "FOUNDRY PATTERN MAKING": [
-    "NC III",
-    "NC II"
-  ],
-  "FORGING": [
-    "NC II",
-    "NC III"
-  ],
-  "HEAT TREATMENT": [
-    "NC II"
-  ],
-  "LABORATORY AND METROLOGY/CALIBRATION SERVICES": [
-    "NC II",
-    "NC III"
-  ],
-  "MOLDMAKING": [
-    "NC II"
-  ],
-  "MOTORCYCLE/SMALL ENGINE SERVICING": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "METAL STAMPING": [
-    "NC II"
-  ],
-  "NON-STRUCTURAL ANALYSIS AND DAMAGE REPAIR": [
-    "NC III"
-  ],
-  "PLASTIC MACHINE OPERATION": [
-    "NC II",
-    "NC III"
-  ],
-  "PAINTING MACHINE OPERATION": [
-    "NC II"
-  ],
-  "PROCESS INSPECTION": [
-    "NC II",
-    "NC III"
-  ],
-  "SPEED LIMITATION DEVICE SERVICING": [
-    "NC II"
-  ],
-  "TINSMITHING (AUTOMOTIVE MANUFACTURING)": [
-    "NC II"
-  ],
-  "AUTOMOTIVE WIRING HARNESS ASSEMBLY": [
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (ARTICULATED OFF-HIGHWAY DUMP TRUCK)": [
-    "NC II"
-  ],
-  "BASIC 3D BUILDING INFORMATION MODELLING": [
-    "NC III"
-  ],
-  "HEAVY EQUIPMENT OPERATION (BACKHOE LOADER)": [
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (BULLDOZER)": [
-    "NC II"
-  ],
-  "CARPENTRY": [
-    "NC II",
-    "NC III",
-    "NC III (SUPERSEDED)",
-    "NC II (SUPERSEDED)"
-  ],
-  "HEAVY EQUIPMENT OPERATION (CRAWLER CRANE)": [
-    "NC II (SUPERSEDED)",
-    "NC III"
-  ],
-  "CONSTRUCTION PAINTING": [
-    "NC II (SUPERSEDED)",
-    "NC II",
-    "NC III"
-  ],
-  "HEAVY EQUIPMENT OPERATION (CONCRETE PUMP)": [
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (CONTAINER STACKER)": [
-    "NC II"
-  ],
+  "COMPLEX PAINT REFINISHING": ["NC III"],
+  "DRIVING (ARTICULATED VEHICLE)": ["NC III"],
+  "DRIVING (PASSENGER BUS/STRAIGHT TRUCK)": ["NC III"],
+  DRIVING: ["NC II", "NC III (SUPERSEDED)"],
+  "FOUNDRY MELTING/CASTING": ["NC II", "NC III"],
+  "FOUNDRY MOLDING": ["NC II", "NC III"],
+  "FOUNDRY PATTERN MAKING": ["NC III", "NC II"],
+  FORGING: ["NC II", "NC III"],
+  "HEAT TREATMENT": ["NC II"],
+  "LABORATORY AND METROLOGY/CALIBRATION SERVICES": ["NC II", "NC III"],
+  MOLDMAKING: ["NC II"],
+  "MOTORCYCLE/SMALL ENGINE SERVICING": ["NC II (SUPERSEDED)", "NC II"],
+  "METAL STAMPING": ["NC II"],
+  "NON-STRUCTURAL ANALYSIS AND DAMAGE REPAIR": ["NC III"],
+  "PLASTIC MACHINE OPERATION": ["NC II", "NC III"],
+  "PAINTING MACHINE OPERATION": ["NC II"],
+  "PROCESS INSPECTION": ["NC II", "NC III"],
+  "SPEED LIMITATION DEVICE SERVICING": ["NC II"],
+  "TINSMITHING (AUTOMOTIVE MANUFACTURING)": ["NC II"],
+  "AUTOMOTIVE WIRING HARNESS ASSEMBLY": ["NC II"],
+  "HEAVY EQUIPMENT OPERATION (ARTICULATED OFF-HIGHWAY DUMP TRUCK)": ["NC II"],
+  "BASIC 3D BUILDING INFORMATION MODELLING": ["NC III"],
+  "HEAVY EQUIPMENT OPERATION (BACKHOE LOADER)": ["NC II"],
+  "HEAVY EQUIPMENT OPERATION (BULLDOZER)": ["NC II"],
+  CARPENTRY: ["NC II", "NC III", "NC III (SUPERSEDED)", "NC II (SUPERSEDED)"],
+  "HEAVY EQUIPMENT OPERATION (CRAWLER CRANE)": ["NC II (SUPERSEDED)", "NC III"],
+  "CONSTRUCTION PAINTING": ["NC II (SUPERSEDED)", "NC II", "NC III"],
+  "HEAVY EQUIPMENT OPERATION (CONCRETE PUMP)": ["NC II"],
+  "HEAVY EQUIPMENT OPERATION (CONTAINER STACKER)": ["NC II"],
   "ELECTRICAL INSTALLATION AND MAINTENANCE": [
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III",
-    "NC IV"
+    "NC IV",
   ],
-  "HEAVY EQUIPMENT OPERATION (FORKLIFT)": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (GANTRY CRANE)": [
-    "NC II (SUPERSEDED)"
-  ],
-  "HEAVY EQUIPMENT SERVICING (MECHANICAL)": [
-    "NC II"
-  ],
+  "HEAVY EQUIPMENT OPERATION (FORKLIFT)": ["NC II (SUPERSEDED)", "NC II"],
+  "HEAVY EQUIPMENT OPERATION (GANTRY CRANE)": ["NC II (SUPERSEDED)"],
+  "HEAVY EQUIPMENT SERVICING (MECHANICAL)": ["NC II"],
   "HEAVY EQUIPMENT OPERATION (HYDRAULIC EXCAVATOR)": [
     "NC II (SUPERSEDED)",
-    "NC II"
+    "NC II",
   ],
-  "CONSTRUCTION LIFT PASSENGER/MATERIAL ELEVATOR OPERATION": [
-    "NC II"
-  ],
-  "MASONRY": [
+  "CONSTRUCTION LIFT PASSENGER/MATERIAL ELEVATOR OPERATION": ["NC II"],
+  MASONRY: [
     "NC I (SUPERSEDED)",
     "NC I",
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III (SUPERSEDED)",
-    "NC III"
+    "NC III",
   ],
-  "HEAVY EQUIPMENT OPERATION (MOTOR GRADER)": [
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (OVERHEAD AND GANTRY CRANE)": [
-    "NC III"
-  ],
-  "HEAVY EQUIPMENT OPERATION (PAVER)": [
-    "NC II"
-  ],
-  "PIPEFITTING": [
-    "NC II (SUPERSEDED)"
-  ],
-  "PIPEFITTING (METALLIC)": [
-    "NC II"
-  ],
-  "PLUMBING": [
+  "HEAVY EQUIPMENT OPERATION (MOTOR GRADER)": ["NC II"],
+  "HEAVY EQUIPMENT OPERATION (OVERHEAD AND GANTRY CRANE)": ["NC III"],
+  "HEAVY EQUIPMENT OPERATION (PAVER)": ["NC II"],
+  PIPEFITTING: ["NC II (SUPERSEDED)"],
+  "PIPEFITTING (METALLIC)": ["NC II"],
+  PLUMBING: [
     "NC I (SUPERSEDED)",
     "NC I",
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III (SUPERSEDED)",
-    "NC III"
+    "NC III",
   ],
-  "PV SYSTEM DESIGN": [
-    "NC III"
-  ],
-  "PV SYSTEMS INSTALLATION": [
-    "NC II"
-  ],
-  "PV SYSTEMS SERVICING": [
-    "NC III"
-  ],
-  "RIGGING": [
-    "NC I"
-  ],
-  "HEAVY EQUIPMENT OPERATION (RIGID OFF-HIGHWAY DUMP TRUCK)": [
-    "NC II"
-  ],
+  "PV SYSTEM DESIGN": ["NC III"],
+  "PV SYSTEMS INSTALLATION": ["NC II"],
+  "PV SYSTEMS SERVICING": ["NC III"],
+  RIGGING: ["NC I"],
+  "HEAVY EQUIPMENT OPERATION (RIGID OFF-HIGHWAY DUMP TRUCK)": ["NC II"],
   "HEAVY EQUIPMENT OPERATION (RIGID ON-HIGHWAY DUMP TRUCK)": [
     "NC II (SUPERSEDED)",
-    "NC II"
+    "NC II",
   ],
-  "HEAVY EQUIPMENT OPERATION (ROAD ROLLER)": [
-    "NC II"
-  ],
-  "REINFORCING STEEL WORKS": [
-    "NC II"
-  ],
+  "HEAVY EQUIPMENT OPERATION (ROAD ROLLER)": ["NC II"],
+  "REINFORCING STEEL WORKS": ["NC II"],
   "HEAVY EQUIPMENT OPERATION (ROUGH TERRAIN CRANE)": [
     "NC II (SUPERSEDED)",
-    "NC III"
+    "NC III",
   ],
-  "SCAFFOLD ERECTION": [
-    "NC II (SUPERSEDED)"
-  ],
-  "SCAFFOLDING WORKS": [
-    "NC II (SUPPORTED TYPE SCAFFOLD)"
-  ],
-  "HEAVY EQUIPMENT OPERATION (SCREED)": [
-    "NC I"
-  ],
-  "SYSTEM FORMWORKS INSTALLATION": [
-    "NC II"
-  ],
-  "STRUCTURAL ERECTION": [
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (TOWER CRANE)": [
-    "NC II (SUPERSEDED)",
-    "NC III"
-  ],
-  "TECHNICAL DRAFTING": [
-    "NC II"
-  ],
-  "TILE SETTING": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
+  "SCAFFOLD ERECTION": ["NC II (SUPERSEDED)"],
+  "SCAFFOLDING WORKS": ["NC II (SUPPORTED TYPE SCAFFOLD)"],
+  "HEAVY EQUIPMENT OPERATION (SCREED)": ["NC I"],
+  "SYSTEM FORMWORKS INSTALLATION": ["NC II"],
+  "STRUCTURAL ERECTION": ["NC II"],
+  "HEAVY EQUIPMENT OPERATION (TOWER CRANE)": ["NC II (SUPERSEDED)", "NC III"],
+  "TECHNICAL DRAFTING": ["NC II"],
+  "TILE SETTING": ["NC II (SUPERSEDED)", "NC II"],
   "HEAVY EQUIPMENT OPERATION (TRUCK MOUNTED CRANE)": [
     "NC II (SUPERSEDED)",
-    "NC III"
-  ],
-  "HEAVY EQUIPMENT OPERATION (TRANSIT MIXER)": [
-    "NC II"
-  ],
-  "HEAVY EQUIPMENT OPERATION (WHEEL LOADER)": [
-    "NC II"
-  ],
-  "PRODUCTION DESIGN (SETS AND PROPS)": [
-    "NC II"
-  ],
-  "AUDIO PRODUCTION SERVICES": [
-    "NC I"
-  ],
-  "BEADWORK ACCESSORIES AND DIVERSIFIED BEADWORK PRODUCTS MAKING": [
-    "NC II"
-  ],
-  "BASKET WEAVING": [
-    "NC II"
-  ],
-  "FILM AND VIDEO POSTPRODUCTION": [
-    "NC III"
-  ],
-  "HAND EMBROIDERY": [
-    "NC II"
-  ],
-  "HANDLOOM WEAVING (BACKSTRAP)": [
-    "NC II"
-  ],
-  "HANDLOOM WEAVING (UPRIGHT)": [
-    "NC II"
-  ],
-  "LIGHTING FOR LIVE PERFORMANCES": [
-    "NC II"
-  ],
-  "MAT WEAVING AND DIVERSIFIED MAT PRODUCTS MAKING": [
-    "NC II"
-  ],
-  "PAPER MACHE MAKING": [
-    "NC II"
-  ],
-  "WOOD CARVING": [
-    "NC II"
-  ],
-  "BIOMEDICAL EQUIPMENT SERVICING": [
-    "NC II",
-    "NC II (SUPERSEDED)"
-  ],
-  "CONSUMER ELECTRONICS SERVICING": [
     "NC III",
-    "NC IV"
   ],
-  "CONSUMER ELECTRONICS": [
-    "NC II (SUPERSEDED)"
-  ],
-  "COMPUTER SYSTEMS SERVICING": [
-    "NC II"
-  ],
-  "ELECTRONICS BACK-END OPERATION": [
-    "NC II"
-  ],
-  "ELECTRONICS FRONT-OF-LINE OPERATION": [
-    "NC II"
-  ],
-  "ELECTRONIC PRODUCTS ASSEMBLY AND SERVICING": [
-    "NC II"
-  ],
-  "ELECTRONICS/SEMICONDUCTOR PRODUCTION LINE MACHINE SERVICING": [
-    "NC III"
-  ],
-  "HARD DISK DRIVE (HDD) FRONT-OF-LINE (FOL) OPERATIONS": [
-    "NC II"
-  ],
+  "HEAVY EQUIPMENT OPERATION (TRANSIT MIXER)": ["NC II"],
+  "HEAVY EQUIPMENT OPERATION (WHEEL LOADER)": ["NC II"],
+  "PRODUCTION DESIGN (SETS AND PROPS)": ["NC II"],
+  "AUDIO PRODUCTION SERVICES": ["NC I"],
+  "BEADWORK ACCESSORIES AND DIVERSIFIED BEADWORK PRODUCTS MAKING": ["NC II"],
+  "BASKET WEAVING": ["NC II"],
+  "FILM AND VIDEO POSTPRODUCTION": ["NC III"],
+  "HAND EMBROIDERY": ["NC II"],
+  "HANDLOOM WEAVING (BACKSTRAP)": ["NC II"],
+  "HANDLOOM WEAVING (UPRIGHT)": ["NC II"],
+  "LIGHTING FOR LIVE PERFORMANCES": ["NC II"],
+  "MAT WEAVING AND DIVERSIFIED MAT PRODUCTS MAKING": ["NC II"],
+  "PAPER MACHE MAKING": ["NC II"],
+  "WOOD CARVING": ["NC II"],
+  "BIOMEDICAL EQUIPMENT SERVICING": ["NC II", "NC II (SUPERSEDED)"],
+  "CONSUMER ELECTRONICS SERVICING": ["NC III", "NC IV"],
+  "CONSUMER ELECTRONICS": ["NC II (SUPERSEDED)"],
+  "COMPUTER SYSTEMS SERVICING": ["NC II"],
+  "ELECTRONICS BACK-END OPERATION": ["NC II"],
+  "ELECTRONICS FRONT-OF-LINE OPERATION": ["NC II"],
+  "ELECTRONIC PRODUCTS ASSEMBLY AND SERVICING": ["NC II"],
+  "ELECTRONICS/SEMICONDUCTOR PRODUCTION LINE MACHINE SERVICING": ["NC III"],
+  "HARD DISK DRIVE (HDD) FRONT-OF-LINE (FOL) OPERATIONS": ["NC II"],
   "INSTRUMENTATION AND CONTROL SERVICING": [
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III (SUPERSEDED)",
     "NC III",
     "NC IV (SUPERSEDED)",
-    "NC IV"
+    "NC IV",
   ],
   "MECHATRONICS SERVICING": [
     "NC II (SUPERSEDED)",
@@ -1312,549 +1543,219 @@ export const TESDA_COURSE_TO_LEVELS_MAP = {
     "NC III (SUPERSEDED)",
     "NC III",
     "NC IV (SUPERSEDED)",
-    "NC IV"
+    "NC IV",
   ],
-  "MOBILE PHONES AND HANDHELD GADGETS SERVICING": [
-    "NC III"
-  ],
-  "SEMICONDUCTOR BACK-END OPERATION": [
-    "NC II"
-  ],
-  "SEMICONDUCTOR FRONT-OF-LINE OPERATION": [
-    "NC II"
-  ],
-  "FOOTWEAR MAKING": [
-    "NC II (SUPERSEDED)"
-  ],
-  "SHOEMAKING": [
-    "NC I",
-    "NC II"
-  ],
-  "FURNITURE MAKING (FINISHING)": [
-    "NC II"
-  ],
-  "DRESSMAKING": [
-    "NC II (SUPERSEDED)"
-  ],
-  "FASHION DESIGN (APPAREL)": [
-    "NC III"
-  ],
-  "GARMENT PRODUCTION": [
-    "NC II"
-  ],
-  "TAILORING": [
-    "NC II (SUPERSEDED)"
-  ],
-  "AIR DUCT SERVICING": [
-    "NC II"
-  ],
-  "COMMERCIAL AIR-CONDITIONING INSTALLATION AND SERVICING": [
-    "NC III"
-  ],
-  "COMMERCIAL REFRIGERATION INSTALLATION AND SERVICING": [
-    "NC III"
-  ],
-  "RAC SERVICING (DOMRAC)": [
-    "NC II",
-    "NC II (SUPERSEDED)"
-  ],
-  "ICE PLANT REFRIGERATION SERVICING": [
-    "NC III"
-  ],
-  "LAND-BASED TRANSPORT MOBILE AIR-CONDITIONING (MAC) SERVICING": [
-    "NC II"
-  ],
-  "RAC SERVICING (PACU-CRE)": [
-    "NC III (SUPERSEDED)"
-  ],
-  "TRANSPORT RAC SERVICING": [
-    "NC II (SUPERSEDED)"
-  ],
-  "LAND-BASED TRANSPORT REFRIGERATION SERVICING": [
-    "NC II"
-  ],
+  "MOBILE PHONES AND HANDHELD GADGETS SERVICING": ["NC III"],
+  "SEMICONDUCTOR BACK-END OPERATION": ["NC II"],
+  "SEMICONDUCTOR FRONT-OF-LINE OPERATION": ["NC II"],
+  "FOOTWEAR MAKING": ["NC II (SUPERSEDED)"],
+  SHOEMAKING: ["NC I", "NC II"],
+  "FURNITURE MAKING (FINISHING)": ["NC II"],
+  DRESSMAKING: ["NC II (SUPERSEDED)"],
+  "FASHION DESIGN (APPAREL)": ["NC III"],
+  "GARMENT PRODUCTION": ["NC II"],
+  TAILORING: ["NC II (SUPERSEDED)"],
+  "AIR DUCT SERVICING": ["NC II"],
+  "COMMERCIAL AIR-CONDITIONING INSTALLATION AND SERVICING": ["NC III"],
+  "COMMERCIAL REFRIGERATION INSTALLATION AND SERVICING": ["NC III"],
+  "RAC SERVICING (DOMRAC)": ["NC II", "NC II (SUPERSEDED)"],
+  "ICE PLANT REFRIGERATION SERVICING": ["NC III"],
+  "LAND-BASED TRANSPORT MOBILE AIR-CONDITIONING (MAC) SERVICING": ["NC II"],
+  "RAC SERVICING (PACU-CRE)": ["NC III (SUPERSEDED)"],
+  "TRANSPORT RAC SERVICING": ["NC II (SUPERSEDED)"],
+  "LAND-BASED TRANSPORT REFRIGERATION SERVICING": ["NC II"],
   "RAC SERVICING": [
-    "NC I (WINDOW-TYPE AIR-CONDITIONING/DOMESTIC REFRIGERATION)  (SUPERSEDED)"
+    "NC I (WINDOW-TYPE AIR-CONDITIONING/DOMESTIC REFRIGERATION)  (SUPERSEDED)",
   ],
-  "EMERGENCY MEDICAL SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC II",
-    "NC III"
-  ],
-  "HAIRDRESSING": [
+  "EMERGENCY MEDICAL SERVICES": ["NC II (SUPERSEDED)", "NC II", "NC III"],
+  HAIRDRESSING: [
     "NC II (SUPERSEDED)",
     "NC III (SUPERSEDED)",
     "NC II",
-    "NC III"
+    "NC III",
   ],
-  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (ORTHOTICS)": [
-    "NC II"
-  ],
-  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (PROSTHETICS)": [
-    "NC II"
-  ],
-  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (WHEELCHAIR)": [
-    "NC II"
-  ],
-  "BARANGAY HEALTH SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "CAREGIVING (CLIENTS WITH SPECIAL NEEDS)": [
-    "NC II"
-  ],
-  "CAREGIVING (ELDERLY)": [
-    "NC II"
-  ],
-  "CAREGIVING (GRADE SCHOOLER TO ADOLESCENT)": [
-    "NC II"
-  ],
-  "CAREGIVING (NEWBORN TO PRE-SCHOOLER)": [
-    "NC II"
-  ],
-  "CAREGIVING": [
-    "NC II"
-  ],
-  "COMMUNITY NUTRITION SERVICES": [
-    "NC II"
-  ],
-  "DENTAL HYGIENE": [
-    "LEVEL IV (SUPERSEDED)",
-    "LEVEL IV"
-  ],
-  "DENTAL LABORATORY TECHNOLOGY SERVICES": [
-    "NC I"
-  ],
+  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (ORTHOTICS)": ["NC II"],
+  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (PROSTHETICS)": ["NC II"],
+  "ASSISTIVE REHABILITATION TECHNOLOGY SERVICES (WHEELCHAIR)": ["NC II"],
+  "BARANGAY HEALTH SERVICES": ["NC II (SUPERSEDED)", "NC II"],
+  "CAREGIVING (CLIENTS WITH SPECIAL NEEDS)": ["NC II"],
+  "CAREGIVING (ELDERLY)": ["NC II"],
+  "CAREGIVING (GRADE SCHOOLER TO ADOLESCENT)": ["NC II"],
+  "CAREGIVING (NEWBORN TO PRE-SCHOOLER)": ["NC II"],
+  CAREGIVING: ["NC II"],
+  "COMMUNITY NUTRITION SERVICES": ["NC II"],
+  "DENTAL HYGIENE": ["LEVEL IV (SUPERSEDED)", "LEVEL IV"],
+  "DENTAL LABORATORY TECHNOLOGY SERVICES": ["NC I"],
   "DENTAL LABORATORY TECHNOLOGY SERVICES (FIXED DENTURES/RESTORATIONS)": [
-    "NC II"
+    "NC II",
   ],
   "DENTAL LABORATORY TECHNOLOGY SERVICES (REMOVABLE DENTURES/APPLIANCES)": [
-    "NC II"
+    "NC II",
   ],
-  "DENTAL TECHNOLOGY": [
-    "NC IV"
-  ],
-  "HEALTH CARE SERVICES": [
-    "NC II"
-  ],
-  "HILOT (WELLNESS MASSAGE)": [
-    "NC II"
-  ],
-  "MASSAGE THERAPY": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "OPHTHALMIC LENS SERVICES": [
-    "NC II"
-  ],
-  "PHARMACY SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC III"
-  ],
-  "CONTACT TRACING": [
-    "NC II"
-  ],
-  "2D ANIMATION": [
-    "NC III (SUPERSEDED)",
-    "NC III"
-  ],
-  "2D GAME ART DEVELOPMENT": [
-    "NC III"
-  ],
-  "3D ANIMATION": [
-    "NC III (SUPERSEDED)",
-    "NC III"
-  ],
-  "3D GAME ART DEVELOPMENT": [
-    "NC III"
-  ],
-  "ANIMATION": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "BROADBAND INSTALLATION (FIXED WIRELESS SYSTEMS)": [
-    "NC II"
-  ],
-  "CONTACT CENTER SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "COMPUTER HARDWARE SERVICING": [
-    "NC II (SUPERSEDED)"
-  ],
-  "CYBER THREAT MONITORING": [
-    "NC I"
-  ],
-  "CYBER THREAT MITIGATION": [
-    "NC II"
-  ],
-  "CABLE TV INSTALLATION": [
-    "NC II"
-  ],
-  "CABLE TV OPERATION AND MAINTENANCE": [
-    "NC III"
-  ],
-  "GAME PROGRAMMING": [
-    "NC III"
-  ],
-  "MEDICAL CODING AND CLAIMS PROCESSING": [
-    "NC III"
-  ],
-  "MEDICAL TRANSCRIPTION": [
-    "NC II"
-  ],
-  "PROGRAMMING": [
-    "NC IV (SUPERSEDED)"
-  ],
-  "PROGRAMMING (JAVA)": [
-    "NC III (SUPERSEDED)",
-    "NC III"
-  ],
-  "PROGRAMMING (.NET TECHNOLOGY)": [
-    "NC III"
-  ],
-  "PROGRAMMING (ORACLE DATABASE)": [
-    "NC III"
-  ],
+  "DENTAL TECHNOLOGY": ["NC IV"],
+  "HEALTH CARE SERVICES": ["NC II"],
+  "HILOT (WELLNESS MASSAGE)": ["NC II"],
+  "MASSAGE THERAPY": ["NC II (SUPERSEDED)", "NC II"],
+  "OPHTHALMIC LENS SERVICES": ["NC II"],
+  "PHARMACY SERVICES": ["NC II (SUPERSEDED)", "NC III"],
+  "CONTACT TRACING": ["NC II"],
+  "2D ANIMATION": ["NC III (SUPERSEDED)", "NC III"],
+  "2D GAME ART DEVELOPMENT": ["NC III"],
+  "3D ANIMATION": ["NC III (SUPERSEDED)", "NC III"],
+  "3D GAME ART DEVELOPMENT": ["NC III"],
+  ANIMATION: ["NC II (SUPERSEDED)", "NC II"],
+  "BROADBAND INSTALLATION (FIXED WIRELESS SYSTEMS)": ["NC II"],
+  "CONTACT CENTER SERVICES": ["NC II (SUPERSEDED)", "NC II"],
+  "COMPUTER HARDWARE SERVICING": ["NC II (SUPERSEDED)"],
+  "CYBER THREAT MONITORING": ["NC I"],
+  "CYBER THREAT MITIGATION": ["NC II"],
+  "CABLE TV INSTALLATION": ["NC II"],
+  "CABLE TV OPERATION AND MAINTENANCE": ["NC III"],
+  "GAME PROGRAMMING": ["NC III"],
+  "MEDICAL CODING AND CLAIMS PROCESSING": ["NC III"],
+  "MEDICAL TRANSCRIPTION": ["NC II"],
+  PROGRAMMING: ["NC IV (SUPERSEDED)"],
+  "PROGRAMMING (JAVA)": ["NC III (SUPERSEDED)", "NC III"],
+  "PROGRAMMING (.NET TECHNOLOGY)": ["NC III"],
+  "PROGRAMMING (ORACLE DATABASE)": ["NC III"],
   "TELECOM OSP AND SUBSCRIBER LINE INSTALLATION (COPPER CABLE/POTS AND DSL)": [
-    "NC II"
-  ],
-  "TELECOM OSP INSTALLATION (FIBER OPTIC CABLE)": [
-    "NC II"
-  ],
-  "VISUAL GRAPHIC DESIGN": [
-    "NC III (SUPERSEDED)",
-    "NC III"
-  ],
-  "WEB DEVELOPMENT": [
-    "NC III (SUPERSEDED)"
-  ],
-  "WEB DESIGN": [
-    "NC III"
-  ],
-  "WEB DEVELOPMENT (BACK-END)": [
-    "NC III"
-  ],
-  "WEB DEVELOPMENT (FRONT-END)": [
-    "NC III"
-  ],
-  "MULTIMODAL TRANSPORT OPERATIONS AND LOGISTICS (SEAFREIGHT IMPORT) SERVICES": [
     "NC II",
-    "NC III",
-    "NC IV"
   ],
-  "WAREHOUSING SERVICES": [
-    "NC II",
-    "NC III",
-    "NC IV"
-  ],
-  "MARINE ELECTRICITY": [
-    "NC II"
-  ],
-  "SHIPS' CATERING": [
-    "NC III (SHIPS' COOKS)"
-  ],
-  "SHIP'S CATERING SERVICES": [
-    "NC I"
-  ],
-  "5-AXIS CNC MACHINE OPERATION": [
-    "NC III"
-  ],
-  "CAD/CAM OPERATION": [
-    "NC III"
-  ],
-  "CNC LATHE MACHINE OPERATION": [
-    "NC II",
-    "NC III"
-  ],
-  "CNC MILLING MACHINE OPERATION": [
-    "NC II",
-    "NC III"
-  ],
-  "MECHANICAL DRAFTING": [
-    "NC I"
-  ],
-  "DIE DESIGNING": [
-    "NC IV"
-  ],
+  "TELECOM OSP INSTALLATION (FIBER OPTIC CABLE)": ["NC II"],
+  "VISUAL GRAPHIC DESIGN": ["NC III (SUPERSEDED)", "NC III"],
+  "WEB DEVELOPMENT": ["NC III (SUPERSEDED)"],
+  "WEB DESIGN": ["NC III"],
+  "WEB DEVELOPMENT (BACK-END)": ["NC III"],
+  "WEB DEVELOPMENT (FRONT-END)": ["NC III"],
+  "MULTIMODAL TRANSPORT OPERATIONS AND LOGISTICS (SEAFREIGHT IMPORT) SERVICES":
+    ["NC II", "NC III", "NC IV"],
+  "WAREHOUSING SERVICES": ["NC II", "NC III", "NC IV"],
+  "MARINE ELECTRICITY": ["NC II"],
+  "SHIPS' CATERING": ["NC III (SHIPS' COOKS)"],
+  "SHIP'S CATERING SERVICES": ["NC I"],
+  "5-AXIS CNC MACHINE OPERATION": ["NC III"],
+  "CAD/CAM OPERATION": ["NC III"],
+  "CNC LATHE MACHINE OPERATION": ["NC II", "NC III"],
+  "CNC MILLING MACHINE OPERATION": ["NC II", "NC III"],
+  "MECHANICAL DRAFTING": ["NC I"],
+  "DIE DESIGNING": ["NC IV"],
   "SHIELDED METAL ARC WELDING (SMAW)": [
     "NC I (SUPERSEDED)",
     "NC II (SUPERSEDED)",
     "NC III (SUPERSEDED)",
-    "NC IV (SUPERSEDED)"
+    "NC IV (SUPERSEDED)",
   ],
-  "ELECTRIC DISCHARGE MACHINE (EDM) SINKING OPERATION": [
-    "NC II"
-  ],
-  "CNC ELECTRIC DISCHARGE MACHINE (EDM) WIRE CUT OPERATION": [
-    "NC III"
-  ],
-  "FLUX-CORED ARC WELDING (FCAW)": [
-    "NC I",
-    "NC II",
-    "NC III"
-  ],
-  "GAS WELDING": [
-    "NC I",
-    "NC II"
-  ],
-  "MANUAL METAL ARC WELDING (MMAW)": [
-    "NC I",
-    "NC II",
-    "NC III",
-    "NC IV"
-  ],
-  "MACHINING": [
-    "NC I (SUPERSEDED)",
-    "NC I",
-    "NC II",
-    "NC III"
-  ],
-  "GAS METAL ARC WELDING (GMAW)": [
-    "NC I",
-    "NC II",
-    "NC III"
-  ],
-  "MOLD DESIGNING": [
-    "NC IV"
-  ],
-  "MOLD MAKING": [
-    "NC III"
-  ],
-  "PLANT MAINTENANCE": [
-    "NC I"
-  ],
-  "PRESS MACHINE OPERATION": [
-    "NC I"
-  ],
-  "SUBMERGED ARC WELDING (SAW)": [
-    "NC I",
-    "NC II"
-  ],
-  "TOOL AND DIE MAKING": [
-    "NC II"
-  ],
-  "GAS TUNGSTEN ARC WELDING (GTAW)": [
-    "NC II",
-    "NC IV"
-  ],
+  "ELECTRIC DISCHARGE MACHINE (EDM) SINKING OPERATION": ["NC II"],
+  "CNC ELECTRIC DISCHARGE MACHINE (EDM) WIRE CUT OPERATION": ["NC III"],
+  "FLUX-CORED ARC WELDING (FCAW)": ["NC I", "NC II", "NC III"],
+  "GAS WELDING": ["NC I", "NC II"],
+  "MANUAL METAL ARC WELDING (MMAW)": ["NC I", "NC II", "NC III", "NC IV"],
+  MACHINING: ["NC I (SUPERSEDED)", "NC I", "NC II", "NC III"],
+  "GAS METAL ARC WELDING (GMAW)": ["NC I", "NC II", "NC III"],
+  "MOLD DESIGNING": ["NC IV"],
+  "MOLD MAKING": ["NC III"],
+  "PLANT MAINTENANCE": ["NC I"],
+  "PRESS MACHINE OPERATION": ["NC I"],
+  "SUBMERGED ARC WELDING (SAW)": ["NC I", "NC II"],
+  "TOOL AND DIE MAKING": ["NC II"],
+  "GAS TUNGSTEN ARC WELDING (GTAW)": ["NC II", "NC IV"],
   "FOOD PROCESSING": [
     "NC I (SUPERSEDED)",
     "NC I",
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III",
-    "NC IV"
+    "NC IV",
   ],
-  "FISH PRODUCTS PACKAGING": [
-    "NC II"
-  ],
-  "SLAUGHTERING OPERATIONS (LARGE ANIMAL)": [
-    "NC II"
-  ],
-  "SLAUGHTERING OPERATIONS": [
-    "NC II (SUPERSEDED)"
-  ],
-  "SLAUGHTERING OPERATIONS (SWINE)": [
-    "NC II"
-  ],
-  "SEAWEED FOOD PROCESSING": [
-    "NC II"
-  ],
+  "FISH PRODUCTS PACKAGING": ["NC II"],
+  "SLAUGHTERING OPERATIONS (LARGE ANIMAL)": ["NC II"],
+  "SLAUGHTERING OPERATIONS": ["NC II (SUPERSEDED)"],
+  "SLAUGHTERING OPERATIONS (SWINE)": ["NC II"],
+  "SEAWEED FOOD PROCESSING": ["NC II"],
   "BEAUTY CARE SERVICES (NAIL CARE)": [
     "NC II (SUPERSEDED)",
-    "NC III (SUPERSEDED)"
+    "NC III (SUPERSEDED)",
   ],
-  "BEAUTY CARE (NAIL CARE) SERVICES": [
-    "NC II"
-  ],
-  "BEAUTY CARE (NAIL ENHANCEMENT TECHNOLOGY) SERVICES": [
-    "NC III"
-  ],
-  "BEAUTY CARE": [
-    "NC II (SUPERSEDED)",
-    "NC III (SUPERSEDED)"
-  ],
-  "BEAUTY CARE (SKIN CARE) SERVICES": [
-    "NC II"
-  ],
-  "BOOKKEEPING": [
-    "NC III"
-  ],
-  "BARBERING": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "PERFORMING ARTS (BALLROOM DANCING)": [
-    "NC II"
-  ],
-  "BOOKKEEPING FOR SANGGUNIANG KABATAAN FINANCIAL TRANSACTIONS": [
-    "NC II"
-  ],
-  "DATA COLLECTION": [
-    "NC II"
-  ],
-  "DOMESTIC WORK": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "EARLY CHILDHOOD CARE AND DEVELOPMENT": [
-    "NC III"
-  ],
-  "LIFEGUARD SERVICES": [
-    "NC II",
-    "NC III"
-  ],
-  "MICROFINANCE TECHNOLOGY": [
-    "NC II",
-    "NC IV"
-  ],
-  "MICROINSURANCE SERVICES (MUTUAL BENEFIT)": [
-    "NC II"
-  ],
-  "PERFORMING ARTS (DANCE)": [
-    "NC II"
-  ],
-  "PERFORMING ARTS (SONG)": [
-    "NC II"
-  ],
-  "PUBLIC EMPLOYMENT SERVICES": [
-    "NC IV"
-  ],
-  "PERFORMING ARTS (MAGICIAN)": [
-    "NC II"
-  ],
-  "PRINTING SERVICES (PREPRESS TECHNICAL OPERATIONS)": [
-    "NC I",
-    "NC II"
-  ],
-  "REAL ESTATE SERVICES": [
-    "NC II"
-  ],
-  "SECURITY SERVICES": [
-    "NC I",
-    "NC II"
-  ],
-  "ATTRACTIONS AND THEME PARKS OPERATIONS": [
-    "NC II"
-  ],
-  "BARTENDING": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "BREAD AND PASTRY PRODUCTION": [
-    "NC II (SUPERSEDED)"
-  ],
-  "BARISTA": [
-    "NC II"
-  ],
+  "BEAUTY CARE (NAIL CARE) SERVICES": ["NC II"],
+  "BEAUTY CARE (NAIL ENHANCEMENT TECHNOLOGY) SERVICES": ["NC III"],
+  "BEAUTY CARE": ["NC II (SUPERSEDED)", "NC III (SUPERSEDED)"],
+  "BEAUTY CARE (SKIN CARE) SERVICES": ["NC II"],
+  BOOKKEEPING: ["NC III"],
+  BARBERING: ["NC II (SUPERSEDED)", "NC II"],
+  "PERFORMING ARTS (BALLROOM DANCING)": ["NC II"],
+  "BOOKKEEPING FOR SANGGUNIANG KABATAAN FINANCIAL TRANSACTIONS": ["NC II"],
+  "DATA COLLECTION": ["NC II"],
+  "DOMESTIC WORK": ["NC II (SUPERSEDED)", "NC II"],
+  "EARLY CHILDHOOD CARE AND DEVELOPMENT": ["NC III"],
+  "LIFEGUARD SERVICES": ["NC II", "NC III"],
+  "MICROFINANCE TECHNOLOGY": ["NC II", "NC IV"],
+  "MICROINSURANCE SERVICES (MUTUAL BENEFIT)": ["NC II"],
+  "PERFORMING ARTS (DANCE)": ["NC II"],
+  "PERFORMING ARTS (SONG)": ["NC II"],
+  "PUBLIC EMPLOYMENT SERVICES": ["NC IV"],
+  "PERFORMING ARTS (MAGICIAN)": ["NC II"],
+  "PRINTING SERVICES (PREPRESS TECHNICAL OPERATIONS)": ["NC I", "NC II"],
+  "REAL ESTATE SERVICES": ["NC II"],
+  "SECURITY SERVICES": ["NC I", "NC II"],
+  "ATTRACTIONS AND THEME PARKS OPERATIONS": ["NC II"],
+  BARTENDING: ["NC II (SUPERSEDED)", "NC II"],
+  "BREAD AND PASTRY PRODUCTION": ["NC II (SUPERSEDED)"],
+  BARISTA: ["NC II"],
   "COMMERCIAL COOKING": [
     "NC II (SUPERSEDED)",
     "NC III (SUPERSEDED)",
-    "NC IV (SUPERSEDED)"
+    "NC IV (SUPERSEDED)",
   ],
-  "COOKERY": [
-    "NC II (SUPERSEDED)"
-  ],
-  "EVENTS MANAGEMENT SERVICES": [
-    "NC III (SUPERSEDED)",
-    "NC III"
-  ],
-  "FOOD PRODUCTION (BREAD AND PATISSERIE)": [
-    "NC II"
-  ],
+  COOKERY: ["NC II (SUPERSEDED)"],
+  "EVENTS MANAGEMENT SERVICES": ["NC III (SUPERSEDED)", "NC III"],
+  "FOOD PRODUCTION (BREAD AND PATISSERIE)": ["NC II"],
   "FOOD AND BEVERAGE SERVICES": [
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III (SUPERSEDED)",
     "NC III",
     "NC IV (SUPERSEDED)",
-    "NC IV"
-  ],
-  "FRONT OFFICE SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC II",
-    "NC III",
-    "NC IV"
-  ],
-  "FOOD PRODUCTION (PROFESSIONAL COOKERY)": [
-    "NC III",
     "NC IV",
-    "NC II"
   ],
-  "HOUSEKEEPING": [
+  "FRONT OFFICE SERVICES": ["NC II (SUPERSEDED)", "NC II", "NC III", "NC IV"],
+  "FOOD PRODUCTION (PROFESSIONAL COOKERY)": ["NC III", "NC IV", "NC II"],
+  HOUSEKEEPING: [
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III (SUPERSEDED)",
     "NC III",
     "NC IV (SUPERSEDED)",
-    "NC IV"
+    "NC IV",
   ],
-  "LOCAL GUIDING SERVICES": [
-    "NC II"
-  ],
-  "TOUR GUIDING SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC III"
-  ],
-  "TOUR PACKAGING (FIT AD HOC DOMESTIC) SERVICES": [
-    "NC II"
-  ],
-  "TOURISM PROMOTION SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
-  "TRAVEL SERVICES": [
-    "NC II (SUPERSEDED)",
-    "NC II"
-  ],
+  "LOCAL GUIDING SERVICES": ["NC II"],
+  "TOUR GUIDING SERVICES": ["NC II (SUPERSEDED)", "NC III"],
+  "TOUR PACKAGING (FIT AD HOC DOMESTIC) SERVICES": ["NC II"],
+  "TOURISM PROMOTION SERVICES": ["NC II (SUPERSEDED)", "NC II"],
+  "TRAVEL SERVICES": ["NC II (SUPERSEDED)", "NC II"],
   "TRAINERS METHODOLOGY": [
     "LEVEL I (IN-COMPANY TRAINER)",
     "LEVEL I (TRAINER/ASSESSOR)",
     "LEVEL II (TRAINING DESIGNER/DEVELOPER)",
     "(TM) LEVEL III",
-    "(TM) LEVEL IV"
+    "(TM) LEVEL IV",
   ],
-  "LINE CONSTRUCTION (ELECTRIC POWER DISTRIBUTION)": [
-    "NC II (SUPERSEDED)"
-  ],
-  "DIESEL POWER PLANT MAINTENANCE": [
-    "NC III"
-  ],
-  "DIESEL POWER PLANT OPERATION AND MAINTENANCE": [
-    "NC II",
-    "NC III"
-  ],
-  "ELECTRIC POWER DISTRIBUTION LINE CONSTRUCTION": [
-    "NC II"
-  ],
-  "ELECTRIC POWER DISTRIBUTION OPERATION AND MAINTENANCE": [
-    "NC III",
-    "NC IV"
-  ],
-  "GARBAGE COLLECTION": [
-    "NC I"
-  ],
-  "SANITARY LANDFILL OPERATIONS": [
-    "NC II",
-    "NC III"
-  ],
+  "LINE CONSTRUCTION (ELECTRIC POWER DISTRIBUTION)": ["NC II (SUPERSEDED)"],
+  "DIESEL POWER PLANT MAINTENANCE": ["NC III"],
+  "DIESEL POWER PLANT OPERATION AND MAINTENANCE": ["NC II", "NC III"],
+  "ELECTRIC POWER DISTRIBUTION LINE CONSTRUCTION": ["NC II"],
+  "ELECTRIC POWER DISTRIBUTION OPERATION AND MAINTENANCE": ["NC III", "NC IV"],
+  "GARBAGE COLLECTION": ["NC I"],
+  "SANITARY LANDFILL OPERATIONS": ["NC II", "NC III"],
   "TRANSMISSION LINE INSTALLATION AND MAINTENANCE": [
     "NC II (SUPERSEDED)",
     "NC II",
     "NC III (SUPERSEDED)",
     "NC III",
-    "NC IV"
+    "NC IV",
   ],
-  "ILLUSTRATION": [
-    "NC II"
-  ],
-  "PHOTOGRAPHY": [
-    "NC II"
-  ],
-  "CUSTOMER SERVICES": [
-    "NC II"
-  ]
+  ILLUSTRATION: ["NC II"],
+  PHOTOGRAPHY: ["NC II"],
+  "CUSTOMER SERVICES": ["NC II"],
 };
 
 export const TESDA_COURSES = Object.keys(TESDA_COURSE_TO_LEVELS_MAP);
@@ -1867,116 +1768,319 @@ export const TESDA_NC_LEVEL_OPTIONS = [
   "TMC I",
   "TMC II",
   "NTTC",
-  "CERTIFICATE OF COMPETENCY (COC)"
+  "CERTIFICATE OF COMPETENCY (COC)",
 ];
 
-export const POST_GRADUATE_DEGREE_OPTIONS = ["MASTERS (UNIT)", "MASTERS DEGREE", "DOCTORATE (UNIT)", "DOCTORATE DEGREE", "N/A", "OTHERS"];
+export const POST_GRADUATE_DEGREE_OPTIONS = [
+  "MASTERS (UNIT)",
+  "MASTERS DEGREE",
+  "DOCTORATE (UNIT)",
+  "DOCTORATE DEGREE",
+  "N/A",
+  "OTHERS",
+];
 
 export const DESIGNATION_GRADE_LEVELS = [
-  "Kinder", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-  "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"
+  "Kinder",
+  "Grade 1",
+  "Grade 2",
+  "Grade 3",
+  "Grade 4",
+  "Grade 5",
+  "Grade 6",
+  "Grade 7",
+  "Grade 8",
+  "Grade 9",
+  "Grade 10",
+  "Grade 11",
+  "Grade 12",
 ];
 
 export const SHS_TRACKS = ["ACADEMIC", "TECHPRO"];
 
 export const getRegularSectionsEnrollment = (classSections) => {
   if (!Array.isArray(classSections)) return 0;
-  const baseSections = classSections.filter(sec => 
-    sec &&
-    sec.sectionType !== 'ARAL' && 
-    !String(sec.sectionType || '').startsWith('ARAL') &&
-    sec.sectionType !== 'REMEDIAL' && 
-    sec.sectionType !== 'ENRICHMENT' &&
-    !sec.interventionType &&
-    !sec.intervention_type &&
-    String(sec.gradeLevel || '').toUpperCase().trim() !== 'ALS' &&
-    !String(sec.gradeLevel || '').toUpperCase().includes('ALS')
+  const baseSections = classSections.filter(
+    (sec) =>
+      sec &&
+      sec.sectionType !== "ARAL" &&
+      !String(sec.sectionType || "").startsWith("ARAL") &&
+      sec.sectionType !== "REMEDIAL" &&
+      sec.sectionType !== "ENRICHMENT" &&
+      !sec.interventionType &&
+      !sec.intervention_type &&
+      String(sec.gradeLevel || "")
+        .toUpperCase()
+        .trim() !== "ALS" &&
+      !String(sec.gradeLevel || "")
+        .toUpperCase()
+        .includes("ALS"),
   );
   return baseSections.reduce((acc, sec) => {
-    const hasGender = (sec.maleLearners !== undefined && sec.maleLearners !== null && sec.maleLearners !== '') ||
-                      (sec.femaleLearners !== undefined && sec.femaleLearners !== null && sec.femaleLearners !== '');
+    const hasGender =
+      (sec.maleLearners !== undefined &&
+        sec.maleLearners !== null &&
+        sec.maleLearners !== "") ||
+      (sec.femaleLearners !== undefined &&
+        sec.femaleLearners !== null &&
+        sec.femaleLearners !== "");
     if (hasGender) {
-      return acc + (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0);
+      return (
+        acc +
+        (Number(sec.maleLearners) || 0) +
+        (Number(sec.femaleLearners) || 0)
+      );
     }
-    const hasCustom = sec.numberOfLearners !== undefined && sec.numberOfLearners !== null && sec.numberOfLearners !== '' && Number(sec.numberOfLearners) !== 35;
+    const hasCustom =
+      sec.numberOfLearners !== undefined &&
+      sec.numberOfLearners !== null &&
+      sec.numberOfLearners !== "" &&
+      Number(sec.numberOfLearners) !== 35;
     return acc + (hasCustom ? Number(sec.numberOfLearners) : 0);
   }, 0);
 };
 
 export const ESF7_TERMS = [
-  { id: '1st', name: '1st Term', number: 1, label: '1st Term' },
-  { id: '2nd', name: '2nd Term', number: 2, label: '2nd Term' },
-  { id: '3rd', name: '3rd Term', number: 3, label: '3rd Term' }
+  { id: "1st", name: "1st Term", number: 1, label: "1st Term" },
+  { id: "2nd", name: "2nd Term", number: 2, label: "2nd Term" },
+  { id: "3rd", name: "3rd Term", number: 3, label: "3rd Term" },
 ];
 
 export const PRIMARY_LEARNING_AREAS = [
-  'Kinder',
-  'Filipino',
-  'English',
-  'Mathematics',
-  'Science',
-  'Araling Panlipunan (AP)',
-  'Edukasyon sa Pagpapakatao (EsP)',
-  'Technology and Livelihood Education (TLE)',
-  'MAPEH'
+  "Kinder",
+  "Filipino",
+  "English",
+  "Mathematics",
+  "Science",
+  "Araling Panlipunan (AP)",
+  "Edukasyon sa Pagpapakatao (EsP)",
+  "Technology and Livelihood Education (TLE)",
+  "MAPEH",
 ];
 
 export const OFFICIAL_DESIGNATIONS = [
-  { id: 'guidance_designate', name: 'GUIDANCE DESIGNATE', isRequired: true, description: 'Handles student guidance, counseling, and student welfare support.' },
-  { id: 'learner_information_officer', name: 'LEARNER INFORMATION OFFICER', isRequired: true, description: 'Oversees learner information, student records, LIS management, and learner support services.' },
-  { id: 'department_head_designate', name: 'DEPARTMENT HEAD DESIGNATE', isRequired: true, description: 'Serves as designated Department Head leading subject area faculty management and curriculum implementation.' },
-  { id: 'assistant_school_head_designate', name: 'ASSISTANT SCHOOL HEAD DESIGNATE', isRequired: false, isEnrollmentBound: true, description: 'Assists the School Head in administrative management, school operations, and instructional supervision (Mandatory for schools with regular enrollment of 1,001 or more).' },
-  { id: 'reading_literacy_numeracy', name: 'READING / LITERACY AND NUMERACY SCHOOL COORDINATOR', isRequired: false, description: 'Leads reading and numeracy interventions, literacy assessments, and learning remediation.' },
-  { id: 'research_coordinator', name: 'RESEARCH SCHOOL COORDINATOR', isRequired: false, description: 'Coordinates school-level action research, innovation projects, and research capability building.' },
-  { id: 'sned_coordinator', name: 'SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR', isRequired: false, description: 'Manages SNED programs, individualized education plans, and inclusive learning needs.' },
-  { id: 'ict_coordinator', name: 'ICT SCHOOL COORDINATOR', isRequired: false, description: 'Handles school IT infrastructure, DepEd computerization program (DCP), and digital reporting systems.' },
-  { id: 'guidance_counselling_coordinator', name: 'GUIDANCE AND COUNSELLING SCHOOL COORDINATOR', isRequired: false, description: 'Oversees guidance services, child protection policy enforcement, and career guidance.' },
-  { id: 'inclusive_education_coordinator', name: 'INCLUSIVE EDUCATION SCHOOL COORDINATOR', isRequired: false, description: 'Coordinates inclusive education initiatives and mainstreaming support for learners.' },
-  { id: 'school_paper_adviser', name: 'SCHOOL PAPER TRAINER/ADVISER', isRequired: false, description: 'Trains and advises campus journalists, school publication staff, and editorial teams.' },
-  { id: 'sports_development_adviser', name: 'SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER', isRequired: false, description: 'Manages school sports programs, athletic training, and sports competition delegations.' },
-  { id: 'selg_sslg_adviser', name: 'SELG / SSLG TRAINER/ADVISER', isRequired: false, description: 'Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).' },
-  { id: 'grade_level_chairperson', name: 'GRADE LEVEL CHAIRPERSON', isRequired: false, description: 'Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.', parameterized: 'grade' },
-  { id: 'learning_area_chairperson', name: 'LEARNING AREA CHAIRPERSON', isRequired: false, description: 'Leads specific learning area/subject faculty planning, curriculum alignment, and assessments across the primary learning areas.', parameterized: 'learningArea' },
-  { id: 'department_head_ecp', name: 'DEPARTMENT HEAD (Based on ECP)', isRequired: false, description: 'Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.', parameterized: 'ecp' }
+  {
+    id: "guidance_designate",
+    name: "GUIDANCE DESIGNATE",
+    isRequired: true,
+    description:
+      "Handles student guidance, counseling, and student welfare support.",
+  },
+  {
+    id: "learner_information_officer",
+    name: "LEARNER INFORMATION OFFICER",
+    isRequired: true,
+    description:
+      "Oversees learner information, student records, LIS management, and learner support services.",
+  },
+  {
+    id: "department_head_designate",
+    name: "DEPARTMENT HEAD DESIGNATE",
+    isRequired: true,
+    description:
+      "Serves as designated Department Head leading subject area faculty management and curriculum implementation.",
+  },
+  {
+    id: "assistant_school_head_designate",
+    name: "ASSISTANT SCHOOL HEAD DESIGNATE",
+    isRequired: false,
+    isEnrollmentBound: true,
+    description:
+      "Assists the School Head in administrative management, school operations, and instructional supervision (Mandatory for schools with regular enrollment of 1,001 or more).",
+  },
+  {
+    id: "reading_literacy_numeracy",
+    name: "READING / LITERACY AND NUMERACY SCHOOL COORDINATOR",
+    isRequired: false,
+    description:
+      "Leads reading and numeracy interventions, literacy assessments, and learning remediation.",
+  },
+  {
+    id: "research_coordinator",
+    name: "RESEARCH SCHOOL COORDINATOR",
+    isRequired: false,
+    description:
+      "Coordinates school-level action research, innovation projects, and research capability building.",
+  },
+  {
+    id: "sned_coordinator",
+    name: "SPECIAL NEEDS EDUCATION SCHOOL COORDINATOR",
+    isRequired: false,
+    description:
+      "Manages SNED programs, individualized education plans, and inclusive learning needs.",
+  },
+  {
+    id: "ict_coordinator",
+    name: "ICT SCHOOL COORDINATOR",
+    isRequired: false,
+    description:
+      "Handles school IT infrastructure, DepEd computerization program (DCP), and digital reporting systems.",
+  },
+  {
+    id: "guidance_counselling_coordinator",
+    name: "GUIDANCE AND COUNSELLING SCHOOL COORDINATOR",
+    isRequired: false,
+    description:
+      "Oversees guidance services, child protection policy enforcement, and career guidance.",
+  },
+  {
+    id: "inclusive_education_coordinator",
+    name: "INCLUSIVE EDUCATION SCHOOL COORDINATOR",
+    isRequired: false,
+    description:
+      "Coordinates inclusive education initiatives and mainstreaming support for learners.",
+  },
+  {
+    id: "school_paper_adviser",
+    name: "SCHOOL PAPER TRAINER/ADVISER",
+    isRequired: false,
+    description:
+      "Trains and advises campus journalists, school publication staff, and editorial teams.",
+  },
+  {
+    id: "sports_development_adviser",
+    name: "SPORTS DEVELOPMENT PROGRAMS TRAINER/ADVISER",
+    isRequired: false,
+    description:
+      "Manages school sports programs, athletic training, and sports competition delegations.",
+  },
+  {
+    id: "selg_sslg_adviser",
+    name: "SELG / SSLG TRAINER/ADVISER",
+    isRequired: false,
+    description:
+      "Advises Supreme Elementary Learner Government (SELG) / Supreme Secondary Learner Government (SSLG).",
+  },
+  {
+    id: "grade_level_chairperson",
+    name: "GRADE LEVEL CHAIRPERSON",
+    isRequired: false,
+    description:
+      "Coordinates grade-level faculty meetings, instructional plans, and grade-wide activities.",
+    parameterized: "grade",
+  },
+  {
+    id: "learning_area_chairperson",
+    name: "LEARNING AREA CHAIRPERSON",
+    isRequired: false,
+    description:
+      "Leads specific learning area/subject faculty planning, curriculum alignment, and assessments across the primary learning areas.",
+    parameterized: "learningArea",
+  },
+  {
+    id: "department_head_ecp",
+    name: "DEPARTMENT HEAD (Based on ECP)",
+    isRequired: false,
+    description:
+      "Department Head based on Equalized Class Program (ECP) limits across grade levels and learning areas/tracks.",
+    parameterized: "ecp",
+  },
 ];
 
-export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolInfo) => {
+export const isSpecialProgramSubjectAllowed = (
+  subjectName,
+  gradeOrBand,
+  schoolInfo,
+) => {
   if (!subjectName) return true;
   const sub = String(subjectName).trim().toUpperCase();
-  const gradeStr = String(gradeOrBand || '').trim().toUpperCase();
+  const gradeStr = String(gradeOrBand || "")
+    .trim()
+    .toUpperCase();
 
   // Core curriculum subjects are ALWAYS allowed and never blocked by special program filters
   const CORE_SUBJECTS = [
-    'KINDER BLOCKS OF TIME', 'LANGUAGE', 'READING AND LITERACY', 'MAKABANSA',
-    'TLE', 'EPP/TLE', 'MAPEH', 'ARALING PANLIPUNAN', 'FILIPINO', 'ENGLISH',
-    'MATHEMATICS', 'SCIENCE', 'VALUES EDUCATION', 'GMRC'
+    "KINDER BLOCKS OF TIME",
+    "LANGUAGE",
+    "READING AND LITERACY",
+    "MAKABANSA",
+    "TLE",
+    "EPP/TLE",
+    "MAPEH",
+    "ARALING PANLIPUNAN",
+    "FILIPINO",
+    "ENGLISH",
+    "MATHEMATICS",
+    "SCIENCE",
+    "VALUES EDUCATION",
+    "GMRC",
   ];
-  if (CORE_SUBJECTS.includes(sub) || sub === 'ARALING PANLIPUNAN' || sub.startsWith('ARALING')) return true;
+  if (
+    CORE_SUBJECTS.includes(sub) ||
+    sub === "ARALING PANLIPUNAN" ||
+    sub.startsWith("ARALING")
+  )
+    return true;
 
   // Helper to read school special programs config
   const getMergedConfig = () => {
-    let progs = Array.isArray(schoolInfo?.specialPrograms) ? [...schoolInfo.specialPrograms] : [];
-    let jhsProgs = Array.isArray(schoolInfo?.jhsSpecialPrograms) ? [...schoolInfo.jhsSpecialPrograms] : [];
-    let hasElem = schoolInfo?.hasElemSpecialPrograms === true || schoolInfo?.hasElemSpecialPrograms === 'yes' || (Array.isArray(schoolInfo?.specialPrograms) && schoolInfo.specialPrograms.some(p => String(p).toUpperCase().includes('SCIENCE')));
-    let elemProg = Boolean(schoolInfo?.elemSpecialProgram) || (Array.isArray(schoolInfo?.specialPrograms) && schoolInfo.specialPrograms.some(p => String(p).toUpperCase().includes('SCIENCE')));
-    let hasJhs = schoolInfo?.hasJhsSpecialPrograms === true || schoolInfo?.hasJhsSpecialPrograms === 'yes' || jhsProgs.length > 0 || progs.some(p => p !== 'SPECIAL SCIENCE ELEMENTARY SCHOOL');
+    let progs = Array.isArray(schoolInfo?.specialPrograms)
+      ? [...schoolInfo.specialPrograms]
+      : [];
+    let jhsProgs = Array.isArray(schoolInfo?.jhsSpecialPrograms)
+      ? [...schoolInfo.jhsSpecialPrograms]
+      : [];
+    let hasElem =
+      schoolInfo?.hasElemSpecialPrograms === true ||
+      schoolInfo?.hasElemSpecialPrograms === "yes" ||
+      (Array.isArray(schoolInfo?.specialPrograms) &&
+        schoolInfo.specialPrograms.some((p) =>
+          String(p).toUpperCase().includes("SCIENCE"),
+        ));
+    let elemProg =
+      Boolean(schoolInfo?.elemSpecialProgram) ||
+      (Array.isArray(schoolInfo?.specialPrograms) &&
+        schoolInfo.specialPrograms.some((p) =>
+          String(p).toUpperCase().includes("SCIENCE"),
+        ));
+    let hasJhs =
+      schoolInfo?.hasJhsSpecialPrograms === true ||
+      schoolInfo?.hasJhsSpecialPrograms === "yes" ||
+      jhsProgs.length > 0 ||
+      progs.some((p) => p !== "SPECIAL SCIENCE ELEMENTARY SCHOOL");
 
-    let inclusivePrograms = Array.isArray(schoolInfo?.inclusivePrograms) ? [...schoolInfo.inclusivePrograms] : [];
+    let inclusivePrograms = Array.isArray(schoolInfo?.inclusivePrograms)
+      ? [...schoolInfo.inclusivePrograms]
+      : [];
 
-    if (typeof localStorage !== 'undefined') {
+    if (typeof localStorage !== "undefined") {
       try {
-        const draftKey = `insighted_school_curricular_config_${schoolInfo?.schoolId || 'default'}`;
+        const draftKey = `insighted_school_curricular_config_${schoolInfo?.schoolId || "default"}`;
         const draft = localStorage.getItem(draftKey);
         if (draft) {
           const parsed = JSON.parse(draft);
-          if (parsed.hasElemSpecialPrograms !== undefined) hasElem = parsed.hasElemSpecialPrograms === true || parsed.hasElemSpecialPrograms === 'yes';
-          if (parsed.elemSpecialProgram !== undefined) elemProg = Boolean(parsed.elemSpecialProgram);
-          if (parsed.hasJhsSpecialPrograms !== undefined) hasJhs = parsed.hasJhsSpecialPrograms === true || parsed.hasJhsSpecialPrograms === 'yes';
-          else if (Array.isArray(parsed.jhsSpecialPrograms) && parsed.jhsSpecialPrograms.length > 0) hasJhs = true;
-          else if (Array.isArray(parsed.specialPrograms) && parsed.specialPrograms.some(p => p !== 'SPECIAL SCIENCE ELEMENTARY SCHOOL')) hasJhs = true;
-          if (Array.isArray(parsed.jhsSpecialPrograms)) jhsProgs = [...new Set([...jhsProgs, ...parsed.jhsSpecialPrograms])];
-          if (Array.isArray(parsed.specialPrograms)) progs = [...new Set([...progs, ...parsed.specialPrograms])];
-          if (Array.isArray(parsed.inclusivePrograms)) inclusivePrograms = [...new Set([...inclusivePrograms, ...parsed.inclusivePrograms])];
+          if (parsed.hasElemSpecialPrograms !== undefined)
+            hasElem =
+              parsed.hasElemSpecialPrograms === true ||
+              parsed.hasElemSpecialPrograms === "yes";
+          if (parsed.elemSpecialProgram !== undefined)
+            elemProg = Boolean(parsed.elemSpecialProgram);
+          if (parsed.hasJhsSpecialPrograms !== undefined)
+            hasJhs =
+              parsed.hasJhsSpecialPrograms === true ||
+              parsed.hasJhsSpecialPrograms === "yes";
+          else if (
+            Array.isArray(parsed.jhsSpecialPrograms) &&
+            parsed.jhsSpecialPrograms.length > 0
+          )
+            hasJhs = true;
+          else if (
+            Array.isArray(parsed.specialPrograms) &&
+            parsed.specialPrograms.some(
+              (p) => p !== "SPECIAL SCIENCE ELEMENTARY SCHOOL",
+            )
+          )
+            hasJhs = true;
+          if (Array.isArray(parsed.jhsSpecialPrograms))
+            jhsProgs = [
+              ...new Set([...jhsProgs, ...parsed.jhsSpecialPrograms]),
+            ];
+          if (Array.isArray(parsed.specialPrograms))
+            progs = [...new Set([...progs, ...parsed.specialPrograms])];
+          if (Array.isArray(parsed.inclusivePrograms))
+            inclusivePrograms = [
+              ...new Set([...inclusivePrograms, ...parsed.inclusivePrograms]),
+            ];
         }
       } catch (e) {}
     }
@@ -1986,51 +2090,152 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   const config = getMergedConfig();
 
   // 1. Elementary check: SPECIAL PROGRAM IN SCIENCE / SPECIAL SCIENCE
-  const isElem = ['KINDER', 'GRADE 1', 'GRADE 2', 'GRADE 3', 'GRADE 4', 'GRADE 5', 'GRADE 6', 'ELEMENTARY', '1', '2', '3', '4', '5', '6', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6'].some(g => gradeStr === g || gradeStr.includes(g));
+  const isElem = [
+    "KINDER",
+    "GRADE 1",
+    "GRADE 2",
+    "GRADE 3",
+    "GRADE 4",
+    "GRADE 5",
+    "GRADE 6",
+    "ELEMENTARY",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+  ].some((g) => gradeStr === g || gradeStr.includes(g));
 
   if (
-    sub === 'SPECIAL SCIENCE' ||
-    sub === 'SPECIAL PROGRAM IN SCIENCE' ||
-    sub.includes('SPECIAL SCIENCE') ||
-    sub.includes('SPECIAL PROGRAM IN SCIENCE')
+    sub === "SPECIAL SCIENCE" ||
+    sub === "SPECIAL PROGRAM IN SCIENCE" ||
+    sub.includes("SPECIAL SCIENCE") ||
+    sub.includes("SPECIAL PROGRAM IN SCIENCE")
   ) {
     if (isElem) {
-      const isElemScienceActive = config.hasElem && (config.elemProg || config.progs.some(p => String(p).toUpperCase().includes('SCIENCE')));
+      const isElemScienceActive =
+        config.hasElem &&
+        (config.elemProg ||
+          config.progs.some((p) =>
+            String(p).toUpperCase().includes("SCIENCE"),
+          ));
       return Boolean(isElemScienceActive);
     }
   }
 
   // 2. JHS checks: Grade 7 to Grade 10 / Junior High School
-  const isJHS = ['GRADE 7', 'GRADE 8', 'GRADE 9', 'GRADE 10', '7', '8', '9', '10', 'G7', 'G8', 'G9', 'G10', 'JUNIOR HIGH SCHOOL', 'JHS'].some(g => gradeStr === g || gradeStr.includes(g));
+  const isJHS = [
+    "GRADE 7",
+    "GRADE 8",
+    "GRADE 9",
+    "GRADE 10",
+    "7",
+    "8",
+    "9",
+    "10",
+    "G7",
+    "G8",
+    "G9",
+    "G10",
+    "JUNIOR HIGH SCHOOL",
+    "JHS",
+  ].some((g) => gradeStr === g || gradeStr.includes(g));
 
   const JHS_SPECIAL_PROGRAM_MAP = {
-    'SPECIAL PROGRAM IN THE ARTS (SPA)': ['SPA', 'SPECIAL PROGRAM IN THE ARTS', 'ARTS (SPA)', 'ARTS'],
-    'SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)': ['SPFL', 'SPECIAL PROGRAM IN FOREIGN LANGUAGE', 'FOREIGN LANGUAGE (SPFL)', 'FOREIGN LANGUAGE'],
-    'SPECIAL PROGRAM IN JOURNALISM (SPJ)': ['SPJ', 'SPECIAL PROGRAM IN JOURNALISM', 'JOURNALISM (SPJ)', 'JOURNALISM'],
-    'SPECIAL PROGRAM IN SPORTS (SPS)': ['SPS', 'SPECIAL PROGRAM IN SPORTS', 'SPORTS (SPS)', 'SPORTS'],
-    'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM': ['STE', 'SCIENCE, TECHNOLOGY, AND ENGINEERING', 'ENGINEERING (STE)', 'STE PROGRAM', 'SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM'],
-    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL EDUCATION', 'TECHNICAL-VOCATIONAL', 'VOCATIONAL EDUCATION (SPTVE)', 'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)'],
-    'SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL  EDUCATION (SPTVE)': ['SPTVE', 'TECHNICAL-VOCATIONAL EDUCATION', 'TECHNICAL-VOCATIONAL', 'VOCATIONAL EDUCATION (SPTVE)'],
-    'SPECIAL PROGRAM IN SCIENCE': ['SPECIAL PROGRAM IN SCIENCE', 'SPECIAL SCIENCE', 'SCIENCE PROGRAM', 'SPECIAL SCIENCE ELEMENTARY SCHOOL', 'SSES', 'SCIENCE']
+    "SPECIAL PROGRAM IN THE ARTS (SPA)": [
+      "SPA",
+      "SPECIAL PROGRAM IN THE ARTS",
+      "ARTS (SPA)",
+      "ARTS",
+    ],
+    "SPECIAL PROGRAM IN FOREIGN LANGUAGE (SPFL)": [
+      "SPFL",
+      "SPECIAL PROGRAM IN FOREIGN LANGUAGE",
+      "FOREIGN LANGUAGE (SPFL)",
+      "FOREIGN LANGUAGE",
+    ],
+    "SPECIAL PROGRAM IN JOURNALISM (SPJ)": [
+      "SPJ",
+      "SPECIAL PROGRAM IN JOURNALISM",
+      "JOURNALISM (SPJ)",
+      "JOURNALISM",
+    ],
+    "SPECIAL PROGRAM IN SPORTS (SPS)": [
+      "SPS",
+      "SPECIAL PROGRAM IN SPORTS",
+      "SPORTS (SPS)",
+      "SPORTS",
+    ],
+    "SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM": [
+      "STE",
+      "SCIENCE, TECHNOLOGY, AND ENGINEERING",
+      "ENGINEERING (STE)",
+      "STE PROGRAM",
+      "SCIENCE, TECHNOLOGY, AND ENGINEERING (STE) PROGRAM",
+    ],
+    "SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)": [
+      "SPTVE",
+      "TECHNICAL-VOCATIONAL EDUCATION",
+      "TECHNICAL-VOCATIONAL",
+      "VOCATIONAL EDUCATION (SPTVE)",
+      "SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL EDUCATION (SPTVE)",
+    ],
+    "SPECIAL PROGRAM IN TECHNICAL-VOCATIONAL  EDUCATION (SPTVE)": [
+      "SPTVE",
+      "TECHNICAL-VOCATIONAL EDUCATION",
+      "TECHNICAL-VOCATIONAL",
+      "VOCATIONAL EDUCATION (SPTVE)",
+    ],
+    "SPECIAL PROGRAM IN SCIENCE": [
+      "SPECIAL PROGRAM IN SCIENCE",
+      "SPECIAL SCIENCE",
+      "SCIENCE PROGRAM",
+      "SPECIAL SCIENCE ELEMENTARY SCHOOL",
+      "SSES",
+      "SCIENCE",
+    ],
   };
 
-  for (const [canonicalSubject, keywords] of Object.entries(JHS_SPECIAL_PROGRAM_MAP)) {
-    const isThisProgSubject = sub === canonicalSubject || keywords.some(k => sub === k || (sub.startsWith('SPECIAL PROGRAM') && sub.includes(k)) || (sub.includes('STE') && sub.includes('ENGINEERING')));
+  for (const [canonicalSubject, keywords] of Object.entries(
+    JHS_SPECIAL_PROGRAM_MAP,
+  )) {
+    const isThisProgSubject =
+      sub === canonicalSubject ||
+      keywords.some(
+        (k) =>
+          sub === k ||
+          (sub.startsWith("SPECIAL PROGRAM") && sub.includes(k)) ||
+          (sub.includes("STE") && sub.includes("ENGINEERING")),
+      );
     if (isThisProgSubject) {
       if (isElem) {
-        if (canonicalSubject === 'SPECIAL PROGRAM IN SCIENCE') {
-          const isElemScienceActive = config.hasElem && (config.elemProg || config.progs.some(p => String(p).toUpperCase().includes('SCIENCE')));
+        if (canonicalSubject === "SPECIAL PROGRAM IN SCIENCE") {
+          const isElemScienceActive =
+            config.hasElem &&
+            (config.elemProg ||
+              config.progs.some((p) =>
+                String(p).toUpperCase().includes("SCIENCE"),
+              ));
           return isElemScienceActive;
         }
         return false;
       }
-      if (isJHS || !gradeStr || gradeStr === 'ALL') {
+      if (isJHS || !gradeStr || gradeStr === "ALL") {
         if (!config.hasJhs) return false;
-        const allJhsActive = [...config.progs, ...config.jhsProgs].map(p => String(p).toUpperCase().trim());
-        const isMatch = allJhsActive.some(p => {
+        const allJhsActive = [...config.progs, ...config.jhsProgs].map((p) =>
+          String(p).toUpperCase().trim(),
+        );
+        const isMatch = allJhsActive.some((p) => {
           if (!p) return false;
           if (p === canonicalSubject || p === sub) return true;
-          return keywords.some(k => {
+          return keywords.some((k) => {
             const cleanK = String(k).toUpperCase().trim();
             return p === cleanK || p.includes(cleanK) || cleanK.includes(p);
           });
@@ -2041,24 +2246,61 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   }
 
   // 3. Inclusive Education Programs Checks (IP, Madrasah, SNED)
-  if (sub === 'IP RELATED SUBJECT' || sub.includes('IP RELATED') || sub === 'IPED') {
-    const hasIP = (config.inclusivePrograms || []).some(p => p.startsWith('IPED-') || p.startsWith('IP-'));
+  if (
+    sub === "IP RELATED SUBJECT" ||
+    sub.includes("IP RELATED") ||
+    sub === "IPED"
+  ) {
+    const hasIP = (config.inclusivePrograms || []).some(
+      (p) => p.startsWith("IPED-") || p.startsWith("IP-"),
+    );
     if (!hasIP) return false;
   }
 
-  if (sub === 'MADRASAH SUBJECTS' || sub.includes('MADRASAH') || sub.includes('ALIVE')) {
-    const hasMadrasah = (config.inclusivePrograms || []).some(p => p.startsWith('MADRASAH-') || p.startsWith('MEP-') || p.startsWith('ALIVE-'));
+  if (
+    sub === "MADRASAH SUBJECTS" ||
+    sub.includes("MADRASAH") ||
+    sub.includes("ALIVE")
+  ) {
+    const hasMadrasah = (config.inclusivePrograms || []).some(
+      (p) =>
+        p.startsWith("MADRASAH-") ||
+        p.startsWith("MEP-") ||
+        p.startsWith("ALIVE-"),
+    );
     if (!hasMadrasah) return false;
   }
 
-  if (sub === 'SPED MODIFIED SUBJECTS' || sub === 'SNED MODIFIED SUBJECT' || sub.includes('SPED MODIFIED') || sub.includes('SNED MODIFIED')) {
-    const isSNED = gradeStr.includes('SNED') || gradeStr.includes('NON-GRADED') || gradeStr.includes('SPED');
+  if (
+    sub === "SPED MODIFIED SUBJECTS" ||
+    sub === "SNED MODIFIED SUBJECT" ||
+    sub.includes("SPED MODIFIED") ||
+    sub.includes("SNED MODIFIED")
+  ) {
+    const isSNED =
+      gradeStr.includes("SNED") ||
+      gradeStr.includes("NON-GRADED") ||
+      gradeStr.includes("SPED");
     if (!isSNED) return false;
   }
 
   // 4. ARAL Program Check: ARAL subjects are strictly for ARAL sections (never match ARALING PANLIPUNAN)
-  if (sub !== 'ARALING PANLIPUNAN' && !sub.startsWith('ARALING') && (sub === 'ARAL' || sub.startsWith('ARAL -') || sub.startsWith('ARAL-') || sub.startsWith('ARAL ') || sub.includes('ARAL TUTORING') || sub.includes('ARAL PROGRAM'))) {
-    const isAral = gradeStr === 'ARAL' || gradeStr.includes('ARAL') || ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(t => gradeStr.toUpperCase().includes(t));
+  if (
+    sub !== "ARALING PANLIPUNAN" &&
+    !sub.startsWith("ARALING") &&
+    (sub === "ARAL" ||
+      sub.startsWith("ARAL -") ||
+      sub.startsWith("ARAL-") ||
+      sub.startsWith("ARAL ") ||
+      sub.includes("ARAL TUTORING") ||
+      sub.includes("ARAL PROGRAM"))
+  ) {
+    const isAral =
+      gradeStr === "ARAL" ||
+      gradeStr.includes("ARAL") ||
+      ["PHIL-IRI", "PHIL IRI", "CRLA", "EGRA", "ALNAT", "RMA", "TOS"].some(
+        (t) => gradeStr.toUpperCase().includes(t),
+      );
     if (!isAral) return false;
   }
 
@@ -2066,9 +2308,23 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
   return true;
 };
 
-export const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '', allowEmailDiscrepancy = false) => {
-  if (!email || String(email).trim().toUpperCase() === 'N/A' || String(email).trim().toUpperCase() === 'NA') return { isValid: true, error: null };
-  const rawEmail = String(email).trim().toLowerCase().replace(/[\u00f1\u00d1]/g, 'n');
+export const validateDepEdEmail = (
+  email,
+  firstName = "",
+  lastName = "",
+  middleName = "",
+  allowEmailDiscrepancy = false,
+) => {
+  if (
+    !email ||
+    String(email).trim().toUpperCase() === "N/A" ||
+    String(email).trim().toUpperCase() === "NA"
+  )
+    return { isValid: true, error: null };
+  const rawEmail = String(email)
+    .trim()
+    .toLowerCase()
+    .replace(/[\u00f1\u00d1]/g, "n");
 
   // 1. Check for duplicate @deped.gov.ph or multiple '@'
   const atCount = (rawEmail.match(/@/g) || []).length;
@@ -2076,24 +2332,25 @@ export const validateDepEdEmail = (email, firstName = '', lastName = '', middleN
   if (atCount > 1 || depedDomainCount > 1) {
     return {
       isValid: false,
-      error: "Duplicate domain '@deped.gov.ph' detected. Please enter a valid single email."
+      error:
+        "Duplicate domain '@deped.gov.ph' detected. Please enter a valid single email.",
     };
   }
 
   // 2. Check official @deped.gov.ph domain suffix
-  if (!rawEmail.endsWith('@deped.gov.ph')) {
+  if (!rawEmail.endsWith("@deped.gov.ph")) {
     return {
       isValid: false,
-      error: "Email must end with official '@deped.gov.ph' domain."
+      error: "Email must end with official '@deped.gov.ph' domain.",
     };
   }
 
   // 3. Extract local part
-  const localPart = rawEmail.split('@')[0];
+  const localPart = rawEmail.split("@")[0];
   if (!localPart) {
     return {
       isValid: false,
-      error: "Email local part cannot be empty."
+      error: "Email local part cannot be empty.",
     };
   }
 
@@ -2103,11 +2360,13 @@ export const validateDepEdEmail = (email, firstName = '', lastName = '', middleN
   }
 
   // 4. Validate First Name and Last/Middle Name matching (letters and numbers only, converting ñ/Ñ -> n)
-  const cleanStr = (s) => String(s || '')
-    .toLowerCase()
-    .replace(/[\u00f1\u00d1]/g, 'n')
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, '');
+  const cleanStr = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[\u00f1\u00d1]/g, "n")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
 
   const cleanFn = cleanStr(firstName);
   const cleanLn = cleanStr(lastName);
@@ -2115,54 +2374,63 @@ export const validateDepEdEmail = (email, firstName = '', lastName = '', middleN
   const cleanLocal = cleanStr(localPart);
 
   // Multi-word first names (e.g. Mary Jane -> check 'mary' or 'jane' or 'maryjane', Iñigo -> inigo)
-  const fnTokens = String(firstName || '')
+  const fnTokens = String(firstName || "")
     .toLowerCase()
-    .replace(/[\u00f1\u00d1]/g, 'n')
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u00f1\u00d1]/g, "n")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .split(/\s+/)
     .map(cleanStr)
     .filter(Boolean);
 
-  const fnMatches = fnTokens.length > 0
-    ? fnTokens.some(t => cleanLocal.includes(t)) || (cleanFn && cleanLocal.includes(cleanFn))
-    : true;
+  const fnMatches =
+    fnTokens.length > 0
+      ? fnTokens.some((t) => cleanLocal.includes(t)) ||
+        (cleanFn && cleanLocal.includes(cleanFn))
+      : true;
 
   // Last name matching (e.g. 'reyes' or multi-word 'delacruz' -> 'dela', 'cruz', 'peña' -> 'pena')
-  const lnTokens = String(lastName || '')
+  const lnTokens = String(lastName || "")
     .toLowerCase()
-    .replace(/[\u00f1\u00d1]/g, 'n')
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u00f1\u00d1]/g, "n")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .split(/\s+/)
     .map(cleanStr)
     .filter(Boolean);
 
   const lnMatches = cleanLn
-    ? (cleanLocal.includes(cleanLn) || lnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
+    ? cleanLocal.includes(cleanLn) ||
+      lnTokens.some((t) => t.length > 2 && cleanLocal.includes(t))
     : true;
 
   // Middle name / Maiden surname matching (e.g. 'santos', 'peña' -> 'pena' or middle initial)
   // In DepEd, married women often retain their maiden surname in their DepEd email, which is stored as middleName in eSF7.
-  const mnTokens = String(middleName || '')
+  const mnTokens = String(middleName || "")
     .toLowerCase()
-    .replace(/[\u00f1\u00d1]/g, 'n')
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u00f1\u00d1]/g, "n")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .split(/\s+/)
     .map(cleanStr)
     .filter(Boolean);
 
-  const mnMatches = cleanMn && cleanMn !== 'na'
-    ? (cleanLocal.includes(cleanMn) || mnTokens.some(t => t.length > 2 && cleanLocal.includes(t)))
-    : false;
+  const mnMatches =
+    cleanMn && cleanMn !== "na"
+      ? cleanLocal.includes(cleanMn) ||
+        mnTokens.some((t) => t.length > 2 && cleanLocal.includes(t))
+      : false;
 
   // Surnames match: accepts legal last name OR maiden/middle name
-  const hasSurnameInput = Boolean(cleanLn || (cleanMn && cleanMn !== 'na'));
-  const surnameMatches = hasSurnameInput ? (lnMatches || mnMatches) : true;
+  const hasSurnameInput = Boolean(cleanLn || (cleanMn && cleanMn !== "na"));
+  const surnameMatches = hasSurnameInput ? lnMatches || mnMatches : true;
 
   if (!fnMatches || !surnameMatches) {
-    const suggestedSurname = cleanLn || (cleanMn && cleanMn !== 'na' ? cleanMn : '') || 'lastname';
+    const suggestedSurname =
+      cleanLn || (cleanMn && cleanMn !== "na" ? cleanMn : "") || "lastname";
     return {
       isValid: false,
-      error: `Email should contain personnel's first and last or middle name (e.g. ${cleanFn ? cleanFn : 'firstname'}.${suggestedSurname}@deped.gov.ph). Middle/maiden names are accepted for married personnel.`
+      error: `Email should contain personnel's first and last or middle name (e.g. ${cleanFn ? cleanFn : "firstname"}.${suggestedSurname}@deped.gov.ph). Middle/maiden names are accepted for married personnel.`,
     };
   }
 
@@ -2667,30 +2935,83 @@ export const COLLEGE_DEGREE_OPTIONS = [
   "BS/BA VOCATIONAL/TECHNICAL EDUCATION",
   "BS/BA VOLCANOLOGY",
   "BS/BA WRITING",
-  "BS/BA ZOOLOGY"
+  "BS/BA ZOOLOGY",
 ];
 
 export const DIVISION_SCHOOL_OPTIONS = [
-  { region: "Region IV-A", division: "Sample Division", district: "Sample District", name: "Sample National High School", schoolId: "123456" },
-  { region: "Region IV-A", division: "Sample Division", district: "Sample District", name: "Receiving Integrated School", schoolId: "123457" },
-  { region: "Region IV-A", division: "Sample Division", district: "North District", name: "Clustered Elementary School", schoolId: "123458" },
-  { region: "Region IV-A", division: "Sample Division", district: "North District", name: "North District Junior High School", schoolId: "123459" },
-  { region: "Region IV-A", division: "Sample Division", district: "South District", name: "South District Senior High School", schoolId: "123460" },
-  { region: "Region IV-A", division: "Sample Division", district: "Riverside District", name: "Riverside Integrated School", schoolId: "123461" },
-  { region: "Region IV-A", division: "Sample Division", district: "San Isidro District", name: "San Isidro National High School", schoolId: "123462" },
-  { region: "Region IV-A", division: "Sample Division", district: "Science District", name: "Division Science High School", schoolId: "123463" }
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "Sample District",
+    name: "Sample National High School",
+    schoolId: "123456",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "Sample District",
+    name: "Receiving Integrated School",
+    schoolId: "123457",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "North District",
+    name: "Clustered Elementary School",
+    schoolId: "123458",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "North District",
+    name: "North District Junior High School",
+    schoolId: "123459",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "South District",
+    name: "South District Senior High School",
+    schoolId: "123460",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "Riverside District",
+    name: "Riverside Integrated School",
+    schoolId: "123461",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "San Isidro District",
+    name: "San Isidro National High School",
+    schoolId: "123462",
+  },
+  {
+    region: "Region IV-A",
+    division: "Sample Division",
+    district: "Science District",
+    name: "Division Science High School",
+    schoolId: "123463",
+  },
 ];
 
 export const isTeachingRelatedSubject = (subject) => {
   if (!subject) return false;
   const sub = subject.toUpperCase();
-  return sub.startsWith('TR -') || sub === 'ADVISORY';
+  return sub.startsWith("TR -") || sub === "ADVISORY";
 };
 
 export const isAdministrativeSubject = (subject) => {
   if (!subject) return false;
   const sub = subject.toUpperCase();
-  return sub.startsWith('ADMIN TASK -') || sub === 'ADMINISTRATIVE' || sub === 'RELATED TASK' || sub === 'COACHING AND MENTORING';
+  return (
+    sub.startsWith("ADMIN TASK -") ||
+    sub === "ADMINISTRATIVE" ||
+    sub === "RELATED TASK" ||
+    sub === "COACHING AND MENTORING"
+  );
 };
 
 // Helper to compute minutes from workload rows
@@ -2698,12 +3019,23 @@ export const computeWeeklyTeachingMinutes = (rows) => {
   if (!Array.isArray(rows)) return 0;
   return rows.reduce((total, row) => {
     if (!row.startTime || !row.endTime) return total;
-    const subUpper = String(row.subject || row.subjectName || '').toUpperCase().trim();
-    if (subUpper === 'HGP' || subUpper.startsWith('HGP (') || subUpper.includes('HOMEROOM GUIDANCE')) return total;
-    if (isTeachingRelatedSubject(row.subject) || isAdministrativeSubject(row.subject)) return total;
-    const [startH, startM] = row.startTime.split(':').map(Number);
-    const [endH, endM] = row.endTime.split(':').map(Number);
-    const diffMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+    const subUpper = String(row.subject || row.subjectName || "")
+      .toUpperCase()
+      .trim();
+    if (
+      subUpper === "HGP" ||
+      subUpper.startsWith("HGP (") ||
+      subUpper.includes("HOMEROOM GUIDANCE")
+    )
+      return total;
+    if (
+      isTeachingRelatedSubject(row.subject) ||
+      isAdministrativeSubject(row.subject)
+    )
+      return total;
+    const [startH, startM] = row.startTime.split(":").map(Number);
+    const [endH, endM] = row.endTime.split(":").map(Number);
+    const diffMinutes = endH * 60 + endM - (startH * 60 + startM);
     const daysCount = Array.isArray(row.days) ? row.days.length : 0;
     return total + (diffMinutes > 0 ? diffMinutes * daysCount : 0);
   }, 0);
@@ -2714,9 +3046,9 @@ export const computeWeeklyTeachingRelatedMinutesFromWorkload = (rows) => {
   return rows.reduce((total, row) => {
     if (!row.startTime || !row.endTime) return total;
     if (!isTeachingRelatedSubject(row.subject)) return total;
-    const [startH, startM] = row.startTime.split(':').map(Number);
-    const [endH, endM] = row.endTime.split(':').map(Number);
-    const diffMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+    const [startH, startM] = row.startTime.split(":").map(Number);
+    const [endH, endM] = row.endTime.split(":").map(Number);
+    const diffMinutes = endH * 60 + endM - (startH * 60 + startM);
     const daysCount = Array.isArray(row.days) ? row.days.length : 0;
     return total + (diffMinutes > 0 ? diffMinutes * daysCount : 0);
   }, 0);
@@ -2727,9 +3059,9 @@ export const computeWeeklyAdministrativeMinutesFromWorkload = (rows) => {
   return rows.reduce((total, row) => {
     if (!row.startTime || !row.endTime) return total;
     if (!isAdministrativeSubject(row.subject)) return total;
-    const [startH, startM] = row.startTime.split(':').map(Number);
-    const [endH, endM] = row.endTime.split(':').map(Number);
-    const diffMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+    const [startH, startM] = row.startTime.split(":").map(Number);
+    const [endH, endM] = row.endTime.split(":").map(Number);
+    const diffMinutes = endH * 60 + endM - (startH * 60 + startM);
     const daysCount = Array.isArray(row.days) ? row.days.length : 0;
     return total + (diffMinutes > 0 ? diffMinutes * daysCount : 0);
   }, 0);
@@ -2737,11 +3069,22 @@ export const computeWeeklyAdministrativeMinutesFromWorkload = (rows) => {
 
 // Pure helpers used by both the initial load and the "restore from official database" flows.
 // (They used to live inside loadInitialData, so the restore flow hit a ReferenceError.)
-const SPREADSHEET_PLACEHOLDERS = ['MULTI-GRADE', 'MULTIGRADE', 'MULTI GRADE', 'MONO-GRADE', 'MONOGRADE', 'MONO GRADE'];
+const SPREADSHEET_PLACEHOLDERS = [
+  "MULTI-GRADE",
+  "MULTIGRADE",
+  "MULTI GRADE",
+  "MONO-GRADE",
+  "MONOGRADE",
+  "MONO GRADE",
+];
 const isInvalidClassSection = (sec) => {
   if (!sec) return true;
-  const g = String(sec.gradeLevel || sec.grade_level || '').toUpperCase().trim();
-  const n = String(sec.sectionName || sec.section_name || '').toUpperCase().trim();
+  const g = String(sec.gradeLevel || sec.grade_level || "")
+    .toUpperCase()
+    .trim();
+  const n = String(sec.sectionName || sec.section_name || "")
+    .toUpperCase()
+    .trim();
   const isPlaceholderGrade = !g || SPREADSHEET_PLACEHOLDERS.includes(g);
   const isPlaceholderName = !n || SPREADSHEET_PLACEHOLDERS.includes(n);
   return isPlaceholderGrade && isPlaceholderName;
@@ -2752,63 +3095,93 @@ const sanitizeClassSectionList = (list) => {
   const map = new Map();
   const naturalKeyIndex = new Map();
 
-  list.filter(sec => !isInvalidClassSection(sec)).forEach(sec => {
-    let cleanGrade = sec.gradeLevel || sec.grade_level || '';
-    const upperG = String(cleanGrade).toUpperCase().trim();
-    if (upperG.includes('KINDER')) cleanGrade = 'Kinder';
-    else if (upperG === 'SNED' || upperG === 'NON-GRADED' || upperG === 'NON GRADED' || upperG === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
+  list
+    .filter((sec) => !isInvalidClassSection(sec))
+    .forEach((sec) => {
+      let cleanGrade = sec.gradeLevel || sec.grade_level || "";
+      const upperG = String(cleanGrade).toUpperCase().trim();
+      if (upperG.includes("KINDER")) cleanGrade = "Kinder";
+      else if (
+        upperG === "SNED" ||
+        upperG === "NON-GRADED" ||
+        upperG === "NON GRADED" ||
+        upperG === "SPED"
+      )
+        cleanGrade = "SNED (NON-GRADED)";
 
-    const rawType = String(sec.sectionType || sec.section_type || '').toUpperCase().trim();
-    const isRegType = rawType === 'MONO GRADE' || rawType === 'MONOGRADE' || rawType === 'MULTIGRADE' || rawType === 'MULTI GRADE';
+      const rawType = String(sec.sectionType || sec.section_type || "")
+        .toUpperCase()
+        .trim();
+      const isRegType =
+        rawType === "MONO GRADE" ||
+        rawType === "MONOGRADE" ||
+        rawType === "MULTIGRADE" ||
+        rawType === "MULTI GRADE";
 
-    const sanitized = {
-      ...sec,
-      gradeLevel: cleanGrade,
-      grade_level: cleanGrade
-    };
+      const sanitized = {
+        ...sec,
+        gradeLevel: cleanGrade,
+        grade_level: cleanGrade,
+      };
 
-    if (isRegType) {
-      delete sanitized.aralBasis;
-      delete sanitized.aralGrade;
-      delete sanitized.aralToolKey;
-      delete sanitized.aralTool;
-      delete sanitized.aralProfileLevel;
-      delete sanitized.aralLearners;
-      delete sanitized.interventionCategory;
-      delete sanitized.interventionType;
-    }
-
-    const sid = (sanitized.id && String(sanitized.id).trim()) ? String(sanitized.id).trim() : null;
-    const gl = String(cleanGrade).trim().toUpperCase();
-    const sn = String(sanitized.sectionName || sanitized.section_name || '').trim().toUpperCase();
-    const st = String(sanitized.sectionType || sanitized.section_type || 'MONO GRADE').trim().toUpperCase();
-    const nKey = (gl && sn) ? `${gl}::${sn}::${st}` : null;
-
-    let targetKey = null;
-    if (sid && map.has(sid)) {
-      targetKey = sid;
-    } else if (nKey && naturalKeyIndex.has(nKey)) {
-      targetKey = naturalKeyIndex.get(nKey);
-    } else {
-      targetKey = sid || nKey || `sec-${Math.random().toString(36).substring(2, 9)}`;
-    }
-
-    if (map.has(targetKey)) {
-      const prev = map.get(targetKey);
-      const merged = { ...prev, ...sanitized };
-      if ((sanitized.numberOfLearners === null || sanitized.numberOfLearners === undefined || sanitized.numberOfLearners === '') &&
-          (prev.numberOfLearners !== null && prev.numberOfLearners !== undefined && prev.numberOfLearners !== '')) {
-        merged.numberOfLearners = prev.numberOfLearners;
-        merged.maleLearners = prev.maleLearners;
-        merged.femaleLearners = prev.femaleLearners;
+      if (isRegType) {
+        delete sanitized.aralBasis;
+        delete sanitized.aralGrade;
+        delete sanitized.aralToolKey;
+        delete sanitized.aralTool;
+        delete sanitized.aralProfileLevel;
+        delete sanitized.aralLearners;
+        delete sanitized.interventionCategory;
+        delete sanitized.interventionType;
       }
-      map.set(targetKey, merged);
-      if (nKey) naturalKeyIndex.set(nKey, targetKey);
-    } else {
-      map.set(targetKey, sanitized);
-      if (nKey) naturalKeyIndex.set(nKey, targetKey);
-    }
-  });
+
+      const sid =
+        sanitized.id && String(sanitized.id).trim()
+          ? String(sanitized.id).trim()
+          : null;
+      const gl = String(cleanGrade).trim().toUpperCase();
+      const sn = String(sanitized.sectionName || sanitized.section_name || "")
+        .trim()
+        .toUpperCase();
+      const st = String(
+        sanitized.sectionType || sanitized.section_type || "MONO GRADE",
+      )
+        .trim()
+        .toUpperCase();
+      const nKey = gl && sn ? `${gl}::${sn}::${st}` : null;
+
+      let targetKey = null;
+      if (sid && map.has(sid)) {
+        targetKey = sid;
+      } else if (nKey && naturalKeyIndex.has(nKey)) {
+        targetKey = naturalKeyIndex.get(nKey);
+      } else {
+        targetKey =
+          sid || nKey || `sec-${Math.random().toString(36).substring(2, 9)}`;
+      }
+
+      if (map.has(targetKey)) {
+        const prev = map.get(targetKey);
+        const merged = { ...prev, ...sanitized };
+        if (
+          (sanitized.numberOfLearners === null ||
+            sanitized.numberOfLearners === undefined ||
+            sanitized.numberOfLearners === "") &&
+          prev.numberOfLearners !== null &&
+          prev.numberOfLearners !== undefined &&
+          prev.numberOfLearners !== ""
+        ) {
+          merged.numberOfLearners = prev.numberOfLearners;
+          merged.maleLearners = prev.maleLearners;
+          merged.femaleLearners = prev.femaleLearners;
+        }
+        map.set(targetKey, merged);
+        if (nKey) naturalKeyIndex.set(nKey, targetKey);
+      } else {
+        map.set(targetKey, sanitized);
+        if (nKey) naturalKeyIndex.set(nKey, targetKey);
+      }
+    });
 
   return Array.from(map.values());
 };
@@ -2819,36 +3192,42 @@ const masterSourceReported = new Set();
 export const AppProvider = ({ children }) => {
   const [activeView, setActiveViewState] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get('view');
+    const fromUrl = params.get("view");
     if (fromUrl) return fromUrl;
-    if (typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem('insighted_active_view');
+    if (typeof localStorage !== "undefined") {
+      const saved = localStorage.getItem("insighted_active_view");
       if (saved) return saved;
     }
     return "landing";
   });
 
   const syncUrlWithView = (view, pushHistory = true) => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     try {
       const url = new URL(window.location.href);
-      if (view && view !== 'landing') {
-        url.searchParams.set('view', view);
+      if (view && view !== "landing") {
+        url.searchParams.set("view", view);
       } else {
-        url.searchParams.delete('view');
+        url.searchParams.delete("view");
       }
-      const newUrl = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
-      const currentUrl = window.location.pathname + window.location.search + window.location.hash;
-      
+      const newUrl =
+        url.pathname +
+        (url.searchParams.toString() ? "?" + url.searchParams.toString() : "") +
+        url.hash;
+      const currentUrl =
+        window.location.pathname +
+        window.location.search +
+        window.location.hash;
+
       if (currentUrl !== newUrl) {
         if (pushHistory) {
-          window.history.pushState({ view }, '', newUrl);
+          window.history.pushState({ view }, "", newUrl);
         } else {
-          window.history.replaceState({ view }, '', newUrl);
+          window.history.replaceState({ view }, "", newUrl);
         }
       }
     } catch (e) {
-      console.error('Failed to sync URL with view:', e);
+      console.error("Failed to sync URL with view:", e);
     }
   };
 
@@ -2856,7 +3235,7 @@ export const AppProvider = ({ children }) => {
   const autoSaveHandlersRef = useRef(new Map());
 
   const registerAutoSaveHandler = useCallback((id, handler) => {
-    if (!id || typeof handler !== 'function') return () => {};
+    if (!id || typeof handler !== "function") return () => {};
     autoSaveHandlersRef.current.set(id, handler);
     return () => {
       autoSaveHandlersRef.current.delete(id);
@@ -2867,7 +3246,7 @@ export const AppProvider = ({ children }) => {
     let savedAny = false;
     for (const [id, handler] of autoSaveHandlersRef.current.entries()) {
       try {
-        if (typeof handler === 'function') {
+        if (typeof handler === "function") {
           const res = await handler(targetView);
           if (res !== false) savedAny = true;
         }
@@ -2879,40 +3258,52 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   const setActiveView = async (view, options = {}) => {
-    const { replace = false, skipAutoSave = false, skipGuard = false } = typeof options === 'boolean' ? { replace: options } : options;
-    
+    const {
+      replace = false,
+      skipAutoSave = false,
+      skipGuard = false,
+    } = typeof options === "boolean" ? { replace: options } : options;
+
     if (!view || view === activeView) return false;
 
     // Unsaved Changes Navigation Guard (SweetAlert2 Modal)
     let leftByDiscarding = false;
     if (!skipGuard && isAnyScreenDirty()) {
-      const outcome = await checkBeforeLeaveDetailed({ actionType: 'navigate' });
-      if (outcome === 'stay') {
+      const outcome = await checkBeforeLeaveDetailed({
+        actionType: "navigate",
+      });
+      if (outcome === "stay") {
         // User stays on the page; navigation is aborted and nothing changes
         return false;
       }
       // 'saved': the server confirmed the save from the dialog. 'discard': drafts were dropped.
-      leftByDiscarding = outcome === 'discard';
+      leftByDiscarding = outcome === "discard";
     }
 
     // Auto-save active module changes whenever navigating
     // (Not after a discard: the auto-save would write the changes the user just threw away back into the local draft.)
-    if (!skipAutoSave && !leftByDiscarding && activeView && activeView !== view && view) {
+    if (
+      !skipAutoSave &&
+      !leftByDiscarding &&
+      activeView &&
+      activeView !== view &&
+      view
+    ) {
       try {
         const didSave = await triggerAutoSave(view);
-        if (view === 'nodemap') {
-          showToast('✓ Auto-saved your changes to Node Map', 'success');
+        if (view === "nodemap") {
+          showToast("✓ Auto-saved your changes to Node Map", "success");
         } else if (didSave) {
-          showToast('✓ Auto-saved changes', 'success');
+          showToast("✓ Auto-saved changes", "success");
         }
       } catch (e) {
-        console.warn('[Auto-Save Navigation Notice]:', e);
+        console.warn("[Auto-Save Navigation Notice]:", e);
       }
     }
 
     setActiveViewState(view);
-    if (typeof localStorage !== 'undefined' && view) {
-      localStorage.setItem('insighted_active_view', view);
+    if (typeof localStorage !== "undefined" && view) {
+      localStorage.setItem("insighted_active_view", view);
     }
     syncUrlWithView(view, !replace);
     return true;
@@ -2921,25 +3312,26 @@ export const AppProvider = ({ children }) => {
   // Sync initial URL on mount and handle Browser Back/Forward navigation
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get('view');
+    const fromUrl = params.get("view");
     if (fromUrl && fromUrl !== activeView) {
       setActiveViewState(fromUrl);
-    } else if (!fromUrl && activeView && activeView !== 'landing') {
+    } else if (!fromUrl && activeView && activeView !== "landing") {
       syncUrlWithView(activeView, false);
     }
 
     const handlePopState = async (event) => {
       const currentParams = new URLSearchParams(window.location.search);
-      const viewFromUrl = currentParams.get('view');
-      const targetView = viewFromUrl || (event.state && event.state.view) || 'landing';
-      
+      const viewFromUrl = currentParams.get("view");
+      const targetView =
+        viewFromUrl || (event.state && event.state.view) || "landing";
+
       if (targetView === activeView) return;
 
       if (isAnyScreenDirty()) {
         // Temporarily keep URL on current view while SweetAlert modal is open
         syncUrlWithView(activeView, false);
 
-        const canProceed = await checkBeforeLeave({ actionType: 'navigate' });
+        const canProceed = await checkBeforeLeave({ actionType: "navigate" });
         if (!canProceed) {
           // User chose to stay and save -> stay on current view
           return;
@@ -2947,31 +3339,39 @@ export const AppProvider = ({ children }) => {
       }
 
       setActiveViewState(targetView);
-      if (typeof localStorage !== 'undefined' && targetView) {
-        localStorage.setItem('insighted_active_view', targetView);
+      if (typeof localStorage !== "undefined" && targetView) {
+        localStorage.setItem("insighted_active_view", targetView);
       }
       syncUrlWithView(targetView, false);
     };
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, [activeView]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState(null);
   const [scannedRoom, setScannedRoom] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('room') ? decodeURIComponent(params.get('room')) : "ROOM-01";
+    return params.get("room")
+      ? decodeURIComponent(params.get("room"))
+      : "ROOM-01";
   });
   const [activePersonnelId, setActivePersonnelId] = useState("P-001");
   const [schoolInfo, setSchoolInfo] = useState(() => {
-    const rememberedUser = localStorage.getItem('remembered_user');
+    const rememberedUser = localStorage.getItem("remembered_user");
     // The session's school (token) wins over anything left in localStorage by a previous login.
-    let userSchoolId = getSessionSchoolId() || localStorage.getItem('activeSchoolId') || localStorage.getItem('school_id') || localStorage.getItem('schoolId') || "";
+    let userSchoolId =
+      getSessionSchoolId() ||
+      localStorage.getItem("activeSchoolId") ||
+      localStorage.getItem("school_id") ||
+      localStorage.getItem("schoolId") ||
+      "";
     if (rememberedUser) {
       try {
         const parsed = JSON.parse(rememberedUser);
-        if (!getSessionSchoolId() && (parsed.school_id || parsed.schoolId)) userSchoolId = parsed.school_id || parsed.schoolId;
+        if (!getSessionSchoolId() && (parsed.school_id || parsed.schoolId))
+          userSchoolId = parsed.school_id || parsed.schoolId;
       } catch (e) {}
     }
     return {
@@ -2982,7 +3382,7 @@ export const AppProvider = ({ children }) => {
       district: "",
       schoolYear: "SY 26-27",
       numberOfShifts: "1",
-      curricularOffering: ['Elementary', 'JHS', 'SHS']
+      curricularOffering: ["Elementary", "JHS", "SHS"],
     };
   });
 
@@ -2991,7 +3391,7 @@ export const AppProvider = ({ children }) => {
   const [classSections, setClassSections] = useState([]);
   const [deletedSectionIds, setDeletedSectionIds] = useState([]);
   const [schoolEdited, setSchoolEdited] = useState(() => {
-    return localStorage.getItem('esf7_school_edited') === 'true';
+    return localStorage.getItem("esf7_school_edited") === "true";
   });
   const [workloadTransfers, setWorkloadTransfers] = useState([]);
   const [absences, setAbsences] = useState([]);
@@ -3000,120 +3400,129 @@ export const AppProvider = ({ children }) => {
   const [allowancesMap, setAllowancesMap] = useState({});
 
   // Term Management State (1st, 2nd, 3rd Terms)
-  const [activeTerm, setActiveTerm] = useState('1st');
+  const [activeTerm, setActiveTerm] = useState("1st");
   const [termStatuses, setTermStatuses] = useState({
-    '1st': 'OPEN',
-    '2nd': 'OPEN',
-    '3rd': 'LOCKED'
+    "1st": "OPEN",
+    "2nd": "OPEN",
+    "3rd": "LOCKED",
   });
 
   const isTermLocked = (termId) => {
-    return termStatuses[termId || activeTerm] === 'LOCKED';
+    return termStatuses[termId || activeTerm] === "LOCKED";
   };
 
   const unlockTerm = (termId) => {
-    setTermStatuses(prev => ({
+    setTermStatuses((prev) => ({
       ...prev,
-      [termId]: 'OPEN'
+      [termId]: "OPEN",
     }));
     if (showToast) showToast(`✓ ${termId} Term is now OPEN for encoding.`);
   };
 
   const lockTerm = (termId) => {
-    setTermStatuses(prev => ({
+    setTermStatuses((prev) => ({
       ...prev,
-      [termId]: 'LOCKED'
+      [termId]: "LOCKED",
     }));
     if (showToast) showToast(`🔒 ${termId} Term has been locked.`);
   };
 
   const copyTermData = async (fromTerm, toTerm) => {
     try {
-      setPersonnel(prev => prev.map(p => {
-        const rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
-        const sourceRows = rows.filter(r => (r.term || '1st') === fromTerm);
-        const otherRows = rows.filter(r => (r.term || '1st') !== toTerm);
-        const clonedRows = sourceRows.map((r, idx) => ({
-          ...r,
-          id: `r-term-${toTerm}-${p.id}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-          term: toTerm
-        }));
-        const updatedRows = [...otherRows, ...clonedRows];
+      setPersonnel((prev) =>
+        prev.map((p) => {
+          const rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
+          const sourceRows = rows.filter((r) => (r.term || "1st") === fromTerm);
+          const otherRows = rows.filter((r) => (r.term || "1st") !== toTerm);
+          const clonedRows = sourceRows.map((r, idx) => ({
+            ...r,
+            id: `r-term-${toTerm}-${p.id}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+            term: toTerm,
+          }));
+          const updatedRows = [...otherRows, ...clonedRows];
 
-        // Also update local storage draft if present
-        try {
-          const draftKey = `esf7_workload_draft_${p.id}`;
-          const localDraft = localStorage.getItem(draftKey);
-          if (localDraft) {
-            const parsed = JSON.parse(localDraft);
-            localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: updatedRows }));
+          // Also update local storage draft if present
+          try {
+            const draftKey = `esf7_workload_draft_${p.id}`;
+            const localDraft = localStorage.getItem(draftKey);
+            if (localDraft) {
+              const parsed = JSON.parse(localDraft);
+              localStorage.setItem(
+                draftKey,
+                JSON.stringify({ ...parsed, workloadRows: updatedRows }),
+              );
+            }
+          } catch (err) {
+            // ignore draft storage error
           }
-        } catch (err) {
-          // ignore draft storage error
-        }
 
-        return {
-          ...p,
-          workloadRows: updatedRows
-        };
-      }));
-      if (showToast) showToast(`✓ Copied timetable setup from ${fromTerm} Term to ${toTerm} Term across all teachers.`);
+          return {
+            ...p,
+            workloadRows: updatedRows,
+          };
+        }),
+      );
+      if (showToast)
+        showToast(
+          `✓ Copied timetable setup from ${fromTerm} Term to ${toTerm} Term across all teachers.`,
+        );
     } catch (e) {
-      console.error('Error copying term data:', e);
-      if (showAlert) showAlert('Copy Failed', 'Unable to duplicate term data: ' + e.message);
+      console.error("Error copying term data:", e);
+      if (showAlert)
+        showAlert("Copy Failed", "Unable to duplicate term data: " + e.message);
     }
   };
 
   // Nodes 1 - 9 and Node 11 are fixed as UNLOCKED. Only Node 10 (overload) is locked by default.
   const ALWAYS_UNLOCKED_NODES = [
-    'school',       // Node 01
-    'roster',       // Node 02
-    'room-qr',      // Node 03
-    'profile',      // Node 04
-    'requests',     // Node 05
-    'classes',      // Node 06
-    'designation',  // Node 07
-    'workload',     // Node 08
-    'allowances',   // Node 09
-    'validation'    // Node 11
+    "school", // Node 01
+    "roster", // Node 02
+    "room-qr", // Node 03
+    "profile", // Node 04
+    "requests", // Node 05
+    "classes", // Node 06
+    "designation", // Node 07
+    "workload", // Node 08
+    "allowances", // Node 09
+    "validation", // Node 11
   ];
 
   const CORE_REGISTRY_NODES = [
-    'school', 
-    'roster', 
-    'room-qr',
-    'profile', 
-    'requests',
-    'classes', 
-    'designation', 
-    'workload', 
-    'allowances',
-    'overload',
-    'validation'
+    "school",
+    "roster",
+    "room-qr",
+    "profile",
+    "requests",
+    "classes",
+    "designation",
+    "workload",
+    "allowances",
+    "overload",
+    "validation",
   ];
 
   const [journeyState, setJourneyState] = useState({
     unlockedNodes: [
-      'school', 
-      'roster', 
-      'room-qr', 
-      'profile', 
-      'requests', 
-      'classes', 
-      'designation', 
-      'workload', 
-      'allowances', 
-      'validation'
+      "school",
+      "roster",
+      "room-qr",
+      "profile",
+      "requests",
+      "classes",
+      "designation",
+      "workload",
+      "allowances",
+      "validation",
     ],
     completedNodes: [],
-    currentNode: 'school'
+    currentNode: "school",
   });
 
   const [bypassNodeLocks, setBypassNodeLocks] = useState(false);
 
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
-    if (nodeId === 'overload') return false; // Node 10 (overload) is locked by default unless DEV locks are bypassed
+    if (nodeId === "overload") return false; // Node 10 (overload) is locked by default unless DEV locks are bypassed
     if (!nodeId) return true;
     if (ALWAYS_UNLOCKED_NODES.includes(nodeId)) return true;
     return true;
@@ -3124,12 +3533,20 @@ export const AppProvider = ({ children }) => {
   };
 
   const completeNode = async (nodeId, nextNodeId) => {
-    const updatedCompleted = Array.from(new Set([...(journeyState.completedNodes || []), nodeId]));
-    const updatedUnlocked = Array.from(new Set([...(journeyState.unlockedNodes || ['school']), nodeId, ...(nextNodeId ? [nextNodeId] : [])]));
+    const updatedCompleted = Array.from(
+      new Set([...(journeyState.completedNodes || []), nodeId]),
+    );
+    const updatedUnlocked = Array.from(
+      new Set([
+        ...(journeyState.unlockedNodes || ["school"]),
+        nodeId,
+        ...(nextNodeId ? [nextNodeId] : []),
+      ]),
+    );
     const newJourneyState = {
       unlockedNodes: updatedUnlocked,
       completedNodes: updatedCompleted,
-      currentNode: nextNodeId || nodeId
+      currentNode: nextNodeId || nodeId,
     };
 
     setJourneyState(newJourneyState);
@@ -3144,7 +3561,11 @@ export const AppProvider = ({ children }) => {
       if (!personnelToSave || personnelToSave.length === 0) {
         try {
           const existingLocal = await getLocalDraft(draftKey);
-          if (existingLocal && Array.isArray(existingLocal.personnel) && existingLocal.personnel.length > 0) {
+          if (
+            existingLocal &&
+            Array.isArray(existingLocal.personnel) &&
+            existingLocal.personnel.length > 0
+          ) {
             personnelToSave = existingLocal.personnel;
           }
         } catch (e) {}
@@ -3157,7 +3578,7 @@ export const AppProvider = ({ children }) => {
         workloadTransfers,
         absences,
         journey_state: newJourneyState,
-        lastUpdated: timestamp
+        lastUpdated: timestamp,
       };
       try {
         await setLocalDraft(draftKey, draftData);
@@ -3167,20 +3588,79 @@ export const AppProvider = ({ children }) => {
 
         // Milestone Sync to esf7_school_node_status
         const nodeMap = {
-          'school': { key: 'node_01_school', payload: { status: 'COMPLETED', school_name: schoolInfo.schoolName, curricular_offering: schoolInfo.curricularOffering, number_of_shifts: schoolInfo.numberOfShifts, region: schoolInfo.region, division: schoolInfo.division, district: schoolInfo.district } },
-          'roster': { key: 'node_02_roster', payload: { status: 'COMPLETED', total_personnel: personnel.length, teaching: personnel.filter(p => p.type === 'teaching').length, related_teaching: personnel.filter(p => p.type === 'teaching-related').length, non_teaching: personnel.filter(p => p.type === 'non-teaching').length } },
-          'requests': { key: 'node_05_requests', payload: { status: 'COMPLETED', incoming_count: incomingRequests.length, outgoing_count: outgoingRequests.length } },
-          'classes': { key: 'node_06_classes', payload: { status: 'COMPLETED', total_sections: classSections.length, sections: classSections } },
-          'overload': { key: 'node_10_overload', payload: { status: 'COMPLETED', completed_at: timestamp } },
-          'validation': { key: 'node_11_validation', payload: { status: 'COMPLETED', certified_by: schoolInfo.certifiedBy, certified_at: schoolInfo.certifiedAt } }
+          school: {
+            key: "node_01_school",
+            payload: {
+              status: "COMPLETED",
+              school_name: schoolInfo.schoolName,
+              curricular_offering: schoolInfo.curricularOffering,
+              number_of_shifts: schoolInfo.numberOfShifts,
+              region: schoolInfo.region,
+              division: schoolInfo.division,
+              district: schoolInfo.district,
+            },
+          },
+          roster: {
+            key: "node_02_roster",
+            payload: {
+              status: "COMPLETED",
+              total_personnel: personnel.length,
+              teaching: personnel.filter((p) => p.type === "teaching").length,
+              related_teaching: personnel.filter(
+                (p) => p.type === "teaching-related",
+              ).length,
+              non_teaching: personnel.filter((p) => p.type === "non-teaching")
+                .length,
+            },
+          },
+          requests: {
+            key: "node_05_requests",
+            payload: {
+              status: "COMPLETED",
+              incoming_count: incomingRequests.length,
+              outgoing_count: outgoingRequests.length,
+            },
+          },
+          classes: {
+            key: "node_06_classes",
+            payload: {
+              status: "COMPLETED",
+              total_sections: classSections.length,
+              sections: classSections,
+            },
+          },
+          overload: {
+            key: "node_10_overload",
+            payload: { status: "COMPLETED", completed_at: timestamp },
+          },
+          validation: {
+            key: "node_11_validation",
+            payload: {
+              status: "COMPLETED",
+              certified_by: schoolInfo.certifiedBy,
+              certified_at: schoolInfo.certifiedAt,
+            },
+          },
         };
 
         const target = nodeMap[nodeId];
         if (target) {
           const overallPct = Math.round((updatedCompleted.length / 11) * 100);
-          api.saveSchoolNode(target.key, target.payload, schoolInfo.schoolYear, updatedCompleted.length >= 11 ? 'COMPLETED' : 'IN_PROGRESS', overallPct).catch(err => {
-            reportError(err, { action: `Updating Node Map progress (${target.key})`, handler: 'completeNode', source: 'NodeStatus Sync' });
-          });
+          api
+            .saveSchoolNode(
+              target.key,
+              target.payload,
+              schoolInfo.schoolYear,
+              updatedCompleted.length >= 11 ? "COMPLETED" : "IN_PROGRESS",
+              overallPct,
+            )
+            .catch((err) => {
+              reportError(err, {
+                action: `Updating Node Map progress (${target.key})`,
+                handler: "completeNode",
+                source: "NodeStatus Sync",
+              });
+            });
         }
       } catch (err) {
         reportDraftError(DRAFT_ACTIONS.JOURNEY_SAVE, err);
@@ -3191,7 +3671,7 @@ export const AppProvider = ({ children }) => {
       setActiveView(nextNodeId);
       showToast(`Step completed! Proceeding to next step.`);
     } else {
-      setActiveView('dashboard');
+      setActiveView("dashboard");
       showToast(`All journey steps completed!`);
     }
   };
@@ -3224,19 +3704,33 @@ export const AppProvider = ({ children }) => {
             return await fn();
           } catch (err) {
             const st = /** @type {any} */ (err)?.status;
-            if (![502, 503, 504].includes(st) || attempt >= delays.length || requestsBlockedRef.current) throw err;
-            await new Promise(r => setTimeout(r, delays[attempt]));
+            if (
+              ![502, 503, 504].includes(st) ||
+              attempt >= delays.length ||
+              requestsBlockedRef.current
+            )
+              throw err;
+            await new Promise((r) => setTimeout(r, delays[attempt]));
           }
         }
       };
       const results = await Promise.allSettled([
         withRetry(() => api.getIncomingRequests(cleanId)),
         withRetry(() => api.getOutgoingRequests(cleanId)),
-        withRetry(() => api.getRequestHistory(cleanId))
+        withRetry(() => api.getRequestHistory(cleanId)),
       ]);
-      const setters = [setIncomingRequests, setOutgoingRequests, setRequestHistory];
-      results.forEach((r, i) => { if (r.status === 'fulfilled' && Array.isArray(r.value)) setters[i](r.value); });
-      const failed = /** @type {PromiseRejectedResult | undefined} */ (results.find(r => r.status === 'rejected'));
+      const setters = [
+        setIncomingRequests,
+        setOutgoingRequests,
+        setRequestHistory,
+      ];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled" && Array.isArray(r.value))
+          setters[i](r.value);
+      });
+      const failed = /** @type {PromiseRejectedResult | undefined} */ (
+        results.find((r) => r.status === "rejected")
+      );
       if (failed) throw failed.reason;
       clearDraftError();
       return true;
@@ -3249,15 +3743,20 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const loadDistrictSchools = async (targetId = null, targetDivision = null) => {
+  const loadDistrictSchools = async (
+    targetId = null,
+    targetDivision = null,
+  ) => {
     try {
       const activeId = resolveSchoolId(targetId);
       const activeDiv = targetDivision || schoolInfo?.division;
-      const cleanId = activeId ? String(activeId).replace(/^SCH-/i, '').trim() : '';
+      const cleanId = activeId
+        ? String(activeId).replace(/^SCH-/i, "").trim()
+        : "";
       const schools = await api.getDistrictSchools(cleanId, activeDiv);
       if (Array.isArray(schools)) setDistrictSchools(schools);
     } catch (e) {
-      console.error('Failed to load district schools:', e);
+      console.error("Failed to load district schools:", e);
     }
   };
 
@@ -3266,9 +3765,9 @@ export const AppProvider = ({ children }) => {
   const fetchSdoSchoolHead = async () => {
     try {
       const res = await api.getSdoSchoolHead();
-      setSdoSchoolHead(res && res.success ? (res.data || null) : null);
+      setSdoSchoolHead(res && res.success ? res.data || null : null);
     } catch (e) {
-      console.error('[AppContext] Failed to fetch SDO school head:', e);
+      console.error("[AppContext] Failed to fetch SDO school head:", e);
     }
   };
   const saveSdoSchoolHead = async (record) => {
@@ -3277,7 +3776,7 @@ export const AppProvider = ({ children }) => {
     return res;
   };
 
-  const fetchAllowances = async (schoolYear = 'SY 26-27') => {
+  const fetchAllowances = async (schoolYear = "SY 26-27") => {
     try {
       const res = await api.getPersonnelAllowances(schoolYear);
       if (res && res.success && res.data) {
@@ -3285,63 +3784,105 @@ export const AppProvider = ({ children }) => {
         return res.data;
       }
     } catch (e) {
-      console.error('[AppContext] Failed to fetch allowances:', e);
+      console.error("[AppContext] Failed to fetch allowances:", e);
     }
     return {};
   };
 
-  const toggleAllowance = async (personnelId, allowanceKey, isGranted, schoolYear = 'SY 26-27') => {
+  const toggleAllowance = async (
+    personnelId,
+    allowanceKey,
+    isGranted,
+    schoolYear = "SY 26-27",
+  ) => {
     const grantedBool = Boolean(isGranted);
-    setAllowancesMap(prev => ({
+    setAllowancesMap((prev) => ({
       ...prev,
       [personnelId]: {
-        ...(prev[personnelId] || { uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
-        [allowanceKey]: grantedBool
-      }
+        ...(prev[personnelId] || {
+          uniform: false,
+          supplies: false,
+          medical: false,
+          hardship: false,
+          overload: false,
+        }),
+        [allowanceKey]: grantedBool,
+      },
     }));
 
     try {
-      const res = await api.togglePersonnelAllowance(personnelId, allowanceKey, grantedBool, schoolYear);
+      const res = await api.togglePersonnelAllowance(
+        personnelId,
+        allowanceKey,
+        grantedBool,
+        schoolYear,
+      );
       return res;
     } catch (e) {
-      console.error('[AppContext] Failed to toggle allowance:', e);
+      console.error("[AppContext] Failed to toggle allowance:", e);
       fetchAllowances(schoolYear);
       return { success: false, error: e.message };
     }
   };
 
-  const setAllowanceDisabled = async (personnelId, allowanceKey, isDisabled, schoolYear = 'SY 26-27') => {
+  const setAllowanceDisabled = async (
+    personnelId,
+    allowanceKey,
+    isDisabled,
+    schoolYear = "SY 26-27",
+  ) => {
     const apply = (list) => {
       const set = new Set(Array.isArray(list) ? list : []);
-      if (isDisabled) set.add(allowanceKey); else set.delete(allowanceKey);
+      if (isDisabled) set.add(allowanceKey);
+      else set.delete(allowanceKey);
       return [...set];
     };
-    setAllowancesMap(prev => ({
+    setAllowancesMap((prev) => ({
       ...prev,
-      [personnelId]: { ...(prev[personnelId] || {}), disabled: apply(prev[personnelId]?.disabled) }
+      [personnelId]: {
+        ...(prev[personnelId] || {}),
+        disabled: apply(prev[personnelId]?.disabled),
+      },
     }));
     try {
-      return await api.setPersonnelAllowanceDisabled(personnelId, allowanceKey, Boolean(isDisabled), schoolYear);
+      return await api.setPersonnelAllowanceDisabled(
+        personnelId,
+        allowanceKey,
+        Boolean(isDisabled),
+        schoolYear,
+      );
     } catch (e) {
-      console.error('[AppContext] Failed to set allowance disabled state:', e);
+      console.error("[AppContext] Failed to set allowance disabled state:", e);
       fetchAllowances(schoolYear);
       return { success: false, error: e.message };
     }
   };
 
-  const bulkToggleAllowances = async (personnelIds = [], allowanceKeys = [], isGranted = true, schoolYear = 'SY 26-27') => {
-    if (!Array.isArray(personnelIds) || personnelIds.length === 0) return { success: true };
+  const bulkToggleAllowances = async (
+    personnelIds = [],
+    allowanceKeys = [],
+    isGranted = true,
+    schoolYear = "SY 26-27",
+  ) => {
+    if (!Array.isArray(personnelIds) || personnelIds.length === 0)
+      return { success: true };
     const keys = Array.isArray(allowanceKeys) ? allowanceKeys : [allowanceKeys];
     const grantedBool = Boolean(isGranted);
 
     // Optimistically update allowancesMap in local state
-    setAllowancesMap(prev => {
+    setAllowancesMap((prev) => {
       const next = { ...prev };
-      personnelIds.forEach(id => {
+      personnelIds.forEach((id) => {
         next[id] = {
-          ...(next[id] || { uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
+          ...(next[id] || {
+            uniform: false,
+            supplies: false,
+            medical: false,
+            hardship: false,
+            overload: false,
+          }),
         };
-        keys.forEach(k => {
+        keys.forEach((k) => {
           if (isAllowanceDisabled(next[id], k)) return; // disabled allowances are not changed
           next[id][k] = grantedBool;
         });
@@ -3354,61 +3895,90 @@ export const AppProvider = ({ children }) => {
       for (const id of personnelIds) {
         for (const k of keys) {
           if (isAllowanceDisabled(allowancesMap[id], k)) continue;
-          tasks.push(api.togglePersonnelAllowance(id, k, grantedBool, schoolYear));
+          tasks.push(
+            api.togglePersonnelAllowance(id, k, grantedBool, schoolYear),
+          );
         }
       }
       await Promise.allSettled(tasks);
       return { success: true };
     } catch (e) {
-      console.error('[AppContext] Failed bulkToggleAllowances:', e);
+      console.error("[AppContext] Failed bulkToggleAllowances:", e);
       fetchAllowances(schoolYear);
       return { success: false, error: e.message };
     }
   };
 
   // Work Immersion Schedules Management
-  const [workImmersionSchedulesMap, setWorkImmersionSchedulesMap] = useState({});
+  const [workImmersionSchedulesMap, setWorkImmersionSchedulesMap] = useState(
+    {},
+  );
 
-  const fetchWorkImmersionSchedules = async (personnelId, schoolYear = '2026-2027') => {
+  const fetchWorkImmersionSchedules = async (
+    personnelId,
+    schoolYear = "2026-2027",
+  ) => {
     if (!personnelId) return [];
     try {
       const res = await api.getWorkImmersionSchedules(personnelId, schoolYear);
       if (res && res.success && Array.isArray(res.data)) {
-        setWorkImmersionSchedulesMap(prev => ({ ...prev, [personnelId]: res.data }));
+        setWorkImmersionSchedulesMap((prev) => ({
+          ...prev,
+          [personnelId]: res.data,
+        }));
         return res.data;
       }
     } catch (e) {
-      console.error('[AppContext] Failed to fetch work immersion schedules:', e);
+      console.error(
+        "[AppContext] Failed to fetch work immersion schedules:",
+        e,
+      );
     }
     return [];
   };
 
-  const saveWorkImmersionSchedules = async (personnelId, schedules, schoolYear = '2026-2027', schoolId = '123456') => {
+  const saveWorkImmersionSchedules = async (
+    personnelId,
+    schedules,
+    schoolYear = "2026-2027",
+    schoolId = "123456",
+  ) => {
     try {
-      const res = await api.saveWorkImmersionBatch({ personnelId, schoolId, schoolYear, schedules });
+      const res = await api.saveWorkImmersionBatch({
+        personnelId,
+        schoolId,
+        schoolYear,
+        schedules,
+      });
       if (res && res.success) {
         await fetchWorkImmersionSchedules(personnelId, schoolYear);
       }
       return res;
     } catch (e) {
-      console.error('[AppContext] Failed to save work immersion schedules:', e);
+      console.error("[AppContext] Failed to save work immersion schedules:", e);
       return { success: false, error: e.message };
     }
   };
 
-
   // An alert/toast that reports a failure right after an API call failed becomes the shared detailed error dialog
   // (same facts as everywhere else), instead of a plain message that hides the real cause.
-  const FAILURE_WORDS = /error|fail|could not|couldn't|cannot|can't|not saved|unable|rejected|invalid|denied/i;
+  const FAILURE_WORDS =
+    /error|fail|could not|couldn't|cannot|can't|not saved|unable|rejected|invalid|denied/i;
   const asDetailedFailure = (title, message) => {
     if (!FAILURE_WORDS.test(`${title} ${message}`)) return null;
     const recent = takeRecentApiError();
-    return recent ? { err: recent, title: String(title || ''), message: String(message || '') } : null;
+    return recent
+      ? {
+          err: recent,
+          title: String(title || ""),
+          message: String(message || ""),
+        }
+      : null;
   };
 
-  const showToast = (message, type = 'success') => {
-    if (type === 'error' || type === 'warning') {
-      const f = asDetailedFailure('', message);
+  const showToast = (message, type = "success") => {
+    if (type === "error" || type === "warning") {
+      const f = asDetailedFailure("", message);
       if (f) reportError(f.err, { userMessage: f.message });
     }
     setToast({ message, type });
@@ -3417,17 +3987,23 @@ export const AppProvider = ({ children }) => {
   const showAlert = (title, message) => {
     const detailed = asDetailedFailure(title, message);
     if (detailed) {
-      return reportError(detailed.err, { title: detailed.title && !/^error$/i.test(detailed.title) ? detailed.title : 'Something went wrong', userMessage: detailed.message }).then(() => true);
+      return reportError(detailed.err, {
+        title:
+          detailed.title && !/^error$/i.test(detailed.title)
+            ? detailed.title
+            : "Something went wrong",
+        userMessage: detailed.message,
+      }).then(() => true);
     }
     return new Promise((resolve) => {
       setCustomModal({
-        type: 'alert',
+        type: "alert",
         title,
         message,
         onConfirm: () => {
           setCustomModal(null);
           resolve(true);
-        }
+        },
       });
     });
   };
@@ -3435,7 +4011,7 @@ export const AppProvider = ({ children }) => {
   const showConfirm = (title, message) => {
     return new Promise((resolve) => {
       setCustomModal({
-        type: 'confirm',
+        type: "confirm",
         title,
         message,
         onConfirm: () => {
@@ -3445,91 +4021,164 @@ export const AppProvider = ({ children }) => {
         onCancel: () => {
           setCustomModal(null);
           resolve(false);
-        }
+        },
       });
     });
   };
 
   const saveSchoolSubjects = async (config) => {
     try {
-      setSchoolInfo(prev => ({ ...prev, subjectsConfig: config }));
-      localStorage.setItem('school_subjects_config', JSON.stringify(config));
+      setSchoolInfo((prev) => ({ ...prev, subjectsConfig: config }));
+      localStorage.setItem("school_subjects_config", JSON.stringify(config));
       if (config.disabledMap) {
-        localStorage.setItem('school_disabled_subjects', JSON.stringify(config.disabledMap));
+        localStorage.setItem(
+          "school_disabled_subjects",
+          JSON.stringify(config.disabledMap),
+        );
       }
       if (config.customSubjects) {
-        localStorage.setItem('school_custom_subjects', JSON.stringify(config.customSubjects));
+        localStorage.setItem(
+          "school_custom_subjects",
+          JSON.stringify(config.customSubjects),
+        );
       }
     } catch (e) {
-      console.error('Failed to update school subjects locally:', e);
+      console.error("Failed to update school subjects locally:", e);
     }
   };
 
   // Fetch and normalize personnel records (maps gradeLevelsTaught to assignedGradeLevels for frontend consistency)
   const fetchAndNormalizePersonnel = async (overrideSchoolId = null) => {
-    const activeSchoolId = resolveSchoolId(overrideSchoolId) || user?.school_id || user?.schoolId || null;
+    const activeSchoolId =
+      resolveSchoolId(overrideSchoolId) ||
+      user?.school_id ||
+      user?.schoolId ||
+      null;
     const list = await api.getPersonnel(activeSchoolId);
     if (!Array.isArray(list)) return [];
 
     // The server flags records whose roster came from the cache (not confirmed saved) and why the real tables were skipped.
-    const flagged = list.find(p => p && p.masterSourceError);
+    const flagged = list.find((p) => p && p.masterSourceError);
     if (flagged && !masterSourceReported.has(String(activeSchoolId))) {
       masterSourceReported.add(String(activeSchoolId));
       reportError(new Error(flagged.masterSourceError), {
-        action: 'Loading the school roster from the master database',
-        userMessage: `The master database could not be read, so the roster is shown from ${flagged.masterSource || 'a cache'} and is NOT confirmed saved. Your saved workload still comes from the database.`,
-        handler: 'GET /api/personnel (fetchMasterPersonnelFromInsightEd)',
-        source: 'Master database unreachable'
+        action: "Loading the school roster from the master database",
+        userMessage: `The master database could not be read, so the roster is shown from ${flagged.masterSource || "a cache"} and is NOT confirmed saved. Your saved workload still comes from the database.`,
+        handler: "GET /api/personnel (fetchMasterPersonnelFromInsightEd)",
+        source: "Master database unreachable",
       });
     }
 
     const gradeToCategory = {
-      'Kinder': 'Elementary', 'Grade 1': 'Elementary', 'Grade 2': 'Elementary', 'Grade 3': 'Elementary', 'Grade 4': 'Elementary', 'Grade 5': 'Elementary', 'Grade 6': 'Elementary',
-      'Grade 7': 'JHS', 'Grade 8': 'JHS', 'Grade 9': 'JHS', 'Grade 10': 'JHS',
-      'Grade 11': 'SHS', 'Grade 12': 'SHS',
-      'NON-GRADED': 'Elementary', 'MONO-GRADE': 'Elementary'
+      Kinder: "Elementary",
+      "Grade 1": "Elementary",
+      "Grade 2": "Elementary",
+      "Grade 3": "Elementary",
+      "Grade 4": "Elementary",
+      "Grade 5": "Elementary",
+      "Grade 6": "Elementary",
+      "Grade 7": "JHS",
+      "Grade 8": "JHS",
+      "Grade 9": "JHS",
+      "Grade 10": "JHS",
+      "Grade 11": "SHS",
+      "Grade 12": "SHS",
+      "NON-GRADED": "Elementary",
+      "MONO-GRADE": "Elementary",
     };
 
-    return list.map(p => {
-      const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
+    return list.map((p) => {
+      const rawPos = String(
+        p.position || p.plantilla_position || p.position_title || "",
+      ).trim();
       const isCanon = isCanonicalPosition(rawPos);
-      const cleanPosition = isCanon ? rawPos : '';
-      const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : '';
-      const cleanCategory = cleanType === 'teaching' ? 'TEACHING' : cleanType === 'teaching-related' ? 'RELATED TEACHING' : cleanType === 'non-teaching' ? 'NON-TEACHING' : '';
+      const cleanPosition = isCanon ? rawPos : "";
+      const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : "";
+      const cleanCategory =
+        cleanType === "teaching"
+          ? "TEACHING"
+          : cleanType === "teaching-related"
+            ? "RELATED TEACHING"
+            : cleanType === "non-teaching"
+              ? "NON-TEACHING"
+              : "";
 
-      const cleanEmpNo = (p.employeeNo && !String(p.employeeNo).toUpperCase().startsWith('PRN')) 
-        ? String(p.employeeNo).trim() 
-        : ((p.employee_no && !String(p.employee_no).toUpperCase().startsWith('PRN')) ? String(p.employee_no).trim() : '');
+      const cleanEmpNo =
+        p.employeeNo && !String(p.employeeNo).toUpperCase().startsWith("PRN")
+          ? String(p.employeeNo).trim()
+          : p.employee_no &&
+              !String(p.employee_no).toUpperCase().startsWith("PRN")
+            ? String(p.employee_no).trim()
+            : "";
 
-      const rawEth = p.ethnicGroup || p.ethnic_group || '';
-      const cleanEthnicGroup = (rawEth === 'OTHERS' ? '' : rawEth);
-      const cleanReligion = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
-      const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
-      const cleanMajor = (primaryDegree.major === 'OTHERS' ? '' : (primaryDegree.major || ''));
-      const cleanMinor = (primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''));
-      const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
+      const rawEth = p.ethnicGroup || p.ethnic_group || "";
+      const cleanEthnicGroup = rawEth === "OTHERS" ? "" : rawEth;
+      const cleanReligion = p.religion === "OTHERS" ? "" : p.religion || "";
+      const primaryDegree =
+        p.degreeRows && p.degreeRows.length
+          ? p.degreeRows[0]
+          : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
+      const cleanMajor =
+        primaryDegree.major === "OTHERS" ? "" : primaryDegree.major || "";
+      const cleanMinor =
+        primaryDegree.minor === "OTHERS" ? "" : primaryDegree.minor || "";
+      const cleanPrc =
+        p.prcSpecialization === "OTHERS"
+          ? ""
+          : p.prcSpecialization || p.prc_specialization || "";
 
-      const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
-      const computedAttainment = p.highestEducationalAttainment || (() => {
-        if (Array.isArray(p.doctorateGraduatedDisciplines) && p.doctorateGraduatedDisciplines.length > 0) return 'DOCTORATE DEGREE (GRADUATED)';
-        if (Array.isArray(p.doctorateWithUnitsDisciplines) && p.doctorateWithUnitsDisciplines.length > 0) return 'DOCTORATE DEGREE (WITH UNITS)';
-        if (Array.isArray(p.mastersGraduatedDisciplines) && p.mastersGraduatedDisciplines.length > 0) return "MASTER'S DEGREE (GRADUATED)";
-        if (Array.isArray(p.mastersWithUnitsDisciplines) && p.mastersWithUnitsDisciplines.length > 0) return "MASTER'S DEGREE (WITH UNITS)";
+      const isTeach =
+        [
+          "teaching",
+          "teaching-related",
+          "TEACHING",
+          "TEACHING-RELATED",
+        ].includes(cleanType) ||
+        ["TEACHING", "TEACHING-RELATED"].includes(cleanCategory);
+      const computedAttainment =
+        p.highestEducationalAttainment ||
+        (() => {
+          if (
+            Array.isArray(p.doctorateGraduatedDisciplines) &&
+            p.doctorateGraduatedDisciplines.length > 0
+          )
+            return "DOCTORATE DEGREE (GRADUATED)";
+          if (
+            Array.isArray(p.doctorateWithUnitsDisciplines) &&
+            p.doctorateWithUnitsDisciplines.length > 0
+          )
+            return "DOCTORATE DEGREE (WITH UNITS)";
+          if (
+            Array.isArray(p.mastersGraduatedDisciplines) &&
+            p.mastersGraduatedDisciplines.length > 0
+          )
+            return "MASTER'S DEGREE (GRADUATED)";
+          if (
+            Array.isArray(p.mastersWithUnitsDisciplines) &&
+            p.mastersWithUnitsDisciplines.length > 0
+          )
+            return "MASTER'S DEGREE (WITH UNITS)";
 
-        if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
-          return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
-            ? 'DOCTORATE DEGREE (GRADUATED)'
-            : "MASTER'S DEGREE (GRADUATED)";
-        }
-        const deg = String(primaryDegree.collegeDegree || '').toUpperCase();
-        if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
-        if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
-        if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
-        if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
-        if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
-        if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
-        return isTeach ? 'COLLEGE GRADUATE / BACCALAUREATE' : '';
-      })();
+          if (
+            p.postGraduateDegree &&
+            !["NONE", "N/A", ""].includes(p.postGraduateDegree)
+          ) {
+            return String(p.postGraduateDegree).toUpperCase().includes("DOCTOR")
+              ? "DOCTORATE DEGREE (GRADUATED)"
+              : "MASTER'S DEGREE (GRADUATED)";
+          }
+          const deg = String(primaryDegree.collegeDegree || "").toUpperCase();
+          if (deg.includes("ELEMENTARY")) return "ELEMENTARY GRADUATE";
+          if (deg.includes("HIGH SCHOOL")) return "HIGH SCHOOL GRADUATE";
+          if (deg.includes("SENIOR HIGH") || deg.includes("SHS"))
+            return "SENIOR HIGH SCHOOL GRADUATE";
+          if (deg.includes("VOCATIONAL") || deg.includes("TECH-VOC"))
+            return "VOCATIONAL / TECH-VOC COURSE";
+          if (deg.includes("COLLEGE UNDER")) return "COLLEGE UNDERGRADUATE";
+          if (deg && deg !== "NONE" && deg !== "N/A")
+            return "COLLEGE GRADUATE / BACCALAUREATE";
+          return isTeach ? "COLLEGE GRADUATE / BACCALAUREATE" : "";
+        })();
 
       return {
         ...p,
@@ -3547,10 +4196,32 @@ export const AppProvider = ({ children }) => {
         highestEducationalAttainment: computedAttainment,
         major: cleanMajor,
         minor: cleanMinor,
-        collegeDegree: primaryDegree.collegeDegree || p.collegeDegree || '',
-        college_degree: primaryDegree.collegeDegree || p.collegeDegree || '',
-        collegeDegrees: p.collegeDegrees || (primaryDegree.collegeDegree ? [{ collegeDegree: primaryDegree.collegeDegree, major: cleanMajor, minor: cleanMinor }] : []),
-        degreeRows: p.degreeRows || (primaryDegree.collegeDegree ? [{ clientKey: 'deg-0', level: 'BACCALAUREATE', collegeDegree: primaryDegree.collegeDegree, major: cleanMajor, minor: cleanMinor }] : []),
+        collegeDegree: primaryDegree.collegeDegree || p.collegeDegree || "",
+        college_degree: primaryDegree.collegeDegree || p.collegeDegree || "",
+        collegeDegrees:
+          p.collegeDegrees ||
+          (primaryDegree.collegeDegree
+            ? [
+                {
+                  collegeDegree: primaryDegree.collegeDegree,
+                  major: cleanMajor,
+                  minor: cleanMinor,
+                },
+              ]
+            : []),
+        degreeRows:
+          p.degreeRows ||
+          (primaryDegree.collegeDegree
+            ? [
+                {
+                  clientKey: "deg-0",
+                  level: "BACCALAUREATE",
+                  collegeDegree: primaryDegree.collegeDegree,
+                  major: cleanMajor,
+                  minor: cleanMinor,
+                },
+              ]
+            : []),
         mastersWithUnitsDisciplines: p.mastersWithUnitsDisciplines || [],
         mastersGraduatedDisciplines: p.mastersGraduatedDisciplines || [],
         doctorateWithUnitsDisciplines: p.doctorateWithUnitsDisciplines || [],
@@ -3558,18 +4229,29 @@ export const AppProvider = ({ children }) => {
         prcSpecialization: cleanPrc,
         prc_specialization: cleanPrc,
         assignedGradeLevels: p.assignedGradeLevels || p.gradeLevelsTaught || [],
-        workloadRows: (p.workloadRows || []).map(r => ({
+        workloadRows: (p.workloadRows || []).map((r) => ({
           ...r,
-          category: r.category || gradeToCategory[r.gradeLevel] || 'Elementary'
-        }))
+          category: r.category || gradeToCategory[r.gradeLevel] || "Elementary",
+        })),
       };
     });
   };
 
   const isNonGenericKey = (val) => {
-    if (!val || typeof val !== 'string') return false;
+    if (!val || typeof val !== "string") return false;
     const s = val.trim().toLowerCase();
-    if (!s || s === 'n/a' || s === 'na' || s === 'none' || s === 'null' || s === 'undefined' || s === '-' || s === 'teacher staff' || s === 'teacher' || s === 'staff') {
+    if (
+      !s ||
+      s === "n/a" ||
+      s === "na" ||
+      s === "none" ||
+      s === "null" ||
+      s === "undefined" ||
+      s === "-" ||
+      s === "teacher staff" ||
+      s === "teacher" ||
+      s === "staff"
+    ) {
       return false;
     }
     return s.length >= 2;
@@ -3579,30 +4261,53 @@ export const AppProvider = ({ children }) => {
     try {
       const res = await fetchAndNormalizePersonnel();
       if (Array.isArray(res)) {
-        const deletedSet = new Set(deletedPersonnelIds.map(k => String(k).trim().toLowerCase()).filter(isNonGenericKey));
-        setPersonnel(prev => {
+        const deletedSet = new Set(
+          deletedPersonnelIds
+            .map((k) => String(k).trim().toLowerCase())
+            .filter(isNonGenericKey),
+        );
+        setPersonnel((prev) => {
           const currentList = Array.isArray(prev) ? prev : [];
           const currentKeys = new Set(
-            currentList.flatMap(p => [
-              String(p.id || '').trim().toLowerCase(),
-              String(p.prn || '').trim().toLowerCase(),
-              `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
-            ]).filter(isNonGenericKey)
+            currentList
+              .flatMap((p) => [
+                String(p.id || "")
+                  .trim()
+                  .toLowerCase(),
+                String(p.prn || "")
+                  .trim()
+                  .toLowerCase(),
+                `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase(),
+              ])
+              .filter(isNonGenericKey),
           );
-          const newItems = res.filter(p => {
-            const idKey = String(p.id || '').trim().toLowerCase();
-            const prnKey = String(p.prn || '').trim().toLowerCase();
-            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-                                 (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-                                 (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey));
-            return !currentKeys.has(idKey) && !currentKeys.has(prnKey) && !currentKeys.has(nameKey) && !isTombstoned;
+          const newItems = res.filter((p) => {
+            const idKey = String(p.id || "")
+              .trim()
+              .toLowerCase();
+            const prnKey = String(p.prn || "")
+              .trim()
+              .toLowerCase();
+            const nameKey =
+              `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+            const isTombstoned =
+              (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+              (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+              (isNonGenericKey(nameKey) &&
+                nameKey !== "teacher staff" &&
+                deletedSet.has(nameKey));
+            return (
+              !currentKeys.has(idKey) &&
+              !currentKeys.has(prnKey) &&
+              !currentKeys.has(nameKey) &&
+              !isTombstoned
+            );
           });
           return [...currentList, ...newItems];
         });
       }
-    } catch(e) {
-      console.error('Failed to refresh personnel from server:', e);
+    } catch (e) {
+      console.error("Failed to refresh personnel from server:", e);
     }
   };
 
@@ -3625,12 +4330,21 @@ export const AppProvider = ({ children }) => {
   // draft differs from what was last loaded/saved (derived values filled in during load are absorbed, not saved).
   const userEditedRef = useRef(false);
   const lastSavedSigRef = useRef(null);
-  const draftSignature = (d) => { try { return JSON.stringify({ ...d, lastUpdated: undefined }); } catch (e) { return null; } };
+  const draftSignature = (d) => {
+    try {
+      return JSON.stringify({ ...d, lastUpdated: undefined });
+    } catch (e) {
+      return null;
+    }
+  };
   useEffect(() => {
-    const mark = () => { userEditedRef.current = true; };
-    const evs = ['input', 'change', 'keydown', 'click'];
-    evs.forEach(e => document.addEventListener(e, mark, true));
-    return () => evs.forEach(e => document.removeEventListener(e, mark, true));
+    const mark = () => {
+      userEditedRef.current = true;
+    };
+    const evs = ["input", "change", "keydown", "click"];
+    evs.forEach((e) => document.addEventListener(e, mark, true));
+    return () =>
+      evs.forEach((e) => document.removeEventListener(e, mark, true));
   }, []);
 
   // Load initial data from draft or DB
@@ -3638,9 +4352,13 @@ export const AppProvider = ({ children }) => {
     const loadInitialData = () => {
       // Single-flight: a double effect run, a user-object refresh or a retry click joins the load already running
       // instead of starting a second hydration over the same state.
-      const flightKey = String(user?.school_id || user?.schoolId || '');
-      if (loadInFlightRef.current && loadInFlightRef.current.key === flightKey) return loadInFlightRef.current.run;
-      const run = runInitialLoad().finally(() => { if (loadInFlightRef.current && loadInFlightRef.current.run === run) loadInFlightRef.current = null; });
+      const flightKey = String(user?.school_id || user?.schoolId || "");
+      if (loadInFlightRef.current && loadInFlightRef.current.key === flightKey)
+        return loadInFlightRef.current.run;
+      const run = runInitialLoad().finally(() => {
+        if (loadInFlightRef.current && loadInFlightRef.current.run === run)
+          loadInFlightRef.current = null;
+      });
       loadInFlightRef.current = { key: flightKey, run };
       return run;
     };
@@ -3651,8 +4369,10 @@ export const AppProvider = ({ children }) => {
       lastSavedSigRef.current = null;
       try {
         // 1. Fetch current school configuration
-        const activeSchoolId = resolveSchoolId(null) || user?.school_id || user?.schoolId;
-        if (!activeSchoolId) throw new Error('No school is attached to this login session.');
+        const activeSchoolId =
+          resolveSchoolId(null) || user?.school_id || user?.schoolId;
+        if (!activeSchoolId)
+          throw new Error("No school is attached to this login session.");
         const school = await api.getSchool(activeSchoolId);
         let currentSchoolInfo = {
           schoolId: String(activeSchoolId),
@@ -3662,19 +4382,23 @@ export const AppProvider = ({ children }) => {
           district: "",
           schoolYear: "SY 26-27",
           numberOfShifts: "1",
-          curricularOffering: ['Elementary']
+          curricularOffering: ["Elementary"],
         };
 
         if (school && !school.error && school.schoolId) {
           currentSchoolInfo = {
             schoolId: String(school.schoolId),
             schoolName: school.schoolName || `School ${school.schoolId}`,
-            region: school.region || '',
-            division: school.division || '',
-            district: school.district || '',
-            schoolYear: school.schoolYear || 'SY 26-27',
+            region: school.region || "",
+            division: school.division || "",
+            district: school.district || "",
+            schoolYear: school.schoolYear || "SY 26-27",
             numberOfShifts: String(school.numberOfShifts || 1),
-            curricularOffering: Array.isArray(school.curricularOffering) && school.curricularOffering.length > 0 ? school.curricularOffering : ['Elementary'],
+            curricularOffering:
+              Array.isArray(school.curricularOffering) &&
+              school.curricularOffering.length > 0
+                ? school.curricularOffering
+                : ["Elementary"],
             certifiedBy: school.certifiedBy || null,
             certifiedSignature: school.certifiedSignature || null,
             certifiedAt: school.certifiedAt || null,
@@ -3684,7 +4408,8 @@ export const AppProvider = ({ children }) => {
             elemSpecialPrograms: school.elemSpecialPrograms || [],
             hasJhsSpecialPrograms: school.hasJhsSpecialPrograms || false,
             jhsSpecialPrograms: school.jhsSpecialPrograms || [],
-            shsCurriculumModel: school.shsCurriculumModel || 'Standard K-12 SHS Curriculum',
+            shsCurriculumModel:
+              school.shsCurriculumModel || "Standard K-12 SHS Curriculum",
             hasElemInclusive: school.hasElemInclusive || false,
             elemInclusivePrograms: school.elemInclusivePrograms || [],
             hasJhsInclusive: school.hasJhsInclusive || false,
@@ -3698,34 +4423,50 @@ export const AppProvider = ({ children }) => {
             inclusivePrograms: school.inclusivePrograms || [],
             curricularConfigSaved: Boolean(school.curricularConfigSaved),
             hasShifts: school.hasShifts ?? false,
-            shiftStartTime: school.shiftStartTime || '07:00',
-            shiftEndTime: school.shiftEndTime || '18:00',
-            shiftsConfig: school.shiftsConfig || {}
+            shiftStartTime: school.shiftStartTime || "07:00",
+            shiftEndTime: school.shiftEndTime || "18:00",
+            shiftsConfig: school.shiftsConfig || {},
           };
         }
         setSchoolInfo(currentSchoolInfo);
 
         // 2. Salary Matrix is static reference data: load it in the background, never block the splash on it
-        api.getSalaryMatrix()
-          .then((matrix) => { if (Array.isArray(matrix)) setSalaryMatrix(matrix); })
-          .catch((e) => console.error('[AppContext] Failed to load salary matrix:', e));
+        api
+          .getSalaryMatrix()
+          .then((matrix) => {
+            if (Array.isArray(matrix)) setSalaryMatrix(matrix);
+          })
+          .catch((e) =>
+            console.error("[AppContext] Failed to load salary matrix:", e),
+          );
 
         // 3. Local draft (IndexedDB), cloud draft (Postgres) and milestone node status are independent: fetch together
         const draftKey = `draft_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}`;
         // The database is the source of truth for sections: always fetch it, whatever draft is chosen below.
-        const dbSectionsPromise = api.getSections()
-          .then((r) => ({ ok: true, rows: Array.isArray(r) ? r : (r && Array.isArray(r.allSections) ? r.allSections : []) }))
+        const dbSectionsPromise = api
+          .getSections()
+          .then((r) => ({
+            ok: true,
+            rows: Array.isArray(r)
+              ? r
+              : r && Array.isArray(r.allSections)
+                ? r.allSections
+                : [],
+          }))
           .catch((error) => ({ ok: false, error }));
         const [localDraft, cloudDraftRes, nodeRes] = await Promise.all([
           getLocalDraft(draftKey),
           api.getSchoolDraft(currentSchoolInfo.schoolYear).catch((e) => {
-            console.error('Failed to load cloud draft from backend:', e);
+            console.error("Failed to load cloud draft from backend:", e);
             return null;
           }),
           api.getNodeStatus(currentSchoolInfo.schoolYear).catch((err) => {
-            console.warn('[NodeStatus Sync] Could not fetch school node status:', err.message);
+            console.warn(
+              "[NodeStatus Sync] Could not fetch school node status:",
+              err.message,
+            );
             return null;
-          })
+          }),
         ]);
         const cloudDraft = cloudDraftRes?.payload || null;
         const cloudUpdatedAt = cloudDraftRes?.updatedAt || null;
@@ -3734,82 +4475,149 @@ export const AppProvider = ({ children }) => {
         let schoolNodeStatus = null;
         if (nodeRes && nodeRes.exists) {
           schoolNodeStatus = nodeRes;
-          console.log('[NodeStatus Sync] Fetched PostgreSQL school node status for', currentSchoolInfo.schoolId);
+          console.log(
+            "[NodeStatus Sync] Fetched PostgreSQL school node status for",
+            currentSchoolInfo.schoolId,
+          );
         }
 
         // 4. Pick the draft to load using the SERVER version number (never client clocks). Decision logic: services/draftSync.js
         let activeDraft = null;
-        const cloudVersion = (typeof cloudDraftRes?.version === 'number') ? cloudDraftRes.version : null;
+        const cloudVersion =
+          typeof cloudDraftRes?.version === "number"
+            ? cloudDraftRes.version
+            : null;
         const decision = chooseDraftSource({
           hasLocal: !!localDraft,
           hasCloud: !!cloudDraft,
           cloudVersion,
-          syncedVersion: getSyncedVersion(currentSchoolInfo.schoolId, currentSchoolInfo.schoolYear),
+          syncedVersion: getSyncedVersion(
+            currentSchoolInfo.schoolId,
+            currentSchoolInfo.schoolYear,
+          ),
           hasUnsyncedChanges: hasUnsynced(),
           localTime: new Date(localDraft?.lastUpdated || 0).getTime(),
-          cloudTime: new Date(cloudUpdatedAt || cloudDraft?.lastUpdated || 0).getTime()
+          cloudTime: new Date(
+            cloudUpdatedAt || cloudDraft?.lastUpdated || 0,
+          ).getTime(),
         });
         console.log(`[Draft Sync] ${decision.source}: ${decision.reason}`);
-        if (decision.source === 'local') {
+        if (decision.source === "local") {
           activeDraft = localDraft;
-        } else if (decision.source === 'cloud') {
+        } else if (decision.source === "cloud") {
           activeDraft = cloudDraft;
-        } else if (decision.source === 'conflict') {
+        } else if (decision.source === "conflict") {
           // Both sides changed: keep both, let the user choose which one to continue with.
           const stamp = Date.now();
-          await setLocalDraft(`conflict_server_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}_${stamp}`, cloudDraft);
+          await setLocalDraft(
+            `conflict_server_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}_${stamp}`,
+            cloudDraft,
+          );
           const useLocal = await showConfirm(
-            'Two versions of your work found',
-            'This draft was changed on the server while you also have unsaved changes on this device. Confirm = continue with this device\'s changes. Cancel = continue with the server version. The other version is kept as a backup on this device either way.'
+            "Two versions of your work found",
+            "This draft was changed on the server while you also have unsaved changes on this device. Confirm = continue with this device's changes. Cancel = continue with the server version. The other version is kept as a backup on this device either way.",
           );
           if (useLocal) {
             activeDraft = localDraft;
           } else {
-            await setLocalDraft(`conflict_local_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}_${stamp}`, localDraft);
+            await setLocalDraft(
+              `conflict_local_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}_${stamp}`,
+              localDraft,
+            );
             activeDraft = cloudDraft;
             markSynced();
           }
-          console.warn('[Draft Sync] Version conflict resolved by user:', useLocal ? 'kept local' : 'kept server');
+          console.warn(
+            "[Draft Sync] Version conflict resolved by user:",
+            useLocal ? "kept local" : "kept server",
+          );
         }
         // Whatever was chosen, this tab's saves are now based on the server version it just saw.
         if (cloudVersion !== null) {
-          setSyncedVersion(currentSchoolInfo.schoolId, currentSchoolInfo.schoolYear, cloudVersion);
+          setSyncedVersion(
+            currentSchoolInfo.schoolId,
+            currentSchoolInfo.schoolYear,
+            cloudVersion,
+          );
         }
 
         // Helper: Auto enrich personnel types based on position
         const autoEnrichPersonnel = (list) => {
           if (!Array.isArray(list)) return [];
-          return list.map(p => {
-            const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
+          return list.map((p) => {
+            const rawPos = String(
+              p.position || p.plantilla_position || p.position_title || "",
+            ).trim();
             const isCanon = isCanonicalPosition(rawPos);
-            const cleanPosition = isCanon ? rawPos : '';
-            const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : '';
-            const cleanCategory = cleanType === 'teaching' ? 'TEACHING' : cleanType === 'teaching-related' ? 'RELATED TEACHING' : cleanType === 'non-teaching' ? 'NON-TEACHING' : '';
+            const cleanPosition = isCanon ? rawPos : "";
+            const cleanType = isCanon
+              ? getCategoryForCanonicalPosition(rawPos)
+              : "";
+            const cleanCategory =
+              cleanType === "teaching"
+                ? "TEACHING"
+                : cleanType === "teaching-related"
+                  ? "RELATED TEACHING"
+                  : cleanType === "non-teaching"
+                    ? "NON-TEACHING"
+                    : "";
 
-            const rawEth = p.ethnicGroup || p.ethnic_group || '';
-            const cleanEthnic = (rawEth === 'OTHERS' ? '' : rawEth);
-            const cleanRel = (p.religion === 'OTHERS' ? '' : (p.religion || ''));
-            const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
-            const cleanMaj = (primaryDegree.major === 'OTHERS' ? '' : (primaryDegree.major || ''));
-            const cleanMin = (primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''));
-            const cleanPrc = (p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''));
+            const rawEth = p.ethnicGroup || p.ethnic_group || "";
+            const cleanEthnic = rawEth === "OTHERS" ? "" : rawEth;
+            const cleanRel = p.religion === "OTHERS" ? "" : p.religion || "";
+            const primaryDegree =
+              p.degreeRows && p.degreeRows.length
+                ? p.degreeRows[0]
+                : {
+                    collegeDegree: p.collegeDegree,
+                    major: p.major,
+                    minor: p.minor,
+                  };
+            const cleanMaj =
+              primaryDegree.major === "OTHERS" ? "" : primaryDegree.major || "";
+            const cleanMin =
+              primaryDegree.minor === "OTHERS" ? "" : primaryDegree.minor || "";
+            const cleanPrc =
+              p.prcSpecialization === "OTHERS"
+                ? ""
+                : p.prcSpecialization || p.prc_specialization || "";
 
-            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
-            const computedAttainment = p.highestEducationalAttainment || (() => {
-              if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
-                return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
-                  ? 'DOCTORATE DEGREE (GRADUATED)'
-                  : "MASTER'S DEGREE (GRADUATED)";
-              }
-              const deg = String(primaryDegree.collegeDegree || '').toUpperCase();
-              if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
-              if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
-              if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
-              if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
-              if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
-              if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
-              return isTeach ? 'COLLEGE GRADUATE / BACCALAUREATE' : '';
-            })();
+            const isTeach =
+              [
+                "teaching",
+                "teaching-related",
+                "TEACHING",
+                "TEACHING-RELATED",
+              ].includes(cleanType) ||
+              ["TEACHING", "TEACHING-RELATED"].includes(cleanCategory);
+            const computedAttainment =
+              p.highestEducationalAttainment ||
+              (() => {
+                if (
+                  p.postGraduateDegree &&
+                  !["NONE", "N/A", ""].includes(p.postGraduateDegree)
+                ) {
+                  return String(p.postGraduateDegree)
+                    .toUpperCase()
+                    .includes("DOCTOR")
+                    ? "DOCTORATE DEGREE (GRADUATED)"
+                    : "MASTER'S DEGREE (GRADUATED)";
+                }
+                const deg = String(
+                  primaryDegree.collegeDegree || "",
+                ).toUpperCase();
+                if (deg.includes("ELEMENTARY")) return "ELEMENTARY GRADUATE";
+                if (deg.includes("HIGH SCHOOL")) return "HIGH SCHOOL GRADUATE";
+                if (deg.includes("SENIOR HIGH") || deg.includes("SHS"))
+                  return "SENIOR HIGH SCHOOL GRADUATE";
+                if (deg.includes("VOCATIONAL") || deg.includes("TECH-VOC"))
+                  return "VOCATIONAL / TECH-VOC COURSE";
+                if (deg.includes("COLLEGE UNDER"))
+                  return "COLLEGE UNDERGRADUATE";
+                if (deg && deg !== "NONE" && deg !== "N/A")
+                  return "COLLEGE GRADUATE / BACCALAUREATE";
+                return isTeach ? "COLLEGE GRADUATE / BACCALAUREATE" : "";
+              })();
 
             return {
               ...p,
@@ -3826,53 +4634,87 @@ export const AppProvider = ({ children }) => {
               major: cleanMaj,
               minor: cleanMin,
               prcSpecialization: cleanPrc,
-              prc_specialization: cleanPrc
+              prc_specialization: cleanPrc,
             };
           });
         };
 
         // Helper: Check if section is invalid (multi-grade/mono-grade artifacts from spreadsheet scanning)
         // Helper: Extract class sections fallback from workload rows
-        const extractClassSectionsFromPersonnel = (personnelList, schoolInf) => {
-          if (!Array.isArray(personnelList) || personnelList.length === 0) return [];
+        const extractClassSectionsFromPersonnel = (
+          personnelList,
+          schoolInf,
+        ) => {
+          if (!Array.isArray(personnelList) || personnelList.length === 0)
+            return [];
           const extractedSecsMap = new Map();
           const IGNORE_SECTION_KEYWORDS = [
-            'LEAVE', 'ADMINISTRATIVE', 'UTILITY', 'DATA MANAGEMENT', 'CHAIRMAN',
-            'CLERK', 'WATCHMAN', 'PRINCIPAL', 'COORDINATOR', 'PROJECTS', 'PROGRAMS',
-            'ADVISORY', 'READING', 'REMEDIATION', 'MULTI-GRADE', 'MONO-GRADE', 'MULTIGRADE', 'MONOGRADE', 'MULTI GRADE', 'MONO GRADE'
+            "LEAVE",
+            "ADMINISTRATIVE",
+            "UTILITY",
+            "DATA MANAGEMENT",
+            "CHAIRMAN",
+            "CLERK",
+            "WATCHMAN",
+            "PRINCIPAL",
+            "COORDINATOR",
+            "PROJECTS",
+            "PROGRAMS",
+            "ADVISORY",
+            "READING",
+            "REMEDIATION",
+            "MULTI-GRADE",
+            "MONO-GRADE",
+            "MULTIGRADE",
+            "MONOGRADE",
+            "MULTI GRADE",
+            "MONO GRADE",
           ];
 
-          personnelList.forEach(p => {
+          personnelList.forEach((p) => {
             if (Array.isArray(p.workloadRows)) {
-              p.workloadRows.forEach(wk => {
+              p.workloadRows.forEach((wk) => {
                 if (wk.gradeLevel && wk.sectionName) {
                   const secUpper = String(wk.sectionName).toUpperCase().trim();
                   const gradeUpper = String(wk.gradeLevel).toUpperCase().trim();
-                  const isNonClassSection = IGNORE_SECTION_KEYWORDS.some(kw => secUpper.includes(kw) || gradeUpper.includes(kw));
+                  const isNonClassSection = IGNORE_SECTION_KEYWORDS.some(
+                    (kw) => secUpper.includes(kw) || gradeUpper.includes(kw),
+                  );
 
                   if (!isNonClassSection && secUpper.length > 0) {
                     let cleanGrade = wk.gradeLevel;
-                    if (gradeUpper.includes('KINDER')) cleanGrade = 'Kinder';
-                    else if (gradeUpper === 'SNED' || gradeUpper === 'NON-GRADED' || gradeUpper === 'NON GRADED' || gradeUpper === 'SPED') cleanGrade = 'SNED (NON-GRADED)';
+                    if (gradeUpper.includes("KINDER")) cleanGrade = "Kinder";
+                    else if (
+                      gradeUpper === "SNED" ||
+                      gradeUpper === "NON-GRADED" ||
+                      gradeUpper === "NON GRADED" ||
+                      gradeUpper === "SPED"
+                    )
+                      cleanGrade = "SNED (NON-GRADED)";
 
                     const key = `${cleanGrade}-${wk.sectionName}`.toLowerCase();
-                    const isAdvRow = wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY';
+                    const isAdvRow =
+                      wk.subject === "ADVISORY" ||
+                      wk.subjectName === "ADVISORY" ||
+                      wk.subject_name === "ADVISORY";
                     const existing = extractedSecsMap.get(key);
-                    
+
                     if (!existing) {
                       extractedSecsMap.set(key, {
-                        id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
-                        schoolId: schoolInf?.schoolId || '199999',
-                        schoolYear: schoolInf?.schoolYear || 'SY 26-27',
+                        id:
+                          wk.sectionId ||
+                          `sec-${Math.random().toString(36).substring(2, 9)}`,
+                        schoolId: schoolInf?.schoolId || "199999",
+                        schoolYear: schoolInf?.schoolYear || "SY 26-27",
                         gradeLevel: cleanGrade,
                         sectionName: wk.sectionName,
-                        sectionType: 'MONO GRADE',
+                        sectionType: "MONO GRADE",
                         advisorId: isAdvRow ? String(p.id) : null,
                         advisoryMinutes: 300,
                         hgpMinutes: 60,
                         numberOfLearners: null,
                         maleLearners: null,
-                        femaleLearners: null
+                        femaleLearners: null,
                       });
                     } else if (isAdvRow && !existing.advisorId) {
                       existing.advisorId = String(p.id);
@@ -3889,78 +4731,137 @@ export const AppProvider = ({ children }) => {
           // Fetch DB personnel to restore draft personnel or merge newly approved shared personnel
           let dbList = [];
           try {
-            const res = await fetchAndNormalizePersonnel(currentSchoolInfo.schoolId);
+            const res = await fetchAndNormalizePersonnel(
+              currentSchoolInfo.schoolId,
+            );
             if (Array.isArray(res)) dbList = res;
             clearDraftError();
-          } catch(e) {
+          } catch (e) {
             // Local draft stays intact; dbList remains empty so the draft's own personnel is used.
             // Cloud auto-save stays blocked until a retry succeeds, so this partial state is never written over real data.
             loadIncompleteRef.current = true;
-            reportDraftError(DRAFT_ACTIONS.PERSONNEL_FETCH, e, { retry: () => loadInitialDataRef.current && loadInitialDataRef.current() });
+            reportDraftError(DRAFT_ACTIONS.PERSONNEL_FETCH, e, {
+              retry: () =>
+                loadInitialDataRef.current && loadInitialDataRef.current(),
+            });
           }
 
-          const rawDeleted = (activeDraft.deletedPersonnelIds || activeDraft.deleted_personnel_ids || []).filter(isNonGenericKey);
-          const deletedSet = new Set(rawDeleted.map(k => String(k).trim().toLowerCase()).filter(isNonGenericKey));
+          const rawDeleted = (
+            activeDraft.deletedPersonnelIds ||
+            activeDraft.deleted_personnel_ids ||
+            []
+          ).filter(isNonGenericKey);
+          const deletedSet = new Set(
+            rawDeleted
+              .map((k) => String(k).trim().toLowerCase())
+              .filter(isNonGenericKey),
+          );
           setDeletedPersonnelIds(rawDeleted);
-          const rawDeletedSecs = activeDraft.deletedSectionIds || activeDraft.deleted_section_ids || [];
+          const rawDeletedSecs =
+            activeDraft.deletedSectionIds ||
+            activeDraft.deleted_section_ids ||
+            [];
           setDeletedSectionIds(rawDeletedSecs);
 
           // Filter out deleted teachers from DB list
-          const filteredDbList = dbList.filter(p => {
-            const idKey = String(p.id || '').trim().toLowerCase();
-            const prnKey = String(p.prn || '').trim().toLowerCase();
-            const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
-            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-                                 (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-                                 (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey)) ||
-                                 (isNonGenericKey(empKey) && deletedSet.has(empKey));
+          const filteredDbList = dbList.filter((p) => {
+            const idKey = String(p.id || "")
+              .trim()
+              .toLowerCase();
+            const prnKey = String(p.prn || "")
+              .trim()
+              .toLowerCase();
+            const empKey = String(p.employeeNo || p.employee_no || "")
+              .trim()
+              .toLowerCase();
+            const nameKey =
+              `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+            const isTombstoned =
+              (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+              (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+              (isNonGenericKey(nameKey) &&
+                nameKey !== "teacher staff" &&
+                deletedSet.has(nameKey)) ||
+              (isNonGenericKey(empKey) && deletedSet.has(empKey));
             return !isTombstoned;
           });
 
-          let draftPersonnel = (activeDraft.personnel || []).filter(p => {
-            const idKey = String(p.id || '').trim().toLowerCase();
-            const prnKey = String(p.prn || '').trim().toLowerCase();
-            const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
-            const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-                                 (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-                                 (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey)) ||
-                                 (isNonGenericKey(empKey) && deletedSet.has(empKey));
+          let draftPersonnel = (activeDraft.personnel || []).filter((p) => {
+            const idKey = String(p.id || "")
+              .trim()
+              .toLowerCase();
+            const prnKey = String(p.prn || "")
+              .trim()
+              .toLowerCase();
+            const empKey = String(p.employeeNo || p.employee_no || "")
+              .trim()
+              .toLowerCase();
+            const nameKey =
+              `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+            const isTombstoned =
+              (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+              (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+              (isNonGenericKey(nameKey) &&
+                nameKey !== "teacher staff" &&
+                deletedSet.has(nameKey)) ||
+              (isNonGenericKey(empKey) && deletedSet.has(empKey));
             return !isTombstoned;
           });
 
           // Only initialize from DB list if the draft is empty
           if (draftPersonnel.length === 0 && filteredDbList.length > 0) {
-            console.log(`[Draft Sync] Initializing draft personnel from master list (${filteredDbList.length} personnel)...`);
+            console.log(
+              `[Draft Sync] Initializing draft personnel from master list (${filteredDbList.length} personnel)...`,
+            );
             draftPersonnel = filteredDbList;
             activeDraft.personnel = draftPersonnel;
           } else if (filteredDbList.length > 0) {
             const draftKeys = new Set(
-              draftPersonnel.flatMap(p => [
-                String(p.id || '').trim().toLowerCase(),
-                String(p.prn || '').trim().toLowerCase(),
-                String(p.employeeNo || p.employee_no || '').trim().toLowerCase(),
-                `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
-              ]).filter(isNonGenericKey)
+              draftPersonnel
+                .flatMap((p) => [
+                  String(p.id || "")
+                    .trim()
+                    .toLowerCase(),
+                  String(p.prn || "")
+                    .trim()
+                    .toLowerCase(),
+                  String(p.employeeNo || p.employee_no || "")
+                    .trim()
+                    .toLowerCase(),
+                  `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase(),
+                ])
+                .filter(isNonGenericKey),
             );
-            const missingMasterPersonnel = filteredDbList.filter(p => {
-              const idKey = String(p.id || '').trim().toLowerCase();
-              const prnKey = String(p.prn || '').trim().toLowerCase();
-              const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
-              const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-              const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-                                   (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-                                   (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey)) ||
-                                   (isNonGenericKey(empKey) && deletedSet.has(empKey));
-              const isInDraft = (isNonGenericKey(idKey) && draftKeys.has(idKey)) ||
-                                (isNonGenericKey(prnKey) && draftKeys.has(prnKey)) ||
-                                (isNonGenericKey(nameKey) && draftKeys.has(nameKey)) ||
-                                (isNonGenericKey(empKey) && draftKeys.has(empKey));
+            const missingMasterPersonnel = filteredDbList.filter((p) => {
+              const idKey = String(p.id || "")
+                .trim()
+                .toLowerCase();
+              const prnKey = String(p.prn || "")
+                .trim()
+                .toLowerCase();
+              const empKey = String(p.employeeNo || p.employee_no || "")
+                .trim()
+                .toLowerCase();
+              const nameKey =
+                `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+              const isTombstoned =
+                (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+                (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+                (isNonGenericKey(nameKey) &&
+                  nameKey !== "teacher staff" &&
+                  deletedSet.has(nameKey)) ||
+                (isNonGenericKey(empKey) && deletedSet.has(empKey));
+              const isInDraft =
+                (isNonGenericKey(idKey) && draftKeys.has(idKey)) ||
+                (isNonGenericKey(prnKey) && draftKeys.has(prnKey)) ||
+                (isNonGenericKey(nameKey) && draftKeys.has(nameKey)) ||
+                (isNonGenericKey(empKey) && draftKeys.has(empKey));
               return !isInDraft && !isTombstoned;
             });
             if (missingMasterPersonnel.length > 0) {
-              console.log(`[Draft Sync] Merging ${missingMasterPersonnel.length} master personnel from official database into draft...`);
+              console.log(
+                `[Draft Sync] Merging ${missingMasterPersonnel.length} master personnel from official database into draft...`,
+              );
               draftPersonnel = [...draftPersonnel, ...missingMasterPersonnel];
               activeDraft.personnel = draftPersonnel;
             }
@@ -3968,47 +4869,102 @@ export const AppProvider = ({ children }) => {
 
           // Database is the source of truth: overlay DB master profiling fields onto draft personnel where draft has placeholder or missing profiling info
           if (filteredDbList.length > 0 && draftPersonnel.length > 0) {
-            draftPersonnel = draftPersonnel.map(dp => {
-              const dpId = String(dp.id || '').trim().toLowerCase();
-              const dpPrn = String(dp.prn || '').trim().toLowerCase();
-              const dbMatch = filteredDbList.find(p => {
-                const pId = String(p.id || '').trim().toLowerCase();
-                const pPrn = String(p.prn || '').trim().toLowerCase();
-                return (dpId && pId === dpId) || (dpPrn && pPrn && pPrn === dpPrn);
+            draftPersonnel = draftPersonnel.map((dp) => {
+              const dpId = String(dp.id || "")
+                .trim()
+                .toLowerCase();
+              const dpPrn = String(dp.prn || "")
+                .trim()
+                .toLowerCase();
+              const dbMatch = filteredDbList.find((p) => {
+                const pId = String(p.id || "")
+                  .trim()
+                  .toLowerCase();
+                const pPrn = String(p.prn || "")
+                  .trim()
+                  .toLowerCase();
+                return (
+                  (dpId && pId === dpId) || (dpPrn && pPrn && pPrn === dpPrn)
+                );
               });
               if (!dbMatch) return dp;
 
-              const isDraftPlaceholder = (dp.firstName === 'TEACHER' && String(dp.lastName || '').startsWith('STAFF')) ||
-                (!dp.collegeDegree && !dp.college_degree && !dp.major && !dp.highestEducationalAttainment && !dp.highest_educational_attainment);
+              const isDraftPlaceholder =
+                (dp.firstName === "TEACHER" &&
+                  String(dp.lastName || "").startsWith("STAFF")) ||
+                (!dp.collegeDegree &&
+                  !dp.college_degree &&
+                  !dp.major &&
+                  !dp.highestEducationalAttainment &&
+                  !dp.highest_educational_attainment);
 
               if (isDraftPlaceholder) {
                 return {
                   ...dbMatch,
                   ...dp,
-                  firstName: (dp.firstName && dp.firstName !== 'TEACHER' ? dp.firstName : dbMatch.firstName) || dbMatch.firstName,
-                  first_name: (dp.first_name && dp.first_name !== 'TEACHER' ? dp.first_name : dbMatch.first_name) || dbMatch.first_name,
-                  lastName: (dp.lastName && !String(dp.lastName).startsWith('STAFF') ? dp.lastName : dbMatch.lastName) || dbMatch.lastName,
-                  last_name: (dp.last_name && !String(dp.last_name).startsWith('STAFF') ? dp.last_name : dbMatch.last_name) || dbMatch.last_name,
-                  middleName: dp.middleName || dbMatch.middleName || '',
-                  middle_name: dp.middle_name || dbMatch.middle_name || '',
-                  collegeDegree: dp.collegeDegree || dbMatch.collegeDegree || '',
-                  college_degree: dp.college_degree || dbMatch.college_degree || '',
-                  major: dp.major || dbMatch.major || '',
-                  minor: dp.minor || dbMatch.minor || 'N/A',
-                  highestEducationalAttainment: dp.highestEducationalAttainment || dbMatch.highestEducationalAttainment || '',
-                  highest_educational_attainment: dp.highest_educational_attainment || dbMatch.highest_educational_attainment || '',
-                  degreeRows: (Array.isArray(dp.degreeRows) && dp.degreeRows.length > 0) ? dp.degreeRows : (dbMatch.degreeRows || []),
-                  collegeDegrees: (Array.isArray(dp.collegeDegrees) && dp.collegeDegrees.length > 0) ? dp.collegeDegrees : (dbMatch.collegeDegrees || []),
-                  prcSpecialization: dp.prcSpecialization || dbMatch.prcSpecialization || '',
-                  prc_specialization: dp.prc_specialization || dbMatch.prc_specialization || '',
-                  position: dp.position || dbMatch.position || '',
-                  plantilla_position: dp.plantilla_position || dbMatch.plantilla_position || '',
-                  position_title: dp.position_title || dbMatch.position_title || '',
-                  type: dp.type || dbMatch.type || '',
-                  positionCategory: dp.positionCategory || dbMatch.positionCategory || '',
-                  position_category: dp.position_category || dbMatch.position_category || '',
-                  eligibility: (Array.isArray(dp.eligibility) && dp.eligibility.length > 0) ? dp.eligibility : (dbMatch.eligibility || []),
-                  workloadRows: (Array.isArray(dp.workloadRows) && dp.workloadRows.length > 0) ? dp.workloadRows : (dbMatch.workloadRows || [])
+                  firstName:
+                    (dp.firstName && dp.firstName !== "TEACHER"
+                      ? dp.firstName
+                      : dbMatch.firstName) || dbMatch.firstName,
+                  first_name:
+                    (dp.first_name && dp.first_name !== "TEACHER"
+                      ? dp.first_name
+                      : dbMatch.first_name) || dbMatch.first_name,
+                  lastName:
+                    (dp.lastName && !String(dp.lastName).startsWith("STAFF")
+                      ? dp.lastName
+                      : dbMatch.lastName) || dbMatch.lastName,
+                  last_name:
+                    (dp.last_name && !String(dp.last_name).startsWith("STAFF")
+                      ? dp.last_name
+                      : dbMatch.last_name) || dbMatch.last_name,
+                  middleName: dp.middleName || dbMatch.middleName || "",
+                  middle_name: dp.middle_name || dbMatch.middle_name || "",
+                  collegeDegree:
+                    dp.collegeDegree || dbMatch.collegeDegree || "",
+                  college_degree:
+                    dp.college_degree || dbMatch.college_degree || "",
+                  major: dp.major || dbMatch.major || "",
+                  minor: dp.minor || dbMatch.minor || "N/A",
+                  highestEducationalAttainment:
+                    dp.highestEducationalAttainment ||
+                    dbMatch.highestEducationalAttainment ||
+                    "",
+                  highest_educational_attainment:
+                    dp.highest_educational_attainment ||
+                    dbMatch.highest_educational_attainment ||
+                    "",
+                  degreeRows:
+                    Array.isArray(dp.degreeRows) && dp.degreeRows.length > 0
+                      ? dp.degreeRows
+                      : dbMatch.degreeRows || [],
+                  collegeDegrees:
+                    Array.isArray(dp.collegeDegrees) &&
+                    dp.collegeDegrees.length > 0
+                      ? dp.collegeDegrees
+                      : dbMatch.collegeDegrees || [],
+                  prcSpecialization:
+                    dp.prcSpecialization || dbMatch.prcSpecialization || "",
+                  prc_specialization:
+                    dp.prc_specialization || dbMatch.prc_specialization || "",
+                  position: dp.position || dbMatch.position || "",
+                  plantilla_position:
+                    dp.plantilla_position || dbMatch.plantilla_position || "",
+                  position_title:
+                    dp.position_title || dbMatch.position_title || "",
+                  type: dp.type || dbMatch.type || "",
+                  positionCategory:
+                    dp.positionCategory || dbMatch.positionCategory || "",
+                  position_category:
+                    dp.position_category || dbMatch.position_category || "",
+                  eligibility:
+                    Array.isArray(dp.eligibility) && dp.eligibility.length > 0
+                      ? dp.eligibility
+                      : dbMatch.eligibility || [],
+                  workloadRows:
+                    Array.isArray(dp.workloadRows) && dp.workloadRows.length > 0
+                      ? dp.workloadRows
+                      : dbMatch.workloadRows || [],
                 };
               }
               return dp;
@@ -4021,36 +4977,73 @@ export const AppProvider = ({ children }) => {
           // Workload page's conflict dialog. Read-only: nothing is written here.
           if (filteredDbList.length > 0 && draftPersonnel.length > 0) {
             const dbWorkloadByKey = new Map();
-            filteredDbList.forEach(p => {
-              if (!Array.isArray(p.workloadRows) || p.workloadRows.length === 0) return;
-              [p.id, p.prn].forEach(k => { const key = String(k || '').trim().toLowerCase(); if (key) dbWorkloadByKey.set(key, p.workloadRows); });
+            filteredDbList.forEach((p) => {
+              if (!Array.isArray(p.workloadRows) || p.workloadRows.length === 0)
+                return;
+              [p.id, p.prn].forEach((k) => {
+                const key = String(k || "")
+                  .trim()
+                  .toLowerCase();
+                if (key) dbWorkloadByKey.set(key, p.workloadRows);
+              });
             });
-            draftPersonnel = draftPersonnel.map(dp => {
-              const dbRows = dbWorkloadByKey.get(String(dp.id || '').trim().toLowerCase()) || dbWorkloadByKey.get(String(dp.prn || '').trim().toLowerCase());
+            draftPersonnel = draftPersonnel.map((dp) => {
+              const dbRows =
+                dbWorkloadByKey.get(
+                  String(dp.id || "")
+                    .trim()
+                    .toLowerCase(),
+                ) ||
+                dbWorkloadByKey.get(
+                  String(dp.prn || "")
+                    .trim()
+                    .toLowerCase(),
+                );
               if (!dbRows) return dp;
               let unsaved = false;
-              try { unsaved = Boolean(localStorage.getItem(`draft_workload_${dp.id}`)); } catch (e) { /* storage unavailable */ }
-              const rows = overlayDatabaseWorkload({ personId: dp.id, draftRows: dp.workloadRows, dbRows, hasUnsavedLocalEdits: unsaved });
-              return rows === dp.workloadRows ? dp : { ...dp, workloadRows: rows };
+              try {
+                unsaved = Boolean(
+                  localStorage.getItem(`draft_workload_${dp.id}`),
+                );
+              } catch (e) {
+                /* storage unavailable */
+              }
+              const rows = overlayDatabaseWorkload({
+                personId: dp.id,
+                draftRows: dp.workloadRows,
+                dbRows,
+                hasUnsavedLocalEdits: unsaved,
+              });
+              return rows === dp.workloadRows
+                ? dp
+                : { ...dp, workloadRows: rows };
             });
             activeDraft.personnel = draftPersonnel;
           }
 
           // Self-healing: If draft personnel has 0 total workloads across all teachers, repair from autofill template
-          const currentDraftWorkloads = draftPersonnel.reduce((acc, p) => acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0), 0);
+          const currentDraftWorkloads = draftPersonnel.reduce(
+            (acc, p) =>
+              acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0),
+            0,
+          );
           if (currentDraftWorkloads === 0 && draftPersonnel.length > 0) {
             try {
               const autofillDrafts = await api.getAutofillTemplate();
               if (Array.isArray(autofillDrafts) && autofillDrafts.length > 0) {
                 const templateMap = new Map();
-                autofillDrafts.forEach(tpl => {
-                  const key = `${(tpl.firstName || '').toLowerCase()}_${(tpl.lastName || '').toLowerCase()}`;
+                autofillDrafts.forEach((tpl) => {
+                  const key = `${(tpl.firstName || "").toLowerCase()}_${(tpl.lastName || "").toLowerCase()}`;
                   templateMap.set(key, tpl.workloadRows || []);
                 });
-                draftPersonnel = draftPersonnel.map(p => {
-                  const key = `${(p.firstName || '').toLowerCase()}_${(p.lastName || '').toLowerCase()}`;
+                draftPersonnel = draftPersonnel.map((p) => {
+                  const key = `${(p.firstName || "").toLowerCase()}_${(p.lastName || "").toLowerCase()}`;
                   const tplWorkloads = templateMap.get(key);
-                  if (Array.isArray(tplWorkloads) && tplWorkloads.length > 0 && (!p.workloadRows || p.workloadRows.length === 0)) {
+                  if (
+                    Array.isArray(tplWorkloads) &&
+                    tplWorkloads.length > 0 &&
+                    (!p.workloadRows || p.workloadRows.length === 0)
+                  ) {
                     return { ...p, workloadRows: tplWorkloads };
                   }
                   return p;
@@ -4058,34 +5051,46 @@ export const AppProvider = ({ children }) => {
                 activeDraft.personnel = draftPersonnel;
               }
             } catch (e) {
-              console.error('Failed to repair draft workloads:', e);
+              console.error("Failed to repair draft workloads:", e);
             }
           }
 
           // Load draft state
-          const extractedSecs = extractClassSectionsFromPersonnel(draftPersonnel, currentSchoolInfo);
+          const extractedSecs = extractClassSectionsFromPersonnel(
+            draftPersonnel,
+            currentSchoolInfo,
+          );
           // Sections: esf7_regular_sections (+ sibling tables) is the baseline; the draft only overlays genuine differences,
           // matched by stable key, never appended. Nothing is written here.
           let loadedDraftSecs;
           const secFetch = await dbSectionsPromise;
           if (secFetch.ok) {
             const secYear = currentSchoolInfo.schoolYear;
-            const baseline = mergeSectionsByKey(inSchoolYear(secFetch.rows, secYear), []).merged;
+            const baseline = mergeSectionsByKey(
+              inSchoolYear(secFetch.rows, secYear),
+              [],
+            ).merged;
             setSectionsBaseline(baseline);
             setSectionsLoadError(null);
-            const m = mergeSectionsByKey(baseline, inSchoolYear(activeDraft.classSections || [], secYear), {
-              deletedIds: activeDraft.deletedSectionIds || [],
-              draftUpdatedAt: activeDraft.lastUpdated || cloudUpdatedAt
-            });
+            const m = mergeSectionsByKey(
+              baseline,
+              inSchoolYear(activeDraft.classSections || [], secYear),
+              {
+                deletedIds: activeDraft.deletedSectionIds || [],
+                draftUpdatedAt: activeDraft.lastUpdated || cloudUpdatedAt,
+              },
+            );
             loadedDraftSecs = baseline;
             if (m.hasDifferences && !m.draftIsOlder) {
               const bits = [];
-              if (m.added.length) bits.push(m.added.length + ' new');
-              if (m.edited.length) bits.push(m.edited.length + ' edited');
-              if (m.removed.length) bits.push(m.removed.length + ' removed');
+              if (m.added.length) bits.push(m.added.length + " new");
+              if (m.edited.length) bits.push(m.edited.length + " edited");
+              if (m.removed.length) bits.push(m.removed.length + " removed");
               const apply = await showConfirm(
-                'Restore unsaved section changes?',
-                'Your saved draft has section changes that are not in the database yet (' + bits.join(', ') + '). Confirm = bring them back (you still need to press Save). Cancel = discard them and show what is saved in the database.'
+                "Restore unsaved section changes?",
+                "Your saved draft has section changes that are not in the database yet (" +
+                  bits.join(", ") +
+                  "). Confirm = bring them back (you still need to press Save). Cancel = discard them and show what is saved in the database.",
               );
               if (apply) {
                 loadedDraftSecs = m.merged;
@@ -4095,25 +5100,49 @@ export const AppProvider = ({ children }) => {
             }
           } else {
             // Database sections could not be confirmed: show the draft, clearly flagged, and keep cloud saves blocked.
-            console.error('[Sections] Could not load sections from the database:', secFetch.error);
+            console.error(
+              "[Sections] Could not load sections from the database:",
+              secFetch.error,
+            );
             loadedDraftSecs = dedupeSections(activeDraft.classSections || []);
             loadIncompleteRef.current = true;
-            setSectionsLoadError(secFetch.error?.message || 'The server did not respond.');
+            setSectionsLoadError(
+              secFetch.error?.message || "The server did not respond.",
+            );
           }
-          if (!activeDraft.sectionsCleared && loadedDraftSecs.length === 0 && extractedSecs.length > 0) {
-            console.log('[Draft Sync] Auto-populating organized class sections from workload rows:', extractedSecs.length);
+          if (
+            !activeDraft.sectionsCleared &&
+            loadedDraftSecs.length === 0 &&
+            extractedSecs.length > 0
+          ) {
+            console.log(
+              "[Draft Sync] Auto-populating organized class sections from workload rows:",
+              extractedSecs.length,
+            );
             loadedDraftSecs = extractedSecs;
           }
 
           // Restore class sections from PostgreSQL node status if draft has 0 sections
-          if (loadedDraftSecs.length === 0 && Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) && schoolNodeStatus.nodes.node_06_classes.sections.length > 0) {
-            console.log('[NodeStatus Sync] Restoring', schoolNodeStatus.nodes.node_06_classes.sections.length, 'class sections from PostgreSQL node status');
+          if (
+            loadedDraftSecs.length === 0 &&
+            Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) &&
+            schoolNodeStatus.nodes.node_06_classes.sections.length > 0
+          ) {
+            console.log(
+              "[NodeStatus Sync] Restoring",
+              schoolNodeStatus.nodes.node_06_classes.sections.length,
+              "class sections from PostgreSQL node status",
+            );
             loadedDraftSecs = schoolNodeStatus.nodes.node_06_classes.sections;
           }
 
           // Sanitize legacy 35 hardcoded default value if male/female were not entered
-          loadedDraftSecs.forEach(sec => {
-            if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
+          loadedDraftSecs.forEach((sec) => {
+            if (
+              sec.numberOfLearners === 35 &&
+              (!sec.maleLearners || Number(sec.maleLearners) === 0) &&
+              (!sec.femaleLearners || Number(sec.femaleLearners) === 0)
+            ) {
               sec.numberOfLearners = null;
               sec.maleLearners = null;
               sec.femaleLearners = null;
@@ -4121,15 +5150,24 @@ export const AppProvider = ({ children }) => {
           });
 
           // Sync advisorId for any section missing advisorId from teacher ADVISORY workloads
-          loadedDraftSecs.forEach(sec => {
+          loadedDraftSecs.forEach((sec) => {
             if (!sec.advisorId) {
-              const advTeacher = draftPersonnel.find(p =>
-                Array.isArray(p.workloadRows) &&
-                p.workloadRows.some(wk =>
-                  (wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY') &&
-                  ((wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
-                   (wk.sectionName && String(wk.sectionName).trim().toLowerCase() === String(sec.sectionName).trim().toLowerCase() && String(wk.gradeLevel).trim().toLowerCase() === String(sec.gradeLevel).trim().toLowerCase()))
-                )
+              const advTeacher = draftPersonnel.find(
+                (p) =>
+                  Array.isArray(p.workloadRows) &&
+                  p.workloadRows.some(
+                    (wk) =>
+                      (wk.subject === "ADVISORY" ||
+                        wk.subjectName === "ADVISORY" ||
+                        wk.subject_name === "ADVISORY") &&
+                      ((wk.sectionId &&
+                        String(wk.sectionId) === String(sec.id)) ||
+                        (wk.sectionName &&
+                          String(wk.sectionName).trim().toLowerCase() ===
+                            String(sec.sectionName).trim().toLowerCase() &&
+                          String(wk.gradeLevel).trim().toLowerCase() ===
+                            String(sec.gradeLevel).trim().toLowerCase())),
+                  ),
               );
               if (advTeacher) {
                 sec.advisorId = String(advTeacher.id);
@@ -4146,50 +5184,110 @@ export const AppProvider = ({ children }) => {
               region: node01.region || mergedSchoolInfo.region,
               division: node01.division || mergedSchoolInfo.division,
               district: node01.district || mergedSchoolInfo.district,
-              numberOfShifts: String(node01.number_of_shifts || mergedSchoolInfo.numberOfShifts || '1'),
-              curricularOffering: (Array.isArray(node01.curricular_offering) && node01.curricular_offering.length > 0)
-                ? node01.curricular_offering
-                : mergedSchoolInfo.curricularOffering
+              numberOfShifts: String(
+                node01.number_of_shifts ||
+                  mergedSchoolInfo.numberOfShifts ||
+                  "1",
+              ),
+              curricularOffering:
+                Array.isArray(node01.curricular_offering) &&
+                node01.curricular_offering.length > 0
+                  ? node01.curricular_offering
+                  : mergedSchoolInfo.curricularOffering,
             };
           }
 
-          if (activeDraft.schoolInfo && String(activeDraft.schoolInfo.schoolId) === String(currentSchoolInfo.schoolId)) {
+          if (
+            activeDraft.schoolInfo &&
+            String(activeDraft.schoolInfo.schoolId) ===
+              String(currentSchoolInfo.schoolId)
+          ) {
             setSchoolInfo({
               ...mergedSchoolInfo,
-              certifiedBy: activeDraft.schoolInfo.certifiedBy || mergedSchoolInfo.certifiedBy,
-              certifiedSignature: activeDraft.schoolInfo.certifiedSignature || mergedSchoolInfo.certifiedSignature,
-              certifiedAt: activeDraft.schoolInfo.certifiedAt || mergedSchoolInfo.certifiedAt,
+              certifiedBy:
+                activeDraft.schoolInfo.certifiedBy ||
+                mergedSchoolInfo.certifiedBy,
+              certifiedSignature:
+                activeDraft.schoolInfo.certifiedSignature ||
+                mergedSchoolInfo.certifiedSignature,
+              certifiedAt:
+                activeDraft.schoolInfo.certifiedAt ||
+                mergedSchoolInfo.certifiedAt,
               // Database first: once esf7_school_profile holds the configuration, a draft never overrides it.
-              specialPrograms: mergedSchoolInfo.curricularConfigSaved ? mergedSchoolInfo.specialPrograms : (activeDraft.schoolInfo.specialPrograms || mergedSchoolInfo.specialPrograms),
-              shsCurriculumModel: mergedSchoolInfo.curricularConfigSaved ? mergedSchoolInfo.shsCurriculumModel : (activeDraft.schoolInfo.shsCurriculumModel || mergedSchoolInfo.shsCurriculumModel)
+              specialPrograms: mergedSchoolInfo.curricularConfigSaved
+                ? mergedSchoolInfo.specialPrograms
+                : activeDraft.schoolInfo.specialPrograms ||
+                  mergedSchoolInfo.specialPrograms,
+              shsCurriculumModel: mergedSchoolInfo.curricularConfigSaved
+                ? mergedSchoolInfo.shsCurriculumModel
+                : activeDraft.schoolInfo.shsCurriculumModel ||
+                  mergedSchoolInfo.shsCurriculumModel,
             });
           } else {
             setSchoolInfo(mergedSchoolInfo);
           }
-          draftPersonnel = draftPersonnel.map(p => {
-            const rawPos = String(p.position || p.plantilla_position || p.position_title || '').trim();
+          draftPersonnel = draftPersonnel.map((p) => {
+            const rawPos = String(
+              p.position || p.plantilla_position || p.position_title || "",
+            ).trim();
             const isCanon = isCanonicalPosition(rawPos);
-            const cleanPosition = isCanon ? rawPos : '';
-            const cleanType = isCanon ? getCategoryForCanonicalPosition(rawPos) : '';
-            const cleanCategory = cleanType === 'teaching' ? 'TEACHING' : cleanType === 'teaching-related' ? 'RELATED TEACHING' : cleanType === 'non-teaching' ? 'NON-TEACHING' : '';
+            const cleanPosition = isCanon ? rawPos : "";
+            const cleanType = isCanon
+              ? getCategoryForCanonicalPosition(rawPos)
+              : "";
+            const cleanCategory =
+              cleanType === "teaching"
+                ? "TEACHING"
+                : cleanType === "teaching-related"
+                  ? "RELATED TEACHING"
+                  : cleanType === "non-teaching"
+                    ? "NON-TEACHING"
+                    : "";
 
-            const primaryDegree = (p.degreeRows && p.degreeRows.length) ? p.degreeRows[0] : { collegeDegree: p.collegeDegree, major: p.major, minor: p.minor };
-            const isTeach = ['teaching', 'teaching-related', 'TEACHING', 'TEACHING-RELATED'].includes(cleanType) || ['TEACHING', 'TEACHING-RELATED'].includes(cleanCategory);
-            const computedAttainment = p.highestEducationalAttainment || (() => {
-              if (p.postGraduateDegree && !['NONE', 'N/A', ''].includes(p.postGraduateDegree)) {
-                return String(p.postGraduateDegree).toUpperCase().includes('DOCTOR')
-                  ? 'DOCTORATE DEGREE (GRADUATED)'
-                  : "MASTER'S DEGREE (GRADUATED)";
-              }
-              const deg = String(primaryDegree.collegeDegree || '').toUpperCase();
-              if (deg.includes('ELEMENTARY')) return 'ELEMENTARY GRADUATE';
-              if (deg.includes('HIGH SCHOOL')) return 'HIGH SCHOOL GRADUATE';
-              if (deg.includes('SENIOR HIGH') || deg.includes('SHS')) return 'SENIOR HIGH SCHOOL GRADUATE';
-              if (deg.includes('VOCATIONAL') || deg.includes('TECH-VOC')) return 'VOCATIONAL / TECH-VOC COURSE';
-              if (deg.includes('COLLEGE UNDER')) return 'COLLEGE UNDERGRADUATE';
-              if (deg && deg !== 'NONE' && deg !== 'N/A') return 'COLLEGE GRADUATE / BACCALAUREATE';
-              return isTeach ? 'COLLEGE GRADUATE / BACCALAUREATE' : '';
-            })();
+            const primaryDegree =
+              p.degreeRows && p.degreeRows.length
+                ? p.degreeRows[0]
+                : {
+                    collegeDegree: p.collegeDegree,
+                    major: p.major,
+                    minor: p.minor,
+                  };
+            const isTeach =
+              [
+                "teaching",
+                "teaching-related",
+                "TEACHING",
+                "TEACHING-RELATED",
+              ].includes(cleanType) ||
+              ["TEACHING", "TEACHING-RELATED"].includes(cleanCategory);
+            const computedAttainment =
+              p.highestEducationalAttainment ||
+              (() => {
+                if (
+                  p.postGraduateDegree &&
+                  !["NONE", "N/A", ""].includes(p.postGraduateDegree)
+                ) {
+                  return String(p.postGraduateDegree)
+                    .toUpperCase()
+                    .includes("DOCTOR")
+                    ? "DOCTORATE DEGREE (GRADUATED)"
+                    : "MASTER'S DEGREE (GRADUATED)";
+                }
+                const deg = String(
+                  primaryDegree.collegeDegree || "",
+                ).toUpperCase();
+                if (deg.includes("ELEMENTARY")) return "ELEMENTARY GRADUATE";
+                if (deg.includes("HIGH SCHOOL")) return "HIGH SCHOOL GRADUATE";
+                if (deg.includes("SENIOR HIGH") || deg.includes("SHS"))
+                  return "SENIOR HIGH SCHOOL GRADUATE";
+                if (deg.includes("VOCATIONAL") || deg.includes("TECH-VOC"))
+                  return "VOCATIONAL / TECH-VOC COURSE";
+                if (deg.includes("COLLEGE UNDER"))
+                  return "COLLEGE UNDERGRADUATE";
+                if (deg && deg !== "NONE" && deg !== "N/A")
+                  return "COLLEGE GRADUATE / BACCALAUREATE";
+                return isTeach ? "COLLEGE GRADUATE / BACCALAUREATE" : "";
+              })();
 
             return {
               ...p,
@@ -4199,14 +5297,28 @@ export const AppProvider = ({ children }) => {
               type: cleanType,
               positionCategory: cleanCategory,
               position_category: cleanCategory,
-              ethnicGroup: p.ethnicGroup === 'OTHERS' ? '' : (p.ethnicGroup || ''),
-              ethnic_group: p.ethnic_group === 'OTHERS' ? '' : (p.ethnic_group || ''),
-              religion: p.religion === 'OTHERS' ? '' : (p.religion || ''),
+              ethnicGroup:
+                p.ethnicGroup === "OTHERS" ? "" : p.ethnicGroup || "",
+              ethnic_group:
+                p.ethnic_group === "OTHERS" ? "" : p.ethnic_group || "",
+              religion: p.religion === "OTHERS" ? "" : p.religion || "",
               highestEducationalAttainment: computedAttainment,
-              major: primaryDegree.major === 'OTHERS' ? '' : (primaryDegree.major || ''),
-              minor: primaryDegree.minor === 'OTHERS' ? '' : (primaryDegree.minor || ''),
-              prcSpecialization: p.prcSpecialization === 'OTHERS' ? '' : (p.prcSpecialization || p.prc_specialization || ''),
-              prc_specialization: p.prc_specialization === 'OTHERS' ? '' : (p.prc_specialization || p.prcSpecialization || '')
+              major:
+                primaryDegree.major === "OTHERS"
+                  ? ""
+                  : primaryDegree.major || "",
+              minor:
+                primaryDegree.minor === "OTHERS"
+                  ? ""
+                  : primaryDegree.minor || "",
+              prcSpecialization:
+                p.prcSpecialization === "OTHERS"
+                  ? ""
+                  : p.prcSpecialization || p.prc_specialization || "",
+              prc_specialization:
+                p.prc_specialization === "OTHERS"
+                  ? ""
+                  : p.prc_specialization || p.prcSpecialization || "",
             };
           });
           const cleanDraftSecs = sanitizeClassSectionList(loadedDraftSecs);
@@ -4219,20 +5331,50 @@ export const AppProvider = ({ children }) => {
           }
 
           // Merge completed milestone nodes from PostgreSQL
-          const allKnownNodes = ['school', 'roster', 'room-qr', 'profile', 'requests', 'classes', 'designation', 'workload', 'allowances', 'overload', 'validation'];
+          const allKnownNodes = [
+            "school",
+            "roster",
+            "room-qr",
+            "profile",
+            "requests",
+            "classes",
+            "designation",
+            "workload",
+            "allowances",
+            "overload",
+            "validation",
+          ];
           const completedFromDb = [];
-          if (schoolNodeStatus?.nodes?.node_01_school?.status === 'COMPLETED') completedFromDb.push('school');
-          if (schoolNodeStatus?.nodes?.node_02_roster?.status === 'COMPLETED') completedFromDb.push('roster');
-          if (schoolNodeStatus?.nodes?.node_05_requests?.status === 'COMPLETED') completedFromDb.push('requests');
-          if (schoolNodeStatus?.nodes?.node_06_classes?.status === 'COMPLETED') completedFromDb.push('classes');
-          if (schoolNodeStatus?.nodes?.node_10_overload?.status === 'COMPLETED') completedFromDb.push('overload');
-          if (schoolNodeStatus?.nodes?.node_11_validation?.status === 'COMPLETED') completedFromDb.push('validation');
+          if (schoolNodeStatus?.nodes?.node_01_school?.status === "COMPLETED")
+            completedFromDb.push("school");
+          if (schoolNodeStatus?.nodes?.node_02_roster?.status === "COMPLETED")
+            completedFromDb.push("roster");
+          if (schoolNodeStatus?.nodes?.node_05_requests?.status === "COMPLETED")
+            completedFromDb.push("requests");
+          if (schoolNodeStatus?.nodes?.node_06_classes?.status === "COMPLETED")
+            completedFromDb.push("classes");
+          if (schoolNodeStatus?.nodes?.node_10_overload?.status === "COMPLETED")
+            completedFromDb.push("overload");
+          if (
+            schoolNodeStatus?.nodes?.node_11_validation?.status === "COMPLETED"
+          )
+            completedFromDb.push("validation");
 
-          const jState = activeDraft.journey_state || activeDraft.journeyState || {};
-          const draftCompleted = Array.isArray(jState.completedNodes) ? jState.completedNodes : [];
-          const finalCompleted = Array.from(new Set([...draftCompleted, ...completedFromDb]));
-          const finalUnlocked = new Set(['school', ...(Array.isArray(jState.unlockedNodes) ? jState.unlockedNodes : [])]);
-          finalCompleted.forEach(c => {
+          const jState =
+            activeDraft.journey_state || activeDraft.journeyState || {};
+          const draftCompleted = Array.isArray(jState.completedNodes)
+            ? jState.completedNodes
+            : [];
+          const finalCompleted = Array.from(
+            new Set([...draftCompleted, ...completedFromDb]),
+          );
+          const finalUnlocked = new Set([
+            "school",
+            ...(Array.isArray(jState.unlockedNodes)
+              ? jState.unlockedNodes
+              : []),
+          ]);
+          finalCompleted.forEach((c) => {
             finalUnlocked.add(c);
             const idx = allKnownNodes.indexOf(c);
             if (idx !== -1 && idx + 1 < allKnownNodes.length) {
@@ -4243,23 +5385,23 @@ export const AppProvider = ({ children }) => {
           setJourneyState({
             unlockedNodes: Array.from(finalUnlocked),
             completedNodes: finalCompleted,
-            currentNode: jState.currentNode || 'school'
+            currentNode: jState.currentNode || "school",
           });
 
           if (draftPersonnel.length > 0) {
             setActivePersonnelId(draftPersonnel[0].id);
           }
           // Make sure local IndexedDB is synced with the loaded draft
-          await setLocalDraft(draftKey, { 
-            ...activeDraft, 
+          await setLocalDraft(draftKey, {
+            ...activeDraft,
             schoolInfo: mergedSchoolInfo,
-            personnel: draftPersonnel, 
+            personnel: draftPersonnel,
             classSections: cleanDraftSecs,
             journey_state: {
               unlockedNodes: Array.from(finalUnlocked),
               completedNodes: finalCompleted,
-              currentNode: jState.currentNode || 'school'
-            }
+              currentNode: jState.currentNode || "school",
+            },
           });
           setHasUnsavedChanges(true);
         } else {
@@ -4273,10 +5415,16 @@ export const AppProvider = ({ children }) => {
               region: node01.region || mergedSchoolInfo.region,
               division: node01.division || mergedSchoolInfo.division,
               district: node01.district || mergedSchoolInfo.district,
-              numberOfShifts: String(node01.number_of_shifts || mergedSchoolInfo.numberOfShifts || '1'),
-              curricularOffering: (Array.isArray(node01.curricular_offering) && node01.curricular_offering.length > 0)
-                ? node01.curricular_offering
-                : mergedSchoolInfo.curricularOffering
+              numberOfShifts: String(
+                node01.number_of_shifts ||
+                  mergedSchoolInfo.numberOfShifts ||
+                  "1",
+              ),
+              curricularOffering:
+                Array.isArray(node01.curricular_offering) &&
+                node01.curricular_offering.length > 0
+                  ? node01.curricular_offering
+                  : mergedSchoolInfo.curricularOffering,
             };
           }
           setSchoolInfo(mergedSchoolInfo);
@@ -4285,36 +5433,70 @@ export const AppProvider = ({ children }) => {
           const sectionsReq = api.getSections();
           const transfersReq = api.getTransfers();
           const absencesReq = api.getAbsences();
-          [sectionsReq, transfersReq, absencesReq].forEach((p) => p.catch(() => {})); // avoid unhandled rejection if personnel throws first
+          [sectionsReq, transfersReq, absencesReq].forEach((p) =>
+            p.catch(() => {}),
+          ); // avoid unhandled rejection if personnel throws first
 
-          const list = await fetchAndNormalizePersonnel(currentSchoolInfo.schoolId);
+          const list = await fetchAndNormalizePersonnel(
+            currentSchoolInfo.schoolId,
+          );
           let loadedPersonnel = [];
           if (Array.isArray(list) && list.length > 0) {
             loadedPersonnel = list;
           } else {
             const autofillDrafts = await api.getAutofillTemplate();
-            loadedPersonnel = Array.isArray(autofillDrafts) ? autofillDrafts : [];
+            loadedPersonnel = Array.isArray(autofillDrafts)
+              ? autofillDrafts
+              : [];
           }
 
           loadedPersonnel = autoEnrichPersonnel(loadedPersonnel);
 
           const rawSections = await sectionsReq;
-          let loadedSections = Array.isArray(rawSections) ? rawSections : (rawSections && Array.isArray(rawSections.allSections) ? rawSections.allSections : []);
-          setSectionsBaseline(mergeSectionsByKey(inSchoolYear(loadedSections, currentSchoolInfo.schoolYear), []).merged);
+          let loadedSections = Array.isArray(rawSections)
+            ? rawSections
+            : rawSections && Array.isArray(rawSections.allSections)
+              ? rawSections.allSections
+              : [];
+          setSectionsBaseline(
+            mergeSectionsByKey(
+              inSchoolYear(loadedSections, currentSchoolInfo.schoolYear),
+              [],
+            ).merged,
+          );
           setSectionsLoadError(null);
-          if (loadedSections.length === 0 && Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) && schoolNodeStatus.nodes.node_06_classes.sections.length > 0) {
-            console.log('[NodeStatus Sync] Restoring', schoolNodeStatus.nodes.node_06_classes.sections.length, 'class sections from PostgreSQL node status');
+          if (
+            loadedSections.length === 0 &&
+            Array.isArray(schoolNodeStatus?.nodes?.node_06_classes?.sections) &&
+            schoolNodeStatus.nodes.node_06_classes.sections.length > 0
+          ) {
+            console.log(
+              "[NodeStatus Sync] Restoring",
+              schoolNodeStatus.nodes.node_06_classes.sections.length,
+              "class sections from PostgreSQL node status",
+            );
             loadedSections = schoolNodeStatus.nodes.node_06_classes.sections;
           }
-          const extractedFallbackSecs = extractClassSectionsFromPersonnel(loadedPersonnel, mergedSchoolInfo);
-          if (loadedSections.length === 0 && !activeDraft?.sectionsCleared && extractedFallbackSecs.length > 0) {
+          const extractedFallbackSecs = extractClassSectionsFromPersonnel(
+            loadedPersonnel,
+            mergedSchoolInfo,
+          );
+          if (
+            loadedSections.length === 0 &&
+            !activeDraft?.sectionsCleared &&
+            extractedFallbackSecs.length > 0
+          ) {
             loadedSections = extractedFallbackSecs;
           }
 
           loadedSections = sanitizeClassSectionList(loadedSections);
 
-          loadedSections.forEach(sec => {
-            if (sec.numberOfLearners === 35 && (!sec.maleLearners || Number(sec.maleLearners) === 0) && (!sec.femaleLearners || Number(sec.femaleLearners) === 0)) {
+          loadedSections.forEach((sec) => {
+            if (
+              sec.numberOfLearners === 35 &&
+              (!sec.maleLearners || Number(sec.maleLearners) === 0) &&
+              (!sec.femaleLearners || Number(sec.femaleLearners) === 0)
+            ) {
               sec.numberOfLearners = null;
               sec.maleLearners = null;
               sec.femaleLearners = null;
@@ -4328,17 +5510,37 @@ export const AppProvider = ({ children }) => {
           const loadedAbs = Array.isArray(absData) ? absData : [];
 
           // Merge completed milestone nodes from PostgreSQL
-          const allKnownNodes = ['school', 'roster', 'room-qr', 'profile', 'requests', 'classes', 'designation', 'workload', 'allowances', 'overload', 'validation'];
+          const allKnownNodes = [
+            "school",
+            "roster",
+            "room-qr",
+            "profile",
+            "requests",
+            "classes",
+            "designation",
+            "workload",
+            "allowances",
+            "overload",
+            "validation",
+          ];
           const completedFromDb = [];
-          if (schoolNodeStatus?.nodes?.node_01_school?.status === 'COMPLETED') completedFromDb.push('school');
-          if (schoolNodeStatus?.nodes?.node_02_roster?.status === 'COMPLETED') completedFromDb.push('roster');
-          if (schoolNodeStatus?.nodes?.node_05_requests?.status === 'COMPLETED') completedFromDb.push('requests');
-          if (schoolNodeStatus?.nodes?.node_06_classes?.status === 'COMPLETED') completedFromDb.push('classes');
-          if (schoolNodeStatus?.nodes?.node_10_overload?.status === 'COMPLETED') completedFromDb.push('overload');
-          if (schoolNodeStatus?.nodes?.node_11_validation?.status === 'COMPLETED') completedFromDb.push('validation');
+          if (schoolNodeStatus?.nodes?.node_01_school?.status === "COMPLETED")
+            completedFromDb.push("school");
+          if (schoolNodeStatus?.nodes?.node_02_roster?.status === "COMPLETED")
+            completedFromDb.push("roster");
+          if (schoolNodeStatus?.nodes?.node_05_requests?.status === "COMPLETED")
+            completedFromDb.push("requests");
+          if (schoolNodeStatus?.nodes?.node_06_classes?.status === "COMPLETED")
+            completedFromDb.push("classes");
+          if (schoolNodeStatus?.nodes?.node_10_overload?.status === "COMPLETED")
+            completedFromDb.push("overload");
+          if (
+            schoolNodeStatus?.nodes?.node_11_validation?.status === "COMPLETED"
+          )
+            completedFromDb.push("validation");
 
-          const finalUnlocked = new Set(['school']);
-          completedFromDb.forEach(c => {
+          const finalUnlocked = new Set(["school"]);
+          completedFromDb.forEach((c) => {
             finalUnlocked.add(c);
             const idx = allKnownNodes.indexOf(c);
             if (idx !== -1 && idx + 1 < allKnownNodes.length) {
@@ -4349,7 +5551,7 @@ export const AppProvider = ({ children }) => {
           setJourneyState({
             unlockedNodes: Array.from(finalUnlocked),
             completedNodes: completedFromDb,
-            currentNode: 'school'
+            currentNode: "school",
           });
 
           setPersonnel(dedupePersonnel(loadedPersonnel));
@@ -4370,22 +5572,29 @@ export const AppProvider = ({ children }) => {
             journey_state: {
               unlockedNodes: Array.from(finalUnlocked),
               completedNodes: completedFromDb,
-              currentNode: 'school'
+              currentNode: "school",
             },
-            lastUpdated: new Date().toISOString()
+            lastUpdated: new Date().toISOString(),
           };
           await setLocalDraft(draftKey, initialDraft);
           try {
-            const storedHolidays = localStorage.getItem('insighted_non_working_days');
+            const storedHolidays = localStorage.getItem(
+              "insighted_non_working_days",
+            );
             if (storedHolidays) {
               const parsed = JSON.parse(storedHolidays);
-              setLocalNonWorkingDays(parsed && parsed.length > 0 ? parsed : DEFAULT_PH_HOLIDAYS);
+              setLocalNonWorkingDays(
+                parsed && parsed.length > 0 ? parsed : DEFAULT_PH_HOLIDAYS,
+              );
             } else {
               setLocalNonWorkingDays(DEFAULT_PH_HOLIDAYS);
-              localStorage.setItem('insighted_non_working_days', JSON.stringify(DEFAULT_PH_HOLIDAYS));
+              localStorage.setItem(
+                "insighted_non_working_days",
+                JSON.stringify(DEFAULT_PH_HOLIDAYS),
+              );
             }
           } catch (e) {
-            console.error('Failed to load local non-working days', e);
+            console.error("Failed to load local non-working days", e);
             setLocalNonWorkingDays(DEFAULT_PH_HOLIDAYS);
           }
 
@@ -4401,7 +5610,10 @@ export const AppProvider = ({ children }) => {
       } catch (err) {
         // Failed load: keep auto-save blocked (never save an empty/partial state) and let the user retry.
         loadIncompleteRef.current = true;
-        reportDraftError(DRAFT_ACTIONS.INITIAL_LOAD, err, { retry: () => loadInitialDataRef.current && loadInitialDataRef.current() });
+        reportDraftError(DRAFT_ACTIONS.INITIAL_LOAD, err, {
+          retry: () =>
+            loadInitialDataRef.current && loadInitialDataRef.current(),
+        });
       } finally {
         setIsInitialized(true);
       }
@@ -4422,7 +5634,11 @@ export const AppProvider = ({ children }) => {
       setOutgoingRequests([]);
       setDistrictSchools([]);
       // Logout: forget whose school this was, so nothing from this session can leak into the next login.
-      setSchoolInfo(prev => ({ ...prev, schoolId: '', schoolName: 'Loading School...' }));
+      setSchoolInfo((prev) => ({
+        ...prev,
+        schoolId: "",
+        schoolName: "Loading School...",
+      }));
       initialLoadCompleteRef.current = false;
       setIsInitialized(false);
       setHasUnsavedChanges(false);
@@ -4431,17 +5647,29 @@ export const AppProvider = ({ children }) => {
 
   // Sync advisorId for existing classSections if missing but teacher has ADVISORY workload
   useEffect(() => {
-    if (classSections.length > 0 && Array.isArray(personnel) && personnel.length > 0) {
+    if (
+      classSections.length > 0 &&
+      Array.isArray(personnel) &&
+      personnel.length > 0
+    ) {
       let modified = false;
-      const updatedSecs = classSections.map(sec => {
+      const updatedSecs = classSections.map((sec) => {
         if (!sec.advisorId) {
-          const advTeacher = personnel.find(p =>
-            Array.isArray(p.workloadRows) &&
-            p.workloadRows.some(wk =>
-              (wk.subject === 'ADVISORY' || wk.subjectName === 'ADVISORY' || wk.subject_name === 'ADVISORY') &&
-              ((wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
-               (wk.sectionName && String(wk.sectionName).trim().toLowerCase() === String(sec.sectionName).trim().toLowerCase() && String(wk.gradeLevel).trim().toLowerCase() === String(sec.gradeLevel).trim().toLowerCase()))
-            )
+          const advTeacher = personnel.find(
+            (p) =>
+              Array.isArray(p.workloadRows) &&
+              p.workloadRows.some(
+                (wk) =>
+                  (wk.subject === "ADVISORY" ||
+                    wk.subjectName === "ADVISORY" ||
+                    wk.subject_name === "ADVISORY") &&
+                  ((wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
+                    (wk.sectionName &&
+                      String(wk.sectionName).trim().toLowerCase() ===
+                        String(sec.sectionName).trim().toLowerCase() &&
+                      String(wk.gradeLevel).trim().toLowerCase() ===
+                        String(sec.gradeLevel).trim().toLowerCase())),
+              ),
           );
           if (advTeacher) {
             modified = true;
@@ -4471,12 +5699,15 @@ export const AppProvider = ({ children }) => {
       if (stopped || requestsBlockedRef.current) return;
       const ok = await refreshRequestsRef.current();
       delay = ok ? 10000 : Math.min(60000, delay * 2);
-      if (!stopped && !requestsBlockedRef.current) timer = setTimeout(tick, delay);
+      if (!stopped && !requestsBlockedRef.current)
+        timer = setTimeout(tick, delay);
     };
     timer = setTimeout(tick, delay);
-    return () => { stopped = true; clearTimeout(timer); };
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [user]);
-
 
   // Debounced Local and Cloud Save hook
   useEffect(() => {
@@ -4486,7 +5717,15 @@ export const AppProvider = ({ children }) => {
     const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
     // Before the first user interaction every state change is load-derived: keep the baseline current and do not sync.
     if (!userEditedRef.current) {
-      lastSavedSigRef.current = draftSignature({ schoolInfo, personnel, classSections, deletedSectionIds, workloadTransfers, absences, journey_state: journeyState });
+      lastSavedSigRef.current = draftSignature({
+        schoolInfo,
+        personnel,
+        classSections,
+        deletedSectionIds,
+        workloadTransfers,
+        absences,
+        journey_state: journeyState,
+      });
       return;
     }
     setIsSyncing(true);
@@ -4502,11 +5741,14 @@ export const AppProvider = ({ children }) => {
           workloadTransfers,
           absences,
           journey_state: journeyState,
-          lastUpdated: timestamp
+          lastUpdated: timestamp,
         };
         // 0. Login/load is read-only: nothing here has been edited by the user yet, so just remember the loaded state.
         const sig = draftSignature(draftData);
-        if (!userEditedRef.current || (sig !== null && sig === lastSavedSigRef.current)) {
+        if (
+          !userEditedRef.current ||
+          (sig !== null && sig === lastSavedSigRef.current)
+        ) {
           lastSavedSigRef.current = sig;
           return;
         }
@@ -4514,7 +5756,10 @@ export const AppProvider = ({ children }) => {
         await setLocalDraft(draftKey, draftData);
         try {
           if (Array.isArray(personnel) && personnel.length > 0) {
-            localStorage.setItem('insighted_personnel_cache', JSON.stringify(personnel));
+            localStorage.setItem(
+              "insighted_personnel_cache",
+              JSON.stringify(personnel),
+            );
           }
         } catch (e) {}
         // 2. Save to cloud Postgres drafts table (blocked while the initial load is incomplete)
@@ -4529,31 +5774,68 @@ export const AppProvider = ({ children }) => {
       } catch (err) {
         // Conflicts are handled by the resolution prompt; everything else shows the shared error notice.
         // A 401 means the session ended: the auth layer keeps the work queued and returns the user to login.
-        if (!(err instanceof DraftConflictError) && /** @type {any} */ (err)?.status !== 401) reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
+        if (
+          !(err instanceof DraftConflictError) &&
+          /** @type {any} */ (err)?.status !== 401
+        )
+          reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
       } finally {
         setIsSyncing(false);
       }
     }, 3500);
 
     return () => clearTimeout(debounceId);
-  }, [schoolInfo, personnel, classSections, deletedSectionIds, workloadTransfers, absences, journeyState]);
+  }, [
+    schoolInfo,
+    personnel,
+    classSections,
+    deletedSectionIds,
+    workloadTransfers,
+    absences,
+    journeyState,
+  ]);
 
   // ---- Server-health lock integration: protect local work, then re-sync on recovery ----
   const latestDraftRef = useRef(null);
   const healthHandlersRef = useRef({});
   useEffect(() => {
-    if (!initialLoadCompleteRef.current || !schoolInfo?.schoolId || !schoolInfo?.schoolYear) return;
+    if (
+      !initialLoadCompleteRef.current ||
+      !schoolInfo?.schoolId ||
+      !schoolInfo?.schoolYear
+    )
+      return;
     if (userEditedRef.current) markDraftDirty();
     latestDraftRef.current = {
       key: `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
       schoolYear: schoolInfo.schoolYear,
-      data: { schoolInfo, personnel, classSections, workloadTransfers, absences, deletedPersonnelIds, journey_state: journeyState, lastUpdated: new Date().toISOString() }
+      data: {
+        schoolInfo,
+        personnel,
+        classSections,
+        workloadTransfers,
+        absences,
+        deletedPersonnelIds,
+        journey_state: journeyState,
+        lastUpdated: new Date().toISOString(),
+      },
     };
-  }, [schoolInfo, personnel, classSections, workloadTransfers, absences, deletedPersonnelIds, journeyState]);
+  }, [
+    schoolInfo,
+    personnel,
+    classSections,
+    workloadTransfers,
+    absences,
+    deletedPersonnelIds,
+    journeyState,
+  ]);
 
   // Handlers read the latest closures through a ref so they are registered once.
   healthHandlersRef.current.syncLocalDraft = async () => {
-    if (loadIncompleteRef.current) throw new Error('Initial data load is incomplete; not syncing a partial state');
+    if (loadIncompleteRef.current)
+      throw new Error(
+        "Initial data load is incomplete; not syncing a partial state",
+      );
     await flushDrafts();
     clearDraftError();
     return true;
@@ -4570,17 +5852,26 @@ export const AppProvider = ({ children }) => {
       const cloud = await api.getSchoolDraft(sy);
       const stamp = Date.now();
       // Keep both versions: the server copy is backed up on this device before anything is decided.
-      await setLocalDraft(`conflict_server_${sid}_${sy}_${stamp}`, cloud?.payload || {});
-      const keepMine = await showConfirm(
-        'Two versions of your work found',
-        'This draft was also changed from another session. Confirm = keep the changes on this screen (the other version is saved as a backup on this device). Cancel = load the other version (your changes are saved as a backup on this device).'
+      await setLocalDraft(
+        `conflict_server_${sid}_${sy}_${stamp}`,
+        cloud?.payload || {},
       );
-      console.warn('[DraftSave] conflict resolved by user:', keepMine ? 'kept local' : 'kept server');
+      const keepMine = await showConfirm(
+        "Two versions of your work found",
+        "This draft was also changed from another session. Confirm = keep the changes on this screen (the other version is saved as a backup on this device). Cancel = load the other version (your changes are saved as a backup on this device).",
+      );
+      console.warn(
+        "[DraftSave] conflict resolved by user:",
+        keepMine ? "kept local" : "kept server",
+      );
       if (keepMine) {
         acceptServerVersion(sid, sy, cloud?.version);
         retryNow().catch(() => {});
       } else {
-        await setLocalDraft(`conflict_local_${sid}_${sy}_${stamp}`, latest.data);
+        await setLocalDraft(
+          `conflict_local_${sid}_${sy}_${stamp}`,
+          latest.data,
+        );
         await setLocalDraft(latest.key, cloud?.payload || latest.data);
         acceptServerVersion(sid, sy, cloud?.version);
         markSynced();
@@ -4599,29 +5890,55 @@ export const AppProvider = ({ children }) => {
       const latest = latestDraftRef.current;
       if (!latest || loadIncompleteRef.current) return null;
       await setLocalDraft(latest.key, latest.data);
-      return { schoolId: latest.data.schoolInfo.schoolId, schoolYear: latest.schoolYear, payload: latest.data };
+      return {
+        schoolId: latest.data.schoolInfo.schoolId,
+        schoolYear: latest.schoolYear,
+        payload: latest.data,
+      };
     });
     const offLock = onServerLock(() => {
       const latest = latestDraftRef.current;
-      if (latest) setLocalDraft(latest.key, latest.data).catch(() => {
-        try { localStorage.setItem(`insighted_fallback_${latest.key}`, JSON.stringify(latest.data)); } catch (e) {}
-      });
+      if (latest)
+        setLocalDraft(latest.key, latest.data).catch(() => {
+          try {
+            localStorage.setItem(
+              `insighted_fallback_${latest.key}`,
+              JSON.stringify(latest.data),
+            );
+          } catch (e) {}
+        });
     });
-    const offRecover = onServerRecover(() => healthHandlersRef.current.syncLocalDraft());
+    const offRecover = onServerRecover(() =>
+      healthHandlersRef.current.syncLocalDraft(),
+    );
     const offSave = subscribeDraftSave((st) => {
-      if (st.status === 'conflict') healthHandlersRef.current.resolveConflict();
+      if (st.status === "conflict") healthHandlersRef.current.resolveConflict();
     });
-    return () => { offLock(); offRecover(); offSave(); };
+    return () => {
+      offLock();
+      offRecover();
+      offSave();
+    };
   }, []);
 
   // Always-current copy of the draft state, read by the restore effect below without making it re-run on every edit.
   const currentStateRef = useRef(null);
-  currentStateRef.current = { schoolInfo, personnel, classSections, workloadTransfers, absences, deletedPersonnelIds, journeyState };
+  currentStateRef.current = {
+    schoolInfo,
+    personnel,
+    classSections,
+    workloadTransfers,
+    absences,
+    deletedPersonnelIds,
+    journeyState,
+  };
 
   // Next load with unsynced work: tell the user it was restored (the auto-save sends it once the load has fully succeeded).
   useEffect(() => {
     if (isInitialized && hasUnsynced() && !loadIncompleteRef.current) {
-      showToast('Restored your unsynced changes from this device. Syncing now...');
+      showToast(
+        "Restored your unsynced changes from this device. Syncing now...",
+      );
       // Send them right away instead of waiting for the next edit (version checks still apply: a newer server copy
       // raises the conflict prompt). Failures keep the local copy and show the shared draft error notice.
       // The snapshot ref is normally filled by the next state change; after a restore there is none, so fill it now.
@@ -4630,12 +5947,25 @@ export const AppProvider = ({ children }) => {
         latestDraftRef.current = {
           key: `draft_${cur.schoolInfo.schoolId}_${cur.schoolInfo.schoolYear}`,
           schoolYear: cur.schoolInfo.schoolYear,
-          data: { schoolInfo: cur.schoolInfo, personnel: cur.personnel, classSections: cur.classSections, workloadTransfers: cur.workloadTransfers, absences: cur.absences, deletedPersonnelIds: cur.deletedPersonnelIds, journey_state: cur.journeyState, lastUpdated: new Date().toISOString() }
+          data: {
+            schoolInfo: cur.schoolInfo,
+            personnel: cur.personnel,
+            classSections: cur.classSections,
+            workloadTransfers: cur.workloadTransfers,
+            absences: cur.absences,
+            deletedPersonnelIds: cur.deletedPersonnelIds,
+            journey_state: cur.journeyState,
+            lastUpdated: new Date().toISOString(),
+          },
         };
       }
       markDraftDirty();
       flushDrafts().catch((err) => {
-        if (!(err instanceof DraftConflictError) && /** @type {any} */ (err)?.status !== 401) reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
+        if (
+          !(err instanceof DraftConflictError) &&
+          /** @type {any} */ (err)?.status !== 401
+        )
+          reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
       });
     }
   }, [isInitialized]);
@@ -4668,397 +5998,602 @@ export const AppProvider = ({ children }) => {
   */
 
   useEffect(() => {
-    localStorage.setItem('esf7_school_edited', String(schoolEdited));
+    localStorage.setItem("esf7_school_edited", String(schoolEdited));
   }, [schoolEdited]);
 
   const updatePersonnelInfo = async (id, fields) => {
     // 1. Instantly update local state for 0ms typing delay (IndexedDB auto-save handles persistence)
-    setPersonnel(prev => prev.map(p => String(p.id) === String(id) ? { ...p, ...fields } : p));
+    setPersonnel((prev) =>
+      prev.map((p) => (String(p.id) === String(id) ? { ...p, ...fields } : p)),
+    );
     setHasUnsavedChanges(true);
   };
 
   const savePersonnelChanges = async (id, updatedPerson, options = {}) => {
     if (!updatedPerson) return;
-    const rawTargetId = String(id || updatedPerson.id || '').trim();
+    const rawTargetId = String(id || updatedPerson.id || "").trim();
     const targetId = rawTargetId.toLowerCase();
-    const targetPrn = String(updatedPerson.prn || '').trim();
+    const targetPrn = String(updatedPerson.prn || "").trim();
 
     let mergedSnapshot = null;
 
-    setPersonnel(prev => {
-      const nextList = prev.map(p => {
-      const pId = String(p.id || '').trim().toLowerCase();
-      const pPrn = String(p.prn || '').trim();
+    setPersonnel((prev) => {
+      const nextList = prev.map((p) => {
+        const pId = String(p.id || "")
+          .trim()
+          .toLowerCase();
+        const pPrn = String(p.prn || "").trim();
 
-      const isMatch = (targetId && pId === targetId) || (targetPrn && pPrn && pPrn === targetPrn);
+        const isMatch =
+          (targetId && pId === targetId) ||
+          (targetPrn && pPrn && pPrn === targetPrn);
 
-      if (isMatch) {
-        const merged = {
-          ...p,
-          ...updatedPerson,
-          isDraft: false,
-          personalVerified: true,
-          lastVerifiedAt: updatedPerson.lastVerifiedAt || new Date().toISOString()
-        };
-        mergedSnapshot = merged;
+        if (isMatch) {
+          const merged = {
+            ...p,
+            ...updatedPerson,
+            isDraft: false,
+            personalVerified: true,
+            lastVerifiedAt:
+              updatedPerson.lastVerifiedAt || new Date().toISOString(),
+          };
+          mergedSnapshot = merged;
 
-        // Bidirectional normalization for all profile fields
-        if (merged.ethnicGroup) merged.ethnic_group = merged.ethnicGroup;
-        if (merged.ethnic_group && !merged.ethnicGroup) merged.ethnicGroup = merged.ethnic_group;
-        if (merged.prcSpecialization) merged.prc_specialization = merged.prcSpecialization;
-        if (merged.prc_specialization && !merged.prcSpecialization) merged.prcSpecialization = merged.prc_specialization;
-        if (merged.highestEducationalAttainment) merged.highest_educational_attainment = merged.highestEducationalAttainment;
-        if (merged.highest_educational_attainment && !merged.highestEducationalAttainment) merged.highestEducationalAttainment = merged.highest_educational_attainment;
-        if (merged.hiringArrangement) merged.hiring_arrangement = merged.hiringArrangement;
-        if (merged.hiring_arrangement && !merged.hiringArrangement) merged.hiringArrangement = merged.hiring_arrangement;
-        if (merged.natureOfAppointment) merged.nature_of_appointment = merged.natureOfAppointment;
-        if (merged.nature_of_appointment && !merged.natureOfAppointment) merged.natureOfAppointment = merged.nature_of_appointment;
-        if (merged.fundSource) merged.fund_source = merged.fundSource;
-        if (merged.fund_source && !merged.fundSource) merged.fundSource = merged.fund_source;
-        if (merged.deploymentStatus) merged.deployment_status = merged.deploymentStatus;
-        if (merged.deployment_status && !merged.deploymentStatus) merged.deploymentStatus = merged.deployment_status;
-        if (merged.soloParent !== undefined) merged.solo_parent = merged.soloParent;
-        if (merged.solo_parent !== undefined && merged.soloParent === undefined) merged.soloParent = merged.solo_parent;
-        if (merged.hasNoTeachingLoad !== undefined) merged.has_no_teaching_load = merged.hasNoTeachingLoad;
-        if (merged.has_no_teaching_load !== undefined && merged.hasNoTeachingLoad === undefined) merged.hasNoTeachingLoad = merged.has_no_teaching_load;
-        if (merged.nameExtension) {
-          merged.extensionName = merged.nameExtension;
-          merged.name_extension = merged.nameExtension;
-        }
-        if (merged.extensionName && !merged.nameExtension) {
-          merged.nameExtension = merged.extensionName;
-          merged.name_extension = merged.extensionName;
-        }
-
-        // Employment dates & step increments (explicitly preserve 'N/A')
-        if (updatedPerson.firstServiceDate !== undefined) {
-          merged.firstServiceDate = updatedPerson.firstServiceDate;
-          merged.first_service_date = updatedPerson.firstServiceDate;
-        } else if (merged.firstServiceDate) {
-          merged.first_service_date = merged.firstServiceDate;
-        } else if (merged.first_service_date) {
-          merged.firstServiceDate = merged.first_service_date;
-        }
-
-        if (updatedPerson.lastPromotionDate !== undefined) {
-          merged.lastPromotionDate = updatedPerson.lastPromotionDate;
-          merged.last_promotion_date = updatedPerson.lastPromotionDate;
-        } else if (merged.lastPromotionDate !== undefined) {
-          merged.last_promotion_date = merged.lastPromotionDate;
-        } else if (merged.last_promotion_date !== undefined) {
-          merged.lastPromotionDate = merged.last_promotion_date;
-        }
-
-        if (updatedPerson.newStationDate !== undefined) {
-          merged.newStationDate = updatedPerson.newStationDate;
-          merged.new_station_date = updatedPerson.newStationDate;
-        } else if (merged.newStationDate !== undefined) {
-          merged.new_station_date = merged.newStationDate;
-        } else if (merged.new_station_date !== undefined) {
-          merged.newStationDate = merged.new_station_date;
-        }
-
-        if (updatedPerson.lastLateralMovementDate !== undefined) {
-          merged.lastLateralMovementDate = updatedPerson.lastLateralMovementDate;
-          merged.last_lateral_movement_date = updatedPerson.lastLateralMovementDate;
-        } else if (merged.lastLateralMovementDate !== undefined) {
-          merged.last_lateral_movement_date = merged.lastLateralMovementDate;
-        } else if (merged.last_lateral_movement_date !== undefined) {
-          merged.lastLateralMovementDate = merged.last_lateral_movement_date;
-        }
-
-        if (merged.stepIncrement) merged.step_increment = merged.stepIncrement;
-        if (merged.step_increment && !merged.stepIncrement) merged.stepIncrement = merged.step_increment;
-        if (merged.stepIncrementConfirmed !== undefined) merged.step_increment_confirmed = merged.stepIncrementConfirmed;
-        if (merged.step_increment_confirmed !== undefined && merged.stepIncrementConfirmed === undefined) merged.stepIncrementConfirmed = merged.step_increment_confirmed;
-
-        // Email & IDs
-        const isPermAppt = String(merged.natureOfAppointment || merged.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
-
-        if (isPermAppt) {
-          merged.noDepedEmail = false;
-          merged.no_deped_email = false;
-          if (merged.depedEmail === 'N/A' || merged.deped_email === 'N/A' || merged.email === 'N/A') {
-            merged.depedEmail = '';
-            merged.deped_email = '';
-            merged.email = '';
-          } else if (merged.depedEmail) {
-            merged.deped_email = merged.depedEmail;
-            merged.email = merged.depedEmail;
-          } else if (merged.deped_email) {
-            merged.depedEmail = merged.deped_email;
-            merged.email = merged.deped_email;
+          // Bidirectional normalization for all profile fields
+          if (merged.ethnicGroup) merged.ethnic_group = merged.ethnicGroup;
+          if (merged.ethnic_group && !merged.ethnicGroup)
+            merged.ethnicGroup = merged.ethnic_group;
+          if (merged.prcSpecialization)
+            merged.prc_specialization = merged.prcSpecialization;
+          if (merged.prc_specialization && !merged.prcSpecialization)
+            merged.prcSpecialization = merged.prc_specialization;
+          if (merged.highestEducationalAttainment)
+            merged.highest_educational_attainment =
+              merged.highestEducationalAttainment;
+          if (
+            merged.highest_educational_attainment &&
+            !merged.highestEducationalAttainment
+          )
+            merged.highestEducationalAttainment =
+              merged.highest_educational_attainment;
+          if (merged.hiringArrangement)
+            merged.hiring_arrangement = merged.hiringArrangement;
+          if (merged.hiring_arrangement && !merged.hiringArrangement)
+            merged.hiringArrangement = merged.hiring_arrangement;
+          if (merged.natureOfAppointment)
+            merged.nature_of_appointment = merged.natureOfAppointment;
+          if (merged.nature_of_appointment && !merged.natureOfAppointment)
+            merged.natureOfAppointment = merged.nature_of_appointment;
+          if (merged.fundSource) merged.fund_source = merged.fundSource;
+          if (merged.fund_source && !merged.fundSource)
+            merged.fundSource = merged.fund_source;
+          if (merged.deploymentStatus)
+            merged.deployment_status = merged.deploymentStatus;
+          if (merged.deployment_status && !merged.deploymentStatus)
+            merged.deploymentStatus = merged.deployment_status;
+          if (merged.soloParent !== undefined)
+            merged.solo_parent = merged.soloParent;
+          if (
+            merged.solo_parent !== undefined &&
+            merged.soloParent === undefined
+          )
+            merged.soloParent = merged.solo_parent;
+          if (merged.hasNoTeachingLoad !== undefined)
+            merged.has_no_teaching_load = merged.hasNoTeachingLoad;
+          if (
+            merged.has_no_teaching_load !== undefined &&
+            merged.hasNoTeachingLoad === undefined
+          )
+            merged.hasNoTeachingLoad = merged.has_no_teaching_load;
+          if (merged.nameExtension) {
+            merged.extensionName = merged.nameExtension;
+            merged.name_extension = merged.nameExtension;
           }
-        } else {
-          if (updatedPerson.noDepedEmail !== undefined || updatedPerson.no_deped_email !== undefined) {
-            const isNoEmail = !!(updatedPerson.noDepedEmail || updatedPerson.no_deped_email);
-            merged.noDepedEmail = isNoEmail;
-            merged.no_deped_email = isNoEmail;
-            if (isNoEmail) {
-              merged.depedEmail = 'N/A';
-              merged.deped_email = 'N/A';
-              merged.email = 'N/A';
+          if (merged.extensionName && !merged.nameExtension) {
+            merged.nameExtension = merged.extensionName;
+            merged.name_extension = merged.extensionName;
+          }
+
+          // Employment dates & step increments (explicitly preserve 'N/A')
+          if (updatedPerson.firstServiceDate !== undefined) {
+            merged.firstServiceDate = updatedPerson.firstServiceDate;
+            merged.first_service_date = updatedPerson.firstServiceDate;
+          } else if (merged.firstServiceDate) {
+            merged.first_service_date = merged.firstServiceDate;
+          } else if (merged.first_service_date) {
+            merged.firstServiceDate = merged.first_service_date;
+          }
+
+          if (updatedPerson.lastPromotionDate !== undefined) {
+            merged.lastPromotionDate = updatedPerson.lastPromotionDate;
+            merged.last_promotion_date = updatedPerson.lastPromotionDate;
+          } else if (merged.lastPromotionDate !== undefined) {
+            merged.last_promotion_date = merged.lastPromotionDate;
+          } else if (merged.last_promotion_date !== undefined) {
+            merged.lastPromotionDate = merged.last_promotion_date;
+          }
+
+          if (updatedPerson.newStationDate !== undefined) {
+            merged.newStationDate = updatedPerson.newStationDate;
+            merged.new_station_date = updatedPerson.newStationDate;
+          } else if (merged.newStationDate !== undefined) {
+            merged.new_station_date = merged.newStationDate;
+          } else if (merged.new_station_date !== undefined) {
+            merged.newStationDate = merged.new_station_date;
+          }
+
+          if (updatedPerson.lastLateralMovementDate !== undefined) {
+            merged.lastLateralMovementDate =
+              updatedPerson.lastLateralMovementDate;
+            merged.last_lateral_movement_date =
+              updatedPerson.lastLateralMovementDate;
+          } else if (merged.lastLateralMovementDate !== undefined) {
+            merged.last_lateral_movement_date = merged.lastLateralMovementDate;
+          } else if (merged.last_lateral_movement_date !== undefined) {
+            merged.lastLateralMovementDate = merged.last_lateral_movement_date;
+          }
+
+          if (merged.stepIncrement)
+            merged.step_increment = merged.stepIncrement;
+          if (merged.step_increment && !merged.stepIncrement)
+            merged.stepIncrement = merged.step_increment;
+          if (merged.stepIncrementConfirmed !== undefined)
+            merged.step_increment_confirmed = merged.stepIncrementConfirmed;
+          if (
+            merged.step_increment_confirmed !== undefined &&
+            merged.stepIncrementConfirmed === undefined
+          )
+            merged.stepIncrementConfirmed = merged.step_increment_confirmed;
+
+          // Email & IDs
+          const isPermAppt =
+            String(
+              merged.natureOfAppointment || merged.nature_of_appointment || "",
+            ).toUpperCase() === "REGULAR PERMANENT";
+
+          if (isPermAppt) {
+            merged.noDepedEmail = false;
+            merged.no_deped_email = false;
+            if (
+              merged.depedEmail === "N/A" ||
+              merged.deped_email === "N/A" ||
+              merged.email === "N/A"
+            ) {
+              merged.depedEmail = "";
+              merged.deped_email = "";
+              merged.email = "";
+            } else if (merged.depedEmail) {
+              merged.deped_email = merged.depedEmail;
+              merged.email = merged.depedEmail;
+            } else if (merged.deped_email) {
+              merged.depedEmail = merged.deped_email;
+              merged.email = merged.deped_email;
             }
-          } else if (merged.depedEmail === 'N/A' || merged.deped_email === 'N/A') {
-            merged.noDepedEmail = true;
-            merged.no_deped_email = true;
-            merged.depedEmail = 'N/A';
-            merged.deped_email = 'N/A';
-            merged.email = 'N/A';
-          } else if (merged.depedEmail) {
-            merged.deped_email = merged.depedEmail;
-            merged.email = merged.depedEmail;
-            merged.noDepedEmail = false;
-            merged.no_deped_email = false;
-          } else if (merged.deped_email) {
-            merged.depedEmail = merged.deped_email;
-            merged.email = merged.deped_email;
-            merged.noDepedEmail = false;
-            merged.no_deped_email = false;
+          } else {
+            if (
+              updatedPerson.noDepedEmail !== undefined ||
+              updatedPerson.no_deped_email !== undefined
+            ) {
+              const isNoEmail = !!(
+                updatedPerson.noDepedEmail || updatedPerson.no_deped_email
+              );
+              merged.noDepedEmail = isNoEmail;
+              merged.no_deped_email = isNoEmail;
+              if (isNoEmail) {
+                merged.depedEmail = "N/A";
+                merged.deped_email = "N/A";
+                merged.email = "N/A";
+              }
+            } else if (
+              merged.depedEmail === "N/A" ||
+              merged.deped_email === "N/A"
+            ) {
+              merged.noDepedEmail = true;
+              merged.no_deped_email = true;
+              merged.depedEmail = "N/A";
+              merged.deped_email = "N/A";
+              merged.email = "N/A";
+            } else if (merged.depedEmail) {
+              merged.deped_email = merged.depedEmail;
+              merged.email = merged.depedEmail;
+              merged.noDepedEmail = false;
+              merged.no_deped_email = false;
+            } else if (merged.deped_email) {
+              merged.depedEmail = merged.deped_email;
+              merged.email = merged.deped_email;
+              merged.noDepedEmail = false;
+              merged.no_deped_email = false;
+            }
           }
-        }
 
-        // PhilSys & TIN N/A Handling
-        if (updatedPerson.noPhilsys !== undefined || updatedPerson.no_philsys !== undefined) {
-          const isNoPs = !!(updatedPerson.noPhilsys || updatedPerson.no_philsys);
-          merged.noPhilsys = isNoPs;
-          merged.no_philsys = isNoPs;
-          if (isNoPs) {
-            merged.philsysNo = '';
-            merged.philsys_no = '';
+          // PhilSys & TIN N/A Handling
+          if (
+            updatedPerson.noPhilsys !== undefined ||
+            updatedPerson.no_philsys !== undefined
+          ) {
+            const isNoPs = !!(
+              updatedPerson.noPhilsys || updatedPerson.no_philsys
+            );
+            merged.noPhilsys = isNoPs;
+            merged.no_philsys = isNoPs;
+            if (isNoPs) {
+              merged.philsysNo = "";
+              merged.philsys_no = "";
+            }
+          } else {
+            const isNoPs = !!(merged.noPhilsys || merged.no_philsys);
+            merged.noPhilsys = isNoPs;
+            merged.no_philsys = isNoPs;
+            if (isNoPs) {
+              merged.philsysNo = "";
+              merged.philsys_no = "";
+            }
           }
-        } else {
-          const isNoPs = !!(merged.noPhilsys || merged.no_philsys);
-          merged.noPhilsys = isNoPs;
-          merged.no_philsys = isNoPs;
-          if (isNoPs) {
-            merged.philsysNo = '';
-            merged.philsys_no = '';
+
+          if (
+            updatedPerson.noTin !== undefined ||
+            updatedPerson.no_tin !== undefined
+          ) {
+            const isNoTin = !!(updatedPerson.noTin || updatedPerson.no_tin);
+            merged.noTin = isNoTin;
+            merged.no_tin = isNoTin;
+            if (isNoTin) {
+              merged.tin = "";
+            }
+          } else {
+            const isNoTin = !!(merged.noTin || merged.no_tin);
+            merged.noTin = isNoTin;
+            merged.no_tin = isNoTin;
+            if (isNoTin) {
+              merged.tin = "";
+            }
           }
-        }
 
-        if (updatedPerson.noTin !== undefined || updatedPerson.no_tin !== undefined) {
-          const isNoTin = !!(updatedPerson.noTin || updatedPerson.no_tin);
-          merged.noTin = isNoTin;
-          merged.no_tin = isNoTin;
-          if (isNoTin) {
-            merged.tin = '';
+          // Employee No. & IDs
+          if (
+            updatedPerson.noEmployeeNo !== undefined ||
+            updatedPerson.no_employee_no !== undefined
+          ) {
+            const isNoEmp = !!(
+              updatedPerson.noEmployeeNo || updatedPerson.no_employee_no
+            );
+            merged.noEmployeeNo = isNoEmp;
+            merged.no_employee_no = isNoEmp;
+            if (isNoEmp) {
+              merged.employeeNo = "N/A";
+              merged.employee_no = "N/A";
+            }
           }
-        } else {
-          const isNoTin = !!(merged.noTin || merged.no_tin);
-          merged.noTin = isNoTin;
-          merged.no_tin = isNoTin;
-          if (isNoTin) {
-            merged.tin = '';
+          if (updatedPerson.employeeNo !== undefined) {
+            merged.employeeNo = updatedPerson.employeeNo;
+            merged.employee_no = updatedPerson.employeeNo;
+            if (updatedPerson.employeeNo === "N/A") {
+              merged.noEmployeeNo = true;
+              merged.no_employee_no = true;
+            }
+          } else if (updatedPerson.employee_no !== undefined) {
+            merged.employeeNo = updatedPerson.employee_no;
+            merged.employee_no = updatedPerson.employee_no;
+            if (updatedPerson.employee_no === "N/A") {
+              merged.noEmployeeNo = true;
+              merged.no_employee_no = true;
+            }
+          } else if (merged.employeeNo) {
+            merged.employee_no = merged.employeeNo;
+          } else if (merged.employee_no) {
+            merged.employeeNo = merged.employee_no;
           }
-        }
 
-        // Employee No. & IDs
-        if (updatedPerson.noEmployeeNo !== undefined || updatedPerson.no_employee_no !== undefined) {
-          const isNoEmp = !!(updatedPerson.noEmployeeNo || updatedPerson.no_employee_no);
-          merged.noEmployeeNo = isNoEmp;
-          merged.no_employee_no = isNoEmp;
-          if (isNoEmp) {
-            merged.employeeNo = 'N/A';
-            merged.employee_no = 'N/A';
+          // PRC Specialization & Eligibility
+          if (updatedPerson.prcSpecialization !== undefined) {
+            merged.prcSpecialization = updatedPerson.prcSpecialization;
+            merged.prc_specialization = updatedPerson.prcSpecialization;
+          } else if (updatedPerson.prc_specialization !== undefined) {
+            merged.prcSpecialization = updatedPerson.prc_specialization;
+            merged.prc_specialization = updatedPerson.prc_specialization;
+          } else if (merged.prcSpecialization) {
+            merged.prc_specialization = merged.prcSpecialization;
+          } else if (merged.prc_specialization) {
+            merged.prcSpecialization = merged.prc_specialization;
           }
-        }
-        if (updatedPerson.employeeNo !== undefined) {
-          merged.employeeNo = updatedPerson.employeeNo;
-          merged.employee_no = updatedPerson.employeeNo;
-          if (updatedPerson.employeeNo === 'N/A') {
-            merged.noEmployeeNo = true;
-            merged.no_employee_no = true;
+          if (updatedPerson.eligibility !== undefined) {
+            merged.eligibility = updatedPerson.eligibility;
           }
-        } else if (updatedPerson.employee_no !== undefined) {
-          merged.employeeNo = updatedPerson.employee_no;
-          merged.employee_no = updatedPerson.employee_no;
-          if (updatedPerson.employee_no === 'N/A') {
-            merged.noEmployeeNo = true;
-            merged.no_employee_no = true;
+
+          // Education degrees & post-grad disciplines
+          if (merged.collegeDegrees && Array.isArray(merged.collegeDegrees)) {
+            merged.degreeRows = merged.collegeDegrees;
+            merged.college_degrees = merged.collegeDegrees;
+          } else if (merged.degreeRows && Array.isArray(merged.degreeRows)) {
+            merged.collegeDegrees = merged.degreeRows;
+            merged.college_degrees = merged.degreeRows;
           }
-        } else if (merged.employeeNo) {
-          merged.employee_no = merged.employeeNo;
-        } else if (merged.employee_no) {
-          merged.employeeNo = merged.employee_no;
-        }
+          if (merged.postGraduateDegree)
+            merged.post_graduate_degree = merged.postGraduateDegree;
+          if (merged.post_graduate_degree && !merged.postGraduateDegree)
+            merged.postGraduateDegree = merged.post_graduate_degree;
+          if (merged.postGraduateDiscipline)
+            merged.post_graduate_discipline = merged.postGraduateDiscipline;
+          if (merged.post_graduate_discipline && !merged.postGraduateDiscipline)
+            merged.postGraduateDiscipline = merged.post_graduate_discipline;
 
-        // PRC Specialization & Eligibility
-        if (updatedPerson.prcSpecialization !== undefined) {
-          merged.prcSpecialization = updatedPerson.prcSpecialization;
-          merged.prc_specialization = updatedPerson.prcSpecialization;
-        } else if (updatedPerson.prc_specialization !== undefined) {
-          merged.prcSpecialization = updatedPerson.prc_specialization;
-          merged.prc_specialization = updatedPerson.prc_specialization;
-        } else if (merged.prcSpecialization) {
-          merged.prc_specialization = merged.prcSpecialization;
-        } else if (merged.prc_specialization) {
-          merged.prcSpecialization = merged.prc_specialization;
-        }
-        if (updatedPerson.eligibility !== undefined) {
-          merged.eligibility = updatedPerson.eligibility;
-        }
+          // Professional Development / Trainings
+          if (Array.isArray(merged.neapTrainingRows))
+            merged.neap_training_rows = merged.neapTrainingRows;
+          if (
+            Array.isArray(merged.neap_training_rows) &&
+            !merged.neapTrainingRows
+          )
+            merged.neapTrainingRows = merged.neap_training_rows;
+          if (Array.isArray(merged.certificationRows))
+            merged.certification_rows = merged.certificationRows;
+          if (
+            Array.isArray(merged.certification_rows) &&
+            !merged.certificationRows
+          )
+            merged.certificationRows = merged.certification_rows;
+          if (Array.isArray(merged.otherTrainingRows))
+            merged.other_training_rows = merged.otherTrainingRows;
+          if (
+            Array.isArray(merged.other_training_rows) &&
+            !merged.otherTrainingRows
+          )
+            merged.otherTrainingRows = merged.other_training_rows;
 
-        // Education degrees & post-grad disciplines
-        if (merged.collegeDegrees && Array.isArray(merged.collegeDegrees)) {
-          merged.degreeRows = merged.collegeDegrees;
-          merged.college_degrees = merged.collegeDegrees;
-        } else if (merged.degreeRows && Array.isArray(merged.degreeRows)) {
-          merged.collegeDegrees = merged.degreeRows;
-          merged.college_degrees = merged.degreeRows;
-        }
-        if (merged.postGraduateDegree) merged.post_graduate_degree = merged.postGraduateDegree;
-        if (merged.post_graduate_degree && !merged.postGraduateDegree) merged.postGraduateDegree = merged.post_graduate_degree;
-        if (merged.postGraduateDiscipline) merged.post_graduate_discipline = merged.postGraduateDiscipline;
-        if (merged.post_graduate_discipline && !merged.postGraduateDiscipline) merged.postGraduateDiscipline = merged.post_graduate_discipline;
+          // Teaching Assignment & Grade Levels
+          const gl =
+            merged.assignedGradeLevels ||
+            merged.gradeLevelsTaught ||
+            merged.assigned_grade_levels ||
+            merged.grade_levels_taught ||
+            [];
+          if (Array.isArray(gl) && gl.length > 0) {
+            merged.assignedGradeLevels = gl;
+            merged.assigned_grade_levels = gl;
+            merged.gradeLevelsTaught = gl;
+            merged.grade_levels_taught = gl;
+            merged.teachesShs = gl.some(
+              (g) => String(g).includes("11") || String(g).includes("12"),
+            );
+            merged.teaches_shs = merged.teachesShs;
+          }
 
-        // Professional Development / Trainings
-        if (Array.isArray(merged.neapTrainingRows)) merged.neap_training_rows = merged.neapTrainingRows;
-        if (Array.isArray(merged.neap_training_rows) && !merged.neapTrainingRows) merged.neapTrainingRows = merged.neap_training_rows;
-        if (Array.isArray(merged.certificationRows)) merged.certification_rows = merged.certificationRows;
-        if (Array.isArray(merged.certification_rows) && !merged.certificationRows) merged.certificationRows = merged.certification_rows;
-        if (Array.isArray(merged.otherTrainingRows)) merged.other_training_rows = merged.otherTrainingRows;
-        if (Array.isArray(merged.other_training_rows) && !merged.otherTrainingRows) merged.otherTrainingRows = merged.other_training_rows;
+          // Learning Area Matrix
+          const laMap =
+            merged.learningAreaMap || merged.matrix_data || merged.matrixData;
+          if (
+            laMap &&
+            typeof laMap === "object" &&
+            Object.keys(laMap).length > 0
+          ) {
+            merged.learningAreaMap = laMap;
+            merged.matrix_data = laMap;
+            merged.matrixData = laMap;
+            try {
+              localStorage.setItem(
+                `draft_learning_areas_${p.id}`,
+                JSON.stringify(laMap),
+              );
+              if (
+                updatedPerson.id &&
+                String(updatedPerson.id) !== String(p.id)
+              ) {
+                localStorage.setItem(
+                  `draft_learning_areas_${updatedPerson.id}`,
+                  JSON.stringify(laMap),
+                );
+              }
+            } catch (e) {}
+          }
 
-        // Teaching Assignment & Grade Levels
-        const gl = merged.assignedGradeLevels || merged.gradeLevelsTaught || merged.assigned_grade_levels || merged.grade_levels_taught || [];
-        if (Array.isArray(gl) && gl.length > 0) {
-          merged.assignedGradeLevels = gl;
-          merged.assigned_grade_levels = gl;
-          merged.gradeLevelsTaught = gl;
-          merged.grade_levels_taught = gl;
-          merged.teachesShs = gl.some(g => String(g).includes('11') || String(g).includes('12'));
-          merged.teaches_shs = merged.teachesShs;
-        }
-
-        // Learning Area Matrix
-        const laMap = merged.learningAreaMap || merged.matrix_data || merged.matrixData;
-        if (laMap && typeof laMap === 'object' && Object.keys(laMap).length > 0) {
-          merged.learningAreaMap = laMap;
-          merged.matrix_data = laMap;
-          merged.matrixData = laMap;
+          // Immediately update localStorage draft key so PersonnelProfile gets fresh data
           try {
-            localStorage.setItem(`draft_learning_areas_${p.id}`, JSON.stringify(laMap));
+            localStorage.setItem(
+              `draft_personnel_${p.id}`,
+              JSON.stringify(merged),
+            );
             if (updatedPerson.id && String(updatedPerson.id) !== String(p.id)) {
-              localStorage.setItem(`draft_learning_areas_${updatedPerson.id}`, JSON.stringify(laMap));
+              localStorage.setItem(
+                `draft_personnel_${updatedPerson.id}`,
+                JSON.stringify(merged),
+              );
             }
           } catch (e) {}
-        }
 
-        // Immediately update localStorage draft key so PersonnelProfile gets fresh data
-        try {
-          localStorage.setItem(`draft_personnel_${p.id}`, JSON.stringify(merged));
-          if (updatedPerson.id && String(updatedPerson.id) !== String(p.id)) {
-            localStorage.setItem(`draft_personnel_${updatedPerson.id}`, JSON.stringify(merged));
+          // Bidirectional sync: extract administrative rows from workloadRows
+          const adminFromWorkload = (
+            Array.isArray(merged.workloadRows) ? merged.workloadRows : []
+          )
+            .filter((r) => {
+              const s = String(r.subject || r.task || "").toUpperCase();
+              return s.startsWith("ADMIN") || s.includes("ADMINISTRATIVE");
+            })
+            .map((r) => {
+              let diffHrs = 1;
+              if (r.startTime && r.endTime) {
+                const [sh, sm] = String(r.startTime).split(":").map(Number);
+                const [eh, em] = String(r.endTime).split(":").map(Number);
+                if (!isNaN(sh) && !isNaN(eh)) {
+                  diffHrs = Math.max(
+                    0.5,
+                    Math.round(
+                      ((eh * 60 + (em || 0) - (sh * 60 + (sm || 0))) / 60) * 10,
+                    ) / 10,
+                  );
+                }
+              }
+              return {
+                task:
+                  r.subject ||
+                  r.task ||
+                  "ADMIN TASK – GENERAL ADMINISTRATIVE SUPPORT",
+                startTime: r.startTime || "13:00",
+                endTime: r.endTime || "14:00",
+                days:
+                  Array.isArray(r.days) && r.days.length > 0
+                    ? r.days
+                    : ["M", "T", "W", "TH", "F"],
+                hours: diffHrs,
+                term: r.term || "1st",
+              };
+            });
+
+          if (adminFromWorkload.length > 0) {
+            merged.administrativeRows = adminFromWorkload;
+            merged.administrative_rows = adminFromWorkload;
           }
-        } catch (e) {}
 
-        // Bidirectional sync: extract administrative rows from workloadRows
-        const adminFromWorkload = (Array.isArray(merged.workloadRows) ? merged.workloadRows : []).filter(r => {
-          const s = String(r.subject || r.task || '').toUpperCase();
-          return s.startsWith('ADMIN') || s.includes('ADMINISTRATIVE');
-        }).map(r => {
-          let diffHrs = 1;
-          if (r.startTime && r.endTime) {
-            const [sh, sm] = String(r.startTime).split(':').map(Number);
-            const [eh, em] = String(r.endTime).split(':').map(Number);
-            if (!isNaN(sh) && !isNaN(eh)) {
-              diffHrs = Math.max(0.5, Math.round((((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / 60) * 10) / 10);
-            }
+          // Persist workload rows directly to PostgreSQL esf7_workload_rows in the background
+          // Callers that do their own awaited workload write (Workload page) pass skipWorkloadSync to avoid a racing duplicate write.
+          if (
+            !options.skipWorkloadSync &&
+            Array.isArray(merged.workloadRows) &&
+            typeof api !== "undefined" &&
+            api.saveWorkloadBatch
+          ) {
+            api
+              .saveWorkloadBatch({
+                personnel_id: merged.id || p.id,
+                workloadRows: merged.workloadRows,
+                teachingRelatedRows:
+                  merged.teachingRelatedRows ||
+                  merged.teaching_related_rows ||
+                  [],
+                administrativeRows:
+                  merged.administrativeRows || merged.administrative_rows || [],
+                school_id:
+                  (schoolInfo && schoolInfo.schoolId) ||
+                  localStorage.getItem("activeSchoolId") ||
+                  "108348",
+                school_year:
+                  (schoolInfo && schoolInfo.schoolYear) || "2026-2027",
+                term: merged.activeTerm || "1st",
+              })
+              .catch((err) =>
+                reportError(err, {
+                  action: `Saving workload for ${merged.id || p.id} (background sync)`,
+                  handler: "savePersonnelChanges",
+                  ids: { personnel_id: String(merged.id || p.id) },
+                }),
+              );
           }
-          return {
-            task: r.subject || r.task || 'ADMIN TASK – GENERAL ADMINISTRATIVE SUPPORT',
-            startTime: r.startTime || '13:00',
-            endTime: r.endTime || '14:00',
-            days: Array.isArray(r.days) && r.days.length > 0 ? r.days : ['M', 'T', 'W', 'TH', 'F'],
-            hours: diffHrs,
-            term: r.term || '1st'
-          };
-        });
 
-        if (adminFromWorkload.length > 0) {
-          merged.administrativeRows = adminFromWorkload;
-          merged.administrative_rows = adminFromWorkload;
+          // Auto-dispatch inter-school requests for CLUSTERED or REASSIGNED personnel
+          const depStatus = String(
+            merged.deploymentStatus || merged.deployment_status || "",
+          ).toUpperCase();
+          const assignedSchoolsList = Array.isArray(merged.assignedSchools)
+            ? merged.assignedSchools
+            : Array.isArray(merged.assigned_schools)
+              ? merged.assigned_schools
+              : merged.assignedSchools
+                ? [merged.assignedSchools]
+                : [];
+
+          if (
+            (depStatus === "CLUSTERED" || depStatus === "REASSIGNED") &&
+            assignedSchoolsList.length > 0
+          ) {
+            const reqType =
+              depStatus === "CLUSTERED"
+                ? "clustered_teacher"
+                : "reassigned_teacher";
+            const pPrn = merged.prn || merged.id;
+            const pFullName =
+              `${merged.firstName || ""} ${merged.lastName || ""}`.trim();
+            const curSchoolId = String(
+              schoolInfo?.schoolId || user?.school_id || user?.schoolId || "",
+            )
+              .replace(/^SCH-/i, "")
+              .trim();
+
+            assignedSchoolsList.forEach((item) => {
+              const rawItem = String(item || "").trim();
+              const parenMatch = rawItem.match(/\((\d{5,})\)/);
+              const directDigits = rawItem.match(/\b(\d{5,})\b/);
+              const targetId = parenMatch
+                ? parenMatch[1]
+                : directDigits
+                  ? directDigits[1]
+                  : null;
+
+              if (targetId && targetId !== curSchoolId) {
+                api
+                  .createRequest({
+                    requesterSchoolId: curSchoolId,
+                    targetSchoolId: targetId,
+                    requestType: reqType,
+                    personnelId: pPrn,
+                    personnelName: pFullName,
+                    remarks: `Auto-dispatched ${depStatus} teacher assignment from School ${curSchoolId}`,
+                  })
+                  .catch((err) =>
+                    reportError(err, {
+                      action: `Sending the ${reqType} request for ${pFullName || pPrn}`,
+                      handler: "savePersonnelChanges (auto-dispatch)",
+                    }),
+                  );
+              }
+            });
+          }
+
+          return merged;
         }
+        return p;
+      });
 
-        // Persist workload rows directly to PostgreSQL esf7_workload_rows in the background
-        // Callers that do their own awaited workload write (Workload page) pass skipWorkloadSync to avoid a racing duplicate write.
-        if (!options.skipWorkloadSync && Array.isArray(merged.workloadRows) && typeof api !== 'undefined' && api.saveWorkloadBatch) {
-          api.saveWorkloadBatch({
-            personnel_id: merged.id || p.id,
-            workloadRows: merged.workloadRows,
-            teachingRelatedRows: merged.teachingRelatedRows || merged.teaching_related_rows || [],
-            administrativeRows: merged.administrativeRows || merged.administrative_rows || [],
-            school_id: (schoolInfo && schoolInfo.schoolId) || localStorage.getItem('activeSchoolId') || '108348',
-            school_year: (schoolInfo && schoolInfo.schoolYear) || '2026-2027',
-            term: merged.activeTerm || '1st'
-          }).catch(err => reportError(err, { action: `Saving workload for ${merged.id || p.id} (background sync)`, handler: 'savePersonnelChanges', ids: { personnel_id: String(merged.id || p.id) } }));
-        }
-
-        // Auto-dispatch inter-school requests for CLUSTERED or REASSIGNED personnel
-        const depStatus = String(merged.deploymentStatus || merged.deployment_status || '').toUpperCase();
-        const assignedSchoolsList = Array.isArray(merged.assignedSchools) 
-          ? merged.assignedSchools 
-          : (Array.isArray(merged.assigned_schools) ? merged.assigned_schools : (merged.assignedSchools ? [merged.assignedSchools] : []));
-
-        if ((depStatus === 'CLUSTERED' || depStatus === 'REASSIGNED') && assignedSchoolsList.length > 0) {
-          const reqType = depStatus === 'CLUSTERED' ? 'clustered_teacher' : 'reassigned_teacher';
-          const pPrn = merged.prn || merged.id;
-          const pFullName = `${merged.firstName || ''} ${merged.lastName || ''}`.trim();
-          const curSchoolId = String(schoolInfo?.schoolId || user?.school_id || user?.schoolId || '').replace(/^SCH-/i, '').trim();
-
-          assignedSchoolsList.forEach(item => {
-            const rawItem = String(item || '').trim();
-            const parenMatch = rawItem.match(/\((\d{5,})\)/);
-            const directDigits = rawItem.match(/\b(\d{5,})\b/);
-            const targetId = parenMatch ? parenMatch[1] : (directDigits ? directDigits[1] : null);
-
-            if (targetId && targetId !== curSchoolId) {
-              api.createRequest({
-                requesterSchoolId: curSchoolId,
-                targetSchoolId: targetId,
-                requestType: reqType,
-                personnelId: pPrn,
-                personnelName: pFullName,
-                remarks: `Auto-dispatched ${depStatus} teacher assignment from School ${curSchoolId}`
-              }).catch(err => reportError(err, { action: `Sending the ${reqType} request for ${pFullName || pPrn}`, handler: 'savePersonnelChanges (auto-dispatch)' }));
-            }
-          });
-        }
-
-        return merged;
-      }
-      return p;
+      // Deduplicate to guarantee no duplicate records in state
+      const seen = new Set();
+      return nextList.filter((p) => {
+        if (!p) return false;
+        const key = String(
+          p.id || p.prn || `${p.firstName || ""}_${p.lastName || ""}`,
+        )
+          .trim()
+          .toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     });
-
-    // Deduplicate to guarantee no duplicate records in state
-    const seen = new Set();
-    return nextList.filter(p => {
-      if (!p) return false;
-      const key = String(p.id || p.prn || `${p.firstName || ''}_${p.lastName || ''}`).trim().toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  });
 
     // Write through to PostgreSQL relational database (esf7_personnel_profile, educ, employment)
-    if (!options.skipApiUpdate && rawTargetId && !rawTargetId.startsWith('temp-') && typeof api !== 'undefined' && api.updatePersonnel) {
+    if (
+      !options.skipApiUpdate &&
+      rawTargetId &&
+      !rawTargetId.startsWith("temp-") &&
+      typeof api !== "undefined" &&
+      api.updatePersonnel
+    ) {
       // The database write is NOT optional: a rejected request throws (with the server's own message) so the caller can
       // keep its dialog open and its draft. Transient failures (502/timeout) are retried; 4xx validation answers are final.
       // Placeholder dates ("N/A", "-") are sent as null. The local state above is already updated either way.
-      const payloadToPersist = cleanPersonnelDates(mergedSnapshot || updatedPerson);
+      const payloadToPersist = cleanPersonnelDates(
+        mergedSnapshot || updatedPerson,
+      );
       try {
-        await retryTransient(() => api.updatePersonnel(rawTargetId, {
-          ...payloadToPersist,
-          school_id: (schoolInfo && schoolInfo.schoolId) || localStorage.getItem('activeSchoolId') || '300488',
-          school_year: (schoolInfo && schoolInfo.schoolYear) || '2026-2027'
-        }));
+        await retryTransient(() =>
+          api.updatePersonnel(rawTargetId, {
+            ...payloadToPersist,
+            school_id:
+              (schoolInfo && schoolInfo.schoolId) ||
+              localStorage.getItem("activeSchoolId") ||
+              "300488",
+            school_year: (schoolInfo && schoolInfo.schoolYear) || "2026-2027",
+          }),
+        );
       } catch (apiErr) {
-        const detail = apiErr?.body?.error || apiErr?.message || 'The server rejected the update.';
-        const field = apiErr?.body?.field ? ` (field: ${apiErr.body.field})` : '';
-        console.error('[savePersonnelChanges] Database update failed:', detail);
-        const failure = new Error(`Personnel record was not saved to the database${field}: ${detail}`);
+        const detail =
+          apiErr?.body?.error ||
+          apiErr?.message ||
+          "The server rejected the update.";
+        const field = apiErr?.body?.field
+          ? ` (field: ${apiErr.body.field})`
+          : "";
+        console.error("[savePersonnelChanges] Database update failed:", detail);
+        const failure = new Error(
+          `Personnel record was not saved to the database${field}: ${detail}`,
+        );
         failure.status = apiErr?.status;
         failure.cause = apiErr;
         throw failure;
@@ -5066,19 +6601,25 @@ export const AppProvider = ({ children }) => {
     }
 
     setHasUnsavedChanges(true);
-    showToast(options.skipApiUpdate ? "Changes saved locally." : "Changes saved locally & synced to database.");
+    showToast(
+      options.skipApiUpdate
+        ? "Changes saved locally."
+        : "Changes saved locally & synced to database.",
+    );
     return { ok: true };
   };
 
   const commitDraftPersonnel = async (specificId = null) => {
     // Clear isDraft on all (or specific) draft personnel so they become
     // visible in PersonnelProfile and Workload pages.
-    setPersonnel(prev => prev.map(p => {
-      if (specificId ? p.id === specificId : p.isDraft) {
-        return { ...p, isDraft: false };
-      }
-      return p;
-    }));
+    setPersonnel((prev) =>
+      prev.map((p) => {
+        if (specificId ? p.id === specificId : p.isDraft) {
+          return { ...p, isDraft: false };
+        }
+        return p;
+      }),
+    );
     showToast("All changes saved locally.");
     return { success: true };
   };
@@ -5087,70 +6628,95 @@ export const AppProvider = ({ children }) => {
     const newId = `local-p-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newRecord = {
       id: newId,
-      prn: newPerson.prn || Math.floor(100000000000 + Math.random() * 900000000000).toString(),
+      prn:
+        newPerson.prn ||
+        Math.floor(100000000000 + Math.random() * 900000000000).toString(),
       school_id: schoolInfo.schoolId,
       school_year: schoolInfo.schoolYear,
       type: newPerson.type,
       salutation: newPerson.salutation,
       firstName: newPerson.firstName,
-      middleName: newPerson.middleName || '',
+      middleName: newPerson.middleName || "",
       lastName: newPerson.lastName,
-      nameExtension: newPerson.nameExtension || '',
+      nameExtension: newPerson.nameExtension || "",
       sexAtBirth: newPerson.sexAtBirth,
       civilStatus: newPerson.civilStatus,
-      soloParent: newPerson.soloParent === true || newPerson.soloParent === 'Yes' || newPerson.soloParent === 'YES' ? 'YES' : 'NO',
-      religion: newPerson.religion || '',
-      ethnicGroup: newPerson.ethnicGroup || '',
-      birthdate: newPerson.birthdate || '',
-      philsysNo: newPerson.philsysNo || '',
+      soloParent:
+        newPerson.soloParent === true ||
+        newPerson.soloParent === "Yes" ||
+        newPerson.soloParent === "YES"
+          ? "YES"
+          : "NO",
+      religion: newPerson.religion || "",
+      ethnicGroup: newPerson.ethnicGroup || "",
+      birthdate: newPerson.birthdate || "",
+      philsysNo: newPerson.philsysNo || "",
       noPhilsys: newPerson.noPhilsys === true || newPerson.no_philsys === true,
-      tin: newPerson.tin || '',
+      tin: newPerson.tin || "",
       noTin: newPerson.noTin === true,
-      employeeNo: newPerson.employeeNo || '',
-      depedEmail: newPerson.depedEmail || '',
-      noDepedEmail: newPerson.noDepedEmail === true || newPerson.no_deped_email === true || newPerson.depedEmail === 'N/A',
-      no_deped_email: newPerson.noDepedEmail === true || newPerson.no_deped_email === true || newPerson.depedEmail === 'N/A',
-      deploymentStatus: newPerson.deploymentStatus || 'OWN STATION',
+      employeeNo: newPerson.employeeNo || "",
+      depedEmail: newPerson.depedEmail || "",
+      noDepedEmail:
+        newPerson.noDepedEmail === true ||
+        newPerson.no_deped_email === true ||
+        newPerson.depedEmail === "N/A",
+      no_deped_email:
+        newPerson.noDepedEmail === true ||
+        newPerson.no_deped_email === true ||
+        newPerson.depedEmail === "N/A",
+      deploymentStatus: newPerson.deploymentStatus || "OWN STATION",
       stepIncrement: newPerson.stepIncrement || 1,
-      position: newPerson.position || '',
-      designation: newPerson.designation || '',
-      fundSource: newPerson.fundSource || (newPerson.position === 'COOK' ? 'SBFP' : 'NATIONAL'),
-      natureOfAppointment: newPerson.natureOfAppointment || (newPerson.position === 'COOK' ? 'CONTRACTUAL' : 'REGULAR PERMANENT'),
-      hiringArrangement: newPerson.hiringArrangement || (newPerson.position === 'COOK' ? 'CONTRACTUAL' : 'REGULAR'),
+      position: newPerson.position || "",
+      designation: newPerson.designation || "",
+      fundSource:
+        newPerson.fundSource ||
+        (newPerson.position === "COOK" ? "SBFP" : "NATIONAL"),
+      natureOfAppointment:
+        newPerson.natureOfAppointment ||
+        (newPerson.position === "COOK" ? "CONTRACTUAL" : "REGULAR PERMANENT"),
+      hiringArrangement:
+        newPerson.hiringArrangement ||
+        (newPerson.position === "COOK" ? "CONTRACTUAL" : "REGULAR"),
       assignedSchools: newPerson.assignedSchools || [],
-      assignedGradeLevels: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      assigned_grade_levels: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      gradeLevelsTaught: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      grade_levels_taught: newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      firstServiceDate: newPerson.firstServiceDate || '',
-      lastPromotionDate: newPerson.lastPromotionDate || '',
-      newStationDate: newPerson.newStationDate || '',
-      lastLateralMovementDate: newPerson.lastLateralMovementDate || '',
-      collegeDegree: newPerson.collegeDegree || '',
-      major: newPerson.major || '',
-      minor: newPerson.minor || '',
+      assignedGradeLevels:
+        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
+      assigned_grade_levels:
+        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
+      gradeLevelsTaught:
+        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
+      grade_levels_taught:
+        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
+      firstServiceDate: newPerson.firstServiceDate || "",
+      lastPromotionDate: newPerson.lastPromotionDate || "",
+      newStationDate: newPerson.newStationDate || "",
+      lastLateralMovementDate: newPerson.lastLateralMovementDate || "",
+      collegeDegree: newPerson.collegeDegree || "",
+      major: newPerson.major || "",
+      minor: newPerson.minor || "",
       degreeRows: newPerson.degreeRows || [],
-      postGraduateDegree: newPerson.postGraduateDegree || 'N/A',
-      postGraduateDiscipline: newPerson.postGraduateDiscipline || '{"masters":[],"doctorate":[]}',
-      post_graduate_discipline: newPerson.post_graduate_discipline || '{"masters":[],"doctorate":[]}',
+      postGraduateDegree: newPerson.postGraduateDegree || "N/A",
+      postGraduateDiscipline:
+        newPerson.postGraduateDiscipline || '{"masters":[],"doctorate":[]}',
+      post_graduate_discipline:
+        newPerson.post_graduate_discipline || '{"masters":[],"doctorate":[]}',
       mastersDisciplines: newPerson.mastersDisciplines || [],
       doctorateDisciplines: newPerson.doctorateDisciplines || [],
-      mastersDiscipline: newPerson.mastersDiscipline || '',
-      doctorateDiscipline: newPerson.doctorateDiscipline || '',
-      discipline: newPerson.discipline || '',
-      eligibility: newPerson.eligibility || '',
-      prcSpecialization: newPerson.prcSpecialization || '',
-      prcLicenseNo: newPerson.prcLicenseNo || '',
-      prcExpiryDate: newPerson.prcExpiryDate || '',
+      mastersDiscipline: newPerson.mastersDiscipline || "",
+      doctorateDiscipline: newPerson.doctorateDiscipline || "",
+      discipline: newPerson.discipline || "",
+      eligibility: newPerson.eligibility || "",
+      prcSpecialization: newPerson.prcSpecialization || "",
+      prcLicenseNo: newPerson.prcLicenseNo || "",
+      prcExpiryDate: newPerson.prcExpiryDate || "",
       neapTrainingRows: [],
       certificationRows: [],
       otherTrainingRows: [],
       workloadRows: [],
       teachingRelatedRows: [],
-      administrativeRows: []
+      administrativeRows: [],
     };
-    
-    setPersonnel(prev => [...prev, newRecord]);
+
+    setPersonnel((prev) => [...prev, newRecord]);
     setActivePersonnelId(newId);
     showToast("Personnel added to draft locally.");
     return newId;
@@ -5158,20 +6724,29 @@ export const AppProvider = ({ children }) => {
 
   const deletePersonnel = async (id) => {
     if (!id) return;
-    const target = personnel.find(p => String(p.id) === String(id) || String(p.prn) === String(id));
+    const target = personnel.find(
+      (p) => String(p.id) === String(id) || String(p.prn) === String(id),
+    );
     const targetId = target ? target.id : id;
     const targetPrn = target ? target.prn : null;
 
-    const updatedPersonnel = personnel.filter(p => String(p.id) !== String(id) && String(p.prn) !== String(id));
+    const updatedPersonnel = personnel.filter(
+      (p) => String(p.id) !== String(id) && String(p.prn) !== String(id),
+    );
     setPersonnel(updatedPersonnel);
 
     if (activePersonnelId === targetId || activePersonnelId === id) {
-      setActivePersonnelId(updatedPersonnel.length > 0 ? updatedPersonnel[0].id : '');
+      setActivePersonnelId(
+        updatedPersonnel.length > 0 ? updatedPersonnel[0].id : "",
+      );
     }
 
     // Clean up advisor role in class sections
-    const updatedSections = classSections.map(sec => {
-      if (String(sec.advisorId) === String(targetId) || String(sec.advisorId) === String(id)) {
+    const updatedSections = classSections.map((sec) => {
+      if (
+        String(sec.advisorId) === String(targetId) ||
+        String(sec.advisorId) === String(id)
+      ) {
         return { ...sec, advisorId: null };
       }
       return sec;
@@ -5179,16 +6754,22 @@ export const AppProvider = ({ children }) => {
     setClassSections(updatedSections);
 
     // Track deleted IDs in tombstone list
-    const targetName = target ? `${target.firstName || ''} ${target.lastName || ''}`.trim() : '';
-    const targetEmpNo = target?.employeeNo || target?.employee_no || '';
-    const newDeletedIds = Array.from(new Set([
-      ...deletedPersonnelIds,
-      String(id),
-      String(targetId),
-      targetPrn ? String(targetPrn) : '',
-      targetEmpNo ? String(targetEmpNo) : '',
-      targetName ? targetName.toLowerCase() : ''
-    ].filter(Boolean)));
+    const targetName = target
+      ? `${target.firstName || ""} ${target.lastName || ""}`.trim()
+      : "";
+    const targetEmpNo = target?.employeeNo || target?.employee_no || "";
+    const newDeletedIds = Array.from(
+      new Set(
+        [
+          ...deletedPersonnelIds,
+          String(id),
+          String(targetId),
+          targetPrn ? String(targetPrn) : "",
+          targetEmpNo ? String(targetEmpNo) : "",
+          targetName ? targetName.toLowerCase() : "",
+        ].filter(Boolean),
+      ),
+    );
     setDeletedPersonnelIds(newDeletedIds);
 
     // Clean up local storage
@@ -5204,39 +6785,55 @@ export const AppProvider = ({ children }) => {
 
     // Persist deleted state to IndexedDB and Cloud Draft
     try {
-      const draftKey = `draft_${schoolInfo?.schoolId || getSessionSchoolId()}_${schoolInfo?.schoolYear || 'SY 26-27'}`;
+      const draftKey = `draft_${schoolInfo?.schoolId || getSessionSchoolId()}_${schoolInfo?.schoolYear || "SY 26-27"}`;
       const currentDraft = (await getLocalDraft(draftKey)) || {};
       const newDraftData = {
         ...currentDraft,
         personnel: updatedPersonnel,
         classSections: updatedSections,
         deletedPersonnelIds: newDeletedIds,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
       };
       await setLocalDraft(draftKey, newDraftData);
       if (!loadIncompleteRef.current && schoolInfo?.schoolId) {
         markDraftDirty();
-        saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear || 'SY 26-27', newDraftData).catch(e => reportError(e, { action: 'Saving your draft after removing a personnel record', handler: 'deletePersonnel' }));
+        saveDraft(
+          schoolInfo.schoolId,
+          schoolInfo.schoolYear || "SY 26-27",
+          newDraftData,
+        ).catch((e) =>
+          reportError(e, {
+            action: "Saving your draft after removing a personnel record",
+            handler: "deletePersonnel",
+          }),
+        );
       }
     } catch (err) {
-      console.warn('Error saving draft after delete:', err);
+      console.warn("Error saving draft after delete:", err);
     }
 
     // Permanently delete in backend DB and record tombstone
     try {
       const deleteMeta = {
-        schoolId: schoolInfo?.schoolId || getSessionSchoolId() || '',
+        schoolId: schoolInfo?.schoolId || getSessionSchoolId() || "",
         prn: targetPrn || targetId,
-        firstName: target?.firstName || '',
-        lastName: target?.lastName || '',
-        employeeNo: targetEmpNo
+        firstName: target?.firstName || "",
+        lastName: target?.lastName || "",
+        employeeNo: targetEmpNo,
       };
       await api.deletePersonnel(targetId, deleteMeta);
       if (targetPrn && targetPrn !== targetId) {
-        await api.deletePersonnel(targetPrn, deleteMeta).catch(e => reportError(e, { action: `Deleting personnel record ${targetPrn}`, handler: 'deletePersonnel', ids: { prn: String(targetPrn) }, expectedStatuses: [404] }));
+        await api.deletePersonnel(targetPrn, deleteMeta).catch((e) =>
+          reportError(e, {
+            action: `Deleting personnel record ${targetPrn}`,
+            handler: "deletePersonnel",
+            ids: { prn: String(targetPrn) },
+            expectedStatuses: [404],
+          }),
+        );
       }
     } catch (err) {
-      console.warn('Backend deletePersonnel notice:', err.message);
+      console.warn("Backend deletePersonnel notice:", err.message);
     }
 
     setHasUnsavedChanges(true);
@@ -5245,68 +6842,110 @@ export const AppProvider = ({ children }) => {
 
   const resolveBorrowedPersonnel = async (personId, action) => {
     if (!personId) return;
-    const target = personnel.find(p => String(p.id) === String(personId));
+    const target = personnel.find((p) => String(p.id) === String(personId));
     if (!target) return;
-    const teacherName = `${target.firstName || ''} ${target.lastName || ''}`.trim() || 'Teacher';
+    const teacherName =
+      `${target.firstName || ""} ${target.lastName || ""}`.trim() || "Teacher";
 
-    if (action === 'remove_and_await') {
+    if (action === "remove_and_await") {
       await deletePersonnel(personId);
       try {
         localStorage.removeItem(`draft_personnel_${personId}`);
       } catch (e) {}
       setHasUnsavedChanges(true);
-      showToast(`Removed ${teacherName}. When Mother School tags them as Reassigned, accept them via Request Center.`);
-    } else if (action === 'convert_to_permanent') {
+      showToast(
+        `Removed ${teacherName}. When Mother School tags them as Reassigned, accept them via Request Center.`,
+      );
+    } else if (action === "convert_to_permanent") {
       savePersonnelChanges(personId, {
-        deploymentStatus: 'OWN STATION',
-        deployment_status: 'OWN STATION',
-        fundSource: 'NATIONAL',
-        fund_source: 'NATIONAL',
-        isShared: false
-      }).catch(e => showToast(e.message, 'error'));
-      showToast(`Converted ${teacherName} to Permanent (Own Station) in this school.`);
+        deploymentStatus: "OWN STATION",
+        deployment_status: "OWN STATION",
+        fundSource: "NATIONAL",
+        fund_source: "NATIONAL",
+        isShared: false,
+      }).catch((e) => showToast(e.message, "error"));
+      showToast(
+        `Converted ${teacherName} to Permanent (Own Station) in this school.`,
+      );
     }
   };
 
   const toggleSchoolHead = async (id, isSchoolHead) => {
-    const targetPerson = personnel.find(item => String(item.id) === String(id));
+    const targetPerson = personnel.find(
+      (item) => String(item.id) === String(id),
+    );
     if (isSchoolHead && targetPerson) {
-      const typeStr = String(targetPerson.type || targetPerson.category || '').toLowerCase().replace(/[^a-z]/g, '');
-      if (typeStr === 'nonteaching') {
-        showToast("⚠️ Non-Teaching personnel cannot be designated as School Head.");
+      const typeStr = String(targetPerson.type || targetPerson.category || "")
+        .toLowerCase()
+        .replace(/[^a-z]/g, "");
+      if (typeStr === "nonteaching") {
+        showToast(
+          "⚠️ Non-Teaching personnel cannot be designated as School Head.",
+        );
         return;
       }
     }
-    setPersonnel(prev => prev.map(item => {
-      const isTarget = String(item.id) === String(id);
-      if (isTarget) {
-        return { ...item, isSchoolHead: Boolean(isSchoolHead), is_school_head: Boolean(isSchoolHead) };
-      }
-      if (isSchoolHead) {
-        return { ...item, isSchoolHead: false, is_school_head: false };
-      }
-      return item;
-    }));
+    setPersonnel((prev) =>
+      prev.map((item) => {
+        const isTarget = String(item.id) === String(id);
+        if (isTarget) {
+          return {
+            ...item,
+            isSchoolHead: Boolean(isSchoolHead),
+            is_school_head: Boolean(isSchoolHead),
+          };
+        }
+        if (isSchoolHead) {
+          return { ...item, isSchoolHead: false, is_school_head: false };
+        }
+        return item;
+      }),
+    );
     setHasUnsavedChanges(true);
 
     if (targetPerson) {
       savePersonnelChanges(id, {
         ...targetPerson,
         isSchoolHead: Boolean(isSchoolHead),
-        is_school_head: Boolean(isSchoolHead)
-      }).catch(e => showToast(e.message, 'error'));
-      if (typeof api !== 'undefined' && api.toggleSchoolHead) {
-        api.toggleSchoolHead(id, Boolean(isSchoolHead)).catch(e => reportError(e, { action: `Updating the School Head flag for ${id}`, handler: 'toggleSchoolHead', ids: { personnel_id: String(id) } }));
+        is_school_head: Boolean(isSchoolHead),
+      }).catch((e) => showToast(e.message, "error"));
+      if (typeof api !== "undefined" && api.toggleSchoolHead) {
+        api.toggleSchoolHead(id, Boolean(isSchoolHead)).catch((e) =>
+          reportError(e, {
+            action: `Updating the School Head flag for ${id}`,
+            handler: "toggleSchoolHead",
+            ids: { personnel_id: String(id) },
+          }),
+        );
       }
     }
 
-    showToast(isSchoolHead ? "School Head designated." : "School Head designation removed.");
+    showToast(
+      isSchoolHead
+        ? "School Head designated."
+        : "School Head designation removed.",
+    );
   };
 
-  const addClassSection = async (gradeLevelOrObj, sectionName, advisorId, sectionType, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null, maleLearners = null, femaleLearners = null) => {
+  const addClassSection = async (
+    gradeLevelOrObj,
+    sectionName,
+    advisorId,
+    sectionType,
+    advisoryMinutes = 300,
+    hgpMinutes = 60,
+    numberOfLearners = null,
+    maleLearners = null,
+    femaleLearners = null,
+  ) => {
     if (!initialLoadCompleteRef.current || loadIncompleteRef.current) {
-      console.warn('[AppContext] addClassSection blocked: initial load is not complete.');
-      showToast('Please wait for your school data to finish loading.', 'warning');
+      console.warn(
+        "[AppContext] addClassSection blocked: initial load is not complete.",
+      );
+      showToast(
+        "Please wait for your school data to finish loading.",
+        "warning",
+      );
       return;
     }
     let finalGradeLevel = gradeLevelOrObj;
@@ -5319,10 +6958,15 @@ export const AppProvider = ({ children }) => {
     let finalMale = maleLearners;
     let finalFemale = femaleLearners;
 
-    if (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) {
+    if (typeof gradeLevelOrObj === "object" && gradeLevelOrObj !== null) {
       finalGradeLevel = gradeLevelOrObj.gradeLevel;
       finalSectionName = gradeLevelOrObj.sectionName;
-      finalAdvisorId = gradeLevelOrObj.advisorId || gradeLevelOrObj.adviserId || gradeLevelOrObj.assignedTeacherId || gradeLevelOrObj.tutorId || gradeLevelOrObj.adviser_id;
+      finalAdvisorId =
+        gradeLevelOrObj.advisorId ||
+        gradeLevelOrObj.adviserId ||
+        gradeLevelOrObj.assignedTeacherId ||
+        gradeLevelOrObj.tutorId ||
+        gradeLevelOrObj.adviser_id;
       finalSectionType = gradeLevelOrObj.sectionType;
       finalAdvisoryMins = gradeLevelOrObj.advisoryMinutes || 300;
       finalHgpMins = gradeLevelOrObj.hgpMinutes || 60;
@@ -5331,37 +6975,92 @@ export const AppProvider = ({ children }) => {
       finalFemale = gradeLevelOrObj.femaleLearners;
     }
 
-    const calcMale = finalMale !== undefined && finalMale !== null && finalMale !== '' ? Number(finalMale) : null;
-    const calcFemale = finalFemale !== undefined && finalFemale !== null && finalFemale !== '' ? Number(finalFemale) : null;
-    let computedTotal = finalLearners !== undefined && finalLearners !== null && finalLearners !== '' ? Number(finalLearners) : null;
+    const calcMale =
+      finalMale !== undefined && finalMale !== null && finalMale !== ""
+        ? Number(finalMale)
+        : null;
+    const calcFemale =
+      finalFemale !== undefined && finalFemale !== null && finalFemale !== ""
+        ? Number(finalFemale)
+        : null;
+    let computedTotal =
+      finalLearners !== undefined &&
+      finalLearners !== null &&
+      finalLearners !== ""
+        ? Number(finalLearners)
+        : null;
     if (calcMale !== null || calcFemale !== null) {
       computedTotal = (calcMale || 0) + (calcFemale || 0);
     }
 
-    const isRemedial = finalSectionType === 'REMEDIAL';
-    const isEnrichment = finalSectionType === 'ENRICHMENT';
+    const isRemedial = finalSectionType === "REMEDIAL";
+    const isEnrichment = finalSectionType === "ENRICHMENT";
     const isAral = Boolean(
-      finalSectionType === 'ARAL' || String(finalSectionType || '').toUpperCase().includes('ARAL') ||
-      String(finalGradeLevel || '').toUpperCase().includes('ARAL') ||
-      String(finalSectionName || '').toUpperCase().includes('ARAL') ||
-      (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null && (
-        gradeLevelOrObj.aralBasis || gradeLevelOrObj.aralToolKey || gradeLevelOrObj.aralTool ||
-        String(gradeLevelOrObj.sectionType || '').toUpperCase().includes('ARAL') ||
-        String(gradeLevelOrObj.gradeLevel || '').toUpperCase().includes('ARAL')
-      )) ||
-      ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(t => 
-        String(finalGradeLevel || '').toUpperCase().includes(t) ||
-        String(finalSectionType || '').toUpperCase().includes(t) ||
-        String(finalSectionName || '').toUpperCase().includes(t) ||
-        (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null && (
-          String(gradeLevelOrObj.gradeLevel || '').toUpperCase().includes(t) ||
-          String(gradeLevelOrObj.sectionType || '').toUpperCase().includes(t) ||
-          String(gradeLevelOrObj.sectionName || '').toUpperCase().includes(t)
-        ))
-      )
+      finalSectionType === "ARAL" ||
+      String(finalSectionType || "")
+        .toUpperCase()
+        .includes("ARAL") ||
+      String(finalGradeLevel || "")
+        .toUpperCase()
+        .includes("ARAL") ||
+      String(finalSectionName || "")
+        .toUpperCase()
+        .includes("ARAL") ||
+      (typeof gradeLevelOrObj === "object" &&
+        gradeLevelOrObj !== null &&
+        (gradeLevelOrObj.aralBasis ||
+          gradeLevelOrObj.aralToolKey ||
+          gradeLevelOrObj.aralTool ||
+          String(gradeLevelOrObj.sectionType || "")
+            .toUpperCase()
+            .includes("ARAL") ||
+          String(gradeLevelOrObj.gradeLevel || "")
+            .toUpperCase()
+            .includes("ARAL"))) ||
+      ["PHIL-IRI", "PHIL IRI", "CRLA", "EGRA", "ALNAT", "RMA", "TOS"].some(
+        (t) =>
+          String(finalGradeLevel || "")
+            .toUpperCase()
+            .includes(t) ||
+          String(finalSectionType || "")
+            .toUpperCase()
+            .includes(t) ||
+          String(finalSectionName || "")
+            .toUpperCase()
+            .includes(t) ||
+          (typeof gradeLevelOrObj === "object" &&
+            gradeLevelOrObj !== null &&
+            (String(gradeLevelOrObj.gradeLevel || "")
+              .toUpperCase()
+              .includes(t) ||
+              String(gradeLevelOrObj.sectionType || "")
+                .toUpperCase()
+                .includes(t) ||
+              String(gradeLevelOrObj.sectionName || "")
+                .toUpperCase()
+                .includes(t))),
+      ),
     );
-    const isALS = (finalSectionType === 'ALS' || String(finalSectionType || '').toUpperCase().includes('ALS') || String(finalGradeLevel || '').toUpperCase().includes('ALS'));
-    const isSNED = (finalSectionType === 'SNED' || finalSectionType === 'NON-GRADED' || String(finalSectionType || '').toUpperCase().includes('SNED') || String(finalGradeLevel || '').toUpperCase().includes('SNED') || String(finalGradeLevel || '').toUpperCase().includes('NON-GRADED'));
+    const isALS =
+      finalSectionType === "ALS" ||
+      String(finalSectionType || "")
+        .toUpperCase()
+        .includes("ALS") ||
+      String(finalGradeLevel || "")
+        .toUpperCase()
+        .includes("ALS");
+    const isSNED =
+      finalSectionType === "SNED" ||
+      finalSectionType === "NON-GRADED" ||
+      String(finalSectionType || "")
+        .toUpperCase()
+        .includes("SNED") ||
+      String(finalGradeLevel || "")
+        .toUpperCase()
+        .includes("SNED") ||
+      String(finalGradeLevel || "")
+        .toUpperCase()
+        .includes("NON-GRADED");
 
     const localSecId = `sec-draft-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
@@ -5370,63 +7069,150 @@ export const AppProvider = ({ children }) => {
       gradeLevel: finalGradeLevel,
       sectionName: finalSectionName,
       advisorId: finalAdvisorId ? String(finalAdvisorId) : null,
-      sectionType: isAral ? (finalSectionType && finalSectionType !== 'MONO GRADE' ? finalSectionType : 'ARAL') : (finalSectionType || 'MONO GRADE'),
+      sectionType: isAral
+        ? finalSectionType && finalSectionType !== "MONO GRADE"
+          ? finalSectionType
+          : "ARAL"
+        : finalSectionType || "MONO GRADE",
       advisoryMinutes: Number(finalAdvisoryMins) || 300,
       hgpMinutes: Number(finalHgpMins) || 60,
       numberOfLearners: computedTotal,
       maleLearners: calcMale,
       femaleLearners: calcFemale,
-      adviserRemarks: (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) ? (gradeLevelOrObj.adviserRemarks || gradeLevelOrObj.adviser_remarks || null) : null,
-      adviser_remarks: (typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null) ? (gradeLevelOrObj.adviserRemarks || gradeLevelOrObj.adviser_remarks || null) : null,
-      ...(typeof gradeLevelOrObj === 'object' && gradeLevelOrObj !== null ? gradeLevelOrObj : {})
+      adviserRemarks:
+        typeof gradeLevelOrObj === "object" && gradeLevelOrObj !== null
+          ? gradeLevelOrObj.adviserRemarks ||
+            gradeLevelOrObj.adviser_remarks ||
+            null
+          : null,
+      adviser_remarks:
+        typeof gradeLevelOrObj === "object" && gradeLevelOrObj !== null
+          ? gradeLevelOrObj.adviserRemarks ||
+            gradeLevelOrObj.adviser_remarks ||
+            null
+          : null,
+      ...(typeof gradeLevelOrObj === "object" && gradeLevelOrObj !== null
+        ? gradeLevelOrObj
+        : {}),
     };
 
     const isProgramTypeMatching = (s1Type, s2Type) => {
-      const isA1 = String(s1Type || '').toUpperCase().includes('ARAL');
-      const isA2 = String(s2Type || '').toUpperCase().includes('ARAL');
+      const isA1 = String(s1Type || "")
+        .toUpperCase()
+        .includes("ARAL");
+      const isA2 = String(s2Type || "")
+        .toUpperCase()
+        .includes("ARAL");
       if (isA1 || isA2) return isA1 === isA2;
-      const isS1 = String(s1Type || '').toUpperCase().includes('SNED') || String(s1Type || '').toUpperCase().includes('NON-GRADED');
-      const isS2 = String(s2Type || '').toUpperCase().includes('SNED') || String(s2Type || '').toUpperCase().includes('NON-GRADED');
+      const isS1 =
+        String(s1Type || "")
+          .toUpperCase()
+          .includes("SNED") ||
+        String(s1Type || "")
+          .toUpperCase()
+          .includes("NON-GRADED");
+      const isS2 =
+        String(s2Type || "")
+          .toUpperCase()
+          .includes("SNED") ||
+        String(s2Type || "")
+          .toUpperCase()
+          .includes("NON-GRADED");
       if (isS1 || isS2) return isS1 === isS2;
-      const isL1 = String(s1Type || '').toUpperCase().includes('ALS');
-      const isL2 = String(s2Type || '').toUpperCase().includes('ALS');
+      const isL1 = String(s1Type || "")
+        .toUpperCase()
+        .includes("ALS");
+      const isL2 = String(s2Type || "")
+        .toUpperCase()
+        .includes("ALS");
       if (isL1 || isL2) return isL1 === isL2;
-      const isR1 = String(s1Type || '').toUpperCase().includes('REMEDIAL') || String(s1Type || '').toUpperCase().includes('ENRICHMENT');
-      const isR2 = String(s2Type || '').toUpperCase().includes('REMEDIAL') || String(s2Type || '').toUpperCase().includes('ENRICHMENT');
+      const isR1 =
+        String(s1Type || "")
+          .toUpperCase()
+          .includes("REMEDIAL") ||
+        String(s1Type || "")
+          .toUpperCase()
+          .includes("ENRICHMENT");
+      const isR2 =
+        String(s2Type || "")
+          .toUpperCase()
+          .includes("REMEDIAL") ||
+        String(s2Type || "")
+          .toUpperCase()
+          .includes("ENRICHMENT");
       if (isR1 || isR2) return isR1 === isR2;
       return true;
     };
 
-    setClassSections(prev => [
-      ...prev.filter(s => {
-        if (s.id && newSec.id && String(s.id) === String(newSec.id)) return false;
-        const sameGrade = String(s.gradeLevel || '').trim().toUpperCase() === String(finalGradeLevel || '').trim().toUpperCase();
-        const sameName = String(s.sectionName || '').trim().toUpperCase() === String(finalSectionName || '').trim().toUpperCase();
-        const sameCategory = isProgramTypeMatching(s.sectionType, newSec.sectionType);
+    setClassSections((prev) => [
+      ...prev.filter((s) => {
+        if (s.id && newSec.id && String(s.id) === String(newSec.id))
+          return false;
+        const sameGrade =
+          String(s.gradeLevel || "")
+            .trim()
+            .toUpperCase() ===
+          String(finalGradeLevel || "")
+            .trim()
+            .toUpperCase();
+        const sameName =
+          String(s.sectionName || "")
+            .trim()
+            .toUpperCase() ===
+          String(finalSectionName || "")
+            .trim()
+            .toUpperCase();
+        const sameCategory = isProgramTypeMatching(
+          s.sectionType,
+          newSec.sectionType,
+        );
         return !(sameGrade && sameName && sameCategory);
       }),
-      newSec
+      newSec,
     ]);
 
     if (finalAdvisorId) {
-      setPersonnel(prevPersonnel => {
-        return prevPersonnel.map(p => {
+      setPersonnel((prevPersonnel) => {
+        return prevPersonnel.map((p) => {
           let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
           const secId = localSecId;
 
           if (String(p.id) !== String(finalAdvisorId)) {
             // Remove any stale advisory / HGP / specialized row for this section from previous teachers
-            const filteredRows = rows.filter(r => !(
-              (r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP' || r.subject === 'ALS LEARNING STRAND' || r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'REMEDIATION' || r.subject === 'ENRICHMENT' || r.subject === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING') &&
-              ((r.sectionId && String(r.sectionId) === String(localSecId)) || ((r.sectionName || '').trim().toUpperCase() === String(finalSectionName || '').trim().toUpperCase() && r.gradeLevel === finalGradeLevel))
-            ));
+            const filteredRows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === "ADVISORY" ||
+                    r.subject === "HGP" ||
+                    r.subjectName === "ADVISORY" ||
+                    r.subjectName === "HGP" ||
+                    r.subject === "ALS LEARNING STRAND" ||
+                    r.subject === "SNED MODIFIED SUBJECT" ||
+                    r.subject === "REMEDIATION" ||
+                    r.subject === "ENRICHMENT" ||
+                    r.subject === "ARAL" ||
+                    r.subject === "ARAL TUTORING" ||
+                    r.subjectName === "ARAL TUTORING") &&
+                  ((r.sectionId &&
+                    String(r.sectionId) === String(localSecId)) ||
+                    ((r.sectionName || "").trim().toUpperCase() ===
+                      String(finalSectionName || "")
+                        .trim()
+                        .toUpperCase() &&
+                      r.gradeLevel === finalGradeLevel))
+                ),
+            );
             if (filteredRows.length !== rows.length) {
               const draftKey = `draft_workload_${p.id}`;
               const savedDraft = localStorage.getItem(draftKey);
               if (savedDraft) {
                 try {
                   const parsed = JSON.parse(savedDraft);
-                  if (parsed) localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: filteredRows }));
+                  if (parsed)
+                    localStorage.setItem(
+                      draftKey,
+                      JSON.stringify({ ...parsed, workloadRows: filteredRows }),
+                    );
                 } catch (e) {}
               }
               return { ...p, workloadRows: filteredRows };
@@ -5435,89 +7221,189 @@ export const AppProvider = ({ children }) => {
           }
 
           if (isSNED) {
-            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
-            const hasSned = rows.some(r => (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subjectName === 'SNED MODIFIED SUBJECT') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            rows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === "ADVISORY" ||
+                    r.subject === "HGP" ||
+                    r.subjectName === "ADVISORY" ||
+                    r.subjectName === "HGP") &&
+                  (String(r.sectionId) === String(secId) ||
+                    (r.sectionName === finalSectionName &&
+                      r.gradeLevel === finalGradeLevel))
+                ),
+            );
+            const hasSned = rows.some(
+              (r) =>
+                (r.subject === "SNED MODIFIED SUBJECT" ||
+                  r.subject === "SNED" ||
+                  r.subjectName === "SNED MODIFIED SUBJECT") &&
+                (String(r.sectionId) === String(secId) ||
+                  (r.sectionName === finalSectionName &&
+                    r.gradeLevel === finalGradeLevel)),
+            );
             if (!hasSned) {
               rows.unshift({
                 id: `wk-sned-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'SNED MODIFIED SUBJECT',
-                subjectName: 'SNED MODIFIED SUBJECT',
-                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                days: ['M', 'T', 'W', 'TH', 'F'],
-                startTime: '08:00',
-                endTime: '09:00',
-                durationMinutes: 60
+                subject: "SNED MODIFIED SUBJECT",
+                subjectName: "SNED MODIFIED SUBJECT",
+                daySchedule: "Mon, Tue, Wed, Thu, Fri",
+                days: ["M", "T", "W", "TH", "F"],
+                startTime: "08:00",
+                endTime: "09:00",
+                durationMinutes: 60,
               });
             }
           } else if (isALS) {
-            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
-            const hasAls = rows.some(r => (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS' || r.subjectName === 'ALS LEARNING STRAND') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            rows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === "ADVISORY" ||
+                    r.subject === "HGP" ||
+                    r.subjectName === "ADVISORY" ||
+                    r.subjectName === "HGP") &&
+                  (String(r.sectionId) === String(secId) ||
+                    (r.sectionName === finalSectionName &&
+                      r.gradeLevel === finalGradeLevel))
+                ),
+            );
+            const hasAls = rows.some(
+              (r) =>
+                (r.subject === "ALS LEARNING STRAND" ||
+                  r.subject === "ALS" ||
+                  r.subjectName === "ALS LEARNING STRAND") &&
+                (String(r.sectionId) === String(secId) ||
+                  (r.sectionName === finalSectionName &&
+                    r.gradeLevel === finalGradeLevel)),
+            );
             if (!hasAls) {
               rows.unshift({
                 id: `wk-als-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'ALS LEARNING STRAND',
-                subjectName: 'ALS LEARNING STRAND',
-                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                days: ['M', 'T', 'W', 'TH', 'F'],
-                startTime: '08:00',
-                endTime: '09:00',
-                durationMinutes: 60
+                subject: "ALS LEARNING STRAND",
+                subjectName: "ALS LEARNING STRAND",
+                daySchedule: "Mon, Tue, Wed, Thu, Fri",
+                days: ["M", "T", "W", "TH", "F"],
+                startTime: "08:00",
+                endTime: "09:00",
+                durationMinutes: 60,
               });
             }
           } else if (isRemedial) {
-            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
-            const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            rows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === "ADVISORY" ||
+                    r.subject === "HGP" ||
+                    r.subjectName === "ADVISORY" ||
+                    r.subjectName === "HGP") &&
+                  (String(r.sectionId) === String(secId) ||
+                    (r.sectionName === finalSectionName &&
+                      r.gradeLevel === finalGradeLevel))
+                ),
+            );
+            const hasRem = rows.some(
+              (r) =>
+                (r.subject === "REMEDIATION" ||
+                  r.subjectName === "REMEDIATION") &&
+                (String(r.sectionId) === String(secId) ||
+                  (r.sectionName === finalSectionName &&
+                    r.gradeLevel === finalGradeLevel)),
+            );
             if (!hasRem) {
               rows.push({
                 id: `wk-rem-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'REMEDIATION',
-                subjectName: 'REMEDIATION',
-                daySchedule: 'Mon, Wed, Fri',
-                days: ['M', 'W', 'F'],
-                startTime: '15:00',
-                endTime: '16:00',
-                durationMinutes: 60
+                subject: "REMEDIATION",
+                subjectName: "REMEDIATION",
+                daySchedule: "Mon, Wed, Fri",
+                days: ["M", "W", "F"],
+                startTime: "15:00",
+                endTime: "16:00",
+                durationMinutes: 60,
               });
             }
           } else if (isEnrichment) {
-            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
-            const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            rows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === "ADVISORY" ||
+                    r.subject === "HGP" ||
+                    r.subjectName === "ADVISORY" ||
+                    r.subjectName === "HGP") &&
+                  (String(r.sectionId) === String(secId) ||
+                    (r.sectionName === finalSectionName &&
+                      r.gradeLevel === finalGradeLevel))
+                ),
+            );
+            const hasEnr = rows.some(
+              (r) =>
+                (r.subject === "ENRICHMENT" ||
+                  r.subjectName === "ENRICHMENT") &&
+                (String(r.sectionId) === String(secId) ||
+                  (r.sectionName === finalSectionName &&
+                    r.gradeLevel === finalGradeLevel)),
+            );
             if (!hasEnr) {
               rows.push({
                 id: `wk-enr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'ENRICHMENT',
-                subjectName: 'ENRICHMENT',
-                daySchedule: 'Tue, Thu',
-                days: ['T', 'TH'],
-                startTime: '15:00',
-                endTime: '16:00',
-                durationMinutes: 60
+                subject: "ENRICHMENT",
+                subjectName: "ENRICHMENT",
+                daySchedule: "Tue, Thu",
+                days: ["T", "TH"],
+                startTime: "15:00",
+                endTime: "16:00",
+                durationMinutes: 60,
               });
             }
           } else if (isAral) {
             // ARAL sections strictly receive ARAL TUTORING and NEVER ADVISORY or HGP
-            rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel))));
-            const hasAral = rows.some(r => (r.subject === 'ARAL' || r.subjectName === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING') && (String(r.sectionId) === String(secId) || (r.sectionName === finalSectionName && r.gradeLevel === finalGradeLevel)));
+            rows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === "ADVISORY" ||
+                    r.subject === "HGP" ||
+                    r.subjectName === "ADVISORY" ||
+                    r.subjectName === "HGP") &&
+                  (String(r.sectionId) === String(secId) ||
+                    (r.sectionName === finalSectionName &&
+                      r.gradeLevel === finalGradeLevel))
+                ),
+            );
+            const hasAral = rows.some(
+              (r) =>
+                (r.subject === "ARAL" ||
+                  r.subjectName === "ARAL" ||
+                  r.subject === "ARAL TUTORING" ||
+                  r.subjectName === "ARAL TUTORING") &&
+                (String(r.sectionId) === String(secId) ||
+                  (r.sectionName === finalSectionName &&
+                    r.gradeLevel === finalGradeLevel)),
+            );
             if (!hasAral) {
-              let aralStart = '15:00';
-              let aralEnd = '16:00';
-              const existingAralCount = rows.filter(r => (r.subject === 'ARAL' || r.subjectName === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL TUTORING')).length;
+              let aralStart = "15:00";
+              let aralEnd = "16:00";
+              const existingAralCount = rows.filter(
+                (r) =>
+                  r.subject === "ARAL" ||
+                  r.subjectName === "ARAL" ||
+                  r.subject === "ARAL TUTORING" ||
+                  r.subjectName === "ARAL TUTORING",
+              ).length;
               if (existingAralCount > 0) {
                 const startHour = 15 + Math.min(existingAralCount, 3);
                 const endHour = startHour + 1;
-                const pad = n => String(n).padStart(2, '0');
+                const pad = (n) => String(n).padStart(2, "0");
                 aralStart = `${pad(startHour)}:00`;
                 aralEnd = `${pad(endHour)}:00`;
               }
@@ -5526,51 +7412,73 @@ export const AppProvider = ({ children }) => {
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'ARAL TUTORING',
-                subjectName: 'ARAL TUTORING',
-                daySchedule: 'Mon, Tue, Wed, Thu',
-                days: ['M', 'T', 'W', 'TH'],
+                subject: "ARAL TUTORING",
+                subjectName: "ARAL TUTORING",
+                daySchedule: "Mon, Tue, Wed, Thu",
+                days: ["M", "T", "W", "TH"],
                 startTime: aralStart,
                 endTime: aralEnd,
-                durationMinutes: 60
+                durationMinutes: 60,
               });
             }
           } else {
-            const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY'));
+            const hasAdv = rows.some(
+              (r) => r.subject === "ADVISORY" || r.subjectName === "ADVISORY",
+            );
             if (!hasAdv) {
               rows.unshift({
                 id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'ADVISORY',
-                subjectName: 'ADVISORY',
-                daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                days: ['M', 'T', 'W', 'TH', 'F'],
-                startTime: '07:30',
-                endTime: '08:30',
-                durationMinutes: 60
+                subject: "ADVISORY",
+                subjectName: "ADVISORY",
+                daySchedule: "Mon, Tue, Wed, Thu, Fri",
+                days: ["M", "T", "W", "TH", "F"],
+                startTime: "07:30",
+                endTime: "08:30",
+                durationMinutes: 60,
               });
             } else {
-              rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionId: secId, sectionName: finalSectionName, gradeLevel: finalGradeLevel } : r);
+              rows = rows.map((r) =>
+                r.subject === "ADVISORY" || r.subjectName === "ADVISORY"
+                  ? {
+                      ...r,
+                      sectionId: secId,
+                      sectionName: finalSectionName,
+                      gradeLevel: finalGradeLevel,
+                    }
+                  : r,
+              );
             }
-            const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP'));
+            const hasHgp = rows.some(
+              (r) => r.subject === "HGP" || r.subjectName === "HGP",
+            );
             if (!hasHgp) {
               rows.push({
                 id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                 sectionId: secId,
                 sectionName: finalSectionName,
                 gradeLevel: finalGradeLevel,
-                subject: 'HGP',
-                subjectName: 'HGP',
-                daySchedule: 'Fri',
-                days: ['F'],
-                startTime: '07:30',
-                endTime: '08:30',
-                durationMinutes: 60
+                subject: "HGP",
+                subjectName: "HGP",
+                daySchedule: "Fri",
+                days: ["F"],
+                startTime: "07:30",
+                endTime: "08:30",
+                durationMinutes: 60,
               });
             } else {
-              rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionId: secId, sectionName: finalSectionName, gradeLevel: finalGradeLevel } : r);
+              rows = rows.map((r) =>
+                r.subject === "HGP" || r.subjectName === "HGP"
+                  ? {
+                      ...r,
+                      sectionId: secId,
+                      sectionName: finalSectionName,
+                      gradeLevel: finalGradeLevel,
+                    }
+                  : r,
+              );
             }
           }
 
@@ -5581,7 +7489,10 @@ export const AppProvider = ({ children }) => {
             try {
               const parsed = JSON.parse(savedDraft);
               if (parsed) {
-                localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: rows }));
+                localStorage.setItem(
+                  draftKey,
+                  JSON.stringify({ ...parsed, workloadRows: rows }),
+                );
               }
             } catch (e) {}
           }
@@ -5592,223 +7503,491 @@ export const AppProvider = ({ children }) => {
     }
 
     setHasUnsavedChanges(true);
-    showToast('Class section added.');
+    showToast("Class section added.");
     return newSec;
   };
 
   const updateSectionDetails = async (sectionId, updates = {}) => {
-    const { sectionName, gradeLevel, sectionType, numberOfLearners, maleLearners, femaleLearners, advisorId, adviserRemarks, adviser_remarks } = updates;
-    const calcMale = maleLearners !== null && maleLearners !== undefined && maleLearners !== '' ? Number(maleLearners) : null;
-    const calcFemale = femaleLearners !== null && femaleLearners !== undefined && femaleLearners !== '' ? Number(femaleLearners) : null;
-    let computedTotal = numberOfLearners !== null && numberOfLearners !== undefined && numberOfLearners !== '' ? Number(numberOfLearners) : null;
+    const {
+      sectionName,
+      gradeLevel,
+      sectionType,
+      numberOfLearners,
+      maleLearners,
+      femaleLearners,
+      advisorId,
+      adviserRemarks,
+      adviser_remarks,
+    } = updates;
+    const calcMale =
+      maleLearners !== null && maleLearners !== undefined && maleLearners !== ""
+        ? Number(maleLearners)
+        : null;
+    const calcFemale =
+      femaleLearners !== null &&
+      femaleLearners !== undefined &&
+      femaleLearners !== ""
+        ? Number(femaleLearners)
+        : null;
+    let computedTotal =
+      numberOfLearners !== null &&
+      numberOfLearners !== undefined &&
+      numberOfLearners !== ""
+        ? Number(numberOfLearners)
+        : null;
     if (calcMale !== null || calcFemale !== null) {
       computedTotal = (calcMale || 0) + (calcFemale || 0);
     }
-    const strAdvisorId = advisorId !== undefined ? (advisorId ? String(advisorId) : null) : undefined;
+    const strAdvisorId =
+      advisorId !== undefined
+        ? advisorId
+          ? String(advisorId)
+          : null
+        : undefined;
 
-    const origSec = (classSections || []).find(s => String(s.id) === String(sectionId));
+    const origSec = (classSections || []).find(
+      (s) => String(s.id) === String(sectionId),
+    );
     let targetSec = null;
-    setClassSections(prev => prev.map(s => {
-      if (String(s.id) === String(sectionId)) {
-        targetSec = {
-          ...s,
-          sectionName: sectionName || s.sectionName,
-          gradeLevel: gradeLevel || s.gradeLevel,
-          sectionType: sectionType || s.sectionType,
-          numberOfLearners: computedTotal !== null ? computedTotal : s.numberOfLearners,
-          maleLearners: calcMale !== null ? calcMale : s.maleLearners,
-          femaleLearners: calcFemale !== null ? calcFemale : s.femaleLearners,
-          advisorId: strAdvisorId !== undefined ? strAdvisorId : s.advisorId,
-          adviserRemarks: adviserRemarks !== undefined ? adviserRemarks : (adviser_remarks !== undefined ? adviser_remarks : s.adviserRemarks),
-          adviser_remarks: adviser_remarks !== undefined ? adviser_remarks : (adviserRemarks !== undefined ? adviserRemarks : s.adviser_remarks)
-        };
-        return targetSec;
-      }
-      return s;
-    }));
+    setClassSections((prev) =>
+      prev.map((s) => {
+        if (String(s.id) === String(sectionId)) {
+          targetSec = {
+            ...s,
+            sectionName: sectionName || s.sectionName,
+            gradeLevel: gradeLevel || s.gradeLevel,
+            sectionType: sectionType || s.sectionType,
+            numberOfLearners:
+              computedTotal !== null ? computedTotal : s.numberOfLearners,
+            maleLearners: calcMale !== null ? calcMale : s.maleLearners,
+            femaleLearners: calcFemale !== null ? calcFemale : s.femaleLearners,
+            advisorId: strAdvisorId !== undefined ? strAdvisorId : s.advisorId,
+            adviserRemarks:
+              adviserRemarks !== undefined
+                ? adviserRemarks
+                : adviser_remarks !== undefined
+                  ? adviser_remarks
+                  : s.adviserRemarks,
+            adviser_remarks:
+              adviser_remarks !== undefined
+                ? adviser_remarks
+                : adviserRemarks !== undefined
+                  ? adviserRemarks
+                  : s.adviser_remarks,
+          };
+          return targetSec;
+        }
+        return s;
+      }),
+    );
 
     if (targetSec && strAdvisorId !== undefined) {
-      setPersonnel(prevPersonnel => {
-        return prevPersonnel.map(p => {
+      setPersonnel((prevPersonnel) => {
+        return prevPersonnel.map((p) => {
           let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
           const isTargetTeacher = strAdvisorId && String(p.id) === strAdvisorId;
-          const isRemedial = targetSec.sectionType === 'REMEDIAL';
-          const isEnrichment = targetSec.sectionType === 'ENRICHMENT';
+          const isRemedial = targetSec.sectionType === "REMEDIAL";
+          const isEnrichment = targetSec.sectionType === "ENRICHMENT";
           const isAral = Boolean(
-            targetSec.sectionType === 'ARAL' || String(targetSec.sectionType || '').toUpperCase().includes('ARAL') ||
-            String(targetSec.gradeLevel || '').toUpperCase().includes('ARAL') ||
-            String(targetSec.sectionName || '').toUpperCase().includes('ARAL') ||
-            Boolean(targetSec.aralBasis || targetSec.aralToolKey || targetSec.aralTool) ||
-            ['PHIL-IRI', 'PHIL IRI', 'CRLA', 'EGRA', 'ALNAT', 'RMA', 'TOS'].some(tool =>
-              String(targetSec.gradeLevel || '').toUpperCase().includes(tool) ||
-              String(targetSec.sectionType || '').toUpperCase().includes(tool) ||
-              String(targetSec.sectionName || '').toUpperCase().includes(tool)
-            )
+            targetSec.sectionType === "ARAL" ||
+            String(targetSec.sectionType || "")
+              .toUpperCase()
+              .includes("ARAL") ||
+            String(targetSec.gradeLevel || "")
+              .toUpperCase()
+              .includes("ARAL") ||
+            String(targetSec.sectionName || "")
+              .toUpperCase()
+              .includes("ARAL") ||
+            Boolean(
+              targetSec.aralBasis ||
+              targetSec.aralToolKey ||
+              targetSec.aralTool,
+            ) ||
+            [
+              "PHIL-IRI",
+              "PHIL IRI",
+              "CRLA",
+              "EGRA",
+              "ALNAT",
+              "RMA",
+              "TOS",
+            ].some(
+              (tool) =>
+                String(targetSec.gradeLevel || "")
+                  .toUpperCase()
+                  .includes(tool) ||
+                String(targetSec.sectionType || "")
+                  .toUpperCase()
+                  .includes(tool) ||
+                String(targetSec.sectionName || "")
+                  .toUpperCase()
+                  .includes(tool),
+            ),
           );
-          const isALS = (targetSec.sectionType === 'ALS' || String(targetSec.sectionType || '').toUpperCase().includes('ALS') || String(targetSec.gradeLevel || '').toUpperCase().includes('ALS'));
-          const isSNED = (targetSec.sectionType === 'SNED' || targetSec.sectionType === 'NON-GRADED' || String(targetSec.sectionType || '').toUpperCase().includes('SNED') || String(targetSec.gradeLevel || '').toUpperCase().includes('SNED') || String(targetSec.gradeLevel || '').toUpperCase().includes('NON-GRADED'));
-          const linkedSub = isALS ? 'ALS LEARNING STRAND' : (isSNED ? 'SNED MODIFIED SUBJECT' : (isRemedial ? 'REMEDIATION' : (isEnrichment ? 'ENRICHMENT' : (isAral ? 'ARAL TUTORING' : 'ADVISORY'))));
+          const isALS =
+            targetSec.sectionType === "ALS" ||
+            String(targetSec.sectionType || "")
+              .toUpperCase()
+              .includes("ALS") ||
+            String(targetSec.gradeLevel || "")
+              .toUpperCase()
+              .includes("ALS");
+          const isSNED =
+            targetSec.sectionType === "SNED" ||
+            targetSec.sectionType === "NON-GRADED" ||
+            String(targetSec.sectionType || "")
+              .toUpperCase()
+              .includes("SNED") ||
+            String(targetSec.gradeLevel || "")
+              .toUpperCase()
+              .includes("SNED") ||
+            String(targetSec.gradeLevel || "")
+              .toUpperCase()
+              .includes("NON-GRADED");
+          const linkedSub = isALS
+            ? "ALS LEARNING STRAND"
+            : isSNED
+              ? "SNED MODIFIED SUBJECT"
+              : isRemedial
+                ? "REMEDIATION"
+                : isEnrichment
+                  ? "ENRICHMENT"
+                  : isAral
+                    ? "ARAL TUTORING"
+                    : "ADVISORY";
 
           const isSecRow = (r) => {
-            const rSecId = String(r.sectionId || r.section_id || '');
+            const rSecId = String(r.sectionId || r.section_id || "");
             const targetSecId = String(sectionId);
-            const origSecId = origSec ? String(origSec.id) : '';
-            if (rSecId && (rSecId === targetSecId || rSecId === origSecId)) return true;
-            const rName = (r.sectionName || r.section_name || '').toUpperCase().trim();
-            const tName = (targetSec.sectionName || '').toUpperCase().trim();
-            const oName = (origSec?.sectionName || '').toUpperCase().trim();
-            if (rName && (rName === tName || (oName && rName === oName))) return true;
+            const origSecId = origSec ? String(origSec.id) : "";
+            if (rSecId && (rSecId === targetSecId || rSecId === origSecId))
+              return true;
+            const rName = (r.sectionName || r.section_name || "")
+              .toUpperCase()
+              .trim();
+            const tName = (targetSec.sectionName || "").toUpperCase().trim();
+            const oName = (origSec?.sectionName || "").toUpperCase().trim();
+            if (rName && (rName === tName || (oName && rName === oName)))
+              return true;
             return false;
           };
 
           if (isTargetTeacher) {
             if (isALS) {
               // Clear any accidental ADVISORY / HGP rows previously attached to this section
-              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
-              const hasAls = rows.some(r => (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS' || r.subjectName === 'ALS LEARNING STRAND') && isSecRow(r));
+              rows = rows.filter(
+                (r) =>
+                  !(
+                    (r.subject === "ADVISORY" ||
+                      r.subject === "HGP" ||
+                      r.subjectName === "ADVISORY" ||
+                      r.subjectName === "HGP") &&
+                    isSecRow(r)
+                  ),
+              );
+              const hasAls = rows.some(
+                (r) =>
+                  (r.subject === "ALS LEARNING STRAND" ||
+                    r.subject === "ALS" ||
+                    r.subjectName === "ALS LEARNING STRAND") &&
+                  isSecRow(r),
+              );
               if (!hasAls) {
                 rows.unshift({
                   id: `wk-als-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'ALS LEARNING STRAND',
-                  subjectName: 'ALS LEARNING STRAND',
-                  daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                  days: ['M', 'T', 'W', 'TH', 'F'],
-                  startTime: '08:00',
-                  endTime: '09:00',
-                  durationMinutes: 60
+                  subject: "ALS LEARNING STRAND",
+                  subjectName: "ALS LEARNING STRAND",
+                  daySchedule: "Mon, Tue, Wed, Thu, Fri",
+                  days: ["M", "T", "W", "TH", "F"],
+                  startTime: "08:00",
+                  endTime: "09:00",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ALS LEARNING STRAND' || r.subject === 'ALS' || r.subjectName === 'ALS LEARNING STRAND') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel, subject: 'ALS LEARNING STRAND', subjectName: 'ALS LEARNING STRAND' } : r);
+                rows = rows.map((r) =>
+                  (r.subject === "ALS LEARNING STRAND" ||
+                    r.subject === "ALS" ||
+                    r.subjectName === "ALS LEARNING STRAND") &&
+                  isSecRow(r)
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                        subject: "ALS LEARNING STRAND",
+                        subjectName: "ALS LEARNING STRAND",
+                      }
+                    : r,
+                );
               }
             } else if (isSNED) {
               // Clear any accidental ADVISORY / HGP rows previously attached to this section
-              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
-              const hasSned = rows.some(r => (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subjectName === 'SNED MODIFIED SUBJECT') && isSecRow(r));
+              rows = rows.filter(
+                (r) =>
+                  !(
+                    (r.subject === "ADVISORY" ||
+                      r.subject === "HGP" ||
+                      r.subjectName === "ADVISORY" ||
+                      r.subjectName === "HGP") &&
+                    isSecRow(r)
+                  ),
+              );
+              const hasSned = rows.some(
+                (r) =>
+                  (r.subject === "SNED MODIFIED SUBJECT" ||
+                    r.subject === "SNED" ||
+                    r.subjectName === "SNED MODIFIED SUBJECT") &&
+                  isSecRow(r),
+              );
               if (!hasSned) {
                 rows.unshift({
                   id: `wk-sned-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'SNED MODIFIED SUBJECT',
-                  subjectName: 'SNED MODIFIED SUBJECT',
-                  daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                  days: ['M', 'T', 'W', 'TH', 'F'],
-                  startTime: '08:00',
-                  endTime: '09:00',
-                  durationMinutes: 60
+                  subject: "SNED MODIFIED SUBJECT",
+                  subjectName: "SNED MODIFIED SUBJECT",
+                  daySchedule: "Mon, Tue, Wed, Thu, Fri",
+                  days: ["M", "T", "W", "TH", "F"],
+                  startTime: "08:00",
+                  endTime: "09:00",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'SNED MODIFIED SUBJECT' || r.subject === 'SNED' || r.subjectName === 'SNED MODIFIED SUBJECT') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel, subject: 'SNED MODIFIED SUBJECT', subjectName: 'SNED MODIFIED SUBJECT' } : r);
+                rows = rows.map((r) =>
+                  (r.subject === "SNED MODIFIED SUBJECT" ||
+                    r.subject === "SNED" ||
+                    r.subjectName === "SNED MODIFIED SUBJECT") &&
+                  isSecRow(r)
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                        subject: "SNED MODIFIED SUBJECT",
+                        subjectName: "SNED MODIFIED SUBJECT",
+                      }
+                    : r,
+                );
               }
             } else if (isRemedial) {
-              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
-              const hasRem = rows.some(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && isSecRow(r));
+              rows = rows.filter(
+                (r) =>
+                  !(
+                    (r.subject === "ADVISORY" ||
+                      r.subject === "HGP" ||
+                      r.subjectName === "ADVISORY" ||
+                      r.subjectName === "HGP") &&
+                    isSecRow(r)
+                  ),
+              );
+              const hasRem = rows.some(
+                (r) =>
+                  (r.subject === "REMEDIATION" ||
+                    r.subjectName === "REMEDIATION") &&
+                  isSecRow(r),
+              );
               if (!hasRem) {
                 rows.push({
                   id: `wk-rem-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'REMEDIATION',
-                  subjectName: 'REMEDIATION',
-                  daySchedule: 'Mon, Wed, Fri',
-                  days: ['M', 'W', 'F'],
-                  startTime: '15:00',
-                  endTime: '16:00',
-                  durationMinutes: 60
+                  subject: "REMEDIATION",
+                  subjectName: "REMEDIATION",
+                  daySchedule: "Mon, Wed, Fri",
+                  days: ["M", "W", "F"],
+                  startTime: "15:00",
+                  endTime: "16:00",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'REMEDIATION' || r.subjectName === 'REMEDIATION') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map((r) =>
+                  (r.subject === "REMEDIATION" ||
+                    r.subjectName === "REMEDIATION") &&
+                  isSecRow(r)
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                      }
+                    : r,
+                );
               }
             } else if (isEnrichment) {
-              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
-              const hasEnr = rows.some(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && isSecRow(r));
+              rows = rows.filter(
+                (r) =>
+                  !(
+                    (r.subject === "ADVISORY" ||
+                      r.subject === "HGP" ||
+                      r.subjectName === "ADVISORY" ||
+                      r.subjectName === "HGP") &&
+                    isSecRow(r)
+                  ),
+              );
+              const hasEnr = rows.some(
+                (r) =>
+                  (r.subject === "ENRICHMENT" ||
+                    r.subjectName === "ENRICHMENT") &&
+                  isSecRow(r),
+              );
               if (!hasEnr) {
                 rows.push({
                   id: `wk-enr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'ENRICHMENT',
-                  subjectName: 'ENRICHMENT',
-                  daySchedule: 'Tue, Thu',
-                  days: ['T', 'TH'],
-                  startTime: '15:00',
-                  endTime: '16:00',
-                  durationMinutes: 60
+                  subject: "ENRICHMENT",
+                  subjectName: "ENRICHMENT",
+                  daySchedule: "Tue, Thu",
+                  days: ["T", "TH"],
+                  startTime: "15:00",
+                  endTime: "16:00",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ENRICHMENT' || r.subjectName === 'ENRICHMENT') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map((r) =>
+                  (r.subject === "ENRICHMENT" ||
+                    r.subjectName === "ENRICHMENT") &&
+                  isSecRow(r)
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                      }
+                    : r,
+                );
               }
             } else if (isAral) {
               // Clear any accidental ADVISORY / HGP rows previously attached to this section (ARAL is tutoring only, never advisory or HGP)
-              rows = rows.filter(r => !((r.subject === 'ADVISORY' || r.subject === 'HGP' || r.subjectName === 'ADVISORY' || r.subjectName === 'HGP') && isSecRow(r)));
-              const hasAral = rows.some(r => (r.subject === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL' || r.subjectName === 'ARAL TUTORING') && isSecRow(r));
+              rows = rows.filter(
+                (r) =>
+                  !(
+                    (r.subject === "ADVISORY" ||
+                      r.subject === "HGP" ||
+                      r.subjectName === "ADVISORY" ||
+                      r.subjectName === "HGP") &&
+                    isSecRow(r)
+                  ),
+              );
+              const hasAral = rows.some(
+                (r) =>
+                  (r.subject === "ARAL" ||
+                    r.subject === "ARAL TUTORING" ||
+                    r.subjectName === "ARAL" ||
+                    r.subjectName === "ARAL TUTORING") &&
+                  isSecRow(r),
+              );
               if (!hasAral) {
                 rows.push({
                   id: `wk-aral-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'ARAL TUTORING',
-                  subjectName: 'ARAL TUTORING',
-                  daySchedule: 'Mon, Tue, Wed, Thu',
-                  days: ['M', 'T', 'W', 'TH'],
-                  startTime: '15:00',
-                  endTime: '16:00',
-                  durationMinutes: 60
+                  subject: "ARAL TUTORING",
+                  subjectName: "ARAL TUTORING",
+                  daySchedule: "Mon, Tue, Wed, Thu",
+                  days: ["M", "T", "W", "TH"],
+                  startTime: "15:00",
+                  endTime: "16:00",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ARAL' || r.subject === 'ARAL TUTORING' || r.subjectName === 'ARAL' || r.subjectName === 'ARAL TUTORING') && isSecRow(r) ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel, subject: 'ARAL TUTORING', subjectName: 'ARAL TUTORING' } : r);
+                rows = rows.map((r) =>
+                  (r.subject === "ARAL" ||
+                    r.subject === "ARAL TUTORING" ||
+                    r.subjectName === "ARAL" ||
+                    r.subjectName === "ARAL TUTORING") &&
+                  isSecRow(r)
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                        subject: "ARAL TUTORING",
+                        subjectName: "ARAL TUTORING",
+                      }
+                    : r,
+                );
               }
             } else {
-              const hasAdv = rows.some(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY'));
+              const hasAdv = rows.some(
+                (r) => r.subject === "ADVISORY" || r.subjectName === "ADVISORY",
+              );
               if (!hasAdv) {
                 rows.unshift({
                   id: `wk-adv-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'ADVISORY',
-                  subjectName: 'ADVISORY',
-                  daySchedule: 'Mon, Tue, Wed, Thu, Fri',
-                  days: ['M', 'T', 'W', 'TH', 'F'],
-                  startTime: '07:30',
-                  endTime: '08:30',
-                  durationMinutes: 60
+                  subject: "ADVISORY",
+                  subjectName: "ADVISORY",
+                  daySchedule: "Mon, Tue, Wed, Thu, Fri",
+                  days: ["M", "T", "W", "TH", "F"],
+                  startTime: "07:30",
+                  endTime: "08:30",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'ADVISORY' || r.subjectName === 'ADVISORY') ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map((r) =>
+                  r.subject === "ADVISORY" || r.subjectName === "ADVISORY"
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                      }
+                    : r,
+                );
               }
-              const hasHgp = rows.some(r => (r.subject === 'HGP' || r.subjectName === 'HGP'));
+              const hasHgp = rows.some(
+                (r) => r.subject === "HGP" || r.subjectName === "HGP",
+              );
               if (!hasHgp) {
                 rows.push({
                   id: `wk-hgp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
                   sectionId: targetSec.id,
                   sectionName: targetSec.sectionName,
                   gradeLevel: targetSec.gradeLevel,
-                  subject: 'HGP',
-                  subjectName: 'HGP',
-                  daySchedule: 'Fri',
-                  days: ['F'],
-                  startTime: '07:30',
-                  endTime: '08:30',
-                  durationMinutes: 60
+                  subject: "HGP",
+                  subjectName: "HGP",
+                  daySchedule: "Fri",
+                  days: ["F"],
+                  startTime: "07:30",
+                  endTime: "08:30",
+                  durationMinutes: 60,
                 });
               } else {
-                rows = rows.map(r => (r.subject === 'HGP' || r.subjectName === 'HGP') ? { ...r, sectionId: targetSec.id, sectionName: targetSec.sectionName, gradeLevel: targetSec.gradeLevel } : r);
+                rows = rows.map((r) =>
+                  r.subject === "HGP" || r.subjectName === "HGP"
+                    ? {
+                        ...r,
+                        sectionId: targetSec.id,
+                        sectionName: targetSec.sectionName,
+                        gradeLevel: targetSec.gradeLevel,
+                      }
+                    : r,
+                );
               }
             }
           } else {
             // For all previous / other teachers: remove any linked advisory / HGP / remediation / enrichment for this section
-            rows = rows.filter(r => !(
-              (r.subject === linkedSub || r.subject === 'HGP' || r.subjectName === linkedSub || r.subjectName === 'HGP') &&
-              isSecRow(r)
-            ));
+            rows = rows.filter(
+              (r) =>
+                !(
+                  (r.subject === linkedSub ||
+                    r.subject === "HGP" ||
+                    r.subjectName === linkedSub ||
+                    r.subjectName === "HGP") &&
+                  isSecRow(r)
+                ),
+            );
           }
 
           // Sync localStorage draft if present for this teacher
@@ -5818,7 +7997,10 @@ export const AppProvider = ({ children }) => {
             try {
               const parsed = JSON.parse(savedDraft);
               if (parsed) {
-                localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: rows }));
+                localStorage.setItem(
+                  draftKey,
+                  JSON.stringify({ ...parsed, workloadRows: rows }),
+                );
               }
             } catch (e) {}
           }
@@ -5832,35 +8014,70 @@ export const AppProvider = ({ children }) => {
     showToast("Section details updated.");
   };
 
-  const updateSectionAdviser = async (sectionId, advisorId, advisoryMinutes = 300, hgpMinutes = 60, numberOfLearners = null) => {
+  const updateSectionAdviser = async (
+    sectionId,
+    advisorId,
+    advisoryMinutes = 300,
+    hgpMinutes = 60,
+    numberOfLearners = null,
+  ) => {
     return updateSectionDetails(sectionId, { advisorId, numberOfLearners });
   };
 
-  const updateSectionLearners = async (sectionId, numberOfLearners, maleLearners = null, femaleLearners = null) => {
-    return updateSectionDetails(sectionId, { numberOfLearners, maleLearners, femaleLearners });
+  const updateSectionLearners = async (
+    sectionId,
+    numberOfLearners,
+    maleLearners = null,
+    femaleLearners = null,
+  ) => {
+    return updateSectionDetails(sectionId, {
+      numberOfLearners,
+      maleLearners,
+      femaleLearners,
+    });
   };
 
   const removeClassSection = async (id) => {
-    const target = classSections.find(s => String(s.id) === String(id));
-    setClassSections(prev => prev.filter(s => String(s.id) !== String(id)));
+    const target = classSections.find((s) => String(s.id) === String(id));
+    setClassSections((prev) => prev.filter((s) => String(s.id) !== String(id)));
     if (id) {
-      setDeletedSectionIds(prev => Array.from(new Set([...prev, String(id)])));
+      setDeletedSectionIds((prev) =>
+        Array.from(new Set([...prev, String(id)])),
+      );
     }
     if (target) {
-      setPersonnel(prevPersonnel => {
-        return prevPersonnel.map(p => {
+      setPersonnel((prevPersonnel) => {
+        return prevPersonnel.map((p) => {
           if (!Array.isArray(p.workloadRows)) return p;
-          const rows = p.workloadRows.filter(r => !(
-            (String(r.sectionId) === String(id)) ||
-            (r.sectionName === target.sectionName && r.gradeLevel === target.gradeLevel && ['ADVISORY', 'HGP', 'REMEDIATION', 'ENRICHMENT', 'ALS', 'SNED', 'SNED MODIFIED SUBJECT', 'ARAL', 'ARAL TUTORING'].includes(r.subject))
-          ));
+          const rows = p.workloadRows.filter(
+            (r) =>
+              !(
+                String(r.sectionId) === String(id) ||
+                (r.sectionName === target.sectionName &&
+                  r.gradeLevel === target.gradeLevel &&
+                  [
+                    "ADVISORY",
+                    "HGP",
+                    "REMEDIATION",
+                    "ENRICHMENT",
+                    "ALS",
+                    "SNED",
+                    "SNED MODIFIED SUBJECT",
+                    "ARAL",
+                    "ARAL TUTORING",
+                  ].includes(r.subject))
+              ),
+          );
           const draftKey = `draft_workload_${p.id}`;
           const savedDraft = localStorage.getItem(draftKey);
           if (savedDraft) {
             try {
               const parsed = JSON.parse(savedDraft);
               if (parsed) {
-                localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: rows }));
+                localStorage.setItem(
+                  draftKey,
+                  JSON.stringify({ ...parsed, workloadRows: rows }),
+                );
               }
             } catch (e) {}
           }
@@ -5875,16 +8092,16 @@ export const AppProvider = ({ children }) => {
 
   const addWorkloadTransfer = async (transferData) => {
     const newId = `local-tfr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    setWorkloadTransfers(prev => [
+    setWorkloadTransfers((prev) => [
       ...prev,
       {
         id: newId,
         absent_personnel_id: transferData.absentTeacherId,
         absentTeacherId: transferData.absentTeacherId,
-        absentTeacherName: transferData.absentTeacherName || '',
+        absentTeacherName: transferData.absentTeacherName || "",
         substitute_personnel_id: transferData.substituteTeacherId,
         substituteTeacherId: transferData.substituteTeacherId,
-        substituteTeacherName: transferData.substituteTeacherName || '',
+        substituteTeacherName: transferData.substituteTeacherName || "",
         workload_row_id: transferData.workloadRows?.[0]?.id || null,
         workloadRows: transferData.workloadRows || [],
         workload_rows: transferData.workloadRows || [],
@@ -5892,27 +8109,48 @@ export const AppProvider = ({ children }) => {
         startDate: transferData.startDate,
         end_date: transferData.endDate,
         endDate: transferData.endDate,
-        reason: transferData.reason || 'Leave of Absence',
-        status: 'active'
-      }
+        reason: transferData.reason || "Leave of Absence",
+        status: "active",
+      },
     ]);
     showToast("Workload transfer added to draft locally.");
   };
 
   const removeWorkloadTransfer = async (transferId) => {
-    setWorkloadTransfers(prev => prev.map(t => t.id === transferId ? { ...t, status: 'ended' } : t));
+    setWorkloadTransfers((prev) =>
+      prev.map((t) => (t.id === transferId ? { ...t, status: "ended" } : t)),
+    );
     showToast("Workload transfer ended locally.");
   };
 
   const addPersonnelAbsence = async (absenceData) => {
-    const startStr = absenceData.startDate || absenceData.logDate || absenceData.absenceDate;
-    const endStr = absenceData.endDate || absenceData.startDate || absenceData.logDate || startStr;
-    const newId = absenceData.id || `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
+    const startStr =
+      absenceData.startDate || absenceData.logDate || absenceData.absenceDate;
+    const endStr =
+      absenceData.endDate ||
+      absenceData.startDate ||
+      absenceData.logDate ||
+      startStr;
+    const newId =
+      absenceData.id ||
+      `local-abs-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`;
 
-    const isTardy = String(absenceData.leaveType || '').toUpperCase().includes('TARD') ||
-                    String(absenceData.leaveType || '').toUpperCase().includes('LATE') ||
-                    String(absenceData.leaveType || '').toUpperCase().includes('UNDER') ||
-                    Boolean(absenceData.timeIn || absenceData.timeOut || absenceData.lateMinutes || absenceData.undertimeMinutes);
+    const isTardy =
+      String(absenceData.leaveType || "")
+        .toUpperCase()
+        .includes("TARD") ||
+      String(absenceData.leaveType || "")
+        .toUpperCase()
+        .includes("LATE") ||
+      String(absenceData.leaveType || "")
+        .toUpperCase()
+        .includes("UNDER") ||
+      Boolean(
+        absenceData.timeIn ||
+        absenceData.timeOut ||
+        absenceData.lateMinutes ||
+        absenceData.undertimeMinutes,
+      );
 
     const newLeaveRecord = {
       id: newId,
@@ -5926,12 +8164,16 @@ export const AppProvider = ({ children }) => {
       absenceDate: startStr,
       log_date: startStr,
       logDate: startStr,
-      term: absenceData.term || activeTerm || '1st',
-      month: absenceData.month || (startStr ? new Date(startStr).toLocaleString('default', { month: 'long' }) : 'June'),
+      term: absenceData.term || activeTerm || "1st",
+      month:
+        absenceData.month ||
+        (startStr
+          ? new Date(startStr).toLocaleString("default", { month: "long" })
+          : "June"),
       leave_type: absenceData.leaveType,
       leaveType: absenceData.leaveType,
-      log_type: isTardy ? (absenceData.logType || 'TARDINESS') : 'ABSENCE',
-      logType: isTardy ? (absenceData.logType || 'TARDINESS') : 'ABSENCE',
+      log_type: isTardy ? absenceData.logType || "TARDINESS" : "ABSENCE",
+      logType: isTardy ? absenceData.logType || "TARDINESS" : "ABSENCE",
       time_in: absenceData.timeIn || null,
       timeIn: absenceData.timeIn || null,
       time_out: absenceData.timeOut || null,
@@ -5940,38 +8182,84 @@ export const AppProvider = ({ children }) => {
       lateMinutes: Number(absenceData.lateMinutes || 0),
       undertime_minutes: Number(absenceData.undertimeMinutes || 0),
       undertimeMinutes: Number(absenceData.undertimeMinutes || 0),
-      total_dtr_deficit_minutes: Number(absenceData.totalDtrDeficitMinutes || (Number(absenceData.lateMinutes || 0) + Number(absenceData.undertimeMinutes || 0))),
-      scheduled_teaching_minutes: Number(absenceData.scheduledTeachingMinutes || 0),
-      scheduledTeachingMinutes: Number(absenceData.scheduledTeachingMinutes || 0),
-      missed_minutes: Number(absenceData.missedMinutes || absenceData.missedTeachingMinutes || 0),
-      missedMinutes: Number(absenceData.missedMinutes || absenceData.missedTeachingMinutes || 0),
-      missed_teaching_minutes: Number(absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
-      missedTeachingMinutes: Number(absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
+      total_dtr_deficit_minutes: Number(
+        absenceData.totalDtrDeficitMinutes ||
+          Number(absenceData.lateMinutes || 0) +
+            Number(absenceData.undertimeMinutes || 0),
+      ),
+      scheduled_teaching_minutes: Number(
+        absenceData.scheduledTeachingMinutes || 0,
+      ),
+      scheduledTeachingMinutes: Number(
+        absenceData.scheduledTeachingMinutes || 0,
+      ),
+      missed_minutes: Number(
+        absenceData.missedMinutes || absenceData.missedTeachingMinutes || 0,
+      ),
+      missedMinutes: Number(
+        absenceData.missedMinutes || absenceData.missedTeachingMinutes || 0,
+      ),
+      missed_teaching_minutes: Number(
+        absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0,
+      ),
+      missedTeachingMinutes: Number(
+        absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0,
+      ),
       actual_rendered_minutes: Number(absenceData.actualRenderedMinutes || 0),
       actualRenderedMinutes: Number(absenceData.actualRenderedMinutes || 0),
-      missed_slot_ids: Array.isArray(absenceData.missedSlotIds) ? absenceData.missedSlotIds : [],
-      missedSlotIds: Array.isArray(absenceData.missedSlotIds) ? absenceData.missedSlotIds : [],
-      teaching_impact_minutes: Number(absenceData.teachingImpactMinutes || absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
-      teachingImpactMinutes: Number(absenceData.teachingImpactMinutes || absenceData.missedTeachingMinutes || absenceData.missedMinutes || 0),
+      missed_slot_ids: Array.isArray(absenceData.missedSlotIds)
+        ? absenceData.missedSlotIds
+        : [],
+      missedSlotIds: Array.isArray(absenceData.missedSlotIds)
+        ? absenceData.missedSlotIds
+        : [],
+      teaching_impact_minutes: Number(
+        absenceData.teachingImpactMinutes ||
+          absenceData.missedTeachingMinutes ||
+          absenceData.missedMinutes ||
+          0,
+      ),
+      teachingImpactMinutes: Number(
+        absenceData.teachingImpactMinutes ||
+          absenceData.missedTeachingMinutes ||
+          absenceData.missedMinutes ||
+          0,
+      ),
       daily_rendered_minutes: Number(absenceData.dailyRenderedMinutes || 0),
       dailyRenderedMinutes: Number(absenceData.dailyRenderedMinutes || 0),
       daily_overload_earned: Number(absenceData.dailyOverloadEarned || 0),
       dailyOverloadEarned: Number(absenceData.dailyOverloadEarned || 0),
-      reason: absenceData.reason || '',
+      reason: absenceData.reason || "",
       is_excused: Boolean(absenceData.isExcused),
-      isExcused: Boolean(absenceData.isExcused)
+      isExcused: Boolean(absenceData.isExcused),
     };
 
-    setAbsences(prev => [...prev.filter(a => !(a.personnelId === absenceData.personnelId && (a.startDate === startStr || a.logDate === startStr))), newLeaveRecord]);
+    setAbsences((prev) => [
+      ...prev.filter(
+        (a) =>
+          !(
+            a.personnelId === absenceData.personnelId &&
+            (a.startDate === startStr || a.logDate === startStr)
+          ),
+      ),
+      newLeaveRecord,
+    ]);
 
     // Persist to backend overload_late_undertime table if tardy
     if (isTardy) {
       try {
-        api.saveOverloadLateUndertime({
-          ...newLeaveRecord,
-          school_id: schoolInfo?.schoolId || '108348',
-          school_year: schoolInfo?.schoolYear || '2026-2027'
-        }).catch(err => reportError(err, { action: 'Saving late/undertime for the overload record', handler: 'saveOverloadLateUndertime' }));
+        api
+          .saveOverloadLateUndertime({
+            ...newLeaveRecord,
+            school_id: schoolInfo?.schoolId || "108348",
+            school_year: schoolInfo?.schoolYear || "2026-2027",
+          })
+          .catch((err) =>
+            reportError(err, {
+              action: "Saving late/undertime for the overload record",
+              handler: "saveOverloadLateUndertime",
+            }),
+          );
       } catch (e) {}
     }
 
@@ -5980,16 +8268,29 @@ export const AppProvider = ({ children }) => {
   };
 
   const removePersonnelAbsence = async (id, targetBatchId = null) => {
-    const target = absences.find(a => a.id === id);
-    setAbsences(prev => prev.filter(a => {
-      if (targetBatchId && (a.batchId === targetBatchId || a.batch_id === targetBatchId)) return false;
-      if (Array.isArray(id) && id.includes(a.id)) return false;
-      return a.id !== id;
-    }));
+    const target = absences.find((a) => a.id === id);
+    setAbsences((prev) =>
+      prev.filter((a) => {
+        if (
+          targetBatchId &&
+          (a.batchId === targetBatchId || a.batch_id === targetBatchId)
+        )
+          return false;
+        if (Array.isArray(id) && id.includes(a.id)) return false;
+        return a.id !== id;
+      }),
+    );
 
     if (target && target.id) {
       try {
-        api.deleteOverloadLateUndertime(target.id).catch(e => reportError(e, { action: 'Deleting a late/undertime record', handler: 'deleteOverloadLateUndertime', ids: { id: String(target.id) }, expectedStatuses: [404] }));
+        api.deleteOverloadLateUndertime(target.id).catch((e) =>
+          reportError(e, {
+            action: "Deleting a late/undertime record",
+            handler: "deleteOverloadLateUndertime",
+            ids: { id: String(target.id) },
+            expectedStatuses: [404],
+          }),
+        );
       } catch (e) {}
     }
 
@@ -5999,7 +8300,7 @@ export const AppProvider = ({ children }) => {
   const resetToDatabase = async () => {
     const confirmReset = await showConfirm(
       "Reset to Database Version",
-      "Are you sure you want to discard ALL local and cloud changes and restore the last saved version from the official database?"
+      "Are you sure you want to discard ALL local and cloud changes and restore the last saved version from the official database?",
     );
     if (!confirmReset) return;
 
@@ -6009,10 +8310,10 @@ export const AppProvider = ({ children }) => {
       try {
         await api.deleteSchoolDraft(schoolInfo.schoolYear);
       } catch (err) {
-        console.error('Failed to delete cloud draft on reset:', err);
+        console.error("Failed to delete cloud draft on reset:", err);
       }
       initialLoadCompleteRef.current = false;
-      
+
       try {
         const school = await api.getSchool();
         let currentSchoolInfo = {
@@ -6023,7 +8324,17 @@ export const AppProvider = ({ children }) => {
           district: "Sample District",
           schoolYear: "SY 26-27",
           numberOfShifts: "1",
-          curricularOffering: ['Elementary', 'JHS', 'SHS', 'SHS-CORE SUBJECTS', 'SHS-APPLIED SUBJECTS', 'SHS-SPECIALIZED SUBJECTS', 'SSHS-CORE', 'SSHS-ACADEMIC', 'SSHS-TECHPRO']
+          curricularOffering: [
+            "Elementary",
+            "JHS",
+            "SHS",
+            "SHS-CORE SUBJECTS",
+            "SHS-APPLIED SUBJECTS",
+            "SHS-SPECIALIZED SUBJECTS",
+            "SSHS-CORE",
+            "SSHS-ACADEMIC",
+            "SSHS-TECHPRO",
+          ],
         };
 
         if (school && !school.error) {
@@ -6034,8 +8345,11 @@ export const AppProvider = ({ children }) => {
             division: school.division,
             district: school.district,
             schoolYear: school.schoolYear || school.school_year,
-            numberOfShifts: String(school.numberOfShifts || school.number_of_shifts || 1),
-            curricularOffering: school.curricularOffering || school.curricular_offering || [],
+            numberOfShifts: String(
+              school.numberOfShifts || school.number_of_shifts || 1,
+            ),
+            curricularOffering:
+              school.curricularOffering || school.curricular_offering || [],
             certifiedBy: school.certifiedBy || null,
             certifiedSignature: school.certifiedSignature || null,
             certifiedAt: school.certifiedAt || null,
@@ -6044,7 +8358,8 @@ export const AppProvider = ({ children }) => {
             elemSpecialPrograms: school.elemSpecialPrograms || [],
             hasJhsSpecialPrograms: school.hasJhsSpecialPrograms || false,
             jhsSpecialPrograms: school.jhsSpecialPrograms || [],
-            shsCurriculumModel: school.shsCurriculumModel || 'Standard K-12 SHS Curriculum',
+            shsCurriculumModel:
+              school.shsCurriculumModel || "Standard K-12 SHS Curriculum",
             hasElemInclusive: school.hasElemInclusive || false,
             elemInclusivePrograms: school.elemInclusivePrograms || [],
             hasJhsInclusive: school.hasJhsInclusive || false,
@@ -6058,9 +8373,11 @@ export const AppProvider = ({ children }) => {
             inclusivePrograms: school.inclusivePrograms || [],
             curricularConfigSaved: Boolean(school.curricularConfigSaved),
             hasShifts: school.hasShifts ?? school.has_shifts ?? false,
-            shiftStartTime: school.shiftStartTime || school.shift_start_time || '07:00',
-            shiftEndTime: school.shiftEndTime || school.shift_end_time || '18:00',
-            shiftsConfig: school.shiftsConfig || school.shifts_config || {}
+            shiftStartTime:
+              school.shiftStartTime || school.shift_start_time || "07:00",
+            shiftEndTime:
+              school.shiftEndTime || school.shift_end_time || "18:00",
+            shiftsConfig: school.shiftsConfig || school.shifts_config || {},
           };
         }
 
@@ -6080,23 +8397,26 @@ export const AppProvider = ({ children }) => {
         let loadedSections = Array.isArray(sections) ? sections : [];
         if (loadedSections.length === 0 && list.length > 0) {
           const extractedSecsMap = new Map();
-          list.forEach(p => {
+          list.forEach((p) => {
             if (Array.isArray(p.workloadRows)) {
-              p.workloadRows.forEach(wk => {
+              p.workloadRows.forEach((wk) => {
                 if (wk.gradeLevel && wk.sectionName) {
-                  const key = `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
+                  const key =
+                    `${wk.gradeLevel}-${wk.sectionName}`.toLowerCase();
                   if (!extractedSecsMap.has(key)) {
                     extractedSecsMap.set(key, {
-                      id: wk.sectionId || `sec-${Math.random().toString(36).substring(2, 9)}`,
-                      schoolId: currentSchoolInfo?.schoolId || '199999',
-                      schoolYear: currentSchoolInfo?.schoolYear || 'SY 26-27',
+                      id:
+                        wk.sectionId ||
+                        `sec-${Math.random().toString(36).substring(2, 9)}`,
+                      schoolId: currentSchoolInfo?.schoolId || "199999",
+                      schoolYear: currentSchoolInfo?.schoolYear || "SY 26-27",
                       gradeLevel: wk.gradeLevel,
                       sectionName: wk.sectionName,
-                      sectionType: 'MONO GRADE',
+                      sectionType: "MONO GRADE",
                       advisorId: null,
                       advisoryMinutes: 300,
                       hgpMinutes: 60,
-                      numberOfLearners: null
+                      numberOfLearners: null,
                     });
                   }
                 }
@@ -6159,18 +8479,45 @@ export const AppProvider = ({ children }) => {
   // Check duplicate values
   const hasDuplicate = (field, value, id) => {
     if (!value) return false;
-    if (field === 'depedEmail' && (String(value).trim().toUpperCase() === 'N/A' || String(value).trim().toUpperCase() === 'NA')) return false;
-    return personnel.some(p => p.id !== id && String(p[field] || "").toLowerCase() === String(value).toLowerCase());
+    if (
+      field === "depedEmail" &&
+      (String(value).trim().toUpperCase() === "N/A" ||
+        String(value).trim().toUpperCase() === "NA")
+    )
+      return false;
+    return personnel.some(
+      (p) =>
+        p.id !== id &&
+        String(p[field] || "").toLowerCase() === String(value).toLowerCase(),
+    );
   };
 
   // Check if a person is designated as school head or has a school head title
   const isSchoolHead = (p) => {
     if (!p) return false;
-    if (p.isSchoolHead === true || p.is_school_head === true || p.is_school_head === 'true' || p.isSchoolHead === 'true') return true;
-    const roleText = `${p.position || ""} ${p.plantilla_position || ""} ${p.position_title || ""} ${p.designation || ""}`.toLowerCase();
-    if (roleText.includes("assistant principal") || roleText.includes("assistant school principal")) return false;
-    return ["school principal", "principal", "teacher-in-charge", "officer-in-charge"].some(token => roleText.includes(token)) ||
-      /\b(tic|oic)\b/.test(roleText);
+    if (
+      p.isSchoolHead === true ||
+      p.is_school_head === true ||
+      p.is_school_head === "true" ||
+      p.isSchoolHead === "true"
+    )
+      return true;
+    const roleText =
+      `${p.position || ""} ${p.plantilla_position || ""} ${p.position_title || ""} ${p.designation || ""}`.toLowerCase();
+    if (
+      roleText.includes("assistant principal") ||
+      roleText.includes("assistant school principal")
+    )
+      return false;
+    return (
+      [
+        "school principal",
+        "principal",
+        "teacher-in-charge",
+        "officer-in-charge",
+      ].some((token) => roleText.includes(token)) ||
+      /\b(tic|oic)\b/.test(roleText)
+    );
   };
 
   const getAge = (dobString) => {
@@ -6180,14 +8527,17 @@ export const AppProvider = ({ children }) => {
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age--;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate()))
+      age--;
     return age;
   };
 
   const getValidationIssues = () => {
-    const rawId = String(schoolInfo?.schoolId || '').replace(/^SCH-/i, '').trim();
+    const rawId = String(schoolInfo?.schoolId || "")
+      .replace(/^SCH-/i, "")
+      .trim();
     // Test account 900230 (ALL OFFERING) or DEV Bypass mode: zero blocking validation errors
-    if (rawId === '900230' || bypassNodeLocks) {
+    if (rawId === "900230" || bypassNodeLocks) {
       return [];
     }
 
@@ -6195,52 +8545,99 @@ export const AppProvider = ({ children }) => {
 
     // 1. School Profile Validation
     if (!schoolInfo.numberOfShifts) {
-      issues.push({ id: "school-shifts", type: "error", category: "School Profile", message: "Number of Shifts is required before final submission." });
+      issues.push({
+        id: "school-shifts",
+        type: "error",
+        category: "School Profile",
+        message: "Number of Shifts is required before final submission.",
+      });
     }
     if (schoolEdited) {
-      issues.push({ id: "school-edited", type: "warn", category: "School Profile", message: "Prefilled school information was edited and must be verified by the SDO Planning Officer." });
+      issues.push({
+        id: "school-edited",
+        type: "warn",
+        category: "School Profile",
+        message:
+          "Prefilled school information was edited and must be verified by the SDO Planning Officer.",
+      });
     }
 
     // 2. School Head Count Validation
     // A school may list several Principals; the one flagged in the Roster is the school head.
     const designatedHeads = personnel.filter(isRosterSchoolHead);
-    const heads = designatedHeads.length > 0 ? designatedHeads : personnel.filter(isSchoolHead);
-    const principalCount = personnel.filter(p => /principal/i.test(`${p.position || ''}`) && !/assistant/i.test(`${p.position || ''}`)).length;
+    const heads =
+      designatedHeads.length > 0
+        ? designatedHeads
+        : personnel.filter(isSchoolHead);
+    const principalCount = personnel.filter(
+      (p) =>
+        /principal/i.test(`${p.position || ""}`) &&
+        !/assistant/i.test(`${p.position || ""}`),
+    ).length;
     if (designatedHeads.length === 0 && principalCount > 1 && !sdoSchoolHead) {
-      issues.push({ id: "school-head-undesignated", type: "error", category: "School Head", message: `${principalCount} Principals are listed but none is designated as the school head. Designate exactly one in the Roster.` });
+      issues.push({
+        id: "school-head-undesignated",
+        type: "error",
+        category: "School Head",
+        message: `${principalCount} Principals are listed but none is designated as the school head. Designate exactly one in the Roster.`,
+      });
     }
     if (heads.length === 0 && sdoSchoolHead) {
       // SDO-supplied OIC Principal stands in as the school head; nothing to flag.
     } else if (heads.length > 1) {
-      issues.push({ id: "school-head-multiple", type: "warn", category: "School Head", message: `Multiple school heads identified (${heads.length} assigned). Verify designated primary school head.` });
+      issues.push({
+        id: "school-head-multiple",
+        type: "warn",
+        category: "School Head",
+        message: `Multiple school heads identified (${heads.length} assigned). Verify designated primary school head.`,
+      });
     } else if (heads.length === 0) {
-      issues.push({ id: "school-head-none", type: "warn", category: "School Head", message: "No school head identified. Assign one Principal, OIC, or TIC before final verification." });
+      issues.push({
+        id: "school-head-none",
+        type: "warn",
+        category: "School Head",
+        message:
+          "No school head identified. Assign one Principal, OIC, or TIC before final verification.",
+      });
     }
-    const tics = heads.filter(h => {
-      const roleText = `${h.position || ""} ${h.designation || ""}`.toLowerCase();
+    const tics = heads.filter((h) => {
+      const roleText =
+        `${h.position || ""} ${h.designation || ""}`.toLowerCase();
       return roleText.includes("teacher-in-charge") || roleText.includes("tic");
     });
-    const nonTics = heads.filter(h => {
-      const roleText = `${h.position || ""} ${h.designation || ""}`.toLowerCase();
-      return !roleText.includes("teacher-in-charge") && !roleText.includes("tic");
+    const nonTics = heads.filter((h) => {
+      const roleText =
+        `${h.position || ""} ${h.designation || ""}`.toLowerCase();
+      return (
+        !roleText.includes("teacher-in-charge") && !roleText.includes("tic")
+      );
     });
     if (tics.length > 0 && nonTics.length > 0) {
-      issues.push({ id: "school-head-tic-conflict", type: "warn", category: "School Head", message: "Notice: School has both Teacher-in-Charge (TIC) and Principal/OIC entries." });
+      issues.push({
+        id: "school-head-tic-conflict",
+        type: "warn",
+        category: "School Head",
+        message:
+          "Notice: School has both Teacher-in-Charge (TIC) and Principal/OIC entries.",
+      });
     }
 
     // 3. Personnel Record Validation
-    personnel.forEach(p => {
-      const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.id;
+    personnel.forEach((p) => {
+      const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.id;
 
       // Borrowed Personnel Handshake Verification Check
-      const isBorrowedUnlinked = String(p.deploymentStatus || p.deployment_status || '').toUpperCase().includes('BORROWED') && !p.isShared;
+      const isBorrowedUnlinked =
+        String(p.deploymentStatus || p.deployment_status || "")
+          .toUpperCase()
+          .includes("BORROWED") && !p.isShared;
       if (isBorrowedUnlinked) {
         issues.push({
           id: `${p.id}-borrowed-unlinked`,
           personId: p.id,
           type: "warn",
           category: "Borrowed Personnel Verification",
-          message: `${name}: Tagged as BORROWED. Must be accepted via Request Center from Mother School or updated to Permanent (Own Station).`
+          message: `${name}: Tagged as BORROWED. Must be accepted via Request Center from Mother School or updated to Permanent (Own Station).`,
         });
       }
 
@@ -6251,14 +8648,29 @@ export const AppProvider = ({ children }) => {
           personId: p.id,
           type: "warn",
           category: "Workload Schedule",
-          message: `${name}: Auto-populated timetable schedule needs Start/End Time verification in Workload.`
+          message: `${name}: Auto-populated timetable schedule needs Start/End Time verification in Workload.`,
         });
       }
 
       // Detect personnel type
-      const detectedType = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || 'teaching';
-      const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(detectedType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
-      const isTeachingRelated = ['teaching-related', 'TEACHING-RELATED', 'related', 'RELATED'].includes(detectedType) || ['teaching-related', 'TEACHING-RELATED', 'related', 'RELATED'].includes(p.type) || ['TEACHING-RELATED', 'RELATED'].includes(p.positionCategory);
+      const detectedType =
+        detectPersonnelTypeFromPosition(
+          p.position || p.plantilla_position || p.position_title || "",
+        ) ||
+        p.type ||
+        "teaching";
+      const isNonTeaching =
+        ["non-teaching", "NON-TEACHING"].includes(detectedType) ||
+        ["non-teaching", "NON-TEACHING"].includes(p.type) ||
+        ["NON-TEACHING"].includes(p.positionCategory);
+      const isTeachingRelated =
+        ["teaching-related", "TEACHING-RELATED", "related", "RELATED"].includes(
+          detectedType,
+        ) ||
+        ["teaching-related", "TEACHING-RELATED", "related", "RELATED"].includes(
+          p.type,
+        ) ||
+        ["TEACHING-RELATED", "RELATED"].includes(p.positionCategory);
       const isTeachingOnly = !isNonTeaching && !isTeachingRelated;
 
       // Check Workload Schedule Duration Errors (> 60m Elem/JHS, > 360m SHS, Kinder = exempt 3h)
@@ -6267,25 +8679,37 @@ export const AppProvider = ({ children }) => {
         const rows = p.workloadRows || [];
         rows.forEach((r, rIdx) => {
           if (r.startTime && r.endTime) {
-            const subStr = String(r.subject || r.task || '').toUpperCase();
-            const gStr = String(r.gradeLevel || '').toUpperCase();
+            const subStr = String(r.subject || r.task || "").toUpperCase();
+            const gStr = String(r.gradeLevel || "").toUpperCase();
 
             // KINDER BLOCKS OF TIME is 3 Hours (180 mins) — exempt from 60-min limit!
-            if (subStr.includes('KINDER BLOCKS OF TIME') || subStr.includes('KINDER') || gStr.includes('KINDER')) {
+            if (
+              subStr.includes("KINDER BLOCKS OF TIME") ||
+              subStr.includes("KINDER") ||
+              gStr.includes("KINDER")
+            ) {
               return;
             }
 
             // Administrative tasks are exempt from classroom teaching duration limits
-            if (subStr.startsWith('ADMIN') || subStr.includes('ADMIN') || subStr.includes('ADMINISTRATIVE') || Boolean(r.is_admin_task || r.isAdminTask)) {
+            if (
+              subStr.startsWith("ADMIN") ||
+              subStr.includes("ADMIN") ||
+              subStr.includes("ADMINISTRATIVE") ||
+              Boolean(r.is_admin_task || r.isAdminTask)
+            ) {
               return;
             }
 
-            const [sh, sm] = (r.startTime || '').split(':').map(Number);
-            const [eh, em] = (r.endTime || '').split(':').map(Number);
+            const [sh, sm] = (r.startTime || "").split(":").map(Number);
+            const [eh, em] = (r.endTime || "").split(":").map(Number);
             if (!isNaN(sh) && !isNaN(eh)) {
-              const diffMins = (eh * 60 + em) - (sh * 60 + sm);
-              const catStr = String(r.category || '').toUpperCase();
-              const isSHS = gStr.includes('11') || gStr.includes('12') || catStr.includes('SHS');
+              const diffMins = eh * 60 + em - (sh * 60 + sm);
+              const catStr = String(r.category || "").toUpperCase();
+              const isSHS =
+                gStr.includes("11") ||
+                gStr.includes("12") ||
+                catStr.includes("SHS");
               const maxMins = isSHS ? 360 : 60;
 
               if (diffMins > maxMins) {
@@ -6294,7 +8718,7 @@ export const AppProvider = ({ children }) => {
                   personId: p.id,
                   type: "error",
                   category: "Workload Schedule",
-                  message: `${name}: ${r.subject || 'Subject'} period duration is ${diffMins} mins (Exceeds maximum ${maxMins} mins limit).`
+                  message: `${name}: ${r.subject || "Subject"} period duration is ${diffMins} mins (Exceeds maximum ${maxMins} mins limit).`,
                 });
               }
             }
@@ -6312,20 +8736,36 @@ export const AppProvider = ({ children }) => {
         { field: "ethnicGroup", label: "Ethnic Group", cat: "Demographics" },
         { field: "position", label: "Position", cat: "Employment" },
         { field: "fundSource", label: "Fund Source", cat: "Employment" },
-        { field: "natureOfAppointment", label: "Nature of Appointment", cat: "Employment" },
-        { field: "hiringArrangement", label: "Hiring Arrangement", cat: "Employment" },
-        { field: "eligibility", label: "Eligibility", cat: "Qualifications" }
+        {
+          field: "natureOfAppointment",
+          label: "Nature of Appointment",
+          cat: "Employment",
+        },
+        {
+          field: "hiringArrangement",
+          label: "Hiring Arrangement",
+          cat: "Employment",
+        },
+        { field: "eligibility", label: "Eligibility", cat: "Qualifications" },
       ];
 
       requiredFields.forEach(({ field, label, cat }) => {
         if (!p[field]) {
-          issues.push({ id: `${p.id}-${field}-req`, personId: p.id, type: "error", category: cat, message: `${name}: ${label} is required.` });
+          issues.push({
+            id: `${p.id}-${field}-req`,
+            personId: p.id,
+            type: "error",
+            category: cat,
+            message: `${name}: ${label} is required.`,
+          });
         }
       });
 
       // College Degree Requirement: Mandatory for Teaching & Teaching-Related personnel.
       // For Non-Teaching personnel, College Degree is only required if their highest educational attainment is College/Post-Grad.
-      const hasAnyCollegeDegree = (p.degreeRows && p.degreeRows.some(d => d.collegeDegree)) || !!p.collegeDegree;
+      const hasAnyCollegeDegree =
+        (p.degreeRows && p.degreeRows.some((d) => d.collegeDegree)) ||
+        !!p.collegeDegree;
       if (!isNonTeaching) {
         if (!hasAnyCollegeDegree) {
           issues.push({
@@ -6333,177 +8773,391 @@ export const AppProvider = ({ children }) => {
             personId: p.id,
             type: "error",
             category: "Qualifications",
-            message: `${name}: College Degree / Baccalaureate is required.`
+            message: `${name}: College Degree / Baccalaureate is required.`,
           });
         }
       } else {
-        const attainment = p.highestEducationalAttainment || '';
-        const isCollegeOrPostGrad = ['COLLEGE GRADUATE / BACCALAUREATE', 'COLLEGE UNDERGRADUATE', "MASTER'S DEGREE (GRADUATED)", "DOCTORATE DEGREE (GRADUATED)"].includes(attainment);
+        const attainment = p.highestEducationalAttainment || "";
+        const isCollegeOrPostGrad = [
+          "COLLEGE GRADUATE / BACCALAUREATE",
+          "COLLEGE UNDERGRADUATE",
+          "MASTER'S DEGREE (GRADUATED)",
+          "DOCTORATE DEGREE (GRADUATED)",
+        ].includes(attainment);
         if (isCollegeOrPostGrad && !hasAnyCollegeDegree) {
           issues.push({
             id: `${p.id}-collegeDegree-req`,
             personId: p.id,
             type: "error",
             category: "Qualifications",
-            message: `${name}: College Degree / Baccalaureate is required.`
+            message: `${name}: College Degree / Baccalaureate is required.`,
           });
         }
       }
 
       // DepEd Email Requirement & Validation
-      const isPermAppt = String(p.natureOfAppointment || p.nature_of_appointment || '').toUpperCase() === 'REGULAR PERMANENT';
+      const isPermAppt =
+        String(
+          p.natureOfAppointment || p.nature_of_appointment || "",
+        ).toUpperCase() === "REGULAR PERMANENT";
 
       if (isPermAppt) {
-        if (!p.depedEmail || p.depedEmail === 'N/A' || p.noDepedEmail || p.no_deped_email) {
+        if (
+          !p.depedEmail ||
+          p.depedEmail === "N/A" ||
+          p.noDepedEmail ||
+          p.no_deped_email
+        ) {
           issues.push({
             id: `${p.id}-deped-email-req`,
             personId: p.id,
             type: "error",
             category: "Contact",
-            message: `${name}: DepEd Email (@deped.gov.ph) is mandatory for Regular Permanent personnel.`
+            message: `${name}: DepEd Email (@deped.gov.ph) is mandatory for Regular Permanent personnel.`,
           });
         }
       }
 
-      const isEmailNA = !p.depedEmail || String(p.depedEmail).trim().toUpperCase() === 'N/A' || String(p.depedEmail).trim().toUpperCase() === 'NA' || p.noDepedEmail || p.no_deped_email;
+      const isEmailNA =
+        !p.depedEmail ||
+        String(p.depedEmail).trim().toUpperCase() === "N/A" ||
+        String(p.depedEmail).trim().toUpperCase() === "NA" ||
+        p.noDepedEmail ||
+        p.no_deped_email;
 
       if (p.depedEmail && !isEmailNA) {
-        const hasDiscrepancyAllowed = Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy);
-        const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName, hasDiscrepancyAllowed);
+        const hasDiscrepancyAllowed = Boolean(
+          p.allowEmailDiscrepancy || p.allow_email_discrepancy,
+        );
+        const emailVal = validateDepEdEmail(
+          p.depedEmail,
+          p.firstName,
+          p.lastName,
+          p.middleName,
+          hasDiscrepancyAllowed,
+        );
         if (!emailVal.isValid) {
           issues.push({
             id: `${p.id}-deped-email-invalid`,
             personId: p.id,
             type: "error",
             category: "Contact",
-            message: `${name}: ${emailVal.error}`
+            message: `${name}: ${emailVal.error}`,
           });
         }
         if (p.depedEmail.toLowerCase() === "samplehighschool@deped.gov.ph") {
-          issues.push({ id: `${p.id}-email-school-match`, personId: p.id, type: "error", category: "Contact", message: `${name}: School's official contact email cannot be used as individual email.` });
+          issues.push({
+            id: `${p.id}-email-school-match`,
+            personId: p.id,
+            type: "error",
+            category: "Contact",
+            message: `${name}: School's official contact email cannot be used as individual email.`,
+          });
         }
         if (hasDuplicate("depedEmail", p.depedEmail, p.id)) {
-          issues.push({ id: `${p.id}-email-dup`, personId: p.id, type: "error", category: "Contact", message: `${name}: Duplicate DepEd email address detected.` });
+          issues.push({
+            id: `${p.id}-email-dup`,
+            personId: p.id,
+            type: "error",
+            category: "Contact",
+            message: `${name}: Duplicate DepEd email address detected.`,
+          });
         }
       }
 
       // PhilSys Duplicate Check
-      if (!p.noPhilsys && !p.no_philsys && p.philsysNo && hasDuplicate("philsysNo", p.philsysNo, p.id)) {
-        issues.push({ id: `${p.id}-philsys-dup`, personId: p.id, type: "error", category: "Demographics", message: `${name}: Duplicate PhilSys / National ID detected.` });
+      if (
+        !p.noPhilsys &&
+        !p.no_philsys &&
+        p.philsysNo &&
+        hasDuplicate("philsysNo", p.philsysNo, p.id)
+      ) {
+        issues.push({
+          id: `${p.id}-philsys-dup`,
+          personId: p.id,
+          type: "error",
+          category: "Demographics",
+          message: `${name}: Duplicate PhilSys / National ID detected.`,
+        });
       }
 
       // Age Checks
       const age = getAge(p.birthdate);
       if (age === null) {
-        issues.push({ id: `${p.id}-no-age`, personId: p.id, type: "error", category: "Demographics", message: `${name}: Birthdate is required to calculate age.` });
+        issues.push({
+          id: `${p.id}-no-age`,
+          personId: p.id,
+          type: "error",
+          category: "Demographics",
+          message: `${name}: Birthdate is required to calculate age.`,
+        });
       } else if (age < 18 || age > 80) {
-        issues.push({ id: `${p.id}-age-questionable`, personId: p.id, type: "warn", category: "Demographics", message: `${name}: Computed age (${age}) is questionable and requires verification.` });
+        issues.push({
+          id: `${p.id}-age-questionable`,
+          personId: p.id,
+          type: "warn",
+          category: "Demographics",
+          message: `${name}: Computed age (${age}) is questionable and requires verification.`,
+        });
       }
 
       // MCOC Grade Levels Handled check (Pure Teaching Only - Non-teaching & Related-teaching do not teach grade levels)
       if (isTeachingOnly) {
-        const currentOfferings = Array.isArray(schoolInfo.curricularOffering) ? schoolInfo.curricularOffering : [];
+        const currentOfferings = Array.isArray(schoolInfo.curricularOffering)
+          ? schoolInfo.curricularOffering
+          : [];
         const offeredGL = [];
-        if (currentOfferings.includes('Elementary')) {
-          offeredGL.push('Kinder', 'Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade', 'SNED (NON-GRADED)', 'SPED (NON-GRADED)', 'SNED', 'SPED');
+        if (currentOfferings.includes("Elementary")) {
+          offeredGL.push(
+            "Kinder",
+            "Kindergarten",
+            "Grade 1",
+            "Grade 2",
+            "Grade 3",
+            "Grade 4",
+            "Grade 5",
+            "Grade 6",
+            "NON-GRADED",
+            "NON GRADED",
+            "Non-Graded",
+            "MONO-GRADE",
+            "MONO GRADE",
+            "Mono-Grade",
+            "SNED (NON-GRADED)",
+            "SPED (NON-GRADED)",
+            "SNED",
+            "SPED",
+          );
         }
-        if (currentOfferings.includes('JHS')) {
-          offeredGL.push('Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade', 'SNED (NON-GRADED)', 'SPED (NON-GRADED)', 'SNED', 'SPED');
+        if (currentOfferings.includes("JHS")) {
+          offeredGL.push(
+            "Grade 7",
+            "Grade 8",
+            "Grade 9",
+            "Grade 10",
+            "NON-GRADED",
+            "NON GRADED",
+            "Non-Graded",
+            "MONO-GRADE",
+            "MONO GRADE",
+            "Mono-Grade",
+            "SNED (NON-GRADED)",
+            "SPED (NON-GRADED)",
+            "SNED",
+            "SPED",
+          );
         }
-        if (currentOfferings.includes('SHS')) {
-          offeredGL.push('Grade 11', 'Grade 12', 'NON-GRADED', 'NON GRADED', 'Non-Graded', 'MONO-GRADE', 'MONO GRADE', 'Mono-Grade', 'SNED (NON-GRADED)', 'SPED (NON-GRADED)', 'SNED', 'SPED');
+        if (currentOfferings.includes("SHS")) {
+          offeredGL.push(
+            "Grade 11",
+            "Grade 12",
+            "NON-GRADED",
+            "NON GRADED",
+            "Non-Graded",
+            "MONO-GRADE",
+            "MONO GRADE",
+            "Mono-Grade",
+            "SNED (NON-GRADED)",
+            "SPED (NON-GRADED)",
+            "SNED",
+            "SPED",
+          );
         }
-        offeredGL.push('ALS', 'ALS (NON-GRADED)', 'SNED', 'SNED (NON-GRADED)', 'SPED', 'SPED (NON-GRADED)');
+        offeredGL.push(
+          "ALS",
+          "ALS (NON-GRADED)",
+          "SNED",
+          "SNED (NON-GRADED)",
+          "SPED",
+          "SPED (NON-GRADED)",
+        );
 
-        const normalizeGL = (gl) => String(gl || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const normalizeGL = (gl) =>
+          String(gl || "")
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, "");
         const offeredGLNormalized = offeredGL.map(normalizeGL);
 
-        const assignedGL = Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
-        const invalidGLs = assignedGL.filter(gl => {
+        const assignedGL = Array.isArray(p.assignedGradeLevels)
+          ? p.assignedGradeLevels
+          : [];
+        const invalidGLs = assignedGL.filter((gl) => {
           const norm = normalizeGL(gl);
           if (!norm) return false;
-          return !offeredGLNormalized.includes(norm) && !offeredGLNormalized.some(off => norm.includes(off) || off.includes(norm));
+          return (
+            !offeredGLNormalized.includes(norm) &&
+            !offeredGLNormalized.some(
+              (off) => norm.includes(off) || off.includes(norm),
+            )
+          );
         });
 
         if (invalidGLs.length > 0) {
-          issues.push({ id: `${p.id}-mcoc-mismatch`, personId: p.id, type: "error", category: "Employment", message: `${name}: Grade levels handled (${invalidGLs.join(', ')}) are not offered by the school's pre-registered Curricular Offerings (${currentOfferings.join(', ')}).` });
+          issues.push({
+            id: `${p.id}-mcoc-mismatch`,
+            personId: p.id,
+            type: "error",
+            category: "Employment",
+            message: `${name}: Grade levels handled (${invalidGLs.join(", ")}) are not offered by the school's pre-registered Curricular Offerings (${currentOfferings.join(", ")}).`,
+          });
         }
       }
 
       // Deployment & Funding Status
       if (p.fundSource === "NATIONAL" && !p.deploymentStatus) {
-        issues.push({ id: `${p.id}-deploy-req`, personId: p.id, type: "error", category: "Deployment", message: `${name}: National/plantilla staff require a Deployment Status.` });
+        issues.push({
+          id: `${p.id}-deploy-req`,
+          personId: p.id,
+          type: "error",
+          category: "Deployment",
+          message: `${name}: National/plantilla staff require a Deployment Status.`,
+        });
       }
 
       // Eligibility & PRC Specialization
-      const elig = Array.isArray(p.eligibility) ? p.eligibility : String(p.eligibility || "").split(",").map(s => s.trim());
-      const hasLETorPBET = elig.some(e => {
-        const u = (e || '').toUpperCase();
-        return u.includes("LICENSURE EXAMINATION FOR TEACHERS") || u.includes("PROFESSIONAL BOARD EXAMINATION FOR TEACHERS") || u === "LET" || u === "PBET";
+      const elig = Array.isArray(p.eligibility)
+        ? p.eligibility
+        : String(p.eligibility || "")
+            .split(",")
+            .map((s) => s.trim());
+      const hasLETorPBET = elig.some((e) => {
+        const u = (e || "").toUpperCase();
+        return (
+          u.includes("LICENSURE EXAMINATION FOR TEACHERS") ||
+          u.includes("PROFESSIONAL BOARD EXAMINATION FOR TEACHERS") ||
+          u === "LET" ||
+          u === "PBET"
+        );
       });
 
-      const isTeachingStaff = p.type === "teaching" || p.type === "TEACHING" || p.positionCategory === "TEACHING";
+      const isTeachingStaff =
+        p.type === "teaching" ||
+        p.type === "TEACHING" ||
+        p.positionCategory === "TEACHING";
       if (isTeachingStaff && !hasLETorPBET) {
-        issues.push({ id: `${p.id}-teaching-let-req`, personId: p.id, type: "error", category: "Qualifications", message: `${name}: Teaching personnel must possess Licensure Examination for Teachers (LET/PBET) eligibility.` });
+        issues.push({
+          id: `${p.id}-teaching-let-req`,
+          personId: p.id,
+          type: "error",
+          category: "Qualifications",
+          message: `${name}: Teaching personnel must possess Licensure Examination for Teachers (LET/PBET) eligibility.`,
+        });
       }
 
       // Related-Teaching LET/PBET check
-      const isRelatedTeachingRequiringLET = ["SCHOOL PRINCIPAL", "ASSISTANT SCHOOL PRINCIPAL", "HEAD TEACHER", "PRINCIPAL", "ASSISTANT PRINCIPAL"].some(pos => (p.position || "").toUpperCase().includes(pos));
+      const isRelatedTeachingRequiringLET = [
+        "SCHOOL PRINCIPAL",
+        "ASSISTANT SCHOOL PRINCIPAL",
+        "HEAD TEACHER",
+        "PRINCIPAL",
+        "ASSISTANT PRINCIPAL",
+      ].some((pos) => (p.position || "").toUpperCase().includes(pos));
       if (isRelatedTeachingRequiringLET && !hasLETorPBET) {
-        issues.push({ id: `${p.id}-related-let`, personId: p.id, type: "error", category: "Qualifications", message: `${name}: Related-teaching position (${p.position}) requires teaching experience and must have LET or PBET eligibility.` });
+        issues.push({
+          id: `${p.id}-related-let`,
+          personId: p.id,
+          type: "error",
+          category: "Qualifications",
+          message: `${name}: Related-teaching position (${p.position}) requires teaching experience and must have LET or PBET eligibility.`,
+        });
       }
 
-      if (hasLETorPBET && (!p.prcSpecialization || p.prcSpecialization === "N/A")) {
-        issues.push({ id: `${p.id}-prc-req`, personId: p.id, type: "error", category: "Qualifications", message: `${name}: PRC Specialization is required when Eligibility is LET or PBET.` });
+      if (
+        hasLETorPBET &&
+        (!p.prcSpecialization || p.prcSpecialization === "N/A")
+      ) {
+        issues.push({
+          id: `${p.id}-prc-req`,
+          personId: p.id,
+          type: "error",
+          category: "Qualifications",
+          message: `${name}: PRC Specialization is required when Eligibility is LET or PBET.`,
+        });
       }
 
       // Deployment Clustered / Reassigned List Check
       if (p.deploymentStatus === "Clustered") {
-        if (!p.clusteredSchools && (!p.assignedSchools || p.assignedSchools.length === 0)) {
-          issues.push({ id: `${p.id}-clustered-none`, personId: p.id, type: "error", category: "Deployment", message: `${name}: Clustered deployment requires selecting at least one receiving school.` });
+        if (
+          !p.clusteredSchools &&
+          (!p.assignedSchools || p.assignedSchools.length === 0)
+        ) {
+          issues.push({
+            id: `${p.id}-clustered-none`,
+            personId: p.id,
+            type: "error",
+            category: "Deployment",
+            message: `${name}: Clustered deployment requires selecting at least one receiving school.`,
+          });
         }
         if (p.clusteredAcceptanceStatus === "Pending acceptance") {
-          issues.push({ id: `${p.id}-clustered-pending`, personId: p.id, type: "warn", category: "Deployment", message: `${name}: Clustered deployment status is currently pending SDO/School acceptance.` });
+          issues.push({
+            id: `${p.id}-clustered-pending`,
+            personId: p.id,
+            type: "warn",
+            category: "Deployment",
+            message: `${name}: Clustered deployment status is currently pending SDO/School acceptance.`,
+          });
         }
       }
-      if (["Reassigned", "Borrowed"].includes(p.deploymentStatus) && (!p.assignedSchools || p.assignedSchools.length === 0) && !p.clusteredSchools) {
-        issues.push({ id: `${p.id}-assigned-none`, personId: p.id, type: "error", category: "Deployment", message: `${name}: ${p.deploymentStatus} deployment requires at least one assigned receiving school.` });
+      if (
+        ["Reassigned", "Borrowed"].includes(p.deploymentStatus) &&
+        (!p.assignedSchools || p.assignedSchools.length === 0) &&
+        !p.clusteredSchools
+      ) {
+        issues.push({
+          id: `${p.id}-assigned-none`,
+          personId: p.id,
+          type: "error",
+          category: "Deployment",
+          message: `${name}: ${p.deploymentStatus} deployment requires at least one assigned receiving school.`,
+        });
       }
 
       // Professional Development / L&D Trainings Check
-      const allTrainings = [...(p.neapTrainingRows || []), ...(p.certificationRows || []), ...(p.otherTrainingRows || [])];
+      const allTrainings = [
+        ...(p.neapTrainingRows || []),
+        ...(p.certificationRows || []),
+        ...(p.otherTrainingRows || []),
+      ];
       if (allTrainings.length > 0) {
-        const hasMissingHours = allTrainings.some(tr => !tr.totalHours || Number(tr.totalHours) <= 0 || Number(tr.totalHours) > 999);
+        const hasMissingHours = allTrainings.some(
+          (tr) =>
+            !tr.totalHours ||
+            Number(tr.totalHours) <= 0 ||
+            Number(tr.totalHours) > 999,
+        );
         if (hasMissingHours) {
           issues.push({
             id: `${p.id}-ld-hours-missing`,
             personId: p.id,
             type: "error",
             category: "Qualifications",
-            message: `${name}: Total hours (1-999) is required for all added Professional Development / L&D training records.`
+            message: `${name}: Total hours (1-999) is required for all added Professional Development / L&D training records.`,
           });
         }
       }
 
       // Teaching Assignment (Grade Levels) - Pure Teaching Only (Related-teaching & Non-teaching are excluded)
       if (isTeachingOnly) {
-        const assignedGL = Array.isArray(p.assignedGradeLevels) ? p.assignedGradeLevels : [];
+        const assignedGL = Array.isArray(p.assignedGradeLevels)
+          ? p.assignedGradeLevels
+          : [];
         if (assignedGL.length === 0) {
           issues.push({
             id: `${p.id}-assigned-gl-none`,
             personId: p.id,
             type: "error",
             category: "Teaching",
-            message: `${name}: Assigned grade level is required in the Teaching tab.`
+            message: `${name}: Assigned grade level is required in the Teaching tab.`,
           });
         }
       }
 
       // Learning Area Matrix (Full Service Years Allocation) - Teaching & Related Only
       if (!isNonTeaching) {
-        const d = p.firstServiceDate || p.first_service_date || '';
+        const d = p.firstServiceDate || p.first_service_date || "";
         let requiredYears = 1;
-        if (d && typeof d === 'string' && d.length >= 4) {
+        if (d && typeof d === "string" && d.length >= 4) {
           const startYear = parseInt(d.substring(0, 4), 10);
           if (!isNaN(startYear)) {
             const currentYear = new Date().getFullYear();
@@ -6513,7 +9167,7 @@ export const AppProvider = ({ children }) => {
 
         const laMap = p.learningAreaMap || p.matrix_data || {};
         let totalAssigned = 0;
-        Object.keys(laMap).forEach(k => {
+        Object.keys(laMap).forEach((k) => {
           if (laMap[k]?.checked) {
             totalAssigned += Number(laMap[k]?.years || 0);
           }
@@ -6525,7 +9179,7 @@ export const AppProvider = ({ children }) => {
             personId: p.id,
             type: "error",
             category: "Learning Area",
-            message: `${name}: Learning Area experience must be fully allocated (0 of ${requiredYears} years assigned).`
+            message: `${name}: Learning Area experience must be fully allocated (0 of ${requiredYears} years assigned).`,
           });
         } else if (totalAssigned < requiredYears) {
           issues.push({
@@ -6533,20 +9187,39 @@ export const AppProvider = ({ children }) => {
             personId: p.id,
             type: "error",
             category: "Learning Area",
-            message: `${name}: Learning Area experience incomplete (${totalAssigned} of ${requiredYears} years assigned, ${requiredYears - totalAssigned} yrs remaining).`
+            message: `${name}: Learning Area experience incomplete (${totalAssigned} of ${requiredYears} years assigned, ${requiredYears - totalAssigned} yrs remaining).`,
           });
         }
       }
 
       // Workload Rows & Schedule Verification
       if (p.type === "teaching") {
-        if (!p.hasNoTeachingLoad && (!p.workloadRows || p.workloadRows.length === 0)) {
-          issues.push({ id: `${p.id}-workload-empty`, personId: p.id, type: "warn", category: "Workload", message: `${name}: Subject workload schedule rows are missing.` });
+        if (
+          !p.hasNoTeachingLoad &&
+          (!p.workloadRows || p.workloadRows.length === 0)
+        ) {
+          issues.push({
+            id: `${p.id}-workload-empty`,
+            personId: p.id,
+            type: "warn",
+            category: "Workload",
+            message: `${name}: Subject workload schedule rows are missing.`,
+          });
         }
-        
+
         const weeklyTeachingMins = computeWeeklyTeachingMinutes(p.workloadRows);
-        if (!p.hasNoTeachingLoad && weeklyTeachingMins === 0 && (!p.deploymentStatus || p.deploymentStatus === 'OWN STATION')) {
-          issues.push({ id: `${p.id}-teaching-zero`, personId: p.id, type: "error", category: "Workload", message: `${name}: Teaching staff has 0 minutes of teaching schedules.` });
+        if (
+          !p.hasNoTeachingLoad &&
+          weeklyTeachingMins === 0 &&
+          (!p.deploymentStatus || p.deploymentStatus === "OWN STATION")
+        ) {
+          issues.push({
+            id: `${p.id}-teaching-zero`,
+            personId: p.id,
+            type: "error",
+            category: "Workload",
+            message: `${name}: Teaching staff has 0 minutes of teaching schedules.`,
+          });
         }
       }
 
@@ -6554,8 +9227,10 @@ export const AppProvider = ({ children }) => {
     });
 
     // 4. Allowances & Financial Incentives Validation Check
-    const activePersonnel = (personnel || []).filter(p => !p.isDraft && !p.isShared);
-    const hasAnyAllowanceChecked = activePersonnel.some(p => {
+    const activePersonnel = (personnel || []).filter(
+      (p) => !p.isDraft && !p.isShared,
+    );
+    const hasAnyAllowanceChecked = activePersonnel.some((p) => {
       const pAllowances = allowancesMap[p.id] || {};
       return hasActiveAllowance(pAllowances); // disabled allowances (e.g. SHA) are skipped
     });
@@ -6565,7 +9240,8 @@ export const AppProvider = ({ children }) => {
         id: "allowances-none-checked",
         type: "error",
         category: "Allowances & Financial Incentives",
-        message: "No allowances or financial incentives have been checked. You must check at least one allowance/incentive in the Allowances & Incentives Portal before submitting."
+        message:
+          "No allowances or financial incentives have been checked. You must check at least one allowance/incentive in the Allowances & Incentives Portal before submitting.",
       });
     }
 
@@ -6574,27 +9250,57 @@ export const AppProvider = ({ children }) => {
     const isAshRequired = regularEnrollment >= 1001;
 
     const REQUIRED_DESIGNATIONS_LIST = [
-      { id: 'guidance_designate', name: 'Guidance Designate', keys: ['GUIDANCE DESIGNATE'] },
-      { id: 'learner_information_officer', name: 'Learner Information Officer', keys: ['LEARNER INFORMATION OFFICER', 'LEARNER FORMATION OFFICER'] },
-      { id: 'department_head_designate', name: 'Department Head Designate', keys: ['DEPARTMENT HEAD DESIGNATE', 'DEPARTMENT HEAD'] }
-    ].filter(d => d.id !== 'department_head_designate' || requiresDepartmentHead(schoolInfo?.curricularOffering)); // not needed for elementary-only schools
+      {
+        id: "guidance_designate",
+        name: "Guidance Designate",
+        keys: ["GUIDANCE DESIGNATE"],
+      },
+      {
+        id: "learner_information_officer",
+        name: "Learner Information Officer",
+        keys: ["LEARNER INFORMATION OFFICER", "LEARNER FORMATION OFFICER"],
+      },
+      {
+        id: "department_head_designate",
+        name: "Department Head Designate",
+        keys: ["DEPARTMENT HEAD DESIGNATE", "DEPARTMENT HEAD"],
+      },
+    ].filter(
+      (d) =>
+        d.id !== "department_head_designate" ||
+        requiresDepartmentHead(schoolInfo?.curricularOffering),
+    ); // not needed for elementary-only schools
 
     if (isAshRequired) {
       REQUIRED_DESIGNATIONS_LIST.push({
-        id: 'assistant_school_head_designate',
-        name: 'Assistant School Head Designate',
-        keys: ['ASSISTANT SCHOOL HEAD DESIGNATE', 'ASSISTANT SCHOOL HEAD']
+        id: "assistant_school_head_designate",
+        name: "Assistant School Head Designate",
+        keys: ["ASSISTANT SCHOOL HEAD DESIGNATE", "ASSISTANT SCHOOL HEAD"],
       });
     }
 
-    REQUIRED_DESIGNATIONS_LIST.forEach(reqDesig => {
-      const isAssigned = (personnel || []).some(p => {
+    REQUIRED_DESIGNATIONS_LIST.forEach((reqDesig) => {
+      const isAssigned = (personnel || []).some((p) => {
         if (p.isDraft) return false;
-        const cleanDesig = String(p.designation || '').replace(/::APPROVED_SDS/gi, '').trim().toUpperCase();
-        const desigsList = Array.isArray(p.designations) 
-          ? p.designations.map(d => String(d || '').replace(/::APPROVED_SDS/gi, '').trim().toUpperCase()) 
+        const cleanDesig = String(p.designation || "")
+          .replace(/::APPROVED_SDS/gi, "")
+          .trim()
+          .toUpperCase();
+        const desigsList = Array.isArray(p.designations)
+          ? p.designations.map((d) =>
+              String(d || "")
+                .replace(/::APPROVED_SDS/gi, "")
+                .trim()
+                .toUpperCase(),
+            )
           : [];
-        return reqDesig.keys.some(k => cleanDesig === k || cleanDesig.startsWith(`${k} -`) || cleanDesig.startsWith(`${k}:`) || desigsList.some(d => d === k || d.startsWith(`${k} -`)));
+        return reqDesig.keys.some(
+          (k) =>
+            cleanDesig === k ||
+            cleanDesig.startsWith(`${k} -`) ||
+            cleanDesig.startsWith(`${k}:`) ||
+            desigsList.some((d) => d === k || d.startsWith(`${k} -`)),
+        );
       });
 
       if (!isAssigned) {
@@ -6602,213 +9308,668 @@ export const AppProvider = ({ children }) => {
           id: `designation-req-${reqDesig.id}`,
           type: "error",
           category: "Official Designations",
-          message: reqDesig.id === 'assistant_school_head_designate'
-            ? `Required Designation Missing: Regular school enrollment is ${regularEnrollment} (1,001+ learners). An 'Assistant School Head Designate' must be assigned in Node 04 (Designations & Duties).`
-            : `Required Designation Missing: No personnel is assigned as '${reqDesig.name}'. Please designate a qualified teacher in Node 04 (Designations & Duties).`
+          message:
+            reqDesig.id === "assistant_school_head_designate"
+              ? `Required Designation Missing: Regular school enrollment is ${regularEnrollment} (1,001+ learners). An 'Assistant School Head Designate' must be assigned in Node 04 (Designations & Duties).`
+              : `Required Designation Missing: No personnel is assigned as '${reqDesig.name}'. Please designate a qualified teacher in Node 04 (Designations & Duties).`,
         });
       }
     });
 
     // 6. MATATAG Curriculum Compliance: Grades 1 to 10 Monograde Sections (DO No. 012, s. 2024)
     const MATATAG_SPECS_BY_GRADE = {
-      'KINDERGARTEN': {
-        gradeLabel: 'Kindergarten',
+      KINDERGARTEN: {
+        gradeLabel: "Kindergarten",
         mandatorySubjects: [
-          { key: 'KINDER_BLOCKS', name: 'Kindergarten Blocks of Time', aliases: ['KINDER', 'KINDERGARTEN', 'KINDER BLOCKS OF TIME', 'BLOCKS OF TIME'] }
+          {
+            key: "KINDER_BLOCKS",
+            name: "Kindergarten Blocks of Time",
+            aliases: [
+              "KINDER",
+              "KINDERGARTEN",
+              "KINDER BLOCKS OF TIME",
+              "BLOCKS OF TIME",
+            ],
+          },
         ],
-        disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'ENGLISH', 'FILIPINO', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+        disallowedSubjects: [
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "MAKABANSA",
+          "ENGLISH",
+          "FILIPINO",
+          "SCIENCE",
+          "EPP",
+          "TLE",
+          "MAPEH",
+          "ARALING PANLIPUNAN",
+        ],
       },
-      'GRADE 1': {
-        gradeLabel: 'Grade 1',
+      "GRADE 1": {
+        gradeLabel: "Grade 1",
         mandatorySubjects: [
-          { key: 'LANGUAGE', name: 'Language', aliases: ['LANGUAGE', 'LANG'] },
-          { key: 'READING AND LITERACY', name: 'Reading and Literacy', aliases: ['READING AND LITERACY', 'READING & LITERACY', 'READING'] },
-          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'] }
+          { key: "LANGUAGE", name: "Language", aliases: ["LANGUAGE", "LANG"] },
+          {
+            key: "READING AND LITERACY",
+            name: "Reading and Literacy",
+            aliases: ["READING AND LITERACY", "READING & LITERACY", "READING"],
+          },
+          { key: "MAKABANSA", name: "Makabansa", aliases: ["MAKABANSA"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          {
+            key: "GMRC",
+            name: "GMRC",
+            aliases: [
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "EDUKASYON SA PAGPAPAKATAO",
+              "ESP",
+            ],
+          },
         ],
-        disallowedSubjects: ['ENGLISH', 'FILIPINO', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+        disallowedSubjects: [
+          "ENGLISH",
+          "FILIPINO",
+          "SCIENCE",
+          "EPP",
+          "TLE",
+          "MAPEH",
+          "ARALING PANLIPUNAN",
+        ],
       },
-      'GRADE 2': {
-        gradeLabel: 'Grade 2',
+      "GRADE 2": {
+        gradeLabel: "Grade 2",
         mandatorySubjects: [
-          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'] }
+          { key: "MAKABANSA", name: "Makabansa", aliases: ["MAKABANSA"] },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          {
+            key: "GMRC",
+            name: "GMRC",
+            aliases: [
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "EDUKASYON SA PAGPAPAKATAO",
+              "ESP",
+            ],
+          },
         ],
-        disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+        disallowedSubjects: [
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+          "SCIENCE",
+          "EPP",
+          "TLE",
+          "MAPEH",
+          "ARALING PANLIPUNAN",
+        ],
       },
-      'GRADE 3': {
-        gradeLabel: 'Grade 3',
+      "GRADE 3": {
+        gradeLabel: "Grade 3",
         mandatorySubjects: [
-          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'] }
+          { key: "MAKABANSA", name: "Makabansa", aliases: ["MAKABANSA"] },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "GMRC",
+            name: "GMRC",
+            aliases: [
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "EDUKASYON SA PAGPAPAKATAO",
+              "ESP",
+            ],
+          },
         ],
-        disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
+        disallowedSubjects: [
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+          "EPP",
+          "TLE",
+          "MAPEH",
+          "ARALING PANLIPUNAN",
+        ],
       },
-      'GRADE 4': {
-        gradeLabel: 'Grade 4',
+      "GRADE 4": {
+        gradeLabel: "Grade 4",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "GMRC",
+            name: "GMRC",
+            aliases: [
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "VALUES EDUCATION",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
       },
-      'GRADE 5': {
-        gradeLabel: 'Grade 5',
+      "GRADE 5": {
+        gradeLabel: "Grade 5",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "GMRC",
+            name: "GMRC",
+            aliases: [
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "VALUES EDUCATION",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
       },
-      'GRADE 6': {
-        gradeLabel: 'Grade 6',
+      "GRADE 6": {
+        gradeLabel: "Grade 6",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "GMRC",
+            name: "GMRC",
+            aliases: [
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "VALUES EDUCATION",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
       },
-      'GRADE 7': {
-        gradeLabel: 'Grade 7',
+      "GRADE 7": {
+        gradeLabel: "Grade 7",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "VALUES_EDUCATION",
+            name: "Values Education",
+            aliases: [
+              "VALUES EDUCATION",
+              "VALUES ED",
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
       },
-      'GRADE 8': {
-        gradeLabel: 'Grade 8',
+      "GRADE 8": {
+        gradeLabel: "Grade 8",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "VALUES_EDUCATION",
+            name: "Values Education",
+            aliases: [
+              "VALUES EDUCATION",
+              "VALUES ED",
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
       },
-      'GRADE 9': {
-        gradeLabel: 'Grade 9',
+      "GRADE 9": {
+        gradeLabel: "Grade 9",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "VALUES_EDUCATION",
+            name: "Values Education",
+            aliases: [
+              "VALUES EDUCATION",
+              "VALUES ED",
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
       },
-      'GRADE 10': {
-        gradeLabel: 'Grade 10',
+      "GRADE 10": {
+        gradeLabel: "Grade 10",
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
+          {
+            key: "EPP_TLE",
+            name: "TLE",
+            aliases: [
+              "TLE",
+              "EPP",
+              "EPP/TLE",
+              "EPP / TLE",
+              "TECHNOLOGY AND LIVELIHOOD EDUCATION",
+              "EDUKASYONG PANTAHANAN AT PANGKABUHAYAN",
+            ],
+          },
+          {
+            key: "MAPEH",
+            name: "MAPEH",
+            aliases: [
+              "MAPEH",
+              "MUSIC",
+              "ARTS",
+              "PE",
+              "HEALTH",
+              "PHYSICAL EDUCATION",
+            ],
+          },
+          {
+            key: "ARALING PANLIPUNAN",
+            name: "Araling Panlipunan",
+            aliases: ["ARALING PANLIPUNAN", "AP"],
+          },
+          { key: "FILIPINO", name: "Filipino", aliases: ["FILIPINO", "FIL"] },
+          { key: "ENGLISH", name: "English", aliases: ["ENGLISH", "ENG"] },
+          {
+            key: "MATHEMATICS",
+            name: "Mathematics",
+            aliases: ["MATHEMATICS", "MATH"],
+          },
+          { key: "SCIENCE", name: "Science", aliases: ["SCIENCE", "SCI"] },
+          {
+            key: "VALUES_EDUCATION",
+            name: "Values Education",
+            aliases: [
+              "VALUES EDUCATION",
+              "VALUES ED",
+              "GMRC",
+              "GOOD MORAL AND RIGHT CONDUCT",
+              "ESP",
+              "EDUKASYON SA PAGPAPAKATAO",
+            ],
+          },
         ],
-        disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
-      }
+        disallowedSubjects: [
+          "MAKABANSA",
+          "LANGUAGE",
+          "READING AND LITERACY",
+          "READING & LITERACY",
+        ],
+      },
     };
 
-    (classSections || []).forEach(sec => {
-      let gLevel = String(sec.gradeLevel || '').trim().toUpperCase();
-      if (gLevel === 'KINDER' || gLevel === 'KINDERGARTEN' || gLevel === 'KINDER - MATATAG') gLevel = 'KINDERGARTEN';
-      if (gLevel === 'GRADE 1 - MATATAG') gLevel = 'GRADE 1';
-      if (gLevel === 'GRADE 2 - MATATAG') gLevel = 'GRADE 2';
-      if (gLevel === 'GRADE 3 - MATATAG') gLevel = 'GRADE 3';
-      if (gLevel === 'GRADE 4 - MATATAG') gLevel = 'GRADE 4';
-      if (gLevel === 'GRADE 5 - MATATAG') gLevel = 'GRADE 5';
-      if (gLevel === 'GRADE 6 - MATATAG') gLevel = 'GRADE 6';
-      if (gLevel === 'GRADE 7 - MATATAG') gLevel = 'GRADE 7';
-      if (gLevel === 'GRADE 8 - MATATAG') gLevel = 'GRADE 8';
-      if (gLevel === 'GRADE 9 - MATATAG') gLevel = 'GRADE 9';
-      if (gLevel === 'GRADE 10 - MATATAG') gLevel = 'GRADE 10';
+    (classSections || []).forEach((sec) => {
+      let gLevel = String(sec.gradeLevel || "")
+        .trim()
+        .toUpperCase();
+      if (
+        gLevel === "KINDER" ||
+        gLevel === "KINDERGARTEN" ||
+        gLevel === "KINDER - MATATAG"
+      )
+        gLevel = "KINDERGARTEN";
+      if (gLevel === "GRADE 1 - MATATAG") gLevel = "GRADE 1";
+      if (gLevel === "GRADE 2 - MATATAG") gLevel = "GRADE 2";
+      if (gLevel === "GRADE 3 - MATATAG") gLevel = "GRADE 3";
+      if (gLevel === "GRADE 4 - MATATAG") gLevel = "GRADE 4";
+      if (gLevel === "GRADE 5 - MATATAG") gLevel = "GRADE 5";
+      if (gLevel === "GRADE 6 - MATATAG") gLevel = "GRADE 6";
+      if (gLevel === "GRADE 7 - MATATAG") gLevel = "GRADE 7";
+      if (gLevel === "GRADE 8 - MATATAG") gLevel = "GRADE 8";
+      if (gLevel === "GRADE 9 - MATATAG") gLevel = "GRADE 9";
+      if (gLevel === "GRADE 10 - MATATAG") gLevel = "GRADE 10";
 
-      const sType = String(sec.sectionType || '').trim().toUpperCase();
-      const isMulti = sType === 'MULTIGRADE' || sType.includes('MULTI') || gLevel.includes(' - ') || String(sec.sectionName || '').toLowerCase().includes('multi');
+      const sType = String(sec.sectionType || "")
+        .trim()
+        .toUpperCase();
+      const isMulti =
+        sType === "MULTIGRADE" ||
+        sType.includes("MULTI") ||
+        gLevel.includes(" - ") ||
+        String(sec.sectionName || "")
+          .toLowerCase()
+          .includes("multi");
       const matatagSpec = MATATAG_SPECS_BY_GRADE[gLevel];
 
       // Validate only pure monograde sections (exclude multigrade)
       if (matatagSpec && !isMulti) {
         const allSectionRows = [];
-        (personnel || []).forEach(p => {
+        (personnel || []).forEach((p) => {
           if (p.isDraft || !Array.isArray(p.workloadRows)) return;
-          p.workloadRows.forEach(r => {
-            const rowSecId = String(r.sectionId || r.section_id || '');
-            const rowSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-            const rowGLevel = String(r.gradeLevel || '').trim().toUpperCase();
-            if (rowSecId === String(sec.id) || (rowSecName === String(sec.sectionName || '').trim().toUpperCase() && (rowGLevel === gLevel || !rowGLevel))) {
-              allSectionRows.push({ ...r, teacherName: `${p.firstName || ''} ${p.lastName || ''}`.trim() });
+          p.workloadRows.forEach((r) => {
+            const rowSecId = String(r.sectionId || r.section_id || "");
+            const rowSecName = String(r.sectionName || r.section_name || "")
+              .trim()
+              .toUpperCase();
+            const rowGLevel = String(r.gradeLevel || "")
+              .trim()
+              .toUpperCase();
+            if (
+              rowSecId === String(sec.id) ||
+              (rowSecName ===
+                String(sec.sectionName || "")
+                  .trim()
+                  .toUpperCase() &&
+                (rowGLevel === gLevel || !rowGLevel))
+            ) {
+              allSectionRows.push({
+                ...r,
+                teacherName: `${p.firstName || ""} ${p.lastName || ""}`.trim(),
+              });
             }
           });
         });
 
         // Determine terms to check for this section (always check 1st Term, and any other term that has schedules in this section)
-        const sectionTerms = Array.from(new Set(allSectionRows.map(r => r.term || '1st')));
-        const termsToCheck = sectionTerms.length > 0 ? sectionTerms : ['1st'];
+        const sectionTerms = Array.from(
+          new Set(allSectionRows.map((r) => r.term || "1st")),
+        );
+        const termsToCheck = sectionTerms.length > 0 ? sectionTerms : ["1st"];
 
-        termsToCheck.forEach(tId => {
-          const termLabel = tId === '1st' ? '1st Term' : tId === '2nd' ? '2nd Term' : tId === '3rd' ? '3rd Term' : `${tId} Term`;
-          const sectionRows = allSectionRows.filter(r => (r.term || '1st') === tId);
+        termsToCheck.forEach((tId) => {
+          const termLabel =
+            tId === "1st"
+              ? "1st Term"
+              : tId === "2nd"
+                ? "2nd Term"
+                : tId === "3rd"
+                  ? "3rd Term"
+                  : `${tId} Term`;
+          const sectionRows = allSectionRows.filter(
+            (r) => (r.term || "1st") === tId,
+          );
 
           // 6.1 Check each of the mandatory MATATAG subjects (No Subject Left Behind)
-          matatagSpec.mandatorySubjects.forEach(reqSub => {
-            const matchingRows = sectionRows.filter(r => {
-              const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
-              return reqSub.aliases.some(a => subStr === a || subStr.startsWith(`${a} `) || subStr.startsWith(`${a}-`));
+          matatagSpec.mandatorySubjects.forEach((reqSub) => {
+            const matchingRows = sectionRows.filter((r) => {
+              const subStr = String(r.subject || r.subjectName || "")
+                .trim()
+                .toUpperCase();
+              return reqSub.aliases.some(
+                (a) =>
+                  subStr === a ||
+                  subStr.startsWith(`${a} `) ||
+                  subStr.startsWith(`${a}-`),
+              );
             });
 
             if (matchingRows.length === 0) {
               issues.push({
-                id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-missing-${sec.id}-${reqSub.key}-${tId}`,
+                id: `${gLevel.toLowerCase().replace(/\s+/g, "")}-matatag-missing-${sec.id}-${reqSub.key}-${tId}`,
                 type: "error",
                 category: "MATATAG Curriculum Compliance",
                 sectionId: sec.id,
                 personId: sec.advisorId || null,
                 term: tId,
-                message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): Incomplete Section Schedule - Missing mandatory subject "${reqSub.name}". All core curriculum subjects must be assigned.`
+                message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): Incomplete Section Schedule - Missing mandatory subject "${reqSub.name}". All core curriculum subjects must be assigned.`,
               });
             } else {
               // Time allotment (minimum / daily / weekly caps) is checked in 6.3 from shared rules.
@@ -6816,18 +9977,24 @@ export const AppProvider = ({ children }) => {
           });
 
           // 6.2 Check for disallowed legacy subjects
-          matatagSpec.disallowedSubjects.forEach(disSub => {
+          matatagSpec.disallowedSubjects.forEach((disSub) => {
             sectionRows.forEach((r, rIdx) => {
-              const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
-              if (subStr === disSub || subStr.startsWith(`${disSub} `) || subStr.startsWith(`${disSub}-`)) {
+              const subStr = String(r.subject || r.subjectName || "")
+                .trim()
+                .toUpperCase();
+              if (
+                subStr === disSub ||
+                subStr.startsWith(`${disSub} `) ||
+                subStr.startsWith(`${disSub}-`)
+              ) {
                 issues.push({
-                  id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-disallowed-${sec.id}-${disSub}-${tId}-${rIdx}`,
+                  id: `${gLevel.toLowerCase().replace(/\s+/g, "")}-matatag-disallowed-${sec.id}-${disSub}-${tId}-${rIdx}`,
                   type: "error",
                   category: "MATATAG Curriculum Compliance",
                   sectionId: sec.id,
                   personId: r.personId || sec.advisorId || null,
                   term: tId,
-                  message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${subStr}" is not part of the ${matatagSpec.gradeLabel} MATATAG curriculum under DepEd Order No. 12, s. 2024.`
+                  message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${subStr}" is not part of the ${matatagSpec.gradeLabel} MATATAG curriculum under DepEd Order No. 12, s. 2024.`,
                 });
               }
             });
@@ -6838,61 +10005,105 @@ export const AppProvider = ({ children }) => {
 
     // 6.3 Time allotment per subject (minimum / daily cap / weekly cap). Rules come from shared/scheduleRules.js
     // and apply to regular, multigrade and Special Curricular Program sections alike.
-    (classSections || []).forEach(sec => {
+    (classSections || []).forEach((sec) => {
       const secRows = [];
-      (personnel || []).forEach(p => {
+      (personnel || []).forEach((p) => {
         if (p.isDraft || !Array.isArray(p.workloadRows)) return;
-        p.workloadRows.forEach(r => {
-          const rowSecId = String(r.sectionId || r.section_id || '');
-          const rowSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-          const sameName = rowSecName === String(sec.sectionName || '').trim().toUpperCase()
-            && String(r.gradeLevel || '').trim().toUpperCase() === String(sec.gradeLevel || '').trim().toUpperCase();
-          if (rowSecId === String(sec.id) || (!rowSecId && sameName)) secRows.push(r);
+        p.workloadRows.forEach((r) => {
+          const rowSecId = String(r.sectionId || r.section_id || "");
+          const rowSecName = String(r.sectionName || r.section_name || "")
+            .trim()
+            .toUpperCase();
+          const sameName =
+            rowSecName ===
+              String(sec.sectionName || "")
+                .trim()
+                .toUpperCase() &&
+            String(r.gradeLevel || "")
+              .trim()
+              .toUpperCase() ===
+              String(sec.gradeLevel || "")
+                .trim()
+                .toUpperCase();
+          if (rowSecId === String(sec.id) || (!rowSecId && sameName))
+            secRows.push(r);
         });
       });
-      Array.from(new Set(secRows.map(r => r.term || '1st'))).forEach(tId => {
-        const termLabel = tId === '1st' ? '1st Term' : tId === '2nd' ? '2nd Term' : tId === '3rd' ? '3rd Term' : `${tId} Term`;
-        validateTimeAllotment(sec, secRows.filter(r => (r.term || '1st') === tId)).forEach((v, vIdx) => {
-          issues.push({
-            id: `time-allotment-${v.code}-${sec.id}-${tId}-${String(v.subject).toLowerCase().replace(/\s+/g, '')}-${vIdx}`,
-            type: "error",
-            category: "MATATAG Curriculum Compliance",
-            sectionId: sec.id,
-            personId: sec.advisorId || null,
-            term: tId,
-            message: `${termLabel} - ${v.message}`
+      Array.from(new Set(secRows.map((r) => r.term || "1st"))).forEach(
+        (tId) => {
+          const termLabel =
+            tId === "1st"
+              ? "1st Term"
+              : tId === "2nd"
+                ? "2nd Term"
+                : tId === "3rd"
+                  ? "3rd Term"
+                  : `${tId} Term`;
+          validateTimeAllotment(
+            sec,
+            secRows.filter((r) => (r.term || "1st") === tId),
+          ).forEach((v, vIdx) => {
+            issues.push({
+              id: `time-allotment-${v.code}-${sec.id}-${tId}-${String(v.subject).toLowerCase().replace(/\s+/g, "")}-${vIdx}`,
+              type: "error",
+              category: "MATATAG Curriculum Compliance",
+              sectionId: sec.id,
+              personId: sec.advisorId || null,
+              term: tId,
+              message: `${termLabel} - ${v.message}`,
+            });
           });
-        });
-      });
+        },
+      );
     });
 
     // 7. Duplicate Subject Assignment in a Single Section (Kinder to Grade 12 - Term Isolated)
     const sectionSubjectAssignments = {};
-    (personnel || []).forEach(p => {
+    (personnel || []).forEach((p) => {
       if (p.isDraft || !Array.isArray(p.workloadRows)) return;
-      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Unknown Teacher';
+      const teacherName =
+        `${p.firstName || ""} ${p.lastName || ""}`.trim() || "Unknown Teacher";
 
       p.workloadRows.forEach((r, rIdx) => {
-        const subRaw = String(r.subject || r.subjectName || '').trim();
+        const subRaw = String(r.subject || r.subjectName || "").trim();
         const subNorm = subRaw.toUpperCase();
-        if (!subNorm || subNorm === 'ADVISORY' || subNorm === 'HGP' || subNorm.includes('HOMEROOM GUIDANCE')) return;
+        if (
+          !subNorm ||
+          subNorm === "ADVISORY" ||
+          subNorm === "HGP" ||
+          subNorm.includes("HOMEROOM GUIDANCE")
+        )
+          return;
 
-        const secId = String(r.sectionId || r.section_id || '');
-        const secName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
-        const rowTerm = r.term || r.semester || '1st';
-        const termLabel = rowTerm === '1st' ? '1st Term' : rowTerm === '2nd' ? '2nd Term' : rowTerm === '3rd' ? '3rd Term' : `${rowTerm}`;
+        const secId = String(r.sectionId || r.section_id || "");
+        const secName = String(r.sectionName || r.section_name || "")
+          .trim()
+          .toUpperCase();
+        const rowTerm = r.term || r.semester || "1st";
+        const termLabel =
+          rowTerm === "1st"
+            ? "1st Term"
+            : rowTerm === "2nd"
+              ? "2nd Term"
+              : rowTerm === "3rd"
+                ? "3rd Term"
+                : `${rowTerm}`;
 
-        const secKey = secId ? `id_${secId}_${rowTerm}` : (secName ? `name_${secName}_${rowTerm}` : null);
+        const secKey = secId
+          ? `id_${secId}_${rowTerm}`
+          : secName
+            ? `name_${secName}_${rowTerm}`
+            : null;
         if (!secKey) return;
 
         if (!sectionSubjectAssignments[secKey]) {
           sectionSubjectAssignments[secKey] = {
             secId,
-            secName: r.sectionName || 'Section',
-            gradeLevel: r.gradeLevel || '',
+            secName: r.sectionName || "Section",
+            gradeLevel: r.gradeLevel || "",
             term: rowTerm,
             termLabel,
-            subjects: {}
+            subjects: {},
           };
         }
 
@@ -6908,19 +10119,27 @@ export const AppProvider = ({ children }) => {
           teacherName,
           subjectOriginal: subRaw,
           rowIdx: rIdx,
-          term: rowTerm
+          term: rowTerm,
         });
       });
     });
 
-    Object.values(sectionSubjectAssignments).forEach(secData => {
+    Object.values(sectionSubjectAssignments).forEach((secData) => {
       Object.entries(secData.subjects).forEach(([subNorm, assignments]) => {
         if (assignments.length > 1) {
-          const teacherNames = Array.from(new Set(assignments.map(a => a.teacherName))).join(', ');
+          const teacherNames = Array.from(
+            new Set(assignments.map((a) => a.teacherName)),
+          ).join(", ");
           const subDisplayName = assignments[0].subjectOriginal || subNorm;
-          const targetSec = (classSections || []).find(s => String(s.id) === String(secData.secId) || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secData.secName));
+          const targetSec = (classSections || []).find(
+            (s) =>
+              String(s.id) === String(secData.secId) ||
+              (s.sectionName &&
+                String(s.sectionName).trim().toUpperCase() === secData.secName),
+          );
           const finalSecName = targetSec?.sectionName || secData.secName;
-          const finalGrade = targetSec?.gradeLevel || secData.gradeLevel || 'Section';
+          const finalGrade =
+            targetSec?.gradeLevel || secData.gradeLevel || "Section";
           const termSuffix = `, ${secData.termLabel}`;
 
           issues.push({
@@ -6930,28 +10149,41 @@ export const AppProvider = ({ children }) => {
             sectionId: secData.secId || null,
             personId: assignments[0].personId || null,
             term: secData.term,
-            message: `Section "${finalSecName}" (${finalGrade}${termSuffix}): Duplicate assignment for subject "${subDisplayName}" across multiple entries (${teacherNames}). Each subject may only be assigned once per section.`
+            message: `Section "${finalSecName}" (${finalGrade}${termSuffix}): Duplicate assignment for subject "${subDisplayName}" across multiple entries (${teacherNames}). Each subject may only be assigned once per section.`,
           });
         }
       });
     });
 
     // 8. Homeroom Guidance (HGP) 60-Minute Weekly Allotment Audit (Term Isolated)
-    (personnel || []).forEach(p => {
+    (personnel || []).forEach((p) => {
       if (p.isDraft || !Array.isArray(p.workloadRows)) return;
-      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Teacher';
+      const teacherName =
+        `${p.firstName || ""} ${p.lastName || ""}`.trim() || "Teacher";
 
       p.workloadRows.forEach((r, rIdx) => {
-        const subStr = String(r.subject || r.subjectName || '').trim().toUpperCase();
-        if (subStr === 'HGP' || subStr.includes('HOMEROOM GUIDANCE')) {
-          const rowTerm = r.term || '1st';
-          const termLabel = rowTerm === '1st' ? '1st Term' : rowTerm === '2nd' ? '2nd Term' : rowTerm === '3rd' ? '3rd Term' : `${rowTerm} Term`;
-          const rowDays = (Array.isArray(r.days) && r.days.length > 0)
-            ? r.days
-            : (r.daySchedule || r.day_schedule)
-              ? String(r.daySchedule || r.day_schedule).split(',').map(s => s.trim())
-              : [];
-          
+        const subStr = String(r.subject || r.subjectName || "")
+          .trim()
+          .toUpperCase();
+        if (subStr === "HGP" || subStr.includes("HOMEROOM GUIDANCE")) {
+          const rowTerm = r.term || "1st";
+          const termLabel =
+            rowTerm === "1st"
+              ? "1st Term"
+              : rowTerm === "2nd"
+                ? "2nd Term"
+                : rowTerm === "3rd"
+                  ? "3rd Term"
+                  : `${rowTerm} Term`;
+          const rowDays =
+            Array.isArray(r.days) && r.days.length > 0
+              ? r.days
+              : r.daySchedule || r.day_schedule
+                ? String(r.daySchedule || r.day_schedule)
+                    .split(",")
+                    .map((s) => s.trim())
+                : [];
+
           if (!r.startTime || !r.endTime || rowDays.length === 0) {
             issues.push({
               id: `hgp-missing-schedule-${p.id}-${rIdx}-${rowTerm}`,
@@ -6959,14 +10191,14 @@ export const AppProvider = ({ children }) => {
               category: "Schedule Conflicts & Duplicate Subjects",
               personId: p.id,
               term: rowTerm,
-              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}" (${termLabel}): Homeroom Guidance (HGP) requires a defined Start Time, End Time, and at least one day (Mon-Fri).`
+              message: `${teacherName} - Section "${r.sectionName || "Advisory"}" (${termLabel}): Homeroom Guidance (HGP) requires a defined Start Time, End Time, and at least one day (Mon-Fri).`,
             });
             return;
           }
 
-          const [sh, sm] = r.startTime.split(':').map(Number);
-          const [eh, em] = r.endTime.split(':').map(Number);
-          const diffM = (eh * 60 + em) - (sh * 60 + sm);
+          const [sh, sm] = r.startTime.split(":").map(Number);
+          const [eh, em] = r.endTime.split(":").map(Number);
+          const diffM = eh * 60 + em - (sh * 60 + sm);
           const weeklyM = diffM * rowDays.length;
 
           if (weeklyM !== 60) {
@@ -6976,7 +10208,7 @@ export const AppProvider = ({ children }) => {
               category: "Schedule Conflicts & Duplicate Subjects",
               personId: p.id,
               term: rowTerm,
-              message: `${teacherName} - Section "${r.sectionName || 'Advisory'}" (${termLabel}): Homeroom Guidance (HGP) must total exactly 60 minutes per week under DepEd policy (Current: ${diffM} mins/day × ${rowDays.length} day${rowDays.length > 1 ? 's' : ''} = ${weeklyM} mins/week).`
+              message: `${teacherName} - Section "${r.sectionName || "Advisory"}" (${termLabel}): Homeroom Guidance (HGP) must total exactly 60 minutes per week under DepEd policy (Current: ${diffM} mins/day × ${rowDays.length} day${rowDays.length > 1 ? "s" : ""} = ${weeklyM} mins/week).`,
             });
           }
         }
@@ -6984,47 +10216,81 @@ export const AppProvider = ({ children }) => {
     });
 
     // 8.1 Workload Schedule Time Overlaps per Teacher & Term
-    (personnel || []).forEach(p => {
+    (personnel || []).forEach((p) => {
       if (p.isDraft || !Array.isArray(p.workloadRows)) return;
-      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Teacher';
+      const teacherName =
+        `${p.firstName || ""} ${p.lastName || ""}`.trim() || "Teacher";
       const rows = p.workloadRows;
-      const termsPresent = Array.from(new Set(rows.map(r => r.term || '1st')));
-      
-      termsPresent.forEach(tId => {
-        const termLabel = tId === '1st' ? '1st Term' : tId === '2nd' ? '2nd Term' : tId === '3rd' ? '3rd Term' : `${tId} Term`;
-        const termRows = rows.filter(r => (r.term || '1st') === tId);
-        
+      const termsPresent = Array.from(
+        new Set(rows.map((r) => r.term || "1st")),
+      );
+
+      termsPresent.forEach((tId) => {
+        const termLabel =
+          tId === "1st"
+            ? "1st Term"
+            : tId === "2nd"
+              ? "2nd Term"
+              : tId === "3rd"
+                ? "3rd Term"
+                : `${tId} Term`;
+        const termRows = rows.filter((r) => (r.term || "1st") === tId);
+
         for (let i = 0; i < termRows.length; i++) {
           for (let j = i + 1; j < termRows.length; j++) {
-            const r1 = termRows[i], r2 = termRows[j];
-            if (!r1.startTime || !r1.endTime || !r2.startTime || !r2.endTime) continue;
-            const days1 = Array.isArray(r1.days) ? r1.days : (r1.daySchedule ? String(r1.daySchedule).split(',').map(s => s.trim()) : []);
-            const days2 = Array.isArray(r2.days) ? r2.days : (r2.daySchedule ? String(r2.daySchedule).split(',').map(s => s.trim()) : []);
-            const daysOverlap = days1.some(d => days2.includes(d));
+            const r1 = termRows[i],
+              r2 = termRows[j];
+            if (!r1.startTime || !r1.endTime || !r2.startTime || !r2.endTime)
+              continue;
+            const days1 = Array.isArray(r1.days)
+              ? r1.days
+              : r1.daySchedule
+                ? String(r1.daySchedule)
+                    .split(",")
+                    .map((s) => s.trim())
+                : [];
+            const days2 = Array.isArray(r2.days)
+              ? r2.days
+              : r2.daySchedule
+                ? String(r2.daySchedule)
+                    .split(",")
+                    .map((s) => s.trim())
+                : [];
+            const daysOverlap = days1.some((d) => days2.includes(d));
             if (!daysOverlap) continue;
 
-            const [s1h, s1m] = r1.startTime.split(':').map(Number);
-            const [e1h, e1m] = r1.endTime.split(':').map(Number);
-            const [s2h, s2m] = r2.startTime.split(':').map(Number);
-            const [e2h, e2m] = r2.endTime.split(':').map(Number);
-            const start1 = s1h * 60 + s1m, end1 = e1h * 60 + e1m;
-            const start2 = s2h * 60 + s2m, end2 = e2h * 60 + e2m;
+            const [s1h, s1m] = r1.startTime.split(":").map(Number);
+            const [e1h, e1m] = r1.endTime.split(":").map(Number);
+            const [s2h, s2m] = r2.startTime.split(":").map(Number);
+            const [e2h, e2m] = r2.endTime.split(":").map(Number);
+            const start1 = s1h * 60 + s1m,
+              end1 = e1h * 60 + e1m;
+            const start2 = s2h * 60 + s2m,
+              end2 = e2h * 60 + e2m;
 
             if (start1 < end2 && end1 > start2) {
-              const isHGPSub = (sub) => String(sub || '').toUpperCase() === 'HGP' || String(sub || '').toUpperCase().includes('HOMEROOM GUIDANCE');
-              const isAdvSub = (sub) => String(sub || '').toUpperCase() === 'ADVISORY';
-              if ((isHGPSub(r1.subject) && isAdvSub(r2.subject)) || (isAdvSub(r1.subject) && isHGPSub(r2.subject))) {
+              const isHGPSub = (sub) =>
+                String(sub || "").toUpperCase() === "HGP" ||
+                String(sub || "")
+                  .toUpperCase()
+                  .includes("HOMEROOM GUIDANCE");
+              const isAdvSub = (sub) =>
+                String(sub || "").toUpperCase() === "ADVISORY";
+              if (
+                (isHGPSub(r1.subject) && isAdvSub(r2.subject)) ||
+                (isAdvSub(r1.subject) && isHGPSub(r2.subject))
+              ) {
                 continue; // Advisory/HGP nesting is allowed
               }
               if (isPerGradeSharedSlot(r1, r2)) continue; // multigrade: different grade levels run side by side
 
               issues.push({
                 id: `time-conflict-${p.id}-${tId}-${i}-${j}`,
-                type: 'error',
-                category: 'Schedule Conflicts & Duplicate Subjects',
+                type: "error",
+                category: "Schedule Conflicts & Duplicate Subjects",
                 personId: p.id,
                 term: tId,
-                message: `${teacherName} (${termLabel}): Schedule collision between "${r1.subject || 'Subject'}" (${r1.startTime}-${r1.endTime}) and "${r2.subject || 'Subject'}" (${r2.startTime}-${r2.endTime}).`
+                message: `${teacherName} (${termLabel}): Schedule collision between "${r1.subject || "Subject"}" (${r1.startTime}-${r1.endTime}) and "${r2.subject || "Subject"}" (${r2.startTime}-${r2.endTime}).`,
               });
             }
           }
@@ -7033,34 +10299,39 @@ export const AppProvider = ({ children }) => {
     });
 
     // 9. Inactive Special Curricular Program Subject Audit (Warn the user)
-    (classSections || []).forEach(sec => {
-      const grade = sec.gradeLevel || '';
-      (sec.subjects || []).forEach(sub => {
+    (classSections || []).forEach((sec) => {
+      const grade = sec.gradeLevel || "";
+      (sec.subjects || []).forEach((sub) => {
         if (!isSpecialProgramSubjectAllowed(sub, grade, schoolInfo)) {
           issues.push({
             id: `sec-${sec.id}-inactive-special-prog-${sub}`,
-            type: 'warn',
-            category: 'Curricular Offerings',
+            type: "warn",
+            category: "Curricular Offerings",
             sectionId: sec.id,
-            message: `Section "${sec.sectionName || 'Section'}" (${grade}) is assigned subject "${sub}", but this special curricular program is currently inactive in School Profile.`
+            message: `Section "${sec.sectionName || "Section"}" (${grade}) is assigned subject "${sub}", but this special curricular program is currently inactive in School Profile.`,
           });
         }
       });
     });
 
-    (personnel || []).forEach(p => {
+    (personnel || []).forEach((p) => {
       if (p.isDraft || !Array.isArray(p.workloadRows)) return;
-      const teacherName = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.id;
+      const teacherName =
+        `${p.firstName || ""} ${p.lastName || ""}`.trim() || p.id;
       p.workloadRows.forEach((r, idx) => {
-        const sub = r.subject || '';
-        const grade = r.gradeLevel || '';
-        if (sub && grade && !isSpecialProgramSubjectAllowed(sub, grade, schoolInfo)) {
+        const sub = r.subject || "";
+        const grade = r.gradeLevel || "";
+        if (
+          sub &&
+          grade &&
+          !isSpecialProgramSubjectAllowed(sub, grade, schoolInfo)
+        ) {
           issues.push({
             id: `teacher-${p.id}-row-${idx}-inactive-special-prog-${sub}`,
             personId: p.id,
-            type: 'warn',
-            category: 'Workload Schedule',
-            message: `${teacherName} is assigned special program subject "${sub}" (${grade}), but this program is currently inactive in School Profile.`
+            type: "warn",
+            category: "Workload Schedule",
+            message: `${teacherName} is assigned special program subject "${sub}" (${grade}), but this program is currently inactive in School Profile.`,
           });
         }
       });
@@ -7070,131 +10341,136 @@ export const AppProvider = ({ children }) => {
   };
 
   return (
-    <AppContext.Provider value={{
-      activeView,
-      setActiveView,
-      registerAutoSaveHandler,
-      triggerAutoSave,
-      activePersonnelId,
-      setActivePersonnelId,
-      sdoSchoolHead,
-      fetchSdoSchoolHead,
-      saveSdoSchoolHead,
-      schoolInfo,
-      setSchoolInfo,
-      personnel,
-      setPersonnel,
-      classSections,
-      setClassSections,
-      updatePersonnelInfo,
-      savePersonnelChanges,
-      addPersonnel,
-      commitDraftPersonnel,
-      deletePersonnel,
-      deletedPersonnelIds,
-      deletedSectionIds,
-      resolveBorrowedPersonnel,
-      discardLocalDraft: async () => {
-        try {
-          const confirmed = await showConfirm(
-            "Discard All Local Changes",
-            "Are you sure you want to discard all unsaved local changes and reset to the master school template? This action cannot be undone."
-          );
-          if (!confirmed) return;
+    <AppContext.Provider
+      value={{
+        activeView,
+        setActiveView,
+        registerAutoSaveHandler,
+        triggerAutoSave,
+        activePersonnelId,
+        setActivePersonnelId,
+        sdoSchoolHead,
+        fetchSdoSchoolHead,
+        saveSdoSchoolHead,
+        schoolInfo,
+        setSchoolInfo,
+        personnel,
+        setPersonnel,
+        classSections,
+        setClassSections,
+        updatePersonnelInfo,
+        savePersonnelChanges,
+        addPersonnel,
+        commitDraftPersonnel,
+        deletePersonnel,
+        deletedPersonnelIds,
+        deletedSectionIds,
+        resolveBorrowedPersonnel,
+        discardLocalDraft: async () => {
+          try {
+            const confirmed = await showConfirm(
+              "Discard All Local Changes",
+              "Are you sure you want to discard all unsaved local changes and reset to the master school template? This action cannot be undone.",
+            );
+            if (!confirmed) return;
 
-          // Every page drops its own unsaved draft too (so a discarded draft cannot come back after the reload).
-          discardAllDirtyScreens();
+            // Every page drops its own unsaved draft too (so a discarded draft cannot come back after the reload).
+            discardAllDirtyScreens();
 
-          if (schoolInfo && schoolInfo.schoolId) {
-            const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear || 'SY 26-27'}`;
-            await deleteLocalDraft(draftKey);
+            if (schoolInfo && schoolInfo.schoolId) {
+              const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear || "SY 26-27"}`;
+              await deleteLocalDraft(draftKey);
+            }
+            showToast("Local draft discarded! Reloading master template...");
+            setTimeout(() => {
+              allowNextUnload(); // the app reloads on purpose: no second "Leave site?" prompt
+              window.location.reload();
+            }, 500);
+          } catch (e) {
+            console.error("Failed to discard local draft:", e);
           }
-          showToast("Local draft discarded! Reloading master template...");
-          setTimeout(() => {
-            allowNextUnload(); // the app reloads on purpose: no second "Leave site?" prompt
-            window.location.reload();
-          }, 500);
-        } catch (e) {
-          console.error('Failed to discard local draft:', e);
-        }
-      },
-      toggleSchoolHead,
-      addClassSection,
-      updateSectionDetails,
-      updateSectionAdviser,
-      updateSectionLearners,
-      removeClassSection,
-      schoolEdited,
-      setSchoolEdited,
-      getValidationIssues,
-      scannedRoom,
-      setScannedRoom,
-      workloadTransfers,
-      setWorkloadTransfers,
-      addWorkloadTransfer,
-      removeWorkloadTransfer,
-      absences,
-      setAbsences,
-      localNonWorkingDays,
-      setLocalNonWorkingDays,
-      salaryMatrix,
-      setSalaryMatrix,
-      addPersonnelAbsence,
-      removePersonnelAbsence,
-      toast,
-      setToast,
-      customModal,
-      setCustomModal,
-      showToast,
-      showAlert,
-      showConfirm,
-      hasUnsavedChanges,
-      setHasUnsavedChanges,
-      checkBeforeLeave,
-      isAnyScreenDirty,
-      isSyncing,
-      submissionStatus,
-      setSubmissionStatus,
-      resetToDatabase,
-      refreshPersonnelList,
-      incomingRequests,
-      setIncomingRequests,
-      outgoingRequests,
-      setOutgoingRequests,
-      requestHistory,
-      setRequestHistory,
-      districtSchools,
-      refreshRequests,
-      loadDistrictSchools,
-      allowancesMap,
-      fetchAllowances,
-      toggleAllowance,
-      setAllowanceDisabled,
-      bulkToggleAllowances,
-      workImmersionSchedulesMap,
-      fetchWorkImmersionSchedules,
-      saveWorkImmersionSchedules,
-      activeTerm,
-      setActiveTerm,
-      termStatuses,
-      isTermLocked,
-      unlockTerm,
-      lockTerm,
-      copyTermData,
-      journeyState,
-      setJourneyState,
-      completeNode,
-      isNodeUnlocked,
-      isNodeCompleted,
-      bypassNodeLocks,
-      setBypassNodeLocks,
-      isInitialized,
-      sectionsBaseline,
-      sectionsLoadError,
-      sectionsOverlayApplied,
-      setSectionsOverlayApplied,
-      retrySectionsLoad: () => (loadInitialDataRef.current ? loadInitialDataRef.current() : Promise.resolve())
-    }}>
+        },
+        toggleSchoolHead,
+        addClassSection,
+        updateSectionDetails,
+        updateSectionAdviser,
+        updateSectionLearners,
+        removeClassSection,
+        schoolEdited,
+        setSchoolEdited,
+        getValidationIssues,
+        scannedRoom,
+        setScannedRoom,
+        workloadTransfers,
+        setWorkloadTransfers,
+        addWorkloadTransfer,
+        removeWorkloadTransfer,
+        absences,
+        setAbsences,
+        localNonWorkingDays,
+        setLocalNonWorkingDays,
+        salaryMatrix,
+        setSalaryMatrix,
+        addPersonnelAbsence,
+        removePersonnelAbsence,
+        toast,
+        setToast,
+        customModal,
+        setCustomModal,
+        showToast,
+        showAlert,
+        showConfirm,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
+        checkBeforeLeave,
+        isAnyScreenDirty,
+        isSyncing,
+        submissionStatus,
+        setSubmissionStatus,
+        resetToDatabase,
+        refreshPersonnelList,
+        incomingRequests,
+        setIncomingRequests,
+        outgoingRequests,
+        setOutgoingRequests,
+        requestHistory,
+        setRequestHistory,
+        districtSchools,
+        refreshRequests,
+        loadDistrictSchools,
+        allowancesMap,
+        fetchAllowances,
+        toggleAllowance,
+        setAllowanceDisabled,
+        bulkToggleAllowances,
+        workImmersionSchedulesMap,
+        fetchWorkImmersionSchedules,
+        saveWorkImmersionSchedules,
+        activeTerm,
+        setActiveTerm,
+        termStatuses,
+        isTermLocked,
+        unlockTerm,
+        lockTerm,
+        copyTermData,
+        journeyState,
+        setJourneyState,
+        completeNode,
+        isNodeUnlocked,
+        isNodeCompleted,
+        bypassNodeLocks,
+        setBypassNodeLocks,
+        isInitialized,
+        sectionsBaseline,
+        sectionsLoadError,
+        sectionsOverlayApplied,
+        setSectionsOverlayApplied,
+        retrySectionsLoad: () =>
+          loadInitialDataRef.current
+            ? loadInitialDataRef.current()
+            : Promise.resolve(),
+      }}
+    >
       {children}
     </AppContext.Provider>
   );
@@ -7205,7 +10481,7 @@ export const useApp = () => {
 
   if (!context) {
     return {
-      activeView: 'landing',
+      activeView: "landing",
       setActiveView: () => {},
       toast: null,
       setToast: () => {},
@@ -7218,10 +10494,14 @@ export const useApp = () => {
       selectedTeachers: [],
       personnel: [],
       isInitialized: false,
-      journeyState: { unlockedNodes: ['school'], completedNodes: [], currentNode: 'school' },
+      journeyState: {
+        unlockedNodes: ["school"],
+        completedNodes: [],
+        currentNode: "school",
+      },
       isNodeUnlocked: () => true,
       isNodeCompleted: () => false,
-      completeNode: () => {}
+      completeNode: () => {},
     };
   }
   return context;

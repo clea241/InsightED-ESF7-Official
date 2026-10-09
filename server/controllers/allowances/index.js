@@ -1,48 +1,61 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
-const { getSchoolIdFromRequest } = require('../../utils/auth');
-const { loadAllowanceRules } = require('../../utils/sharedRules');
+const db = require("../../db");
+const { getSchoolIdFromRequest } = require("../../utils/auth");
+const { loadAllowanceRules } = require("../../utils/sharedRules");
 
-const ALLOWED_KEYS = ['pera', 'uniform', 'supplies', 'medical', 'hardship'];
+const ALLOWED_KEYS = ["pera", "uniform", "supplies", "medical", "hardship"];
 
 const DEFAULT_AMOUNTS = {
   pera: null,
   uniform: null,
   supplies: null,
   medical: null,
-  hardship: null
+  hardship: null,
 };
 
 // Additive, idempotent: records without a disabled list keep their current behaviour.
 let disabledColumnReady;
 function ensureDisabledColumn() {
   if (!disabledColumnReady) {
-    disabledColumnReady = db.query(
-      `ALTER TABLE esf7_personnel_allowances ADD COLUMN IF NOT EXISTS disabled_allowances JSONB NOT NULL DEFAULT '[]'::jsonb`
-    ).catch((e) => { disabledColumnReady = null; throw e; });
+    disabledColumnReady = db
+      .query(
+        `ALTER TABLE esf7_personnel_allowances ADD COLUMN IF NOT EXISTS disabled_allowances JSONB NOT NULL DEFAULT '[]'::jsonb`,
+      )
+      .catch((e) => {
+        disabledColumnReady = null;
+        throw e;
+      });
   }
   return disabledColumnReady;
 }
 
-const toDisabledList = (row) => (Array.isArray(row?.disabled_allowances) ? row.disabled_allowances : []);
+const toDisabledList = (row) =>
+  Array.isArray(row?.disabled_allowances) ? row.disabled_allowances : [];
 
 async function isPersonnelNonTeaching(personnelId) {
   try {
     const res = await db.query(
       `SELECT type, plantilla_position FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [personnelId]
+      [personnelId],
     );
     if (res.rows.length === 0) return false;
     const p = res.rows[0];
-    const t = String(p.type || '').toLowerCase();
-    const pos = String(p.plantilla_position || '').toUpperCase();
-    if (t.includes('non') || t === 'non-teaching') return true;
+    const t = String(p.type || "").toLowerCase();
+    const pos = String(p.plantilla_position || "").toUpperCase();
+    if (t.includes("non") || t === "non-teaching") return true;
     if (
-      pos.includes('ADMINISTRATIVE') || pos.includes('ADAS') || pos.includes('BOOKKEEPER') ||
-      pos.includes('SECURITY') || pos.includes('UTILITY') || pos.includes('NURSE') ||
-      pos.includes('DRIVER') || pos.includes('AIDE') || pos.includes('ACCOUNTANT') ||
-      pos.includes('DISBURSING') || pos.includes('CLERK')
+      pos.includes("ADMINISTRATIVE") ||
+      pos.includes("ADAS") ||
+      pos.includes("BOOKKEEPER") ||
+      pos.includes("SECURITY") ||
+      pos.includes("UTILITY") ||
+      pos.includes("NURSE") ||
+      pos.includes("DRIVER") ||
+      pos.includes("AIDE") ||
+      pos.includes("ACCOUNTANT") ||
+      pos.includes("DISBURSING") ||
+      pos.includes("CLERK")
     ) {
       return true;
     }
@@ -64,68 +77,104 @@ function formatAllowanceRecord(row) {
     school_id: row.school_id,
     schoolYear: row.school_year,
     school_year: row.school_year,
-    
+
     // Booleans & Amounts (Amounts are null)
     pera: !!row.has_pera,
     has_pera: !!row.has_pera,
     hasPera: !!row.has_pera,
-    pera_amount: row.pera_amount !== null && row.pera_amount !== undefined ? Number(row.pera_amount) : null,
-    peraAmount: row.pera_amount !== null && row.pera_amount !== undefined ? Number(row.pera_amount) : null,
-    
+    pera_amount:
+      row.pera_amount !== null && row.pera_amount !== undefined
+        ? Number(row.pera_amount)
+        : null,
+    peraAmount:
+      row.pera_amount !== null && row.pera_amount !== undefined
+        ? Number(row.pera_amount)
+        : null,
+
     uniform: !!row.has_uniform,
     has_uniform: !!row.has_uniform,
     hasUniform: !!row.has_uniform,
-    uniform_amount: row.uniform_amount !== null && row.uniform_amount !== undefined ? Number(row.uniform_amount) : null,
-    uniformAmount: row.uniform_amount !== null && row.uniform_amount !== undefined ? Number(row.uniform_amount) : null,
-    
+    uniform_amount:
+      row.uniform_amount !== null && row.uniform_amount !== undefined
+        ? Number(row.uniform_amount)
+        : null,
+    uniformAmount:
+      row.uniform_amount !== null && row.uniform_amount !== undefined
+        ? Number(row.uniform_amount)
+        : null,
+
     supplies: !!row.has_supplies,
     has_supplies: !!row.has_supplies,
     hasSupplies: !!row.has_supplies,
-    supplies_amount: row.supplies_amount !== null && row.supplies_amount !== undefined ? Number(row.supplies_amount) : null,
-    suppliesAmount: row.supplies_amount !== null && row.supplies_amount !== undefined ? Number(row.supplies_amount) : null,
-    
+    supplies_amount:
+      row.supplies_amount !== null && row.supplies_amount !== undefined
+        ? Number(row.supplies_amount)
+        : null,
+    suppliesAmount:
+      row.supplies_amount !== null && row.supplies_amount !== undefined
+        ? Number(row.supplies_amount)
+        : null,
+
     medical: !!row.has_medical,
     has_medical: !!row.has_medical,
     hasMedical: !!row.has_medical,
-    medical_amount: row.medical_amount !== null && row.medical_amount !== undefined ? Number(row.medical_amount) : null,
-    medicalAmount: row.medical_amount !== null && row.medical_amount !== undefined ? Number(row.medical_amount) : null,
-    
+    medical_amount:
+      row.medical_amount !== null && row.medical_amount !== undefined
+        ? Number(row.medical_amount)
+        : null,
+    medicalAmount:
+      row.medical_amount !== null && row.medical_amount !== undefined
+        ? Number(row.medical_amount)
+        : null,
+
     hardship: !!row.has_hardship,
     has_hardship: !!row.has_hardship,
     hasHardship: !!row.has_hardship,
-    hardship_amount: row.hardship_amount !== null && row.hardship_amount !== undefined ? Number(row.hardship_amount) : null,
-    hardshipAmount: row.hardship_amount !== null && row.hardship_amount !== undefined ? Number(row.hardship_amount) : null,
-    
+    hardship_amount:
+      row.hardship_amount !== null && row.hardship_amount !== undefined
+        ? Number(row.hardship_amount)
+        : null,
+    hardshipAmount:
+      row.hardship_amount !== null && row.hardship_amount !== undefined
+        ? Number(row.hardship_amount)
+        : null,
+
     disabled: toDisabledList(row),
-    rawPayload: raw
+    rawPayload: raw,
   };
 }
 
 // GET /api/allowances
 // Retrieves all personnel allowance records for school
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const schoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.query.schoolId || req.query.school_id || '108348';
-    const schoolYear = req.query.schoolYear || req.query.school_year || '2026-2027';
+    const schoolId =
+      getSchoolIdFromRequest(req) ||
+      req.headers["x-school-id"] ||
+      req.query.schoolId ||
+      req.query.school_id ||
+      "108348";
+    const schoolYear =
+      req.query.schoolYear || req.query.school_year || "2026-2027";
     await ensureDisabledColumn();
 
     // 1. Fetch all personnel profiles for school
     const personnelRes = await db.query(
       `SELECT id, school_id, school_year FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2`,
-      [schoolId, schoolId.replace('SCH-', '')]
+      [schoolId, schoolId.replace("SCH-", "")],
     );
 
     // 2. Fetch existing allowances records
     const result = await db.query(
       `SELECT * FROM esf7_personnel_allowances WHERE school_id = $1 OR school_id = $2`,
-      [schoolId, schoolId.replace('SCH-', '')]
+      [schoolId, schoolId.replace("SCH-", "")],
     );
 
     const existingMap = {};
     const allowancesMap = {};
     const fullRecords = [];
 
-    result.rows.forEach(r => {
+    result.rows.forEach((r) => {
       existingMap[r.personnel_id] = r;
       const formatted = formatAllowanceRecord(r);
       allowancesMap[r.personnel_id] = {
@@ -139,7 +188,7 @@ router.get('/', async (req, res) => {
         supplies_amount: formatted.supplies_amount,
         medical_amount: formatted.medical_amount,
         hardship_amount: formatted.hardship_amount,
-        disabled: formatted.disabled
+        disabled: formatted.disabled,
       };
       fullRecords.push(formatted);
     });
@@ -147,9 +196,11 @@ router.get('/', async (req, res) => {
     // Ensure EVERY personnel profile in DB also gets a record if missing
     for (const p of personnelRes.rows) {
       if (!existingMap[p.id]) {
-        const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
-        const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-        const alwId = `ALW-${p.school_id.replace('SCH-', '')}-${seq}`;
+        const countRes = await db.query(
+          `SELECT COUNT(*) FROM esf7_personnel_allowances`,
+        );
+        const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+        const alwId = `ALW-${p.school_id.replace("SCH-", "")}-${seq}`;
 
         const insertRes = await db.query(
           `INSERT INTO esf7_personnel_allowances (
@@ -160,7 +211,7 @@ router.get('/', async (req, res) => {
           ) VALUES ($1, $2, $3, $4, FALSE, NULL, FALSE, NULL, FALSE, NULL, FALSE, NULL, FALSE, NULL, '{}'::jsonb)
            ON CONFLICT (personnel_id, school_year) DO UPDATE SET updated_at = NOW()
            RETURNING *;`,
-          [alwId, p.id, p.school_id, schoolYear]
+          [alwId, p.id, p.school_id, schoolYear],
         );
         const formatted = formatAllowanceRecord(insertRes.rows[0]);
         allowancesMap[p.id] = {
@@ -174,7 +225,7 @@ router.get('/', async (req, res) => {
           supplies_amount: null,
           medical_amount: null,
           hardship_amount: null,
-          disabled: formatted.disabled
+          disabled: formatted.disabled,
         };
         fullRecords.push(formatted);
       }
@@ -184,27 +235,39 @@ router.get('/', async (req, res) => {
       success: true,
       schoolYear,
       data: allowancesMap,
-      raw: fullRecords
+      raw: fullRecords,
     });
   } catch (error) {
-    console.error('[Allowances GET Error]:', error.message);
+    console.error("[Allowances GET Error]:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // POST /api/allowances/toggle
 // Body: { personnelId, allowanceKey, isGranted, amount, schoolYear }
-router.post('/toggle', async (req, res) => {
+router.post("/toggle", async (req, res) => {
   try {
-    const { personnelId, allowanceKey, isGranted, amount, schoolYear = '2026-2027' } = req.body;
+    const {
+      personnelId,
+      allowanceKey,
+      isGranted,
+      amount,
+      schoolYear = "2026-2027",
+    } = req.body;
 
     if (!personnelId || !allowanceKey) {
-      return res.status(400).json({ success: false, error: 'personnelId and allowanceKey are required.' });
+      return res.status(400).json({
+        success: false,
+        error: "personnelId and allowanceKey are required.",
+      });
     }
 
     const keyLower = String(allowanceKey).toLowerCase();
     if (!ALLOWED_KEYS.includes(keyLower)) {
-      return res.status(400).json({ success: false, error: `Invalid allowanceKey. Allowed keys: ${ALLOWED_KEYS.join(', ')}` });
+      return res.status(400).json({
+        success: false,
+        error: `Invalid allowanceKey. Allowed keys: ${ALLOWED_KEYS.join(", ")}`,
+      });
     }
 
     const grantedBool = Boolean(isGranted);
@@ -214,37 +277,57 @@ router.post('/toggle', async (req, res) => {
     if (grantedBool) {
       const cur = await db.query(
         `SELECT disabled_allowances FROM esf7_personnel_allowances WHERE personnel_id = $1 AND school_year = $2`,
-        [personnelId, schoolYear]
+        [personnelId, schoolYear],
       );
-      if (cur.rows.length > 0 && toDisabledList(cur.rows[0]).includes(keyLower)) {
-        return res.status(409).json({ success: false, error: 'This allowance is disabled for this personnel. Enable it first.' });
+      if (
+        cur.rows.length > 0 &&
+        toDisabledList(cur.rows[0]).includes(keyLower)
+      ) {
+        return res.status(409).json({
+          success: false,
+          error:
+            "This allowance is disabled for this personnel. Enable it first.",
+        });
       }
     }
 
     // Rule: Non-Teaching staff cannot receive Teaching Supplies Allowance
-    if (keyLower === 'supplies' && grantedBool) {
+    if (keyLower === "supplies" && grantedBool) {
       const isNonTeaching = await isPersonnelNonTeaching(personnelId);
       if (isNonTeaching) {
         return res.status(400).json({
           success: false,
-          error: 'Non-Teaching personnel are strictly not eligible for Teaching Supplies Allowance.'
+          error:
+            "Non-Teaching personnel are strictly not eligible for Teaching Supplies Allowance.",
         });
       }
     }
 
     const personRes = await db.query(
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [personnelId]
+      [personnelId],
     );
-    const headerSchoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.body.schoolId || req.body.school_id;
+    const headerSchoolId =
+      getSchoolIdFromRequest(req) ||
+      req.headers["x-school-id"] ||
+      req.body.schoolId ||
+      req.body.school_id;
     const parsedIdMatch = String(personnelId).match(/^PER-(\d+)-\d+$/i);
-    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : (headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : '108348'));
+    const targetSchoolId =
+      personRes.rows.length > 0
+        ? personRes.rows[0].school_id
+        : headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : "108348");
 
-    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const alwId = `ALW-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM esf7_personnel_allowances`,
+    );
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+    const alwId = `ALW-${targetSchoolId.replace("SCH-", "")}-${seq}`;
 
-    const targetAmount = amount !== undefined && amount !== null ? Number(amount) : (DEFAULT_AMOUNTS[keyLower] || 0);
+    const targetAmount =
+      amount !== undefined && amount !== null
+        ? Number(amount)
+        : DEFAULT_AMOUNTS[keyLower] || 0;
 
     const hasCol = `has_${keyLower}`;
     const amtCol = `${keyLower}_amount`;
@@ -269,15 +352,15 @@ router.post('/toggle', async (req, res) => {
       schoolYear,
       grantedBool,
       grantedBool ? targetAmount : null,
-      JSON.stringify(req.body)
+      JSON.stringify(req.body),
     ]);
 
     res.json({
       success: true,
-      record: formatAllowanceRecord(result.rows[0])
+      record: formatAllowanceRecord(result.rows[0]),
     });
   } catch (error) {
-    console.error('[Allowances Toggle Error]:', error.message);
+    console.error("[Allowances Toggle Error]:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -285,26 +368,38 @@ router.post('/toggle', async (req, res) => {
 // POST /api/allowances/disable
 // Body: { personnelId, allowanceKey, isDisabled, schoolYear }
 // Disabling keeps the stored grant but makes compliance/totals ignore it; re-enabling restores it.
-router.post('/disable', async (req, res) => {
+router.post("/disable", async (req, res) => {
   try {
-    const { personnelId, allowanceKey, isDisabled, schoolYear = '2026-2027' } = req.body;
+    const {
+      personnelId,
+      allowanceKey,
+      isDisabled,
+      schoolYear = "2026-2027",
+    } = req.body;
     const { ALLOWANCE_KEYS } = await loadAllowanceRules();
-    const keyLower = String(allowanceKey || '').toLowerCase();
+    const keyLower = String(allowanceKey || "").toLowerCase();
     if (!personnelId || !ALLOWANCE_KEYS.includes(keyLower)) {
-      return res.status(400).json({ success: false, error: `personnelId and a valid allowanceKey (${ALLOWANCE_KEYS.join(', ')}) are required.` });
+      return res.status(400).json({
+        success: false,
+        error: `personnelId and a valid allowanceKey (${ALLOWANCE_KEYS.join(", ")}) are required.`,
+      });
     }
     await ensureDisabledColumn();
 
     const personRes = await db.query(
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [personnelId]
+      [personnelId],
     );
     if (personRes.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Personnel not found.' });
+      return res
+        .status(404)
+        .json({ success: false, error: "Personnel not found." });
     }
     const targetSchoolId = personRes.rows[0].school_id;
-    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
-    const alwId = `ALW-${String(targetSchoolId).replace('SCH-', '')}-${String(Number(countRes.rows[0].count) + 1).padStart(3, '0')}`;
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM esf7_personnel_allowances`,
+    );
+    const alwId = `ALW-${String(targetSchoolId).replace("SCH-", "")}-${String(Number(countRes.rows[0].count) + 1).padStart(3, "0")}`;
 
     const result = await db.query(
       `INSERT INTO esf7_personnel_allowances (id, personnel_id, school_id, school_year, disabled_allowances)
@@ -320,54 +415,100 @@ router.post('/disable', async (req, res) => {
          ) AS v
        ), updated_at = NOW()
        RETURNING *;`,
-      [alwId, personnelId, targetSchoolId, schoolYear, JSON.stringify(isDisabled ? [keyLower] : []), Boolean(isDisabled), keyLower]
+      [
+        alwId,
+        personnelId,
+        targetSchoolId,
+        schoolYear,
+        JSON.stringify(isDisabled ? [keyLower] : []),
+        Boolean(isDisabled),
+        keyLower,
+      ],
     );
     res.json({ success: true, record: formatAllowanceRecord(result.rows[0]) });
   } catch (error) {
-    console.error('[Allowances Disable Error]:', error.message);
+    console.error("[Allowances Disable Error]:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // POST /api/allowances/bulk
 // Body: { personnelId, allowances: { pera, uniform, ... }, amounts: { pera_amount, ... }, schoolYear }
-router.post('/bulk', async (req, res) => {
+router.post("/bulk", async (req, res) => {
   try {
-    const { personnelId, allowances = {}, amounts = {}, schoolYear = '2026-2027' } = req.body;
+    const {
+      personnelId,
+      allowances = {},
+      amounts = {},
+      schoolYear = "2026-2027",
+    } = req.body;
 
     if (!personnelId) {
-      return res.status(400).json({ success: false, error: 'personnelId is required.' });
+      return res
+        .status(400)
+        .json({ success: false, error: "personnelId is required." });
     }
 
     const isNonTeaching = await isPersonnelNonTeaching(personnelId);
 
     const personRes = await db.query(
       `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-      [personnelId]
+      [personnelId],
     );
-    const headerSchoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.body.schoolId || req.body.school_id;
+    const headerSchoolId =
+      getSchoolIdFromRequest(req) ||
+      req.headers["x-school-id"] ||
+      req.body.schoolId ||
+      req.body.school_id;
     const parsedIdMatch = String(personnelId).match(/^PER-(\d+)-\d+$/i);
-    const targetSchoolId = personRes.rows.length > 0 ? personRes.rows[0].school_id : (headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : '108348'));
+    const targetSchoolId =
+      personRes.rows.length > 0
+        ? personRes.rows[0].school_id
+        : headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : "108348");
 
-    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const alwId = `ALW-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM esf7_personnel_allowances`,
+    );
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+    const alwId = `ALW-${targetSchoolId.replace("SCH-", "")}-${seq}`;
 
     const hasPera = Boolean(allowances.pera || allowances.has_pera);
-    const peraAmt = Number(amounts.pera_amount || amounts.peraAmount || DEFAULT_AMOUNTS.pera);
+    const peraAmt = Number(
+      amounts.pera_amount || amounts.peraAmount || DEFAULT_AMOUNTS.pera,
+    );
 
     const hasUniform = Boolean(allowances.uniform || allowances.has_uniform);
-    const uniformAmt = Number(amounts.uniform_amount || amounts.uniformAmount || DEFAULT_AMOUNTS.uniform);
+    const uniformAmt = Number(
+      amounts.uniform_amount ||
+        amounts.uniformAmount ||
+        DEFAULT_AMOUNTS.uniform,
+    );
 
     // Non-teaching personnel can NEVER have supplies allowance
-    const hasSupplies = isNonTeaching ? false : Boolean(allowances.supplies || allowances.has_supplies);
-    const suppliesAmt = isNonTeaching ? null : Number(amounts.supplies_amount || amounts.suppliesAmount || DEFAULT_AMOUNTS.supplies);
+    const hasSupplies = isNonTeaching
+      ? false
+      : Boolean(allowances.supplies || allowances.has_supplies);
+    const suppliesAmt = isNonTeaching
+      ? null
+      : Number(
+          amounts.supplies_amount ||
+            amounts.suppliesAmount ||
+            DEFAULT_AMOUNTS.supplies,
+        );
 
     const hasMedical = Boolean(allowances.medical || allowances.has_medical);
-    const medicalAmt = Number(amounts.medical_amount || amounts.medicalAmount || DEFAULT_AMOUNTS.medical);
+    const medicalAmt = Number(
+      amounts.medical_amount ||
+        amounts.medicalAmount ||
+        DEFAULT_AMOUNTS.medical,
+    );
 
     const hasHardship = Boolean(allowances.hardship || allowances.has_hardship);
-    const hardshipAmt = Number(amounts.hardship_amount || amounts.hardshipAmount || DEFAULT_AMOUNTS.hardship);
+    const hardshipAmt = Number(
+      amounts.hardship_amount ||
+        amounts.hardshipAmount ||
+        DEFAULT_AMOUNTS.hardship,
+    );
 
     const sql = `
       INSERT INTO esf7_personnel_allowances (
@@ -397,21 +538,29 @@ router.post('/bulk', async (req, res) => {
     `;
 
     const result = await db.query(sql, [
-      alwId, personnelId, targetSchoolId, schoolYear,
-      hasPera, peraAmt,
-      hasUniform, uniformAmt,
-      hasSupplies, suppliesAmt,
-      hasMedical, medicalAmt,
-      hasHardship, hardshipAmt,
-      JSON.stringify(req.body)
+      alwId,
+      personnelId,
+      targetSchoolId,
+      schoolYear,
+      hasPera,
+      peraAmt,
+      hasUniform,
+      uniformAmt,
+      hasSupplies,
+      suppliesAmt,
+      hasMedical,
+      medicalAmt,
+      hasHardship,
+      hardshipAmt,
+      JSON.stringify(req.body),
     ]);
 
     res.json({
       success: true,
-      record: formatAllowanceRecord(result.rows[0])
+      record: formatAllowanceRecord(result.rows[0]),
     });
   } catch (error) {
-    console.error('[Allowances Bulk Error]:', error.message);
+    console.error("[Allowances Bulk Error]:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -1,7 +1,9 @@
-const db = require('../db');
+const db = require("../db");
 
 async function migrateDeletedPersonnelTable() {
-  console.log('🚀 [Migration] Creating `esf7_deleted_personnel` table in insighted_esf7...');
+  console.log(
+    "🚀 [Migration] Creating `esf7_deleted_personnel` table in insighted_esf7...",
+  );
 
   try {
     await db.query(`
@@ -22,9 +24,14 @@ async function migrateDeletedPersonnelTable() {
       CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_prn ON esf7_deleted_personnel(prn);
       CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_name ON esf7_deleted_personnel(school_id, full_name_clean);
     `);
-    console.log('✅ Table `esf7_deleted_personnel` verified / created successfully.');
+    console.log(
+      "✅ Table `esf7_deleted_personnel` verified / created successfully.",
+    );
   } catch (err) {
-    console.error('❌ [Migration Error] Failed to create `esf7_deleted_personnel` table:', err);
+    console.error(
+      "❌ [Migration Error] Failed to create `esf7_deleted_personnel` table:",
+      err,
+    );
     throw err;
   }
 }

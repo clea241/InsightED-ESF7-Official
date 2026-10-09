@@ -1,14 +1,14 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../../db');
-const { insightEdPool, usersDbPool } = require('../../db');
-const { getSchoolIdFromRequest } = require('../../utils/auth');
-const cacheService = require('../../services/cacheService');
+const db = require("../../db");
+const { insightEdPool, usersDbPool } = require("../../db");
+const { getSchoolIdFromRequest } = require("../../utils/auth");
+const cacheService = require("../../services/cacheService");
 
 function formatRequestRecord(row) {
   if (!row) return null;
   let raw = row.raw_payload || {};
-  if (typeof raw === 'string') {
+  if (typeof raw === "string") {
     try {
       raw = JSON.parse(raw);
     } catch {
@@ -31,19 +31,19 @@ function formatRequestRecord(row) {
     personnelName: row.personnel_name,
     personnel_name: row.personnel_name,
     status: row.status,
-    remarks: row.remarks || '',
-    rawPayload: raw
+    remarks: row.remarks || "",
+    rawPayload: raw,
   };
 }
 
 async function resolveSchoolId(input) {
-  if (!input) return '';
+  if (!input) return "";
   const str = String(input).trim();
   const parenMatch = str.match(/\((\d{5,})\)/);
   if (parenMatch) return parenMatch[1];
   const directDigits = str.match(/\b(\d{5,})\b/);
   if (directDigits) return directDigits[1];
-  const cleaned = str.replace(/^SCH-/i, '').trim();
+  const cleaned = str.replace(/^SCH-/i, "").trim();
   if (/^\d{5,}$/.test(cleaned)) return cleaned;
 
   // Non-numeric name passed: look up against users_database.schools_iern
@@ -51,40 +51,44 @@ async function resolveSchoolId(input) {
   try {
     const res1 = await usersDbPool.query(
       `SELECT school_id FROM schools_iern WHERE UPPER(TRIM(school_name)) = $1 LIMIT 1`,
-      [upperName]
+      [upperName],
     );
     if (res1.rows.length > 0) return String(res1.rows[0].school_id).trim();
 
     const normalized = upperName
-      .replace(/\bNHS\b/g, 'NATIONAL HIGH SCHOOL')
-      .replace(/\bIS\b/g, 'INTEGRATED SCHOOL')
-      .replace(/\bES\b/g, 'ELEMENTARY SCHOOL')
-      .replace(/\bHIGHSCHOOL\b/g, 'HIGH SCHOOL')
+      .replace(/\bNHS\b/g, "NATIONAL HIGH SCHOOL")
+      .replace(/\bIS\b/g, "INTEGRATED SCHOOL")
+      .replace(/\bES\b/g, "ELEMENTARY SCHOOL")
+      .replace(/\bHIGHSCHOOL\b/g, "HIGH SCHOOL")
       .trim();
 
     const res2 = await usersDbPool.query(
       `SELECT school_id FROM schools_iern WHERE UPPER(TRIM(school_name)) = $1 OR school_name ILIKE $2 LIMIT 1`,
-      [normalized, `%${normalized}%`]
+      [normalized, `%${normalized}%`],
     );
     if (res2.rows.length > 0) return String(res2.rows[0].school_id).trim();
 
     const res3 = await insightEdPool.query(
       `SELECT school_id FROM unit1_school_identity WHERE UPPER(TRIM(school_name)) = $1 OR school_name ILIKE $2 LIMIT 1`,
-      [upperName, `%${upperName}%`]
+      [upperName, `%${upperName}%`],
     );
     if (res3.rows.length > 0) return String(res3.rows[0].school_id).trim();
   } catch (e) {
-    console.warn('[resolveSchoolId lookup error]:', e.message);
+    console.warn("[resolveSchoolId lookup error]:", e.message);
   }
 
   return cleaned;
 }
 
 // GET /api/requests/incoming
-router.get('/incoming', async (req, res) => {
+router.get("/incoming", async (req, res) => {
   try {
-    const schoolId = req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '108348';
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, '').trim();
+    const schoolId =
+      req.query.schoolId ||
+      req.query.school_id ||
+      getSchoolIdFromRequest(req) ||
+      "108348";
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
     const cacheKey = `requests:incoming:${cleanSchoolId}`;
     const cached = await cacheService.get(cacheKey);
@@ -95,7 +99,7 @@ router.get('/incoming', async (req, res) => {
     try {
       const sRes = await usersDbPool.query(
         `SELECT school_name FROM schools_iern WHERE CAST(school_id AS TEXT) = $1 LIMIT 1`,
-        [cleanSchoolId]
+        [cleanSchoolId],
       );
       if (sRes.rows.length > 0 && sRes.rows[0].school_name) {
         schoolNames.push(sRes.rows[0].school_name.trim().toUpperCase());
@@ -109,12 +113,16 @@ router.get('/incoming', async (req, res) => {
         OR target_school_id = $2 
         OR REPLACE(target_school_id, 'SCH-', '') = $1 
         OR target_school_id ILIKE $3
-        ${schoolNames.length > 0 ? `OR UPPER(TRIM(target_school_id)) = $4` : ''}
+        ${schoolNames.length > 0 ? `OR UPPER(TRIM(target_school_id)) = $4` : ""}
       ) 
         AND LOWER(status) = 'pending' 
       ORDER BY created_at DESC
     `;
-    const params = [cleanSchoolId, `SCH-${cleanSchoolId}`, `%${cleanSchoolId}%`];
+    const params = [
+      cleanSchoolId,
+      `SCH-${cleanSchoolId}`,
+      `%${cleanSchoolId}%`,
+    ];
     if (schoolNames.length > 0) {
       params.push(schoolNames[0]);
     }
@@ -123,8 +131,12 @@ router.get('/incoming', async (req, res) => {
 
     // Fallback: If 0 rows found in active pool, check the alternative pool
     if (result.rows.length === 0) {
-      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId) ? db.prodPool : db.stagingPool;
-      const fallbackRes = await fallbackPool.query(queryText, params).catch(() => ({ rows: [] }));
+      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId)
+        ? db.prodPool
+        : db.stagingPool;
+      const fallbackRes = await fallbackPool
+        .query(queryText, params)
+        .catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
       }
@@ -134,16 +146,20 @@ router.get('/incoming', async (req, res) => {
     await cacheService.set(cacheKey, formatted, 5);
     res.json(formatted);
   } catch (err) {
-    console.error('[Requests Incoming GET Error]:', err.message);
+    console.error("[Requests Incoming GET Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/requests/outgoing
-router.get('/outgoing', async (req, res) => {
+router.get("/outgoing", async (req, res) => {
   try {
-    const schoolId = req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '108348';
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, '').trim();
+    const schoolId =
+      req.query.schoolId ||
+      req.query.school_id ||
+      getSchoolIdFromRequest(req) ||
+      "108348";
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
     const cacheKey = `requests:outgoing:${cleanSchoolId}`;
     const cached = await cacheService.get(cacheKey);
@@ -154,14 +170,22 @@ router.get('/outgoing', async (req, res) => {
       WHERE (requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(requester_school_id, 'SCH-', '') = $1 OR requester_school_id ILIKE $3) 
       ORDER BY created_at DESC
     `;
-    const params = [cleanSchoolId, `SCH-${cleanSchoolId}`, `%${cleanSchoolId}%`];
+    const params = [
+      cleanSchoolId,
+      `SCH-${cleanSchoolId}`,
+      `%${cleanSchoolId}%`,
+    ];
 
     let result = await db.query(queryText, params);
 
     // Fallback: If 0 rows found in active pool, check alternative pool
     if (result.rows.length === 0) {
-      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId) ? db.prodPool : db.stagingPool;
-      const fallbackRes = await fallbackPool.query(queryText, params).catch(() => ({ rows: [] }));
+      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId)
+        ? db.prodPool
+        : db.stagingPool;
+      const fallbackRes = await fallbackPool
+        .query(queryText, params)
+        .catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
       }
@@ -171,16 +195,20 @@ router.get('/outgoing', async (req, res) => {
     await cacheService.set(cacheKey, formatted, 5);
     res.json(formatted);
   } catch (err) {
-    console.error('[Requests Outgoing GET Error]:', err.message);
+    console.error("[Requests Outgoing GET Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/requests/history
-router.get('/history', async (req, res) => {
+router.get("/history", async (req, res) => {
   try {
-    const schoolId = req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '108348';
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, '').trim();
+    const schoolId =
+      req.query.schoolId ||
+      req.query.school_id ||
+      getSchoolIdFromRequest(req) ||
+      "108348";
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
     const cacheKey = `requests:history:${cleanSchoolId}`;
     const cached = await cacheService.get(cacheKey);
@@ -198,11 +226,15 @@ router.get('/history', async (req, res) => {
 
     // Fallback: If 0 rows found in active pool, check alternative pool
     if (result.rows.length === 0) {
-      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId) ? db.prodPool : db.stagingPool;
+      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId)
+        ? db.prodPool
+        : db.stagingPool;
       // Bounded so a slow secondary pool can never push the request past the gateway timeout.
       const fallbackRes = await Promise.race([
         fallbackPool.query(queryText, params),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('fallback timeout')), 5000))
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error("fallback timeout")), 5000),
+        ),
       ]).catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
@@ -213,17 +245,23 @@ router.get('/history', async (req, res) => {
     await cacheService.set(cacheKey, formatted, 5);
     res.json(formatted);
   } catch (err) {
-    console.error('[Requests History GET Error]:', err.message);
+    console.error("[Requests History GET Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/requests/district-schools
-router.get('/district-schools', async (req, res) => {
+router.get("/district-schools", async (req, res) => {
   try {
-    const schoolId = req.query.schoolId || req.query.school_id || getSchoolIdFromRequest(req) || '502949';
-    const reqDivision = req.query.division ? String(req.query.division).trim() : '';
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, '').trim();
+    const schoolId =
+      req.query.schoolId ||
+      req.query.school_id ||
+      getSchoolIdFromRequest(req) ||
+      "502949";
+    const reqDivision = req.query.division
+      ? String(req.query.division).trim()
+      : "";
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
     let currentSchoolMeta = null;
     let schoolsRes = { rows: [] };
@@ -235,13 +273,13 @@ router.get('/district-schools', async (req, res) => {
          FROM schools_iern 
          WHERE CAST(school_id AS TEXT) = $1 
          LIMIT 1`,
-        [cleanSchoolId]
+        [cleanSchoolId],
       );
       if (metaRes.rows.length > 0) {
         currentSchoolMeta = metaRes.rows[0];
       }
     } catch (e) {
-      console.warn('[users_database.schools_iern lookup error]:', e.message);
+      console.warn("[users_database.schools_iern lookup error]:", e.message);
     }
 
     // 2. Fallback: Lookup in insightEd unit1_school_identity
@@ -252,7 +290,7 @@ router.get('/district-schools', async (req, res) => {
            FROM unit1_school_identity 
            WHERE CAST(school_id AS TEXT) = $1 
            LIMIT 1`,
-          [cleanSchoolId]
+          [cleanSchoolId],
         );
         if (idRes.rows.length > 0) {
           currentSchoolMeta = idRes.rows[0];
@@ -268,7 +306,7 @@ router.get('/district-schools', async (req, res) => {
            FROM esf7_school_profile 
            WHERE CAST(school_id AS TEXT) = $1 OR school_id = $2
            LIMIT 1`,
-          [cleanSchoolId, `SCH-${cleanSchoolId}`]
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
         );
         if (profRes.rows.length > 0) {
           currentSchoolMeta = profRes.rows[0];
@@ -276,15 +314,25 @@ router.get('/district-schools', async (req, res) => {
       } catch (e) {}
     }
 
-    const divisionToFilter = reqDivision || (currentSchoolMeta && currentSchoolMeta.division ? String(currentSchoolMeta.division).trim() : '');
-    const isTestSchool = cleanSchoolId.startsWith('900') || cleanSchoolId.startsWith('800') || cleanSchoolId.startsWith('199') || cleanSchoolId.startsWith('divtest-') || cleanSchoolId.startsWith('pilot-');
+    const divisionToFilter =
+      reqDivision ||
+      (currentSchoolMeta && currentSchoolMeta.division
+        ? String(currentSchoolMeta.division).trim()
+        : "");
+    const isTestSchool =
+      cleanSchoolId.startsWith("900") ||
+      cleanSchoolId.startsWith("800") ||
+      cleanSchoolId.startsWith("199") ||
+      cleanSchoolId.startsWith("divtest-") ||
+      cleanSchoolId.startsWith("pilot-");
 
     // 4. Query all schools in the exact same DIVISION from users_database.schools_iern
     if (divisionToFilter) {
-      const testClause = isTestSchool ? '' : 'AND (is_testaccount IS NOT TRUE)';
+      const testClause = isTestSchool ? "" : "AND (is_testaccount IS NOT TRUE)";
 
-      schoolsRes = await usersDbPool.query(
-        `SELECT school_id, school_name, district, division, region 
+      schoolsRes = await usersDbPool
+        .query(
+          `SELECT school_id, school_name, district, division, region 
          FROM schools_iern 
          WHERE (
            UPPER(TRIM(division)) = UPPER(TRIM($1)) 
@@ -293,15 +341,12 @@ router.get('/district-schools', async (req, res) => {
          AND CAST(school_id AS TEXT) != $3 
          ${testClause}
          ORDER BY school_name ASC`,
-        [
-          divisionToFilter,
-          `%${divisionToFilter}%`,
-          cleanSchoolId
-        ]
-      ).catch((err) => {
-        console.warn('[schools_iern division query error]:', err.message);
-        return { rows: [] };
-      });
+          [divisionToFilter, `%${divisionToFilter}%`, cleanSchoolId],
+        )
+        .catch((err) => {
+          console.warn("[schools_iern division query error]:", err.message);
+          return { rows: [] };
+        });
     }
 
     // 5. Fallback: Query same division from insightEd unit1_school_identity
@@ -316,7 +361,7 @@ router.get('/district-schools', async (req, res) => {
            )
            AND CAST(school_id AS TEXT) != $3 
            ORDER BY school_name ASC`,
-          [divisionToFilter, `%${divisionToFilter}%`, cleanSchoolId]
+          [divisionToFilter, `%${divisionToFilter}%`, cleanSchoolId],
         );
         if (idDivRes.rows.length > 0) {
           schoolsRes = idDivRes;
@@ -333,7 +378,7 @@ router.get('/district-schools', async (req, res) => {
            WHERE CAST(school_id AS TEXT) != $1 AND school_id != $2
            ORDER BY school_name ASC
            LIMIT 50`,
-          [cleanSchoolId, `SCH-${cleanSchoolId}`]
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
         );
         if (localRes.rows.length > 0) {
           schoolsRes = localRes;
@@ -341,37 +386,92 @@ router.get('/district-schools', async (req, res) => {
       } catch (e) {}
     }
 
-    let districtList = schoolsRes.rows.map(r => ({
-      schoolId: String(r.school_id || '').trim(),
-      school_id: String(r.school_id || '').trim(),
-      schoolName: (r.school_name || `School ${r.school_id}`).trim(),
-      school_name: (r.school_name || `School ${r.school_id}`).trim(),
-      district: r.district || '',
-      division: r.division || '',
-      region: r.region || ''
-    })).filter(s => s.schoolId !== cleanSchoolId && s.schoolId !== '199997' && s.schoolId !== '199998');
+    let districtList = schoolsRes.rows
+      .map((r) => ({
+        schoolId: String(r.school_id || "").trim(),
+        school_id: String(r.school_id || "").trim(),
+        schoolName: (r.school_name || `School ${r.school_id}`).trim(),
+        school_name: (r.school_name || `School ${r.school_id}`).trim(),
+        district: r.district || "",
+        division: r.division || "",
+        region: r.region || "",
+      }))
+      .filter(
+        (s) =>
+          s.schoolId !== cleanSchoolId &&
+          s.schoolId !== "199997" &&
+          s.schoolId !== "199998",
+      );
 
     // ── Archetype & Demo Account Partner Additions ──
     if (isTestSchool || districtList.length === 0) {
       const archetypeTestSchools = [
-        { schoolId: '900223', schoolName: 'MCOC Elementary Demo School (SSES)', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '900224', schoolName: 'MCOC Junior High School Demo (SPA/SPJ/STE)', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '900225', schoolName: 'MCOC Senior High School Demo', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '900226', schoolName: 'MCOC Integrated School Demo (K-10)', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '900227', schoolName: 'MCOC Multigrade Elementary Demo (MG ES)', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '900228', schoolName: 'MCOC Comprehensive K-12 Demo', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '900229', schoolName: 'MCOC Inclusive Special Education (SNED/ALS/ARAL)', district: 'MCOC DISTRICT', division: 'MCOC CENTRAL DIVISION' },
-        { schoolId: '199997', schoolName: 'Orientation Satellite Elementary School', district: 'ALBAY II DISTRICT', division: 'LEGASPI CITY' },
-        { schoolId: '199998', schoolName: 'Orientation Demonstration Integrated School', district: 'ALBAY II DISTRICT', division: 'LEGASPI CITY' }
+        {
+          schoolId: "900223",
+          schoolName: "MCOC Elementary Demo School (SSES)",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "900224",
+          schoolName: "MCOC Junior High School Demo (SPA/SPJ/STE)",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "900225",
+          schoolName: "MCOC Senior High School Demo",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "900226",
+          schoolName: "MCOC Integrated School Demo (K-10)",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "900227",
+          schoolName: "MCOC Multigrade Elementary Demo (MG ES)",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "900228",
+          schoolName: "MCOC Comprehensive K-12 Demo",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "900229",
+          schoolName: "MCOC Inclusive Special Education (SNED/ALS/ARAL)",
+          district: "MCOC DISTRICT",
+          division: "MCOC CENTRAL DIVISION",
+        },
+        {
+          schoolId: "199997",
+          schoolName: "Orientation Satellite Elementary School",
+          district: "ALBAY II DISTRICT",
+          division: "LEGASPI CITY",
+        },
+        {
+          schoolId: "199998",
+          schoolName: "Orientation Demonstration Integrated School",
+          district: "ALBAY II DISTRICT",
+          division: "LEGASPI CITY",
+        },
       ];
 
       for (const tSchool of archetypeTestSchools) {
-        if (tSchool.schoolId !== cleanSchoolId && !districtList.some(d => d.schoolId === tSchool.schoolId)) {
+        if (
+          tSchool.schoolId !== cleanSchoolId &&
+          !districtList.some((d) => d.schoolId === tSchool.schoolId)
+        ) {
           districtList.push({
             ...tSchool,
             school_id: tSchool.schoolId,
             school_name: tSchool.schoolName,
-            region: 'REGION IV-A'
+            region: "REGION IV-A",
           });
         }
       }
@@ -379,28 +479,43 @@ router.get('/district-schools', async (req, res) => {
 
     res.json(districtList);
   } catch (err) {
-    console.error('[District Schools Error]:', err.message);
+    console.error("[District Schools Error]:", err.message);
     res.status(500).json({ error: err.message, schools: [] });
   }
 });
 
-
 // POST /api/requests/create
-router.post('/create', async (req, res) => {
+router.post("/create", async (req, res) => {
   try {
-    const { targetSchoolId, target_school_id, requestType, request_type, personnelId, personnel_id, personnelName, personnel_name, remarks } = req.body;
-    let rawRequester = getSchoolIdFromRequest(req) || req.body.requesterSchoolId || req.body.requester_school_id || '108348';
+    const {
+      targetSchoolId,
+      target_school_id,
+      requestType,
+      request_type,
+      personnelId,
+      personnel_id,
+      personnelName,
+      personnel_name,
+      remarks,
+    } = req.body;
+    let rawRequester =
+      getSchoolIdFromRequest(req) ||
+      req.body.requesterSchoolId ||
+      req.body.requester_school_id ||
+      "108348";
     let rawTarget = targetSchoolId || target_school_id;
     const rType = requestType || request_type;
 
     if (!rawTarget || !rType) {
-      return res.status(400).json({ error: 'Target school ID and request type are required.' });
+      return res
+        .status(400)
+        .json({ error: "Target school ID and request type are required." });
     }
 
     const requesterId = await resolveSchoolId(rawRequester);
     const tSchoolId = await resolveSchoolId(rawTarget);
     const pId = personnelId || personnel_id || null;
-    const pName = personnelName || personnel_name || '';
+    const pName = personnelName || personnel_name || "";
 
     // Check if identical request is already pending for this specific teacher
     const checkDup = await db.query(
@@ -410,65 +525,94 @@ router.post('/create', async (req, res) => {
          AND request_type = $5 
          AND (personnel_id = $6 OR raw_payload->>'personnelId' = $6 OR personnel_name ILIKE $7)
          AND LOWER(status) = 'pending'`,
-      [requesterId, `SCH-${requesterId}`, tSchoolId, `SCH-${tSchoolId}`, rType, pId || '', pName ? `%${pName}%` : '']
+      [
+        requesterId,
+        `SCH-${requesterId}`,
+        tSchoolId,
+        `SCH-${tSchoolId}`,
+        rType,
+        pId || "",
+        pName ? `%${pName}%` : "",
+      ],
     );
 
     if (checkDup.rows.length > 0) {
-      return res.json({ success: true, alreadyExists: true, request: formatRequestRecord(checkDup.rows[0]) });
+      return res.json({
+        success: true,
+        alreadyExists: true,
+        request: formatRequestRecord(checkDup.rows[0]),
+      });
     }
 
     let targetPersonnelId = pId;
     if (targetPersonnelId) {
       const pRes = await db.query(
         `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-        [targetPersonnelId]
+        [targetPersonnelId],
       );
       if (pRes.rows.length > 0) {
         targetPersonnelId = pRes.rows[0].id;
       } else {
-        const idParts = String(targetPersonnelId).split('-');
+        const idParts = String(targetPersonnelId).split("-");
         const schoolId = idParts.length > 1 ? idParts[1] : requesterId;
-        const cleanSchoolId = schoolId.replace(/^SCH-/i, '').trim();
-        const isTest = db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
+        const cleanSchoolId = schoolId.replace(/^SCH-/i, "").trim();
+        const isTest =
+          db.isDivisionOrTestAccount &&
+          db.isDivisionOrTestAccount(cleanSchoolId);
         const seqIndex = idParts.length > 2 ? parseInt(idParts[2], 10) - 1 : 0;
         let masterRows = { rows: [] };
         if (isTest) {
-          masterRows = await insightEdPool.query(
-            `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
-            [cleanSchoolId]
-          ).catch(() => ({ rows: [] }));
+          masterRows = await insightEdPool
+            .query(
+              `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
+              [cleanSchoolId],
+            )
+            .catch(() => ({ rows: [] }));
         } else {
-          masterRows = await insightEdPool.query(
-            `SELECT * FROM esf7_database WHERE school_id = $1`,
-            [cleanSchoolId]
-          ).catch(() => ({ rows: [] }));
+          masterRows = await insightEdPool
+            .query(`SELECT * FROM esf7_database WHERE school_id = $1`, [
+              cleanSchoolId,
+            ])
+            .catch(() => ({ rows: [] }));
           if (masterRows.rows.length === 0) {
-            masterRows = await insightEdPool.query(
-              `SELECT * FROM esf7_database WHERE schoool_id = $1`,
-              [cleanSchoolId]
-            ).catch(() => ({ rows: [] }));
+            masterRows = await insightEdPool
+              .query(`SELECT * FROM esf7_database WHERE schoool_id = $1`, [
+                cleanSchoolId,
+              ])
+              .catch(() => ({ rows: [] }));
           }
         }
-        
-        const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
-        const fName = masterRow.first || masterRow.first_name || (pName ? pName.split(' ')[0] : 'TEACHER');
-        const lName = masterRow.last || masterRow.last_name || (pName ? pName.split(' ').slice(1).join(' ') : 'STAFF');
-        const actualPrn = masterRow.prn || String(targetPersonnelId).replace('PER-', 'PRN-');
-        const actualId = String(targetPersonnelId).replace('PRN-', 'PER-');
 
-        await db.query(
-          `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, type, first_name, last_name, created_at, updated_at)
+        const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
+        const fName =
+          masterRow.first ||
+          masterRow.first_name ||
+          (pName ? pName.split(" ")[0] : "TEACHER");
+        const lName =
+          masterRow.last ||
+          masterRow.last_name ||
+          (pName ? pName.split(" ").slice(1).join(" ") : "STAFF");
+        const actualPrn =
+          masterRow.prn || String(targetPersonnelId).replace("PER-", "PRN-");
+        const actualId = String(targetPersonnelId).replace("PRN-", "PER-");
+
+        await db
+          .query(
+            `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, type, first_name, last_name, created_at, updated_at)
            VALUES ($1, $2, $3, 'SY 26-27', 'teaching', $4, $5, NOW(), NOW())
            ON CONFLICT (id) DO NOTHING`,
-          [actualId, actualPrn, cleanSchoolId, fName, lName]
-        ).catch(() => {});
+            [actualId, actualPrn, cleanSchoolId, fName, lName],
+          )
+          .catch(() => {});
         targetPersonnelId = actualId;
       }
     }
 
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_requests`);
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const reqId = req.body.id || `REQ-${requesterId}-${seq}-${Math.floor(Math.random()*1000)}`;
+    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+    const reqId =
+      req.body.id ||
+      `REQ-${requesterId}-${seq}-${Math.floor(Math.random() * 1000)}`;
 
     const insertRes = await db.query(
       `INSERT INTO esf7_requests (id, requester_school_id, target_school_id, request_type, personnel_id, personnel_name, remarks, raw_payload)
@@ -481,41 +625,54 @@ router.post('/create', async (req, res) => {
         targetPersonnelId,
         pName || null,
         remarks || null,
-        JSON.stringify({ ...req.body, requesterId, targetSchoolId: tSchoolId, personnelId: targetPersonnelId, personnelName: pName })
-      ]
+        JSON.stringify({
+          ...req.body,
+          requesterId,
+          targetSchoolId: tSchoolId,
+          personnelId: targetPersonnelId,
+          personnelName: pName,
+        }),
+      ],
     );
 
-    await cacheService.delPattern('requests:*');
-    res.json({ success: true, request: formatRequestRecord(insertRes.rows[0]) });
+    await cacheService.delPattern("requests:*");
+    res.json({
+      success: true,
+      request: formatRequestRecord(insertRes.rows[0]),
+    });
   } catch (err) {
-    console.error('[Requests Create Error]:', err.message);
+    console.error("[Requests Create Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // POST /api/requests/:id/respond
-router.post('/:id/respond', async (req, res) => {
+router.post("/:id/respond", async (req, res) => {
   const { id } = req.params;
   const { action, remarks } = req.body; // 'approved' or 'rejected'
 
-  if (!['approved', 'rejected'].includes(action)) {
-    return res.status(400).json({ error: 'Invalid action response.' });
+  if (!["approved", "rejected"].includes(action)) {
+    return res.status(400).json({ error: "Invalid action response." });
   }
 
   try {
     const result = await db.query(
       `UPDATE esf7_requests SET status = $1, remarks = COALESCE($2, remarks), updated_at = NOW() WHERE id = $3 RETURNING *`,
-      [action, remarks || null, id]
+      [action, remarks || null, id],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Request not found.' });
+      return res.status(404).json({ error: "Request not found." });
     }
 
-    await cacheService.delPattern('requests:*');
-    res.json({ success: true, status: action, request: formatRequestRecord(result.rows[0]) });
+    await cacheService.delPattern("requests:*");
+    res.json({
+      success: true,
+      status: action,
+      request: formatRequestRecord(result.rows[0]),
+    });
   } catch (err) {
-    console.error('[Requests Respond Error]:', err.message);
+    console.error("[Requests Respond Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -538,20 +695,20 @@ async function ensureGhostSyncTable() {
     `);
     isGhostTableInitialized = true;
   } catch (err) {
-    console.warn('[ensureGhostSyncTable Warning]:', err.message);
+    console.warn("[ensureGhostSyncTable Warning]:", err.message);
   }
 }
 
 // Helper to resolve canonical room key from any PRN, ID, or Name with fast in-memory cache
 const roomKeyCache = new Map();
 async function resolveCanonicalRoomKey(rawKey) {
-  if (!rawKey) return 'UNKNOWN';
+  if (!rawKey) return "UNKNOWN";
   const clean = String(rawKey).trim();
   if (roomKeyCache.has(clean)) {
     return roomKeyCache.get(clean);
   }
 
-  const cleanStripped = clean.replace(/^(PER-|PRN-)/i, '').trim();
+  const cleanStripped = clean.replace(/^(PER-|PRN-)/i, "").trim();
 
   try {
     // 1. Check personnel profile table using exact ID or exact PRN
@@ -559,14 +716,16 @@ async function resolveCanonicalRoomKey(rawKey) {
       `SELECT id, prn, first_name, last_name FROM esf7_personnel_profile 
        WHERE id = $1 OR prn = $1 OR (prn = $2 AND length($2) >= 6)
        LIMIT 1`,
-      [clean, cleanStripped]
+      [clean, cleanStripped],
     );
 
     if (pRes.rows.length > 0) {
       const p = pRes.rows[0];
-      const fn = (p.first_name || '').toUpperCase().trim();
-      const ln = (p.last_name || '').toUpperCase().trim();
-      const resolved = p.prn ? `ROOM_${p.prn}` : `ROOM_${fn}_${ln}`.replace(/[^A-Z0-9_]/g, '');
+      const fn = (p.first_name || "").toUpperCase().trim();
+      const ln = (p.last_name || "").toUpperCase().trim();
+      const resolved = p.prn
+        ? `ROOM_${p.prn}`
+        : `ROOM_${fn}_${ln}`.replace(/[^A-Z0-9_]/g, "");
       if (roomKeyCache.size > 2000) roomKeyCache.clear();
       roomKeyCache.set(clean, resolved);
       return resolved;
@@ -577,22 +736,27 @@ async function resolveCanonicalRoomKey(rawKey) {
       `SELECT personnel_id, personnel_name FROM esf7_requests 
        WHERE personnel_id = $1 OR personnel_id = $2
        LIMIT 1`,
-      [clean, cleanStripped]
+      [clean, cleanStripped],
     );
 
     if (reqRes.rows.length > 0) {
       const r = reqRes.rows[0];
-      const name = (r.personnel_name || r.personnel_id || '').toUpperCase().trim();
-      const resolved = `ROOM_${name}`.replace(/[^A-Z0-9_]/g, '');
+      const name = (r.personnel_name || r.personnel_id || "")
+        .toUpperCase()
+        .trim();
+      const resolved = `ROOM_${name}`.replace(/[^A-Z0-9_]/g, "");
       if (roomKeyCache.size > 2000) roomKeyCache.clear();
       roomKeyCache.set(clean, resolved);
       return resolved;
     }
   } catch (err) {
-    console.warn('[resolveCanonicalRoomKey Error]:', err.message);
+    console.warn("[resolveCanonicalRoomKey Error]:", err.message);
   }
 
-  const fallback = `ROOM_${cleanStripped.toUpperCase()}`.replace(/[^A-Z0-9_]/g, '');
+  const fallback = `ROOM_${cleanStripped.toUpperCase()}`.replace(
+    /[^A-Z0-9_]/g,
+    "",
+  );
   if (roomKeyCache.size > 2000) roomKeyCache.clear();
   roomKeyCache.set(clean, fallback);
   return fallback;
@@ -600,42 +764,52 @@ async function resolveCanonicalRoomKey(rawKey) {
 
 // GET /api/requests/clustered/:prn/sync
 // Fetch active ghost slots from partner schools for a clustered teacher
-router.get('/clustered/:prn/sync', async (req, res) => {
+router.get("/clustered/:prn/sync", async (req, res) => {
   const { prn } = req.params;
-  const requestingSchoolId = String(getSchoolIdFromRequest(req) || req.query.schoolId || req.query.school_id || '').replace('SCH-', '').trim();
+  const requestingSchoolId = String(
+    getSchoolIdFromRequest(req) ||
+      req.query.schoolId ||
+      req.query.school_id ||
+      "",
+  )
+    .replace("SCH-", "")
+    .trim();
 
   try {
     await ensureGhostSyncTable();
     const roomKey = await resolveCanonicalRoomKey(prn);
-    const cleanStripped = String(prn).replace(/^(PER-|PRN-)/i, '').trim();
+    const cleanStripped = String(prn)
+      .replace(/^(PER-|PRN-)/i, "")
+      .trim();
 
     // Query partner school slots from PostgreSQL
     const syncRes = await db.query(
       `SELECT school_id, school_name, slots FROM esf7_clustered_ghost_sync 
        WHERE room_key = $1 AND school_id != $2`,
-      [roomKey, requestingSchoolId]
+      [roomKey, requestingSchoolId],
     );
 
     let sharedSlots = [];
 
     if (syncRes.rows.length > 0) {
-      syncRes.rows.forEach(row => {
+      syncRes.rows.forEach((row) => {
         const rowSlots = Array.isArray(row.slots) ? row.slots : [];
-        rowSlots.forEach(slot => {
-          const sub = String(slot.subject || '').toUpperCase();
-          if (sub.startsWith('ADMIN') || sub.includes('ADMINISTRATIVE')) return;
+        rowSlots.forEach((slot) => {
+          const sub = String(slot.subject || "").toUpperCase();
+          if (sub.startsWith("ADMIN") || sub.includes("ADMINISTRATIVE")) return;
           sharedSlots.push({
             ...slot,
             schoolId: row.school_id,
-            schoolName: row.school_name || `School ${row.school_id}`
+            schoolName: row.school_name || `School ${row.school_id}`,
           });
         });
       });
     } else {
       // If table has no partner entries yet, query active DB workloads for exact PRN match
       if (cleanStripped && cleanStripped.length >= 6) {
-        const dbSlots = await db.query(
-          `SELECT w.*, p.school_id, s.school_name, p.first_name, p.last_name 
+        const dbSlots = await db
+          .query(
+            `SELECT w.*, p.school_id, s.school_name, p.first_name, p.last_name 
            FROM esf7_workload_rows w
            JOIN esf7_personnel_profile p ON w.personnel_id = p.id
            LEFT JOIN esf7_school_profile s ON p.school_id = s.school_id
@@ -643,23 +817,32 @@ router.get('/clustered/:prn/sync', async (req, res) => {
              AND p.school_id != $3
              AND (w.subject NOT ILIKE 'ADMIN%' AND w.subject NOT ILIKE '%ADMINISTRATIVE%')
            ORDER BY w.start_time ASC`,
-          [prn, cleanStripped, requestingSchoolId]
-        ).catch(() => ({ rows: [] }));
+            [prn, cleanStripped, requestingSchoolId],
+          )
+          .catch(() => ({ rows: [] }));
 
         if (dbSlots.rows.length > 0) {
-          dbSlots.rows.forEach(row => {
-            const schId = String(row.school_id || '').replace('SCH-', '').trim();
+          dbSlots.rows.forEach((row) => {
+            const schId = String(row.school_id || "")
+              .replace("SCH-", "")
+              .trim();
             const schName = row.school_name || `School ${schId}`;
             sharedSlots.push({
-              day: row.days && Array.isArray(row.days) ? row.days[0] : (row.day || 'MONDAY'),
-              days: Array.isArray(row.days) && row.days.length > 0 ? row.days : [row.day || 'MONDAY'],
+              day:
+                row.days && Array.isArray(row.days)
+                  ? row.days[0]
+                  : row.day || "MONDAY",
+              days:
+                Array.isArray(row.days) && row.days.length > 0
+                  ? row.days
+                  : [row.day || "MONDAY"],
               startTime: row.start_time,
               endTime: row.end_time,
               subject: row.subject,
               gradeLevel: row.grade_level,
               sectionName: row.section_name,
               schoolId: schId,
-              schoolName: schName
+              schoolName: schName,
             });
           });
         }
@@ -671,33 +854,35 @@ router.get('/clustered/:prn/sync', async (req, res) => {
       prn,
       roomKey,
       sharedSlots,
-      count: sharedSlots.length
+      count: sharedSlots.length,
     });
   } catch (err) {
-    console.error('[Clustered Sync GET Error]:', err.message);
+    console.error("[Clustered Sync GET Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // POST /api/requests/clustered/:prn/sync
 // Broadcast or update active school timetable slots for a clustered teacher
-router.post('/clustered/:prn/sync', async (req, res) => {
+router.post("/clustered/:prn/sync", async (req, res) => {
   const { prn } = req.params;
   const { authorSchoolId, authorSchoolName, slots } = req.body;
 
   if (!prn || !authorSchoolId) {
-    return res.status(400).json({ error: 'prn and authorSchoolId are required.' });
+    return res
+      .status(400)
+      .json({ error: "prn and authorSchoolId are required." });
   }
 
-  const cleanAuthorSchoolId = String(authorSchoolId).replace('SCH-', '').trim();
+  const cleanAuthorSchoolId = String(authorSchoolId).replace("SCH-", "").trim();
 
   try {
     await ensureGhostSyncTable();
     const roomKey = await resolveCanonicalRoomKey(prn);
     const rawSlots = Array.isArray(slots) ? slots : [];
-    const validSlots = rawSlots.filter(s => {
-      const sub = String(s.subject || s.task || '').toUpperCase();
-      return !sub.startsWith('ADMIN') && !sub.includes('ADMINISTRATIVE');
+    const validSlots = rawSlots.filter((s) => {
+      const sub = String(s.subject || s.task || "").toUpperCase();
+      return !sub.startsWith("ADMIN") && !sub.includes("ADMINISTRATIVE");
     });
 
     // Atomically upsert slots into PostgreSQL (persists across all PM2 cluster instances)
@@ -709,26 +894,31 @@ router.post('/clustered/:prn/sync', async (req, res) => {
          school_name = EXCLUDED.school_name,
          slots = EXCLUDED.slots,
          updated_at = NOW()`,
-      [roomKey, cleanAuthorSchoolId, authorSchoolName || `School ${cleanAuthorSchoolId}`, JSON.stringify(validSlots)]
+      [
+        roomKey,
+        cleanAuthorSchoolId,
+        authorSchoolName || `School ${cleanAuthorSchoolId}`,
+        JSON.stringify(validSlots),
+      ],
     );
 
     // Fetch and return the partner schools' latest slots
     const syncRes = await db.query(
       `SELECT school_id, school_name, slots FROM esf7_clustered_ghost_sync 
        WHERE room_key = $1 AND school_id != $2`,
-      [roomKey, cleanAuthorSchoolId]
+      [roomKey, cleanAuthorSchoolId],
     );
 
     const sharedSlots = [];
-    syncRes.rows.forEach(row => {
+    syncRes.rows.forEach((row) => {
       const rowSlots = Array.isArray(row.slots) ? row.slots : [];
-      rowSlots.forEach(slot => {
-        const sub = String(slot.subject || slot.task || '').toUpperCase();
-        if (sub.startsWith('ADMIN') || sub.includes('ADMINISTRATIVE')) return;
+      rowSlots.forEach((slot) => {
+        const sub = String(slot.subject || slot.task || "").toUpperCase();
+        if (sub.startsWith("ADMIN") || sub.includes("ADMINISTRATIVE")) return;
         sharedSlots.push({
           ...slot,
           schoolId: row.school_id,
-          schoolName: row.school_name || `School ${row.school_id}`
+          schoolName: row.school_name || `School ${row.school_id}`,
         });
       });
     });
@@ -738,13 +928,12 @@ router.post('/clustered/:prn/sync', async (req, res) => {
       prn,
       roomKey,
       authorSchoolId: cleanAuthorSchoolId,
-      sharedSlots
+      sharedSlots,
     });
   } catch (err) {
-    console.error('[Clustered Sync POST Error]:', err.message);
+    console.error("[Clustered Sync POST Error]:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 module.exports = router;
-
