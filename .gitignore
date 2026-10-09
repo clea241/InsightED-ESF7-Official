@@ -31,3 +31,6 @@ readiness-reports/
 
 # pg-health-assessment reports (may contain schema details)
 pg-health-reports/
+
+# load-capacity-test: keep the example env file, ignore the real one
+!.env.load.example

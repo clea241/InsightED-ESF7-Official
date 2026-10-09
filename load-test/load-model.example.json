@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "_comment": "Copy to load-test/load-model.json. Every input carries a source: stated (the user gave it), assumed (a placeholder to confirm) or from-log.",
+  "inputs": {
+    "total_schools": { "value": 60, "source": "assumed" },
+    "users_per_school": { "value": 6, "source": "assumed" },
+    "peak_active_fraction": { "value": 0.5, "source": "assumed" },
+    "actions_per_minute": { "value": 4, "source": "assumed" },
+    "requests_per_action": { "value": 3, "source": "assumed" },
+    "burst_multiplier": { "value": 3, "source": "assumed" },
+    "safety_factor": { "value": 2, "source": "assumed" },
+    "avg_latency_s": { "value": 0.4, "source": "assumed" },
+    "pm2_instances": { "value": 2, "source": "assumed" },
+    "soak_hours": { "value": 4, "source": "assumed" }
+  },
+  "largest_tenant_targets": {
+    "school_id": "600001",
+    "tenant_column": "school_id",
+    "tables": {
+      "esf7_personnel_profile": 400,
+      "esf7_workload_rows": 6000,
+      "esf7_regular_sections": 200,
+      "school_drafts": 1
+    }
+  },
+  "other_tenants": {
+    "count": 20,
+    "rows_per_table": {
+      "esf7_personnel_profile": 40,
+      "esf7_workload_rows": 400,
+      "esf7_regular_sections": 20,
+      "school_drafts": 1
+    }
+  },
+  "thresholds": {
+    "read_p95_ms": 800,
+    "write_p95_ms": 1500,
+    "error_rate": 0.01,
+    "generator_cpu_max_percent": 85
+  },
+  "endpoint_mix": [
+    {
+      "name": "personnel_list",
+      "method": "GET",
+      "path": "/api/personnel?schoolId={schoolId}",
+      "weight": 10,
+      "kind": "read",
+      "source": "assumed"
+    },
+    {
+      "name": "school_draft_get",
+      "method": "GET",
+      "path": "/api/school/draft?schoolId={schoolId}",
+      "weight": 25,
+      "kind": "read",
+      "source": "assumed"
+    },
+    {
+      "name": "workload_by_personnel",
+      "method": "GET",
+      "path": "/api/workloads/personnel/{personnelId}",
+      "weight": 30,
+      "kind": "read",
+      "source": "assumed"
+    },
+    {
+      "name": "class_sections",
+      "method": "GET",
+      "path": "/api/class-sections?schoolId={schoolId}",
+      "weight": 15,
+      "kind": "read",
+      "source": "assumed"
+    },
+    {
+      "name": "school_draft_save",
+      "method": "PUT",
+      "path": "/api/school/draft?schoolId={schoolId}",
+      "weight": 20,
+      "kind": "write",
+      "source": "assumed"
+    }
+  ],
+  "scenarios": {}
+}
