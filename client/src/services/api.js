@@ -899,31 +899,6 @@ export const api = {
     return parseJsonOrThrow(res);
   },
 
-  // Feature B — Work Immersion management
-  getWorkImmersion: async ({ personnelId, schoolYear, month }) => {
-    const params = new URLSearchParams({ personnelId, schoolYear, month });
-    const res = await fetchWithAuth(
-      `${API_BASE}/work-immersion?${params.toString()}`,
-    );
-    if (!res.ok) throw new Error("Failed to fetch work immersion data");
-    return parseJsonOrThrow(res);
-  },
-  saveWorkImmersion: async ({
-    personnelId,
-    schoolYear,
-    month,
-    day,
-    minutes,
-  }) => {
-    const res = await fetchWithAuth(`${API_BASE}/work-immersion/save`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personnelId, schoolYear, month, day, minutes }),
-    });
-    if (!res.ok) throw new Error("Failed to save work immersion data");
-    return parseJsonOrThrow(res);
-  },
-
   getExtraTasks: async (personnelId = null) => {
     const query = personnelId
       ? `?personnelId=${encodeURIComponent(personnelId)}`
