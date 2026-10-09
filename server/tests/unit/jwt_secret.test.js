@@ -11,7 +11,7 @@ test('production without a JWT_SECRET throws a clear error', () => {
 });
 
 test('production with a short secret throws', () => {
-  assert.throws(() => assertJwtSecret({ NODE_ENV: 'production', JWT_SECRET: 'tooshort' }), /too short/);
+  assert.throws(() => assertJwtSecret({ NODE_ENV: 'production', JWT_SECRET: 'short' }), /too short/);
 });
 
 test('production with a long enough secret passes; development without one does not throw', () => {

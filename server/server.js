@@ -1,6 +1,7 @@
 // Force nodemon restart for updated queue_worker.js uq_school_sy_profile fix
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -15,17 +16,27 @@ try {
 `);
   process.exit(1);
 }
-// Check JWT secret if provided; warn if missing in production environment
+// Fail fast if required environment variables are missing in production
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET) {
+    console.error('❌ [Startup Fatal] JWT_SECRET is required in production environment.');
+    process.exit(1);
+  }
+}
 try {
   require('./utils/jwtSecret').assertJwtSecret();
 } catch (err) {
-  console.warn(`⚠️ [Startup Warning] ${err.message}`);
+  console.error(`❌ [Startup Fatal] ${err.message}`);
+  process.exit(1);
 }
 const db = require('./db');
 const redisQueue = require('./services/redisQueue');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Trust first proxy hop behind reverse proxy (nginx) so req.ip uses client IP
+app.set('trust proxy', 1);
 
 // In-flight save / request tracking for zero-loss memory restarts
 let activeRequests = 0;
@@ -55,7 +66,46 @@ try {
 } catch (e) {
   // compression is optional
 }
-app.use(cors());
+// Security Headers via Helmet (HSTS, CSP tailored to app assets)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://unpkg.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https://api.qrserver.com"],
+      connectSrc: ["'self'", "https:", "wss:", "ws:"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
+    }
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
+
+// CORS Configuration with origin allowlist from environment config
+const rawOrigins = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || '';
+const corsAllowlist = rawOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g. mobile apps, curl, internal service calls)
+    if (!origin) return callback(null, true);
+    if (corsAllowlist.length === 0) {
+      if (process.env.NODE_ENV !== 'production') return callback(null, true);
+      return callback(new Error('CORS blocked: origin not allowed by configuration'), false);
+    }
+    if (corsAllowlist.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS blocked: origin not allowed by configuration: ' + origin), false);
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Health endpoints (public, no auth, no tenant context).

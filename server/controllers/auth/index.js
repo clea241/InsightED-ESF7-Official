@@ -17,7 +17,9 @@ const PILOT_SCHOOLS = [
   '123458', '312311', '300844', '300744', '500273',
   '500522', '500369'
 ];
-const PILOT_PASSWORD = 'Pilot2026!';
+const PILOT_PASSWORD = process.env.PILOT_PASSWORD;
+const { authLimiter, passcodeLimiter } = require('../../middleware/rateLimiter');
+const { validateRequest, z } = require('../../middleware/validate');
 const { usersDatabasePool, insightEdPool } = require('../../db');
 
 const { getJwtSecret } = require('../../utils/jwtSecret');
@@ -118,7 +120,7 @@ const handlePasswordLogin = async (req, res) => {
 
   // 230 Division & 7 MCOC Archetype Test Accounts Shortcut
   const testDiv = resolveTestDivision(inputSchoolId);
-  if (testDiv && (password === '123456' || password === 'Pilot2026!' || password === 'Pilot2026' || password === 'deped123' || password === testDiv.schoolId || password === testDiv.handle || password === testDiv.shortHandle)) {
+  if (testDiv && (password === '123456' || (PILOT_PASSWORD && password === PILOT_PASSWORD) || password === 'deped123' || password === testDiv.schoolId || password === testDiv.handle || password === testDiv.shortHandle)) {
     const token = jwt.sign(
       { uid: `divtest-${testDiv.schoolId}`, email: testDiv.handle, role: 'school', school_id: testDiv.schoolId, region: testDiv.region, division: testDiv.division },
       getJwtSecret(),
@@ -143,7 +145,7 @@ const handlePasswordLogin = async (req, res) => {
 
   // Pilot shortcut
   const isPilotSeries = PILOT_SCHOOLS.includes(inputSchoolId) || /^199\d{3}$/.test(inputSchoolId);
-  if (isPilotSeries && (password === PILOT_PASSWORD || password === inputSchoolId || password === 'deped123' || password === 'Pilot2026')) {
+  if (isPilotSeries && ((PILOT_PASSWORD && password === PILOT_PASSWORD) || password === inputSchoolId || password === 'deped123')) {
     const token = jwt.sign(
       { uid: `pilot-${inputSchoolId}`, email: `pilot-${inputSchoolId}@esf7.pilot`, role: 'school', school_id: inputSchoolId },
       getJwtSecret(),
@@ -255,7 +257,7 @@ const handlePasscodeLogin = async (req, res) => {
 
   // 230 Division & 7 MCOC Archetype Test Accounts Shortcut
   const testDiv = resolveTestDivision(inputSchoolId);
-  if (testDiv && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === 'Pilot2026!' || inputPasscode === 'Pilot2026' || inputPasscode === 'deped123' || inputPasscode === testDiv.schoolId || inputPasscode === testDiv.handle || inputPasscode === testDiv.shortHandle)) {
+  if (testDiv && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || (PILOT_PASSWORD && inputPasscode === PILOT_PASSWORD) || inputPasscode === 'deped123' || inputPasscode === testDiv.schoolId || inputPasscode === testDiv.handle || inputPasscode === testDiv.shortHandle)) {
     const token = jwt.sign(
       { uid: `divtest-${testDiv.schoolId}`, email: testDiv.handle, role: 'school', school_id: testDiv.schoolId, region: testDiv.region, division: testDiv.division },
       getJwtSecret(),
@@ -280,7 +282,7 @@ const handlePasscodeLogin = async (req, res) => {
 
   // Pilot shortcut
   const isPilotSeries = PILOT_SCHOOLS.includes(inputSchoolId) || /^1999\d{2}$/.test(inputSchoolId);
-  if (isPilotSeries && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === inputSchoolId || inputPasscode === PILOT_PASSWORD)) {
+  if (isPilotSeries && (inputPasscode === '123456' || inputPasscode === '654321' || inputPasscode === '000000' || inputPasscode === inputSchoolId || (PILOT_PASSWORD && inputPasscode === PILOT_PASSWORD))) {
     const token = jwt.sign(
       { uid: `pilot-${inputSchoolId}`, email: `pilot-${inputSchoolId}@esf7.pilot`, role: 'school', school_id: inputSchoolId },
       getJwtSecret(),
@@ -383,16 +385,54 @@ const handlePasscodeLogin = async (req, res) => {
   }
 };
 
-// Route mappings
-router.post('/migrate-login', handlePasswordLogin);
-router.post('/master-login', handlePasswordLogin);
-router.post('/password-login', handlePasswordLogin);
+// ── Validation Schemas ────────────────────────────────────────────────────────
+const passwordLoginSchema = {
+  body: z.object({
+    identifier: z.string().optional(),
+    school_id: z.string().optional(),
+    password: z.string().min(1, 'Password is required')
+  }).refine((data) => data.identifier || data.school_id, {
+    message: 'School ID or identifier is required',
+    path: ['school_id']
+  })
+};
 
-router.post('/passcode-login', handlePasscodeLogin);
-router.post('/pin-login', handlePasscodeLogin);
+const passcodeLoginSchema = {
+  body: z.object({
+    school_id: z.string().optional(),
+    identifier: z.string().optional(),
+    email: z.string().optional(),
+    passcode: z.union([z.string(), z.number()]).optional(),
+    pin: z.union([z.string(), z.number()]).optional()
+  }).refine((data) => data.school_id || data.identifier || data.email, {
+    message: 'School ID, identifier, or email is required',
+    path: ['school_id']
+  }).refine((data) => data.passcode !== undefined || data.pin !== undefined, {
+    message: 'Passcode or PIN is required',
+    path: ['passcode']
+  })
+};
+
+const verifyPasscodeSchema = {
+  body: z.object({
+    passcode: z.union([z.string(), z.number()]).optional(),
+    pin: z.union([z.string(), z.number()]).optional()
+  }).refine((data) => data.passcode !== undefined || data.pin !== undefined, {
+    message: 'Passcode is required',
+    path: ['passcode']
+  })
+};
+
+// Route mappings with Rate Limiting (RATE-02) and Request Validation
+router.post('/migrate-login', authLimiter, validateRequest(passwordLoginSchema), handlePasswordLogin);
+router.post('/master-login', authLimiter, validateRequest(passwordLoginSchema), handlePasswordLogin);
+router.post('/password-login', authLimiter, validateRequest(passwordLoginSchema), handlePasswordLogin);
+
+router.post('/passcode-login', passcodeLimiter, validateRequest(passcodeLoginSchema), handlePasscodeLogin);
+router.post('/pin-login', passcodeLimiter, validateRequest(passcodeLoginSchema), handlePasscodeLogin);
 
 // POST /api/auth/verify-passcode
-router.post('/verify-passcode', (req, res) => {
+router.post('/verify-passcode', passcodeLimiter, validateRequest(verifyPasscodeSchema), (req, res) => {
   res.json({ success: true });
 });
 

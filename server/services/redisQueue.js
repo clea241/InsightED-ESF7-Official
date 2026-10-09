@@ -2,7 +2,8 @@ const Redis = require('ioredis');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-const STREAM_KEY = process.env.REDIS_STREAM_KEY || 'esf7:submission_stream';
+const DEFAULT_SUBMISSION_STREAM = 'esf7:submission_stream';
+const STREAM_KEY = process.env.REDIS_STREAM_KEY || DEFAULT_SUBMISSION_STREAM;
 const GROUP_NAME = process.env.REDIS_GROUP_NAME || 'esf7_submission_group';
 
 const { parseRedisConfig } = require('../utils/redisConfig');
