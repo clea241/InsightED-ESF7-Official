@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import useDirtyGuard from '../hooks/useDirtyGuard';
+import { confirmServerDraftSaved } from '../services/screenSave';
 import {
   useApp,
   OFFICIAL_DESIGNATIONS,
@@ -186,10 +187,12 @@ export default function Designations() {
     }
   };
 
+  const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   useDirtyGuard({
     screenId: 'designations',
     isDirty,
-    onDiscard: handleDiscard
+    onDiscard: handleDiscard,
+    onSave: () => runSaveRef.current()
   });
 
   // Key Stage 1 Checklist Assignment Form State
@@ -856,14 +859,12 @@ export default function Designations() {
     return missing;
   };
 
-  const handleSave = async () => {
+  // The one Designations save, used by the header Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  const runDesignationsSave = async () => {
     const missing = getMissingRequiredDesignations();
     if (missing.length > 0) {
-      setMissingDesignationsModal({
-        isOpen: true,
-        missingList: missing
-      });
-      return;
+      return { ok: false, missing, title: 'Required Designations Missing', message: `Assign all required designations before saving (${missing.length} still missing).` };
     }
 
     setIsSaving(true);
@@ -903,6 +904,10 @@ export default function Designations() {
         } catch (e) {}
       }
 
+      // Success is reported only after the server confirmed the database write.
+      const confirmed = await confirmServerDraftSaved();
+      if (!confirmed.ok) return confirmed;
+
       savedDesignationsSnapshotRef.current = JSON.stringify(getDesignationsSnapshot());
 
       if (completeNode) {
@@ -912,13 +917,24 @@ export default function Designations() {
       if (showToast) {
         showToast("Designations saved to database successfully.", "success");
       }
+      return { ok: true };
     } catch (err) {
       console.warn("Failed to save designations:", err);
-      if (showToast) {
-        showToast("Failed to save designations: " + err.message, "error");
-      }
+      return { ok: false, title: 'Designations Not Saved', message: "Failed to save designations: " + err.message };
     } finally {
       setIsSaving(false);
+    }
+  };
+  runSaveRef.current = runDesignationsSave;
+
+  const handleSave = async () => {
+    const result = await runDesignationsSave();
+    if (result.ok === false) {
+      if (result.missing) {
+        setMissingDesignationsModal({ isOpen: true, missingList: result.missing });
+      } else if (showToast) {
+        showToast(result.message, "error");
+      }
     }
   };
 

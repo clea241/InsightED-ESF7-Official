@@ -5,6 +5,7 @@ import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import PortalHeader from '../components/PortalHeader';
 import useDirtyGuard from '../hooks/useDirtyGuard';
+import { confirmServerDraftSaved } from '../services/screenSave';
 import { api } from '../services/api';
 import { FiPlus, FiSave, FiTag, FiLink, FiUser, FiTrash2, FiInfo, FiX, FiUploadCloud, FiRefreshCw, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
@@ -474,12 +475,14 @@ export default function Roster() {
   const hasPendingDrafts = Boolean((personnel || []).some(p => p.isDraft));
   const isDirty = Boolean(hasPendingDrafts || (savedRosterSnapshotRef.current && JSON.stringify(getRosterSnapshot()) !== savedRosterSnapshotRef.current));
 
+  const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   useDirtyGuard({
     screenId: 'roster',
     isDirty,
     onDiscard: () => {
       // Discard dirty state
-    }
+    },
+    onSave: () => runSaveRef.current()
   });
 
   // Poll eSF7 Harvester Queue status if roster is empty
@@ -570,13 +573,13 @@ export default function Roster() {
     setSortConfig({ key, direction });
   };
 
-  const handleSave = async () => {
+  // The one Roster save, used by the header Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  const runRosterSave = async () => {
     // 1. DepEd eSF7 School Head Verification Gate
     const currentHead = personnel.find(p => p.isSchoolHead === true || p.is_school_head === true);
     if (!currentHead) {
-      setIsHeadRequiredModalOpen(true);
-      setHighlightHeadColumn(true);
-      return;
+      return { ok: false, needsHead: true, title: 'School Head Required', message: 'Designate a School Head in the roster before saving.' };
     }
 
     setIsSavingDrafts(true);
@@ -586,6 +589,10 @@ export default function Roster() {
       if (drafts.length > 0) {
         await commitDraftPersonnel();
       }
+
+      // Success is reported only after the server confirmed the database write.
+      const confirmed = await confirmServerDraftSaved();
+      if (!confirmed.ok) return confirmed;
 
       // 3. Mark completed node without forcing navigation
       if (completeNode) {
@@ -597,13 +604,25 @@ export default function Roster() {
       if (showToast) {
         showToast(`Roster saved to database. School Head verified: ${currentHead.firstName} ${currentHead.lastName}`, 'success');
       }
+      return { ok: true };
     } catch (err) {
       console.warn('Save roster error:', err);
-      if (showToast) {
-        showToast('Failed to save roster changes: ' + err.message, 'error');
-      }
+      return { ok: false, title: 'Roster Not Saved', message: 'Failed to save roster changes: ' + err.message };
     } finally {
       setIsSavingDrafts(false);
+    }
+  };
+  runSaveRef.current = runRosterSave;
+
+  const handleSave = async () => {
+    const result = await runRosterSave();
+    if (result.ok === false) {
+      if (result.needsHead) {
+        setIsHeadRequiredModalOpen(true);
+        setHighlightHeadColumn(true);
+      } else if (showToast) {
+        showToast(result.message, 'error');
+      }
     }
   };
 

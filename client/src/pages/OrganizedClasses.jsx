@@ -4,6 +4,7 @@ import { setLocalDraft } from '../services/db';
 import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
 import useDirtyGuard from '../hooks/useDirtyGuard';
+import { confirmServerDraftSaved } from '../services/screenSave';
 import SortableTableHead from '../components/SortableTableHead';
 import SearchableDropdown from '../components/SearchableDropdown';
 import useSortableFilterableTable from '../hooks/useSortableFilterableTable';
@@ -736,10 +737,12 @@ export default function OrganizedClasses() {
     }
   };
 
+  const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   useDirtyGuard({
     screenId: 'organized_classes',
     isDirty,
-    onDiscard: handleDiscard
+    onDiscard: handleDiscard,
+    onSave: () => runSaveRef.current()
   });
 
   const classSectionsRef = useRef(classSections);
@@ -2011,7 +2014,9 @@ export default function OrganizedClasses() {
     if (showToast) showToast('✓ ALS section added.');
   };
 
-  const handleSave = async () => {
+  // The one Organized Classes save, used by the header Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  const runClassesSave = async () => {
     // Validate that all sections have assigned advisers and valid enrollment
     const invalidSections = (classSections || []).filter(sec => {
       const isAral = String(sec.sectionType || '').startsWith('ARAL') ||
@@ -2067,13 +2072,11 @@ export default function OrganizedClasses() {
         reason = 'has 0 or missing learner enrollment';
       }
 
-      if (showAlert) {
-        await showAlert(
-          'Incomplete Class Sections',
-          `Cannot save: Section "${secName}" is ${reason}. All sections must have an assigned advisory teacher and valid learner enrollment.`
-        );
-      }
-      return;
+      return {
+        ok: false,
+        title: 'Incomplete Class Sections',
+        message: `Cannot save: Section "${secName}" is ${reason}. All sections must have an assigned advisory teacher and valid learner enrollment.`
+      };
     }
 
     setIsSaving(true);
@@ -2126,9 +2129,16 @@ export default function OrganizedClasses() {
         if (api && api.deleteSection) {
           try {
             await api.deleteSection(delSec.id);
-          } catch (e) {}
+          } catch (e) {
+            // Already gone (404) is fine; any other failure means the section was NOT removed, so the save must not claim success.
+            if (e?.status !== 404) throw e;
+          }
         }
       }
+
+      // Success is reported only after the server confirmed the database write.
+      const confirmed = await confirmServerDraftSaved();
+      if (!confirmed.ok) return confirmed;
 
       // Update snapshot
       savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
@@ -2141,13 +2151,24 @@ export default function OrganizedClasses() {
       if (showToast) {
         showToast("Organized classes and section setup saved to database.", "success");
       }
+      return { ok: true };
     } catch (err) {
       console.warn("Failed to save class sections:", err);
-      if (showToast) {
-        showToast("Failed to save class sections: " + err.message, "error");
-      }
+      return { ok: false, title: 'Class Sections Not Saved', message: "Failed to save class sections: " + err.message };
     } finally {
       setIsSaving(false);
+    }
+  };
+  runSaveRef.current = runClassesSave;
+
+  const handleSave = async () => {
+    const result = await runClassesSave();
+    if (result.ok === false) {
+      if (showAlert && result.title === 'Incomplete Class Sections') {
+        await showAlert(result.title, result.message);
+      } else if (showToast) {
+        showToast(result.message, "error");
+      }
     }
   };
 

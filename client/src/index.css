@@ -2897,6 +2897,24 @@
   box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45) !important;
 }
 
+.insighted-swal-save-btn {
+  background: linear-gradient(135deg, #16A34A 0%, #15803D 100%) !important;
+  color: #FFFFFF !important;
+  font-weight: 800 !important;
+  font-size: 12.5px !important;
+  border-radius: 12px !important;
+  padding: 10px 22px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(21, 128, 61, 0.35) !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.insighted-swal-save-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 16px rgba(21, 128, 61, 0.45) !important;
+}
+
 .insighted-swal-discard-btn {
   background: #DC2626 !important;
   color: #FFFFFF !important;

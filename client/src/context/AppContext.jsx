@@ -7,7 +7,7 @@ import { chooseDraftSource } from '../services/draftSync';
 import { getSessionSchoolId, resolveSchoolId } from '../services/session';
 import { saveDraft, flushDrafts, markDraftDirty, registerSnapshotProvider, subscribeDraftSave, getSyncedVersion, setSyncedVersion, acceptServerVersion, retryNow, DraftConflictError } from '../services/draftSaver';
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
-import { checkBeforeLeave, isAnyScreenDirty, discardAllDirtyScreens } from '../services/dirtyGuard';
+import { checkBeforeLeave, checkBeforeLeaveDetailed, allowNextUnload, isAnyScreenDirty, discardAllDirtyScreens } from '../services/dirtyGuard';
 
 const AppContext = createContext();
 
@@ -2837,17 +2837,20 @@ export const AppProvider = ({ children }) => {
     if (!view || view === activeView) return false;
 
     // Unsaved Changes Navigation Guard (SweetAlert2 Modal)
+    let leftByDiscarding = false;
     if (!skipGuard && isAnyScreenDirty()) {
-      const canProceed = await checkBeforeLeave({ actionType: 'navigate' });
-      if (!canProceed) {
-        // User chose to stay and save -> abort navigation
+      const outcome = await checkBeforeLeaveDetailed({ actionType: 'navigate' });
+      if (outcome === 'stay') {
+        // User stays on the page; navigation is aborted and nothing changes
         return false;
       }
-      // User chose to discard and leave -> dirty state is reset, proceed
+      // 'saved': the server confirmed the save from the dialog. 'discard': drafts were dropped.
+      leftByDiscarding = outcome === 'discard';
     }
 
     // Auto-save active module changes whenever navigating
-    if (!skipAutoSave && activeView && activeView !== view && view) {
+    // (Not after a discard: the auto-save would write the changes the user just threw away back into the local draft.)
+    if (!skipAutoSave && !leftByDiscarding && activeView && activeView !== view && view) {
       try {
         const didSave = await triggerAutoSave(view);
         if (view === 'nodemap') {
@@ -3810,6 +3813,56 @@ export const AppProvider = ({ children }) => {
             }
           }
 
+          // Database is the source of truth: overlay DB master profiling fields onto draft personnel where draft has placeholder or missing profiling info
+          if (filteredDbList.length > 0 && draftPersonnel.length > 0) {
+            draftPersonnel = draftPersonnel.map(dp => {
+              const dpId = String(dp.id || '').trim().toLowerCase();
+              const dpPrn = String(dp.prn || '').trim().toLowerCase();
+              const dbMatch = filteredDbList.find(p => {
+                const pId = String(p.id || '').trim().toLowerCase();
+                const pPrn = String(p.prn || '').trim().toLowerCase();
+                return (dpId && pId === dpId) || (dpPrn && pPrn && pPrn === dpPrn);
+              });
+              if (!dbMatch) return dp;
+
+              const isDraftPlaceholder = (dp.firstName === 'TEACHER' && String(dp.lastName || '').startsWith('STAFF')) ||
+                (!dp.collegeDegree && !dp.college_degree && !dp.major && !dp.highestEducationalAttainment && !dp.highest_educational_attainment);
+
+              if (isDraftPlaceholder) {
+                return {
+                  ...dbMatch,
+                  ...dp,
+                  firstName: (dp.firstName && dp.firstName !== 'TEACHER' ? dp.firstName : dbMatch.firstName) || dbMatch.firstName,
+                  first_name: (dp.first_name && dp.first_name !== 'TEACHER' ? dp.first_name : dbMatch.first_name) || dbMatch.first_name,
+                  lastName: (dp.lastName && !String(dp.lastName).startsWith('STAFF') ? dp.lastName : dbMatch.lastName) || dbMatch.lastName,
+                  last_name: (dp.last_name && !String(dp.last_name).startsWith('STAFF') ? dp.last_name : dbMatch.last_name) || dbMatch.last_name,
+                  middleName: dp.middleName || dbMatch.middleName || '',
+                  middle_name: dp.middle_name || dbMatch.middle_name || '',
+                  collegeDegree: dp.collegeDegree || dbMatch.collegeDegree || '',
+                  college_degree: dp.college_degree || dbMatch.college_degree || '',
+                  major: dp.major || dbMatch.major || '',
+                  minor: dp.minor || dbMatch.minor || 'N/A',
+                  highestEducationalAttainment: dp.highestEducationalAttainment || dbMatch.highestEducationalAttainment || '',
+                  highest_educational_attainment: dp.highest_educational_attainment || dbMatch.highest_educational_attainment || '',
+                  degreeRows: (Array.isArray(dp.degreeRows) && dp.degreeRows.length > 0) ? dp.degreeRows : (dbMatch.degreeRows || []),
+                  collegeDegrees: (Array.isArray(dp.collegeDegrees) && dp.collegeDegrees.length > 0) ? dp.collegeDegrees : (dbMatch.collegeDegrees || []),
+                  prcSpecialization: dp.prcSpecialization || dbMatch.prcSpecialization || '',
+                  prc_specialization: dp.prc_specialization || dbMatch.prc_specialization || '',
+                  position: dp.position || dbMatch.position || '',
+                  plantilla_position: dp.plantilla_position || dbMatch.plantilla_position || '',
+                  position_title: dp.position_title || dbMatch.position_title || '',
+                  type: dp.type || dbMatch.type || '',
+                  positionCategory: dp.positionCategory || dbMatch.positionCategory || '',
+                  position_category: dp.position_category || dbMatch.position_category || '',
+                  eligibility: (Array.isArray(dp.eligibility) && dp.eligibility.length > 0) ? dp.eligibility : (dbMatch.eligibility || []),
+                  workloadRows: (Array.isArray(dp.workloadRows) && dp.workloadRows.length > 0) ? dp.workloadRows : (dbMatch.workloadRows || [])
+                };
+              }
+              return dp;
+            });
+            activeDraft.personnel = draftPersonnel;
+          }
+
           // Self-healing: If draft personnel has 0 total workloads across all teachers, repair from autofill template
           const currentDraftWorkloads = draftPersonnel.reduce((acc, p) => acc + (Array.isArray(p.workloadRows) ? p.workloadRows.length : 0), 0);
           if (currentDraftWorkloads === 0 && draftPersonnel.length > 0) {
@@ -4400,8 +4453,11 @@ export const AppProvider = ({ children }) => {
 
   const savePersonnelChanges = async (id, updatedPerson, options = {}) => {
     if (!updatedPerson) return;
-    const targetId = String(id || updatedPerson.id || '').trim().toLowerCase();
+    const rawTargetId = String(id || updatedPerson.id || '').trim();
+    const targetId = rawTargetId.toLowerCase();
     const targetPrn = String(updatedPerson.prn || '').trim();
+
+    let mergedSnapshot = null;
 
     setPersonnel(prev => {
       const nextList = prev.map(p => {
@@ -4418,6 +4474,7 @@ export const AppProvider = ({ children }) => {
           personalVerified: true,
           lastVerifiedAt: updatedPerson.lastVerifiedAt || new Date().toISOString()
         };
+        mergedSnapshot = merged;
 
         // Bidirectional normalization for all profile fields
         if (merged.ethnicGroup) merged.ethnic_group = merged.ethnicGroup;
@@ -4758,6 +4815,21 @@ export const AppProvider = ({ children }) => {
       return true;
     });
   });
+
+    // Write through to PostgreSQL relational database (esf7_personnel_profile, educ, employment)
+    if (!options.skipApiUpdate && rawTargetId && !rawTargetId.startsWith('temp-') && typeof api !== 'undefined' && api.updatePersonnel) {
+      try {
+        const payloadToPersist = mergedSnapshot || updatedPerson;
+        await api.updatePersonnel(rawTargetId, {
+          ...payloadToPersist,
+          school_id: (schoolInfo && schoolInfo.schoolId) || localStorage.getItem('activeSchoolId') || '300488',
+          school_year: (schoolInfo && schoolInfo.schoolYear) || '2026-2027'
+        });
+      } catch (apiErr) {
+        console.warn('[savePersonnelChanges] Direct API update notice:', apiErr.message);
+      }
+    }
+
     setHasUnsavedChanges(true);
     showToast("Changes saved locally & synced to database.");
   };
@@ -6847,12 +6919,16 @@ export const AppProvider = ({ children }) => {
           );
           if (!confirmed) return;
 
+          // Every page drops its own unsaved draft too (so a discarded draft cannot come back after the reload).
+          discardAllDirtyScreens();
+
           if (schoolInfo && schoolInfo.schoolId) {
             const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear || 'SY 26-27'}`;
             await deleteLocalDraft(draftKey);
           }
           showToast("Local draft discarded! Reloading master template...");
           setTimeout(() => {
+            allowNextUnload(); // the app reloads on purpose: no second "Leave site?" prompt
             window.location.reload();
           }, 500);
         } catch (e) {

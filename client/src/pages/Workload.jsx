@@ -3,6 +3,10 @@ import useDirtyGuard from '../hooks/useDirtyGuard';
 import PortalHeader from '../components/PortalHeader';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import { api } from '../services/api';
+import { resolveSchoolId } from '../services/session';
+import { versionOf, dedupeWorkloadRows, compareDraftToDatabase } from '../services/workloadMerge';
+import { retryTransient, verifySavedRows, editedSinceSent } from '../services/workloadSave';
+import { showWorkloadRestoreModal } from '../services/dirtyGuard';
 import { 
   FiUser, FiGrid, FiTrash2, FiCheck, FiFileText, FiCalendar, FiAlertCircle, 
   FiAlertTriangle, FiBriefcase, FiList, FiLock, FiUnlock, FiBookOpen, FiBook, 
@@ -10,6 +14,27 @@ import {
   FiChevronRight, FiCopy, FiDownload, FiTrendingUp, FiBookmark, FiArrowRight, 
   FiSliders, FiCheckSquare, FiSave, FiMove, FiRotateCcw, FiRotateCw
 } from 'react-icons/fi';
+
+// What happened to the draft check for each teacher + term since this page was loaded (reset by a browser reload):
+//  'clean' nothing worth restoring | 'restored' / 'declined' the user answered the restore prompt |
+//  'edited' the user started editing | 'unreachable' the saved rows could not be read (the check runs again later) |
+//  'prompting' the prompt is open. A teacher + term is only asked about once per load.
+const restoreResolutions = new Map();
+const restoreDeclined = new Set(); // teachers whose draft was declined: it stays in the browser, the editor shows the saved rows
+const resolutionKey = (personId, term) => `${personId}:${term}`;
+
+// The browser draft's rows may go into the editor only after the user confirmed the restore prompt, while the
+// saved rows cannot be read, or once the user is editing. Until then the editor shows the saved baseline.
+export const draftRowsMayOverlay = (personId, term, schoolId) => {
+  if (!schoolId) return true;
+  const resolution = restoreResolutions.get(resolutionKey(personId, term));
+  return resolution === 'restored' || resolution === 'unreachable' || resolution === 'edited';
+};
+
+const noteUserEdit = (personId, term) => {
+  restoreResolutions.set(resolutionKey(personId, term), 'edited');
+  restoreDeclined.delete(String(personId));
+};
 
 export const isEligibleForTeachingOverload = (person) => {
   if (!person) return false;
@@ -66,6 +91,50 @@ export const isNonTeachingTaskSubject = (subject) => {
     return true;
   }
   return false;
+};
+
+export const normalizeWorkloadRowForComparison = (r) => {
+  if (!r) return null;
+  const term = String(r.term || '1st').trim();
+  const rawSub = r.subject || r.subjectName || r.subject_name || r.task || '';
+  const subject = normalizeSubjectName(rawSub);
+  const gradeLevel = String(r.gradeLevel || r.grade_level || '').trim();
+  const section = String(r.sectionName || r.section_name || r.sectionId || r.section_id || '').trim().toUpperCase();
+  const startTime = String(r.startTime || r.start_time || '').trim().slice(0, 5);
+  const endTime = String(r.endTime || r.end_time || '').trim().slice(0, 5);
+  
+  let daysArr = [];
+  if (Array.isArray(r.days)) {
+    daysArr = r.days.map(d => String(d).toUpperCase().trim());
+  } else if (r.daySchedule) {
+    daysArr = String(r.daySchedule).split(',').map(d => String(d).toUpperCase().trim());
+  }
+  const days = Array.from(new Set(daysArr)).filter(Boolean).sort().join(',');
+
+  return {
+    term,
+    subject,
+    gradeLevel,
+    section,
+    startTime,
+    endTime,
+    days
+  };
+};
+
+export const normalizeRowsForComparison = (rows, termFilter = null) => {
+  if (!Array.isArray(rows)) return [];
+  const list = termFilter
+    ? rows.filter(r => (r.term || '1st') === termFilter)
+    : rows;
+  const normalized = list.map(normalizeWorkloadRowForComparison).filter(Boolean);
+  
+  normalized.sort((a, b) => {
+    const kA = `${a.term}|${a.subject}|${a.startTime}|${a.endTime}|${a.days}|${a.gradeLevel}|${a.section}`;
+    const kB = `${b.term}|${b.subject}|${b.startTime}|${b.endTime}|${b.days}|${b.gradeLevel}|${b.section}`;
+    return kA.localeCompare(kB);
+  });
+  return normalized;
 };
 
 export const ADMIN_TASK_OPTIONS = [
@@ -3905,6 +3974,7 @@ function WorkloadGanttScheduleView({
   selectedBlockIdx,
   setSelectedBlockIdx,
   handleSaveChangesDirectly,
+  isSaving = false,
   sharedWorkloadRows = [],
   activeTerm = '1st',
   onCopyFirstTerm,
@@ -5446,6 +5516,32 @@ function WorkloadGanttScheduleView({
               title="Add Administrative or Ancillary Task to schedule (No section required)"
             >
               <FiBriefcase size={14} color="#38BDF8" /> + Add Admin Task
+            </button>
+          )}
+
+          {typeof handleSaveChangesDirectly === 'function' && (
+            <button
+              type="button"
+              onClick={handleSaveChangesDirectly}
+              disabled={isSaving}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: '1.5px solid #0284C7',
+                background: isSaving ? '#94A3B8' : '#0284C7',
+                color: '#FFFFFF',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: isSaving ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 4px rgba(2, 132, 199, 0.2)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Save teacher's weekly workload schedule directly to database"
+            >
+              <FiSave size={14} color="#FFFFFF" /> {isSaving ? 'Saving...' : 'Save Schedule'}
             </button>
           )}
         </div>
@@ -7328,6 +7424,7 @@ export default function Workload() {
   const handleConfirmAllAndSave = async () => {
     let confirmedCount = 0;
     const errorTeachers = [];
+    const failedSaveTeachers = [];
     const updatedPersonnelList = [];
 
     for (const p of (personnel || [])) {
@@ -7374,8 +7471,6 @@ export default function Workload() {
         continue;
       }
 
-      confirmedCount++;
-
       const updatedP = {
         ...p,
         workloadRows: tRows,
@@ -7383,20 +7478,25 @@ export default function Workload() {
         needsTimeReview: false
       };
 
-      updatedPersonnelList.push(updatedP);
-
-      // Save changes into AppContext AND PostgreSQL
+      // Persist to PostgreSQL esf7_workload_rows first!
       try {
-        await savePersonnelChanges(p.id, {
-          workloadRows: tRows,
-          workloadVerified: true,
-          needsTimeReview: false
-        });
-      } catch (e) {
-        console.error("Error saving personnel changes for", p.id, e);
-      }
+        const res = await persistWorkloadToServer(updatedP);
+        const { person: fullySaved } = commitConfirmedSave(updatedP, res);
 
-      localStorage.removeItem(draftKey);
+        confirmedCount++;
+        updatedPersonnelList.push(fullySaved);
+
+        if (savePersonnelChanges) {
+          await savePersonnelChanges(p.id, fullySaved, { skipWorkloadSync: true });
+        }
+      } catch (err) {
+        console.warn("Error saving workload batch for", p.id, err);
+        failedSaveTeachers.push({
+          name: `${p.lastName || 'Teacher'}, ${p.firstName || ''}`,
+          message: err?.message || 'Server error'
+        });
+        updatedPersonnelList.push(p);
+      }
     }
 
     // Set personnel in AppContext
@@ -7410,16 +7510,21 @@ export default function Workload() {
       }
     }
 
+    savedWorkloadSnapshotRef.current = JSON.stringify(getFullWorkloadSnapshot());
+
     setShowAttentionModal(false);
 
-    if (errorTeachers.length === 0) {
-      if (showToast) showToast(`Successfully confirmed & saved timetables for ALL ${confirmedCount} personnel!`);
-      await showAlert("Batch Timetable Verification", `All ${confirmedCount} personnel schedules have been confirmed and saved!`);
+    if (failedSaveTeachers.length > 0 || errorTeachers.length > 0) {
+      const failMsgs = failedSaveTeachers.map(f => `• ${f.name}: ${f.message}`).join('\n');
+      const errMsgs = errorTeachers.map(name => `• ${name}: Duration or schedule overlap`).join('\n');
+      let combined = '';
+      if (failMsgs) combined += `Database save failed for:\n${failMsgs}\n\n`;
+      if (errMsgs) combined += `Validation errors for:\n${errMsgs}\n\n`;
+      combined += `Their drafts were kept locally in this browser. Successfully saved ${confirmedCount} teacher schedule(s).`;
+      await showAlert("Batch Timetable Verification Notice", combined);
     } else {
-      await showAlert(
-        "Batch Timetable Verification",
-        `Confirmed and saved ${confirmedCount} personnel schedules!\n\nNotice: ${errorTeachers.length} personnel were skipped due to duration errors (> 60m / > 6h SHS) or schedule overlaps:\n• ${errorTeachers.slice(0, 5).join('\n• ')}${errorTeachers.length > 5 ? `\n...and ${errorTeachers.length - 5} more` : ''}`
-      );
+      if (showToast) showToast(`Successfully confirmed & saved timetables for ALL ${confirmedCount} personnel!`);
+      await showAlert("Batch Timetable Verification", `All ${confirmedCount} personnel schedules have been confirmed and saved to the database!`);
     }
   };
 
@@ -7440,6 +7545,18 @@ export default function Workload() {
     try {
       const activePersonId = currentPerson.id;
 
+      // 0. Delete the saved rows first; if that fails nothing is cleared locally either, so it cannot reappear later.
+      let clearedVersion = null;
+      try {
+        const cleared = await api.clearTeacherTermWorkload(activePersonId, activeTerm, schoolInfo?.schoolId);
+        clearedVersion = versionOf(cleared?.workloadSavedAt);
+      } catch (err) {
+        if (!(err?.status === 404 && err?.body?.error === 'Personnel not found')) { // that 404 = never saved to the database, so there is nothing to delete there
+          if (showAlert) await showAlert("Error", "Could not clear the saved workload from the database: " + (err?.message || 'Unknown error') + " Nothing was cleared.");
+          return;
+        }
+      }
+
       // 1. Update active editPerson state in Workload
       if (typeof setEditPerson === 'function') {
         setEditPerson(prev => (prev ? {
@@ -7455,9 +7572,11 @@ export default function Workload() {
         await savePersonnelChanges(activePersonId, {
           workloadRows: otherTermRows,
           workloadVerified: false,
-          needsTimeReview: false
+          needsTimeReview: false,
+          ...(clearedVersion ? { workloadBaseVersion: clearedVersion } : {})
         });
       }
+      if (clearedVersion) applyWorkloadToPerson(activePersonId, { termRows: null, baseVersion: clearedVersion });
 
       // 3. Update local storage workload draft only
       const draftKey = `draft_workload_${activePersonId}`;
@@ -7493,6 +7612,16 @@ export default function Workload() {
     if (!confirmed) return;
 
     try {
+      // 0. Delete the saved rows for this term first; if that fails nothing is cleared locally either.
+      let clearedVersion = null;
+      try {
+        const cleared = await api.clearSchoolTermWorkload(schoolInfo?.schoolId, activeTerm);
+        clearedVersion = versionOf(cleared?.workloadSavedAt);
+      } catch (err) {
+        if (showAlert) await showAlert("Error", "Could not clear the saved workloads from the database: " + (err?.message || 'Unknown error') + " Nothing was cleared.");
+        return;
+      }
+
       // 1. Update in AppContext & remove local teacher workload drafts while strictly preserving other terms and profile fields
       const updatedList = (personnel || []).map(p => {
         const pRows = Array.isArray(p.workloadRows) ? p.workloadRows : [];
@@ -7503,12 +7632,13 @@ export default function Workload() {
           try {
             const parsed = JSON.parse(savedDraft);
             if (parsed) {
-              localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: preservedRows }));
+              localStorage.setItem(draftKey, JSON.stringify({ ...parsed, workloadRows: preservedRows, workloadBaseVersion: clearedVersion }));
             }
           } catch (e) {}
         }
         return {
           ...p,
+          workloadBaseVersion: clearedVersion,
           workloadRows: preservedRows,
           workloadVerified: false,
           needsTimeReview: false
@@ -7522,6 +7652,7 @@ export default function Workload() {
           const pRows = Array.isArray(prev.workloadRows) ? prev.workloadRows : [];
           return {
             ...prev,
+            workloadBaseVersion: clearedVersion,
             workloadRows: pRows.filter(r => (r.term || '1st') !== activeTerm),
             workloadVerified: false,
             needsTimeReview: false
@@ -7735,9 +7866,17 @@ export default function Workload() {
       const draftKey = `draft_workload_${dbPerson.id}`;
       const savedDraft = localStorage.getItem(draftKey);
       let person = dbPerson;
+      const draftOverlaid = draftRowsMayOverlay(dbPerson.id, activeTerm, schoolInfo?.schoolId);
       if (savedDraft) {
         try {
           const parsed = JSON.parse(savedDraft);
+          if (parsed && !draftOverlaid && Array.isArray(parsed.workloadRows)) {
+            // Not confirmed yet: this term shows the saved baseline; the draft's rows for it wait for the restore prompt.
+            parsed.workloadRows = [
+              ...(dbPerson.workloadRows || []).filter(r => (r.term || '1st') === activeTerm),
+              ...parsed.workloadRows.filter(r => (r.term || '1st') !== activeTerm)
+            ];
+          }
           if (parsed) {
             person = {
               ...dbPerson,
@@ -8360,7 +8499,19 @@ export default function Workload() {
       if (rowsChanged) {
         const updatedPerson = { ...person, workloadRows: updatedRows };
         setEditPerson(updatedPerson);
-        localStorage.setItem(draftKey, JSON.stringify(updatedPerson));
+        // Only update an existing draft in localStorage if one was already present
+        // and really differs from saved state; never create a fresh draft from auto-generation
+        if (savedDraft && draftOverlaid) {
+          const schoolId = resolveSchoolId(schoolInfo?.schoolId);
+          const snapKey = `${schoolId}__${dbPerson.id}__${activeTerm}`;
+          const savedNorm = savedTeacherTermSnapshotRef.current?.get(snapKey);
+          const currentNorm = normalizeRowsForComparison(updatedRows, activeTerm);
+          if (savedNorm && JSON.stringify(currentNorm) === JSON.stringify(savedNorm)) {
+            localStorage.removeItem(draftKey);
+          } else {
+            try { localStorage.setItem(draftKey, JSON.stringify(updatedPerson)); } catch (e) {}
+          }
+        }
       } else {
         setEditPerson(person);
       }
@@ -8372,22 +8523,31 @@ export default function Workload() {
   const currentPerson = editPerson || dbPerson;
 
   const savedWorkloadSnapshotRef = useRef(null);
+  const savedTeacherTermSnapshotRef = useRef(new Map());
   const [isSaving, setIsSaving] = useState(false);
+
+  const setTeacherTermSavedSnapshot = useCallback((personId, term, rows) => {
+    if (!personId) return;
+    const cleanSchool = resolveSchoolId(schoolInfo?.schoolId);
+    const snapKey = `${cleanSchool}__${personId}__${term}`;
+    savedTeacherTermSnapshotRef.current.set(snapKey, normalizeRowsForComparison(rows || [], term));
+  }, [schoolInfo?.schoolId]);
+
+  const isTeacherDirty = useCallback((personId, term, rows) => {
+    if (!personId) return false;
+    const cleanSchool = resolveSchoolId(schoolInfo?.schoolId);
+    const snapKey = `${cleanSchool}__${personId}__${term}`;
+    if (!savedTeacherTermSnapshotRef.current.has(snapKey)) return false;
+    const savedNorm = savedTeacherTermSnapshotRef.current.get(snapKey) || [];
+    const currentNorm = normalizeRowsForComparison(rows || [], term);
+    return JSON.stringify(currentNorm) !== JSON.stringify(savedNorm);
+  }, [schoolInfo?.schoolId]);
 
   const getPersonWorkloadSnapshot = useCallback((p) => {
     if (!p) return null;
     return {
       id: String(p.id),
-      workloadRows: (p.workloadRows || []).map(r => ({
-        id: String(r.id || ''),
-        term: r.term || '1st',
-        startTime: r.startTime || '',
-        endTime: r.endTime || '',
-        days: Array.isArray(r.days) ? [...r.days].sort() : [],
-        subject: r.subject || r.subject_name || '',
-        sectionId: r.sectionId ? String(r.sectionId) : '',
-        gradeLevel: r.gradeLevel || ''
-      })),
+      workloadRows: normalizeRowsForComparison(p.workloadRows || []),
       teachingRelatedRows: (p.teachingRelatedRows || p.teaching_related_rows || []).map(r => ({
         task: r.task || '',
         dates: Array.isArray(r.dates) ? r.dates : []
@@ -8412,58 +8572,291 @@ export default function Workload() {
     }
   }, [personnel, getFullWorkloadSnapshot]);
 
-  const currentSnapshotStr = useMemo(() => JSON.stringify(getFullWorkloadSnapshot()), [getFullWorkloadSnapshot]);
-  const hasLocalDrafts = useMemo(() => {
-    return (personnel || []).some(p => Boolean(localStorage.getItem(`draft_workload_${p.id}`)));
-  }, [personnel, currentPerson]);
 
-  const isDirty = Boolean(savedWorkloadSnapshotRef.current && (currentSnapshotStr !== savedWorkloadSnapshotRef.current || hasLocalDrafts));
+  // ── Saved rows are the baseline ─────────────────────────────────────────────────────────────────
+  // esf7_workload_rows (read through GET /workloads/personnel/:id/state) is the source of truth for a teacher + term.
+  // The local copy (localStorage draft / school draft) is kept only when it holds unsaved changes made on top of the
+  // version it started from (person.workloadBaseVersion); if the database moved on, the user chooses which to keep.
+  const [workloadSync, setWorkloadSync] = useState({}); // personId -> { status: 'checking' | 'confirmed' | 'unconfirmed', term, message? }
+  const hydrateSeqRef = useRef(0);
+  const latestWorkloadRef = useRef({});
+  latestWorkloadRef.current = { personnel, editPerson };
+  const hydrateWorkloadRef = useRef(() => Promise.resolve());
 
-  const handleDiscard = useCallback(() => {
-    if (savedWorkloadSnapshotRef.current) {
-      try {
-        const snap = JSON.parse(savedWorkloadSnapshotRef.current);
-        if (Array.isArray(snap)) {
-          const snapMap = new Map(snap.map(sp => [String(sp.id), sp]));
-          (personnel || []).forEach(p => {
-            localStorage.removeItem(`draft_workload_${p.id}`);
-          });
-          setPersonnel(prev => (prev || []).map(p => {
-            const saved = snapMap.get(String(p.id));
-            if (saved) {
-              return {
-                ...p,
-                workloadRows: saved.workloadRows,
-                teachingRelatedRows: saved.teachingRelatedRows,
-                administrativeRows: saved.administrativeRows
-              };
-            }
-            return p;
-          }));
-          if (dbPerson) {
-            const savedActive = snapMap.get(String(dbPerson.id));
-            if (savedActive) {
-              setEditPerson({
-                ...dbPerson,
-                workloadRows: savedActive.workloadRows,
-                teachingRelatedRows: savedActive.teachingRelatedRows,
-                administrativeRows: savedActive.administrativeRows
-              });
-            } else {
-              setEditPerson(dbPerson);
-            }
+  // Records `person` (with the term's rows replaced by the saved ones) as the saved baseline, so only real differences count as unsaved.
+  const patchSavedSnapshot = useCallback((person) => {
+    if (!person || !savedWorkloadSnapshotRef.current) return;
+    try {
+      const parsed = JSON.parse(savedWorkloadSnapshotRef.current);
+      if (!Array.isArray(parsed)) return;
+      const entry = getPersonWorkloadSnapshot(person);
+      const idx = parsed.findIndex(sp => String(sp.id) === String(person.id));
+      if (idx >= 0) parsed[idx] = entry; else parsed.push(entry);
+      savedWorkloadSnapshotRef.current = JSON.stringify(parsed);
+    } catch (e) { /* keep the previous baseline */ }
+  }, [getPersonWorkloadSnapshot]);
+
+  // Updates one teacher everywhere the page reads from: roster state, the open editor and the local draft.
+  // termRows = { term, rows } replaces that term's rows (other terms are kept); baseVersion is the marker last seen.
+  const saveInFlightRef = useRef(new Set()); // teacher ids with a save running: blocks double submits on every save path
+
+  // baseRows = { term, rows } (or { all: true, rows }) are the saved rows the local copy was built on; the per-block merge diffs against them.
+  const applyWorkloadToPerson = useCallback((personId, { termRows = null, baseVersion, baseRows = null, skipDraft = false }) => {
+    const patch = (p) => {
+      const next = { ...p };
+      if (baseVersion !== undefined) next.workloadBaseVersion = baseVersion;
+      if (baseRows) {
+        next.workloadBaseRows = baseRows.all
+          ? baseRows.rows
+          : [...(Array.isArray(p.workloadBaseRows) ? p.workloadBaseRows : []).filter(r => (r.term || '1st') !== baseRows.term), ...baseRows.rows];
+      }
+      if (termRows) {
+        next.workloadRows = [
+          ...(Array.isArray(p.workloadRows) ? p.workloadRows : []).filter(r => (r.term || '1st') !== termRows.term),
+          ...termRows.rows
+        ];
+      }
+      return next;
+    };
+    setPersonnel(prev => (Array.isArray(prev) ? prev : []).map(p => (String(p.id) === String(personId) ? patch(p) : p)));
+    setEditPerson(prev => (prev && String(prev.id) === String(personId) ? patch(prev) : prev));
+    if (skipDraft) return; // a declined draft stays exactly as it was
+    const key = `draft_workload_${personId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) localStorage.setItem(key, JSON.stringify(patch(JSON.parse(raw))));
+    } catch (e) { /* the draft is left as it was */ }
+  }, [setPersonnel]);
+
+  const hydrateWorkloadFromServer = useCallback(async (personId, term, { afterSave = false } = {}) => {
+    const schoolId = schoolInfo?.schoolId;
+    if (!personId || !schoolId) return;
+    if (!afterSave && saveInFlightRef.current.has(String(personId))) return; // a save is running; its confirmation updates the editor
+    const seq = ++hydrateSeqRef.current;
+    setWorkloadSync(prev => ({ ...prev, [personId]: { status: 'checking', term } }));
+
+    let state;
+    try {
+      state = await api.getWorkloadState(personId, term, schoolId);
+    } catch (err) {
+      if (seq !== hydrateSeqRef.current) return;
+      if (err?.status === 404 && err?.body?.error === 'Personnel not found') {
+        state = { rows: [], version: null }; // not in the database yet: nothing saved
+      } else {
+        // The database could not be read: do not compare or restore. Fall back to the browser draft (flagged below as not
+        // yet confirmed saved) and run the comparison again once the database is reachable.
+        restoreResolutions.set(resolutionKey(personId, term), 'unreachable');
+        try {
+          const rawDraft = localStorage.getItem(`draft_workload_${personId}`);
+          const fallback = rawDraft ? JSON.parse(rawDraft) : null;
+          if (fallback && Array.isArray(fallback.workloadRows)) {
+            applyWorkloadToPerson(personId, { termRows: { term, rows: fallback.workloadRows.filter(r => (r.term || '1st') === term) }, skipDraft: true });
           }
-        }
-      } catch (e) {
-        console.warn('Error discarding workload changes:', e);
+        } catch (draftError) { /* keep what the editor holds */ }
+        setWorkloadSync(prev => ({ ...prev, [personId]: { status: 'unconfirmed', term, message: err?.message || 'The server could not be reached.' } }));
+        return;
       }
     }
-  }, [personnel, dbPerson, setPersonnel]);
+    if (seq !== hydrateSeqRef.current) return;
+
+    const { personnel: list, editPerson: open } = latestWorkloadRef.current;
+    const person = (open && String(open.id) === String(personId)) ? open : (list || []).find(p => String(p.id) === String(personId));
+    if (!person) return;
+
+    const dbRows = dedupeWorkloadRows(personId, (state.rows || []).map(r => ({ ...r, term: r.term || term })));
+    const version = versionOf(state.version);
+    const localRows = Array.isArray(person.workloadRows) ? person.workloadRows : [];
+
+    // Store baseline from esf7_workload_rows per school, teacher, and term
+    setTeacherTermSavedSnapshot(personId, term, dbRows);
+
+    const draftKey = `draft_workload_${personId}`;
+    const key = resolutionKey(personId, term);
+    const prior = restoreResolutions.get(key);
+    const teacherName = `${person.firstName || ''} ${person.lastName || ''}`.trim() || 'this teacher';
+    const outsideTerm = (rows) => (Array.isArray(rows) ? rows : []).filter(r => (r.term || '1st') !== term);
+
+    let draftObj = null;
+    try {
+      const rawDraft = localStorage.getItem(draftKey);
+      if (rawDraft) draftObj = JSON.parse(rawDraft);
+    } catch (e) {
+      localStorage.removeItem(draftKey);
+    }
+    const draftRowsAll = draftObj && Array.isArray(draftObj.workloadRows) ? draftObj.workloadRows : null;
+    // The local copy is the browser draft when there is one; otherwise the rows the roster currently holds.
+    const localCopy = draftRowsAll || localRows;
+
+    const adoptSaved = () => applyWorkloadToPerson(personId, {
+      termRows: { term, rows: dbRows }, baseVersion: version, baseRows: { term, rows: dbRows }
+    });
+
+    if (afterSave) {
+      // A confirmed save (or an explicit discard): show exactly what is saved.
+      adoptSaved();
+      if (draftObj && outsideTerm(draftRowsAll).length === 0) localStorage.removeItem(draftKey);
+      restoreResolutions.set(key, 'clean');
+    } else if (prior && prior !== 'unreachable') {
+      // Already checked in this page load: never ask again.
+      if (prior === 'declined' && restoreDeclined.has(String(personId))) {
+        applyWorkloadToPerson(personId, { termRows: { term, rows: dbRows }, baseVersion: version, baseRows: { term, rows: dbRows }, skipDraft: true });
+      } else if (prior === 'clean') {
+        adoptSaved();
+      } else {
+        // restored / edited: the editor's rows are the user's; only move the baseline to what is saved now.
+        applyWorkloadToPerson(personId, { termRows: null, baseVersion: version, baseRows: { term, rows: dbRows } });
+      }
+    } else {
+      const identical = JSON.stringify(normalizeRowsForComparison(localCopy, term)) === JSON.stringify(normalizeRowsForComparison(dbRows, term));
+      const comparison = identical
+        ? { action: 'clean', reason: 'identical' }
+        : compareDraftToDatabase({
+          personId, term, dbRows, dbVersion: state.version, localRows: localCopy,
+          baseRows: Array.isArray(person.workloadBaseRows) ? person.workloadBaseRows : undefined,
+          draftSavedAt: (draftObj && draftObj.workloadDraftSavedAt) || person.workloadDraftSavedAt
+        });
+
+      if (comparison.action === 'clean') {
+        // Identical, or older with nothing extra: discard silently, no prompt, no unsaved-changes banner.
+        adoptSaved();
+        if (draftObj && outsideTerm(draftRowsAll).length === 0) localStorage.removeItem(draftKey);
+        restoreResolutions.set(key, 'clean');
+      } else {
+        restoreResolutions.set(key, 'prompting');
+        const choice = await showWorkloadRestoreModal({ teacherName, term, summary: comparison.summary });
+        if (choice === 'restore') {
+          // Only now does the draft go into the editor: its differences on top of the saved rows, as unsaved changes.
+          restoreDeclined.delete(String(personId));
+          restoreResolutions.set(key, 'restored');
+          applyWorkloadToPerson(personId, {
+            termRows: { term, rows: comparison.rows }, baseVersion: version, baseRows: { term, rows: dbRows }
+          });
+          try {
+            localStorage.setItem(draftKey, JSON.stringify({
+              ...person,
+              workloadRows: [...outsideTerm(localCopy), ...comparison.rows],
+              workloadBaseVersion: version,
+              workloadBaseRows: [...outsideTerm(person.workloadBaseRows), ...dbRows],
+              workloadDraftSavedAt: new Date().toISOString()
+            }));
+          } catch (e) { /* the restored rows are still in the editor */ }
+        } else {
+          // Declined: the editor shows the saved rows; the draft is kept untouched (stashed first if it only lived in the roster).
+          restoreDeclined.add(String(personId));
+          restoreResolutions.set(key, 'declined');
+          if (!draftObj) {
+            try { localStorage.setItem(draftKey, JSON.stringify({ ...person, workloadRows: localCopy })); } catch (e) { /* nothing to keep */ }
+          }
+          applyWorkloadToPerson(personId, {
+            termRows: { term, rows: dbRows }, baseVersion: version, baseRows: { term, rows: dbRows }, skipDraft: true
+          });
+        }
+      }
+    }
+    // The saved rows are the "saved" side of the comparison; local rows that differ from them show as unsaved.
+    patchSavedSnapshot({ ...person, workloadRows: [...outsideTerm(localRows), ...dbRows] });
+    setWorkloadSync(prev => ({ ...prev, [personId]: { status: 'confirmed', term } }));
+  }, [schoolInfo?.schoolId, applyWorkloadToPerson, patchSavedSnapshot, setTeacherTermSavedSnapshot]);
+  hydrateWorkloadRef.current = hydrateWorkloadFromServer;
+
+  // Runs after the server confirmed a write (and the rows were verified). The editor is rebuilt from the rows the
+  // server saved and the browser draft is cleared, unless the user changed something while the save was running:
+  // those newer edits are compared against the rows that were SENT and are kept as the new draft, never discarded.
+  const commitConfirmedSave = useCallback((sentPerson, res) => {
+    const personId = sentPerson.id;
+    const { personnel: list, editPerson: open } = latestWorkloadRef.current;
+    const latest = (open && String(open.id) === String(personId))
+      ? open
+      : ((list || []).find(p => String(p.id) === String(personId)) || sentPerson);
+    const sentRows = res?.sentRows || sentPerson.workloadRows || [];
+    const serverRows = Array.isArray(res?.data) ? dedupeWorkloadRows(personId, res.data) : sentRows;
+    const edited = editedSinceSent(sentRows, latest.workloadRows || []);
+    const person = {
+      ...sentPerson,
+      ...(edited
+        ? { workloadRows: latest.workloadRows || [], workloadVerified: false, workloadValidated: false }
+        : { workloadRows: serverRows }),
+      workloadBaseVersion: versionOf(res?.workloadSavedAt),
+      workloadBaseRows: serverRows
+    };
+    const draftKey = `draft_workload_${personId}`;
+    try {
+      if (edited) localStorage.setItem(draftKey, JSON.stringify(person));
+      else localStorage.removeItem(draftKey);
+    } catch (e) { /* storage unavailable: nothing to clear */ }
+    setPersonnel(prev => (Array.isArray(prev) ? prev : []).map(p => (String(p.id) === String(personId) ? person : p)));
+    setEditPerson(prev => (prev && String(prev.id) === String(personId) ? person : prev));
+    // The saved rows are the new "saved" side; newer edits (if any) then show as unsaved, and nothing else does.
+    setTeacherTermSavedSnapshot(personId, activeTerm, serverRows);
+    patchSavedSnapshot({ ...person, workloadRows: serverRows });
+    return { person, edited };
+  }, [setPersonnel, patchSavedSnapshot, setTeacherTermSavedSnapshot, activeTerm]);
+
+  // If the saved rows could not be read, look again every 30 seconds and as soon as the browser reports it is back online.
+  useEffect(() => {
+    const id = currentPerson?.id;
+    if (!id || workloadSync[id]?.status !== 'unconfirmed') return undefined;
+    const retry = () => hydrateWorkloadRef.current(id, activeTerm);
+    const timer = setInterval(retry, 30000);
+    window.addEventListener('online', retry);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', retry);
+    };
+  }, [currentPerson?.id, activeTerm, workloadSync]);
+
+  // Re-read the saved rows whenever the selected teacher or term changes.
+  useEffect(() => {
+    if (!dbPerson?.id) return;
+    hydrateWorkloadRef.current(dbPerson.id, activeTerm);
+  }, [dbPerson?.id, activeTerm, schoolInfo?.schoolId]);
+
+  // Real dirty checks: only flag dirty when normalized rows really differ from the saved database snapshot.
+  const isCurrentTeacherDirty = useMemo(() => {
+    if (!currentPerson?.id) return false;
+    return isTeacherDirty(currentPerson.id, activeTerm, currentPerson.workloadRows);
+  }, [currentPerson, activeTerm, isTeacherDirty, workloadSync]);
+
+  const hasLocalDrafts = useMemo(() => {
+    const cleanSchool = resolveSchoolId(schoolInfo?.schoolId);
+    return (personnel || []).some(p => {
+      if (!p?.id || (currentPerson && String(p.id) === String(currentPerson.id))) return false;
+      const snapKey = `${cleanSchool}__${p.id}__${activeTerm}`;
+      if (!savedTeacherTermSnapshotRef.current.has(snapKey)) return false;
+      const raw = localStorage.getItem(`draft_workload_${p.id}`);
+      if (!raw) return false;
+      try {
+        const parsed = JSON.parse(raw);
+        const draftNorm = normalizeRowsForComparison(parsed.workloadRows || [], activeTerm);
+        const savedNorm = savedTeacherTermSnapshotRef.current.get(snapKey) || [];
+        return JSON.stringify(draftNorm) !== JSON.stringify(savedNorm);
+      } catch (e) {
+        return false;
+      }
+    });
+  }, [personnel, currentPerson, activeTerm, schoolInfo?.schoolId, workloadSync]);
+
+  const isDirty = Boolean(isCurrentTeacherDirty || hasLocalDrafts);
+  // A draft the user declined to restore stays in the browser; leaving the page still offers it through the unsaved-changes alert.
+  const hasDeclinedDraft = [...restoreDeclined].some(id => Boolean(localStorage.getItem(`draft_workload_${id}`)));
+
+  const handleDiscard = useCallback(() => {
+    (personnel || []).forEach(p => {
+      localStorage.removeItem(`draft_workload_${p.id}`);
+    });
+    if (dbPerson?.id) {
+      hydrateWorkloadFromServer(dbPerson.id, activeTerm, { afterSave: true });
+    }
+  }, [personnel, dbPerson?.id, activeTerm, hydrateWorkloadFromServer]);
+
+  const isSavingRef = useRef(false);
+  const runWorkloadSaveRef = useRef(() => Promise.resolve({ ok: true }));
 
   const { confirmAction } = useDirtyGuard({
     screenId: 'workload',
-    isDirty,
-    onDiscard: handleDiscard
+    isDirty: isDirty || hasDeclinedDraft,
+    onDiscard: handleDiscard,
+    onSave: () => runWorkloadSaveRef.current()
   });
 
   const currentPersonRef = useRef(currentPerson);
@@ -8532,7 +8925,9 @@ export default function Workload() {
       }
     }
 
-    const updated = { ...targetPerson, [key]: value, workloadValidated: false };
+    const updated = { ...targetPerson, [key]: value, workloadValidated: false, workloadDraftSavedAt: new Date().toISOString() };
+    // The user is editing: from now on the editor's own rows are the ones that count for this teacher and term.
+    noteUserEdit(personId, activeTerm);
     if (currentPerson && currentPerson.id === personId) {
       setEditPerson(updated);
     }
@@ -9112,7 +9507,13 @@ export default function Workload() {
 
     if (removedRow && removedRow.id && !String(removedRow.id).startsWith('new-') && !String(removedRow.id).startsWith('wk-') && !String(removedRow.id).startsWith('local-')) {
       if (typeof api !== 'undefined' && api.deleteWorkloadRow) {
-        api.deleteWorkloadRow(removedRow.id).catch(e => console.warn('Background delete error:', e));
+        const removedFromPersonId = currentPerson.id;
+        api.deleteWorkloadRow(removedRow.id)
+          .then((res) => applyWorkloadToPerson(removedFromPersonId, { termRows: null, baseVersion: versionOf(res?.workloadSavedAt) }))
+          .catch((e) => {
+            console.warn('Delete from database failed:', e);
+            if (showToast) showToast('This block could not be removed from the database yet. It will be removed when you press Save.', 'warning');
+          });
       }
     }
   };
@@ -10128,19 +10529,53 @@ export default function Workload() {
 
   // Awaited write to esf7_workload_rows. Throws on any failure; a 422 surfaces the server's own message.
   const persistWorkloadToServer = async (person) => {
+    const lockKey = String(person.id);
+    if (saveInFlightRef.current.has(lockKey)) {
+      throw new Error('A save for this teacher is already running. Please wait a moment and try again.');
+    }
+    saveInFlightRef.current.add(lockKey);
     try {
-      return await api.saveWorkloadBatch({
+      const activeSchoolId = resolveSchoolId(schoolInfo?.schoolId || person.school_id || person.schoolId || localStorage.getItem('activeSchoolId'));
+      const activeSy = schoolInfo?.schoolYear || person.school_year || person.schoolYear || '2026-2027';
+      const assignedGrades = (typeof getAssignedGradeLevels === 'function' ? getAssignedGradeLevels(person) : []) || person.assignedGradeLevels || person.assigned_grade_levels || person.gradeLevelsTaught || person.grade_levels_taught || [];
+
+      const sentRows = dedupeWorkloadRows(person.id, person.workloadRows || []);
+      // Retrying is safe: the server replaces the teacher's term in one transaction, so a retry never creates duplicates.
+      let res = await retryTransient(() => api.saveWorkloadBatch({
         personnel_id: person.id,
-        workloadRows: person.workloadRows || [],
+        workloadRows: sentRows,
         teachingRelatedRows: person.teachingRelatedRows || person.teaching_related_rows || [],
         administrativeRows: person.administrativeRows || person.administrative_rows || [],
-        school_id: schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || '108348',
-        school_year: schoolInfo?.schoolYear || '2026-2027',
+        assignedGradeLevels: assignedGrades,
+        school_id: activeSchoolId || '108348',
+        school_year: activeSy,
         term: activeTerm || '1st'
-      });
+      }));
+
+      // Verify the write: what the server says it saved must be what was sent. If the reply does not prove it,
+      // read the rows back from the database before anyone shows success or clears a draft.
+      const terms = Array.from(new Set([...sentRows.map(r => r.term || '1st'), activeTerm || '1st']));
+      let check = Array.isArray(res?.data) ? verifySavedRows(person.id, sentRows, res.data, terms) : { ok: false, mismatchedTerms: terms };
+      if (!check.ok) {
+        const fromDatabase = [];
+        for (const t of terms) {
+          const state = await retryTransient(() => api.getWorkloadState(person.id, t, activeSchoolId));
+          fromDatabase.push(...(state.rows || []).map(r => ({ ...r, term: r.term || t })));
+        }
+        check = verifySavedRows(person.id, sentRows, fromDatabase, terms);
+        if (check.ok) res = { ...res, data: fromDatabase };
+      }
+      if (!check.ok) {
+        throw new Error(`The server did not confirm every schedule block (${check.mismatchedTerms.join(', ')} term). Your changes are kept on this device; please press Save again.`);
+      }
+      return { ...res, sentRows };
     } catch (err) {
-      if (err?.status === 422 && err?.body?.message) throw new Error(err.body.message);
-      throw err;
+      if (err?.body?.message) throw new Error(err.body.message);
+      if (err?.body?.error && typeof err.body.error === 'string') throw new Error(err.body.error);
+      if (err?.message) throw err;
+      throw new Error(String(err));
+    } finally {
+      saveInFlightRef.current.delete(lockKey);
     }
   };
 
@@ -10193,14 +10628,27 @@ export default function Workload() {
       return;
     }
 
+    setIsSaving(true);
     try {
-      await persistWorkloadToServer(currentPerson);
-      await savePersonnelChanges(currentPerson.id, currentPerson, { skipWorkloadSync: true });
-      localStorage.removeItem(`draft_workload_${currentPerson.id}`);
-      broadcastClusteredSlots(currentPerson.workloadRows);
-      showToast("Workload changes saved to database.");
+      const res = await persistWorkloadToServer(currentPerson);
+      // Only after the server confirmed (and the rows were verified): rebuild from the saved rows and clear the draft,
+      // keeping anything edited while the save was running as the new draft.
+      const { person: updatedPerson, edited } = commitConfirmedSave(currentPerson, res);
+
+      if (savePersonnelChanges) {
+        await savePersonnelChanges(currentPerson.id, updatedPerson, { skipWorkloadSync: true });
+      }
+
+      broadcastClusteredSlots(updatedPerson.workloadRows);
+      setHasUnsavedChanges(edited);
+
+      showToast("Workload changes saved to database.", "success");
     } catch (err) {
-      await showAlert("Error", "Failed to save workload changes: " + err.message);
+      console.warn("Save workload error:", err);
+      const errMsg = err?.message || 'Failed to save workload changes';
+      await showAlert("Error", errMsg);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -10233,22 +10681,37 @@ export default function Workload() {
       return;
     }
 
+    setIsSaving(true);
     try {
       const updated = { ...currentPerson, workloadVerified: true, workloadValidated: true };
 
       // The server must confirm the write before anything is marked verified or the browser copy is removed.
-      await persistWorkloadToServer(updated);
-      setEditPerson(updated);
-      await savePersonnelChanges(currentPerson.id, updated, { skipWorkloadSync: true });
-      localStorage.removeItem(`draft_workload_${currentPerson.id}`);
-      markTeacherValidated(currentPerson.id, true);
-      showToast("Workload verified and saved to database!");
+      const res = await persistWorkloadToServer(updated);
+      const { person: fullyUpdated, edited } = commitConfirmedSave(updated, res);
+      if (savePersonnelChanges) {
+        await savePersonnelChanges(currentPerson.id, fullyUpdated, { skipWorkloadSync: true });
+      }
+
+      // Validated only if nothing was edited while the save was running.
+      markTeacherValidated(currentPerson.id, !edited);
+      setHasUnsavedChanges(edited);
+
+      showToast(edited ? "Saved. Your newer edits are kept and still need saving." : "Workload verified and saved to database!", edited ? "warning" : "success");
     } catch (err) {
-      await showAlert("Error", "Failed to save and validate workload: " + err.message);
+      console.warn("Save and validate workload error:", err);
+      const errMsg = err?.message || 'Failed to save and validate workload';
+      await showAlert("Error", errMsg);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleSave = async () => {
+  // The one workload save used by the header Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message } so each caller shows the error its own way.
+  const runWorkloadSave = async () => {
+    if (isSavingRef.current) {
+      return { ok: false, title: 'Save in Progress', message: 'A save is already running. Please wait a moment and try again.' };
+    }
     if (currentPerson) {
       const hasIncompleteBlock = (currentPerson.workloadRows || []).some(row => {
         if (!row.subject) return true;
@@ -10256,8 +10719,7 @@ export default function Workload() {
         return !row.gradeLevel;
       });
       if (hasIncompleteBlock) {
-        await showAlert("Incomplete Schedule Block", "Cannot save. One or more schedule blocks are missing a Subject or Class Section/Grade Level. Please complete them first.");
-        return;
+        return { ok: false, title: "Incomplete Schedule Block", message: "Cannot save. One or more schedule blocks are missing a Subject or Class Section/Grade Level. Please complete them first." };
       }
 
       const currentTermRows = (currentPerson.workloadRows || []).filter(row => (row.term || '1st') === activeTerm);
@@ -10281,8 +10743,7 @@ export default function Workload() {
       });
 
       if (hasAnyConflict) {
-        await showAlert("Schedule Conflict", `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`);
-        return;
+        return { ok: false, title: "Schedule Conflict", message: `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.` };
       }
 
       const hasCrossSchoolConflict = currentTermRows.some(row => {
@@ -10290,11 +10751,11 @@ export default function Workload() {
       });
 
       if (hasCrossSchoolConflict) {
-        await showAlert("Cross-School Schedule Conflict", `Cannot save. Clustered personnel has a schedule collision or transit restriction (gap ≤ 2h between partner station classes) in ${activeTerm} Term. Please adjust times to avoid double-booking.`);
-        return;
+        return { ok: false, title: "Cross-School Schedule Conflict", message: `Cannot save. Clustered personnel has a schedule collision or transit restriction (gap ≤ 2h between partner station classes) in ${activeTerm} Term. Please adjust times to avoid double-booking.` };
       }
     }
 
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
       let prevWorkloadMap = new Map();
@@ -10321,18 +10782,29 @@ export default function Workload() {
 
       // Per teacher: only a server-confirmed write clears the browser copy and marks the teacher validated.
       const failedSaves = [];
+      const successfulTeachers = [];
       for (const p of changedTeachers) {
         const updated = { ...p, workloadVerified: true, workloadValidated: true };
         try {
-          await persistWorkloadToServer(updated);
+          const res = await persistWorkloadToServer(updated);
+          const { person: fullyUpdated, edited } = commitConfirmedSave(updated, res);
+
           if (savePersonnelChanges) {
-            await savePersonnelChanges(p.id, updated, { skipWorkloadSync: true });
+            await savePersonnelChanges(p.id, fullyUpdated, { skipWorkloadSync: true });
           }
-          localStorage.removeItem(`draft_workload_${p.id}`);
-          markTeacherValidated(p.id, true);
+          markTeacherValidated(p.id, !edited);
+          successfulTeachers.push(fullyUpdated);
         } catch (err) {
           console.warn('Save workload batch error for', p.id, err);
           failedSaves.push({ name: `${p.firstName || ''} ${p.lastName || ''}`.trim() || String(p.id), message: err?.message || 'Unknown error' });
+        }
+      }
+
+      if (successfulTeachers.length > 0) {
+        const successMap = new Map(successfulTeachers.map(sp => [String(sp.id), sp]));
+        setPersonnel(prev => (prev || []).map(p => successMap.get(String(p.id)) || p));
+        if (currentPerson && successMap.has(String(currentPerson.id))) {
+          setEditPerson(successMap.get(String(currentPerson.id)));
         }
       }
 
@@ -10340,32 +10812,39 @@ export default function Workload() {
         // Leave the saved snapshot and node status untouched so the failed teachers stay "changed" and can be retried.
         const list = failedSaves.slice(0, 8).map(f => `• ${f.name}: ${f.message}`).join('\n');
         const more = failedSaves.length > 8 ? `\n…and ${failedSaves.length - 8} more.` : '';
-        await showAlert("Some Workloads Were Not Saved", `${failedSaves.length} of ${changedTeachers.length} teacher(s) could not be saved to the database. Their changes are kept in this browser; press Save again to retry.\n${list}${more}`);
-        return;
+        return { ok: false, title: "Some Workloads Were Not Saved", message: `${failedSaves.length} of ${changedTeachers.length} teacher(s) could not be saved to the database. Their changes are kept in this browser; press Save again to retry.\n${list}${more}` };
       }
 
       if (currentPerson) {
         broadcastClusteredSlots(currentPerson.workloadRows);
       }
-
-      savedWorkloadSnapshotRef.current = JSON.stringify(getFullWorkloadSnapshot());
+      // (Each saved teacher already refreshed its own saved baseline in commitConfirmedSave, so edits made while saving still show as unsaved.)
 
       if (completeNode) {
         completeNode('workload', null);
       }
 
       showToast("Workload schedule saved to database successfully.", "success");
+      return { ok: true };
     } catch (err) {
       console.warn("Failed to save workload schedule:", err);
-      if (showAlert) {
-        await showAlert("Error", "Failed to save workload schedule: " + err.message);
-      } else if (showToast) {
-        showToast("Failed to save workload schedule: " + err.message, "error");
-      }
+      return { ok: false, title: "Error", message: "Failed to save workload schedule: " + err.message };
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
+
+  // Header Save button: same save, errors shown in the existing alert.
+  const handleSave = async () => {
+    const result = await runWorkloadSave();
+    if (result && result.ok === false) {
+      await showAlert(result.title, result.message);
+    }
+  };
+
+  // Always points at the latest render's save (it reads current state), for the dialog's Save button.
+  runWorkloadSaveRef.current = runWorkloadSave;
   // ────────────────────────────────────────────────────────────────────────
   // ────────────────────────────────────────────────────────────────────────
 
@@ -10376,8 +10855,9 @@ export default function Workload() {
         description="Manage teacher teaching loads, HGP advisory rules, relieving duties, and schedule conflict resolution."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
+        showDiscard={false}
         onContinue={handleSave}
-        continueText="Save"
+        continueText={isDirty ? (isSaving ? "Saving..." : "Save Changes") : "Save"}
         continueDisabled={!isDirty || isSaving}
       />
 
@@ -10459,7 +10939,7 @@ export default function Workload() {
                         if (isLocked) {
                           setShowUnlockTermModal(t.id);
                         } else {
-                          setActiveTerm(t.id);
+                          confirmAction(() => setActiveTerm(t.id));
                         }
                       }}
                       style={{
@@ -11962,18 +12442,29 @@ export default function Workload() {
                       </div>
                     )}
 
-                    {/* Draft Banner if exists */}
-                    {localStorage.getItem(`draft_workload_${currentPerson?.id}`) && (
-                      <div style={{ padding: '12px 16px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '12px', color: '#B45309', fontSize: '13px', marginBottom: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {/* Draft Banner if real unsaved changes exist */}
+                    {isCurrentTeacherDirty && (
+                      <div style={{ padding: '12px 16px', background: '#FFFBEB', border: '1.5px solid #FCD34D', borderRadius: '12px', color: '#B45309', fontSize: '13px', marginBottom: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiAlertTriangle size={15} color="#F59E0B" /> You have unsaved workload changes for this personnel (draft stored locally).</span>
-                        <button className="btn secondary" style={{ minHeight: '28px', padding: '0 10px', fontSize: '12px', background: 'white', color: '#B45309', borderColor: '#FCD34D' }} type="button" onClick={async () => {
-                          if (await showConfirm("Discard Draft?", "Are you sure you want to discard your unsaved changes and revert to the server data?")) {
-                            localStorage.removeItem(`draft_workload_${dbPerson.id}`);
-                            setEditPerson(dbPerson);
-                          }
-                        }}>
-                          Discard Draft
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            className="btn primary"
+                            style={{ minHeight: '28px', padding: '0 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', background: '#0284C7', borderColor: '#0284C7', color: '#FFFFFF' }}
+                            type="button"
+                            onClick={handleSaveChangesDirectly}
+                            disabled={isSaving}
+                          >
+                            <FiSave size={13} /> {isSaving ? 'Saving...' : 'Save Changes'}
+                          </button>
+                          <button className="btn secondary" style={{ minHeight: '28px', padding: '0 10px', fontSize: '12px', background: 'white', color: '#B45309', borderColor: '#FCD34D' }} type="button" onClick={async () => {
+                            if (await showConfirm("Discard Draft?", "Are you sure you want to discard your unsaved changes and revert to the server data?")) {
+                              localStorage.removeItem(`draft_workload_${dbPerson.id}`);
+                              await hydrateWorkloadFromServer(dbPerson.id, activeTerm, { afterSave: true });
+                            }
+                          }}>
+                            Discard Draft
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -12116,6 +12607,20 @@ export default function Workload() {
                         </div>
                       </div>
                     )}
+                    {currentPerson && workloadSync[currentPerson.id]?.status === 'unconfirmed' && (
+                      <div role="alert" style={{ marginBottom: '12px', padding: '10px 14px', background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: '10px', color: '#92400E', fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <span>
+                          Could not confirm this teacher's saved workload with the server ({workloadSync[currentPerson.id].message}). You are seeing your local copy, which is not yet confirmed saved. Nothing has been cleared.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => hydrateWorkloadRef.current(currentPerson.id, activeTerm)}
+                          style={{ flexShrink: 0, border: '1.5px solid #D97706', background: 'white', color: '#92400E', borderRadius: '8px', padding: '5px 12px', fontSize: '11.5px', fontWeight: '800', cursor: 'pointer' }}
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    )}
                     {/* Workload Schedule (Gantt Timetable View) */}
                     <div style={{ marginBottom: '24px' }}>
                       <WorkloadGanttScheduleView
@@ -12146,6 +12651,7 @@ export default function Workload() {
                         selectedBlockIdx={selectedBlockIdx}
                         setSelectedBlockIdx={setSelectedBlockIdx}
                         handleSaveChangesDirectly={handleSaveChangesDirectly}
+                        isSaving={isSaving}
                         sharedWorkloadRows={sharedWorkloadRows}
                         activeTerm={activeTerm}
                         onCopyFirstTerm={(scope) => handleCopyFirstTermToSecondTerm(scope || 'CURRENT')}

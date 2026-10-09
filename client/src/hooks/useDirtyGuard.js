@@ -12,12 +12,14 @@ import {
  * @param {string} options.screenId - Unique identifier for the screen (e.g. 'school_profile', 'roster')
  * @param {boolean} [options.isDirty] - Optional external boolean controlling dirty state
  * @param {Function} [options.onDiscard] - Callback to revert screen data when changes are discarded
+ * @param {Function} [options.onSave] - Async save used by the dialog's Save button; resolves { ok, title?, message? } (same handler as the screen's Save button)
  * @param {any} [options.initialSnapshot] - Baseline snapshot for data comparison
  */
 export function useDirtyGuard({
   screenId,
   isDirty: externalIsDirty,
   onDiscard: externalOnDiscard,
+  onSave: externalOnSave,
   initialSnapshot = null
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -31,6 +33,10 @@ export function useDirtyGuard({
   const onDiscardRef = useRef(externalOnDiscard);
   onDiscardRef.current = externalOnDiscard;
 
+  const onSaveRef = useRef(externalOnSave);
+  onSaveRef.current = externalOnSave;
+  const supportsSave = typeof externalOnSave === 'function';
+
   useEffect(() => {
     const unregister = registerDirtyGuard(screenId, {
       isDirty: () => isDirtyRef.current,
@@ -43,11 +49,12 @@ export function useDirtyGuard({
           }
         }
         setInternalIsDirty(false);
-      }
+      },
+      ...(supportsSave ? { onSave: () => onSaveRef.current() } : {})
     });
 
     return unregister;
-  }, [screenId]);
+  }, [screenId, supportsSave]);
 
   useEffect(() => {
     notifyDirtyStateChanged();
@@ -79,8 +86,17 @@ export function useDirtyGuard({
       return true;
     }
 
-    const confirmedDiscard = await showUnsavedChangesModal({ actionType });
-    if (confirmedDiscard) {
+    const outcome = await showUnsavedChangesModal({
+      actionType,
+      onSave: onSaveRef.current ? () => onSaveRef.current() : undefined
+    });
+    if (outcome === 'saved') {
+      // The save was confirmed by the server inside the dialog; nothing to discard.
+      notifyDirtyStateChanged();
+      if (typeof actionFn === 'function') actionFn();
+      return true;
+    }
+    if (outcome === 'discard') {
       if (typeof onDiscardRef.current === 'function') {
         try {
           onDiscardRef.current();
@@ -107,5 +123,8 @@ export function useDirtyGuard({
     confirmAction
   };
 }
+
+// The one shared guard for every editable page (the same hook under its descriptive name).
+export const useUnsavedChangesGuard = useDirtyGuard;
 
 export default useDirtyGuard;

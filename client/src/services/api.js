@@ -281,6 +281,25 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${personnelId}`);
     return parseJsonOrThrow(res);
   },
+  // Saved rows for one teacher + term from esf7_workload_rows, plus the version marker: { rows, version }.
+  getWorkloadState: async (personnelId, term, schoolId) => {
+    const cleanId = String(resolveSchoolId(schoolId) || '').replace(/^SCH-/i, '').trim();
+    const query = `?schoolId=${encodeURIComponent(cleanId)}&term=${encodeURIComponent(term)}`;
+    const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${encodeURIComponent(personnelId)}/state${query}`);
+    return parseJsonOrThrow(res);
+  },
+  // Deletes one teacher's rows for one term from the database: { deleted, workloadSavedAt }.
+  clearTeacherTermWorkload: async (personnelId, term, schoolId) => {
+    const cleanId = String(resolveSchoolId(schoolId) || '').replace(/^SCH-/i, '').trim();
+    const res = await fetchWithAuth(`${API_BASE}/workloads/personnel/${encodeURIComponent(personnelId)}/term/${encodeURIComponent(term)}?schoolId=${encodeURIComponent(cleanId)}`, { method: 'DELETE' });
+    return parseJsonOrThrow(res);
+  },
+  // Deletes every teacher's rows for one term in the school from the database: { deleted, workloadSavedAt }.
+  clearSchoolTermWorkload: async (schoolId, term) => {
+    const cleanId = String(resolveSchoolId(schoolId) || '').replace(/^SCH-/i, '').trim();
+    const res = await fetchWithAuth(`${API_BASE}/workloads/term-clear/school?schoolId=${encodeURIComponent(cleanId)}&term=${encodeURIComponent(term)}`, { method: 'DELETE' });
+    return parseJsonOrThrow(res);
+  },
 
   // Employment Tab Details
   updateEmployment: async (personnelId, data) => {

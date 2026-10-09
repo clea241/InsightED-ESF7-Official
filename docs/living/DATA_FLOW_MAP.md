@@ -11,4 +11,8 @@
 - Overload absence range ("Confirm & Log") -> app state `absences` -> school draft (PUT /api/school/draft). Tardiness DTR "Save DTR & Workload Impact" -> same state/draft AND POST /api/overload-late-undertime. Workload "Unlock & Duplicate" -> `personnel[].workloadRows` (term copied) -> school draft.
 
 - Workload save (PUT/POST `/api/workload_rows/personnel/:id`) now reads the teacher's assigned grades (`esf7_personnel_employment.grade_levels_taught` / profile `raw_payload`) to reject new teaching rows when none are assigned.
-- Workload page Save / Save & Validate: each awaits `POST /api/workloads/bulk` (esf7_workload_rows) per teacher, then updates local state + school draft (the header "Save & Continue" does not yet write workload rows). Browser copy `draft_workload_<id>` is cleared only after the server confirms.
+- Workload page Save / Save & Validate / header Save: each awaits `POST /api/workloads/bulk` (esf7_workload_rows) per teacher, then updates local state + school draft. Browser copy `draft_workload_<id>` is cleared only after the server confirms.
+
+- Workload page, selecting a teacher or term: `GET /api/workloads/personnel/:id/state?schoolId=&term=` returns the saved rows + version marker (`raw_payload.workloadSavedAt`); merged with the local draft per `services/workloadMerge.js`.
+- Workload Save / Save & Validate / header Save: `POST /api/workloads/bulk` stamps a new `workloadSavedAt`; the editor is rebuilt from the rows the server returns.
+- Delete one block: `DELETE /api/workloads/:id` (also stamps the marker). Clear this teacher (one term): `DELETE /api/workloads/personnel/:id/term/:term?schoolId=`. Clear All Teachers (one term): `DELETE /api/workloads/term-clear/school?schoolId=&term=`. Both also remove the term from the teacher's `raw_payload.workloadRows`.

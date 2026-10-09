@@ -3,6 +3,7 @@ import { useApp, DIVISION_SCHOOL_OPTIONS } from '../context/AppContext';
 import PortalHeader from '../components/PortalHeader';
 import { FiAlertCircle } from 'react-icons/fi';
 import useDirtyGuard from '../hooks/useDirtyGuard';
+import { confirmServerDraftSaved } from '../services/screenSave';
 
 export default function Deployment() {
   const {
@@ -65,10 +66,12 @@ export default function Deployment() {
     }
   };
 
+  const runSaveRef = React.useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   const { confirmAction } = useDirtyGuard({
     screenId: 'deployment',
     isDirty,
-    onDiscard: handleDiscard
+    onDiscard: handleDiscard,
+    onSave: () => runSaveRef.current()
   });
 
   const handleSelectPerson = (newId) => {
@@ -93,26 +96,40 @@ export default function Deployment() {
     localStorage.setItem(`draft_deployment_${currentPerson.id}`, JSON.stringify(updated));
   };
 
-  const handleSave = async () => {
-    if (!currentPerson || !isDirty) return;
+  // The one Deployment save, used by the header Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  const runDeploymentSave = async () => {
+    if (!currentPerson || !isDirty) return { ok: true };
     setIsSaving(true);
     try {
       await savePersonnelChanges(currentPerson.id, currentPerson);
+      // Success is reported, and the local draft cleared, only after the server confirmed the database write.
+      const confirmed = await confirmServerDraftSaved();
+      if (!confirmed.ok) return confirmed;
       localStorage.removeItem(`draft_deployment_${currentPerson.id}`);
       setEditPerson(currentPerson);
       if (completeNode) {
         completeNode('deployment', null);
       }
       showToast("Deployment changes saved to database successfully.");
+      return { ok: true };
     } catch (err) {
       console.warn("Failed to save deployment changes:", err);
-      if (showAlert) {
-        await showAlert("Error", "Failed to save deployment changes: " + err.message);
-      } else if (showToast) {
-        showToast("Failed to save deployment changes: " + err.message, "error");
-      }
+      return { ok: false, title: 'Deployment Not Saved', message: "Failed to save deployment changes: " + err.message };
     } finally {
       setIsSaving(false);
+    }
+  };
+  runSaveRef.current = runDeploymentSave;
+
+  const handleSave = async () => {
+    const result = await runDeploymentSave();
+    if (result.ok === false) {
+      if (showAlert) {
+        await showAlert("Error", result.message);
+      } else if (showToast) {
+        showToast(result.message, "error");
+      }
     }
   };
 

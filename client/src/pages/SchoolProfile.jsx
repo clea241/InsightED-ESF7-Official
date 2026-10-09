@@ -4,6 +4,7 @@ import { getLocalDraft, setLocalDraft } from '../services/db';
 import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
 import useDirtyGuard from '../hooks/useDirtyGuard';
+import { confirmServerDraftSaved } from '../services/screenSave';
 import {
   FiShield,
   FiMapPin,
@@ -101,10 +102,12 @@ export default function SchoolProfile() {
     } catch (e) {}
   };
 
+  const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   useDirtyGuard({
     screenId: 'school_profile',
     isDirty,
-    onDiscard: handleDiscard
+    onDiscard: handleDiscard,
+    onSave: () => runSaveRef.current()
   });
 
   // Load configuration on mount or when schoolInfo updates
@@ -292,8 +295,9 @@ export default function SchoolProfile() {
     });
   };
 
-  const handleConfirmAndProceed = async () => {
-    if (confirmInput.trim().toUpperCase() !== 'CONFIRM') return;
+  // The one School Profile save, used by the confirm dialog's Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  const runSchoolProfileSave = async () => {
     setIsSaving(true);
     try {
       const selectedPrograms = [];
@@ -344,6 +348,10 @@ export default function SchoolProfile() {
         }));
       }
 
+      // Success is reported only after the server confirmed the database write.
+      const confirmed = await confirmServerDraftSaved();
+      if (!confirmed.ok) return confirmed;
+
       savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
       setIsConfirmModalOpen(false);
       setConfirmInput('');
@@ -355,10 +363,22 @@ export default function SchoolProfile() {
       if (showToast) {
         showToast('School Profile configuration saved to database.', 'success');
       }
+      return { ok: true };
     } catch (err) {
       console.error('Failed to save configuration:', err);
+      return { ok: false, title: 'School Profile Not Saved', message: 'Failed to save configuration: ' + (err?.message || 'Unknown error') };
     } finally {
       setIsSaving(false);
+    }
+  };
+  runSaveRef.current = runSchoolProfileSave;
+
+  // Header Save opens the typed-CONFIRM step; confirming it runs the same save the unsaved-changes dialog uses.
+  const handleConfirmAndProceed = async () => {
+    if (confirmInput.trim().toUpperCase() !== 'CONFIRM') return;
+    const result = await runSchoolProfileSave();
+    if (result.ok === false && showAlert) {
+      await showAlert(result.title, result.message);
     }
   };
 

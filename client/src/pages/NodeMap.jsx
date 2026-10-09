@@ -27,7 +27,7 @@ import {
 } from 'react-icons/fi';
 
 export default function NodeMap() {
-  const { personnel, classSections, schoolInfo, setActiveView, isNodeUnlocked, isNodeCompleted, bypassNodeLocks, setBypassNodeLocks, incomingRequests } = useApp();
+  const { personnel, classSections, schoolInfo, setActiveView, isNodeUnlocked, isNodeCompleted, bypassNodeLocks, setBypassNodeLocks, incomingRequests, isInitialized } = useApp();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
@@ -55,7 +55,7 @@ export default function NodeMap() {
           subtitle: 'Master personnel list & appointment status',
           Icon: FiUsers,
           view: 'roster',
-          summary: `${personnel.length} Registered Personnel`
+          summary: !isInitialized ? 'Loading roster...' : `${personnel.length} Registered Personnel`
         },
         {
           id: 'room-qr',
@@ -73,7 +73,15 @@ export default function NodeMap() {
           subtitle: 'Educational qualifications, LET & eligibility',
           Icon: FiUserCheck,
           view: 'profile',
-          summary: `${personnel.filter(p => p.degreeMajor || p.major || p.collegeDegree).length} Profiles Configured`
+          summary: !isInitialized
+            ? 'Loading profiles...'
+            : `${personnel.filter(p => {
+                const hasDegree = Boolean(p.degreeMajor || p.major || p.collegeDegree || p.college_degree);
+                const hasDegreeRows = Boolean((Array.isArray(p.degreeRows) && p.degreeRows.length > 0) || (Array.isArray(p.collegeDegrees) && p.collegeDegrees.length > 0));
+                const hasAttainment = Boolean(p.highestEducationalAttainment || p.highest_educational_attainment);
+                const isCompleted = Boolean(p.isProfileCompleted || p.is_profile_completed);
+                return hasDegree || hasDegreeRows || hasAttainment || isCompleted;
+              }).length} Profiles Configured`
         }
       ]
     },
@@ -89,7 +97,7 @@ export default function NodeMap() {
           subtitle: 'Incoming and outgoing personnel transfer requests',
           Icon: FiMail,
           view: 'requests',
-          summary: `${incomingRequests?.length || 0} Pending Inter-School Requests`
+          summary: !isInitialized ? 'Loading requests...' : `${incomingRequests?.length || 0} Pending Inter-School Requests`
         },
         {
           id: 'classes',
@@ -98,7 +106,7 @@ export default function NodeMap() {
           subtitle: 'Section setup, advisers & learner counts',
           Icon: FiGrid,
           view: 'classes',
-          summary: `${classSections.length} Class Sections`
+          summary: !isInitialized ? 'Loading sections...' : `${classSections.length} Class Sections`
         },
         {
           id: 'designation',
@@ -107,7 +115,7 @@ export default function NodeMap() {
           subtitle: 'Ancillary roles, grade chairpersons & SDS approvals',
           Icon: FiBookmark,
           view: 'designation',
-          summary: `${personnel.filter(p => p.designation && p.designation !== 'N/A').length} Assigned Roles`
+          summary: !isInitialized ? 'Loading roles...' : `${personnel.filter(p => p.designation && p.designation !== 'N/A').length} Assigned Roles`
         },
         {
           id: 'workload',
@@ -116,7 +124,7 @@ export default function NodeMap() {
           subtitle: 'Teaching schedules, period durations & timetable',
           Icon: FiClock,
           view: 'workload',
-          summary: `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`
+          summary: !isInitialized ? 'Loading slots...' : `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`
         }
       ]
     },

@@ -405,8 +405,22 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     }
   }
 
+  // 3. Tertiary Fallback: Check esf7_room_roster_cache in local database
   if (masterRes.rows.length === 0) {
-    console.log(`[LocalDraft] No master records found in esf7_database or esf7_database_dummy for School ID ${cleanSchoolId}.`);
+    console.log(`[LocalDraft] No master records in esf7_database/dummy for School ID ${cleanSchoolId}, checking esf7_room_roster_cache...`);
+    const cacheRes = await db.query(
+      `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1`,
+      [cleanSchoolId]
+    ).catch(() => ({ rows: [] }));
+    if (cacheRes.rows.length > 0 && Array.isArray(cacheRes.rows[0].roster_json) && cacheRes.rows[0].roster_json.length > 0) {
+      console.log(`[LocalDraft] Found ${cacheRes.rows[0].roster_json.length} records in esf7_room_roster_cache for School ID ${cleanSchoolId}`);
+      masterRes = { rows: cacheRes.rows[0].roster_json };
+      sourceTable = 'esf7_room_roster_cache';
+    }
+  }
+
+  if (masterRes.rows.length === 0) {
+    console.log(`[LocalDraft] No master records found in esf7_database, esf7_database_dummy, or esf7_room_roster_cache for School ID ${cleanSchoolId}.`);
     return [];
   }
 
@@ -417,13 +431,13 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
   for (let i = 0; i < masterRes.rows.length; i++) {
     const row = masterRes.rows[i];
     const seq = String(i + 1).padStart(3, '0');
-    const profileId = `PER-${cleanSchoolId}-${seq}`;
-    const empId = `EMP-${cleanSchoolId}-${seq}`;
-    const educId = `EDU-${cleanSchoolId}-${seq}`;
+    const profileId = row.id || `PER-${cleanSchoolId}-${seq}`;
+    const empId = row.employmentId || `EMP-${cleanSchoolId}-${seq}`;
+    const educId = row.educationId || `EDU-${cleanSchoolId}-${seq}`;
 
-    let fName = row.first_name || row.first || '';
-    let lName = row.last_name || row.last || '';
-    let mName = row.middle_name || row.middle || '';
+    let fName = row.firstName || row.first_name || row.first || '';
+    let lName = row.lastName || row.last_name || row.last || '';
+    let mName = row.middleName || row.middle_name || row.middle || '';
 
     if ((!fName || !lName) && row.last_first) {
       const parts = String(row.last_first).trim().split(/\s+/);
@@ -434,22 +448,27 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     if (!fName) fName = `TEACHER`;
     if (!lName) lName = `STAFF ${seq}`;
 
-    const prn = (row.prn || row.employee_no || `PRN-${cleanSchoolId}-${seq}`).trim();
-    const isSchoolHead = checkIsSchoolHead(row);
-    const bDate = parseDateFromParts(row.birthday_yyyy, row.birthday_mm, row.birthday_dd) || row.birthdate || null;
+    const prn = (row.prn || row.employee_no || row.employeeNo || `PRN-${cleanSchoolId}-${seq}`).trim();
+    const isSchoolHead = row.isSchoolHead !== undefined ? !!row.isSchoolHead : (row.is_school_head !== undefined ? !!row.is_school_head : checkIsSchoolHead(row));
+    const bDate = row.birthdate || parseDateFromParts(row.birthday_yyyy, row.birthday_mm, row.birthday_dd) || null;
     const computedAge = sanitizeAge(row.age, bDate);
-    const firstApptDate = parseDateFromParts(row.appt_yyyy, row.appt_mm, row.appt_dd) || row.first_service_date || null;
-    const stationDate = parseDateFromParts(row.station_yyyy, row.station_mm, row.station_dd) || row.new_station_date || null;
-    const stepIncrement = sanitizeStepIncrement(row.step_increment);
-    const degree = row.degree_finished__baccalaureate || row.college_degree || 'BACHELOR OF SECONDARY EDUCATION';
-    const major = row.major__specialization || row.major || 'GENERAL EDUCATION';
-    const postGrad = row.post_graduate__degree || row.post_graduate_degree || 'N/A';
-    const elig = row.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS';
+    const firstApptDate = row.firstServiceDate || row.first_service_date || parseDateFromParts(row.appt_yyyy, row.appt_mm, row.appt_dd) || null;
+    const stationDate = row.newStationDate || row.new_station_date || parseDateFromParts(row.station_yyyy, row.station_mm, row.station_dd) || null;
+    const stepIncrement = sanitizeStepIncrement(row.stepIncrement || row.step_increment);
+    const degree = row.collegeDegree || row.college_degree || row.degree_finished__baccalaureate || 'BACHELOR OF SECONDARY EDUCATION';
+    const major = row.major || row.major__specialization || 'GENERAL EDUCATION';
+    const minor = row.minor || 'N/A';
+    const highestAttainment = row.highestEducationalAttainment || row.highest_educational_attainment || 'COLLEGE GRADUATE / BACCALAUREATE';
+    const postGrad = row.postGraduateDegree || row.post_graduate_degree || row.post_graduate__degree || 'N/A';
+    const postGradDisc = row.postGraduateDiscipline || row.post_graduate_discipline || '{"mastersWithUnits":[],"mastersGraduated":[],"doctorateWithUnits":[],"doctorateGraduated":[],"masters":[],"doctorate":[]}';
+    const elig = Array.isArray(row.eligibility) ? row.eligibility : [row.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS'];
+    const prcSpec = row.prcSpecialization || row.prc_specialization || major;
+    const degreeRows = (Array.isArray(row.degreeRows) && row.degreeRows.length > 0) ? row.degreeRows : (Array.isArray(row.collegeDegrees) && row.collegeDegrees.length > 0 ? row.collegeDegrees : [{ collegeDegree: degree, major, minor }]);
 
-    const cleanEmpNo = (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : '';
-    const depedEmail = row.deped_email || '';
+    const cleanEmpNo = (row.employee_no && !String(row.employee_no).toUpperCase().startsWith('PRN')) ? String(row.employee_no).trim() : (row.employeeNo && !String(row.employeeNo).toUpperCase().startsWith('PRN') ? String(row.employeeNo).trim() : '');
+    const depedEmail = row.deped_email || row.depedEmail || '';
 
-    const rawPos = (row.position || '').trim();
+    const rawPos = (row.position_title || row.position || row.plantilla_position || '').trim();
     const isCanon = isCanonicalPosition(rawPos);
     const posName = isCanon ? rawPos : '';
     const catObj = determinePositionCategory(posName);
@@ -470,28 +489,28 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       middle_name: mName ? String(mName).toUpperCase() : '',
       lastName: String(lName).toUpperCase(),
       last_name: String(lName).toUpperCase(),
-      nameExtension: row.name_extension || '',
-      name_extension: row.name_extension || '',
+      nameExtension: row.name_extension || row.nameExtension || '',
+      name_extension: row.name_extension || row.nameExtension || '',
       tin: row.tin || '',
       noTin: !row.tin,
       no_tin: !row.tin,
-      sexAtBirth: (row.sex || row.sex_at_birth || row.gender || 'FEMALE').toUpperCase(),
-      sex_at_birth: (row.sex || row.sex_at_birth || row.gender || 'FEMALE').toUpperCase(),
-      civilStatus: (row.civil_status || 'SINGLE').toUpperCase(),
-      civil_status: (row.civil_status || 'SINGLE').toUpperCase(),
-      soloParent: row.solo_parent ? 'YES' : 'NO',
+      sexAtBirth: (row.sex || row.sex_at_birth || row.sexAtBirth || row.gender || 'FEMALE').toUpperCase(),
+      sex_at_birth: (row.sex || row.sex_at_birth || row.sexAtBirth || row.gender || 'FEMALE').toUpperCase(),
+      civilStatus: (row.civil_status || row.civilStatus || 'SINGLE').toUpperCase(),
+      civil_status: (row.civil_status || row.civilStatus || 'SINGLE').toUpperCase(),
+      soloParent: (row.solo_parent === 'YES' || row.soloParent === 'YES' || row.soloParent === true) ? 'YES' : 'NO',
       religion: ((row.religion === 'OTHERS' ? '' : row.religion) || 'CHRISTIANITY').toUpperCase(),
-      ethnicGroup: ((row.ehtinic_group === 'OTHERS' || row.ethnic_group === 'OTHERS' ? '' : (row.ehtinic_group || row.ethnic_group)) || '').toUpperCase(),
-      ethnic_group: ((row.ehtinic_group === 'OTHERS' || row.ethnic_group === 'OTHERS' ? '' : (row.ehtinic_group || row.ethnic_group)) || '').toUpperCase(),
+      ethnicGroup: ((row.ehtinic_group === 'OTHERS' || row.ethnic_group === 'OTHERS' || row.ethnicGroup === 'OTHERS' ? '' : (row.ehtinic_group || row.ethnic_group || row.ethnicGroup)) || '').toUpperCase(),
+      ethnic_group: ((row.ehtinic_group === 'OTHERS' || row.ethnic_group === 'OTHERS' || row.ethnicGroup === 'OTHERS' ? '' : (row.ehtinic_group || row.ethnic_group || row.ethnicGroup)) || '').toUpperCase(),
       birthdate: bDate,
       age: computedAge,
       employeeNo: cleanEmpNo,
       employee_no: cleanEmpNo,
       depedEmail: depedEmail,
-      noDepedEmail: !!row.no_deped_email || depedEmail === 'N/A',
-      no_deped_email: !!row.no_deped_email || depedEmail === 'N/A',
-      allowEmailDiscrepancy: !!row.allow_email_discrepancy,
-      allow_email_discrepancy: !!row.allow_email_discrepancy,
+      noDepedEmail: !!row.no_deped_email || !!row.noDepedEmail || depedEmail === 'N/A',
+      no_deped_email: !!row.no_deped_email || !!row.noDepedEmail || depedEmail === 'N/A',
+      allowEmailDiscrepancy: !!row.allow_email_discrepancy || !!row.allowEmailDiscrepancy,
+      allow_email_discrepancy: !!row.allow_email_discrepancy || !!row.allowEmailDiscrepancy,
 
       isSchoolHead: isSchoolHead,
       is_school_head: isSchoolHead,
@@ -503,19 +522,19 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       position: posName,
       stepIncrement,
       step_increment: stepIncrement,
-      fundSource: (row.fund_source || 'NATIONAL').toUpperCase(),
-      fund_source: (row.fund_source || 'NATIONAL').toUpperCase(),
-      natureOfAppointment: (row.nature_of_appointment || 'REGULAR PERMANENT').toUpperCase(),
-      nature_of_appointment: (row.nature_of_appointment || 'REGULAR PERMANENT').toUpperCase(),
-      hiringArrangement: (row.hiring_arrangement || 'REGULAR').toUpperCase(),
-      deploymentStatus: (row.status__item_ || 'OWN STATION').toUpperCase(),
-      deployment_status: (row.status__item_ || 'OWN STATION').toUpperCase(),
-      assignedSchools: [],
-      assigned_schools: [],
-      gradeLevelsTaught: [],
-      grade_levels_taught: [],
-      assignedGradeLevels: [],
-      assigned_grade_levels: [],
+      fundSource: (row.fund_source || row.fundSource || 'NATIONAL').toUpperCase(),
+      fund_source: (row.fund_source || row.fundSource || 'NATIONAL').toUpperCase(),
+      natureOfAppointment: (row.nature_of_appointment || row.natureOfAppointment || 'REGULAR PERMANENT').toUpperCase(),
+      nature_of_appointment: (row.nature_of_appointment || row.natureOfAppointment || 'REGULAR PERMANENT').toUpperCase(),
+      hiringArrangement: (row.hiring_arrangement || row.hiringArrangement || 'REGULAR').toUpperCase(),
+      deploymentStatus: (row.status__item_ || row.deploymentStatus || row.deployment_status || 'OWN STATION').toUpperCase(),
+      deployment_status: (row.status__item_ || row.deploymentStatus || row.deployment_status || 'OWN STATION').toUpperCase(),
+      assignedSchools: row.assignedSchools || row.assigned_schools || [],
+      assigned_schools: row.assignedSchools || row.assigned_schools || [],
+      gradeLevelsTaught: row.gradeLevelsTaught || row.grade_levels_taught || row.assignedGradeLevels || row.assigned_grade_levels || [],
+      grade_levels_taught: row.gradeLevelsTaught || row.grade_levels_taught || row.assignedGradeLevels || row.assigned_grade_levels || [],
+      assignedGradeLevels: row.gradeLevelsTaught || row.grade_levels_taught || row.assignedGradeLevels || row.assigned_grade_levels || [],
+      assigned_grade_levels: row.gradeLevelsTaught || row.grade_levels_taught || row.assignedGradeLevels || row.assigned_grade_levels || [],
       firstServiceDate: firstApptDate,
       lastPromotionDate: firstApptDate,
       newStationDate: stationDate || firstApptDate,
@@ -529,17 +548,25 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       collegeDegree: String(degree).toUpperCase(),
       college_degree: String(degree).toUpperCase(),
       major: String(major).toUpperCase(),
-      minor: 'N/A',
+      minor: String(minor).toUpperCase(),
+      highestEducationalAttainment: String(highestAttainment).toUpperCase(),
+      highest_educational_attainment: String(highestAttainment).toUpperCase(),
+      degreeRows: degreeRows,
+      collegeDegrees: degreeRows,
       postGraduateDegree: String(postGrad).toUpperCase(),
       post_graduate_degree: String(postGrad).toUpperCase(),
-      eligibility: [elig],
+      postGraduateDiscipline: typeof postGradDisc === 'string' ? postGradDisc : JSON.stringify(postGradDisc),
+      post_graduate_discipline: typeof postGradDisc === 'string' ? postGradDisc : JSON.stringify(postGradDisc),
+      eligibility: elig,
+      prcSpecialization: String(prcSpec).toUpperCase(),
+      prc_specialization: String(prcSpec).toUpperCase(),
 
-      workloadRows: [],
-      neapTrainingRows: [],
-      certificationRows: [],
-      otherTrainingRows: [],
-      learningAreaMap: {},
-      designations: []
+      workloadRows: Array.isArray(row.workloadRows) ? row.workloadRows : [],
+      neapTrainingRows: Array.isArray(row.neapTrainingRows) ? row.neapTrainingRows : [],
+      certificationRows: Array.isArray(row.certificationRows) ? row.certificationRows : [],
+      otherTrainingRows: Array.isArray(row.otherTrainingRows) ? row.otherTrainingRows : [],
+      learningAreaMap: row.learningAreaMap || row.matrixData || row.matrix_data || {},
+      designations: Array.isArray(row.designations) ? row.designations : []
     });
   }
 
@@ -1079,7 +1106,14 @@ router.get('/', async (req, res) => {
           collegeDegree: m.collegeDegree || dbMatch.collegeDegree,
           college_degree: m.college_degree || dbMatch.college_degree,
           major: m.major || dbMatch.major,
-          eligibility: m.eligibility || dbMatch.eligibility,
+          minor: m.minor || dbMatch.minor || 'N/A',
+          highestEducationalAttainment: m.highestEducationalAttainment || dbMatch.highestEducationalAttainment,
+          highest_educational_attainment: m.highest_educational_attainment || dbMatch.highest_educational_attainment,
+          degreeRows: (Array.isArray(m.degreeRows) && m.degreeRows.length > 0) ? m.degreeRows : (dbMatch.degreeRows || []),
+          collegeDegrees: (Array.isArray(m.collegeDegrees) && m.collegeDegrees.length > 0) ? m.collegeDegrees : (dbMatch.collegeDegrees || []),
+          prcSpecialization: m.prcSpecialization || dbMatch.prcSpecialization,
+          prc_specialization: m.prc_specialization || dbMatch.prc_specialization,
+          eligibility: (Array.isArray(m.eligibility) && m.eligibility.length > 0) ? m.eligibility : dbMatch.eligibility,
           workloadRows: Array.isArray(dbMatch.workloadRows) ? dbMatch.workloadRows : (m.workloadRows || []),
           designations: (Array.isArray(dbMatch.designations) && dbMatch.designations.length > 0) ? dbMatch.designations : (m.designations || []),
           trainings: (Array.isArray(dbMatch.trainings) && dbMatch.trainings.length > 0) ? dbMatch.trainings : (m.trainings || [])
@@ -1088,6 +1122,16 @@ router.get('/', async (req, res) => {
           ...dbMatch,
           position: dbMatch.position || m.position,
           position_title: dbMatch.position_title || m.position_title || m.position,
+          collegeDegree: dbMatch.collegeDegree || dbMatch.college_degree || m.collegeDegree || m.college_degree || '',
+          college_degree: dbMatch.college_degree || dbMatch.collegeDegree || m.college_degree || m.collegeDegree || '',
+          major: dbMatch.major || m.major || '',
+          minor: dbMatch.minor || m.minor || 'N/A',
+          highestEducationalAttainment: dbMatch.highestEducationalAttainment || dbMatch.highest_educational_attainment || m.highestEducationalAttainment || m.highest_educational_attainment || '',
+          highest_educational_attainment: dbMatch.highest_educational_attainment || dbMatch.highestEducationalAttainment || m.highest_educational_attainment || m.highestEducationalAttainment || '',
+          degreeRows: (Array.isArray(dbMatch.degreeRows) && dbMatch.degreeRows.length > 0) ? dbMatch.degreeRows : (m.degreeRows || []),
+          collegeDegrees: (Array.isArray(dbMatch.collegeDegrees) && dbMatch.collegeDegrees.length > 0) ? dbMatch.collegeDegrees : (m.collegeDegrees || []),
+          prcSpecialization: dbMatch.prcSpecialization || dbMatch.prc_specialization || m.prcSpecialization || m.prc_specialization || '',
+          prc_specialization: dbMatch.prc_specialization || dbMatch.prcSpecialization || m.prc_specialization || m.prcSpecialization || '',
           workloadRows: Array.isArray(dbMatch.workloadRows) ? dbMatch.workloadRows : (m.workloadRows || [])
         };
 
@@ -2128,7 +2172,7 @@ router.put('/:id', async (req, res) => {
     }
 
     const currentRes = await client.query(
-      `SELECT * FROM esf7_personnel_profile WHERE id = $1 LIMIT 1`,
+      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR prn = $1 LIMIT 1`,
       [req.params.id]
     );
 
@@ -2227,7 +2271,7 @@ router.put('/:id', async (req, res) => {
       finalAllowEmailDiscrepancy,
       isTargetHead,
       JSON.stringify(req.body),
-      req.params.id
+      current.id
     ];
 
     const profileRes = await client.query(updateProfileQuery, profileValues);

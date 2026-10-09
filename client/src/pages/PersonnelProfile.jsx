@@ -3,6 +3,7 @@ import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import PortalHeader from '../components/PortalHeader';
 import useDirtyGuard from '../hooks/useDirtyGuard';
+import { confirmServerDraftSaved } from '../services/screenSave';
 import { api } from '../services/api';
 import { 
   FiCreditCard, 
@@ -1417,10 +1418,12 @@ export default function PersonnelProfile() {
     }
   }, [dbPerson]);
 
+  const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   const { confirmAction } = useDirtyGuard({
     screenId: 'personnel_profile',
     isDirty,
-    onDiscard: handleDiscard
+    onDiscard: handleDiscard,
+    onSave: () => runSaveRef.current()
   });
 
   useEffect(() => {
@@ -2121,7 +2124,9 @@ export default function PersonnelProfile() {
 
 
 
-  const handleSave = async () => {
+  // The one Personnel Profile save, used by the header Save button AND the unsaved-changes dialog's Save button.
+  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  const runProfileSave = async () => {
     try {
       const recordsToSave = [];
 
@@ -2129,8 +2134,7 @@ export default function PersonnelProfile() {
       if (currentPerson && (currentPersonDirty || (editPerson && JSON.stringify(editPerson) !== JSON.stringify(dbPerson)))) {
         const conflict = checkSchoolHeadConflict(currentPerson);
         if (conflict) {
-          await showAlert("School Head Conflict", conflict);
-          return;
+          return { ok: false, title: 'School Head Conflict', message: conflict };
         }
         recordsToSave.push(currentPerson);
       }
@@ -2147,13 +2151,35 @@ export default function PersonnelProfile() {
         }
       });
 
-      if (recordsToSave.length === 0) return;
+      if (recordsToSave.length === 0) return { ok: true };
 
       // 3. Save ONLY the changed records to database
       for (const p of recordsToSave) {
         if (typeof savePersonnelChanges === 'function') {
           await savePersonnelChanges(p.id, p);
         }
+        if (api && api.savePersonnelNode) {
+          api.savePersonnelNode(p.id, 'profile', {
+            schoolYear: schoolInfo?.schoolYear || 'SY 26-27',
+            personnelName: `${p.lastName || ''}, ${p.firstName || ''}`,
+            positionTitle: p.position || p.position_title || '',
+            category: p.positionCategory || p.position_category || 'TEACHING',
+            isSchoolHead: !!p.isSchoolHead,
+            isComplete: true,
+            payload: {
+              status: 'COMPLETED',
+              degrees: p.degreeRows || p.collegeDegrees || [],
+              highest_educational_attainment: p.highestEducationalAttainment || p.highest_educational_attainment || ''
+            }
+          }).catch(err => console.warn('[savePersonnelNode notice]:', err.message));
+        }
+      }
+
+      // Success is reported, and the local drafts cleared, only after the server confirmed the database write.
+      const confirmed = await confirmServerDraftSaved();
+      if (!confirmed.ok) return confirmed;
+
+      for (const p of recordsToSave) {
         localStorage.removeItem(`draft_personnel_${p.id}`);
         localStorage.removeItem(`draft_learning_areas_${p.id}`);
       }
@@ -2170,10 +2196,21 @@ export default function PersonnelProfile() {
       if (showToast) {
         showToast("Personnel profile changes saved to database.", "success");
       }
+      return { ok: true };
     } catch (err) {
       console.warn("Save personnel changes error:", err);
-      if (showToast) {
-        showToast("Failed to save personnel profile: " + err.message, "error");
+      return { ok: false, title: 'Personnel Profile Not Saved', message: "Failed to save personnel profile: " + err.message };
+    }
+  };
+  runSaveRef.current = runProfileSave;
+
+  const handleSave = async () => {
+    const result = await runProfileSave();
+    if (result.ok === false) {
+      if (result.title === 'School Head Conflict') {
+        await showAlert(result.title, result.message);
+      } else if (showToast) {
+        showToast(result.message, "error");
       }
     }
   };

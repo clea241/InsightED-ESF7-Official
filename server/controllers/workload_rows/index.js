@@ -15,22 +15,22 @@ function formatWorkloadRecord(row) {
     school_id: row.school_id,
     schoolYear: row.school_year,
     school_year: row.school_year,
-    gradeLevel: row.grade_level || '',
-    grade_level: row.grade_level || '',
-    sectionId: row.section_id || null,
-    section_id: row.section_id || null,
-    sectionName: row.section_name || '',
-    section_name: row.section_name || '',
-    subject: row.subject,
-    subjectId: row.subject_id || null,
-    subject_id: row.subject_id || null,
-    remediationSubject: row.remediation_subject || '',
-    remediation_subject: row.remediation_subject || '',
-    startTime: row.start_time ? String(row.start_time).substring(0, 5) : null,
-    start_time: row.start_time ? String(row.start_time).substring(0, 5) : null,
-    endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
-    end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
-    days: row.days || ['M', 'T', 'W', 'TH', 'F'],
+    gradeLevel: row.grade_level || raw.gradeLevel || raw.grade_level || '',
+    grade_level: row.grade_level || raw.gradeLevel || raw.grade_level || '',
+    sectionId: row.section_id || raw.sectionId || raw.section_id || null,
+    section_id: row.section_id || raw.sectionId || raw.section_id || null,
+    sectionName: row.section_name || raw.sectionName || raw.section_name || '',
+    section_name: row.section_name || raw.sectionName || raw.section_name || '',
+    subject: row.subject || raw.subject || raw.subjectName || raw.subject_name || '',
+    subjectId: row.subject_id || raw.subjectId || raw.subject_id || null,
+    subject_id: row.subject_id || raw.subjectId || raw.subject_id || null,
+    remediationSubject: row.remediation_subject || raw.remediationSubject || raw.remediation_subject || '',
+    remediation_subject: row.remediation_subject || raw.remediationSubject || raw.remediation_subject || '',
+    startTime: row.start_time ? String(row.start_time).substring(0, 5) : (raw.startTime || null),
+    start_time: row.start_time ? String(row.start_time).substring(0, 5) : (raw.startTime || null),
+    endTime: row.end_time ? String(row.end_time).substring(0, 5) : (raw.endTime || null),
+    end_time: row.end_time ? String(row.end_time).substring(0, 5) : (raw.endTime || null),
+    days: row.days || raw.days || ['M', 'T', 'W', 'TH', 'F'],
     term: row.term || raw.term || '1st',
     rawPayload: raw
   };
@@ -79,7 +79,11 @@ router.get('/personnel/:personnel_id', async (req, res) => {
   try {
     const { personnel_id } = req.params;
     const result = await db.query(
-      `SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      `SELECT * FROM esf7_workload_rows 
+       WHERE personnel_id = $1 
+          OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1)
+          OR personnel_id IN (SELECT prn FROM esf7_personnel_profile WHERE id = $1 OR prn = $1)
+       ORDER BY created_at ASC`,
       [personnel_id]
     );
     res.json(result.rows.map(formatWorkloadRecord));
@@ -93,7 +97,11 @@ router.get('/personnel/:personnel_id/admin-tasks', async (req, res) => {
   try {
     const { personnel_id } = req.params;
     const result = await db.query(
-      `SELECT * FROM esf7_admin_task WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      `SELECT * FROM esf7_admin_task 
+       WHERE personnel_id = $1 
+          OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1)
+          OR personnel_id IN (SELECT prn FROM esf7_personnel_profile WHERE id = $1 OR prn = $1)
+       ORDER BY created_at ASC`,
       [personnel_id]
     );
     res.json(result.rows.map(formatAdminTaskRecord));
@@ -181,6 +189,19 @@ router.post('/', async (req, res) => {
 });
 
 // Batch replace workload rows for a personnel (supports PUT/POST /personnel/:personnel_id and POST /bulk)
+// A payload can repeat the same block id (e.g. a block copied in the editor). Keep the first one; ids that the server
+// replaces anyway (new-/wk-) may repeat freely.
+function dedupeRowsById(rows) {
+  const seen = new Set();
+  return rows.filter((r) => {
+    const id = r && r.id ? String(r.id) : '';
+    if (!id || id.startsWith('new-') || id.startsWith('wk-')) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 const saveWorkloadBatchHandler = async (req, res) => {
   const client = await db.getClient();
   try {
@@ -202,11 +223,16 @@ const saveWorkloadBatchHandler = async (req, res) => {
     const teachingRelatedRows = req.body.teachingRelatedRows !== undefined ? req.body.teachingRelatedRows : req.body.teaching_related_rows;
     const administrativeRows = req.body.administrativeRows !== undefined ? req.body.administrativeRows : req.body.administrative_rows;
 
-    const rowsToSave = Array.isArray(workloadRows) && workloadRows.length > 0
+    const rowsToSave = dedupeRowsById(Array.isArray(workloadRows) && workloadRows.length > 0
       ? workloadRows
-      : (Array.isArray(workload_rows) ? workload_rows : []);
+      : (Array.isArray(workload_rows) ? workload_rows : []));
 
     await client.query('BEGIN');
+    // Saves for the same teacher run one after another (retry / double submit / two browsers), so each full replace sees the last one's committed rows.
+    const idProbe = await client.query('SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1', [targetPersonnelId]);
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['workload:' + (idProbe.rows[0] ? idProbe.rows[0].id : String(targetPersonnelId))]);
+    // Version marker for this teacher's workload; clients compare it to detect data saved from another browser/device.
+    const workloadSavedAt = new Date().toISOString();
 
     // 1. Locate or create personnel profile record to satisfy FK
     let personRes = await client.query(
@@ -221,7 +247,15 @@ const saveWorkloadBatchHandler = async (req, res) => {
         `SELECT grade_levels_taught FROM esf7_personnel_employment WHERE personnel_id = $1 LIMIT 1`,
         [personRes.rows[0].id]
       );
-      const profileForRule = { ...personRes.rows[0], grade_levels_taught: empRes.rows[0] ? empRes.rows[0].grade_levels_taught : null };
+      const incomingGrades = req.body.assignedGradeLevels || req.body.assigned_grade_levels || req.body.gradeLevelsTaught || req.body.grade_levels_taught;
+      const profileForRule = {
+        ...personRes.rows[0],
+        grade_levels_taught: (empRes.rows[0] && empRes.rows[0].grade_levels_taught) ? empRes.rows[0].grade_levels_taught : incomingGrades,
+        raw_payload: {
+          ...(personRes.rows[0].raw_payload || {}),
+          ...(incomingGrades ? { assignedGradeLevels: incomingGrades } : {})
+        }
+      };
       const existingSaved = (personRes.rows[0].raw_payload || {}).workloadRows || [];
       const blocked = findBlockedTeachingRows(profileForRule, rowsToSave, existingSaved);
       if (blocked.length > 0) {
@@ -239,13 +273,17 @@ const saveWorkloadBatchHandler = async (req, res) => {
     let targetSchoolYear = bodySchoolYear || bodySnakeSchoolYear || '2026-2027';
 
     const targetTerm = req.body.term || (rowsToSave.length > 0 ? (rowsToSave[0].term || '1st') : null);
+    const replaceTerms = () => Array.from(new Set([
+      ...rowsToSave.map(r => r.term || targetTerm || '1st'),
+      ...(req.body.term ? [String(req.body.term)] : [])
+    ]));
 
     if (personRes.rows.length > 0) {
       targetPersonId = personRes.rows[0].id;
       targetSchoolId = bodySchoolId || bodySnakeSchoolId || personRes.rows[0].school_id || targetSchoolId;
       targetSchoolYear = bodySchoolYear || bodySnakeSchoolYear || personRes.rows[0].school_year || targetSchoolYear;
 
-      const termsInPayload = Array.from(new Set(rowsToSave.map(r => r.term || targetTerm || '1st')));
+      const termsInPayload = replaceTerms();
 
       // Update raw_payload in esf7_personnel_profile with term preservation
       const existingRaw = personRes.rows[0].raw_payload || {};
@@ -273,7 +311,8 @@ const saveWorkloadBatchHandler = async (req, res) => {
         ...existingRaw,
         workloadRows: mergedWorkloadRows,
         teachingRelatedRows: teachingRelatedRows !== undefined ? teachingRelatedRows : (existingRaw.teachingRelatedRows || existingRaw.teaching_related_rows || []),
-        administrativeRows: mergedAdminRows
+        administrativeRows: mergedAdminRows,
+        workloadSavedAt
       };
       await client.query(
         `UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`,
@@ -286,17 +325,17 @@ const saveWorkloadBatchHandler = async (req, res) => {
         INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name, raw_payload, created_at, updated_at)
         VALUES ($1, $2, $3, $4, 'TEACHER', 'STAFF', $5::jsonb, NOW(), NOW())
         ON CONFLICT (id) DO UPDATE SET raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
-      `, [targetPersonId, generatedPrn, targetSchoolId, targetSchoolYear, JSON.stringify({ workloadRows: rowsToSave, teachingRelatedRows, administrativeRows })]);
+      `, [targetPersonId, generatedPrn, targetSchoolId, targetSchoolYear, JSON.stringify({ workloadRows: rowsToSave, teachingRelatedRows, administrativeRows, workloadSavedAt })]);
     }
 
     // Clean school ID
     targetSchoolId = String(targetSchoolId).replace('SCH-', '');
 
     // 2. Delete existing workload rows for this personnel (scoped by terms present in payload to preserve other terms)
-    const termsInPayload = Array.from(new Set(rowsToSave.map(r => r.term || targetTerm || '1st')));
+    const termsInPayload = replaceTerms();
     if (termsInPayload.length > 0) {
       await client.query(
-        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND term = ANY($2::text[])`,
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND COALESCE(term, '1st') = ANY($2::text[])`,
         [targetPersonId, termsInPayload]
       );
     } else if (targetTerm) {
@@ -551,6 +590,7 @@ const saveWorkloadBatchHandler = async (req, res) => {
       success: true,
       message: `Saved ${insertedRows.length} workload rows for personnel ${targetPersonId} successfully.`,
       count: insertedRows.length,
+      workloadSavedAt,
       data: insertedRows
     });
   } catch (err) {
@@ -670,6 +710,7 @@ router.delete('/:id', async (req, res) => {
     const pId = rowRes.rows.length > 0 ? rowRes.rows[0].personnel_id : null;
 
     await db.query(`DELETE FROM esf7_workload_rows WHERE id = $1`, [req.params.id]);
+    const workloadSavedAt = new Date().toISOString();
 
     if (pId) {
       const pRes = await db.query(`SELECT raw_payload FROM esf7_personnel_profile WHERE id = $1`, [pId]);
@@ -677,14 +718,144 @@ router.delete('/:id', async (req, res) => {
         const raw = pRes.rows[0].raw_payload;
         if (Array.isArray(raw.workloadRows)) {
           raw.workloadRows = raw.workloadRows.filter(r => String(r.id) !== String(req.params.id));
+          raw.workloadSavedAt = workloadSavedAt;
           await db.query(`UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`, [JSON.stringify(raw), pId]);
         }
       }
     }
 
-    res.json({ success: true, message: `Workload row ${req.params.id} deleted successfully.` });
+    res.json({ success: true, workloadSavedAt, message: `Workload row ${req.params.id} deleted successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ───────────────────────── Source-of-truth reads and term-scoped clears ─────────────────────────
+const cleanSchool = (v) => String(v || '').replace(/^SCH-/i, '').trim();
+
+// The school is always named in the query (?schoolId=...) so the auth gate can check it against the login token.
+function requireSchoolQuery(req, res) {
+  const schoolId = cleanSchool(req.query.schoolId || req.query.school_id);
+  if (!schoolId) {
+    res.status(400).json({ error: 'schoolId is required' });
+    return null;
+  }
+  return schoolId;
+}
+
+// Loads the teacher and confirms they belong to the named school. Returns null after sending the error response.
+async function loadTeacherInSchool(runner, res, personnelId, schoolId) {
+  const r = await runner.query(
+    `SELECT id, school_id, raw_payload FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+    [personnelId]
+  );
+  if (r.rows.length === 0) {
+    res.status(404).json({ error: 'Personnel not found' });
+    return null;
+  }
+  if (cleanSchool(r.rows[0].school_id) !== schoolId) {
+    res.status(403).json({ error: 'This teacher does not belong to the named school.' });
+    return null;
+  }
+  return r.rows[0];
+}
+
+// GET one teacher's saved workload for a term plus the version marker the page uses to detect newer saved data.
+router.get('/personnel/:personnel_id/state', async (req, res) => {
+  try {
+    const schoolId = requireSchoolQuery(req, res);
+    if (!schoolId) return;
+    const teacher = await loadTeacherInSchool(db, res, req.params.personnel_id, schoolId);
+    if (!teacher) return;
+    const term = req.query.term ? String(req.query.term) : null;
+    const result = term
+      ? await db.query(`SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 AND COALESCE(term, '1st') = $2 ORDER BY created_at ASC`, [teacher.id, term])
+      : await db.query(`SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`, [teacher.id]);
+    const raw = teacher.raw_payload || {};
+    res.json({
+      personnelId: teacher.id,
+      term,
+      version: raw.workloadSavedAt || null,
+      rows: result.rows.map(formatWorkloadRecord)
+    });
+  } catch (err) {
+    console.error('[Workload State GET Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Removes one term's rows from raw_payload.workloadRows (every other term is kept) and stamps the version marker.
+// $2 = term, $3 = new marker.
+const SQL_STRIP_TERM_FROM_PAYLOAD = `
+  jsonb_set(
+    jsonb_set(
+      COALESCE(raw_payload, '{}'::jsonb),
+      '{workloadRows}',
+      COALESCE((
+        SELECT jsonb_agg(e) FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(raw_payload->'workloadRows') = 'array' THEN raw_payload->'workloadRows' ELSE '[]'::jsonb END
+        ) e WHERE COALESCE(e->>'term', '1st') <> $2
+      ), '[]'::jsonb)
+    ),
+    '{workloadSavedAt}', to_jsonb($3::text)
+  )`;
+
+// DELETE one teacher's rows for one term (workload rows, SHS rows, and the copy in the profile payload).
+router.delete('/personnel/:personnel_id/term/:term', async (req, res) => {
+  const client = await db.getClient();
+  try {
+    const schoolId = requireSchoolQuery(req, res);
+    if (!schoolId) return;
+    const term = String(req.params.term);
+    await client.query('BEGIN');
+    const teacher = await loadTeacherInSchool(client, res, req.params.personnel_id, schoolId);
+    if (!teacher) {
+      await client.query('ROLLBACK');
+      return;
+    }
+    const workloadSavedAt = new Date().toISOString();
+    const del = await client.query(`DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND COALESCE(term, '1st') = $2`, [teacher.id, term]);
+    await client.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1 AND COALESCE(term, '1st') = $2`, [teacher.id, term]);
+    await client.query(
+      `UPDATE esf7_personnel_profile SET raw_payload = ${SQL_STRIP_TERM_FROM_PAYLOAD}, updated_at = NOW() WHERE id = $1`,
+      [teacher.id, term, workloadSavedAt]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true, deleted: del.rowCount, term, workloadSavedAt });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) { /* already rolled back */ }
+    console.error('[Workload term clear (teacher) Error]:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE every teacher's rows for one term in the named school (other terms and other schools are untouched).
+router.delete('/term-clear/school', async (req, res) => {
+  const client = await db.getClient();
+  try {
+    const schoolId = requireSchoolQuery(req, res);
+    if (!schoolId) return;
+    const term = req.query.term ? String(req.query.term) : '';
+    if (!term) return res.status(400).json({ error: 'term is required' });
+    const ids = [schoolId, `SCH-${schoolId}`];
+    const workloadSavedAt = new Date().toISOString();
+    await client.query('BEGIN');
+    const del = await client.query(`DELETE FROM esf7_workload_rows WHERE school_id = ANY($1::text[]) AND COALESCE(term, '1st') = $2`, [ids, term]);
+    await client.query(`DELETE FROM esf7_shs_workload_rows WHERE school_id = ANY($1::text[]) AND COALESCE(term, '1st') = $2`, [ids, term]);
+    const upd = await client.query(
+      `UPDATE esf7_personnel_profile SET raw_payload = ${SQL_STRIP_TERM_FROM_PAYLOAD}, updated_at = NOW() WHERE school_id = ANY($1::text[])`,
+      [ids, term, workloadSavedAt]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true, deleted: del.rowCount, teachers: upd.rowCount, term, workloadSavedAt });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) { /* already rolled back */ }
+    console.error('[Workload term clear (school) Error]:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
