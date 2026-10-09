@@ -188,18 +188,22 @@ router.get('/history', async (req, res) => {
 
     const queryText = `
       SELECT * FROM esf7_requests 
-      WHERE (target_school_id = $1 OR target_school_id = $2 OR requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(target_school_id, 'SCH-', '') = $1 OR REPLACE(requester_school_id, 'SCH-', '') = $1 OR target_school_id ILIKE $3 OR requester_school_id ILIKE $3) 
+      WHERE (target_school_id IN ($1, $2) OR requester_school_id IN ($1, $2))
         AND LOWER(status) IN ('approved', 'rejected', 'cancelled') 
-      ORDER BY updated_at DESC
+      ORDER BY updated_at DESC LIMIT 500
     `;
-    const params = [cleanSchoolId, `SCH-${cleanSchoolId}`, `%${cleanSchoolId}%`];
+    const params = [cleanSchoolId, `SCH-${cleanSchoolId}`];
 
     let result = await db.query(queryText, params);
 
     // Fallback: If 0 rows found in active pool, check alternative pool
     if (result.rows.length === 0) {
       const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId) ? db.prodPool : db.stagingPool;
-      const fallbackRes = await fallbackPool.query(queryText, params).catch(() => ({ rows: [] }));
+      // Bounded so a slow secondary pool can never push the request past the gateway timeout.
+      const fallbackRes = await Promise.race([
+        fallbackPool.query(queryText, params),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('fallback timeout')), 5000))
+      ]).catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
       }

@@ -3137,14 +3137,29 @@ export const AppProvider = ({ children }) => {
       const cleanId = resolveSchoolId(targetId);
       if (!cleanId || requestsBlockedRef.current) return true;
 
-      const incoming = await api.getIncomingRequests(cleanId);
-      if (Array.isArray(incoming)) setIncomingRequests(incoming);
-      
-      const outgoing = await api.getOutgoingRequests(cleanId);
-      if (Array.isArray(outgoing)) setOutgoingRequests(outgoing);
-
-      const history = await api.getRequestHistory(cleanId);
-      if (Array.isArray(history)) setRequestHistory(history);
+      // Each list loads independently: a failure in one (e.g. a 502 on history) keeps that list's last
+      // good data and never blocks the others. Transient 502/503/504 are retried with short backoff.
+      const withRetry = async (fn) => {
+        const delays = [500, 1500];
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await fn();
+          } catch (err) {
+            const st = /** @type {any} */ (err)?.status;
+            if (![502, 503, 504].includes(st) || attempt >= delays.length || requestsBlockedRef.current) throw err;
+            await new Promise(r => setTimeout(r, delays[attempt]));
+          }
+        }
+      };
+      const results = await Promise.allSettled([
+        withRetry(() => api.getIncomingRequests(cleanId)),
+        withRetry(() => api.getOutgoingRequests(cleanId)),
+        withRetry(() => api.getRequestHistory(cleanId))
+      ]);
+      const setters = [setIncomingRequests, setOutgoingRequests, setRequestHistory];
+      results.forEach((r, i) => { if (r.status === 'fulfilled' && Array.isArray(r.value)) setters[i](r.value); });
+      const failed = /** @type {PromiseRejectedResult | undefined} */ (results.find(r => r.status === 'rejected'));
+      if (failed) throw failed.reason;
       clearDraftError();
       return true;
     } catch (e) {
