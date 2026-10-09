@@ -767,6 +767,18 @@ export const api = {
     if (!res.ok) throw new Error('Failed to acknowledge room submissions');
     return parseJsonOrThrow(res);
   },
+  acceptRoomSubmissions: async ({ schoolId, submissions = [], submission, selectedFields }) => {
+    const res = await fetch(`${API_BASE}/room-profiling/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolId, submissions, submission, selectedFields })
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error || `Failed to accept room submissions (HTTP ${res.status})`);
+    }
+    return parseJsonOrThrow(res);
+  },
   getProfilingSnapshots: async (schoolId = '199998') => {
     const res = await fetch(`${API_BASE}/room-profiling/snapshots?schoolId=${encodeURIComponent(schoolId)}`);
     if (!res.ok) throw new Error('Failed to fetch snapshots');

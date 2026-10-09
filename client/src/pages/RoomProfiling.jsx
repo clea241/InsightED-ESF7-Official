@@ -125,14 +125,15 @@ export const getEffectivePostGradDisciplines = (p) => {
     }
   }
 
-  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && p.mastersDiscipline) {
-    const list = String(p.mastersDiscipline).split(',').map(s => s.trim()).filter(Boolean);
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && (p.mastersDiscipline || p.masters_discipline)) {
+    const list = String(p.mastersDiscipline || p.masters_discipline).split(',').map(s => s.trim()).filter(Boolean);
     const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
     if (attainment === "MASTER'S DEGREE (WITH UNITS)") mastersWithUnits = list;
     else mastersGraduated = list;
   }
-  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && p.doctorateDiscipline) {
-    const list = String(p.doctorateDiscipline).split(',').map(s => s.trim()).filter(Boolean);
+  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && (p.doctorateDiscipline || p.doctorate_discipline || p.phdDiscipline || p.phd_discipline)) {
+    const docDisc = p.doctorateDiscipline || p.doctorate_discipline || p.phdDiscipline || p.phd_discipline;
+    const list = String(docDisc).split(',').map(s => s.trim()).filter(Boolean);
     const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
     if (attainment === "DOCTORATE DEGREE (WITH UNITS)") doctorateWithUnits = list;
     else doctorateGraduated = list;
@@ -1220,6 +1221,34 @@ export default function RoomProfiling() {
         mastersGraduatedDisciplines: pgDiscs.mastersGraduated,
         doctorateWithUnitsDisciplines: pgDiscs.doctorateWithUnits,
         doctorateGraduatedDisciplines: pgDiscs.doctorateGraduated,
+        mastersDisciplines: [...new Set([...pgDiscs.mastersWithUnits, ...pgDiscs.mastersGraduated])],
+        doctorateDisciplines: [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])],
+        mastersDiscipline: draftData.mastersDiscipline || draftData.masters_discipline || sourceTeacher.mastersDiscipline || sourceTeacher.masters_discipline || [...new Set([...pgDiscs.mastersWithUnits, ...pgDiscs.mastersGraduated])].join(', '),
+        masters_discipline: draftData.mastersDiscipline || draftData.masters_discipline || sourceTeacher.mastersDiscipline || sourceTeacher.masters_discipline || [...new Set([...pgDiscs.mastersWithUnits, ...pgDiscs.mastersGraduated])].join(', '),
+        doctorateDiscipline: draftData.doctorateDiscipline || draftData.doctorate_discipline || draftData.phdDiscipline || draftData.phd_discipline || sourceTeacher.doctorateDiscipline || sourceTeacher.doctorate_discipline || sourceTeacher.phdDiscipline || sourceTeacher.phd_discipline || [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])].join(', '),
+        doctorate_discipline: draftData.doctorateDiscipline || draftData.doctorate_discipline || draftData.phdDiscipline || draftData.phd_discipline || sourceTeacher.doctorateDiscipline || sourceTeacher.doctorate_discipline || sourceTeacher.phdDiscipline || sourceTeacher.phd_discipline || [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])].join(', '),
+        phdDiscipline: draftData.doctorateDiscipline || draftData.doctorate_discipline || draftData.phdDiscipline || draftData.phd_discipline || sourceTeacher.doctorateDiscipline || sourceTeacher.doctorate_discipline || sourceTeacher.phdDiscipline || sourceTeacher.phd_discipline || [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])].join(', '),
+        phd_discipline: draftData.doctorateDiscipline || draftData.doctorate_discipline || draftData.phdDiscipline || draftData.phd_discipline || sourceTeacher.doctorateDiscipline || sourceTeacher.doctorate_discipline || sourceTeacher.phdDiscipline || sourceTeacher.phd_discipline || [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])].join(', '),
+        postGraduateDiscipline: typeof (draftData.postGraduateDiscipline || draftData.post_graduate_discipline || sourceTeacher.postGraduateDiscipline || sourceTeacher.post_graduate_discipline) === 'object'
+          ? JSON.stringify(draftData.postGraduateDiscipline || draftData.post_graduate_discipline || sourceTeacher.postGraduateDiscipline || sourceTeacher.post_graduate_discipline)
+          : (draftData.postGraduateDiscipline || draftData.post_graduate_discipline || sourceTeacher.postGraduateDiscipline || sourceTeacher.post_graduate_discipline || JSON.stringify({
+              mastersWithUnits: pgDiscs.mastersWithUnits,
+              mastersGraduated: pgDiscs.mastersGraduated,
+              doctorateWithUnits: pgDiscs.doctorateWithUnits,
+              doctorateGraduated: pgDiscs.doctorateGraduated,
+              masters: [...new Set([...pgDiscs.mastersWithUnits, ...pgDiscs.mastersGraduated])],
+              doctorate: [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])]
+            })),
+        post_graduate_discipline: typeof (draftData.postGraduateDiscipline || draftData.post_graduate_discipline || sourceTeacher.postGraduateDiscipline || sourceTeacher.post_graduate_discipline) === 'object'
+          ? JSON.stringify(draftData.postGraduateDiscipline || draftData.post_graduate_discipline || sourceTeacher.postGraduateDiscipline || sourceTeacher.post_graduate_discipline)
+          : (draftData.postGraduateDiscipline || draftData.post_graduate_discipline || sourceTeacher.postGraduateDiscipline || sourceTeacher.post_graduate_discipline || JSON.stringify({
+              mastersWithUnits: pgDiscs.mastersWithUnits,
+              mastersGraduated: pgDiscs.mastersGraduated,
+              doctorateWithUnits: pgDiscs.doctorateWithUnits,
+              doctorateGraduated: pgDiscs.doctorateGraduated,
+              masters: [...new Set([...pgDiscs.mastersWithUnits, ...pgDiscs.mastersGraduated])],
+              doctorate: [...new Set([...pgDiscs.doctorateWithUnits, ...pgDiscs.doctorateGraduated])]
+            })),
         eligibility: draftData.eligibility || sourceTeacher.eligibility || 'LICENSURE EXAMINATION FOR TEACHERS',
         prcSpecialization: draftData.prcSpecialization || sourceTeacher.prcSpecialization || sourceTeacher.prc_specialization || '',
         neapTrainingRows: neapRows,
@@ -1735,6 +1764,98 @@ export default function RoomProfiling() {
           new_station_date: formData.newStationDate || formData.firstServiceDate || 'N/A',
           lastLateralMovementDate: formData.lastLateralMovementDate || 'N/A',
           last_lateral_movement_date: formData.lastLateralMovementDate || 'N/A',
+          mastersWithUnitsDisciplines: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            return ep.mastersWithUnits || [];
+          })(),
+          mastersGraduatedDisciplines: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            return ep.mastersGraduated || [];
+          })(),
+          doctorateWithUnitsDisciplines: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            return ep.doctorateWithUnits || [];
+          })(),
+          doctorateGraduatedDisciplines: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            return ep.doctorateGraduated || [];
+          })(),
+          mastersDisciplines: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            return [...new Set([...(ep.mastersWithUnits || []), ...(ep.mastersGraduated || [])])];
+          })(),
+          doctorateDisciplines: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            return [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+          })(),
+          mastersDiscipline: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allM = [...new Set([...(ep.mastersWithUnits || []), ...(ep.mastersGraduated || [])])];
+            return formData.mastersDiscipline || formData.masters_discipline || (allM.length > 0 ? allM.join(', ') : '');
+          })(),
+          masters_discipline: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allM = [...new Set([...(ep.mastersWithUnits || []), ...(ep.mastersGraduated || [])])];
+            return formData.mastersDiscipline || formData.masters_discipline || (allM.length > 0 ? allM.join(', ') : '');
+          })(),
+          doctorateDiscipline: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allD = [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+            return formData.doctorateDiscipline || formData.doctorate_discipline || formData.phdDiscipline || formData.phd_discipline || (allD.length > 0 ? allD.join(', ') : '');
+          })(),
+          doctorate_discipline: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allD = [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+            return formData.doctorateDiscipline || formData.doctorate_discipline || formData.phdDiscipline || formData.phd_discipline || (allD.length > 0 ? allD.join(', ') : '');
+          })(),
+          phdDiscipline: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allD = [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+            return formData.doctorateDiscipline || formData.doctorate_discipline || formData.phdDiscipline || formData.phd_discipline || (allD.length > 0 ? allD.join(', ') : '');
+          })(),
+          phd_discipline: (() => {
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allD = [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+            return formData.doctorateDiscipline || formData.doctorate_discipline || formData.phdDiscipline || formData.phd_discipline || (allD.length > 0 ? allD.join(', ') : '');
+          })(),
+          postGraduateDiscipline: (() => {
+            if (typeof formData.postGraduateDiscipline === 'string' && formData.postGraduateDiscipline.startsWith('{')) {
+              return formData.postGraduateDiscipline;
+            }
+            if (typeof formData.post_graduate_discipline === 'string' && formData.post_graduate_discipline.startsWith('{')) {
+              return formData.post_graduate_discipline;
+            }
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allM = [...new Set([...(ep.mastersWithUnits || []), ...(ep.mastersGraduated || [])])];
+            const allD = [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+            return JSON.stringify({
+              mastersWithUnits: ep.mastersWithUnits || [],
+              mastersGraduated: ep.mastersGraduated || [],
+              doctorateWithUnits: ep.doctorateWithUnits || [],
+              doctorateGraduated: ep.doctorateGraduated || [],
+              masters: allM,
+              doctorate: allD
+            });
+          })(),
+          post_graduate_discipline: (() => {
+            if (typeof formData.postGraduateDiscipline === 'string' && formData.postGraduateDiscipline.startsWith('{')) {
+              return formData.postGraduateDiscipline;
+            }
+            if (typeof formData.post_graduate_discipline === 'string' && formData.post_graduate_discipline.startsWith('{')) {
+              return formData.post_graduate_discipline;
+            }
+            const ep = getEffectivePostGradDisciplines(formData);
+            const allM = [...new Set([...(ep.mastersWithUnits || []), ...(ep.mastersGraduated || [])])];
+            const allD = [...new Set([...(ep.doctorateWithUnits || []), ...(ep.doctorateGraduated || [])])];
+            return JSON.stringify({
+              mastersWithUnits: ep.mastersWithUnits || [],
+              mastersGraduated: ep.mastersGraduated || [],
+              doctorateWithUnits: ep.doctorateWithUnits || [],
+              doctorateGraduated: ep.doctorateGraduated || [],
+              masters: allM,
+              doctorate: allD
+            });
+          })(),
           school_id: activeSchoolId,
           lastVerifiedAt: new Date().toISOString()
         }
@@ -2878,7 +2999,11 @@ export default function RoomProfiling() {
                     mastersDisciplines: allMasters,
                     doctorateDisciplines: allDoctorate,
                     mastersDiscipline: allMasters.join(', '),
+                    masters_discipline: allMasters.join(', '),
                     doctorateDiscipline: allDoctorate.join(', '),
+                    doctorate_discipline: allDoctorate.join(', '),
+                    phdDiscipline: allDoctorate.join(', '),
+                    phd_discipline: allDoctorate.join(', '),
                     postGraduateDiscipline: jsonStr,
                     post_graduate_discipline: jsonStr
                   });

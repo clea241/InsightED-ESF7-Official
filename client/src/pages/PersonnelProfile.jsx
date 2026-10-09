@@ -173,14 +173,15 @@ export const getEffectivePostGradDisciplines = (p) => {
     }
   }
 
-  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && p.mastersDiscipline) {
-    const list = String(p.mastersDiscipline).split(',').map(s => s.trim()).filter(Boolean);
+  if (mastersWithUnits.length === 0 && mastersGraduated.length === 0 && (p.mastersDiscipline || p.masters_discipline)) {
+    const list = String(p.mastersDiscipline || p.masters_discipline).split(',').map(s => s.trim()).filter(Boolean);
     const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
     if (attainment === "MASTER'S DEGREE (WITH UNITS)") mastersWithUnits = list;
     else mastersGraduated = list;
   }
-  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && p.doctorateDiscipline) {
-    const list = String(p.doctorateDiscipline).split(',').map(s => s.trim()).filter(Boolean);
+  if (doctorateWithUnits.length === 0 && doctorateGraduated.length === 0 && (p.doctorateDiscipline || p.doctorate_discipline || p.phdDiscipline || p.phd_discipline)) {
+    const docDisc = p.doctorateDiscipline || p.doctorate_discipline || p.phdDiscipline || p.phd_discipline;
+    const list = String(docDisc).split(',').map(s => s.trim()).filter(Boolean);
     const attainment = String(p.highestEducationalAttainment || '').toUpperCase();
     if (attainment === "DOCTORATE DEGREE (WITH UNITS)") doctorateWithUnits = list;
     else doctorateGraduated = list;
@@ -520,10 +521,10 @@ export const getPersonnelValidationChecklist = (p) => {
 
   const postGrads = getEffectivePostGradDisciplines(p);
   if (attainment.includes("MASTER")) {
-    const hasDisc = postGrads.mastersWithUnits.length > 0 || postGrads.mastersGraduated.length > 0 || (Array.isArray(p.mastersDisciplines) && p.mastersDisciplines.length > 0) || !!p.mastersDiscipline?.trim();
+    const hasDisc = postGrads.mastersWithUnits.length > 0 || postGrads.mastersGraduated.length > 0 || (Array.isArray(p.mastersDisciplines) && p.mastersDisciplines.length > 0) || !!p.mastersDiscipline?.trim() || !!p.masters_discipline?.trim();
     check('postGraduateDiscipline', "Master's Discipline", hasDisc, "Education", "education");
   } else if (attainment.includes("DOCTOR")) {
-    const hasDisc = postGrads.doctorateWithUnits.length > 0 || postGrads.doctorateGraduated.length > 0 || (Array.isArray(p.doctorateDisciplines) && p.doctorateDisciplines.length > 0) || !!p.doctorateDiscipline?.trim();
+    const hasDisc = postGrads.doctorateWithUnits.length > 0 || postGrads.doctorateGraduated.length > 0 || (Array.isArray(p.doctorateDisciplines) && p.doctorateDisciplines.length > 0) || !!p.doctorateDiscipline?.trim() || !!p.doctorate_discipline?.trim() || !!p.phdDiscipline?.trim() || !!p.phd_discipline?.trim();
     check('doctorateDiscipline', "Doctorate Discipline", hasDisc, "Education", "education");
   }
 

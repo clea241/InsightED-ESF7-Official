@@ -9,12 +9,15 @@ import { resolveSchoolId } from '../services/session';
 import { versionOf, dedupeWorkloadRows, compareDraftToDatabase } from '../services/workloadMerge';
 import { retryTransient, verifySavedRows, editedSinceSent } from '../services/workloadSave';
 import { showWorkloadRestoreModal } from '../services/dirtyGuard';
+import { reportError } from '../services/errorAlert';
+import { isAllowanceDisabled, isAllowanceActive, hasActiveAllowance, ALLOWANCE_KEYS } from '@shared/allowances.js';
 import { 
   FiUser, FiGrid, FiTrash2, FiCheck, FiFileText, FiCalendar, FiAlertCircle, 
   FiAlertTriangle, FiBriefcase, FiList, FiLock, FiUnlock, FiBookOpen, FiBook, 
   FiClock, FiPlus, FiX, FiBarChart2, FiSearch, FiFilter, FiCheckCircle, 
   FiChevronRight, FiCopy, FiDownload, FiTrendingUp, FiBookmark, FiArrowRight, 
-  FiSliders, FiCheckSquare, FiSave, FiMove, FiRotateCcw, FiRotateCw
+  FiSliders, FiCheckSquare, FiSave, FiMove, FiRotateCcw, FiRotateCw,
+  FiAward, FiSlash, FiSquare, FiInfo
 } from 'react-icons/fi';
 
 // What happened to the draft check for each teacher + term since this page was loaded (reset by a browser reload):
@@ -1269,7 +1272,7 @@ const SearchableSelect = ({ value, onChange, options = [], disabled = false, pla
   });
 
   const filteredOptions = Array.from(uniqueOptionsMap.values()).filter(opt =>
-    (opt.label || '').toLowerCase().includes(search.toLowerCase())
+    String(opt?.label || '').toLowerCase().includes(String(search || '').toLowerCase())
   );
 
   const handleSelect = (val) => {
@@ -1284,6 +1287,7 @@ const SearchableSelect = ({ value, onChange, options = [], disabled = false, pla
           type="text"
           value={isOpen ? search : (selectedOption ? selectedOption.label : '')}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.stopPropagation()}
           onFocus={handleInputFocus}
           placeholder={placeholder}
           disabled={disabled}
@@ -4163,12 +4167,15 @@ function WorkloadGanttScheduleView({
   // Multi-cell selection state for Ctrl+Click / Cmd+Click
   const [selectedCellKeys, setSelectedCellKeys] = useState(new Set());
 
-  // Reset undo/redo stack and multi-selection on teacher switch
+  // Reset undo/redo stack, multi-selection, and block selection on teacher switch
   useEffect(() => {
     setUndoStack([]);
     setRedoStack([]);
     setSelectedCellKeys(new Set());
-  }, [currentPerson?.id, activePersonnelId]);
+    if (typeof setSelectedBlockIdx === 'function') {
+      setSelectedBlockIdx(null);
+    }
+  }, [currentPerson?.id, activePersonnelId, setSelectedBlockIdx]);
 
   // Auto-heal SNED, ALS, ARAL, Remedial/Enrichment, and Regular ADVISORY workloads & deduplicate
   useEffect(() => {
@@ -5258,7 +5265,7 @@ function WorkloadGanttScheduleView({
   };
 
   const rawRows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
-  const selectedRow = (selectedBlockIdx !== null && rawRows[selectedBlockIdx]) ? rawRows[selectedBlockIdx] : null;
+  const selectedRow = (selectedBlockIdx !== null && selectedBlockIdx >= 0 && selectedBlockIdx < (rawRows || []).length && rawRows[selectedBlockIdx]) ? rawRows[selectedBlockIdx] : null;
 
   // Copy Section Only (Ctrl+C): Copies sectionId, sectionName, gradeLevel, category, days (and preserves ADVISORY if copying Advisory)
   const handleCopySelectedSection = useCallback(() => {
@@ -5426,7 +5433,7 @@ function WorkloadGanttScheduleView({
   useEffect(() => {
     const handleKeyDown = (e) => {
       const tag = (e.target?.tagName || '').toUpperCase();
-      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable || Boolean(e.target?.closest?.('input, textarea, select, [contenteditable="true"]'));
       if (isEditable) return;
       if (dragState) return;
 
@@ -7283,7 +7290,186 @@ function WorkloadGanttScheduleView({
 }
 
 
-export default function Workload() {
+// ── WORKLOAD ERROR BOUNDARY ──
+class WorkloadErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, errorInfo: null, copied: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
+    reportError(error, {
+      title: 'Workload Screen Crashed',
+      action: 'Rendering Workload Timetable & Teacher View',
+      handler: (errorInfo?.componentStack ? errorInfo.componentStack.split('\n').map(s => s.trim()).filter(Boolean)[0] : '') || 'Workload',
+      source: 'Workload React Render Error'
+    });
+  }
+
+  handleCopyDetails = async () => {
+    const { error, errorInfo } = this.state;
+    const text = [
+      'InsightED eSF7 - Workload Render Error Details',
+      `Time: ${new Date().toISOString()}`,
+      `Error: ${error?.name || 'Error'}: ${error?.message || 'Unknown error'}`,
+      `Component Stack:`,
+      errorInfo?.componentStack || '(no component stack)',
+      '',
+      `Error Stack:`,
+      error?.stack || '(no error stack)'
+    ].join('\n');
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        this.setState({ copied: true });
+        setTimeout(() => this.setState({ copied: false }), 2500);
+        return;
+      }
+    } catch (e) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      this.setState({ copied: true });
+      setTimeout(() => this.setState({ copied: false }), 2500);
+    } catch (e) {}
+  };
+
+  handleReset = () => {
+    this.setState({ error: null, errorInfo: null, copied: false });
+  };
+
+  render() {
+    if (this.state.error) {
+      const err = this.state.error;
+      const stack = this.state.errorInfo?.componentStack || err.stack || '';
+      return (
+        <div style={{ padding: '32px 24px', maxWidth: '840px', margin: '40px auto' }}>
+          <div
+            role="alert"
+            style={{
+              background: '#FFFBEB',
+              border: '1.5px solid #FCD34D',
+              borderRadius: '16px',
+              padding: '28px 32px',
+              boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.1), 0 8px 10px -6px rgba(245, 158, 11, 0.05)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '16px' }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#FEE2E2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FiAlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '800', color: '#78350F' }}>
+                  Workload View Encountered an Error
+                </h3>
+                <p style={{ margin: 0, fontSize: '13.5px', color: '#92400E', lineHeight: 1.5 }}>
+                  The workload view crashed while rendering. Your saved timetable data is preserved. Exact technical details were captured and sent to the global alert dialog.
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: '10px',
+              padding: '14px 16px',
+              marginBottom: '20px',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              fontSize: '12px',
+              color: '#0F172A',
+              overflowX: 'auto',
+              maxHeight: '220px',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}>
+              <strong style={{ color: '#DC2626', display: 'block', marginBottom: '6px' }}>
+                {err.name || 'Error'}: {err.message || 'Unknown render error'}
+              </strong>
+              {stack && (
+                <div style={{ fontSize: '11px', color: '#64748B', lineHeight: 1.45 }}>
+                  {stack.slice(0, 1500)}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={this.handleReset}
+                style={{
+                  background: '#0284C7',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '9px 18px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <FiRotateCcw size={14} /> Try Again
+              </button>
+              <button
+                type="button"
+                onClick={this.handleCopyDetails}
+                style={{
+                  background: this.state.copied ? '#15803D' : '#FFFFFF',
+                  color: this.state.copied ? '#FFFFFF' : '#334155',
+                  border: '1.5px solid',
+                  borderColor: this.state.copied ? '#15803D' : '#CBD5E1',
+                  borderRadius: '8px',
+                  padding: '9px 18px',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <FiCopy size={14} /> {this.state.copied ? 'Copied ✓' : 'Copy Details'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                style={{
+                  background: '#F1F5F9',
+                  color: '#475569',
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: '8px',
+                  padding: '9px 16px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Reload Page
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function WorkloadInner() {
   const {
     personnel,
     setPersonnel,
@@ -7316,7 +7502,12 @@ export default function Workload() {
     incomingRequests,
     outgoingRequests,
     requestHistory,
-    refreshRequests
+    refreshRequests,
+    allowancesMap,
+    fetchAllowances,
+    toggleAllowance,
+    setAllowanceDisabled,
+    currentSchoolYear
   } = useApp();
 
 
@@ -7933,52 +8124,85 @@ export default function Workload() {
   // add60MinutesToTime is exported at module level (top of file)
 
   const getAssignedGradeLevels = (p) => {
-    if (!p) return [];
+    if (!p || typeof p !== 'object') return [];
     let raw = p.assignedGradeLevels || p.assigned_grade_levels || p.gradeLevelsTaught || p.grade_levels_taught;
     if (typeof raw === 'string') {
       try {
         raw = JSON.parse(raw);
       } catch (e) {
-        raw = raw.split(',').map(s => s.trim());
+        raw = raw.split(',').map(s => String(s || '').trim()).filter(Boolean);
       }
     }
-    const assigned = Array.isArray(raw) ? raw.filter(Boolean) : [];
+    const assigned = Array.isArray(raw) ? raw.filter(Boolean).map(String) : [];
     const organized = getOrganizedClassGradeLevels(p, classSections);
     return organized.length > 0 ? [...new Set([...assigned, ...organized])] : assigned;
   };
 
   // Filter people list based on search query, grade level, and category (teaching / teaching-related)
-  const filteredPeople = personnel.filter(p => {
-    if (p.isDraft) return false;
+  const filteredPeople = useMemo(() => {
+    if (!Array.isArray(personnel)) return [];
+    const query = String(teacherSearch || '').toLowerCase().trim();
 
-    // 1. Search filter
-    const fullName = `${p.firstName} ${p.lastName}`.toLowerCase();
-    const position = (p.position || '').toLowerCase();
-    const query = teacherSearch.toLowerCase().trim();
-    const matchesSearch = fullName.includes(query) || position.includes(query);
+    return personnel.filter(p => {
+      if (!p || typeof p !== 'object' || p.isDraft) return false;
 
-    // 2. Category filter
-    const matchesCat = categoryFilter === 'all' || p.type === categoryFilter;
+      // 1. Search filter (safe against null, undefined, non-string positions)
+      const firstName = String(p.firstName || '').toLowerCase().trim();
+      const lastName = String(p.lastName || '').toLowerCase().trim();
+      const middleName = String(p.middleName || '').toLowerCase().trim();
+      const fullName = `${firstName} ${lastName}`.trim();
+      const position = String(p.position || p.plantilla_position || p.position_title || '').toLowerCase().trim();
 
-    // 3. Grade Level filter
-    let matchesGrade = true;
-    if (gradeFilter !== 'all') {
-      if (p.type === 'non-teaching') {
-        matchesGrade = false;
-      } else {
-        const assigned = getAssignedGradeLevels(p);
-        const rowGrades = (p.workloadRows || []).map(r => r.gradeLevel).filter(Boolean);
-        matchesGrade = assigned.includes(gradeFilter) || rowGrades.includes(gradeFilter);
+      let matchesSearch = true;
+      if (query) {
+        matchesSearch = fullName.includes(query) || position.includes(query) || middleName.includes(query);
       }
-    }
 
-    return matchesSearch && matchesCat && matchesGrade;
-  });
+      // 2. Category filter
+      const matchesCat = categoryFilter === 'all' || p.type === categoryFilter;
 
-  const dbPerson = (personnel || []).find(p => String(p.id) === String(activePersonnelId) || String(p._id) === String(activePersonnelId)) ||
-                   filteredPeople.find(p => String(p.id) === String(activePersonnelId) || String(p._id) === String(activePersonnelId)) ||
-                   filteredPeople[0] || null;
+      // 3. Grade Level filter
+      let matchesGrade = true;
+      if (gradeFilter !== 'all') {
+        if (p.type === 'non-teaching') {
+          matchesGrade = false;
+        } else {
+          const assigned = getAssignedGradeLevels(p);
+          const rowGrades = (p.workloadRows || []).map(r => r?.gradeLevel).filter(Boolean);
+          matchesGrade = assigned.includes(gradeFilter) || rowGrades.includes(gradeFilter);
+        }
+      }
+
+      return matchesSearch && matchesCat && matchesGrade;
+    });
+  }, [personnel, teacherSearch, categoryFilter, gradeFilter, classSections]);
+
+  const dbPerson = (personnel || []).find(p => p && (String(p.id) === String(activePersonnelId) || String(p._id) === String(activePersonnelId))) ||
+                   (filteredPeople.length > 0 ? (filteredPeople.find(p => p && (String(p.id) === String(activePersonnelId) || String(p._id) === String(activePersonnelId))) || filteredPeople[0]) : null) ||
+                   (personnel || []).find(p => p && !p.isDraft) ||
+                   (personnel || [])[0] || null;
   const [editPerson, setEditPerson] = useState(null);
+  const currentPerson = editPerson || dbPerson;
+
+  // Clear selectedBlockIdx whenever switching active teachers to prevent stale index pointer collisions
+  useEffect(() => {
+    setSelectedBlockIdx(null);
+  }, [currentPerson?.id]);
+
+  // Memoized teaching hours map to eliminate heavy sorting/merging calculations on keystrokes
+  const teacherHoursMap = useMemo(() => {
+    const map = {};
+    (personnel || []).forEach(p => {
+      if (p?.id) {
+        try {
+          map[p.id] = getPersonWeeklyTeachingHours(p);
+        } catch (e) {
+          map[p.id] = 0;
+        }
+      }
+    });
+    return map;
+  }, [personnel, workloadTransfers]);
 
   useEffect(() => {
     if (dbPerson) {
@@ -8650,7 +8874,84 @@ export default function Workload() {
     }
   }, [activePersonnelId, dbPerson, classSections]);
 
-  const currentPerson = editPerson || dbPerson;
+  // Allowances & Incentives Configuration Items (Teaching Supplies restricted to teaching staff)
+  const ALLOWANCE_ITEMS = useMemo(() => [
+    { key: 'uniform', label: 'Uniform Allowance', desc: 'Clothing & Uniform Allowance' },
+    { key: 'supplies', label: 'Teaching Supplies', desc: 'Cash Allowance for Teaching Supplies (Teaching Only)', teachingOnly: true },
+    { key: 'medical', label: 'Medical Allowance', desc: 'Fixed Medical Allowance (₱7,000)' },
+    { key: 'hardship', label: 'Special Hardship (SHA)', desc: 'Special Hardship Allowance for Hardship Posts / Teaching' }
+  ], []);
+
+  const [updatingAllowanceKey, setUpdatingAllowanceKey] = useState(null);
+
+  const activeSchoolYear = currentSchoolYear || schoolInfo?.schoolYear || 'SY 26-27';
+
+  useEffect(() => {
+    if (typeof fetchAllowances === 'function') {
+      fetchAllowances(activeSchoolYear);
+    }
+  }, [activeSchoolYear, fetchAllowances]);
+
+  const handleToggleAllowanceDisabled = useCallback(async (key, nextDisabled) => {
+    if (!currentPerson?.id) return;
+    const conf = ALLOWANCE_ITEMS.find(a => a.key === key) || { label: key };
+    const teacherName = `${currentPerson.firstName || ''} ${currentPerson.lastName || ''}`.trim() || 'Teacher';
+    
+    setUpdatingAllowanceKey(key);
+    try {
+      const res = await setAllowanceDisabled(currentPerson.id, key, nextDisabled, activeSchoolYear);
+      if (res && res.success !== false) {
+        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
+        if (showToast) {
+          showToast(`${nextDisabled ? '🚫 Disabled' : '✅ Re-enabled'} ${conf.label} for ${teacherName}`, 'info');
+        }
+      } else {
+        if (showToast) {
+          showToast(`Failed to update ${conf.label}: ${res?.error || 'Server error'}`, 'error');
+        }
+      }
+    } catch (err) {
+      if (showToast) showToast(`Error updating ${conf.label}`, 'error');
+    } finally {
+      setUpdatingAllowanceKey(null);
+    }
+  }, [currentPerson, activeSchoolYear, ALLOWANCE_ITEMS, setAllowanceDisabled, setHasUnsavedChanges, showToast]);
+
+  const handleToggleAllowanceGrant = useCallback(async (key, nextGranted) => {
+    if (!currentPerson?.id) return;
+    const conf = ALLOWANCE_ITEMS.find(a => a.key === key) || { label: key };
+    const teacherName = `${currentPerson.firstName || ''} ${currentPerson.lastName || ''}`.trim() || 'Teacher';
+    const pAllowances = (allowancesMap && allowancesMap[currentPerson.id]) || {};
+
+    if (isAllowanceDisabled(pAllowances, key)) {
+      if (showToast) showToast(`${conf.label} is currently disabled. Enable it first to grant.`, 'warning');
+      return;
+    }
+
+    if (conf.teachingOnly && currentPerson.type === 'non-teaching') {
+      if (showToast) showToast('Non-Teaching personnel are not eligible for Teaching Supplies Allowance.', 'warning');
+      return;
+    }
+
+    setUpdatingAllowanceKey(key);
+    try {
+      const res = await toggleAllowance(currentPerson.id, key, nextGranted, activeSchoolYear);
+      if (res && res.success !== false) {
+        if (typeof setHasUnsavedChanges === 'function') setHasUnsavedChanges(true);
+        if (showToast) {
+          showToast(`${nextGranted ? 'Granted' : 'Revoked'} ${conf.label} for ${teacherName}`, 'success');
+        }
+      } else {
+        if (showToast) {
+          showToast(`Failed to grant ${conf.label}: ${res?.error || 'Server error'}`, 'error');
+        }
+      }
+    } catch (err) {
+      if (showToast) showToast(`Error updating ${conf.label}`, 'error');
+    } finally {
+      setUpdatingAllowanceKey(null);
+    }
+  }, [currentPerson, activeSchoolYear, allowancesMap, ALLOWANCE_ITEMS, toggleAllowance, setHasUnsavedChanges, showToast]);
 
   const savedWorkloadSnapshotRef = useRef(null);
   const savedTeacherTermSnapshotRef = useRef(new Map());
@@ -11344,6 +11645,7 @@ export default function Workload() {
                     placeholder="Search section or adviser..."
                     value={sectionSearch}
                     onChange={(e) => setSectionSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
                     style={{ width: '100%', padding: '10px 14px 10px 34px', borderRadius: '10px', border: '1.5px solid var(--line)', fontSize: '13px' }}
                   />
                 </div>
@@ -11381,6 +11683,7 @@ export default function Workload() {
                 {/* Section List Cards */}
                 {(() => {
                   const filteredSections = (classSections || []).filter(sec => {
+                    if (!sec || typeof sec !== 'object') return false;
                     if (sectionGradeFilter !== 'all') {
                       const sGrade = String(sec.gradeLevel || '').trim().toLowerCase();
                       const fGrade = String(sectionGradeFilter).trim().toLowerCase();
@@ -11390,12 +11693,12 @@ export default function Workload() {
                         (fGrade === 'als' && sGrade.includes('als'));
                       if (!matchGrade) return false;
                     }
-                    if (sectionSearch.trim()) {
-                      const q = sectionSearch.toLowerCase();
+                    if (sectionSearch && String(sectionSearch).trim()) {
+                      const q = String(sectionSearch).toLowerCase().trim();
                       const secName = String(sec.sectionName || '').toLowerCase();
                       const secGrade = String(sec.gradeLevel || '').toLowerCase();
-                      const adviser = sec.advisorId ? (personnel || []).find(p => p.id === sec.advisorId) : null;
-                      const advName = adviser ? `${adviser.firstName} ${adviser.lastName}`.toLowerCase() : '';
+                      const adviser = sec.advisorId ? (personnel || []).find(p => p && p.id === sec.advisorId) : null;
+                      const advName = adviser ? `${String(adviser.firstName || '')} ${String(adviser.lastName || '')}`.trim().toLowerCase() : '';
                       return secName.includes(q) || secGrade.includes(q) || advName.includes(q);
                     }
                     return true;
@@ -12345,6 +12648,7 @@ export default function Workload() {
                   placeholder="Search name or position..."
                   value={teacherSearch}
                   onChange={(e) => setTeacherSearch(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid var(--line)', fontSize: '13px' }}
                 />
 
@@ -12393,6 +12697,8 @@ export default function Workload() {
                             ((Array.isArray(p.workloadRows) && p.workloadRows.length > 0) ||
                              (currentPerson && currentPerson.id === p.id && Array.isArray(currentPerson.workloadRows) && currentPerson.workloadRows.length > 0))
                           );
+                          const pHours = teacherHoursMap[p.id] || 0;
+                          const isShaOff = isAllowanceDisabled(allowancesMap?.[p.id], 'hardship');
                           return (
                             <div
                               key={p.id}
@@ -12415,7 +12721,20 @@ export default function Workload() {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--muted)' }}>
                                 <span>{p.position}</span>
                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                  {isEligibleForTeachingOverload(p) && getPersonWeeklyTeachingHours(p) > 30 && (
+                                  {isShaOff && (
+                                    <span style={{
+                                      background: '#F1F5F9',
+                                      color: '#64748B',
+                                      border: '1px solid #CBD5E1',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      fontSize: '8.5px',
+                                      fontWeight: '700'
+                                    }}>
+                                      SHA Off
+                                    </span>
+                                  )}
+                                  {isEligibleForTeachingOverload(p) && pHours > 30 && (
                                     <span style={{
                                       background: '#FEF2F2',
                                       color: '#F43F5E',
@@ -13322,6 +13641,223 @@ export default function Workload() {
                       </div>
                     </div>
 
+                    {/* ── ALLOWANCES & COMPENSATION INCENTIVES (SHA & ALLOWANCE MANAGEMENT) ── */}
+                    {currentPerson && (
+                      <div style={{
+                        background: 'white',
+                        borderRadius: '14px',
+                        border: '1.5px solid var(--line)',
+                        padding: '22px 24px',
+                        marginTop: '20px',
+                        marginBottom: '20px',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '10px',
+                              background: '#EFF6FF',
+                              color: '#2563EB',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <FiAward size={20} />
+                            </div>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--navy)' }}>
+                                Allowances & Compensation Incentives
+                              </h3>
+                              <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748B' }}>
+                                Manage allowances and hardship incentives (e.g. SHA) for {currentPerson.firstName} {currentPerson.lastName}. Disabled allowances are excluded from compliance checks, totals, and badges.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Summary Status Badges */}
+                          {(() => {
+                            const pAllowances = (allowancesMap && allowancesMap[currentPerson.id]) || {};
+                            const activeCount = ALLOWANCE_ITEMS.filter(item => isAllowanceActive(pAllowances, item.key)).length;
+                            const disabledCount = ALLOWANCE_ITEMS.filter(item => isAllowanceDisabled(pAllowances, item.key)).length;
+                            return (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span style={{
+                                  background: '#DCFCE7',
+                                  color: '#15803D',
+                                  border: '1px solid #86EFAC',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  fontWeight: '700'
+                                }}>
+                                  {activeCount} Active
+                                </span>
+                                {disabledCount > 0 && (
+                                  <span style={{
+                                    background: '#F1F5F9',
+                                    color: '#64748B',
+                                    border: '1px solid #CBD5E1',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '11px',
+                                    fontWeight: '700'
+                                  }}>
+                                    {disabledCount} Disabled
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Allowance Items Grid */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                          {ALLOWANCE_ITEMS.map((item) => {
+                            const pAllowances = (allowancesMap && allowancesMap[currentPerson.id]) || {};
+                            const isDis = isAllowanceDisabled(pAllowances, item.key);
+                            const isAct = isAllowanceActive(pAllowances, item.key);
+                            const isGranted = Boolean(pAllowances[item.key]);
+                            const isPending = updatingAllowanceKey === item.key;
+                            const isNonTeachingBlocked = item.teachingOnly && currentPerson.type === 'non-teaching';
+
+                            return (
+                              <div
+                                key={item.key}
+                                style={{
+                                  background: isDis ? '#F8FAFC' : isAct ? '#F0FDF4' : 'white',
+                                  border: `1.5px solid ${isDis ? '#E2E8F0' : isAct ? '#BBF7D0' : 'var(--line)'}`,
+                                  borderRadius: '10px',
+                                  padding: '14px 16px',
+                                  opacity: isDis ? 0.75 : 1,
+                                  transition: 'all 0.15s ease',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  justifyContent: 'space-between',
+                                  gap: '12px'
+                                }}
+                              >
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                    <span style={{
+                                      fontWeight: '700',
+                                      fontSize: '13px',
+                                      color: isDis ? '#64748B' : isAct ? '#166534' : 'var(--navy)',
+                                      textDecoration: isDis ? 'line-through' : 'none'
+                                    }}>
+                                      {item.label}
+                                    </span>
+
+                                    {isDis ? (
+                                      <span style={{
+                                        background: '#F1F5F9',
+                                        color: '#64748B',
+                                        border: '1px solid #CBD5E1',
+                                        padding: '2px 7px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                        fontWeight: '700',
+                                        textTransform: 'uppercase'
+                                      }}>
+                                        Disabled (Excluded)
+                                      </span>
+                                    ) : isAct ? (
+                                      <span style={{
+                                        background: '#DCFCE7',
+                                        color: '#15803D',
+                                        border: '1px solid #86EFAC',
+                                        padding: '2px 7px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                        fontWeight: '700',
+                                        textTransform: 'uppercase'
+                                      }}>
+                                        Active / Granted
+                                      </span>
+                                    ) : (
+                                      <span style={{
+                                        background: '#F8FAFC',
+                                        color: '#94A3B8',
+                                        border: '1px solid #E2E8F0',
+                                        padding: '2px 7px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                        fontWeight: '700',
+                                        textTransform: 'uppercase'
+                                      }}>
+                                        Not Granted
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: '#64748B', lineHeight: 1.4 }}>
+                                    {item.desc}
+                                  </p>
+                                  {isNonTeachingBlocked && (
+                                    <span style={{ fontSize: '10.5px', color: '#EF4444', fontWeight: '600', marginTop: '4px', display: 'block' }}>
+                                      Not eligible (Non-Teaching personnel)
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Action buttons */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', paddingTop: '8px', borderTop: '1px solid #E2E8F0' }}>
+                                  {/* Grant / Revoke toggle */}
+                                  <button
+                                    type="button"
+                                    disabled={isDis || isPending || isNonTeachingBlocked}
+                                    onClick={() => handleToggleAllowanceGrant(item.key, !isGranted)}
+                                    style={{
+                                      background: isDis || isNonTeachingBlocked ? '#F1F5F9' : isGranted ? '#DCFCE7' : '#FFFFFF',
+                                      color: isDis || isNonTeachingBlocked ? '#94A3B8' : isGranted ? '#15803D' : '#334155',
+                                      border: `1.5px solid ${isDis || isNonTeachingBlocked ? '#E2E8F0' : isGranted ? '#86EFAC' : '#CBD5E1'}`,
+                                      borderRadius: '6px',
+                                      padding: '5px 10px',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      cursor: (isDis || isPending || isNonTeachingBlocked) ? 'not-allowed' : 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '5px',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    title={isDis ? 'Enable allowance first to grant or revoke' : isGranted ? 'Click to revoke grant' : 'Click to grant'}
+                                  >
+                                    {isGranted ? <FiCheckSquare size={13} /> : <FiSquare size={13} />}
+                                    {isGranted ? 'Granted' : 'Grant'}
+                                  </button>
+
+                                  {/* Disable / Enable toggle */}
+                                  <button
+                                    type="button"
+                                    disabled={isPending}
+                                    onClick={() => handleToggleAllowanceDisabled(item.key, !isDis)}
+                                    style={{
+                                      background: isDis ? '#F0F9FF' : '#FEF2F2',
+                                      color: isDis ? '#0284C7' : '#DC2626',
+                                      border: `1.5px solid ${isDis ? '#BAE6FD' : '#FECACA'}`,
+                                      borderRadius: '6px',
+                                      padding: '5px 10px',
+                                      fontSize: '11px',
+                                      fontWeight: '700',
+                                      cursor: isPending ? 'wait' : 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '5px',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    title={isDis ? 'Re-enable allowance (restores previous granted value)' : 'Disable allowance (excludes from all computations, badges, and compliance)'}
+                                  >
+                                    {isDis ? <FiCheckCircle size={12} /> : <FiSlash size={12} />}
+                                    {isDis ? 'Enable' : 'Disable'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                   </div>
                 )}
@@ -13414,14 +13950,16 @@ export default function Workload() {
 
             {/* Search & Grade Level Filter controls */}
             {(() => {
-              const visibleTeachers = personnel.filter(p => {
-                const fullName = `${p.firstName || ''} ${p.lastName || ''} ${p.position || ''}`.toLowerCase();
-                const matchesSearch = fullName.includes(delegationSearch.toLowerCase().trim());
+              const visibleTeachers = (personnel || []).filter(p => {
+                if (!p || typeof p !== 'object') return false;
+                const fullName = `${String(p.firstName || '')} ${String(p.lastName || '')} ${String(p.position || '')}`.toLowerCase();
+                const q = String(delegationSearch || '').toLowerCase().trim();
+                const matchesSearch = !q || fullName.includes(q);
                 if (!matchesSearch) return false;
                 if (delegationGradeFilter === 'all') return true;
 
                 const assigned = getAssignedGradeLevels(p);
-                const rowGrades = (p.workloadRows || []).map(r => r.gradeLevel).filter(Boolean);
+                const rowGrades = (p.workloadRows || []).map(r => r?.gradeLevel).filter(Boolean);
                 const allGrades = Array.from(new Set([...assigned, ...rowGrades]));
                 return allGrades.includes(delegationGradeFilter);
               });
@@ -13437,6 +13975,7 @@ export default function Workload() {
                       placeholder="Search teacher..."
                       value={delegationSearch}
                       onChange={(e) => setDelegationSearch(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
                       style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--line)', fontSize: '12px' }}
                     />
                     <select
@@ -14294,3 +14833,10 @@ const WorkImmersionSection = ({ currentPerson, schoolInfo, showToast, workImmers
   );
 };
 
+export default function Workload(props) {
+  return (
+    <WorkloadErrorBoundary>
+      <WorkloadInner {...props} />
+    </WorkloadErrorBoundary>
+  );
+}

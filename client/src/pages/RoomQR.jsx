@@ -25,11 +25,13 @@ import {
   FiShield,
   FiUploadCloud,
   FiSave,
+  FiAlertCircle,
   FiAlertTriangle,
   FiDatabase,
   FiLayers,
   FiX
 } from 'react-icons/fi';
+import { getEffectivePostGradDisciplines } from './RoomProfiling';
 
 export default function RoomQR() {
   const { scannedRoom, setScannedRoom, personnel: appPersonnel, setPersonnel, updatePersonnelInfo, savePersonnelChanges, schoolInfo, setActiveView } = useApp() || {};
@@ -85,6 +87,9 @@ export default function RoomQR() {
 
   // Pending cross-tab QR submissions detected locally
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
+  // High-performance atomic accept & error states
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState(null);
   // Historical approved submissions from server
   const [approvedSubmissions, setApprovedSubmissions] = useState([]);
 
@@ -327,6 +332,8 @@ export default function RoomQR() {
       dr: full.degreeRows || full.collegeDegrees || full.college_degrees || [],
       pgd: full.postGraduateDegree || full.post_graduate_degree,
       pgdisc: full.postGraduateDiscipline || full.post_graduate_discipline,
+      md: full.mastersDiscipline || full.masters_discipline,
+      dd: full.doctorateDiscipline || full.doctorate_discipline || full.phdDiscipline || full.phd_discipline,
       mwu: full.mastersWithUnitsDisciplines || [],
       mg: full.mastersGraduatedDisciplines || [],
       dwu: full.doctorateWithUnitsDisciplines || [],
@@ -425,6 +432,16 @@ export default function RoomQR() {
       post_graduate_degree: short.pgd || short.postGraduateDegree || short.post_graduate_degree || '',
       postGraduateDiscipline: short.pgdisc || short.postGraduateDiscipline || short.post_graduate_discipline || '',
       post_graduate_discipline: short.pgdisc || short.postGraduateDiscipline || short.post_graduate_discipline || '',
+      ...(short.md || short.mastersDiscipline || short.masters_discipline ? {
+        mastersDiscipline: short.md || short.mastersDiscipline || short.masters_discipline,
+        masters_discipline: short.md || short.mastersDiscipline || short.masters_discipline
+      } : {}),
+      ...(short.dd || short.doctorateDiscipline || short.doctorate_discipline || short.phdDiscipline || short.phd_discipline ? {
+        doctorateDiscipline: short.dd || short.doctorateDiscipline || short.doctorate_discipline || short.phdDiscipline || short.phd_discipline,
+        doctorate_discipline: short.dd || short.doctorateDiscipline || short.doctorate_discipline || short.phdDiscipline || short.phd_discipline,
+        phdDiscipline: short.dd || short.doctorateDiscipline || short.doctorate_discipline || short.phdDiscipline || short.phd_discipline,
+        phd_discipline: short.dd || short.doctorateDiscipline || short.doctorate_discipline || short.phdDiscipline || short.phd_discipline
+      } : {}),
       mastersWithUnitsDisciplines: short.mwu || short.mastersWithUnitsDisciplines || [],
       mastersGraduatedDisciplines: short.mg || short.mastersGraduatedDisciplines || [],
       doctorateWithUnitsDisciplines: short.dwu || short.doctorateWithUnitsDisciplines || [],
@@ -676,71 +693,100 @@ export default function RoomQR() {
       if (isNoTin) merged.tin = '';
     }
 
+    // Disciplines: Non-destructive merge (never overwrite existing values with blank or undefined)
+    const decompMasters = decomp.mastersDiscipline || decomp.masters_discipline;
+    if (decompMasters && String(decompMasters).trim()) {
+      merged.mastersDiscipline = decompMasters;
+      merged.masters_discipline = decompMasters;
+    } else {
+      merged.mastersDiscipline = target.mastersDiscipline || target.masters_discipline || '';
+      merged.masters_discipline = target.masters_discipline || target.mastersDiscipline || '';
+    }
+
+    const decompDoc = decomp.doctorateDiscipline || decomp.doctorate_discipline || decomp.phdDiscipline || decomp.phd_discipline;
+    if (decompDoc && String(decompDoc).trim()) {
+      merged.doctorateDiscipline = decompDoc;
+      merged.doctorate_discipline = decompDoc;
+      merged.phdDiscipline = decompDoc;
+      merged.phd_discipline = decompDoc;
+    } else {
+      const targetDoc = target.doctorateDiscipline || target.doctorate_discipline || target.phdDiscipline || target.phd_discipline || '';
+      merged.doctorateDiscipline = targetDoc;
+      merged.doctorate_discipline = targetDoc;
+      merged.phdDiscipline = targetDoc;
+      merged.phd_discipline = targetDoc;
+    }
+
+    if (decomp.postGraduateDiscipline || decomp.post_graduate_discipline) {
+      merged.postGraduateDiscipline = decomp.postGraduateDiscipline || decomp.post_graduate_discipline;
+      merged.post_graduate_discipline = decomp.post_graduate_discipline || decomp.postGraduateDiscipline;
+    } else if (target.postGraduateDiscipline || target.post_graduate_discipline) {
+      merged.postGraduateDiscipline = target.postGraduateDiscipline || target.post_graduate_discipline;
+      merged.post_graduate_discipline = target.post_graduate_discipline || target.postGraduateDiscipline;
+    }
+
     return merged;
   };
 
   const handleCommitAllSubmissions = async () => {
-    if (pendingSubmissions.length === 0) return;
-    let count = 0;
-    const remoteSubmissionIds = [];
-    const remotePersonnelIds = [];
-    const updatedRoster = [...effectivePersonnel];
+    if (pendingSubmissions.length === 0 || isAccepting) return;
+    setIsAccepting(true);
+    setAcceptError(null);
+    try {
+      const res = await api.acceptRoomSubmissions({
+        schoolId: activeSchoolId,
+        submissions: pendingSubmissions
+      });
 
-    for (const item of pendingSubmissions) {
-      if (item && (item.id || item.personnelId)) {
-        const fullProfile = item.rawProfile || (item.fn ? decompressProfile(item) : item);
-        const targetId = String(fullProfile.id || item.personnelId || item.id || '').trim();
-        const subPrn = String(fullProfile.prn || item.prn || '').trim();
-        const subFn = String(fullProfile.firstName || fullProfile.fn || fullProfile.first_name || '').trim().toUpperCase();
-        const subLn = String(fullProfile.lastName || fullProfile.ln || fullProfile.last_name || '').trim().toUpperCase();
-
-        const pIdx = updatedRoster.findIndex(p => {
-          if (targetId && String(p.id).trim() === targetId) return true;
-          if (subPrn && p.prn && String(p.prn).trim() === subPrn) return true;
-          const pFn = String(p.firstName || p.first_name || '').trim().toUpperCase();
-          const pLn = String(p.lastName || p.last_name || '').trim().toUpperCase();
-          return subFn && subLn && pFn === subFn && pLn === subLn;
-        });
-
-        if (pIdx !== -1) {
-          const target = updatedRoster[pIdx];
-          const merged = mergeTeacherProfileRecord(target, fullProfile);
-          updatedRoster[pIdx] = merged;
-
-          try {
-            localStorage.setItem(`draft_personnel_${target.id}`, JSON.stringify(merged));
-            if (merged.learningAreaMap) {
-              localStorage.setItem(`draft_learning_areas_${target.id}`, JSON.stringify(merged.learningAreaMap));
-            }
-          } catch (e) {}
-        }
-
-        localStorage.removeItem(`pending_submission_${targetId}`);
-        if (item.submissionId) {
-          remoteSubmissionIds.push(item.submissionId);
-        }
-        remotePersonnelIds.push(targetId);
-        count++;
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'Failed to accept all submissions');
       }
-    }
 
-    if (setPersonnel) {
-      setPersonnel(updatedRoster);
-    }
+      const updatedList = res.updatedPersonnel || [];
 
-    if (remoteSubmissionIds.length > 0 || remotePersonnelIds.length > 0) {
-      try {
-        await api.ackRoomSubmissions({
-          schoolId: activeSchoolId,
-          submissionIds: remoteSubmissionIds,
-          personnelIds: remotePersonnelIds
+      // Update in-memory state directly without redundant network refetching
+      if (setPersonnel && updatedList.length > 0) {
+        setPersonnel(prev => {
+          const list = Array.isArray(prev) ? [...prev] : [];
+          for (const updated of updatedList) {
+            const uId = String(updated.id).trim();
+            const idx = list.findIndex(p => String(p.id).trim() === uId);
+            if (idx !== -1) {
+              list[idx] = { ...list[idx], ...updated };
+            } else {
+              list.push(updated);
+            }
+          }
+          return list;
         });
-      } catch (e) {}
-    }
+      }
 
-    await loadPendingSubmissions();
-    setIngestionSuccess(`✓ Approved & Merged ${count} Teacher Profiling Record(s) directly into your Local Draft Roster!`);
-    setTimeout(() => setIngestionSuccess(''), 6000);
+      // Update local storage drafts
+      for (const updated of updatedList) {
+        const uId = String(updated.id).trim();
+        try {
+          localStorage.setItem(`draft_personnel_${uId}`, JSON.stringify(updated));
+          if (updated.learningAreaMap) {
+            localStorage.setItem(`draft_learning_areas_${uId}`, JSON.stringify(updated.learningAreaMap));
+          }
+        } catch (e) {}
+        localStorage.removeItem(`pending_submission_${uId}`);
+      }
+
+      // Clear pending submissions and add to approved state
+      setPendingSubmissions([]);
+      if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
+        setApprovedSubmissions(prev => [...res.approvedSubmissions, ...prev]);
+      }
+
+      setIngestionSuccess(`✓ Approved & Merged ${res.count || updatedList.length} Teacher Profiling Record(s) directly into your Local Draft Roster!`);
+      setTimeout(() => setIngestionSuccess(''), 6000);
+    } catch (err) {
+      console.error('Accept all submissions error:', err);
+      setAcceptError(err.message || 'Failed to approve submissions');
+    } finally {
+      setIsAccepting(false);
+    }
   };
 
   // Compile comparison rows between database and submitted QR data
@@ -813,6 +859,29 @@ export default function RoomQR() {
       { label: 'Salary Step Increment', key: 'stepIncrement', format: (v, item) => (v || item.step_increment) ? `Step ${v || item.step_increment}${item.stepIncrementConfirmed || item.step_increment_confirmed ? ' (Confirmed)' : ''}` : 'N/A' },
       { label: 'Highest Educational Attainment', key: 'highestEducationalAttainment', format: (v, item) => v || item.highest_educational_attainment || 'N/A' },
       { label: 'Educational Attainment', key: 'degreeRows', format: (_, item) => formatDegrees(item) },
+      { 
+        label: "Master's Degree Discipline", 
+        key: 'mastersDiscipline', 
+        format: (v, item) => {
+          if (v && v !== 'N/A') return v;
+          if (item?.masters_discipline && item.masters_discipline !== 'N/A') return item.masters_discipline;
+          const pg = getEffectivePostGradDisciplines(item);
+          const m = [...new Set([...(pg?.mastersWithUnits || []), ...(pg?.mastersGraduated || [])])];
+          return m.length > 0 ? m.join(', ') : 'None / N/A';
+        }
+      },
+      { 
+        label: "PhD Degree Discipline", 
+        key: 'doctorateDiscipline', 
+        format: (v, item) => {
+          if (v && v !== 'N/A') return v;
+          const doc = item?.doctorate_discipline || item?.phdDiscipline || item?.phd_discipline;
+          if (doc && doc !== 'N/A') return doc;
+          const pg = getEffectivePostGradDisciplines(item);
+          const d = [...new Set([...(pg?.doctorateWithUnits || []), ...(pg?.doctorateGraduated || [])])];
+          return d.length > 0 ? d.join(', ') : 'None / N/A';
+        }
+      },
       { label: 'Civil Service Eligibility', key: 'eligibility', format: (v) => v || 'N/A' },
       ...(!isNT ? [
         { label: 'PRC Specialization', key: 'prcSpecialization', format: (v, item) => v || item.prc_specialization || 'N/A' }
@@ -1031,7 +1100,10 @@ export default function RoomQR() {
 
   // Commit reviewed data to central context with selective field-level merging
   const handleCommitReview = async () => {
-    if (pendingReviewData) {
+    if (!pendingReviewData || isAccepting) return;
+    setIsAccepting(true);
+    setAcceptError(null);
+    try {
       // Find current existing record in effectivePersonnel
       const current = effectivePersonnel.find(p => String(p.id) === String(pendingReviewData.id)) ||
         effectivePersonnel.find(p => p.prn && String(p.prn) === String(pendingReviewData.prn)) ||
@@ -1067,6 +1139,29 @@ export default function RoomQR() {
           if (pendingReviewData.mastersWithUnitsDisciplines) mergedProfile.mastersWithUnitsDisciplines = pendingReviewData.mastersWithUnitsDisciplines;
           if (pendingReviewData.doctorateGraduatedDisciplines) mergedProfile.doctorateGraduatedDisciplines = pendingReviewData.doctorateGraduatedDisciplines;
           if (pendingReviewData.doctorateWithUnitsDisciplines) mergedProfile.doctorateWithUnitsDisciplines = pendingReviewData.doctorateWithUnitsDisciplines;
+          if (pendingReviewData.mastersDiscipline) {
+            mergedProfile.mastersDiscipline = pendingReviewData.mastersDiscipline;
+            mergedProfile.masters_discipline = pendingReviewData.mastersDiscipline;
+          }
+          if (pendingReviewData.doctorateDiscipline || pendingReviewData.phdDiscipline || pendingReviewData.phd_discipline) {
+            const doc = pendingReviewData.doctorateDiscipline || pendingReviewData.phdDiscipline || pendingReviewData.phd_discipline;
+            mergedProfile.doctorateDiscipline = doc;
+            mergedProfile.doctorate_discipline = doc;
+            mergedProfile.phdDiscipline = doc;
+            mergedProfile.phd_discipline = doc;
+          }
+        } else if (key === 'mastersDiscipline') {
+          if (subVal && String(subVal).trim() !== '' && subVal !== 'N/A') {
+            mergedProfile.mastersDiscipline = subVal;
+            mergedProfile.masters_discipline = subVal;
+          }
+        } else if (key === 'doctorateDiscipline') {
+          if (subVal && String(subVal).trim() !== '' && subVal !== 'N/A') {
+            mergedProfile.doctorateDiscipline = subVal;
+            mergedProfile.doctorate_discipline = subVal;
+            mergedProfile.phdDiscipline = subVal;
+            mergedProfile.phd_discipline = subVal;
+          }
         } else if (key === 'assignedGradeLevels') {
           const gl = pendingReviewData.assignedGradeLevels || pendingReviewData.assigned_grade_levels || pendingReviewData.gradeLevelsTaught || pendingReviewData.grade_levels_taught || subVal;
           mergedProfile.assignedGradeLevels = gl;
@@ -1209,29 +1304,57 @@ export default function RoomQR() {
       mergedProfile.personalVerified = true;
       mergedProfile.id = pendingReviewData.id || current.id;
 
-      if (savePersonnelChanges) {
-        await savePersonnelChanges(mergedProfile.id, mergedProfile);
+      // Single atomic request to persist to normalized database
+      const res = await api.acceptRoomSubmissions({
+        schoolId: activeSchoolId,
+        submission: mergedProfile,
+        selectedFields: Array.from(selectedFieldsToMerge)
+      });
+
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'Failed to accept reviewed submission');
       }
-      try {
-        localStorage.setItem(`draft_personnel_${mergedProfile.id}`, JSON.stringify(mergedProfile));
-      } catch (e) {}
-      
-      // Clean up localStorage keys if they exist
-      localStorage.removeItem(`pending_submission_${mergedProfile.id}`);
 
-      try {
-        await api.ackRoomSubmissions({
-          schoolId: activeSchoolId,
-          personnelIds: [mergedProfile.id]
+      const savedPerson = (res.updatedPersonnel && res.updatedPersonnel[0]) || mergedProfile;
+
+      // Update in-memory state directly without redundant network refetching
+      if (setPersonnel) {
+        setPersonnel(prev => {
+          const list = Array.isArray(prev) ? [...prev] : [];
+          const idx = list.findIndex(p => String(p.id).trim() === String(savedPerson.id).trim());
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...savedPerson };
+          } else {
+            list.push(savedPerson);
+          }
+          return list;
         });
+      }
+
+      try {
+        localStorage.setItem(`draft_personnel_${savedPerson.id}`, JSON.stringify(savedPerson));
       } catch (e) {}
+      localStorage.removeItem(`pending_submission_${savedPerson.id}`);
 
-      await loadPendingSubmissions();
+      // Update pending submissions and approved lists locally
+      setPendingSubmissions(prev => prev.filter(s => {
+        const sId = String(s.personnelId || s.id || s.rawProfile?.id || '').trim();
+        return sId !== String(savedPerson.id).trim();
+      }));
 
-      setIngestionSuccess(`✓ Approved & Merged: Updated ${selectedFieldsToMerge.size} selected field(s) for ${pendingReviewData.firstName} ${pendingReviewData.lastName}!`);
+      if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
+        setApprovedSubmissions(prev => [...res.approvedSubmissions, ...prev]);
+      }
+
+      setIngestionSuccess(`✓ Approved & Merged: Updated ${selectedFieldsToMerge.size} selected field(s) for ${pendingReviewData.firstName || ''} ${pendingReviewData.lastName || ''}!`);
       setShowReviewModal(false);
       setPendingReviewData(null);
       setTimeout(() => setIngestionSuccess(''), 6000);
+    } catch (err) {
+      console.error('Accept review submission error:', err);
+      setAcceptError(err.message || 'Failed to approve reviewed submission');
+    } finally {
+      setIsAccepting(false);
     }
   };
 
@@ -1422,29 +1545,77 @@ export default function RoomQR() {
   }, [approvedSubmissions, verifiedTeachers]);
 
   const handleCommitSingle = async (pSub) => {
-    if (!pSub) return;
-    const fullProfile = pSub.rawProfile || decompressProfile(pSub);
-    const targetId = fullProfile.id || pSub.personnelId || pSub.id;
-
-    if (savePersonnelChanges) {
-      await savePersonnelChanges(targetId, {
-        ...fullProfile,
-        personalVerified: true
-      });
-    }
-
-    localStorage.removeItem(`pending_submission_${targetId}`);
+    if (!pSub || isAccepting) return;
+    setIsAccepting(true);
+    setAcceptError(null);
     try {
-      await api.ackRoomSubmissions({
-        schoolId: activeSchoolId,
-        submissionIds: pSub.submissionId ? [pSub.submissionId] : [],
-        personnelIds: [targetId]
-      });
-    } catch (e) {}
+      const fullProfile = pSub.rawProfile || (pSub.fn ? decompressProfile(pSub) : pSub);
+      const targetId = String(fullProfile.id || pSub.personnelId || pSub.id || '').trim();
 
-    await loadPendingSubmissions();
-    setIngestionSuccess(`✓ Approved & Merged profiling details for ${fullProfile.firstName || ''} ${fullProfile.lastName || ''} into local draft!`);
-    setTimeout(() => setIngestionSuccess(''), 6000);
+      const res = await api.acceptRoomSubmissions({
+        schoolId: activeSchoolId,
+        submission: {
+          ...pSub,
+          profileData: {
+            ...fullProfile,
+            id: targetId,
+            personalVerified: true,
+            isVerified: true
+          }
+        }
+      });
+
+      if (!res || !res.success) {
+        throw new Error(res?.error || 'Failed to accept submission');
+      }
+
+      const savedPerson = (res.updatedPersonnel && res.updatedPersonnel[0]) || {
+        ...fullProfile,
+        id: targetId,
+        personalVerified: true,
+        isVerified: true,
+        verified: true
+      };
+
+      // Direct in-memory state update to avoid redundant refetches
+      if (setPersonnel) {
+        setPersonnel(prev => {
+          const list = Array.isArray(prev) ? [...prev] : [];
+          const idx = list.findIndex(p => String(p.id).trim() === targetId);
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...savedPerson };
+          } else {
+            list.push(savedPerson);
+          }
+          return list;
+        });
+      }
+
+      try {
+        localStorage.setItem(`draft_personnel_${targetId}`, JSON.stringify(savedPerson));
+        if (savedPerson.learningAreaMap) {
+          localStorage.setItem(`draft_learning_areas_${targetId}`, JSON.stringify(savedPerson.learningAreaMap));
+        }
+      } catch (e) {}
+      localStorage.removeItem(`pending_submission_${targetId}`);
+
+      setPendingSubmissions(prev => prev.filter(s => {
+        const sId = String(s.personnelId || s.id || s.rawProfile?.id || '').trim();
+        return sId !== targetId && s.submissionId !== pSub.submissionId;
+      }));
+
+      if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
+        setApprovedSubmissions(prev => [...res.approvedSubmissions, ...prev]);
+      }
+
+      setIngestionSuccess(`✓ Approved & Merged profiling details for ${savedPerson.firstName || ''} ${savedPerson.lastName || ''} into local draft!`);
+      setTimeout(() => setIngestionSuccess(''), 6000);
+    } catch (err) {
+      console.error('Accept single submission error:', err);
+      setAcceptError(err.message || 'Failed to approve submission');
+    } finally {
+      setIsAccepting(false);
+    }
   };
 
   const handleTakeManualSnapshot = async () => {
@@ -1717,6 +1888,15 @@ export default function RoomQR() {
 
   return (
     <div style={{ maxWidth: '1080px', margin: '0 auto', display: 'grid', gap: '20px' }}>
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+      `}</style>
       <PortalHeader
         title="Room QR Mobile Profiling Station"
         description="Scan room QR codes to allow teachers to self-profile directly on mobile devices."
@@ -1754,11 +1934,33 @@ export default function RoomQR() {
           </div>
           <button
             className="btn"
+            disabled={isAccepting}
             onClick={handleCommitAllSubmissions}
-            style={{ background: 'white', color: '#065F46', fontWeight: 800, padding: '8px 18px', border: 0, borderRadius: '10px', fontSize: '12px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            style={{ background: 'white', color: '#065F46', fontWeight: 800, padding: '8px 18px', border: 0, borderRadius: '10px', fontSize: '12px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)', display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: isAccepting ? 0.7 : 1, cursor: isAccepting ? 'wait' : 'pointer' }}
           >
-            <FiCheck size={14} />
-            <span>1-Click Approve & Merge All ({pendingTeachers.length})</span>
+            {isAccepting ? <FiRefreshCw size={14} className="spin" /> : <FiCheck size={14} />}
+            <span>{isAccepting ? 'Approving & Saving...' : `1-Click Approve & Merge All (${pendingTeachers.length})`}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Global Error Banner */}
+      {acceptError && (
+        <div style={{ padding: '14px 18px', background: '#FEE2E2', color: '#991B1B', border: '1.5px solid #F87171', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <FiAlertCircle size={20} color="#DC2626" />
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 800 }}>Accept Operation Failed</div>
+              <div style={{ fontSize: '12px', fontWeight: 'normal', marginTop: '2px' }}>{acceptError}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAcceptError(null)}
+            style={{ background: 'transparent', border: 'none', color: '#991B1B', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+            title="Dismiss error"
+          >
+            <FiX size={18} />
           </button>
         </div>
       )}
@@ -1909,11 +2111,12 @@ export default function RoomQR() {
                 {pendingTeachers.length > 0 && (
                   <button
                     className="btn"
+                    disabled={isAccepting}
                     onClick={handleCommitAllSubmissions}
-                    style={{ background: '#059669', color: 'white', border: 0, padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    style={{ background: '#059669', color: 'white', border: 0, padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px', opacity: isAccepting ? 0.7 : 1, cursor: isAccepting ? 'wait' : 'pointer' }}
                   >
-                    <FiCheck size={12} />
-                    <span>Approve All ({pendingTeachers.length})</span>
+                    {isAccepting ? <FiRefreshCw size={12} className="spin" /> : <FiCheck size={12} />}
+                    <span>{isAccepting ? 'Saving...' : `Approve All (${pendingTeachers.length})`}</span>
                   </button>
                 )}
               </div>
@@ -2118,11 +2321,12 @@ export default function RoomQR() {
                               <button
                                 className="btn"
                                 type="button"
+                                disabled={isAccepting}
                                 onClick={() => handleCommitSingle(submission)}
-                                style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                style={{ background: '#059669', color: 'white', border: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px', opacity: isAccepting ? 0.7 : 1, cursor: isAccepting ? 'wait' : 'pointer' }}
                               >
-                                <FiCheck size={12} />
-                                <span>Approve & Merge</span>
+                                {isAccepting ? <FiRefreshCw size={12} className="spin" /> : <FiCheck size={12} />}
+                                <span>{isAccepting ? 'Saving...' : 'Approve & Merge'}</span>
                               </button>
                             </div>
                           </div>
@@ -2928,11 +3132,12 @@ export default function RoomQR() {
               <button
                 className="btn"
                 type="button"
+                disabled={isAccepting}
                 onClick={handleCommitReview}
-                style={{ background: '#059669', color: 'white', border: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                style={{ background: '#059669', color: 'white', border: 0, display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: isAccepting ? 0.7 : 1, cursor: isAccepting ? 'wait' : 'pointer' }}
               >
-                <FiCheck size={14} />
-                <span>Approve & Merge Selected ({selectedFieldsToMerge.size})</span>
+                {isAccepting ? <FiRefreshCw size={14} className="spin" /> : <FiCheck size={14} />}
+                <span>{isAccepting ? 'Saving...' : `Approve & Merge Selected (${selectedFieldsToMerge.size})`}</span>
               </button>
             </div>
           </div>
