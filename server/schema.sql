@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS esf7_aral_sections (
     school_year TEXT NOT NULL DEFAULT '2026-2027',
     
     basis_type TEXT NOT NULL DEFAULT 'grade',
+    section_type TEXT NOT NULL DEFAULT 'ARAL',
     grade_level TEXT NOT NULL,
     assessment_tool TEXT,
     profile_level TEXT,
@@ -274,6 +275,7 @@ CREATE TABLE IF NOT EXISTS esf7_remedial_enrichment_sections (
     school_year TEXT NOT NULL DEFAULT '2026-2027',
     
     intervention_type TEXT NOT NULL DEFAULT 'REMEDIAL',
+    section_type TEXT NOT NULL DEFAULT 'REMEDIAL',
     grade_level TEXT NOT NULL,
     section_name TEXT NOT NULL,
     
@@ -298,6 +300,7 @@ CREATE TABLE IF NOT EXISTS esf7_sned_sections (
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL DEFAULT '2026-2027',
     
+    section_type TEXT NOT NULL DEFAULT 'SNED (NON-GRADED)',
     grade_level TEXT NOT NULL DEFAULT 'SNED (NON-GRADED)',
     section_name TEXT NOT NULL,
     program_type TEXT,
@@ -327,6 +330,7 @@ CREATE TABLE IF NOT EXISTS esf7_als_sections (
     school_id TEXT NOT NULL,
     school_year TEXT NOT NULL DEFAULT '2026-2027',
     
+    section_type TEXT NOT NULL DEFAULT 'ALS',
     grade_level TEXT NOT NULL DEFAULT 'ALS',
     section_name TEXT NOT NULL,
     delivery_mode TEXT,
@@ -679,6 +683,12 @@ CREATE TABLE IF NOT EXISTS esf7_school_profile (
     
     -- Aggregate Array of Active Inclusive Program Tags
     inclusive_programs JSONB DEFAULT '[]'::jsonb,
+
+    -- School Shift Declaration (Optional, within 4:00 AM - 10:00 PM)
+    has_shifts BOOLEAN NOT NULL DEFAULT FALSE,
+    shift_start_time TEXT,
+    shift_end_time TEXT,
+    shifts_config JSONB DEFAULT '{}'::jsonb,
     
     raw_payload JSONB DEFAULT '{}'::jsonb,
     

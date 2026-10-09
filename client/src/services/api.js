@@ -305,6 +305,18 @@ export const api = {
     });
     return parseJsonOrThrow(res);
   },
+  getSdoSchoolHead: async () => {
+    const res = await fetchWithAuth(`${API_BASE}/school-head-sdo`);
+    return parseJsonOrThrow(res);
+  },
+  saveSdoSchoolHead: async (record) => {
+    const res = await fetchWithAuth(`${API_BASE}/school-head-sdo`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record)
+    });
+    return parseJsonOrThrow(res);
+  },
   toggleSchoolHead: async (id, isSchoolHead) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/school-head`, {
       method: 'PUT',
@@ -555,6 +567,14 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ personnelId, allowanceKey, isGranted, schoolYear })
+    });
+    return parseJsonOrThrow(res);
+  },
+  setPersonnelAllowanceDisabled: async (personnelId, allowanceKey, isDisabled, schoolYear = 'SY 26-27') => {
+    const res = await fetchWithAuth(`${API_BASE}/allowances/disable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personnelId, allowanceKey, isDisabled, schoolYear })
     });
     return parseJsonOrThrow(res);
   },

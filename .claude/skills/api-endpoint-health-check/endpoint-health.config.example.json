@@ -1,0 +1,49 @@
+{
+  "project": "eSF7 (MATATAG school management, Node/Express, Postgres)",
+  "entryFile": "server/server.js",
+  "baseUrl": "http://localhost:5000",
+  "allowedHosts": ["localhost", "127.0.0.1", "::1"],
+  "startServer": {
+    "enabled": false,
+    "cwd": "server",
+    "command": "node",
+    "args": ["server.js"],
+    "port": 5099,
+    "readyPath": "/api/health/readiness",
+    "readyTimeoutMs": 60000,
+    "env": { "START_LOCAL_WORKER": "false" }
+  },
+  "auth": {
+    "scheme": "bearer",
+    "loginPath": "/api/auth/password-login",
+    "loginBody": { "identifier": "$HC_IDENTIFIER", "password": "$HC_PASSWORD" },
+    "tokenField": "token",
+    "gateFile": "server/middleware/auth.js",
+    "gateNames": ["apiAuthGate"],
+    "middlewareNames": ["requireAuth", "authenticate", "verifyToken", "authMiddleware"],
+    "publicPrefixes": ["/api/health", "/api/auth", "/api/room-profiling", "/api/salary-matrix"],
+    "credentialsEnvFile": null
+  },
+  "database": {
+    "enabled": true,
+    "envFile": "server/.env",
+    "allowedNames": ["esf7_local", "insighted_esf7"],
+    "expectedEnv": { "INSIGHTED_DB_NAME": "esf7_local" },
+    "tablePrefix": "esf7_",
+    "intentionalSpellings": ["esf7_perssonel_educ"],
+    "extraTables": ["school_drafts"],
+    "queryWrapperFiles": ["server/db/index.js"],
+    "staticSchemaGlobs": ["server/schema.sql", "server/create_*.js", "server/migrations/*.js"],
+    "settleMs": 1200
+  },
+  "thresholds": { "slowMs": 1500, "timeoutMs": 15000, "bodyPreviewChars": 300, "maxLargeBodyBytes": 5000000 },
+  "rate": { "concurrency": 1, "delayMs": 25, "abortAfterConsecutiveFailures": 5 },
+  "sampleParams": { "schoolId": "$HC_SCHOOL_ID", "school_id": "$HC_SCHOOL_ID" },
+  "queryDefaults": { "schoolYear": "SY 26-27" },
+  "destructivePathPattern": "(clear|delete-all|truncate|reset|purge|wipe|drop|migrate|seed|restore|import|upload|submit)",
+  "skip": [
+    { "match": "^[A-Z]+ /api/dev(/|$)", "reason": "developer snapshot tooling; not an application endpoint" }
+  ],
+  "logs": { "file": null, "pm2App": null, "ignorePatterns": ["POSTGRES-FALLBACK mode"] },
+  "outDir": null
+}

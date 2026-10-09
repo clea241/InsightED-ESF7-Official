@@ -1,7 +1,11 @@
 import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
 
 // Unit tests only (fast, no database, no browser). Integration and e2e suites have their own commands.
 export default defineConfig({
+  resolve: {
+    alias: { '@shared': fileURLToPath(new URL('./shared', import.meta.url)) }
+  },
   test: {
     include: ['client/tests/unit/**/*.test.{js,mjs}', 'server/tests/unit/**/*.test.{js,mjs}'],
     setupFiles: ['./client/tests/setup.js'],

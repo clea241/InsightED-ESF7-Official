@@ -284,9 +284,17 @@ function getMasterDbInfo() {
   };
 }
 
+
+/** Ends every pool that was actually created (shared pools are ended once). Used by graceful shutdown. */
+async function closeAllPools() {
+  const pools = new Set([_pool, _stagingPool, _prodPool, _insightEdPool, _usersDbPool].filter(Boolean));
+  await Promise.all([...pools].map((p) => p.end().catch((e) => console.warn('[Pool close warning]:', e.message))));
+}
+
 const dbExport = {
   query,
   getClient,
+  closeAllPools,
   getPool,
   getStagingPool,
   getProdPool,

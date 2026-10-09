@@ -46,3 +46,26 @@
 
 ## Class sections: source of truth (2026-10-09)
 Sections live in `esf7_regular_sections` (and sibling sned/als/aral/remedial tables), never in `school_drafts`. Stable key = row id, then school + canonical school year + grade level + section name. Canonical school year format is "SY 26-27". A draft is only an unsaved overlay and needs user confirmation to be applied.
+
+## Time allotment per subject (shared/scheduleRules.js)
+- Regular/multigrade: min 40 min per class (sections containing G1 or G2), no daily cap, 480 min/week per subject.
+- Special Curricular Programs: min 40 min, max 120 min/day per subject, 600 min/week per subject.
+- Enforced in Validation Center (client) and on workload save (server, 422). Message names the rule + "coordinate with CID".
+
+## Personnel category, fund source, allowances, multigrade (2026-10-09)
+- Category comes from the position lookup (`POSITION_OPTIONS_BY_CATEGORY` client, `CANONICAL_POSITIONS_BY_CATEGORY` server). Librarian, School Librarian, College Librarian moved Non-Teaching -> Teaching-Related; Guidance positions were already Teaching-Related.
+- Related-Teaching staff (any position in that category, incl. Head Teacher, Librarian, Guidance) get workload from Classes Organized: grade levels of sections they advise count as their assigned grades (unlocks plotting). Never decided by title text.
+- Fund source NATIONAL is allowed for CONTRACTUAL and JOB ORDER/CONTRACT OF SERVICE (list: `NATIONAL_FUND_ELIGIBLE_NATURES`, shared/scheduleRules.js). Other non-permanent natures stay local-fund only.
+- An allowance can be disabled per personnel + school year (e.g. Special Hardship). Disabled = cannot be granted, bulk toggles skip it, compliance "at least one allowance" ignores it. Stored grant is kept; re-enabling restores it. Default: nothing disabled.
+- Multigrade section: each grade level can carry its own subject (`subjectGradeLevel` on the workload row). Different grades in one section are not a time overlap or duplicate-subject conflict; same grade + same subject by two teachers still is. Min/weekly-max allotment is counted per grade level + subject (shared/timeAllotment.js, enforced on save server-side).
+
+## School head (Rows 14/16, 2026-10-09)
+- A school may list several Principals; exactly one is the school head (Roster toggle -> `is_school_head`). Server blocks a second head on create and update; migration adds a partial unique index per school. Roster save is blocked with zero heads (unless an SDO head exists); Validation Center errors when 2+ Principals and none designated.
+- If the roster has no designated head, the Roster shows "Add SDO School Head" (name, email, position title; table `esf7_school_head_sdo`, one per school, not in the roster). Reports/SF7 print and Validation Center principal name use roster head first, then the SDO record (`shared/schoolHead.js`). The SDO record is refused (409) while the roster has a head.
+- SCHOOL PRINCIPAL II and MASTER TEACHER I already exist in the position lookups (client + server); no change needed.
+
+## Rows 17-22 (2026-10-09)
+- Learning Area years available = years since first service day minus `disabledServiceYears` (personnel record, default 0, whole number 0-70). Cannot disable so many that recorded subject-years exceed what remains. Existing records unchanged until used.
+- Department Head per key stage is required only if JHS or SHS is offered (`requiresDepartmentHead`, shared/schoolLevel.js). Elementary-only schools are not blocked. Unknown/empty offering keeps the old (required) behavior.
+- School Principal positions (shared/personnelClass.js) stay Related-Teaching but get no Classes-Organized workload: no advisory/section rows are generated and organized-class grades are not counted.
+- JHS/SHS sections: two classes may share a time slot in the By-Section builder when subjects differ; a clash is the same subject repeated, or the same teacher double-booked. Elementary sections keep one class per slot. Room double-booking is not checked (workload rows carry no room).

@@ -526,8 +526,10 @@ async function processJobById(targetJobId, specificClient = null) {
          has_jhs_inclusive, jhs_inclusive_programs,
          has_shs_inclusive, shs_inclusive_programs,
          has_als, has_sned, has_iped, has_madrasah,
-         inclusive_programs, raw_payload, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
+         inclusive_programs,
+         has_shifts, shift_start_time, shift_end_time, shifts_config,
+         raw_payload, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
        ON CONFLICT (school_id, school_year) DO UPDATE SET
          has_elem_special_programs = EXCLUDED.has_elem_special_programs,
          elem_special_programs = EXCLUDED.elem_special_programs,
@@ -545,6 +547,10 @@ async function processJobById(targetJobId, specificClient = null) {
          has_iped = EXCLUDED.has_iped,
          has_madrasah = EXCLUDED.has_madrasah,
          inclusive_programs = EXCLUDED.inclusive_programs,
+         has_shifts = EXCLUDED.has_shifts,
+         shift_start_time = EXCLUDED.shift_start_time,
+         shift_end_time = EXCLUDED.shift_end_time,
+         shifts_config = EXCLUDED.shifts_config,
          raw_payload = EXCLUDED.raw_payload,
          updated_at = NOW()`,
       [
@@ -567,6 +573,10 @@ async function processJobById(targetJobId, specificClient = null) {
         hasIped,
         hasMadrasah,
         JSON.stringify(incProgs),
+        Boolean(schoolInfo.hasShifts ?? schoolInfo.has_shifts),
+        schoolInfo.shiftStartTime || schoolInfo.shift_start_time || null,
+        schoolInfo.shiftEndTime || schoolInfo.shift_end_time || null,
+        JSON.stringify(schoolInfo.shiftsConfig || schoolInfo.shifts_config || {}),
         JSON.stringify(schoolInfo)
       ]
     );
@@ -1332,8 +1342,9 @@ async function processJobById(targetJobId, specificClient = null) {
           id: secId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
+          section_type: 'SNED (NON-GRADED)',
           grade_level: 'SNED (NON-GRADED)',
-          section_name: sn,
+          section_name: sn || secId,
           program_type: s.programType || s.program_type || null,
           adviser_id: advId,
           male_learners: maleL,
@@ -1347,8 +1358,9 @@ async function processJobById(targetJobId, specificClient = null) {
           id: secId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
+          section_type: 'ALS',
           grade_level: gl,
-          section_name: sn,
+          section_name: sn || secId,
           delivery_mode: s.deliveryMode || s.delivery_mode || null,
           clc_name: s.clcName || s.clc_name || null,
           adviser_id: advId,
@@ -1364,10 +1376,11 @@ async function processJobById(targetJobId, specificClient = null) {
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
           basis_type: s.basisType || s.aralBasis || (s.aralTool ? 'assessment' : 'grade'),
+          section_type: 'ARAL',
           grade_level: s.aralGrade || gl,
           assessment_tool: s.assessmentTool || s.aralTool || s.aralToolKey || null,
           profile_level: s.profileLevel || s.aralProfileLevel || null,
-          section_name: sn,
+          section_name: sn || secId,
           tutor_id: s.tutorId || s.tutor_id || advId,
           male_learners: maleL,
           female_learners: femaleL,
@@ -1375,13 +1388,15 @@ async function processJobById(targetJobId, specificClient = null) {
           raw_payload: JSON.stringify(s)
         });
       } else if (isRem) {
+        const remType = stUpper.includes('ENRICHMENT') ? 'ENRICHMENT' : 'REMEDIAL';
         remSecBatch.push({
           id: secId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
-          intervention_type: (stUpper.includes('ENRICHMENT') ? 'ENRICHMENT' : 'REMEDIAL'),
+          intervention_type: remType,
+          section_type: remType,
           grade_level: gl,
-          section_name: sn,
+          section_name: sn || secId,
           assigned_teacher_id: s.assignedTeacherId || s.teacherId || advId,
           male_learners: maleL,
           female_learners: femaleL,
@@ -1424,6 +1439,7 @@ async function processJobById(targetJobId, specificClient = null) {
     if (snedSecBatch.length > 0) {
       await executeBatchInsertInChunks(client, 'esf7_sned_sections', Object.keys(snedSecBatch[0]), snedSecBatch, `
         ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+          section_type = EXCLUDED.section_type,
           grade_level = EXCLUDED.grade_level,
           program_type = EXCLUDED.program_type,
           adviser_id = EXCLUDED.adviser_id,
@@ -1440,6 +1456,7 @@ async function processJobById(targetJobId, specificClient = null) {
     if (alsSecBatch.length > 0) {
       await executeBatchInsertInChunks(client, 'esf7_als_sections', Object.keys(alsSecBatch[0]), alsSecBatch, `
         ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+          section_type = EXCLUDED.section_type,
           grade_level = EXCLUDED.grade_level,
           delivery_mode = EXCLUDED.delivery_mode,
           clc_name = EXCLUDED.clc_name,
@@ -1458,6 +1475,7 @@ async function processJobById(targetJobId, specificClient = null) {
       await executeBatchInsertInChunks(client, 'esf7_aral_sections', Object.keys(aralSecBatch[0]), aralSecBatch, `
         ON CONFLICT (id) DO UPDATE SET
           basis_type = EXCLUDED.basis_type,
+          section_type = EXCLUDED.section_type,
           grade_level = EXCLUDED.grade_level,
           assessment_tool = EXCLUDED.assessment_tool,
           profile_level = EXCLUDED.profile_level,
@@ -1476,6 +1494,7 @@ async function processJobById(targetJobId, specificClient = null) {
       await executeBatchInsertInChunks(client, 'esf7_remedial_enrichment_sections', Object.keys(remSecBatch[0]), remSecBatch, `
         ON CONFLICT (id) DO UPDATE SET
           intervention_type = EXCLUDED.intervention_type,
+          section_type = EXCLUDED.section_type,
           grade_level = EXCLUDED.grade_level,
           section_name = EXCLUDED.section_name,
           assigned_teacher_id = EXCLUDED.assigned_teacher_id,

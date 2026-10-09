@@ -15,6 +15,7 @@ import {
   FiAward,
   FiBook,
   FiCheckCircle,
+  FiClock,
   FiX
 } from 'react-icons/fi';
 
@@ -60,6 +61,10 @@ export default function SchoolProfile() {
   const [shsInclusivePrograms, setShsInclusivePrograms] = useState([]); // ['ALS-SHS', 'SNED-SHS', 'IPED-SHS']
 
   const [shsCurriculumModel, setShsCurriculumModel] = useState('Standard K-12 SHS Curriculum');
+  // School Shift Schedule State (Optional)
+  const [hasShifts, setHasShifts] = useState('no'); // 'yes' | 'no'
+  const [shiftStartTime, setShiftStartTime] = useState('07:00');
+  const [shiftEndTime, setShiftEndTime] = useState('18:00');
   const [isSaving, setIsSaving] = useState(false);
 
   // Confirmation Modal & Spotlight Glow State
@@ -79,7 +84,10 @@ export default function SchoolProfile() {
     jhsInclusivePrograms: [...(jhsInclusivePrograms || [])].sort(),
     hasShsInclusive,
     shsInclusivePrograms: [...(shsInclusivePrograms || [])].sort(),
-    shsCurriculumModel
+    shsCurriculumModel,
+    hasShifts,
+    shiftStartTime,
+    shiftEndTime
   });
 
   const isDirty = Boolean(savedSnapshotRef.current && JSON.stringify(getCurrentConfigSnapshot()) !== savedSnapshotRef.current);
@@ -99,6 +107,9 @@ export default function SchoolProfile() {
       setHasShsInclusive(snap.hasShsInclusive);
       setShsInclusivePrograms(snap.shsInclusivePrograms || []);
       setShsCurriculumModel(snap.shsCurriculumModel);
+      setHasShifts(snap.hasShifts || 'no');
+      setShiftStartTime(snap.shiftStartTime || '07:00');
+      setShiftEndTime(snap.shiftEndTime || '18:00');
     } catch (e) {}
   };
 
@@ -145,6 +156,13 @@ export default function SchoolProfile() {
           : (schoolInfo?.hasShsInclusive ? 'yes' : (shsInc.length > 0 ? 'yes' : 'no'));
         setHasShsInclusive(hasShsIncVal);
         setShsInclusivePrograms(shsInc.length > 0 ? shsInc : (config?.shsInclusivePrograms || schoolInfo?.shsInclusivePrograms || []));
+
+        const hasShiftsVal = config?.hasShifts !== undefined
+          ? (config.hasShifts ? 'yes' : 'no')
+          : (schoolInfo?.hasShifts ? 'yes' : 'no');
+        setHasShifts(hasShiftsVal);
+        setShiftStartTime(config?.shiftStartTime || schoolInfo?.shiftStartTime || '07:00');
+        setShiftEndTime(config?.shiftEndTime || schoolInfo?.shiftEndTime || '18:00');
 
         if (config) {
           setHasElemSpecialPrograms(config.hasElemSpecialPrograms ? 'yes' : 'no');
@@ -211,6 +229,9 @@ export default function SchoolProfile() {
           hasShsInclusive: hasShsInclusive === 'yes',
           shsInclusivePrograms,
           shsCurriculumModel,
+          hasShifts: hasShifts === 'yes',
+          shiftStartTime: hasShifts === 'yes' ? shiftStartTime : '07:00',
+          shiftEndTime: hasShifts === 'yes' ? shiftEndTime : '18:00',
           specialPrograms: selectedPrograms,
           inclusivePrograms: selectedInclusive
         };
@@ -231,7 +252,7 @@ export default function SchoolProfile() {
         return false;
       }
     });
-  }, [registerAutoSaveHandler, schoolInfo?.schoolId, hasElemSpecialPrograms, elemSpecialProgram, hasElemInclusive, elemInclusivePrograms, hasJhsSpecialPrograms, jhsSpecialPrograms, hasJhsInclusive, jhsInclusivePrograms, hasShsInclusive, shsInclusivePrograms, shsCurriculumModel, setSchoolInfo]);
+  }, [registerAutoSaveHandler, schoolInfo?.schoolId, hasElemSpecialPrograms, elemSpecialProgram, hasElemInclusive, elemInclusivePrograms, hasJhsSpecialPrograms, jhsSpecialPrograms, hasJhsInclusive, jhsInclusivePrograms, hasShsInclusive, shsInclusivePrograms, shsCurriculumModel, hasShifts, shiftStartTime, shiftEndTime, setSchoolInfo]);
 
   const syncConfigDraft = (overrides = {}) => {
     try {
@@ -246,6 +267,9 @@ export default function SchoolProfile() {
       const curJhsInc = overrides.jhsInclusivePrograms !== undefined ? overrides.jhsInclusivePrograms : jhsInclusivePrograms;
       const curHasShsInc = overrides.hasShsInclusive !== undefined ? overrides.hasShsInclusive : hasShsInclusive;
       const curShsInc = overrides.shsInclusivePrograms !== undefined ? overrides.shsInclusivePrograms : shsInclusivePrograms;
+      const curHasShifts = overrides.hasShifts !== undefined ? overrides.hasShifts : hasShifts;
+      const curShiftStart = overrides.shiftStartTime !== undefined ? overrides.shiftStartTime : shiftStartTime;
+      const curShiftEnd = overrides.shiftEndTime !== undefined ? overrides.shiftEndTime : shiftEndTime;
 
       const selectedPrograms = [
         ...(curHasElemSpecial === 'yes' && curElemSpecial ? ['SPECIAL SCIENCE ELEMENTARY SCHOOL'] : []),
@@ -271,6 +295,9 @@ export default function SchoolProfile() {
         shsInclusivePrograms: curHasShsInc === 'yes' ? curShsInc : [],
         inclusivePrograms: selectedInclusive,
         shsCurriculumModel,
+        hasShifts: curHasShifts === 'yes',
+        shiftStartTime: curHasShifts === 'yes' ? curShiftStart : '07:00',
+        shiftEndTime: curHasShifts === 'yes' ? curShiftEnd : '18:00',
         schoolYear: schoolInfo.schoolYear || 'SY 26-27'
       };
 
@@ -302,6 +329,24 @@ export default function SchoolProfile() {
   const runSchoolProfileSave = async () => {
     setIsSaving(true);
     try {
+      if (hasShifts === 'yes') {
+        const parseM = (t) => {
+          if (!t) return null;
+          const parts = String(t).split(':').map(Number);
+          if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+          return parts[0] * 60 + parts[1];
+        };
+        const sM = parseM(shiftStartTime);
+        const eM = parseM(shiftEndTime);
+        if (sM === null || eM === null || sM < 240 || eM > 1320 || eM <= sM) {
+          return {
+            ok: false,
+            title: 'Invalid Shift Window',
+            message: 'Declared shift hours must fall between 4:00 AM (04:00) and 10:00 PM (22:00), and End Time must be later than Start Time.'
+          };
+        }
+      }
+
       const selectedPrograms = [];
       if (isElemActive && hasElemSpecialPrograms === 'yes' && elemSpecialProgram) {
         selectedPrograms.push('SPECIAL SCIENCE ELEMENTARY SCHOOL');
@@ -330,6 +375,9 @@ export default function SchoolProfile() {
         shsInclusivePrograms: hasShsInclusive === 'yes' ? shsInclusivePrograms : [],
         inclusivePrograms: selectedInclusive,
         shsCurriculumModel: isSHSActive ? shsCurriculumModel : null,
+        hasShifts: hasShifts === 'yes',
+        shiftStartTime: hasShifts === 'yes' ? shiftStartTime : '07:00',
+        shiftEndTime: hasShifts === 'yes' ? shiftEndTime : '18:00',
         schoolYear: schoolInfo.schoolYear || 'SY 26-27'
       };
 
@@ -1202,6 +1250,207 @@ export default function SchoolProfile() {
 
             </div>
           </article>
+
+          {/* School Shift Schedule (Optional) */}
+          <article
+            className="card"
+            style={{
+              border: '1px solid #e2e8f0',
+              borderRadius: '22px',
+              overflow: 'hidden',
+              boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.05)',
+              background: '#ffffff',
+              marginTop: '24px'
+            }}
+          >
+            <div style={{
+              padding: '24px 32px',
+              borderBottom: '1px solid #f1f5f9',
+              background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px'
+            }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '14px',
+                background: '#f0f9ff',
+                color: '#0284c7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #bae6fd'
+              }}>
+                <FiClock size={22} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>
+                    School Shift Schedule
+                  </h3>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    background: '#f1f5f9',
+                    color: '#64748b',
+                    padding: '2px 8px',
+                    borderRadius: '10px'
+                  }}>
+                    Optional
+                  </span>
+                </div>
+                <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#64748b' }}>
+                  Declare custom institutional shift operating hours for timetable scheduling and workload computations.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', margin: 0, display: 'block' }}>
+                    Does your school operate on a declared custom shift schedule?
+                  </label>
+                  <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#64748b' }}>
+                    If disabled, timetables default to DepEd standard operational bounds (7:00 AM – 6:00 PM).
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasShifts('yes');
+                      syncConfigDraft({ hasShifts: 'yes' });
+                    }}
+                    style={{
+                      padding: '8px 22px',
+                      borderRadius: '10px',
+                      border: hasShifts === 'yes' ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                      background: hasShifts === 'yes' ? '#0284c7' : '#ffffff',
+                      color: hasShifts === 'yes' ? '#ffffff' : '#475569',
+                      fontWeight: '800',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    YES
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasShifts('no');
+                      syncConfigDraft({ hasShifts: 'no' });
+                    }}
+                    style={{
+                      padding: '8px 22px',
+                      borderRadius: '10px',
+                      border: hasShifts === 'no' ? '1.5px solid #64748b' : '1px solid #cbd5e1',
+                      background: hasShifts === 'no' ? '#64748b' : '#ffffff',
+                      color: hasShifts === 'no' ? '#ffffff' : '#475569',
+                      fontWeight: '800',
+                      fontSize: '13px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    NO
+                  </button>
+                </div>
+              </div>
+
+              {hasShifts === 'yes' && (
+                <div style={{
+                  padding: '20px',
+                  background: '#f0f9ff',
+                  borderRadius: '16px',
+                  border: '1.5px solid #bae6fd',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px'
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
+                        Shift Start Time
+                      </label>
+                      <input
+                        type="time"
+                        value={shiftStartTime}
+                        onChange={(e) => {
+                          setShiftStartTime(e.target.value);
+                          syncConfigDraft({ shiftStartTime: e.target.value });
+                        }}
+                        min="04:00"
+                        max="21:59"
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1.5px solid #7dd3fc',
+                          background: '#ffffff',
+                          fontSize: '14px',
+                          fontWeight: '700',
+                          color: '#0f172a',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
+                        Shift End Time
+                      </label>
+                      <input
+                        type="time"
+                        value={shiftEndTime}
+                        onChange={(e) => {
+                          setShiftEndTime(e.target.value);
+                          syncConfigDraft({ shiftEndTime: e.target.value });
+                        }}
+                        min="04:01"
+                        max="22:00"
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1.5px solid #7dd3fc',
+                          background: '#ffffff',
+                          fontSize: '14px',
+                          fontWeight: '700',
+                          color: '#0f172a',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                    paddingTop: '8px',
+                    borderTop: '1px dashed #7dd3fc',
+                    fontSize: '12px',
+                    color: '#0369a1'
+                  }}>
+                    <span>Operational window: <strong>4:00 AM – 10:00 PM</strong> (e.g. 7:00 AM to 2:10 PM for 50-minute periods).</span>
+                    <span style={{
+                      background: '#e0f2fe',
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontWeight: '800',
+                      color: '#0284c7'
+                    }}>
+                      Active Window: {shiftStartTime} – {shiftEndTime}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </article>
         </div>
 
       </div>
@@ -1340,6 +1589,14 @@ export default function SchoolProfile() {
                       <span style={{ fontWeight: '800', color: '#64748b' }}>None</span>
                     )}
                   </div>
+                </div>
+
+                {/* Shift Schedule Summary */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+                  <span style={{ fontWeight: '700', color: '#0284c7' }}>Shift Schedule:</span>
+                  <span style={{ fontWeight: '800', color: hasShifts === 'yes' ? '#0369a1' : '#64748b' }}>
+                    {hasShifts === 'yes' ? `${shiftStartTime} – ${shiftEndTime}` : 'Standard (7:00 AM – 6:00 PM)'}
+                  </span>
                 </div>
               </div>
             </div>

@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 2026-10-09 (PM2 restart safety)
+- Server: graceful shutdown now closes all Postgres pools after in-flight requests drain (`db.closeAllPools`); startup verifies the primary DB (5 tries) before opening the port and exits non-zero otherwise, so PM2 retries instead of serving 500s. `ecosystem.config.js` gained kill_timeout 15000 / wait_ready / listen_timeout (prod and staging configs already had them). Rollback: revert server/server.js, server/db/index.js, ecosystem.config.js.
+
 ## 2026-10-09 (lock only from readiness, one school id)
 - Lock: an ordinary failed request (network error, 502/503/504) is only a hint; it starts readiness probes (GET /api/health, 0.5s/1s backoff) and the app locks only after 3 consecutive failed probes. 4xx incl. 401/403 never count. Rollback: revert `services/serverHealth.js` (recordServerFailure/runProbes).
 - School id: root cause of `schoolId=100093`: (a) `schoolInfo` state defaulted to the placeholder "100093" before login, (b) the 10 s requests poller captured a stale `refreshRequests` closure from that time, (c) many API helpers fell back to `localStorage.activeSchoolId` left by earlier logins. Now `services/session.js` `resolveSchoolId()` (token payload) is the single source for every school-scoped call in api.js and AppContext; a different explicit id from a single-school account is replaced and recorded (`getSchoolIdMismatches`). Placeholder defaults removed; schoolInfo.schoolId cleared on logout.
@@ -116,3 +119,28 @@
 - Roster: save creates people added on the roster (`local-p-` ids) through `POST /personnel`, now idempotent on id/PRN (`existing: true`), and checks the returned id.
 - Absences: `GET /absences` is scoped to the school (it returned all schools); `POST` is an idempotent upsert; a foreign-key failure returns 422 with a clear message.
 - Tooling (nothing applied): `utils/naturalKeys.js`, `scripts/audit_duplicates.js` (read-only), `scripts/dedupe_natural_keys.js` (report; `--apply --confirm=<table>` snapshots first), `migrations/add_natural_key_constraints.js` (check-only unless `--apply --confirm=YES`; skips tables that still have duplicates).
+
+## 2026-10-09 - Time-allotment rules + QR validity constant
+- Schedule compliance now checks per-subject minimum / daily cap / weekly cap from `shared/scheduleRules.js` (replaces fixed 40-min and 45/50/55/60 DO 12 patterns). Multigrade sections are now checked (90-min blocks allowed).
+- Server rejects (422 `TIME_ALLOTMENT_VIOLATION`) new or changed workload rows that break the rules.
+- Error messages name the failed rule and include the "coordinate with CID" note.
+- QR passcode window now reads `QR_VALIDITY_MS` (24h) on client and server; behavior unchanged.
+
+## 2026-10-09 - Rows 9-13 (multigrade, allowances, classification, fund source)
+- Multigrade: per-grade subject selector in Workload Block Inspector; per-grade conflict/duplicate/allotment checks.
+- Allowances: per-person Disable/Enable button; new POST /api/allowances/disable; column `disabled_allowances` (additive, auto-created).
+- Librarian positions -> Teaching-Related (client + server lookup). Organized Classes no longer excludes Guidance and no longer matches Related-Teaching by title.
+- Related-Teaching workload follows Classes Organized (advised sections' grades).
+- Fund source: NATIONAL option for Contractual and COS (Personnel Profile, Room Profiling form + validation).
+
+## 2026-10-09 - Rows 14 & 16 (school head)
+- New table `esf7_school_head_sdo` + `/api/school-head-sdo` (GET/PUT); Roster button + modal; SF7 print and Validation Center fall back to it.
+- Server rejects a second designated head on create; migration `add_school_head_sdo_and_unique_head.js` (NOT yet run) adds the unique index.
+- Validation Center counts the designated head only, flags undesignated multiple Principals.
+
+## 2026-10-09 - Rows 17, 19, 22, last row
+- Learning Area "Disable Years" (new column `disabled_service_years` on esf7_personnel_profile, auto-created on first save).
+- Department Head requirement skipped for elementary-only schools (Designations gate + Validation Center).
+- Principals exempt from Classes-Organized workload generation.
+- By-Section slot conflict relaxed for JHS/SHS different subjects.
+- Row 18 verified only (no change), Row 21 no action, Row 20 pending.

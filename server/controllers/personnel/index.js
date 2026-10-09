@@ -338,7 +338,7 @@ const CANONICAL_POSITIONS_BY_CATEGORY = {
     "HEAD TEACHER IV", "HEAD TEACHER V", "HEAD TEACHER VI",
     "SCHOOL PRINCIPAL I", "SCHOOL PRINCIPAL II", "SCHOOL PRINCIPAL III", "SCHOOL PRINCIPAL IV",
     "SPECIAL SCHOOL PRINCIPAL I", "SPECIAL SCHOOL PRINCIPAL II",
-    "GUIDANCE SERVICES SPECIALIST", "VOCATIONAL SCHOOL ADMINISTRATOR", "VOCATIONAL SCHOOL SUPERINTENDENT"
+    "GUIDANCE SERVICES SPECIALIST", "LIBRARIAN", "SCHOOL LIBRARIAN", "COLLEGE LIBRARIAN", "VOCATIONAL SCHOOL ADMINISTRATOR", "VOCATIONAL SCHOOL SUPERINTENDENT"
   ],
   "non-teaching": [
     "ACCOUNTANT", "ACCOUNTING CLERK", "ADMINISTRATIVE AIDE",
@@ -353,18 +353,18 @@ const CANONICAL_POSITIONS_BY_CATEGORY = {
     "ADMINISTRATIVE OFFICER III (AO III)", "ADMINISTRATIVE OFFICER IV (AO IV)",
     "ADMINISTRATIVE OFFICER V (AO V)", "AGRICULTURIST", "AQUACULTURAL TECHNICIAN",
     "AQUACULTURIST", "BOOKKEEPER", "CASHIER", "CHIEF ADMINISTRATIVE OFFICER",
-    "CLERK", "COLLEGE LIBRARIAN", "COMMUNICATIONS EQUIPMENT OPERATOR",
+    "CLERK", "COMMUNICATIONS EQUIPMENT OPERATOR",
     "COMPUTER MAINTENANCE TECHNOLOGIST", "CONSTRUCTION AND MAINTENANCE MAN",
     "COOK", "COXSWAIN", "DENTAL AIDE", "DENTIST", "DISBURSING OFFICER",
     "DRIVER", "ENGINEER", "FARM WORKER", "FISCAL CLERK", "FISHERMAN",
     "HANDICRAFT WORKER", "HEAVY EQUIPMENT OPERATOR", "HOUSEPARENT",
     "INFORMATION SYSTEMS ANALYST", "INFORMATION TECHNOLOGY OFFICER",
-    "LABORATORY TECHNICIAN", "LIBRARIAN", "LIGHT EQUIPMENT OPERATOR",
+    "LABORATORY TECHNICIAN", "LIGHT EQUIPMENT OPERATOR",
     "LINEMAN", "MARINE ENGINEMAN", "MASTER FISHERMAN", "MECHANIC",
     "MECHANICAL PLANT OPERATOR", "MEDICAL OFFICER", "NURSE", "NURSE MAID",
     "NURSING ATTENDANT", "NUTRITIONIST-DIETITIAN", "PLANNING OFFICER",
     "PROJECT DEVELOPMENT OFFICER", "PSYCHOLOGIST", "REGISTRAR",
-    "REPRODUCTION MACHINE OPERATOR", "SCHOOL LIBRARIAN",
+    "REPRODUCTION MACHINE OPERATOR",
     "SCHOOLS DIVISION SUPERINTENDENT", "SECURITY GUARD", "SECURITY OFFICER",
     "SENIOR BOOKKEEPER", "SOCIAL WELFARE OFFICER", "STATISTICIAN AIDE",
     "SUPPLY OFFICER", "TECHNICAL EDUCATION AND SKILLS DEVELOPMENT SPECIALIST",
@@ -841,6 +841,18 @@ function formatAdminTaskRecord(row) {
 }
 
 // Formatter to standardize database rows into frontend-compatible objects
+// Years of service the user excluded from the Learning Area total (e.g. non-teaching years before becoming a teacher).
+// Additive, idempotent; existing records default to 0 so their counts do not change.
+let disabledYearsColumnReady;
+function ensureDisabledYearsColumn() {
+  if (!disabledYearsColumnReady) {
+    disabledYearsColumnReady = db.query(
+      `ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS disabled_service_years INTEGER NOT NULL DEFAULT 0`
+    ).catch((e) => { disabledYearsColumnReady = null; throw e; });
+  }
+  return disabledYearsColumnReady;
+}
+
 function formatPersonnelRecord(row, trainingsList = [], designationsList = [], workloadList = [], adminTaskList = []) {
   if (!row) return null;
   const rawProfile = row.raw_payload || {};
@@ -922,6 +934,8 @@ function formatPersonnelRecord(row, trainingsList = [], designationsList = [], w
     allow_email_discrepancy: !!row.allow_email_discrepancy,
     isSchoolHead: !!row.is_school_head,
     is_school_head: !!row.is_school_head,
+    disabledServiceYears: Number(row.disabled_service_years || 0),
+    disabled_service_years: Number(row.disabled_service_years || 0),
 
     // Employment Tab Fields
     employmentId: row.emp_id || null,
@@ -1961,6 +1975,23 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // A school can have several Principals but only ONE designated school head
+    if (is_school_head === true || isSchoolHead === true) {
+      const bare = String(targetSchoolId).replace('SCH-', '');
+      const headCheck = await client.query(
+        `SELECT first_name, last_name, position FROM esf7_personnel_profile
+          WHERE REPLACE(school_id, 'SCH-', '') = $1 AND is_school_head = TRUE LIMIT 1`,
+        [bare]
+      );
+      if (headCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
+        const h = headCheck.rows[0];
+        return res.status(400).json({
+          error: `School head already designated (${h.first_name} ${h.last_name} - ${h.position}). A school can only have ONE School Head.`
+        });
+      }
+    }
+
     // Sequence ID Generation
     const countRes = await client.query(
       `SELECT COUNT(*) FROM esf7_personnel_profile WHERE school_id = $1`,
@@ -2259,6 +2290,9 @@ router.post('/', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error creating personnel record:', err);
+    if (err.code === '23505' && String(err.constraint || '').includes('one_school_head')) {
+      return res.status(400).json({ error: 'A school can only have ONE School Head. Remove the current designation first.' });
+    }
     res.status(err.status || 500).json({ error: err.message, ...(err.field ? { field: err.field } : {}) });
   } finally {
     client.release();
@@ -2460,7 +2494,22 @@ router.put('/:id', async (req, res) => {
     ];
 
     const profileRes = await client.query(updateProfileQuery, profileValues);
-    const updatedProfile = profileRes.rows[0];
+    let updatedProfile = profileRes.rows[0];
+
+    // Disabled service years (Learning Area tab). Validated whole number, never more than the years since first service.
+    const rawDisabled = req.body.disabledServiceYears ?? req.body.disabled_service_years;
+    if (rawDisabled !== undefined && rawDisabled !== null && rawDisabled !== '') {
+      const n = Number(rawDisabled);
+      if (!Number.isInteger(n) || n < 0 || n > 70) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Disabled service years must be a whole number from 0 to 70.' });
+      }
+      await ensureDisabledYearsColumn();
+      const upd = await client.query(
+        `UPDATE esf7_personnel_profile SET disabled_service_years = $1 WHERE id = $2 RETURNING *`, [n, updatedProfile.id]
+      );
+      if (upd.rows[0]) updatedProfile = upd.rows[0];
+    }
 
     let empPos = (position || 'TEACHER I').toUpperCase();
     const isCook = empPos === 'COOK';
@@ -2690,6 +2739,9 @@ router.put('/:id', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error updating personnel profile:', err);
+    if (err.code === '23505' && String(err.constraint || '').includes('one_school_head')) {
+      return res.status(400).json({ error: 'A school can only have ONE School Head. Remove the current designation first.' });
+    }
     res.status(err.status || 500).json({ error: err.message, ...(err.field ? { field: err.field } : {}) });
   } finally {
     client.release();

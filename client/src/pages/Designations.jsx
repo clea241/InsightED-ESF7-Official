@@ -12,6 +12,7 @@ import {
 } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import PortalHeader from '../components/PortalHeader';
+import { requiresDepartmentHead } from '@shared/schoolLevel.js';
 import {
   FiCheckCircle,
   FiAlertCircle,
@@ -835,7 +836,7 @@ export default function Designations() {
     // Check if Department Head requirement is marked N/A
     const isDeptHeadNa = designationsNaMap['department_head_keystage'] || designationsNaMap['department_head'];
 
-    if (!isDeptHeadNa) {
+    if (!isDeptHeadNa && requiresDepartmentHead(schoolInfo?.curricularOffering)) {
       // Check if at least 1 Department Head is designated in any active Key Stage
       const anyDeptHeadAssigned = activePersonnel.some(p => {
         const pDesigStr = typeof p.designation === 'string' ? p.designation : (p.designation?.name || p.designation?.designation || String(p.designation || ''));

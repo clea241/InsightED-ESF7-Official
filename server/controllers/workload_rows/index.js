@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const { findBlockedTeachingRows } = require('../../utils/teachingAssignments');
+const { loadTimeAllotment } = require('../../utils/sharedRules');
 
 function formatWorkloadRecord(row) {
   if (!row) return null;
@@ -202,6 +203,53 @@ function dedupeRowsById(rows) {
   });
 }
 
+const rowSignature = (r) => [
+  r.subject, r.startTime || r.start_time, r.endTime || r.end_time,
+  JSON.stringify(r.days || []), r.sectionId || r.section_id, r.term || '1st'
+].join('|');
+
+// Violations (from shared/timeAllotment.js) that involve at least one new or changed incoming row.
+async function findTimeAllotmentViolations(client, personId, incomingRows, existingRows) {
+  const incoming = incomingRows.map((r, i) => ({ ...r, id: r.id || `incoming-${i}` }));
+  const sectionIds = [...new Set(incoming.map(r => r.sectionId || r.section_id).filter(Boolean).map(String))];
+  if (sectionIds.length === 0) return [];
+
+  const { validateTimeAllotment } = await loadTimeAllotment();
+  const existingSigs = new Map((existingRows || []).filter(r => r && r.id).map(r => [String(r.id), rowSignature(r)]));
+  const changedIds = new Set(incoming.filter(r => existingSigs.get(String(r.id)) !== rowSignature(r)).map(r => String(r.id)));
+  if (changedIds.size === 0) return [];
+
+  const secRes = await client.query(
+    `SELECT id, grade_level, section_name, section_type FROM esf7_class_sections WHERE id = ANY($1)`, [sectionIds]
+  );
+  const othersRes = await client.query(
+    `SELECT id, section_id, subject, start_time, end_time, days, raw_payload
+       FROM esf7_workload_rows WHERE section_id = ANY($1) AND personnel_id <> $2`,
+    [sectionIds, personId]
+  );
+  const others = othersRes.rows.map(r => ({
+    ...r,
+    term: (r.raw_payload && r.raw_payload.term) || '1st',
+    subjectGradeLevel: r.raw_payload && (r.raw_payload.subjectGradeLevel || r.raw_payload.subject_grade_level)
+  }));
+
+  const found = [];
+  for (const sec of secRes.rows) {
+    const mine = incoming.filter(r => String(r.sectionId || r.section_id) === String(sec.id));
+    const terms = [...new Set(mine.map(r => r.term || '1st'))];
+    for (const t of terms) {
+      const combined = [
+        ...others.filter(r => String(r.section_id) === String(sec.id) && r.term === t),
+        ...mine.filter(r => (r.term || '1st') === t)
+      ];
+      for (const v of validateTimeAllotment(sec, combined)) {
+        if (v.rowIds.some(id => changedIds.has(String(id)))) found.push(v);
+      }
+    }
+  }
+  return found;
+}
+
 const saveWorkloadBatchHandler = async (req, res) => {
   const client = await db.getClient();
   try {
@@ -266,6 +314,22 @@ const saveWorkloadBatchHandler = async (req, res) => {
           blockedRowIds: blocked.map(r => r.id || null)
         });
       }
+    }
+
+    // Rule: time-allotment limits per subject (shared/scheduleRules.js). The weekly cap spans every teacher of a
+    // section, so other teachers' saved rows are loaded. As with the rule above, only new or changed rows can be
+    // rejected; rows saved earlier are left alone so legacy data does not block unrelated edits.
+    const timeViolations = await findTimeAllotmentViolations(
+      client, personRes.rows[0] ? personRes.rows[0].id : targetPersonnelId, rowsToSave,
+      personRes.rows[0] ? ((personRes.rows[0].raw_payload || {}).workloadRows || []) : []
+    );
+    if (timeViolations.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({
+        error: 'TIME_ALLOTMENT_VIOLATION',
+        message: timeViolations[0].message,
+        violations: timeViolations.map(v => ({ code: v.code, subject: v.subject, message: v.message }))
+      });
     }
 
     let targetPersonId = targetPersonnelId;

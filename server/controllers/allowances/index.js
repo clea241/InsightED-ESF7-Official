@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const { getSchoolIdFromRequest } = require('../../utils/auth');
+const { loadAllowanceRules } = require('../../utils/sharedRules');
 
 const ALLOWED_KEYS = ['pera', 'uniform', 'supplies', 'medical', 'hardship'];
 
@@ -12,6 +13,19 @@ const DEFAULT_AMOUNTS = {
   medical: null,
   hardship: null
 };
+
+// Additive, idempotent: records without a disabled list keep their current behaviour.
+let disabledColumnReady;
+function ensureDisabledColumn() {
+  if (!disabledColumnReady) {
+    disabledColumnReady = db.query(
+      `ALTER TABLE esf7_personnel_allowances ADD COLUMN IF NOT EXISTS disabled_allowances JSONB NOT NULL DEFAULT '[]'::jsonb`
+    ).catch((e) => { disabledColumnReady = null; throw e; });
+  }
+  return disabledColumnReady;
+}
+
+const toDisabledList = (row) => (Array.isArray(row?.disabled_allowances) ? row.disabled_allowances : []);
 
 async function isPersonnelNonTeaching(personnelId) {
   try {
@@ -82,6 +96,7 @@ function formatAllowanceRecord(row) {
     hardship_amount: row.hardship_amount !== null && row.hardship_amount !== undefined ? Number(row.hardship_amount) : null,
     hardshipAmount: row.hardship_amount !== null && row.hardship_amount !== undefined ? Number(row.hardship_amount) : null,
     
+    disabled: toDisabledList(row),
     rawPayload: raw
   };
 }
@@ -92,6 +107,7 @@ router.get('/', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || req.headers['x-school-id'] || req.query.schoolId || req.query.school_id || '108348';
     const schoolYear = req.query.schoolYear || req.query.school_year || '2026-2027';
+    await ensureDisabledColumn();
 
     // 1. Fetch all personnel profiles for school
     const personnelRes = await db.query(
@@ -122,7 +138,8 @@ router.get('/', async (req, res) => {
         uniform_amount: formatted.uniform_amount,
         supplies_amount: formatted.supplies_amount,
         medical_amount: formatted.medical_amount,
-        hardship_amount: formatted.hardship_amount
+        hardship_amount: formatted.hardship_amount,
+        disabled: formatted.disabled
       };
       fullRecords.push(formatted);
     });
@@ -156,7 +173,8 @@ router.get('/', async (req, res) => {
           uniform_amount: null,
           supplies_amount: null,
           medical_amount: null,
-          hardship_amount: null
+          hardship_amount: null,
+          disabled: formatted.disabled
         };
         fullRecords.push(formatted);
       }
@@ -190,6 +208,18 @@ router.post('/toggle', async (req, res) => {
     }
 
     const grantedBool = Boolean(isGranted);
+    await ensureDisabledColumn();
+
+    // Rule: a disabled allowance cannot be granted until it is re-enabled
+    if (grantedBool) {
+      const cur = await db.query(
+        `SELECT disabled_allowances FROM esf7_personnel_allowances WHERE personnel_id = $1 AND school_year = $2`,
+        [personnelId, schoolYear]
+      );
+      if (cur.rows.length > 0 && toDisabledList(cur.rows[0]).includes(keyLower)) {
+        return res.status(409).json({ success: false, error: 'This allowance is disabled for this personnel. Enable it first.' });
+      }
+    }
 
     // Rule: Non-Teaching staff cannot receive Teaching Supplies Allowance
     if (keyLower === 'supplies' && grantedBool) {
@@ -248,6 +278,53 @@ router.post('/toggle', async (req, res) => {
     });
   } catch (error) {
     console.error('[Allowances Toggle Error]:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/allowances/disable
+// Body: { personnelId, allowanceKey, isDisabled, schoolYear }
+// Disabling keeps the stored grant but makes compliance/totals ignore it; re-enabling restores it.
+router.post('/disable', async (req, res) => {
+  try {
+    const { personnelId, allowanceKey, isDisabled, schoolYear = '2026-2027' } = req.body;
+    const { ALLOWANCE_KEYS } = await loadAllowanceRules();
+    const keyLower = String(allowanceKey || '').toLowerCase();
+    if (!personnelId || !ALLOWANCE_KEYS.includes(keyLower)) {
+      return res.status(400).json({ success: false, error: `personnelId and a valid allowanceKey (${ALLOWANCE_KEYS.join(', ')}) are required.` });
+    }
+    await ensureDisabledColumn();
+
+    const personRes = await db.query(
+      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      [personnelId]
+    );
+    if (personRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Personnel not found.' });
+    }
+    const targetSchoolId = personRes.rows[0].school_id;
+    const countRes = await db.query(`SELECT COUNT(*) FROM esf7_personnel_allowances`);
+    const alwId = `ALW-${String(targetSchoolId).replace('SCH-', '')}-${String(Number(countRes.rows[0].count) + 1).padStart(3, '0')}`;
+
+    const result = await db.query(
+      `INSERT INTO esf7_personnel_allowances (id, personnel_id, school_id, school_year, disabled_allowances)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (personnel_id, school_year)
+       DO UPDATE SET disabled_allowances = (
+         SELECT COALESCE(jsonb_agg(DISTINCT v), '[]'::jsonb)
+         FROM jsonb_array_elements_text(
+           CASE WHEN $6::boolean
+             THEN esf7_personnel_allowances.disabled_allowances || to_jsonb($7::text)
+             ELSE esf7_personnel_allowances.disabled_allowances - $7::text
+           END
+         ) AS v
+       ), updated_at = NOW()
+       RETURNING *;`,
+      [alwId, personnelId, targetSchoolId, schoolYear, JSON.stringify(isDisabled ? [keyLower] : []), Boolean(isDisabled), keyLower]
+    );
+    res.json({ success: true, record: formatAllowanceRecord(result.rows[0]) });
+  } catch (error) {
+    console.error('[Allowances Disable Error]:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

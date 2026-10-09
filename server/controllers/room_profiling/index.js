@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const { loadScheduleRules } = require('../../utils/sharedRules');
 const cacheService = require('../../services/cacheService');
 
 // Ensure ephemeral queue table & cross-device lockout table exist
@@ -578,10 +579,10 @@ router.get('/roster', async (req, res) => {
   }
 });
 
-// Helper for deterministic passcode calculation (Resets every 1 day / 24 hours)
-function calculateDailyCode(key, offset = 0) {
+// Helper for deterministic passcode calculation (window length = shared QR_VALIDITY_MS, 24 hours)
+function calculateDailyCode(key, offset, windowMs) {
   if (!key) return '00000000';
-  const timeWindow = Math.floor(Date.now() / 86400000) + offset;
+  const timeWindow = Math.floor(Date.now() / windowMs) + offset;
   const str = `${String(key).toUpperCase().trim()}_${timeWindow}_ESF7_SECRET_SALT_V2`;
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -610,6 +611,9 @@ router.post('/verify-passcode', async (req, res) => {
     if (!cleanCode) {
       return res.status(400).json({ success: false, message: 'Passcode is required' });
     }
+
+    const { QR_VALIDITY_MS } = await loadScheduleRules();
+
 
     // Load active roster
     let roster = [];
@@ -668,7 +672,7 @@ router.post('/verify-passcode', async (req, res) => {
           break;
         }
         for (const offset of [0, -1, 1]) {
-          if (calculateHourlyCode(cleanK, offset) === cleanCode) {
+          if (calculateHourlyCode(cleanK, offset, QR_VALIDITY_MS) === cleanCode) {
             matched = teacher;
             break;
           }

@@ -881,7 +881,7 @@ export default function OrganizedClasses() {
   });
   // Inline add ARAL row state
   const [showInlineAddAral, setShowInlineAddAral] = useState(false);
-  const [inlineAralData, setInlineAralData] = useState({ aralBasis: 'grade', aralGrade: 'Grade 3', aralToolKey: 'crla', aralProfileLevel: 'Emerging', aralLearners: 15, tutorId: '', sectionName: 'ARAL - ' });
+  const [inlineAralData, setInlineAralData] = useState({ aralBasis: 'grade', aralGrade: 'Grade 3', aralToolKey: 'crla', aralProfileLevel: 'Emerging', aralLearners: 15, tutorId: '', sectionName: '' });
   // Inline add Remedial/Enrichment row state
   const [showInlineAddRemedial, setShowInlineAddRemedial] = useState(false);
   const [inlineRemedialData, setInlineRemedialData] = useState({ interventionCategory: 'REMEDIAL', gradeLevel: '', sectionName: '', maleLearners: '', femaleLearners: '', teacherId: '' });
@@ -1290,14 +1290,6 @@ export default function OrganizedClasses() {
       /\b(tic|oic)\b/.test(roleText);
   };
 
-  const isGuidancePersonnel = (p) => {
-    if (!p) return false;
-    const pos = String(p.position || p.plantilla_position || p.position_title || p.title || p.designation || '').toUpperCase();
-    const role = String(p.role || p.natureOfAppointment || '').toUpperCase();
-    const sub = String(p.subject || '').toUpperCase();
-    return pos.includes('GUIDANCE') || role.includes('GUIDANCE') || sub.includes('GUIDANCE');
-  };
-
   const getPersonnelCategory = (p) => {
     if (!p) return 'teaching';
     const pos = p.position || p.plantilla_position || p.position_title || '';
@@ -1310,20 +1302,18 @@ export default function OrganizedClasses() {
   };
 
   const isTeachingStaff = (p) => {
-    if (!p || isGuidancePersonnel(p)) return false;
+    if (!p) return false;
     const cat = getPersonnelCategory(p);
     return cat !== 'non-teaching';
   };
 
   const isTeachingRelated = (p) => {
     if (!p) return false;
-    if (isGuidancePersonnel(p)) return false;
     const cat = getPersonnelCategory(p);
     const type = String(p.type || '').toLowerCase();
-    const pos = String(p.position || p.plantilla_position || p.position_title || p.title || p.designation || '').toUpperCase();
     const isTeachingRelatedType = cat === 'teaching-related' || type === 'teaching-related' || type === 'teaching_related' || type === 'related-teaching' || type === 'related_teaching';
-    const isTeachingRelatedPos = pos.includes('HEAD TEACHER') || pos.includes('MASTER TEACHER') || pos.includes('COORDINATOR') || pos.includes('TIC') || pos.includes('TEACHER-IN-CHARGE') || pos.includes('PRINCIPAL') || pos.includes('OFFICER-IN-CHARGE');
-    return isTeachingRelatedType || isTeachingRelatedPos || checkIsSchoolHead(p);
+    // Classification (position category) decides this; no position-title keyword matching.
+    return isTeachingRelatedType || checkIsSchoolHead(p);
   };
 
   // Merge local storage draft state into personnel objects so unsaved/freshly updated Teaching Tab data is immediately active
@@ -1653,11 +1643,11 @@ export default function OrganizedClasses() {
 
   const handleSaveInlineEdit = async (sec) => {
     if (!editingRowData) return;
-    if (!editingRowData.sectionName.trim()) {
+    const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(sec.sectionType || '').toUpperCase().trim());
+    if (isReg && !editingRowData.sectionName.trim()) {
       if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
       return;
     }
-    const isReg = ['MONO GRADE', 'MONOGRADE', 'MULTIGRADE', 'MULTI GRADE'].includes(String(sec.sectionType || '').toUpperCase().trim());
     const isAral = !isReg && (
       String(sec.sectionType || '').startsWith('ARAL') ||
       String(sec.sectionType || '').toUpperCase().includes('ARAL') ||
@@ -1737,24 +1727,20 @@ export default function OrganizedClasses() {
       }
     }
 
-    let cleanSectionName = editingRowData.sectionName.toUpperCase().trim();
-    if (isAral) {
-      if (!cleanSectionName.startsWith('ARAL -') && !cleanSectionName.startsWith('ARAL-')) {
-        cleanSectionName = `ARAL - ${cleanSectionName}`;
-      }
-    }
+    let cleanSectionName = isReg ? editingRowData.sectionName.toUpperCase().trim() : (sec.sectionName || sec.id);
 
-    // Check duplicate name within the same grade level and program category (excluding self)
-    const isDuplicate = classSections.some(s => {
-      if (s.id === sec.id) return false;
-      const sameGrade = String(s.gradeLevel || '').trim().toUpperCase() === String(finalGradeLevel || '').trim().toUpperCase();
-      const sameName = String(s.sectionName || '').trim().toUpperCase() === cleanSectionName;
-      const isAralS = String(s.sectionType || '').toUpperCase().includes('ARAL');
-      return sameGrade && sameName && (isAralS === Boolean(isAral));
-    });
-    if (isDuplicate) {
-      if (showAlert) await showAlert('Duplicate Section', `A section named "${cleanSectionName}" already exists for ${finalGradeLevel}.`);
-      return;
+    // Check duplicate name within the same grade level and program category (excluding self) - only for regular classes
+    if (isReg) {
+      const isDuplicate = classSections.some(s => {
+        if (s.id === sec.id) return false;
+        const sameGrade = String(s.gradeLevel || '').trim().toUpperCase() === String(finalGradeLevel || '').trim().toUpperCase();
+        const sameName = String(s.sectionName || '').trim().toUpperCase() === cleanSectionName;
+        return sameGrade && sameName;
+      });
+      if (isDuplicate) {
+        if (showAlert) await showAlert('Duplicate Section', `A section named "${cleanSectionName}" already exists for ${finalGradeLevel}.`);
+        return;
+      }
     }
 
     // Learners validation
@@ -1872,12 +1858,6 @@ export default function OrganizedClasses() {
 
   // Inline ADD handlers for ARAL sections
   const handleSaveInlineAddAral = async () => {
-    const customPart = (inlineAralData.sectionName || '').replace(/^ARAL\s*-\s*/i, '').trim();
-    if (!customPart) {
-      if (showAlert) await showAlert('Validation Error', 'Please enter a section name.');
-      return;
-    }
-
     // Tutor check
     if (!inlineAralData.tutorId) {
       if (showAlert) await showAlert('Validation Error', 'Section Tutor is required. Please assign a tutor for this ARAL section.');
@@ -1905,14 +1885,12 @@ export default function OrganizedClasses() {
       resGrade = `${toolObjToSave.tool} - ${levelToSave}`;
     }
 
-    let cleanAralSecName = inlineAralData.sectionName.toUpperCase().trim();
-    if (!cleanAralSecName.startsWith('ARAL -') && !cleanAralSecName.startsWith('ARAL-')) {
-      cleanAralSecName = `ARAL - ${cleanAralSecName}`;
-    }
+    const secId = `ARAL-${schoolInfo?.schoolId || 'SCH'}-${Date.now().toString(36).toUpperCase()}`;
 
     await addClassSection({
+      id: secId,
       gradeLevel: resGrade,
-      sectionName: cleanAralSecName,
+      sectionName: secId,
       advisorId: inlineAralData.tutorId || null,
       adviserId: inlineAralData.tutorId || null,
       tutorId: inlineAralData.tutorId || null,
@@ -1926,15 +1904,15 @@ export default function OrganizedClasses() {
       aralLearners: Number(inlineAralData.aralLearners) || 0
     });
 
-    setInlineAralData({ aralBasis: 'grade', aralGrade: 'Grade 3', aralToolKey: 'crla', aralProfileLevel: 'Emerging', aralLearners: 15, tutorId: '', sectionName: 'ARAL - ' });
+    setInlineAralData({ aralBasis: 'grade', aralGrade: 'Grade 3', aralToolKey: 'crla', aralProfileLevel: 'Emerging', aralLearners: 15, tutorId: '', sectionName: '' });
     setShowInlineAddAral(false);
     if (showToast) showToast(`✓ ARAL Section added.`);
   };
 
   // Inline ADD handlers for Remedial/Enrichment sections
   const handleSaveInlineAddRemedial = async () => {
-    if (!inlineRemedialData.sectionName.trim() || !inlineRemedialData.gradeLevel) {
-      if (showAlert) await showAlert('Validation Error', 'Please fill in all required fields.');
+    if (!inlineRemedialData.gradeLevel) {
+      if (showAlert) await showAlert('Validation Error', 'Please select a Target Grade Level.');
       return;
     }
 
@@ -1954,12 +1932,17 @@ export default function OrganizedClasses() {
       return;
     }
 
+    const cat = inlineRemedialData.interventionCategory || 'REMEDIAL';
+    const pfx = cat === 'ENRICHMENT' ? 'ENR' : 'REM';
+    const secId = `${pfx}-${schoolInfo?.schoolId || 'SCH'}-${Date.now().toString(36).toUpperCase()}`;
+
     await addClassSection({
+      id: secId,
       gradeLevel: inlineRemedialData.gradeLevel,
-      sectionName: inlineRemedialData.sectionName.toUpperCase().trim(),
+      sectionName: secId,
       advisorId: inlineRemedialData.teacherId || null,
       adviserId: inlineRemedialData.teacherId || null,
-      sectionType: inlineRemedialData.interventionCategory || 'REMEDIAL',
+      sectionType: cat,
       maleLearners: mVal,
       femaleLearners: fVal,
       numberOfLearners: total
@@ -1972,11 +1955,6 @@ export default function OrganizedClasses() {
 
   // Inline ADD handlers for SNED sections
   const handleSaveInlineAddSned = async () => {
-    if (!inlineSnedData.sectionName.trim()) {
-      if (showAlert) await showAlert('Validation Error', 'Please enter a section name for the SNED section.');
-      return;
-    }
-
     if (!inlineSnedData.advisorId) {
       if (showAlert) await showAlert('Validation Error', 'Class Adviser is required. Please assign a qualified SNED-trained teacher.');
       return;
@@ -1991,9 +1969,12 @@ export default function OrganizedClasses() {
       return;
     }
 
+    const secId = `SNED-${schoolInfo?.schoolId || 'SCH'}-${Date.now().toString(36).toUpperCase()}`;
+
     await addClassSection({
+      id: secId,
       gradeLevel: inlineSnedData.gradeLevel || availableSnedGrades[0] || 'SNED-ES (NON-GRADED)',
-      sectionName: inlineSnedData.sectionName.toUpperCase().trim(),
+      sectionName: secId,
       advisorId: inlineSnedData.advisorId || null,
       adviserId: inlineSnedData.advisorId || null,
       sectionType: 'SNED (NON-GRADED)',
@@ -2015,11 +1996,6 @@ export default function OrganizedClasses() {
 
   // Inline ADD handlers for ALS sections
   const handleSaveInlineAddAls = async () => {
-    if (!inlineAlsData.sectionName.trim()) {
-      if (showAlert) await showAlert('Validation Error', 'Please enter a section name for the ALS section.');
-      return;
-    }
-
     if (!inlineAlsData.advisorId) {
       if (showAlert) await showAlert('Validation Error', 'Class Adviser is required. Please assign a qualified ALS-trained teacher.');
       return;
@@ -2034,9 +2010,12 @@ export default function OrganizedClasses() {
       return;
     }
 
+    const secId = `ALS-${schoolInfo?.schoolId || 'SCH'}-${Date.now().toString(36).toUpperCase()}`;
+
     await addClassSection({
+      id: secId,
       gradeLevel: inlineAlsData.gradeLevel || availableAlsGrades[0] || 'ALS-ES',
-      sectionName: inlineAlsData.sectionName.toUpperCase().trim(),
+      sectionName: secId,
       advisorId: inlineAlsData.advisorId || null,
       adviserId: inlineAlsData.advisorId || null,
       sectionType: 'ALS',
@@ -2056,7 +2035,7 @@ export default function OrganizedClasses() {
     if (showToast) showToast('✓ ALS section added.');
   };
 
-  // The one Organized Classes save, used by the header Save button AND the unsaved-changes dialog's Save button.
+    // The one Organized Classes save, used by the header Save button AND the unsaved-changes dialog's Save button.
   // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
   const runClassesSave = async () => {
     // Validate that all sections have assigned advisers and valid enrollment
@@ -2193,11 +2172,15 @@ export default function OrganizedClasses() {
       }
 
       for (const sec of otherChanged) {
-        await api.addSection({
+        const saved = await api.addSection({
           ...sec,
           schoolId: schoolInfo?.schoolId,
           schoolYear: saveYear
         });
+        const savedId = saved?.data?.id || saved?.id;
+        if (savedId && String(savedId) !== String(sec.id)) {
+          setClassSections(prev => prev.map(s => String(s.id) === String(sec.id) ? { ...s, id: savedId, sectionName: savedId } : s));
+        }
       }
 
       // Persist deletions of the other section kinds
@@ -2420,7 +2403,7 @@ export default function OrganizedClasses() {
             const regularColumns = [
               { key: 'classType', label: 'Class Type', width: COL_W.shortTag, getValue: sec => (String(sec.gradeLevel || '').includes(' - ') || sec.sectionType === 'MULTIGRADE') ? 'Multi Grade' : 'Mono Grade' },
               { key: 'gradeLevel', label: 'Grade Level', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel, getSortValue: sec => getGradeRank(sec.gradeLevel) },
-              { key: 'sectionName', label: 'Section Name', width: COL_W.sectionName, getValue: sec => sec.sectionName },
+              { key: 'sectionId', label: 'Section ID & Type', width: COL_W.sectionName, getValue: sec => `${sec.id} [${sec.sectionType || 'SNED'}]` },
               { key: 'male', label: 'Male ♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Male', getValue: sec => Number(sec.maleLearners) || 0 },
               { key: 'female', label: 'Female ♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Female', getValue: sec => Number(sec.femaleLearners) || 0 },
               { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: 'Total', getValue: sectionTotal },
@@ -2431,7 +2414,7 @@ export default function OrganizedClasses() {
 
             const snedColumns = [
               { key: 'gradeLevel', label: 'Grade Level', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel || 'SNED-ES (NON-GRADED)', getSortValue: sec => getGradeRank(sec.gradeLevel) },
-              { key: 'sectionName', label: 'Section Name', width: COL_W.sectionName, getValue: sec => sec.sectionName },
+              { key: 'sectionId', label: 'Section ID & Type', width: COL_W.sectionName, getValue: sec => `${sec.id} [${sec.sectionType || 'ALS'}]` },
               { key: 'male', label: 'Male ♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Male', getValue: sec => Number(sec.maleLearners) || 0 },
               { key: 'female', label: 'Female ♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Female', getValue: sec => Number(sec.femaleLearners) || 0 },
               { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: 'Total', getValue: sectionTotal },
@@ -2470,7 +2453,7 @@ export default function OrganizedClasses() {
                   return toolObj.levels.includes(sec.aralProfileLevel) ? sec.aralProfileLevel : toolObj.levels[0];
                 }
               },
-              { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
+              { key: 'sectionId', label: 'Section ID & Type', getValue: sec => `${sec.id} [${sec.sectionType || 'ARAL'}]` },
               { key: 'learners', label: 'Learners', align: 'center', width: COL_W.learners, filterPlaceholder: 'Count', getValue: sec => Number(sec.aralLearners || sec.numberOfLearners) || 0 },
               { key: 'tutor', label: 'Section Tutor', width: COL_W.personName, getValue: sec => { const t = (effectivePersonnel || personnel).find(p => String(p.id) === String(sec.tutorId || sec.advisorId || sec.adviserId)); return t ? `${t.firstName} ${t.lastName}` : ''; } },
               { key: 'actions', label: 'Actions', align: 'center', width: COL_W.actions, sortable: false, filterable: false, getValue: () => '' }
@@ -2480,7 +2463,7 @@ export default function OrganizedClasses() {
             const remedialColumns = [
               { key: 'category', label: 'Intervention Category', width: COL_W.interventionCategory, getValue: sec => sec.sectionType === 'ENRICHMENT' ? 'ENRICHMENT' : 'REMEDIAL' },
               { key: 'gradeLevel', label: 'Target Grade', width: COL_W.gradeLevel, getValue: sec => sec.gradeLevel, getSortValue: sec => getGradeRank(sec.gradeLevel) },
-              { key: 'sectionName', label: 'Section Name', getValue: sec => sec.sectionName },
+              { key: 'sectionId', label: 'Section ID & Type', getValue: sec => `${sec.id} [${sec.sectionType || 'REMEDIAL'}]` },
               { key: 'male', label: 'Male ♂', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Male', getValue: sec => Number(sec.maleLearners) || 0 },
               { key: 'female', label: 'Female ♀', align: 'center', width: COL_W.sexIcon, filterPlaceholder: 'Female', getValue: sec => Number(sec.femaleLearners) || 0 },
               { key: 'total', label: 'Total', align: 'center', width: COL_W.total, filterPlaceholder: 'Total', getValue: sec => (Number(sec.maleLearners) || 0) + (Number(sec.femaleLearners) || 0) },
@@ -2530,7 +2513,7 @@ export default function OrganizedClasses() {
                         </span>
                       )}
                     </td>
-                    <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
+                    <td><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', fontSize: '11px', color: '#0F172A' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#FEF08A', color: '#854D0E', border: '1px solid #FDE047' }}>SNED</span></div></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                     <td><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
@@ -2570,7 +2553,7 @@ export default function OrganizedClasses() {
                         </span>
                       )}
                     </td>
-                    <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
+                    <td><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', fontSize: '11px', color: '#0F172A' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#CCFBF1', color: '#115E59', border: '1px solid #99F6E4' }}>ALS</span></div></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                     <td><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
@@ -2632,47 +2615,7 @@ export default function OrganizedClasses() {
                         </select>
                       )}
                     </td>
-                    <td>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        background: 'white',
-                        border: '1.5px solid #86EFAC',
-                        borderRadius: '6px',
-                        overflow: 'hidden'
-                      }}>
-                        <span style={{
-                          padding: '4px 6px',
-                          background: '#DCFCE7',
-                          color: '#15803D',
-                          fontWeight: '800',
-                          fontSize: '11px',
-                          borderRight: '1px solid #BBF7D0',
-                          userSelect: 'none',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          ARAL -
-                        </span>
-                        <input
-                          style={{
-                            border: 'none',
-                            outline: 'none',
-                            padding: '5px 8px',
-                            fontSize: '12px',
-                            fontWeight: '700',
-                            width: '100%',
-                            textTransform: 'uppercase',
-                            background: 'transparent'
-                          }}
-                          value={(d.sectionName || '').replace(/^ARAL\s*-\s*/i, '')}
-                          onChange={e => {
-                            const raw = e.target.value.toUpperCase().replace(/^ARAL\s*-\s*/i, '');
-                            setEditingRowData({ ...d, sectionName: `ARAL - ${raw}` });
-                          }}
-                          placeholder="SECTION NAME"
-                        />
-                      </div>
-                    </td>
+                    <td style={{ padding: '8px 10px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#F0FDF4', padding: '5px 8px', borderRadius: '6px', border: '1px dashed #BBF7D0' }}><span style={{ fontSize: '11px', color: '#15803D', fontStyle: 'italic' }}>Auto ID</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#DCFCE7', color: '#15803D' }}>ARAL</span></div></td>
                     <td><input style={{ ...cellInput, width: '70px' }} type="number" min="1" max="999" value={d.aralLearners} onChange={e => setEditingRowData({ ...d, aralLearners: e.target.value })} /></td>
                     <td style={{ minWidth: '170px' }}>
                       <SearchableDropdown
@@ -2710,7 +2653,7 @@ export default function OrganizedClasses() {
                         onChange={val => setEditingRowData({ ...d, gradeLevel: val })}
                       />
                     </td>
-                    <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
+                    <td><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', fontSize: '11px', color: '#0F172A' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>{sec.sectionType || 'ARAL'}</span></div></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                     <td><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
@@ -2771,7 +2714,7 @@ export default function OrganizedClasses() {
                         />
                       )}
                     </td>
-                    <td><input style={cellInput} value={d.sectionName} onChange={e => setEditingRowData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" /></td>
+                    <td><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', fontSize: '11px', color: '#0F172A' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: (sec.sectionType === 'ENRICHMENT') ? '#E0E7FF' : '#FFEDD5', color: (sec.sectionType === 'ENRICHMENT') ? '#4338CA' : '#C2410C', border: (sec.sectionType === 'ENRICHMENT') ? '1px solid #C7D2FE' : '1px solid #FED7AA' }}>{sec.sectionType || 'REMEDIAL'}</span></div></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setEditingRowData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                     <td><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setEditingRowData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                     <td><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
@@ -3109,7 +3052,7 @@ export default function OrganizedClasses() {
                                       ))
                                       : sec.gradeLevel}
                                   </td>
-                                  <td style={{ padding: '10px 12px', fontWeight: '700', color: '#0F172A' }}>{sec.sectionName}</td>
+                                  <td style={{ padding: '10px 12px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0F172A', fontSize: '12px' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A' }}>{sec.sectionType || 'SNED'}</span></div></td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center', color: '#1D4ED8', fontWeight: '700' }}>{mVal || '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center', color: '#BE185D', fontWeight: '700' }}>{fVal || '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
@@ -3319,7 +3262,7 @@ export default function OrganizedClasses() {
                                       {sec.gradeLevel || 'SNED-ES (NON-GRADED)'}
                                     </span>
                                   </td>
-                                  <td style={{ padding: '10px 12px', fontWeight: '700', color: '#0F172A' }}>{sec.sectionName}</td>
+                                  <td style={{ padding: '10px 12px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0F172A', fontSize: '12px' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#CCFBF1', color: '#115E59', border: '1px solid #99F6E4' }}>{sec.sectionType || 'ALS'}</span></div></td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center', color: '#1D4ED8', fontWeight: '700' }}>{mVal || '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center', color: '#BE185D', fontWeight: '700' }}>{fVal || '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
@@ -3361,9 +3304,7 @@ export default function OrganizedClasses() {
                                       </span>
                                     )}
                                   </td>
-                                  <td style={{ padding: '8px 10px' }}>
-                                    <input style={cellInput} value={d.sectionName} onChange={e => setInlineSnedData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" autoFocus />
-                                  </td>
+                                  <td style={{ padding: '8px 10px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FEF9C3', padding: '5px 8px', borderRadius: '6px', border: '1px dashed #FDE68A' }}><span style={{ fontSize: '11px', color: '#854D0E', fontStyle: 'italic' }}>Auto ID</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#FEF08A', color: '#854D0E' }}>SNED</span></div></td>
                                   <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setInlineSnedData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                                   <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setInlineSnedData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
@@ -3446,7 +3387,7 @@ export default function OrganizedClasses() {
                                       {sec.gradeLevel || 'ALS-ES'}
                                     </span>
                                   </td>
-                                  <td style={{ padding: '10px 12px', fontWeight: '700', color: '#0F172A' }}>{sec.sectionName}</td>
+                                  <td style={{ padding: '10px 12px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0F172A', fontSize: '12px' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>{sec.sectionType || 'ARAL'}</span></div></td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center', color: '#1D4ED8', fontWeight: '700' }}>{mVal || '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center', color: '#BE185D', fontWeight: '700' }}>{fVal || '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
@@ -3488,9 +3429,7 @@ export default function OrganizedClasses() {
                                       </span>
                                     )}
                                   </td>
-                                  <td style={{ padding: '8px 10px' }}>
-                                    <input style={cellInput} value={d.sectionName} onChange={e => setInlineAlsData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" autoFocus />
-                                  </td>
+                                  <td style={{ padding: '8px 10px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#F0FDFA', padding: '5px 8px', borderRadius: '6px', border: '1px dashed #99F6E4' }}><span style={{ fontSize: '11px', color: '#115E59', fontStyle: 'italic' }}>Auto ID</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: '#CCFBF1', color: '#115E59' }}>ALS</span></div></td>
                                   <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setInlineAlsData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                                   <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setInlineAlsData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>
@@ -3591,7 +3530,7 @@ export default function OrganizedClasses() {
                                       <span style={{ color: '#94A3B8', fontSize: '12px' }}>—</span>
                                     )}
                                   </td>
-                                  <td style={{ padding: '10px 12px', fontWeight: '700', color: '#0F172A' }}>{sec.sectionName}</td>
+                                  <td style={{ padding: '10px 12px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0F172A', fontSize: '12px' }}>{sec.id}</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: (sec.sectionType === 'ENRICHMENT') ? '#E0E7FF' : '#FFEDD5', color: (sec.sectionType === 'ENRICHMENT') ? '#4338CA' : '#C2410C', border: (sec.sectionType === 'ENRICHMENT') ? '1px solid #C7D2FE' : '1px solid #FED7AA' }}>{sec.sectionType || 'REMEDIAL'}</span></div></td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                     <span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{sec.aralLearners || sec.numberOfLearners || '—'}</span>
                                   </td>
@@ -3814,7 +3753,7 @@ export default function OrganizedClasses() {
                                       onChange={val => setInlineRemedialData({ ...d, gradeLevel: val })}
                                     />
                                   </td>
-                                  <td style={{ padding: '8px 10px' }}><input style={cellInput} value={d.sectionName} onChange={e => setInlineRemedialData({ ...d, sectionName: e.target.value.toUpperCase() })} placeholder="SECTION NAME" autoFocus /></td>
+                                  <td style={{ padding: '8px 10px' }}><div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FEF3C7', padding: '5px 8px', borderRadius: '6px', border: '1px dashed #FDE68A' }}><span style={{ fontSize: '11px', color: '#78350F', fontStyle: 'italic' }}>Auto ID</span><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', background: (d.interventionCategory === 'ENRICHMENT') ? '#E0E7FF' : '#FFEDD5', color: (d.interventionCategory === 'ENRICHMENT') ? '#4338CA' : '#C2410C' }}>{d.interventionCategory || 'REMEDIAL'}</span></div></td>
                                   <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.maleLearners} onChange={e => setInlineRemedialData({ ...d, maleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Male" title="Male Learners (0-99)" /></td>
                                   <td style={{ padding: '8px 10px' }}><input style={{ ...cellInput, width: '60px', textAlign: 'center' }} type="text" inputMode="numeric" maxLength={2} value={d.femaleLearners} onChange={e => setInlineRemedialData({ ...d, femaleLearners: sanitizeTwoDigit(e.target.value) })} placeholder="Female" title="Female Learners (0-99)" /></td>
                                   <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#047857', background: '#DCFCE7', padding: '3px 8px', borderRadius: '6px' }}>{(Number(d.maleLearners)||0)+(Number(d.femaleLearners)||0)}</span></td>

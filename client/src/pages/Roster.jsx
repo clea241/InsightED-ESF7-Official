@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useApp, POSITION_OPTIONS_BY_CATEGORY, detectPersonnelTypeFromPosition, isCanonicalPosition, getCategoryForCanonicalPosition, validateDepEdEmail } from '../context/AppContext';
+import { findRosterSchoolHead } from '@shared/schoolHead.js';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import ESF7UploadModal from '../components/ESF7UploadModal';
@@ -442,7 +443,7 @@ function DatePickerDropdowns({ value, onChange, disabled = false, maxDate, minDa
 }
 
 export default function Roster() {
-  const { personnel, setPersonnel, schoolInfo, addPersonnel, deletePersonnel, resolveBorrowedPersonnel, toggleSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges, completeNode, outgoingRequests, requestHistory } = useApp();
+  const { personnel, setPersonnel, schoolInfo, addPersonnel, deletePersonnel, resolveBorrowedPersonnel, toggleSchoolHead, sdoSchoolHead, saveSdoSchoolHead, commitDraftPersonnel, setActivePersonnelId, setActiveView, showConfirm, showToast, hasUnsavedChanges, completeNode, outgoingRequests, requestHistory } = useApp();
   
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -454,6 +455,35 @@ export default function Roster() {
   const [isCheckingHarvest, setIsCheckingHarvest] = useState(false);
   const [isHeadRequiredModalOpen, setIsHeadRequiredModalOpen] = useState(false);
   const [highlightHeadColumn, setHighlightHeadColumn] = useState(false);
+  // SDO-supplied school head (e.g. EPS II as OIC Principal): only offered while the roster has no designated head
+  const [isSdoHeadModalOpen, setIsSdoHeadModalOpen] = useState(false);
+  const [sdoHeadForm, setSdoHeadForm] = useState({ name: '', email: '', positionTitle: '' });
+  const [sdoHeadError, setSdoHeadError] = useState('');
+  const [isSavingSdoHead, setIsSavingSdoHead] = useState(false);
+  const rosterHasHead = Boolean(findRosterSchoolHead(personnel));
+
+  const openSdoHeadModal = () => {
+    setSdoHeadForm({ name: sdoSchoolHead?.name || '', email: sdoSchoolHead?.email || '', positionTitle: sdoSchoolHead?.positionTitle || '' });
+    setSdoHeadError('');
+    setIsSdoHeadModalOpen(true);
+  };
+
+  const submitSdoHead = async (e) => {
+    e.preventDefault();
+    setIsSavingSdoHead(true);
+    setSdoHeadError('');
+    try {
+      await saveSdoSchoolHead(sdoHeadForm);
+      setIsSdoHeadModalOpen(false);
+      setHighlightHeadColumn(false);
+      setIsHeadRequiredModalOpen(false);
+      if (showToast) showToast('SDO school head saved.', 'success');
+    } catch (err) {
+      setSdoHeadError(err.message || 'Could not save the SDO school head.');
+    } finally {
+      setIsSavingSdoHead(false);
+    }
+  };
 
   const savedRosterSnapshotRef = useRef(null);
 
@@ -578,8 +608,8 @@ export default function Roster() {
   // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
   const runRosterSave = async () => {
     // 1. DepEd eSF7 School Head Verification Gate
-    const currentHead = personnel.find(p => p.isSchoolHead === true || p.is_school_head === true);
-    if (!currentHead) {
+    const currentHead = findRosterSchoolHead(personnel);
+    if (!currentHead && !sdoSchoolHead) {
       return { ok: false, needsHead: true, title: 'School Head Required', message: 'Designate a School Head in the roster before saving.' };
     }
 
@@ -761,6 +791,11 @@ export default function Roster() {
               <button className="btn" type="button" onClick={() => setIsModalOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <FiPlus size={15} /> <span>Add Personnel</span>
               </button>
+              {!rosterHasHead && (
+                <button className="btn" type="button" onClick={openSdoHeadModal} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }} title="No school head in the roster. Enter the school head supplied by the SDO (e.g. OIC Principal).">
+                  <FiUser size={15} /> <span>{sdoSchoolHead ? 'Edit SDO School Head' : 'Add SDO School Head'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1397,6 +1432,35 @@ export default function Roster() {
           if (showToast) showToast('Faculty profiles auto-populated successfully!', 'success');
         }} 
       />
+
+      {/* SDO School Head (OIC Principal) entry */}
+      {isSdoHeadModalOpen && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px' }} onClick={() => setIsSdoHeadModalOpen(false)}>
+          <form className="card" onSubmit={submitSdoHead} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px', width: '100%', background: '#ffffff', borderRadius: '24px', padding: '24px 28px', display: 'grid', gap: '12px' }}>
+            <h3 style={{ margin: 0 }}>SDO School Head</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+              Used in reports and SF7 only while the roster has no designated school head (e.g. an EPS II serving as OIC Principal). It is not added to the roster.
+            </p>
+            <div>
+              <label>Name</label>
+              <input required value={sdoHeadForm.name} onChange={(e) => setSdoHeadForm(f => ({ ...f, name: e.target.value }))} placeholder="LAST NAME, FIRST NAME M.I." />
+            </div>
+            <div>
+              <label>Email</label>
+              <input required type="email" value={sdoHeadForm.email} onChange={(e) => setSdoHeadForm(f => ({ ...f, email: e.target.value }))} />
+            </div>
+            <div>
+              <label>Position Title</label>
+              <input required value={sdoHeadForm.positionTitle} onChange={(e) => setSdoHeadForm(f => ({ ...f, positionTitle: e.target.value }))} placeholder="e.g. EPS II / OIC Principal" />
+            </div>
+            {sdoHeadError && <div style={{ color: '#DC2626', fontSize: '13px', fontWeight: 600 }}>{sdoHeadError}</div>}
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button className="btn" type="button" onClick={() => setIsSdoHeadModalOpen(false)}>Cancel</button>
+              <button className="btn" type="submit" disabled={isSavingSdoHead}>{isSavingSdoHead ? 'Saving…' : (sdoSchoolHead ? 'Update' : 'Add')}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* School Head Required Alert Modal */}
       {isHeadRequiredModalOpen && (

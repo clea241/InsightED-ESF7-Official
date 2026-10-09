@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { isOrganizedClassWorkloadExempt } from '@shared/personnelClass.js';
+import { isSectionSlotClash } from '@shared/schoolLevel.js';
 import useDirtyGuard from '../hooks/useDirtyGuard';
 import PortalHeader from '../components/PortalHeader';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
@@ -93,6 +95,19 @@ export const isNonTeachingTaskSubject = (subject) => {
   return false;
 };
 
+export const formatSectionDisplay = (secOrName, secType, secId) => {
+  if (!secOrName && !secId) return 'Section';
+  const typeStr = String(secType || '').toUpperCase().trim();
+  const idStr = String(secId || '').trim();
+  const isNonReg = ['SNED', 'ALS', 'ARAL', 'REMEDIAL', 'ENRICHMENT'].some(k => typeStr.includes(k)) ||
+    ['SNED-', 'ALS-', 'ARAL-', 'REM-', 'ENR-'].some(pfx => idStr.startsWith(pfx));
+  if (isNonReg) {
+    const fallbackType = typeStr || (idStr.startsWith('SNED-') ? 'SNED' : idStr.startsWith('ALS-') ? 'ALS' : idStr.startsWith('ARAL-') ? 'ARAL' : idStr.startsWith('ENR-') ? 'ENRICHMENT' : idStr.startsWith('REM-') ? 'REMEDIAL' : 'NON-REGULAR');
+    return `${idStr || secOrName} [${fallbackType}]`;
+  }
+  return typeof secOrName === 'string' ? secOrName : (secOrName?.sectionName || secOrName?.id || 'Section');
+};
+
 export const normalizeWorkloadRowForComparison = (r) => {
   if (!r) return null;
   const term = String(r.term || '1st').trim();
@@ -182,6 +197,27 @@ export const readAssignedGradeLevels = (p) => {
     try { raw = JSON.parse(raw); } catch (e) { raw = raw.split(',').map(s => s.trim()); }
   }
   return Array.isArray(raw) ? raw.filter(Boolean) : [];
+};
+
+// Related-Teaching is decided by the position classification (detectPersonnelTypeFromPosition), never by title text,
+// so every Related-Teaching position (Head Teacher, Librarian, Guidance, ...) follows the same workload rule.
+export const isRelatedTeachingPerson = (p) => {
+  if (!p) return false;
+  const cat = detectPersonnelTypeFromPosition(p.position || p.plantilla_position || p.position_title || '') || p.type || '';
+  return String(cat).toLowerCase().trim() === 'teaching-related';
+};
+
+// Related-Teaching staff teach the classes organized for them in Organized Classes (sections they advise),
+// so those sections' grade levels count as their assigned grades in addition to any set in Personnel Profiling.
+export const getOrganizedClassGradeLevels = (p, classSections = []) => {
+  if (!p || !isRelatedTeachingPerson(p) || isOrganizedClassWorkloadExempt(p)) return [];
+  const id = String(p.id || '');
+  if (!id) return [];
+  const grades = (classSections || [])
+    .filter(s => [s.advisorId, s.advisor_id, s.adviserId, s.adviser_id].some(v => v && String(v) === id))
+    .flatMap(s => String(s.gradeLevel || s.grade_level || '').split(' - ').map(g => g.trim()))
+    .filter(Boolean);
+  return [...new Set(grades)];
 };
 
 // Teaching / teaching-related personnel with no classes assigned in Personnel Profiling cannot have teaching blocks plotted.
@@ -2082,6 +2118,7 @@ import {
   isSpecialProgramSubjectAllowed
 } from '../context/AppContext';
 import { getActiveSubjectsForSchool } from './OrganizedClasses';
+import { isPerGradeSharedSlot, rowSubjectGrade, splitSectionGrades, classifySection } from '@shared/timeAllotment.js';
 
 const isAralSubject = (sub) => {
   if (!sub) return false;
@@ -4494,7 +4531,8 @@ function WorkloadGanttScheduleView({
       updateWorkloadRowWithHistory(rowIdx, {
         sectionId: '',
         sectionName: '',
-        gradeLevel: ''
+        gradeLevel: '',
+        subjectGradeLevel: ''
       });
       return;
     }
@@ -4513,6 +4551,7 @@ function WorkloadGanttScheduleView({
       sectionId: chosenSec.id,
       sectionName: secName,
       gradeLevel: secGrade,
+      subjectGradeLevel: '', // multigrade: re-pick the grade level for the new section
       trackStrand: chosenSec.trackStrand || chosenSec.track_strand || ''
     };
 
@@ -4636,9 +4675,15 @@ function WorkloadGanttScheduleView({
       } else {
         typeLabel = `Mono Grade · ${gradeLevel || 'Grade'}`;
       }
+      const isNonReg = ['SNED', 'ALS', 'ARAL', 'REMEDIAL', 'ENRICHMENT'].some(k => sectionType.includes(k)) ||
+        ['SNED-', 'ALS-', 'ARAL-', 'REM-', 'ENR-'].some(pfx => String(sec.id).startsWith(pfx));
+      const displaySectionName = isNonReg
+        ? `${sec.id} [${sec.sectionType || typeLabel || 'NON-REGULAR'}]`
+        : (sec.sectionName || sec.section_name || 'Section');
+
       return {
         id: String(sec.id),
-        sectionName: sec.sectionName || sec.section_name || 'Section',
+        sectionName: displaySectionName,
         gradeLevel,
         category: sec.category || '',
         typeLabel,
@@ -4672,83 +4717,32 @@ function WorkloadGanttScheduleView({
       ];
 
   const personnelId = currentPerson?.id || activePersonnelId || 'default';
-  const storedHoursKey = `insighted_timetable_hours_${personnelId}`;
 
-  const [customStartHour, setCustomStartHour] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`insighted_timetable_hours_${currentPerson?.id || activePersonnelId || 'default'}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.startHour === 'number' && parsed.startHour >= 5 && parsed.startHour <= 19) {
-          return parsed.startHour;
-        }
-      }
-    } catch (e) {}
-    return 7;
-  });
-
-  const [customEndHour, setCustomEndHour] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`insighted_timetable_hours_${currentPerson?.id || activePersonnelId || 'default'}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.endHour === 'number' && parsed.endHour >= 6 && parsed.endHour <= 20) {
-          return parsed.endHour;
-        }
-      }
-    } catch (e) {}
-    return 18;
-  });
-
-  // Reload custom shift bounds when changing personnel
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storedHoursKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.startHour === 'number' && typeof parsed.endHour === 'number') {
-          setCustomStartHour(Math.max(5, Math.min(19, parsed.startHour)));
-          setCustomEndHour(Math.max(6, Math.min(20, parsed.endHour)));
-          return;
-        }
-      }
-    } catch (e) {}
-    let s = 7, e = 18;
-    const rows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
-    rows.forEach(r => {
-      if (r.startTime) {
-        const sM = parseMins(r.startTime);
-        if (sM < 99999) s = Math.min(s, Math.floor(sM / 60));
-      }
-      if (r.endTime) {
-        const eM = parseMins(r.endTime);
-        if (eM < 99999) e = Math.max(e, Math.ceil(eM / 60));
-      }
-    });
-    setCustomStartHour(Math.max(5, Math.min(19, s)));
-    setCustomEndHour(Math.max(6, Math.min(20, e)));
-  }, [personnelId, storedHoursKey, activeTerm]);
-
-  const handleUpdateScheduleHours = (newStart, newEnd) => {
-    const validStart = Math.max(5, Math.min(19, newStart));
-    const validEnd = Math.max(validStart + 1, Math.min(20, newEnd));
-    setCustomStartHour(validStart);
-    setCustomEndHour(validEnd);
-    try {
-      localStorage.setItem(storedHoursKey, JSON.stringify({ startHour: validStart, endHour: validEnd }));
-    } catch (e) {}
-  };
-
-  const formatHourOption = (h) => {
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return `${h12}:00 ${ampm}`;
-  };
+  // Derive custom shift bounds from schoolInfo if declared, otherwise fall back to 7:00 AM – 6:00 PM
+  const declaredShift = useMemo(() => {
+    const has = schoolInfo?.hasShifts === true || schoolInfo?.hasShifts === 'yes';
+    if (!has) {
+      return { hasShifts: false, startHour: 7, endHour: 18, startMins: 420, endMins: 1080 };
+    }
+    const sStr = schoolInfo?.shiftStartTime || '07:00';
+    const eStr = schoolInfo?.shiftEndTime || '18:00';
+    const sM = parseMins(sStr);
+    const eM = parseMins(eStr);
+    const validSM = (sM >= 240 && sM <= 1320) ? sM : 420;
+    const validEM = (eM >= 240 && eM <= 1320 && eM > validSM) ? eM : 1080;
+    return {
+      hasShifts: true,
+      startHour: Math.max(4, Math.floor(validSM / 60)),
+      endHour: Math.min(22, Math.ceil(validEM / 60)),
+      startMins: validSM,
+      endMins: validEM
+    };
+  }, [schoolInfo?.hasShifts, schoolInfo?.shiftStartTime, schoolInfo?.shiftEndTime]);
 
   // Dynamically calculate grid time bounds from rows & custom shift settings
   const gridBounds = useMemo(() => {
-    let minHour = customStartHour;
-    let maxHour = customEndHour;
+    let minHour = declaredShift.startHour;
+    let maxHour = declaredShift.endHour;
     const rows = (currentPerson?.workloadRows || []).filter(r => (r.term || '1st') === activeTerm);
     rows.forEach(r => {
       if (r.startTime) {
@@ -4761,10 +4755,10 @@ function WorkloadGanttScheduleView({
       }
     });
     return {
-      startHour: Math.max(5, minHour),
-      endHour: Math.min(20, Math.max(minHour + 1, maxHour))
+      startHour: Math.max(4, minHour),
+      endHour: Math.min(22, Math.max(minHour + 1, maxHour))
     };
-  }, [customStartHour, customEndHour, currentPerson?.workloadRows, activeTerm]);
+  }, [declaredShift, currentPerson?.workloadRows, activeTerm]);
 
   const { startHour, endHour } = gridBounds;
   const gridStartMins = startHour * 60;
@@ -5316,9 +5310,10 @@ function WorkloadGanttScheduleView({
     if (sMins >= 16 * 60) {
       newStartMins = 7 * 60 + 30;
     }
-    const maxEndMins = (customEndHour || 18) * 60;
+    const maxEndMins = declaredShift.endMins;
+    const minStartMins = declaredShift.startMins;
     if (newStartMins + dur > maxEndMins) {
-      newStartMins = Math.max(7 * 60, maxEndMins - dur);
+      newStartMins = Math.max(minStartMins, maxEndMins - dur);
     }
 
     const newId = `advisory-slot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -5341,7 +5336,7 @@ function WorkloadGanttScheduleView({
     if (showToast) {
       showToast(`📋 Created 2nd Advisory slot (${dur} mins) at ${formatMinutesToTime(newStartMins)} – ${formatMinutesToTime(newStartMins + dur)}! Drag or adjust its time.`, 'success');
     }
-  }, [selectedRow, currentPerson?.workloadRows, customEndHour, activeTerm, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
+  }, [selectedRow, currentPerson?.workloadRows, declaredShift, activeTerm, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
 
   // Paste Section (Ctrl+V): Creates a new schedule block with the copied section, WITHOUT the subject (or with ADVISORY if copying Advisory)
   const handlePasteSection = useCallback(() => {
@@ -5375,8 +5370,8 @@ function WorkloadGanttScheduleView({
     }
 
     // Clamp within shift bounds
-    const maxEndMins = (customEndHour || 18) * 60;
-    const minStartMins = (customStartHour || 7) * 60;
+    const maxEndMins = declaredShift.endMins;
+    const minStartMins = declaredShift.startMins;
     if (newStartMins + durationMins > maxEndMins) {
       newStartMins = Math.max(minStartMins, maxEndMins - durationMins);
     }
@@ -5414,7 +5409,7 @@ function WorkloadGanttScheduleView({
         showToast(`📋 Pasted section "${secToUse.sectionName}"! Select the subject for this block.`, 'success');
       }
     }
-  }, [isPlottingLocked, copiedSection, pendingCreateSection, selectedRow, customStartHour, customEndHour, currentPerson?.workloadRows, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
+  }, [isPlottingLocked, copiedSection, pendingCreateSection, selectedRow, declaredShift, currentPerson?.workloadRows, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
 
   const handleRemoveRow = useCallback((rowIdx) => {
     recordUndoSnapshot();
@@ -5548,39 +5543,6 @@ function WorkloadGanttScheduleView({
             >
               <FiRotateCw size={12} color={redoStack.length > 0 ? '#0284C7' : '#94A3B8'} /> Redo
             </button>
-          </div>
-
-          {/* Shift Time Window Dropdowns */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'white', padding: '4px 8px', borderRadius: '8px', border: '1.5px solid #CBD5E1', fontSize: '11px' }}>
-            <FiClock size={13} color="#0284C7" />
-            <span style={{ fontWeight: '800', color: '#475569', textTransform: 'uppercase', fontSize: '10px' }}>Shift:</span>
-            <select
-              value={customStartHour}
-              onChange={(e) => {
-                const s = Number(e.target.value);
-                handleUpdateScheduleHours(s, Math.max(s + 1, customEndHour));
-              }}
-              style={{ border: '1px solid #CBD5E1', borderRadius: '5px', padding: '2px 4px', fontSize: '11px', fontWeight: '700', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
-              title="Timetable Earliest Start Hour (Earliest: 5:00 AM)"
-            >
-              {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map(h => (
-                <option key={h} value={h}>{formatHourOption(h)}</option>
-              ))}
-            </select>
-            <span style={{ color: '#94A3B8', fontWeight: '700' }}>–</span>
-            <select
-              value={customEndHour}
-              onChange={(e) => {
-                const endH = Number(e.target.value);
-                handleUpdateScheduleHours(Math.min(customStartHour, endH - 1), endH);
-              }}
-              style={{ border: '1px solid #CBD5E1', borderRadius: '5px', padding: '2px 4px', fontSize: '11px', fontWeight: '700', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
-              title="Timetable Latest End Hour (Latest: 8:00 PM)"
-            >
-              {[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].filter(h => h > customStartHour).map(h => (
-                <option key={h} value={h}>{formatHourOption(h)}</option>
-              ))}
-            </select>
           </div>
 
           <button
@@ -6097,6 +6059,7 @@ function WorkloadGanttScheduleView({
                     if (ns >= ne || rs >= re) return false;
                     if (ns < re && ne > rs) {
                       if (isAdvisoryOrHgpPair(row, otherRow)) return false;
+                      if (isPerGradeSharedSlot(row, otherRow)) return false; // multigrade: different grade levels run side by side
                       return true;
                     }
                     return false;
@@ -6287,7 +6250,10 @@ function WorkloadGanttScheduleView({
 
                         {height >= 40 && (
                           <div style={{ fontSize: '10px', fontWeight: '600', opacity: 0.9, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {isAdmin ? '[Administrative Duty]' : `[${row.gradeLevel ? `${row.gradeLevel} • ` : ''}${row.sectionName || 'Section'}]`}
+                            {isAdmin ? '[Administrative Duty]' : `[${row.gradeLevel ? `${row.gradeLevel} • ` : ''}${(() => {
+  const matched = (classSections || []).find(s => String(s.id) === String(row.sectionId));
+  return formatSectionDisplay(row.sectionName, matched?.sectionType || row.sectionType, matched?.id || row.sectionId);
+})()}]`}
                           </div>
                         )}
 
@@ -6845,6 +6811,7 @@ function WorkloadGanttScheduleView({
               if (ns >= ne || rs >= re) return false;
               if (ns < re && ne > rs) {
                 if (isAdvisoryOrHgpPair(selectedRow, otherRow)) return false;
+                if (isPerGradeSharedSlot(selectedRow, otherRow)) return false; // multigrade: different grade levels run side by side
                 return true;
               }
               return false;
@@ -7049,6 +7016,27 @@ function WorkloadGanttScheduleView({
                         )}
                       </div>
 
+                      {/* Multigrade: each grade level of the section can carry its own subject */}
+                      {isRegLinked && classifySection(linkedSec).isMultigrade && (
+                        <div>
+                          <label style={{ fontSize: '10px', fontWeight: '800', color: !selectedRow.subjectGradeLevel ? '#DC2626' : '#64748b', textTransform: 'uppercase', marginBottom: '4px', display: 'block' }}>
+                            Grade Level of this Subject {!selectedRow.subjectGradeLevel && <span title="Required">*</span>}
+                          </label>
+                          <SearchableSelect
+                            value={selectedRow.subjectGradeLevel || ''}
+                            onChange={(e) => {
+                              recordUndoSnapshot();
+                              updateWorkloadRowWithHistory(idx, { subjectGradeLevel: e.target.value });
+                            }}
+                            options={splitSectionGrades(selectedRow.gradeLevel).map(g => ({ value: g, label: g }))}
+                            placeholder="Select the grade level this subject is for…"
+                          />
+                          <div style={{ fontSize: '9.5px', color: '#64748b', marginTop: '3px' }}>
+                            Different grade levels in this multigrade section may have different subjects at the same time.
+                          </div>
+                        </div>
+                      )}
+
                       {/* SHS Category Selector if SHS Section or SHS Row */}
                       {isShsCategory && (
                         <div>
@@ -7117,7 +7105,7 @@ function WorkloadGanttScheduleView({
                             }
                             let rawList = [];
                             if (selectedRow.gradeLevel) {
-                              rawList = getSubjectsForGrade(selectedRow.gradeLevel, effectiveCategory);
+                              rawList = getSubjectsForGrade(selectedRow.subjectGradeLevel || selectedRow.gradeLevel, effectiveCategory);
                             } else {
                               rawList = activeSchoolSubjects && activeSchoolSubjects.length > 0
                                 ? activeSchoolSubjects.map(s => s.name)
@@ -7136,7 +7124,7 @@ function WorkloadGanttScheduleView({
                             ...(isCustom ? [{ value: effectiveSubjectVal, label: effectiveSubjectVal, disabled: false }] : []),
                             ...subjectList.map(sub => {
                               const isSelfCurrent = (sub === effectiveSubjectVal);
-                              const otherTeacherAssignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, selectedRow.sectionName, sub, isSHSRow(selectedRow) ? (selectedRow.term || '1st') : null, idx, selectedRow.gradeLevel) : null;
+                              const otherTeacherAssignment = !isSelfCurrent ? getSubjectAssignmentForSection(currentSecId, selectedRow.sectionName, sub, isSHSRow(selectedRow) ? (selectedRow.term || '1st') : null, idx, selectedRow.gradeLevel, selectedRow.subjectGradeLevel) : null;
 
                               if (otherTeacherAssignment && otherTeacherAssignment.assigned && otherTeacherAssignment.isOtherTeacher) {
                                 return { value: sub, label: `${sub} (${otherTeacherAssignment.teacherName})`, disabled: false };
@@ -7954,10 +7942,9 @@ export default function Workload() {
         raw = raw.split(',').map(s => s.trim());
       }
     }
-    if (Array.isArray(raw)) {
-      return raw.filter(Boolean);
-    }
-    return [];
+    const assigned = Array.isArray(raw) ? raw.filter(Boolean) : [];
+    const organized = getOrganizedClassGradeLevels(p, classSections);
+    return organized.length > 0 ? [...new Set([...assigned, ...organized])] : assigned;
   };
 
   // Filter people list based on search query, grade level, and category (teaching / teaching-related)
@@ -8089,7 +8076,7 @@ export default function Workload() {
 
       const activePersonIdToMatch = String(dbPerson?.id || currentPerson?.id || activePersonnelId);
       const isSecOwnedByActivePerson = (s) => {
-        if (!s) return false;
+        if (!s || isOrganizedClassWorkloadExempt(currentPerson || dbPerson)) return false; // Principals: no Classes-Organized workload
         const pIds = [
           String(person?.id || ''),
           String(person?._id || ''),
@@ -8153,7 +8140,7 @@ export default function Workload() {
       };
 
       const isSecAdvisedByActivePerson = (s) => {
-        if (!s) return false;
+        if (!s || isOrganizedClassWorkloadExempt(currentPerson || dbPerson)) return false; // Principals: no Classes-Organized workload
         const pIds = [
           String(person?.id || ''),
           String(person?._id || ''),
@@ -9847,7 +9834,7 @@ export default function Workload() {
   };
 
   // Helper: Find who is currently assigned to a subject in a specific section across all personnel (term-isolated)
-  const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowOrId = null, gradeLevel = null) => {
+  const getSubjectAssignmentForSection = (sectionId, sectionName, subjectName, term = null, currentRowOrId = null, gradeLevel = null, subjectGrade = null) => {
     if ((!sectionId && !sectionName) || !subjectName) return null;
     const normSub = String(subjectName).trim().toUpperCase();
     if (normSub === 'ADVISORY') return null;
@@ -9908,6 +9895,11 @@ export default function Workload() {
                          (secNameStr && rSecName && secNameStr === rSecName && (!targetGrade || !rGrade || targetGrade === rGrade));
         if (!matchSec) continue;
 
+        // Multigrade section: the same subject for a different grade level is a separate assignment, not a duplicate
+        const wantedGrade = rowSubjectGrade({ subjectGradeLevel: subjectGrade });
+        const otherGrade = rowSubjectGrade(r);
+        if (wantedGrade && otherGrade && wantedGrade !== otherGrade) continue;
+
         // Check term
         const rTerm = r.term || r.semester || '1st';
         if (rTerm !== targetTerm) continue;
@@ -9945,7 +9937,7 @@ export default function Workload() {
     if (!secId && !secName) return null;
 
     const term = row.term || row.semester || activeTerm || '1st';
-    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowRefOrIdx || row, row.gradeLevel || matchedSec?.gradeLevel);
+    const assignment = getSubjectAssignmentForSection(secId, secName, normSub, term, rowRefOrIdx || row, row.gradeLevel || matchedSec?.gradeLevel, row.subjectGradeLevel);
 
     const targetSec = matchedSec || (classSections || []).find(s => String(s.id) === secId || (s.sectionName && String(s.sectionName).trim().toUpperCase() === secName));
     const displaySecName = targetSec?.sectionName || row.sectionName || 'this section';
@@ -10525,7 +10517,7 @@ export default function Workload() {
     });
   }, [selectedSectionId, selectedSection, personnel, classSections, activeTerm]);
 
-  const checkConflict = (teacherId, sectionId, startTime, endTime, days) => {
+  const checkConflict = (teacherId, sectionId, startTime, endTime, days, subject = '') => {
     if (!startTime || !endTime || !days || !days.length) return null;
 
     const ns = parseTimeToMinutes(startTime);
@@ -10546,6 +10538,8 @@ export default function Workload() {
         const rs = parseTimeToMinutes(slot.startTime);
         const re = parseTimeToMinutes(slot.endTime);
         if (ns < re && ne > rs) {
+          // JHS/SHS: a section may be split into different subjects in one slot (own teacher, own learner group)
+          if (!isSectionSlotClash(slot.gradeLevel, slot.subject, subject)) continue;
           return {
             type: 'section',
             subject: slot.subject,
@@ -10617,7 +10611,7 @@ export default function Workload() {
 
   useEffect(() => {
     if (workloadView === 'by-section' && selectedSectionId) {
-      const c = checkConflict(newSlot.teacherId, selectedSectionId, newSlot.startTime, newSlot.endTime, newSlot.days);
+      const c = checkConflict(newSlot.teacherId, selectedSectionId, newSlot.startTime, newSlot.endTime, newSlot.days, newSlot.subject);
       setSlotConflict(c);
     }
   }, [newSlot.teacherId, newSlot.startTime, newSlot.endTime, newSlot.days, selectedSectionId, personnel, classSections, workloadView, sectionSlots]);
@@ -10632,7 +10626,7 @@ export default function Workload() {
       await showAlert("No Classes Assigned", TEACHING_PLOT_LOCK_MESSAGE);
       return;
     }
-    const conflict = checkConflict(newSlot.teacherId, selectedSectionId, newSlot.startTime, newSlot.endTime, newSlot.days);
+    const conflict = checkConflict(newSlot.teacherId, selectedSectionId, newSlot.startTime, newSlot.endTime, newSlot.days, newSlot.subject);
     if (conflict) {
       setSlotConflict(conflict);
       await showAlert("Schedule Conflict", conflict.type === 'invalid_time' ? conflict.message : "Cannot add slot due to a time conflict with an existing schedule.");
@@ -10720,7 +10714,7 @@ export default function Workload() {
     setNewSlot(prev => {
       const days = prev.days.includes(day) ? prev.days.filter(d => d !== day) : [...prev.days, day];
       const updated = { ...prev, days };
-      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days, updated.subject);
       setSlotConflict(c);
       return updated;
     });
@@ -11505,7 +11499,7 @@ export default function Workload() {
                                   {sec.gradeLevel || 'Section'}
                                 </span>
                                 <h4 style={{ margin: '4px 0 0', fontSize: '14px', fontWeight: '800', color: 'var(--navy)' }}>
-                                  {sec.sectionName}
+                                  {formatSectionDisplay(sec.sectionName, sec.sectionType, sec.id)}
                                 </h4>
                               </div>
                               <span style={{
@@ -11614,7 +11608,7 @@ export default function Workload() {
                             </span>
                           </div>
                           <h2 style={{ margin: 0, fontSize: '26px', fontWeight: '800', letterSpacing: '-0.02em', color: '#FFFFFF' }}>
-                            {sec.sectionName}
+                            {formatSectionDisplay(sec.sectionName, sec.sectionType, sec.id)}
                           </h2>
                           <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#94A3B8' }}>
                             Class Program & Weekly Timetable for {sec.gradeLevel} · {schoolInfo?.schoolYear || 'SY 26-27'}
@@ -12092,7 +12086,7 @@ export default function Workload() {
                                       const teacherId = e.target.value;
                                       setNewSlot(prev => {
                                         const updated = { ...prev, teacherId };
-                                        const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+                                        const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days, updated.subject);
                                         setSlotConflict(c);
                                         return updated;
                                       });
@@ -12213,7 +12207,7 @@ export default function Workload() {
                                     const endTime = add60MinutesToTime(startTime);
                                     setNewSlot(prev => {
                                       const updated = { ...prev, startTime, endTime, days: prev.days && prev.days.length > 0 ? prev.days : ['M', 'T', 'W', 'TH', 'F'] };
-                                      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+                                      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days, updated.subject);
                                       setSlotConflict(c);
                                       return updated;
                                     });
@@ -12231,7 +12225,7 @@ export default function Workload() {
                                     const endTime = e.target.value;
                                     setNewSlot(prev => {
                                       const updated = { ...prev, endTime };
-                                      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days);
+                                      const c = checkConflict(updated.teacherId, selectedSectionId, updated.startTime, updated.endTime, updated.days, updated.subject);
                                       setSlotConflict(c);
                                       return updated;
                                     });

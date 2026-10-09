@@ -1,6 +1,8 @@
+import { QR_VALIDITY_MS } from '@shared/scheduleRules.js';
+
 /**
  * Generates a deterministic 8-character 1-Day (24-hour) TOTP passcode for a personnel ID.
- * Resets every 1 day (86,400,000 ms).
+ * Window length is the shared QR_VALIDITY_MS (24 hours).
  * @param {string|object} personOrId - The ID or object of the personnel.
  * @param {number} windowOffset - Time window offset (0 for today, -1 for yesterday).
  * @returns {string} 8-character uppercase passcode.
@@ -25,7 +27,7 @@ export function getDailyPasscode(personOrId, windowOffset = 0) {
   }
 
   // 1-Day (24-hour) TOTP window (86,400,000 ms)
-  const timeWindow = Math.floor(Date.now() / 86400000) + windowOffset;
+  const timeWindow = Math.floor(Date.now() / QR_VALIDITY_MS) + windowOffset;
   const str = `${key}_${timeWindow}_ESF7_SECRET_SALT_V2`;
   let hash = 0;
   for (let i = 0; i < str.length; i++) {

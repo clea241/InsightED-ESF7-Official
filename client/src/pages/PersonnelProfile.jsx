@@ -64,6 +64,7 @@ import {
   NEAP_TRAINING_OPTIONS,
   validateDepEdEmail
 } from '../context/AppContext';
+import { NATIONAL_FUND_ELIGIBLE_NATURES } from '@shared/scheduleRules.js';
 
 export const getAge = (dobString) => {
   if (!dobString) return null;
@@ -1683,7 +1684,8 @@ export default function PersonnelProfile() {
     return () => { isMounted = false; };
   }, [currentPerson?.id]);
 
-  const getMaxAllowedServiceYears = (person) => {
+  // Years counted from the first day of service, before any disabled years are taken off.
+  const getGrossServiceYears = (person) => {
     const d = person?.firstServiceDate || person?.first_service_date || '';
     if (!d || typeof d !== 'string' || d.length < 4) return 70;
     const startYear = parseInt(d.substring(0, 4), 10);
@@ -1691,6 +1693,34 @@ export default function PersonnelProfile() {
     const currentYear = new Date().getFullYear();
     const years = currentYear - startYear;
     return Math.min(70, Math.max(1, years));
+  };
+
+  // Learning Area years available = service years minus the years the user disabled (e.g. non-teaching years).
+  // Records with no disabled years keep exactly their previous value.
+  const getMaxAllowedServiceYears = (person) => {
+    const disabled = Math.max(0, Number(person?.disabledServiceYears ?? person?.disabled_service_years ?? 0) || 0);
+    const gross = getGrossServiceYears(person);
+    return disabled > 0 ? Math.max(0, gross - disabled) : gross;
+  };
+
+  const [showDisableYears, setShowDisableYears] = useState(false);
+  const [disableYearsInput, setDisableYearsInput] = useState('0');
+
+  // Saves with the rest of the profile (Save Changes) as disabledServiceYears on the personnel record.
+  const applyDisabledYears = () => {
+    const n = Math.floor(Number(disableYearsInput));
+    const gross = getGrossServiceYears(currentPerson);
+    if (!Number.isFinite(n) || n < 0 || n > gross) {
+      showToast(`Enter a whole number from 0 to ${gross}.`, 'warning');
+      return;
+    }
+    const assigned = getTotalAssignedLearningYears(learningAreaMap);
+    if (gross - n < assigned) {
+      showToast(`${assigned} learning-area years are already recorded. Remove ${assigned - (gross - n)} year(s) from the matrix first.`, 'warning');
+      return;
+    }
+    handleFieldChange('disabledServiceYears', n);
+    setShowDisableYears(false);
   };
 
   const getTotalAssignedLearningYears = (map) => {
@@ -1859,7 +1889,7 @@ export default function PersonnelProfile() {
         } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(nature)) {
           updated.natureOfAppointment = nature;
           updated.hiringArrangement = 'N/A';
-          if (String(updated.fundSource || '').toUpperCase() === 'NATIONAL') {
+          if (String(updated.fundSource || '').toUpperCase() === 'NATIONAL' && !NATIONAL_FUND_ELIGIBLE_NATURES.includes(nature)) {
             updated.fundSource = '';
           }
         }
@@ -1894,7 +1924,7 @@ export default function PersonnelProfile() {
             }
           }
         }
-        if (autoType !== 'non-teaching' && updated.depedEmail === 'N/A') {
+        if (String(updated.natureOfAppointment || '').toUpperCase() === 'REGULAR PERMANENT' && updated.depedEmail === 'N/A') {
           updated.depedEmail = '';
         }
       }
@@ -1909,7 +1939,7 @@ export default function PersonnelProfile() {
           } else if (nat === 'REGULAR PERMANENT') {
             updated.hiringArrangement = 'REGULAR';
           }
-        } else if (updated.depedEmail === 'N/A') {
+        } else if (String(updated.natureOfAppointment || '').toUpperCase() === 'REGULAR PERMANENT' && updated.depedEmail === 'N/A') {
           updated.depedEmail = '';
         }
       }
@@ -2369,16 +2399,17 @@ export default function PersonnelProfile() {
   };
 
   const handleEmailLocalChange = (val) => {
-    const raw = String(val || '').replace(/@/g, '').trim().toLowerCase().replace(/[^a-z0-9.ñ]/g, '');
+    const trimmed = String(val || '').trim();
+    if (trimmed.toLowerCase() === 'n/a' || trimmed.toLowerCase() === 'na') {
+      handleMultipleFieldsChange({ depedEmail: 'N/A', deped_email: 'N/A', noDepedEmail: true, no_deped_email: true });
+      return;
+    }
+    const raw = trimmed.replace(/@/g, '').toLowerCase().replace(/[^a-z0-9.ñ]/g, '');
     if (!raw) {
-      handleMultipleFieldsChange({ depedEmail: '', noDepedEmail: false, no_deped_email: false });
+      handleMultipleFieldsChange({ depedEmail: '', deped_email: '', noDepedEmail: false, no_deped_email: false });
       return;
     }
-    if (raw === 'n/a') {
-      handleMultipleFieldsChange({ depedEmail: 'N/A', noDepedEmail: true, no_deped_email: true });
-      return;
-    }
-    handleMultipleFieldsChange({ depedEmail: `${raw}@deped.gov.ph`, noDepedEmail: false, no_deped_email: false });
+    handleMultipleFieldsChange({ depedEmail: `${raw}@deped.gov.ph`, deped_email: `${raw}@deped.gov.ph`, noDepedEmail: false, no_deped_email: false });
   };
 
   // Filtered list for sidebar
@@ -3389,13 +3420,14 @@ export default function PersonnelProfile() {
                               fundValue = 'NATIONAL';
                               isFundDisabled = true;
                             } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(currentNature)) {
+                              const allowsNational = NATIONAL_FUND_ELIGIBLE_NATURES.includes(currentNature);
                               fundOptions = isCookPosition 
-                                ? ['SBFP', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'] 
-                                : ['SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
+                                ? ['SBFP', ...(allowsNational ? ['NATIONAL'] : []), 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'] 
+                                : [...(allowsNational ? ['NATIONAL'] : []), 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
                               isFundDisabled = false;
                               if (!isCookPosition && String(fundValue).toUpperCase() === 'SBFP') {
                                 fundValue = 'SEF';
-                              } else if (String(fundValue).toUpperCase() === 'NATIONAL') {
+                              } else if (String(fundValue).toUpperCase() === 'NATIONAL' && !allowsNational) {
                                 fundValue = isCookPosition ? 'SBFP' : '';
                               } else if (String(fundValue).toUpperCase() === 'MOOE') {
                                 fundValue = 'SCHOOL MOOE';
@@ -5432,7 +5464,35 @@ export default function PersonnelProfile() {
                                 Record taught primary learning areas across DepEd curriculum eras. Check a subject to enter total years taught.
                               </p>
                             </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              {showDisableYears ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+                                  <label style={{ margin: 0 }}>Years to disable</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={getGrossServiceYears(currentPerson)}
+                                    value={disableYearsInput}
+                                    onChange={(e) => setDisableYearsInput(e.target.value)}
+                                    style={{ width: '70px', minHeight: 'auto', padding: '4px 6px' }}
+                                  />
+                                  <button type="button" className="btn" style={{ fontSize: '11px', padding: '6px 12px' }} onClick={applyDisabledYears}>Apply</button>
+                                  <button type="button" className="btn secondary" style={{ fontSize: '11px', padding: '6px 12px' }} onClick={() => setShowDisableYears(false)}>Cancel</button>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn secondary"
+                                  style={{ fontSize: '11px', padding: '6px 12px' }}
+                                  title="Exclude years that should not be counted (e.g. years served as non-teaching before becoming a teacher)"
+                                  onClick={() => {
+                                    setDisableYearsInput(String(Number(currentPerson?.disabledServiceYears ?? currentPerson?.disabled_service_years ?? 0) || 0));
+                                    setShowDisableYears(true);
+                                  }}
+                                >
+                                  Disable Years{Number(currentPerson?.disabledServiceYears || 0) > 0 ? ` (${currentPerson.disabledServiceYears})` : ''}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="btn secondary"

@@ -13,6 +13,10 @@ import { cleanPersonnelDates } from '../services/dateFields';
 import { reportError, takeRecentApiError } from '../services/errorAlert';
 import { overlayDatabaseWorkload } from '../services/workloadMerge';
 import { retryTransient } from '../services/workloadSave';
+import { validateTimeAllotment, isPerGradeSharedSlot, rowSubjectGrade } from '@shared/timeAllotment.js';
+import { hasActiveAllowance, isAllowanceDisabled } from '@shared/allowances.js';
+import { isRosterSchoolHead } from '@shared/schoolHead.js';
+import { requiresDepartmentHead } from '@shared/schoolLevel.js';
 import { checkBeforeLeave, checkBeforeLeaveDetailed, allowNextUnload, isAnyScreenDirty, discardAllDirtyScreens } from '../services/dirtyGuard';
 
 const AppContext = createContext();
@@ -620,6 +624,9 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "SPECIAL SCHOOL PRINCIPAL I",
     "SPECIAL SCHOOL PRINCIPAL II",
     "GUIDANCE SERVICES SPECIALIST",
+    "LIBRARIAN",
+    "SCHOOL LIBRARIAN",
+    "COLLEGE LIBRARIAN",
     "VOCATIONAL SCHOOL ADMINISTRATOR",
     "VOCATIONAL SCHOOL SUPERINTENDENT"
   ],
@@ -653,7 +660,6 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "CASHIER",
     "CHIEF ADMINISTRATIVE OFFICER",
     "CLERK",
-    "COLLEGE LIBRARIAN",
     "COMMUNICATIONS EQUIPMENT OPERATOR",
     "COMPUTER MAINTENANCE TECHNOLOGIST",
     "CONSTRUCTION AND MAINTENANCE MAN",
@@ -673,7 +679,6 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "INFORMATION SYSTEMS ANALYST",
     "INFORMATION TECHNOLOGY OFFICER",
     "LABORATORY TECHNICIAN",
-    "LIBRARIAN",
     "LIGHT EQUIPMENT OPERATOR",
     "LINEMAN",
     "MARINE ENGINEMAN",
@@ -690,7 +695,6 @@ export const POSITION_OPTIONS_BY_CATEGORY = {
     "PSYCHOLOGIST",
     "REGISTRAR",
     "REPRODUCTION MACHINE OPERATOR",
-    "SCHOOL LIBRARIAN",
     "SCHOOLS DIVISION SUPERINTENDENT",
     "SECURITY GUARD",
     "SECURITY OFFICER",
@@ -2063,7 +2067,7 @@ export const isSpecialProgramSubjectAllowed = (subjectName, gradeOrBand, schoolI
 };
 
 export const validateDepEdEmail = (email, firstName = '', lastName = '', middleName = '', allowEmailDiscrepancy = false) => {
-  if (!email || email === 'N/A') return { isValid: true, error: null };
+  if (!email || String(email).trim().toUpperCase() === 'N/A' || String(email).trim().toUpperCase() === 'NA') return { isValid: true, error: null };
   const rawEmail = String(email).trim().toLowerCase().replace(/[\u00f1\u00d1]/g, 'n');
 
   // 1. Check for duplicate @deped.gov.ph or multiple '@'
@@ -3257,6 +3261,22 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // SDO-supplied school head, used only when the roster has no designated school head (see shared/schoolHead.js)
+  const [sdoSchoolHead, setSdoSchoolHead] = useState(null);
+  const fetchSdoSchoolHead = async () => {
+    try {
+      const res = await api.getSdoSchoolHead();
+      setSdoSchoolHead(res && res.success ? (res.data || null) : null);
+    } catch (e) {
+      console.error('[AppContext] Failed to fetch SDO school head:', e);
+    }
+  };
+  const saveSdoSchoolHead = async (record) => {
+    const res = await api.saveSdoSchoolHead(record); // throws with the server message on 400/409
+    if (res && res.success) setSdoSchoolHead(res.data);
+    return res;
+  };
+
   const fetchAllowances = async (schoolYear = 'SY 26-27') => {
     try {
       const res = await api.getPersonnelAllowances(schoolYear);
@@ -3290,6 +3310,25 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  const setAllowanceDisabled = async (personnelId, allowanceKey, isDisabled, schoolYear = 'SY 26-27') => {
+    const apply = (list) => {
+      const set = new Set(Array.isArray(list) ? list : []);
+      if (isDisabled) set.add(allowanceKey); else set.delete(allowanceKey);
+      return [...set];
+    };
+    setAllowancesMap(prev => ({
+      ...prev,
+      [personnelId]: { ...(prev[personnelId] || {}), disabled: apply(prev[personnelId]?.disabled) }
+    }));
+    try {
+      return await api.setPersonnelAllowanceDisabled(personnelId, allowanceKey, Boolean(isDisabled), schoolYear);
+    } catch (e) {
+      console.error('[AppContext] Failed to set allowance disabled state:', e);
+      fetchAllowances(schoolYear);
+      return { success: false, error: e.message };
+    }
+  };
+
   const bulkToggleAllowances = async (personnelIds = [], allowanceKeys = [], isGranted = true, schoolYear = 'SY 26-27') => {
     if (!Array.isArray(personnelIds) || personnelIds.length === 0) return { success: true };
     const keys = Array.isArray(allowanceKeys) ? allowanceKeys : [allowanceKeys];
@@ -3303,6 +3342,7 @@ export const AppProvider = ({ children }) => {
           ...(next[id] || { uniform: false, supplies: false, medical: false, hardship: false, overload: false }),
         };
         keys.forEach(k => {
+          if (isAllowanceDisabled(next[id], k)) return; // disabled allowances are not changed
           next[id][k] = grantedBool;
         });
       });
@@ -3313,6 +3353,7 @@ export const AppProvider = ({ children }) => {
       const tasks = [];
       for (const id of personnelIds) {
         for (const k of keys) {
+          if (isAllowanceDisabled(allowancesMap[id], k)) continue;
           tasks.push(api.togglePersonnelAllowance(id, k, grantedBool, schoolYear));
         }
       }
@@ -3655,7 +3696,11 @@ export const AppProvider = ({ children }) => {
             hasIped: school.hasIped || false,
             hasMadrasah: school.hasMadrasah || false,
             inclusivePrograms: school.inclusivePrograms || [],
-            curricularConfigSaved: Boolean(school.curricularConfigSaved)
+            curricularConfigSaved: Boolean(school.curricularConfigSaved),
+            hasShifts: school.hasShifts ?? false,
+            shiftStartTime: school.shiftStartTime || '07:00',
+            shiftEndTime: school.shiftEndTime || '18:00',
+            shiftsConfig: school.shiftsConfig || {}
           };
         }
         setSchoolInfo(currentSchoolInfo);
@@ -4352,6 +4397,7 @@ export const AppProvider = ({ children }) => {
         refreshRequests(currentSchoolInfo.schoolId);
         loadDistrictSchools(currentSchoolInfo.schoolId);
         fetchAllowances(currentSchoolInfo.schoolYear);
+        fetchSdoSchoolHead();
       } catch (err) {
         // Failed load: keep auto-save blocked (never save an empty/partial state) and let the user retry.
         loadIncompleteRef.current = true;
@@ -6010,7 +6056,11 @@ export const AppProvider = ({ children }) => {
             hasIped: school.hasIped || false,
             hasMadrasah: school.hasMadrasah || false,
             inclusivePrograms: school.inclusivePrograms || [],
-            curricularConfigSaved: Boolean(school.curricularConfigSaved)
+            curricularConfigSaved: Boolean(school.curricularConfigSaved),
+            hasShifts: school.hasShifts ?? school.has_shifts ?? false,
+            shiftStartTime: school.shiftStartTime || school.shift_start_time || '07:00',
+            shiftEndTime: school.shiftEndTime || school.shift_end_time || '18:00',
+            shiftsConfig: school.shiftsConfig || school.shifts_config || {}
           };
         }
 
@@ -6109,6 +6159,7 @@ export const AppProvider = ({ children }) => {
   // Check duplicate values
   const hasDuplicate = (field, value, id) => {
     if (!value) return false;
+    if (field === 'depedEmail' && (String(value).trim().toUpperCase() === 'N/A' || String(value).trim().toUpperCase() === 'NA')) return false;
     return personnel.some(p => p.id !== id && String(p[field] || "").toLowerCase() === String(value).toLowerCase());
   };
 
@@ -6151,8 +6202,16 @@ export const AppProvider = ({ children }) => {
     }
 
     // 2. School Head Count Validation
-    const heads = personnel.filter(isSchoolHead);
-    if (heads.length > 1) {
+    // A school may list several Principals; the one flagged in the Roster is the school head.
+    const designatedHeads = personnel.filter(isRosterSchoolHead);
+    const heads = designatedHeads.length > 0 ? designatedHeads : personnel.filter(isSchoolHead);
+    const principalCount = personnel.filter(p => /principal/i.test(`${p.position || ''}`) && !/assistant/i.test(`${p.position || ''}`)).length;
+    if (designatedHeads.length === 0 && principalCount > 1 && !sdoSchoolHead) {
+      issues.push({ id: "school-head-undesignated", type: "error", category: "School Head", message: `${principalCount} Principals are listed but none is designated as the school head. Designate exactly one in the Roster.` });
+    }
+    if (heads.length === 0 && sdoSchoolHead) {
+      // SDO-supplied OIC Principal stands in as the school head; nothing to flag.
+    } else if (heads.length > 1) {
       issues.push({ id: "school-head-multiple", type: "warn", category: "School Head", message: `Multiple school heads identified (${heads.length} assigned). Verify designated primary school head.` });
     } else if (heads.length === 0) {
       issues.push({ id: "school-head-none", type: "warn", category: "School Head", message: "No school head identified. Assign one Principal, OIC, or TIC before final verification." });
@@ -6306,7 +6365,9 @@ export const AppProvider = ({ children }) => {
         }
       }
 
-      if (p.depedEmail && p.depedEmail !== 'N/A') {
+      const isEmailNA = !p.depedEmail || String(p.depedEmail).trim().toUpperCase() === 'N/A' || String(p.depedEmail).trim().toUpperCase() === 'NA' || p.noDepedEmail || p.no_deped_email;
+
+      if (p.depedEmail && !isEmailNA) {
         const hasDiscrepancyAllowed = Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy);
         const emailVal = validateDepEdEmail(p.depedEmail, p.firstName, p.lastName, p.middleName, hasDiscrepancyAllowed);
         if (!emailVal.isValid) {
@@ -6496,7 +6557,7 @@ export const AppProvider = ({ children }) => {
     const activePersonnel = (personnel || []).filter(p => !p.isDraft && !p.isShared);
     const hasAnyAllowanceChecked = activePersonnel.some(p => {
       const pAllowances = allowancesMap[p.id] || {};
-      return Object.values(pAllowances).some(val => Boolean(val) === true);
+      return hasActiveAllowance(pAllowances); // disabled allowances (e.g. SHA) are skipped
     });
 
     if (!hasAnyAllowanceChecked) {
@@ -6516,7 +6577,7 @@ export const AppProvider = ({ children }) => {
       { id: 'guidance_designate', name: 'Guidance Designate', keys: ['GUIDANCE DESIGNATE'] },
       { id: 'learner_information_officer', name: 'Learner Information Officer', keys: ['LEARNER INFORMATION OFFICER', 'LEARNER FORMATION OFFICER'] },
       { id: 'department_head_designate', name: 'Department Head Designate', keys: ['DEPARTMENT HEAD DESIGNATE', 'DEPARTMENT HEAD'] }
-    ];
+    ].filter(d => d.id !== 'department_head_designate' || requiresDepartmentHead(schoolInfo?.curricularOffering)); // not needed for elementary-only schools
 
     if (isAshRequired) {
       REQUIRED_DESIGNATIONS_LIST.push({
@@ -6553,151 +6614,139 @@ export const AppProvider = ({ children }) => {
       'KINDERGARTEN': {
         gradeLabel: 'Kindergarten',
         mandatorySubjects: [
-          { key: 'KINDER_BLOCKS', name: 'Kindergarten Blocks of Time', aliases: ['KINDER', 'KINDERGARTEN', 'KINDER BLOCKS OF TIME', 'BLOCKS OF TIME'], minWeekly: 0 }
+          { key: 'KINDER_BLOCKS', name: 'Kindergarten Blocks of Time', aliases: ['KINDER', 'KINDERGARTEN', 'KINDER BLOCKS OF TIME', 'BLOCKS OF TIME'] }
         ],
         disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'MAKABANSA', 'ENGLISH', 'FILIPINO', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
       },
       'GRADE 1': {
         gradeLabel: 'Grade 1',
-        fixedDailyMins: 40,
-        minDays: 5,
         mandatorySubjects: [
-          { key: 'LANGUAGE', name: 'Language', aliases: ['LANGUAGE', 'LANG'], minWeekly: 200 },
-          { key: 'READING AND LITERACY', name: 'Reading and Literacy', aliases: ['READING AND LITERACY', 'READING & LITERACY', 'READING'], minWeekly: 200 },
-          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'], minWeekly: 200 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 200 },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'], minWeekly: 200 }
+          { key: 'LANGUAGE', name: 'Language', aliases: ['LANGUAGE', 'LANG'] },
+          { key: 'READING AND LITERACY', name: 'Reading and Literacy', aliases: ['READING AND LITERACY', 'READING & LITERACY', 'READING'] },
+          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'] }
         ],
         disallowedSubjects: ['ENGLISH', 'FILIPINO', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
       },
       'GRADE 2': {
         gradeLabel: 'Grade 2',
-        fixedDailyMins: 40,
-        minDays: 5,
         mandatorySubjects: [
-          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 200 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 200 },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'], minWeekly: 200 }
+          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'] }
         ],
         disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'SCIENCE', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
       },
       'GRADE 3': {
         gradeLabel: 'Grade 3',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'], minWeekly: 225 }
+          { key: 'MAKABANSA', name: 'Makabansa', aliases: ['MAKABANSA'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'EDUKASYON SA PAGPAPAKATAO', 'ESP'] }
         ],
         disallowedSubjects: ['LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY', 'EPP', 'TLE', 'MAPEH', 'ARALING PANLIPUNAN']
       },
       'GRADE 4': {
         gradeLabel: 'Grade 4',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       },
       'GRADE 5': {
         gradeLabel: 'Grade 5',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       },
       'GRADE 6': {
         gradeLabel: 'Grade 6',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'GMRC', name: 'GMRC', aliases: ['GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'VALUES EDUCATION', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       },
       'GRADE 7': {
         gradeLabel: 'Grade 7',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       },
       'GRADE 8': {
         gradeLabel: 'Grade 8',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       },
       'GRADE 9': {
         gradeLabel: 'Grade 9',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       },
       'GRADE 10': {
         gradeLabel: 'Grade 10',
-        allowedDailyMins: [45, 50, 55, 60],
         mandatorySubjects: [
-          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'], minWeekly: 200 },
-          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'], minWeekly: 200 },
-          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'], minWeekly: 200 },
-          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'], minWeekly: 200 },
-          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'], minWeekly: 225 },
-          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'], minWeekly: 225 },
-          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'], minWeekly: 225 },
-          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'], minWeekly: 225 }
+          { key: 'EPP_TLE', name: 'TLE', aliases: ['TLE', 'EPP', 'EPP/TLE', 'EPP / TLE', 'TECHNOLOGY AND LIVELIHOOD EDUCATION', 'EDUKASYONG PANTAHANAN AT PANGKABUHAYAN'] },
+          { key: 'MAPEH', name: 'MAPEH', aliases: ['MAPEH', 'MUSIC', 'ARTS', 'PE', 'HEALTH', 'PHYSICAL EDUCATION'] },
+          { key: 'ARALING PANLIPUNAN', name: 'Araling Panlipunan', aliases: ['ARALING PANLIPUNAN', 'AP'] },
+          { key: 'FILIPINO', name: 'Filipino', aliases: ['FILIPINO', 'FIL'] },
+          { key: 'ENGLISH', name: 'English', aliases: ['ENGLISH', 'ENG'] },
+          { key: 'MATHEMATICS', name: 'Mathematics', aliases: ['MATHEMATICS', 'MATH'] },
+          { key: 'SCIENCE', name: 'Science', aliases: ['SCIENCE', 'SCI'] },
+          { key: 'VALUES_EDUCATION', name: 'Values Education', aliases: ['VALUES EDUCATION', 'VALUES ED', 'GMRC', 'GOOD MORAL AND RIGHT CONDUCT', 'ESP', 'EDUKASYON SA PAGPAPAKATAO'] }
         ],
         disallowedSubjects: ['MAKABANSA', 'LANGUAGE', 'READING AND LITERACY', 'READING & LITERACY']
       }
@@ -6762,101 +6811,7 @@ export const AppProvider = ({ children }) => {
                 message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): Incomplete Section Schedule - Missing mandatory subject "${reqSub.name}". All core curriculum subjects must be assigned.`
               });
             } else {
-              matchingRows.forEach((r, rIdx) => {
-                if (r.startTime && r.endTime) {
-                  const [sh, sm] = r.startTime.split(':').map(Number);
-                  const [eh, em] = r.endTime.split(':').map(Number);
-                  const diffM = (eh * 60 + em) - (sh * 60 + sm);
-                  const rDays = Array.isArray(r.days) && r.days.length > 0 ? r.days : (r.daySchedule ? String(r.daySchedule).split(',').map(s => s.trim()) : ['M', 'T', 'W', 'TH', 'F']);
-                  const weeklyM = diffM * rDays.length;
-
-                  // Grade 1 & 2 Fixed 40-minute rules
-                  if (matatagSpec.fixedDailyMins) {
-                    if (diffM !== matatagSpec.fixedDailyMins) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" is scheduled for ${diffM} mins/day (MATATAG Policy requires exactly ${matatagSpec.fixedDailyMins} mins/day under DepEd Order No. 12, s. 2024).`
-                      });
-                    }
-
-                    if (rDays.length < 5) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" is scheduled for only ${rDays.length} day(s) (MATATAG Policy requires 5 days, Monday to Friday).`
-                      });
-                    }
-                  }
-
-                  // Grade 3 Flexible Time Allotment Rules
-                  if (matatagSpec.allowedDailyMins) {
-                    if (!matatagSpec.allowedDailyMins.includes(diffM)) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-duration-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" duration (${diffM} mins/day) must be 45, 50, 55, or 60 mins/day under DepEd Order No. 12, s. 2024.`
-                      });
-                    }
-
-                    if (weeklyM < reqSub.minWeekly) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-minweekly-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" has only ${weeklyM} mins/week (MATATAG Policy requires at least ${reqSub.minWeekly} mins/week under DepEd Order No. 12, s. 2024).`
-                      });
-                    }
-
-                    if (reqSub.minWeekly === 225 && rDays.length < 5) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" must be scheduled from Monday to Friday (5 days/week).`
-                      });
-                    } else if (reqSub.minWeekly === 200 && diffM === 45 && rDays.length < 5) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" (45 mins/day) must be scheduled from Monday to Friday (5 days/week).`
-                      });
-                    } else if (reqSub.minWeekly === 200 && [50, 55, 60].includes(diffM) && rDays.length < 4) {
-                      issues.push({
-                        id: `${gLevel.toLowerCase().replace(/\s+/g, '')}-matatag-days-${sec.id}-${reqSub.key}-${tId}-${rIdx}`,
-                        type: "error",
-                        category: "MATATAG Curriculum Compliance",
-                        sectionId: sec.id,
-                        personId: r.personId || sec.advisorId || null,
-                        term: tId,
-                        message: `Section "${sec.sectionName}" (${matatagSpec.gradeLabel}, ${termLabel}): "${reqSub.name}" (${diffM} mins/day) must be scheduled for at least 4 days/week.`
-                      });
-                    }
-                  }
-                }
-              });
+              // Time allotment (minimum / daily / weekly caps) is checked in 6.3 from shared rules.
             }
           });
 
@@ -6879,6 +6834,36 @@ export const AppProvider = ({ children }) => {
           });
         });
       }
+    });
+
+    // 6.3 Time allotment per subject (minimum / daily cap / weekly cap). Rules come from shared/scheduleRules.js
+    // and apply to regular, multigrade and Special Curricular Program sections alike.
+    (classSections || []).forEach(sec => {
+      const secRows = [];
+      (personnel || []).forEach(p => {
+        if (p.isDraft || !Array.isArray(p.workloadRows)) return;
+        p.workloadRows.forEach(r => {
+          const rowSecId = String(r.sectionId || r.section_id || '');
+          const rowSecName = String(r.sectionName || r.section_name || '').trim().toUpperCase();
+          const sameName = rowSecName === String(sec.sectionName || '').trim().toUpperCase()
+            && String(r.gradeLevel || '').trim().toUpperCase() === String(sec.gradeLevel || '').trim().toUpperCase();
+          if (rowSecId === String(sec.id) || (!rowSecId && sameName)) secRows.push(r);
+        });
+      });
+      Array.from(new Set(secRows.map(r => r.term || '1st'))).forEach(tId => {
+        const termLabel = tId === '1st' ? '1st Term' : tId === '2nd' ? '2nd Term' : tId === '3rd' ? '3rd Term' : `${tId} Term`;
+        validateTimeAllotment(sec, secRows.filter(r => (r.term || '1st') === tId)).forEach((v, vIdx) => {
+          issues.push({
+            id: `time-allotment-${v.code}-${sec.id}-${tId}-${String(v.subject).toLowerCase().replace(/\s+/g, '')}-${vIdx}`,
+            type: "error",
+            category: "MATATAG Curriculum Compliance",
+            sectionId: sec.id,
+            personId: sec.advisorId || null,
+            term: tId,
+            message: `${termLabel} - ${v.message}`
+          });
+        });
+      });
     });
 
     // 7. Duplicate Subject Assignment in a Single Section (Kinder to Grade 12 - Term Isolated)
@@ -6911,11 +6896,14 @@ export const AppProvider = ({ children }) => {
           };
         }
 
-        if (!sectionSubjectAssignments[secKey].subjects[subNorm]) {
-          sectionSubjectAssignments[secKey].subjects[subNorm] = [];
+        // Multigrade: each grade level of the section has its own subjects, so key by grade + subject
+        const gradeKey = rowSubjectGrade(r);
+        const subKey = gradeKey ? `${gradeKey}|${subNorm}` : subNorm;
+        if (!sectionSubjectAssignments[secKey].subjects[subKey]) {
+          sectionSubjectAssignments[secKey].subjects[subKey] = [];
         }
 
-        sectionSubjectAssignments[secKey].subjects[subNorm].push({
+        sectionSubjectAssignments[secKey].subjects[subKey].push({
           personId: p.id,
           teacherName,
           subjectOriginal: subRaw,
@@ -7028,6 +7016,7 @@ export const AppProvider = ({ children }) => {
               if ((isHGPSub(r1.subject) && isAdvSub(r2.subject)) || (isAdvSub(r1.subject) && isHGPSub(r2.subject))) {
                 continue; // Advisory/HGP nesting is allowed
               }
+              if (isPerGradeSharedSlot(r1, r2)) continue; // multigrade: different grade levels run side by side
 
               issues.push({
                 id: `time-conflict-${p.id}-${tId}-${i}-${j}`,
@@ -7088,6 +7077,9 @@ export const AppProvider = ({ children }) => {
       triggerAutoSave,
       activePersonnelId,
       setActivePersonnelId,
+      sdoSchoolHead,
+      fetchSdoSchoolHead,
+      saveSdoSchoolHead,
       schoolInfo,
       setSchoolInfo,
       personnel,
@@ -7177,6 +7169,7 @@ export const AppProvider = ({ children }) => {
       allowancesMap,
       fetchAllowances,
       toggleAllowance,
+      setAllowanceDisabled,
       bulkToggleAllowances,
       workImmersionSchedulesMap,
       fetchWorkImmersionSchedules,

@@ -157,6 +157,7 @@ app.use('/api/submissions', require('./controllers/submissions'));
 app.use('/api/requests', require('./controllers/requests'));
 app.use('/api/reports', require('./controllers/reports'));
 app.use('/api/allowances', require('./controllers/allowances'));
+app.use('/api/school-head-sdo', require('./controllers/school_head_sdo'));
 app.use('/api/extra-tasks', require('./controllers/personnel_extra_tasks'));
 app.use('/api/room-profiling', require('./controllers/room_profiling'));
 app.use('/api/esf7-upload', require('./controllers/esf7_upload'));
@@ -394,6 +395,16 @@ const initDB = async () => {
         ALTER TABLE esf7_aral_sections ALTER COLUMN id TYPE TEXT;
         ALTER TABLE esf7_remedial_enrichment_sections ALTER COLUMN id TYPE TEXT;
         ALTER TABLE esf7_workload_transfer ALTER COLUMN id TYPE TEXT;
+
+        ALTER TABLE esf7_aral_sections ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'ARAL';
+        ALTER TABLE esf7_remedial_enrichment_sections ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'REMEDIAL';
+        ALTER TABLE esf7_sned_sections ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'SNED (NON-GRADED)';
+        ALTER TABLE esf7_als_sections ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'ALS';
+
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shift_start_time TEXT;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shift_end_time TEXT;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shifts_config JSONB DEFAULT '{}'::jsonb;
       EXCEPTION WHEN OTHERS THEN NULL;
       END $$;
     `);
@@ -410,6 +421,22 @@ const initDB = async () => {
   }
 };
 
+
+// Refuse to accept traffic until Postgres answers; exit non-zero so PM2 retries instead of serving 500s.
+const verifyDatabaseOrExit = async () => {
+  const attempts = 5;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await db.pool.query('SELECT 1');
+      return;
+    } catch (err) {
+      console.error(`❌ [Startup] Database not reachable (attempt ${i}/${attempts}): ${err.message}`);
+      if (i < attempts) await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  console.error('❌ [Startup] Database unreachable - exiting without opening the port.');
+  process.exit(1);
+};
 
 const startServer = (port) => {
   const targetDb = process.env.DB_NAME || 'insighted_esf7';
@@ -463,14 +490,14 @@ const startServer = (port) => {
       if (activeRequests === 0) {
         clearInterval(checkDrain);
         console.log('✅ All in-flight saves and requests completed cleanly.');
-        process.exit(0);
+        db.closeAllPools().finally(() => process.exit(0));
       }
     }, 150);
 
     setTimeout(() => {
       clearInterval(checkDrain);
       console.warn(`⚠️ Force exiting after timeout with ${activeRequests} remaining in-flight requests.`);
-      process.exit(0);
+      process.exit(0); // Postgres rolls back any open transaction when the connection drops
     }, 12000);
   };
 
@@ -493,4 +520,4 @@ const startServer = (port) => {
   });
 };
 
-startServer(PORT);
+verifyDatabaseOrExit().then(() => startServer(PORT));

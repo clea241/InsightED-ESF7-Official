@@ -27,6 +27,7 @@ import {
   NEAP_TRAINING_OPTIONS,
   validateDepEdEmail
 } from '../context/AppContext';
+import { NATIONAL_FUND_ELIGIBLE_NATURES } from '@shared/scheduleRules.js';
 import { getHourlyPasscode, get10MinPasscode } from '../utils/passcode';
 import { api } from '../services/api';
 import { 
@@ -1277,16 +1278,17 @@ export default function RoomProfiling() {
   };
 
   const handleEmailLocalChange = (val) => {
-    const raw = String(val || '').replace(/@/g, '').trim().toLowerCase().replace(/[^a-z0-9.ñ]/g, '');
+    const trimmed = String(val || '').trim();
+    if (trimmed.toLowerCase() === 'n/a' || trimmed.toLowerCase() === 'na') {
+      handleMultipleFieldsChange({ depedEmail: 'N/A', deped_email: 'N/A', noDepedEmail: true, no_deped_email: true });
+      return;
+    }
+    const raw = trimmed.replace(/@/g, '').toLowerCase().replace(/[^a-z0-9.ñ]/g, '');
     if (!raw) {
-      handleMultipleFieldsChange({ depedEmail: '', noDepedEmail: false, no_deped_email: false });
+      handleMultipleFieldsChange({ depedEmail: '', deped_email: '', noDepedEmail: false, no_deped_email: false });
       return;
     }
-    if (raw === 'n/a') {
-      handleMultipleFieldsChange({ depedEmail: 'N/A', noDepedEmail: true, no_deped_email: true });
-      return;
-    }
-    handleMultipleFieldsChange({ depedEmail: `${raw}@deped.gov.ph`, noDepedEmail: false, no_deped_email: false });
+    handleMultipleFieldsChange({ depedEmail: `${raw}@deped.gov.ph`, deped_email: `${raw}@deped.gov.ph`, noDepedEmail: false, no_deped_email: false });
   };
 
   // DepEd email local sync helpers
@@ -1581,8 +1583,8 @@ export default function RoomProfiling() {
 
     const currentNature = String(formData.natureOfAppointment || '').toUpperCase();
     if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(currentNature)) {
-      if (String(formData.fundSource).toUpperCase() === 'NATIONAL') {
-        alert('Non-permanent appointments cannot be NATIONAL funded. Please select SEF, LGU, PTA, NGO, or SCHOOL MOOE.');
+      if (String(formData.fundSource).toUpperCase() === 'NATIONAL' && !NATIONAL_FUND_ELIGIBLE_NATURES.includes(currentNature)) {
+        alert('Only Contractual and Job Order/COS appointments can be NATIONAL funded. Please select SEF, LGU, PTA, NGO, or SCHOOL MOOE.');
         return;
       }
     }
@@ -2528,13 +2530,14 @@ export default function RoomProfiling() {
                         fundValue = 'NATIONAL';
                         isFundDisabled = true;
                       } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(currentNature)) {
+                        const allowsNational = NATIONAL_FUND_ELIGIBLE_NATURES.includes(currentNature);
                         fundOptions = isCookPosition
-                          ? ['SBFP', 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE']
-                          : ['SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
+                          ? ['SBFP', ...(allowsNational ? ['NATIONAL'] : []), 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE']
+                          : [...(allowsNational ? ['NATIONAL'] : []), 'SEF', 'LGU', 'PTA', 'NGO', 'SCHOOL MOOE'];
                         isFundDisabled = false;
                         if (!isCookPosition && String(fundValue).toUpperCase() === 'SBFP') {
                           fundValue = 'SEF';
-                        } else if (String(fundValue).toUpperCase() === 'NATIONAL' || !fundValue) {
+                        } else if ((String(fundValue).toUpperCase() === 'NATIONAL' && !allowsNational) || !fundValue) {
                           fundValue = isCookPosition ? 'SBFP' : 'SEF';
                         } else if (String(fundValue).toUpperCase() === 'MOOE') {
                           fundValue = 'SCHOOL MOOE';
@@ -2568,7 +2571,7 @@ export default function RoomProfiling() {
                           newHiring = 'DOST';
                         } else if (['CONTRACTUAL', 'SUBSTITUTE', 'CASUAL/EMERGENCY', 'JOB ORDER/CONTRACT OF SERVICE', 'VOLUNTEER'].includes(natureUpper)) {
                           newHiring = 'N/A';
-                          if (String(newFund).toUpperCase() === 'NATIONAL' || !newFund) {
+                          if ((String(newFund).toUpperCase() === 'NATIONAL' && !NATIONAL_FUND_ELIGIBLE_NATURES.includes(natureUpper)) || !newFund) {
                             newFund = 'SEF';
                           }
                         }

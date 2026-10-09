@@ -55,3 +55,16 @@
 - 2026-10-09: Master DB connection unification + startup health fail-loudly + honest cache dedupe + workload persistence verified end-to-end. Root cause of code 3D000 eliminated by configuring `INSIGHTED_DB_NAME=esf7_local` and sharing `getPool()` in `server/db/index.js` when master database matches primary database. Server boot runs connectivity checks against Primary DB, Master DB, and Auth DB, reporting reachability. Ensured `esf7_database` in `esf7_local` with 91 deduplicated authentic personnel for school 300488. Cleaned duplicate entry in `esf7_room_roster_cache`. Stable-key workload overlay in `server/controllers/personnel/index.js` ensures `esf7_workload_rows` are attached to personnel even after cache clears. End-to-end verified with live HTTP tests. All 21 unit test suites pass (204 tests) and client builds cleanly.
 
 - 2026-10-09: Persistence audit written and P1/P2 fixes applied (list in PERSISTENCE_AUDIT.md section 8). Not browser-tested. Decisions needed: (1) should "Save" on the Roster register the 77 auto-filled master people as profile rows, (2) run dedupe + unique indexes on this database (2,786 extra copies locally; 300488 is clean), (3) production env must set INSIGHTED_DATABASE_URL/INSIGHTED_DB_NAME now that the master pool defaults to the primary DB.
+- 2026-10-09: PM2 restart/stop audit. Draft save (single-statement upsert) and /api/workloads/bulk (BEGIN..COMMIT, ack after commit) are safe; client draftSaver keeps dirty state and retries every 10s on failure. Fixed pool close + DB-before-listen + dev ecosystem timeouts. NOT live-tested with pm2 (no pm2 run here). Open: syncDraftToNodeStatus runs fire-and-forget after the draft commit, so a restart in that window can leave derived node-status rows stale until the next save.
+
+## 2026-10-09 session
+Done: time-allotment rules (shared/, client Validation Center 6.3, server save check), QR constant. Open: ARCHITECTURE.md `shared/` note awaits user edit; RoomQR countdown uses local midnight while passcodes roll at UTC midnight (08:00 PH) - pre-existing mismatch, not changed; no 12h QR setting was found; no automated tests added yet.
+
+## 2026-10-09 session 2 - Rows 9-13
+Done in code: all five rows (see CHANGELOG). Client builds; shared multigrade logic unit-checked with a node script. NOT browser-tested. Open: ARCHITECTURE.md / PRODUCT_OVERVIEW.md still have `[fill in]` (Success Targets, Out of Scope, shared/ note). Existing saved Librarian personnel keep their stored `type` until re-saved (category is re-derived from position in most views).
+
+## 2026-10-09 session 3 - Rows 14, 16
+Done in code; not browser-tested. TODO: user runs `node server/migrations/add_school_head_sdo_and_unique_head.js` after backup (table auto-creates on first API call regardless). Row 15 blocked on user input.
+
+## 2026-10-09 session 4 - Rows 17-22
+Done: 17, 19, 22, last row. Row 18: Home Economics / Digital Literacy NOT in the SHS subject lists (Workload.jsx / OrganizedClasses.jsx) - awaiting user. Row 20: needs a CLC assignment-location field - awaiting user. Row 21: no action. Not browser-tested. Server has no Department Head requirement check, so rule 19 is client-only (shared fn ready).

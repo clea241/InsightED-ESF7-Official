@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiPrinter, FiX, FiAlertTriangle, FiCheck } from 'react-icons/fi';
-import { detectPersonnelTypeFromPosition } from '../context/AppContext';
+import { detectPersonnelTypeFromPosition, useApp } from '../context/AppContext';
+import { resolveSchoolHead } from '@shared/schoolHead.js';
 
 // The wrapper owns the open/closed decision so the inner component always calls its hooks in the same order.
 export default function ESF7PrintableReportModal(props) {
@@ -9,6 +10,7 @@ export default function ESF7PrintableReportModal(props) {
 }
 
 function ESF7PrintableReportModalContent({ isOpen, onClose, schoolInfo, personnel, signature, isLocked, errorsCount, selectedTerm = '1st' }) {
+  const { sdoSchoolHead, classSections = [] } = useApp();
   const [activePrintTerm, setActivePrintTerm] = useState(selectedTerm || '1st');
 
   useEffect(() => {
@@ -23,7 +25,9 @@ function ESF7PrintableReportModalContent({ isOpen, onClose, schoolInfo, personne
   const schoolYearStr = schoolInfo?.schoolYear || schoolInfo?.school_year || 'SY 2026-2027';
 
   // Dynamic School Head Detection strictly following the toggle in Personnel Roster
-  const schoolHead = (personnel || []).find(p => p.isSchoolHead === true || p.is_school_head === true) ||
+  // Roster head first, then the SDO OIC record, then (legacy) a title-based guess
+  const resolvedHead = resolveSchoolHead(personnel, sdoSchoolHead);
+  const schoolHead = resolvedHead?.source === 'sdo' ? null : resolvedHead?.person ||
     (personnel || []).find(p => {
       const pos = (p.position || '').toUpperCase();
       return pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('TIC') || pos.includes('TEACHER-IN-CHARGE');
@@ -33,11 +37,15 @@ function ESF7PrintableReportModalContent({ isOpen, onClose, schoolInfo, personne
     ? ` ${schoolHead.middleName.charAt(0)}.`
     : '';
 
-  const schoolHeadFullName = schoolHead
+  const schoolHeadFullName = resolvedHead?.source === 'sdo'
+    ? resolvedHead.name
+    : schoolHead
     ? `${schoolHead.lastName || ''}, ${schoolHead.firstName || ''}${middleInitial}`.toUpperCase()
     : (schoolInfo?.certifiedBy || 'SCHOOL HEAD / PRINCIPAL');
 
-  const schoolHeadPosition = schoolHead?.position
+  const schoolHeadPosition = resolvedHead?.source === 'sdo'
+    ? `${resolvedHead.positionTitle} / School Head`
+    : schoolHead?.position
     ? `${schoolHead.position} / School Head`
     : (schoolInfo?.certifiedTitle || 'School Head Signature & Official Designation');
 
@@ -745,7 +753,16 @@ function ESF7PrintableReportModalContent({ isOpen, onClose, schoolInfo, personne
                       const m = gradeVal.match(/\d+/);
                       if (m) gradeVal = m[0];
                     }
-                    const secVal      = (w.sectionName || w.section_name || '').toUpperCase();
+                    let secVal = (w.sectionName || w.section_name || '').toUpperCase();
+                    const targetSec = (classSections || []).find(s => String(s.id) === String(w.sectionId || w.section_id));
+                    const secType = String(targetSec?.sectionType || w.sectionType || '').toUpperCase();
+                    const isNonReg = ['SNED', 'ALS', 'ARAL', 'REMEDIAL', 'ENRICHMENT'].some(k => secType.includes(k)) ||
+                      ['SNED-', 'ALS-', 'ARAL-', 'REM-', 'ENR-'].some(pfx => String(w.sectionId || w.section_id || '').startsWith(pfx));
+                    if (isNonReg) {
+                      const displayId = targetSec?.id || w.sectionId || w.section_id || secVal;
+                      const displayType = secType || (displayId.startsWith('SNED-') ? 'SNED' : displayId.startsWith('ALS-') ? 'ALS' : displayId.startsWith('ARAL-') ? 'ARAL' : displayId.startsWith('ENR-') ? 'ENRICHMENT' : displayId.startsWith('REM-') ? 'REMEDIAL' : 'NON-REGULAR');
+                      secVal = `${displayId} [${displayType}]`;
+                    }
 
                     return (
                       <tr key={w.id || wIdx} style={{ height: '18px' }}>

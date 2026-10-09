@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import PageTransition from '../components/PageTransition';
 import PortalHeader from '../components/PortalHeader';
+import { isAllowanceDisabled } from '@shared/allowances.js';
 import { 
   FiCheck, FiMap, FiCheckSquare, FiSquare, FiMinusSquare, 
   FiFilter, FiUsers, FiSearch, FiCheckCircle, FiXCircle, 
@@ -14,6 +15,7 @@ export default function Allowances() {
     showToast, 
     allowancesMap, 
     toggleAllowance, 
+    setAllowanceDisabled,
     bulkToggleAllowances, 
     fetchAllowances, 
     schoolInfo, 
@@ -118,6 +120,9 @@ export default function Allowances() {
     }
 
     const personAllowances = allowancesMap[personId] || {};
+    if (isAllowanceDisabled(personAllowances, conf.key)) {
+      return showToast(`${conf.label} is disabled for ${name}. Enable it first.`, 'warning');
+    }
     const currentlyGranted = Boolean(personAllowances[conf.key]);
     const nextGranted = !currentlyGranted;
 
@@ -167,6 +172,17 @@ export default function Allowances() {
         ? `Granted ${confLabel} to ${targetIds.length} ${categoryLabel}.` 
         : `Removed ${confLabel} from ${targetIds.length} ${categoryLabel}.`
     );
+  };
+
+  // Disable / re-enable one allowance for one person (e.g. Special Hardship). Disabled = ignored by compliance.
+  const handleDisableToggle = async (personId, name, conf, nextDisabled) => {
+    if (isLocked) return;
+    const res = await setAllowanceDisabled(personId, conf.key, nextDisabled, currentSchoolYear);
+    if (res && res.success !== false) {
+      showToast(`${nextDisabled ? 'Disabled' : 'Enabled'} ${conf.label} for ${name}`);
+    } else {
+      showToast(`Failed to update ${conf.label} for ${name}`, 'error');
+    }
   };
 
   // Bulk toggle for ALL allowance columns across all currently filtered personnel
@@ -630,8 +646,9 @@ export default function Allowances() {
                     >
                       {allowanceConfig.map(conf => {
                         const isNonTeachingSupplies = conf.key === 'supplies' && cat === 'non-teaching';
-                        const isChecked = !isNonTeachingSupplies && Boolean(personAllowances[conf.key]);
-                        const isInputDisabled = isLocked || isNonTeachingSupplies;
+                        const isOptedOut = isAllowanceDisabled(personAllowances, conf.key);
+                        const isChecked = !isNonTeachingSupplies && !isOptedOut && Boolean(personAllowances[conf.key]);
+                        const isInputDisabled = isLocked || isNonTeachingSupplies || isOptedOut;
 
                         return (
                           <div 
@@ -701,9 +718,28 @@ export default function Allowances() {
                                       <FiCheck size={11} /> GRANTED
                                     </>
                                   ) : (
-                                    'OFF'
+                                    isOptedOut ? 'DISABLED' : 'OFF'
                                   )}
                                 </span>
+                                <button
+                                  type="button"
+                                  disabled={isLocked}
+                                  onClick={() => handleDisableToggle(p.id, fullName, conf, !isOptedOut)}
+                                  title={isOptedOut ? `Enable ${conf.label} for this personnel` : `Disable ${conf.label} for this personnel (ignored in compliance)`}
+                                  style={{
+                                    marginLeft: 'auto',
+                                    background: 'none',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '6px',
+                                    fontSize: '10px',
+                                    fontWeight: '700',
+                                    padding: '2px 6px',
+                                    color: isOptedOut ? '#B45309' : '#64748b',
+                                    cursor: isLocked ? 'not-allowed' : 'pointer'
+                                  }}
+                                >
+                                  {isOptedOut ? 'Enable' : 'Disable'}
+                                </button>
                               </>
                             )}
                           </div>

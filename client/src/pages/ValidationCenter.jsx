@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { errorMessage as apiErrorMessage } from '../services/errorMessage';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
+import { resolveSchoolHead } from '@shared/schoolHead.js';
 import { api } from '../services/api';
 import { deleteLocalDraft, getLocalDraft } from '../services/db';
 import ESF7PrintableReportModal from '../components/ESF7PrintableReportModal';
@@ -27,6 +28,7 @@ export default function ValidationCenter() {
     showAlert,
     completeNode,
     allowancesMap,
+    sdoSchoolHead,
     activeTerm,
     setActiveTerm
   } = useApp();
@@ -169,7 +171,13 @@ export default function ValidationCenter() {
   }, [schoolInfo]);
 
   useEffect(() => {
-    const schoolHead = (personnel || []).find(p => p.isSchoolHead === true || p.is_school_head === true) ||
+    const resolved = resolveSchoolHead(personnel, sdoSchoolHead);
+    // No designated head in the roster: the SDO-supplied OIC Principal is the principal of record
+    if (resolved?.source === 'sdo') {
+      setPrincipalName(resolved.name);
+      return;
+    }
+    const schoolHead = resolved?.person ||
       (personnel || []).find(p => {
         const pos = (p.position || '').toUpperCase();
         return pos.includes('PRINCIPAL') || pos.includes('HEAD TEACHER') || pos.includes('TEACHER-IN-CHARGE') || pos.includes('TIC') || pos.includes('OIC');
@@ -186,7 +194,7 @@ export default function ValidationCenter() {
         setSignature(schoolHead.e_signature_url || schoolHead.signature);
       }
     }
-  }, [personnel]);
+  }, [personnel, sdoSchoolHead]);
 
   // E-Signature Drawing & Upload state
   const [sigMode, setSigMode] = useState('draw'); // 'draw' | 'upload' | 'type'
@@ -2100,7 +2108,14 @@ export default function ValidationCenter() {
                                   }
                                    const matchedSec = (classSections || []).find(s => String(s.id) === String(w.sectionId)) || 
                                                       (classSections || []).find(s => String(s.adviserId || s.adviser_id) === String(p.id));
-                                   const secVal   = (w.sectionName || w.section_name || matchedSec?.sectionName || matchedSec?.section_name || (w.subject === 'ADVISORY' || w.subject === 'HGP' ? 'ADVISORY SECTION' : 'GENERIC')).toUpperCase();
+                                   const matchType = String(matchedSec?.sectionType || w.sectionType || '').toUpperCase();
+                                   const isNonReg = ['SNED', 'ALS', 'ARAL', 'REMEDIAL', 'ENRICHMENT'].some(k => matchType.includes(k)) || ['SNED-', 'ALS-', 'ARAL-', 'REM-', 'ENR-'].some(pfx => String(matchedSec?.id || w.sectionId || '').startsWith(pfx));
+                                   let secVal = (w.sectionName || w.section_name || matchedSec?.sectionName || matchedSec?.section_name || (w.subject === 'ADVISORY' || w.subject === 'HGP' ? 'ADVISORY SECTION' : 'GENERIC')).toUpperCase();
+                                   if (isNonReg) {
+                                     const secIdVal = matchedSec?.id || w.sectionId || secVal;
+                                     const typeVal = matchType || (secIdVal.startsWith('SNED-') ? 'SNED' : secIdVal.startsWith('ALS-') ? 'ALS' : secIdVal.startsWith('ARAL-') ? 'ARAL' : secIdVal.startsWith('ENR-') ? 'ENRICHMENT' : secIdVal.startsWith('REM-') ? 'REMEDIAL' : 'NON-REGULAR');
+                                     secVal = `${secIdVal} [${typeVal}]`;
+                                   }
 
                                   return (
                                     <tr key={w.id || wIdx} style={{ borderBottom: '1px solid #F1F5F9' }}>

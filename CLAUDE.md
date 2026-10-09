@@ -149,3 +149,14 @@ Antigravity), which mirrors this file, and `.agent/workflows/sync-specs.md`
 proposes updates (never applies them without approval — see "Frozen vs.
 AI-maintained" above). If the user changes a rule in one brain file,
 apply the same change to the other in the same session.
+
+## Replicable processes (skills)
+
+When my message contains the word "replicate" (e.g. "replicate the deploy"), run a saved process:
+1. List the folders in `.claude/skills/` and read each `SKILL.md` front matter (name, description).
+2. Pick the skill whose description best matches the request, then read its `SKILL.md` fully plus any files it points to (`scripts/`, `reference/`, `rules.md`).
+3. Follow the steps exactly. If a step references a script in `scripts/`, execute it instead of regenerating the code.
+4. Run the skill's verification/acceptance checks before reporting done; summarize what was checked and report anything that could not be verified.
+5. If no skill matches, don't improvise silently. Say so and ask whether to (a) do the task interactively once and (b) save it as `.claude/skills/<name>/` with `SKILL.md` (YAML front matter: name, description), `scripts/` for deterministic steps, and acceptance criteria.
+6. If a run fails, find the root cause and fix it in the smallest durable place: process problem -> that skill's `SKILL.md`; missing context -> its `reference/`; repeated error -> an explicit rule in `rules.md`. Then re-run the same task to confirm. Repo-wide rules go in this file instead.
+Keep skill-specific details out of this file; they belong in the skills.
