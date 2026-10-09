@@ -1,5 +1,10 @@
 # PROGRESS
 
+## 2026-10-09 (endpoint health check, esf7_local only)
+- Ran the endpoint health check against a local server + `esf7_local` (public routes only; 200 protected routes gate-checked, 75 protected GETs not called). CRITICAL 18 -> 0 after the health/error-handler fixes.
+- Open, report only: `esf7_class_sections` is read by `workload_rows` (findTimeAllotmentViolations) but does not exist (replaced by the esf7_*_sections tables) - workload saves with changed rows may fail; `DELETE /api/personnel/:id` is not transactional, swallows every cleanup error, and uses wrong names (`esf7_personnel_trainings`, `esf7_overload_late_undertime`, `esf7_overload_no_work`, `esf7_class_sections`); `esf7_validation` / `esf7_clustered_ghost_sync` are created lazily at runtime.
+- Next: HC_* test login + HC_SCHOOL_ID for the protected routes; convert the draft routes and personnel delete to normalized transactional writes after the school_drafts migration is verified.
+
 ## 2026-09-09
 - Optimized `/api/dashboard/stats` (Executive Dashboard) load time by reusing a
   singleton `pg.Pool` for the cross-DB `insightEd` fallback queries instead of

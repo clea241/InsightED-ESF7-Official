@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 2026-10-09 (endpoint health fixes)
+- Server: `/api/health`, `/health`, `/api/health/deep`, `/health/deep` now return 503 only when PostgreSQL is unreachable; with Redis down they return 200 with `degraded: true` and per-dependency status (body shape otherwise unchanged).
+- Server: global JSON error handler after all routes. Malformed JSON -> 400 `{error: "Invalid JSON body"}`; other errors -> JSON `{error}` with file paths scrubbed; stacks are logged server-side only. `GET /api/room-profiling/snapshots/:id` returns 400 for a malformed id (guard in server.js).
+- DB: new idempotent migration `migrations/create_school_calendar_terms.js` (table was used by /api/reports/calendar-terms but never created). `esf7_school_head_sdo` is now created only by its migration; the lazy create in the controller was removed (run the migration before deploying).
+
 ## 2026-10-09 (PM2 restart safety)
 - Server: graceful shutdown now closes all Postgres pools after in-flight requests drain (`db.closeAllPools`); startup verifies the primary DB (5 tries) before opening the port and exits non-zero otherwise, so PM2 retries instead of serving 500s. `ecosystem.config.js` gained kill_timeout 15000 / wait_ready / listen_timeout (prod and staging configs already had them). Rollback: revert server/server.js, server/db/index.js, ecosystem.config.js.
 
