@@ -19,3 +19,6 @@ test-results/
 *.bak
 *.bak_*
 
+
+# Database backups (contain real personnel data)
+server/backups/
