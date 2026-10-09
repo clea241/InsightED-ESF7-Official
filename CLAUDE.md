@@ -160,3 +160,5 @@ When my message contains the word "replicate" (e.g. "replicate the deploy"), run
 5. If no skill matches, don't improvise silently. Say so and ask whether to (a) do the task interactively once and (b) save it as `.claude/skills/<name>/` with `SKILL.md` (YAML front matter: name, description), `scripts/` for deterministic steps, and acceptance criteria.
 6. If a run fails, find the root cause and fix it in the smallest durable place: process problem -> that skill's `SKILL.md`; missing context -> its `reference/`; repeated error -> an explicit rule in `rules.md`. Then re-run the same task to confirm. Repo-wide rules go in this file instead.
 Keep skill-specific details out of this file; they belong in the skills.
+
+Code-quality setup and checks: use the `quality-gate` skill (`.claude/skills/quality-gate/`).

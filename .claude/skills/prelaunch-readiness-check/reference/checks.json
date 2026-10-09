@@ -1,0 +1,866 @@
+[
+  {
+    "id": "API-01",
+    "category": "API",
+    "title": "One shared error handler returns consistent JSON errors; API never returns HTML error pages",
+    "severity": "high",
+    "verify_by": "Find the 4-argument error middleware in evidence.security.errorHandlers; on staging, evidence.staging.unknownApiRoute.isJson must be true.",
+    "fix_hint": "Register one error middleware last that logs the error and returns {error:{code,message,requestId}} with the right status; add a JSON catch-all 404 for /api/*."
+  },
+  {
+    "id": "API-02",
+    "category": "API",
+    "title": "Async errors are forwarded; process-level unhandledRejection/uncaughtException handled",
+    "severity": "high",
+    "verify_by": "Open the app entry file; check evidence.security.processHandling and that async handlers are wrapped (express-async-errors, asyncHandler or Express 5).",
+    "fix_hint": "Wrap async route handlers (or upgrade to Express 5), and add process.on(\"unhandledRejection\"/\"uncaughtException\") handlers that log, then exit so PM2 restarts the process."
+  },
+  {
+    "id": "API-03",
+    "category": "API",
+    "title": "All request bodies, params and queries validated with a schema library",
+    "severity": "high",
+    "verify_by": "evidence.security.validationLibs lists a library; open route files and confirm each route validates req.body, req.params and req.query.",
+    "fix_hint": "Add zod/joi/ajv validation middleware per route; reject unknown fields and return 400 with field-level messages."
+  },
+  {
+    "id": "API-04",
+    "category": "API",
+    "title": "Correct HTTP status codes; no 200 with an error body",
+    "severity": "medium",
+    "verify_by": "Review route handlers for res.json({error}) or res.json({success:false}) without a status; compare with evidence.staging probe statuses.",
+    "fix_hint": "Return 4xx/5xx via the shared error handler; replace 200-with-error bodies and add a test per route family."
+  },
+  {
+    "id": "API-05",
+    "category": "API",
+    "title": "List endpoints are paginated and bounded; no unbounded SELECT * responses",
+    "severity": "high",
+    "verify_by": "Open list routes; look for LIMIT/OFFSET or cursor params with a server-side maximum, and for SELECT * without LIMIT.",
+    "fix_hint": "Add limit (default 50, max 200) and cursor/offset parameters to every list query and return paging metadata."
+  },
+  {
+    "id": "API-06",
+    "category": "API",
+    "title": "Request body size limits and request timeouts configured",
+    "severity": "medium",
+    "verify_by": "evidence.security.bodyLimit and evidence.security.requestTimeouts; evidence.nginx.timeouts for client_max_body_size and client_body_timeout.",
+    "fix_hint": "Set express.json({limit}) explicitly, set server.requestTimeout/headersTimeout, and client_max_body_size plus client_body_timeout in nginx."
+  },
+  {
+    "id": "API-07",
+    "category": "API",
+    "title": "Success is returned only after the DB commit; queue jobs acknowledged after commit",
+    "severity": "critical",
+    "verify_by": "Review write handlers: the response (and queue ack) must come after await commit / await query, never before or in a fire-and-forget promise.",
+    "fix_hint": "Await the transaction commit before responding; ack queue jobs only after commit; use an outbox table for events that must not be lost."
+  },
+  {
+    "id": "API-08",
+    "category": "API",
+    "title": "API contract documented (OpenAPI or equivalent) and versioned",
+    "severity": "low",
+    "verify_by": "evidence.repo.openapi lists a spec file; routes are prefixed /api/v1 or equivalent.",
+    "fix_hint": "Generate or write an OpenAPI 3 spec, commit it, and version the route prefix."
+  },
+  {
+    "id": "API-09",
+    "category": "API",
+    "title": "Integration tests cover failure paths (bad input, auth fail, 503/504, DB down)",
+    "severity": "high",
+    "verify_by": "evidence.repo.testFiles; open tests and look for 400/401/403/503 assertions and a DB-down case.",
+    "fix_hint": "Add integration tests for invalid input, missing/expired token, forbidden role, and database unavailable returning 503."
+  },
+  {
+    "id": "API-10",
+    "category": "API",
+    "title": "The health endpoint and every route in the user-approved --safe-routes list return no 5xx on staging (unknown if no safe routes were given)",
+    "severity": "critical",
+    "verify_by": "evidence.staging.health.status and evidence.staging.safeRoutes[].status are all below 500. Mark unknown if staging was skipped or no safe routes given.",
+    "fix_hint": "Fix the root cause of each 5xx found (check server logs on staging), then re-run the probe."
+  },
+  {
+    "id": "DB-01",
+    "category": "DB",
+    "title": "Every table and column referenced in code exists in the migrated schema (no wrong tables)",
+    "severity": "critical",
+    "verify_by": "evidence.db.missingInDb (needs --check-db) and evidence.db.missingInMigrations (local) must both be empty.",
+    "fix_hint": "Add a migration for each missing table/column or correct the wrong table name in the query; add a CI test that applies migrations then runs the queries."
+  },
+  {
+    "id": "DB-02",
+    "category": "DB",
+    "title": "No unexpected or unreferenced tables; staging schema matches migrations",
+    "severity": "medium",
+    "verify_by": "evidence.db.unreferencedInDb (needs --check-db) compared with the migrated table list.",
+    "fix_hint": "Drop or document unreferenced tables via a reviewed migration (after a verified backup); regenerate staging from migrations."
+  },
+  {
+    "id": "DB-03",
+    "category": "DB",
+    "title": "Migrations are versioned, ordered and apply cleanly on an empty database",
+    "severity": "high",
+    "verify_by": "evidence.db.local.migrationFiles shows ordered, numbered files; CI applies them to an empty database.",
+    "fix_hint": "Use a migration tool with ordered versions; add a CI job that runs all migrations on a fresh Postgres."
+  },
+  {
+    "id": "DB-04",
+    "category": "DB",
+    "title": "Migrations are additive with a tested rollback or forward-fix plan; CREATE INDEX CONCURRENTLY on live tables",
+    "severity": "high",
+    "verify_by": "Open recent migrations for DROP/ALTER TYPE, and CREATE INDEX without CONCURRENTLY; look for down/rollback files or documented forward-fix.",
+    "fix_hint": "Split destructive changes into expand/contract steps, use CREATE INDEX CONCURRENTLY, and write a down migration or runbook step for each."
+  },
+  {
+    "id": "DB-05",
+    "category": "DB",
+    "title": "Every table has a primary key; required NOT NULL, UNIQUE and foreign keys exist",
+    "severity": "high",
+    "verify_by": "evidence.db.tablesWithoutPk (needs --check-db) is empty; review migrations for NOT NULL/UNIQUE/FOREIGN KEY on key columns.",
+    "fix_hint": "Add primary keys, NOT NULL, UNIQUE and FOREIGN KEY constraints in a migration (backfill and validate first)."
+  },
+  {
+    "id": "DB-06",
+    "category": "DB",
+    "title": "Indexes on foreign keys and hot filter/sort columns",
+    "severity": "medium",
+    "verify_by": "evidence.db.fkWithoutIndex (needs --check-db) is empty; review hot queries for matching indexes.",
+    "fix_hint": "Create indexes (CONCURRENTLY) on each unindexed foreign key and on frequent WHERE/ORDER BY columns."
+  },
+  {
+    "id": "DB-07",
+    "category": "DB",
+    "title": "Pool sizes fit max_connections (pool x processes x apps sharing the DB)",
+    "severity": "high",
+    "verify_by": "Compute evidence.db.local.poolSettings max x evidence.pm2 instances x apps and compare with evidence.db.remote.maxConnections.",
+    "fix_hint": "Lower pool max or instance count so total connections stay under ~80% of max_connections, or add PgBouncer."
+  },
+  {
+    "id": "DB-08",
+    "category": "DB",
+    "title": "Runtime DB role is least-privilege (not superuser, no DDL)",
+    "severity": "critical",
+    "verify_by": "evidence.db.remote role guard result (needs --check-db with the runtime role) or connection string review in config.",
+    "fix_hint": "Create an app role with only SELECT/INSERT/UPDATE/DELETE on required tables; run migrations with a separate owner role."
+  },
+  {
+    "id": "DB-09",
+    "category": "DB",
+    "title": "Multi-step writes use transactions",
+    "severity": "high",
+    "verify_by": "evidence.db.local.transactionUsage; open handlers that perform more than one write and confirm BEGIN/COMMIT or a transaction helper.",
+    "fix_hint": "Wrap multi-statement writes in a transaction with rollback on error."
+  },
+  {
+    "id": "DB-10",
+    "category": "DB",
+    "title": "Statement and idle-in-transaction timeouts set",
+    "severity": "medium",
+    "verify_by": "evidence.db.remote.roleSettings (needs --check-db) or evidence.db.local.timeoutSettings in pool config.",
+    "fix_hint": "Set statement_timeout and idle_in_transaction_session_timeout on the app role or pool options."
+  },
+  {
+    "id": "DB-11",
+    "category": "DB",
+    "title": "Saves are upserts by id; guards against whole-array replace and unexpected record-count drops",
+    "severity": "high",
+    "verify_by": "evidence.db.local.upsertUsage; review save handlers for DELETE-then-INSERT of whole collections and for count-drop guards.",
+    "fix_hint": "Switch to INSERT ... ON CONFLICT (id) DO UPDATE per record; reject saves that would remove more than a set fraction of existing rows unless explicitly confirmed."
+  },
+  {
+    "id": "DB-12",
+    "category": "DB",
+    "title": "Staging and production use separate DB credentials and instances",
+    "severity": "critical",
+    "verify_by": "Compare DB host/user in staging and production env templates and deploy config; no shared URL.",
+    "fix_hint": "Provision a separate staging database and credentials; rotate any credential that was shared."
+  },
+  {
+    "id": "DATA-01",
+    "category": "DATA",
+    "title": "Automated backups exist",
+    "severity": "critical",
+    "verify_by": "evidence.backups lists backup scripts/cron entries (pg_dump, pgBackRest, managed snapshots) or provider settings are cited.",
+    "fix_hint": "Schedule automated daily pg_dump or managed snapshots with retention, and alert on failure."
+  },
+  {
+    "id": "DATA-02",
+    "category": "DATA",
+    "title": "A restore has been tested and recorded",
+    "severity": "critical",
+    "verify_by": "Find a restore log or runbook entry with a date and result in docs.",
+    "fix_hint": "Restore the latest backup to a scratch database, verify row counts, and record date and outcome in the runbook."
+  },
+  {
+    "id": "DATA-03",
+    "category": "DATA",
+    "title": "Backups encrypted and stored off-host",
+    "severity": "high",
+    "verify_by": "Review the backup script/config for encryption and a remote destination (object storage, another region).",
+    "fix_hint": "Encrypt backups (gpg/age or storage-side) and copy them to off-host storage with restricted access."
+  },
+  {
+    "id": "DATA-04",
+    "category": "DATA",
+    "title": "RPO/RTO defined",
+    "severity": "medium",
+    "verify_by": "Find stated RPO and RTO in docs.",
+    "fix_hint": "Define and document RPO/RTO, and confirm backup frequency and restore time meet them."
+  },
+  {
+    "id": "DATA-05",
+    "category": "DATA",
+    "title": "Deploy gate requires a verified backup before migrations",
+    "severity": "high",
+    "verify_by": "evidence.repo.deploy.backupStep and the deploy script: a backup step must run and be checked before migrations.",
+    "fix_hint": "Add a deploy step that takes a backup, verifies it (size/checksum/test restore), and aborts the deploy if that fails."
+  },
+  {
+    "id": "DATA-06",
+    "category": "DATA",
+    "title": "Runbook forbids destructive commands without backup and rollback plan",
+    "severity": "medium",
+    "verify_by": "Find runbook text covering DROP/TRUNCATE/bulk DELETE approval and backup requirement.",
+    "fix_hint": "Add a runbook section requiring backup, rollback plan and second-person review before any destructive command."
+  },
+  {
+    "id": "SEC-01",
+    "category": "SEC",
+    "title": "Parameterized queries only; no string/template concatenation with user input",
+    "severity": "critical",
+    "verify_by": "evidence.sql.hits must be empty or each hit reviewed and shown to contain no user input.",
+    "fix_hint": "Replace concatenated SQL with parameterized queries ($1, $2) and pass values as an array."
+  },
+  {
+    "id": "SEC-02",
+    "category": "SEC",
+    "title": "Dynamic identifiers (sort column, table, direction) whitelisted",
+    "severity": "high",
+    "verify_by": "Open code that builds ORDER BY / column / table names from input and confirm a fixed allowlist.",
+    "fix_hint": "Map user-supplied sort/column/table values through a constant allowlist object; reject anything else."
+  },
+  {
+    "id": "SEC-03",
+    "category": "SEC",
+    "title": "No hardcoded secrets in the repo or git history; secret scanning in place",
+    "severity": "critical",
+    "verify_by": "evidence.secrets.hits and evidence.secrets.gitHistoryHits are empty; evidence.repo.ci.hints.secretScan is true.",
+    "fix_hint": "Remove secrets from code, rotate every exposed secret, purge history if needed, and add gitleaks/trufflehog to CI."
+  },
+  {
+    "id": "SEC-04",
+    "category": "SEC",
+    "title": "No fallback secrets; production refuses to start without JWT_SECRET and other required secrets",
+    "severity": "critical",
+    "verify_by": "evidence.secrets.hits of type jwt-fallback is empty; startup code throws when required env vars are missing.",
+    "fix_hint": "Remove \"|| default\" fallbacks and validate required secrets at startup, exiting in production when absent."
+  },
+  {
+    "id": "SEC-05",
+    "category": "SEC",
+    "title": "XSS defenses: output escaping, no unsanitized innerHTML, CSP set",
+    "severity": "high",
+    "verify_by": "evidence.security.innerHtml hits reviewed; evidence.security.csp true or staging Content-Security-Policy header present.",
+    "fix_hint": "Remove or sanitize (DOMPurify) innerHTML/dangerouslySetInnerHTML uses and add a Content-Security-Policy header."
+  },
+  {
+    "id": "SEC-06",
+    "category": "SEC",
+    "title": "CSRF protection (SameSite, tokens) wherever cookies authenticate",
+    "severity": "high",
+    "verify_by": "evidence.security.csrf and cookie flags; mark na if auth uses only Authorization headers (cite the code).",
+    "fix_hint": "Set SameSite=Lax/Strict on auth cookies and add CSRF tokens for state-changing routes, or move auth to bearer headers."
+  },
+  {
+    "id": "SEC-07",
+    "category": "SEC",
+    "title": "CORS is a strict allowlist; no wildcard with credentials",
+    "severity": "high",
+    "verify_by": "evidence.security.cors (wildcard, credentials) and evidence.staging.corsPreflight.reflectsOrigin must be false.",
+    "fix_hint": "Replace origin:\"*\" or reflected origins with an explicit allowlist from config; never combine wildcard with credentials."
+  },
+  {
+    "id": "SEC-08",
+    "category": "SEC",
+    "title": "Security headers present (HSTS, nosniff, frame protection, referrer policy)",
+    "severity": "high",
+    "verify_by": "evidence.staging.securityHeaders, or evidence.nginx.securityHeaders when staging is skipped.",
+    "fix_hint": "Add Strict-Transport-Security, X-Content-Type-Options, frame-ancestors/X-Frame-Options and Referrer-Policy via helmet or nginx add_header ... always."
+  },
+  {
+    "id": "SEC-09",
+    "category": "SEC",
+    "title": "No known critical/high dependency vulnerabilities; lockfile committed",
+    "severity": "high",
+    "verify_by": "evidence.deps counts (critical and high must be 0) and evidence.repo.lockfiles is non-empty.",
+    "fix_hint": "Run npm audit fix or upgrade the vulnerable packages, commit the lockfile, and gate CI on npm audit --audit-level=high."
+  },
+  {
+    "id": "SEC-10",
+    "category": "SEC",
+    "title": "SAST (Semgrep/CodeQL) runs in CI",
+    "severity": "medium",
+    "verify_by": "evidence.repo.ci.hints.sast is true and the workflow file is cited.",
+    "fix_hint": "Add a CodeQL or Semgrep workflow that runs on every pull request."
+  },
+  {
+    "id": "SEC-11",
+    "category": "SEC",
+    "title": "No command injection or path traversal; no exec with user input",
+    "severity": "critical",
+    "verify_by": "evidence.security.execWithVariables is empty or each hit reviewed; file-path handlers use path.resolve plus a base-directory check.",
+    "fix_hint": "Use execFile with an argument array and fixed command; validate file paths against a base directory."
+  },
+  {
+    "id": "SEC-12",
+    "category": "SEC",
+    "title": "Outbound URLs allowlisted (SSRF)",
+    "severity": "medium",
+    "verify_by": "Review code that fetches user-supplied URLs (fetch/axios/http.get with input).",
+    "fix_hint": "Resolve and check outbound hosts against an allowlist and block private/loopback ranges."
+  },
+  {
+    "id": "SEC-13",
+    "category": "SEC",
+    "title": "Uploads validated by type, size and content; stored outside web root",
+    "severity": "high",
+    "verify_by": "evidence.security.uploadLibs; if present, review limits, MIME/content sniffing and destination; na if no uploads (cite).",
+    "fix_hint": "Enforce size limits, verify magic bytes, rename files, and store outside the web root or in object storage."
+  },
+  {
+    "id": "SEC-14",
+    "category": "SEC",
+    "title": "Passwords hashed (argon2/bcrypt), JWT expiry and rotation defined, secure cookie flags",
+    "severity": "high",
+    "verify_by": "evidence.security.passwordHashing, evidence.security.jwtExpiry and cookie flags.",
+    "fix_hint": "Use argon2id or bcrypt (cost >= 12), set expiresIn on every JWT with a refresh/rotation plan, and set httpOnly, secure, sameSite on cookies."
+  },
+  {
+    "id": "SEC-15",
+    "category": "SEC",
+    "title": "No stack traces or version banners in responses",
+    "severity": "high",
+    "verify_by": "evidence.staging.stackTraceLeak false and evidence.staging.banners empty (Server/X-Powered-By).",
+    "fix_hint": "Disable x-powered-by, set server_tokens off, and return generic error bodies in production."
+  },
+  {
+    "id": "SEC-16",
+    "category": "SEC",
+    "title": "TLS everywhere, HTTP->HTTPS redirect, automated cert renewal",
+    "severity": "critical",
+    "verify_by": "evidence.staging.tls and evidence.staging.httpRedirect; evidence.nginx.tls (protocols, 301 redirect, certbot/ACME).",
+    "fix_hint": "Serve only HTTPS with TLS 1.2+, redirect port 80 with 301, and automate renewal (certbot timer) with expiry alerting."
+  },
+  {
+    "id": "SEC-17",
+    "category": "SEC",
+    "title": "Secrets live in a secrets manager or env, rotatable without downtime",
+    "severity": "medium",
+    "verify_by": "Review config/deploy docs; evidence.secrets.trackedEnvFiles must be empty.",
+    "fix_hint": "Move secrets to a secrets manager or server-side env files outside git, and document a rotation procedure."
+  },
+  {
+    "id": "SEC-18",
+    "category": "SEC",
+    "title": "DAST/pen test completed on staging before go-live",
+    "severity": "medium",
+    "verify_by": "Find a dated DAST/pen-test report in docs. Mark unknown if none; this skill never runs attack tools.",
+    "fix_hint": "Run OWASP ZAP baseline or a pen test against staging with written authorization and fix findings."
+  },
+  {
+    "id": "EXP-01",
+    "category": "EXP",
+    "title": "Every API route is behind auth middleware; explicit public allowlist; a test enforces it",
+    "severity": "critical",
+    "verify_by": "evidence.routes.unprotected matches an intentional public allowlist; a test fails when a new route is unauthenticated.",
+    "fix_hint": "Apply auth middleware at the router level, list public routes explicitly, and add a test that walks the route table."
+  },
+  {
+    "id": "EXP-02",
+    "category": "EXP",
+    "title": "Tenant/user ID comes from the verified token, never a client header or param",
+    "severity": "critical",
+    "verify_by": "Grep handlers for req.headers[\"x-user-id\"|\"x-tenant-id\"], req.body.userId and similar used for authorization.",
+    "fix_hint": "Derive user and tenant IDs only from the verified token claims; ignore client-supplied identity fields."
+  },
+  {
+    "id": "EXP-03",
+    "category": "EXP",
+    "title": "Object-level access checks (IDOR); cross-tenant request returns 403/404",
+    "severity": "critical",
+    "verify_by": "Open handlers loading records by id and confirm ownership/tenant filtering; find a cross-tenant test.",
+    "fix_hint": "Scope every query by tenant/owner from the token and add tests that cross-tenant access returns 403/404."
+  },
+  {
+    "id": "EXP-04",
+    "category": "EXP",
+    "title": "Role-based authorization on admin routes",
+    "severity": "high",
+    "verify_by": "Admin routes in evidence.routes use a role-check middleware; open it to confirm roles come from the verified token.",
+    "fix_hint": "Add requireRole middleware to all admin routes and test each role boundary."
+  },
+  {
+    "id": "EXP-05",
+    "category": "EXP",
+    "title": "No debug/admin/docs endpoints publicly reachable (/debug, /metrics, /api-docs, /swagger, /.env, /.git, /server-status)",
+    "severity": "critical",
+    "verify_by": "evidence.staging.sensitivePaths: none returns 200 with real content. Mark unknown if staging was skipped.",
+    "fix_hint": "Remove the endpoints or restrict them to loopback/VPN or authenticated admins; deny dotfiles in nginx."
+  },
+  {
+    "id": "EXP-06",
+    "category": "EXP",
+    "title": "DB, Redis, PM2 and internal ports not publicly exposed; bound to loopback or firewalled",
+    "severity": "critical",
+    "verify_by": "Review postgresql.conf/pg_hba, redis.conf bind, compose port mappings and firewall docs; nginx upstreams use 127.0.0.1.",
+    "fix_hint": "Bind DB, Redis and app ports to 127.0.0.1 or a private network and allow only 80/443 publicly."
+  },
+  {
+    "id": "EXP-07",
+    "category": "EXP",
+    "title": "Redis is passworded or loopback-only; staging and prod do not share Redis",
+    "severity": "high",
+    "verify_by": "Review redis config/URL in env templates for requirepass/ACL or loopback bind and separate hosts per environment.",
+    "fix_hint": "Set requirepass/ACL or bind to loopback, and give staging its own Redis instance."
+  },
+  {
+    "id": "EXP-08",
+    "category": "EXP",
+    "title": "nginx does not serve source maps, backups, dotfiles",
+    "severity": "high",
+    "verify_by": "evidence.nginx.denyDotfiles, denySourceMaps, autoindex; evidence.staging.sensitivePaths for .map files.",
+    "fix_hint": "Add location blocks denying /\\., *.map and backup extensions; disable autoindex; do not deploy source maps to the web root."
+  },
+  {
+    "id": "EXP-09",
+    "category": "EXP",
+    "title": "Responses do not over-expose fields (hashes, internal IDs, other tenants' data)",
+    "severity": "high",
+    "verify_by": "Review serializers and SELECT * responses for password hashes, tokens and internal columns.",
+    "fix_hint": "Return explicit field lists (DTOs) instead of raw rows and strip hashes/tokens."
+  },
+  {
+    "id": "EXP-10",
+    "category": "EXP",
+    "title": "Refused requests are logged without tokens",
+    "severity": "low",
+    "verify_by": "Review auth failure logging: it should log reason and request ID but never the token or password.",
+    "fix_hint": "Log 401/403 events with request ID, route and user ID only; redact Authorization headers."
+  },
+  {
+    "id": "RATE-01",
+    "category": "RATE",
+    "title": "Global rate limiting at nginx and/or app",
+    "severity": "high",
+    "verify_by": "evidence.ratelimit.libraries and evidence.ratelimit.nginx (limit_req_zone and limit_req).",
+    "fix_hint": "Add limit_req in nginx and/or express-rate-limit globally with sensible per-IP limits."
+  },
+  {
+    "id": "RATE-02",
+    "category": "RATE",
+    "title": "Strict limits on login, password reset, token and signup endpoints",
+    "severity": "critical",
+    "verify_by": "evidence.ratelimit.authRoutes: each has limiterOnRoute true or an nginx location with limit_req.",
+    "fix_hint": "Apply a strict limiter (e.g. 5-10 requests/minute per IP and per account) to login, reset, token and signup routes."
+  },
+  {
+    "id": "RATE-03",
+    "category": "RATE",
+    "title": "Limits keyed per user/tenant/IP, with a shared store when multi-process",
+    "severity": "medium",
+    "verify_by": "Review limiter config for keyGenerator and store (Redis) when PM2 cluster or multiple hosts are used.",
+    "fix_hint": "Key limits by user/tenant when authenticated, else IP, and use a Redis-backed store across processes."
+  },
+  {
+    "id": "RATE-04",
+    "category": "RATE",
+    "title": "429 with Retry-After; clients back off",
+    "severity": "medium",
+    "verify_by": "evidence.ratelimitProbe (429 and Retry-After/RateLimit-* headers) or limiter config showing headers enabled.",
+    "fix_hint": "Return 429 with Retry-After and enable standard RateLimit headers; make clients honor them."
+  },
+  {
+    "id": "RATE-05",
+    "category": "RATE",
+    "title": "Brute-force lockout and alerting on spikes",
+    "severity": "medium",
+    "verify_by": "Review login code for attempt counters/lockout and docs for alerts on 401/429 spikes.",
+    "fix_hint": "Add progressive lockout per account/IP and alert when 401/429 rates spike."
+  },
+  {
+    "id": "RATE-06",
+    "category": "RATE",
+    "title": "Connection, body and header timeouts guard against slow-client attacks",
+    "severity": "high",
+    "verify_by": "evidence.nginx.timeouts: client_header_timeout, client_body_timeout, send_timeout, keepalive_timeout; Node server headersTimeout.",
+    "fix_hint": "Set client_header_timeout, client_body_timeout, send_timeout and limit_conn in nginx; set Node headersTimeout/requestTimeout."
+  },
+  {
+    "id": "RATE-07",
+    "category": "RATE",
+    "title": "Heavy endpoints (exports, reports, search) have tighter limits or are queued",
+    "severity": "medium",
+    "verify_by": "Identify heavy routes in evidence.routes and check for specific limiters or queueing.",
+    "fix_hint": "Add stricter per-route limits to heavy endpoints or move them to a background queue."
+  },
+  {
+    "id": "LB-01",
+    "category": "LB",
+    "title": "Multiple app instances behind an nginx upstream or PM2 cluster mode",
+    "severity": "high",
+    "verify_by": "evidence.nginx.upstreams (more than one server) or evidence.pm2 exec_mode=cluster with instances > 1.",
+    "fix_hint": "Run at least two instances using PM2 cluster mode (instances: \"max\" or 2+) or an nginx upstream with several servers."
+  },
+  {
+    "id": "LB-02",
+    "category": "LB",
+    "title": "Upstream health handling (max_fails/fail_timeout or equivalent) tied to a readiness endpoint",
+    "severity": "high",
+    "verify_by": "evidence.nginx.upstreams max_fails/fail_timeout and evidence.health endpoints.",
+    "fix_hint": "Set max_fails and fail_timeout on upstream servers and expose a readiness endpoint that checks the database."
+  },
+  {
+    "id": "LB-03",
+    "category": "LB",
+    "title": "App is stateless (sessions, uploads, caches not in process memory or local disk)",
+    "severity": "high",
+    "verify_by": "Grep for in-memory session stores, local-disk uploads and module-level caches that must be shared.",
+    "fix_hint": "Move sessions to Redis/DB, uploads to object storage, and shared caches to Redis."
+  },
+  {
+    "id": "LB-04",
+    "category": "LB",
+    "title": "Upstream keepalive on; $connection_upgrade map instead of hardcoded Connection \"upgrade\"",
+    "severity": "medium",
+    "verify_by": "evidence.nginx.upstreams keepalive, evidence.nginx.connectionHardcodedUpgrade false, connectionUpgradeMap true.",
+    "fix_hint": "Add keepalive to upstreams with proxy_http_version 1.1 and a map $http_upgrade $connection_upgrade block."
+  },
+  {
+    "id": "LB-05",
+    "category": "LB",
+    "title": "Timeouts consistent across browser, gateway, nginx, app and DB",
+    "severity": "medium",
+    "verify_by": "Compare evidence.nginx.timeouts, Node server timeouts and DB statement_timeout: each layer inward should be shorter.",
+    "fix_hint": "Align timeouts so client > nginx > app > DB statement timeout, and document the values."
+  },
+  {
+    "id": "LB-06",
+    "category": "LB",
+    "title": "Load test at expected peak with headroom, results recorded",
+    "severity": "high",
+    "verify_by": "Find a recorded load-test report in docs. Mark unknown if none; this skill never runs load tests.",
+    "fix_hint": "Run a load test on staging at 2x expected peak (with authorization) and record latency, errors and saturation."
+  },
+  {
+    "id": "LB-07",
+    "category": "LB",
+    "title": "Heavy work off the request path (queue, 202); one queue-worker consumer set",
+    "severity": "medium",
+    "verify_by": "Review long-running handlers and queue worker setup (BullMQ etc.) for a single consumer set.",
+    "fix_hint": "Move heavy work to a queue, return 202 with a status endpoint, and run workers as one separate PM2 app."
+  },
+  {
+    "id": "LB-08",
+    "category": "LB",
+    "title": "Single points of failure (DB, Redis, nginx) identified and accepted or mitigated",
+    "severity": "medium",
+    "verify_by": "Find a SPOF list in docs with owner decisions.",
+    "fix_hint": "Document each single point of failure with its mitigation or explicit risk acceptance."
+  },
+  {
+    "id": "LB-09",
+    "category": "LB",
+    "title": "Compression and cache headers for static assets",
+    "severity": "low",
+    "verify_by": "evidence.nginx.gzip and long-lived Cache-Control on hashed static assets.",
+    "fix_hint": "Enable gzip/brotli and set Cache-Control immutable with long max-age for hashed assets."
+  },
+  {
+    "id": "LB-10",
+    "category": "LB",
+    "title": "Graceful shutdown drains connections on SIGINT/SIGTERM",
+    "severity": "high",
+    "verify_by": "evidence.security.processHandling.sigterm and server.close usage; evidence.pm2 kill_timeout.",
+    "fix_hint": "On SIGTERM/SIGINT stop accepting connections, call server.close, close the DB pool, then exit; set PM2 kill_timeout above drain time."
+  },
+  {
+    "id": "RES-01",
+    "category": "RES",
+    "title": "Readiness check (app + DB) separate from deep check (Redis etc.)",
+    "severity": "high",
+    "verify_by": "evidence.health.endpoints shows separate liveness/readiness/deep routes; open the handler to confirm what each checks.",
+    "fix_hint": "Expose /health (liveness), /ready (app + DB) and an authenticated /health/deep for optional dependencies."
+  },
+  {
+    "id": "RES-02",
+    "category": "RES",
+    "title": "Optional dependencies degrade with a visible fallback",
+    "severity": "medium",
+    "verify_by": "Review Redis/cache/third-party call sites for try/catch fallback and a logged or surfaced degraded state.",
+    "fix_hint": "Wrap optional dependency calls in fallbacks and report degraded status in the deep health check."
+  },
+  {
+    "id": "RES-03",
+    "category": "RES",
+    "title": "Retries use exponential backoff on 502/503/504, never on 401/403",
+    "severity": "medium",
+    "verify_by": "Review client/API wrapper retry logic (client code, axios interceptors).",
+    "fix_hint": "Retry only idempotent requests on 502/503/504 with exponential backoff and jitter; never retry 401/403."
+  },
+  {
+    "id": "RES-04",
+    "category": "RES",
+    "title": "Memory caps (max_memory_restart, Redis maxmemory)",
+    "severity": "high",
+    "verify_by": "evidence.pm2.max_memory_restart and Redis maxmemory settings in config.",
+    "fix_hint": "Set max_memory_restart in PM2 and maxmemory plus an eviction policy in Redis."
+  },
+  {
+    "id": "RES-05",
+    "category": "RES",
+    "title": "Auto-restart on crash with crash-loop protection",
+    "severity": "high",
+    "verify_by": "evidence.pm2 autorestart, max_restarts, min_uptime, restart_delay or exp_backoff_restart_delay.",
+    "fix_hint": "Enable autorestart with max_restarts, min_uptime and exp_backoff_restart_delay in the PM2 ecosystem file."
+  },
+  {
+    "id": "RES-06",
+    "category": "RES",
+    "title": "Failed queue jobs do not retry forever; dead-letter handling",
+    "severity": "high",
+    "verify_by": "Review queue job options for attempts, backoff, and failed-job handling; na if no queue (cite).",
+    "fix_hint": "Cap attempts with exponential backoff and route exhausted jobs to a dead-letter queue with alerting."
+  },
+  {
+    "id": "RES-07",
+    "category": "RES",
+    "title": "Timeouts on all outbound calls (DB, HTTP, Redis)",
+    "severity": "high",
+    "verify_by": "Review pool options (connectionTimeoutMillis), fetch/axios timeout, Redis commandTimeout.",
+    "fix_hint": "Set explicit timeouts on every outbound client (DB, HTTP, Redis)."
+  },
+  {
+    "id": "RES-08",
+    "category": "RES",
+    "title": "Maintenance mode ready (503 + Retry-After, JSON 503 for API)",
+    "severity": "low",
+    "verify_by": "evidence.nginx maintenance location returning 503 with Retry-After; API returns JSON 503.",
+    "fix_hint": "Add an nginx maintenance flag returning 503 with Retry-After and a JSON body for /api."
+  },
+  {
+    "id": "RES-09",
+    "category": "RES",
+    "title": "Multi-hour soak shows flat memory",
+    "severity": "medium",
+    "verify_by": "Find a soak-test result in docs. Mark unknown if none.",
+    "fix_hint": "Run a multi-hour soak on staging under realistic load and record memory and handle counts."
+  },
+  {
+    "id": "DEP-01",
+    "category": "DEP",
+    "title": "One verify command runs lint, typecheck, tests, build and smoke test",
+    "severity": "high",
+    "verify_by": "evidence.repo.scripts.verify lists a package.json containing a verify script covering those steps.",
+    "fix_hint": "Add an npm run verify script that chains lint, typecheck, tests, build and a smoke test; run it in CI."
+  },
+  {
+    "id": "DEP-02",
+    "category": "DEP",
+    "title": "CI required by branch protection; deploy blocked unless checks passed for that commit",
+    "severity": "high",
+    "verify_by": "evidence.repo.ci.files and repo settings/docs showing required status checks.",
+    "fix_hint": "Enable required status checks on the main branch and make the deploy job depend on them."
+  },
+  {
+    "id": "DEP-03",
+    "category": "DEP",
+    "title": "Lint catches undeclared variables (no-undef) and hook rules",
+    "severity": "medium",
+    "verify_by": "evidence.repo.lintConfig: eslint config enabling no-undef and react-hooks rules.",
+    "fix_hint": "Enable eslint:recommended (no-undef) and eslint-plugin-react-hooks, and fail CI on errors."
+  },
+  {
+    "id": "DEP-04",
+    "category": "DEP",
+    "title": "Zero-downtime deploy: pm2 reload, wait_ready with process.send(\"ready\")",
+    "severity": "high",
+    "verify_by": "evidence.pm2.wait_ready, evidence.security.processHandling.sendReady and evidence.repo.deploy.pm2Reload.",
+    "fix_hint": "Use pm2 reload, set wait_ready and listen_timeout, and call process.send(\"ready\") after the server listens."
+  },
+  {
+    "id": "DEP-05",
+    "category": "DEP",
+    "title": "Automatic rollback on failed post-deploy smoke test, rehearsed",
+    "severity": "high",
+    "verify_by": "Open the deploy script: smoke test then automatic rollback; find a rehearsal record.",
+    "fix_hint": "Add a post-deploy smoke test that triggers rollback to the previous release on failure, and rehearse it on staging."
+  },
+  {
+    "id": "DEP-06",
+    "category": "DEP",
+    "title": "Required env vars validated at startup and in the deploy gate",
+    "severity": "high",
+    "verify_by": "evidence.security.envValidation and the deploy script check for required variables.",
+    "fix_hint": "Validate required env vars at boot (envalid/zod) and verify them in the deploy gate before switching traffic."
+  },
+  {
+    "id": "DEP-07",
+    "category": "DEP",
+    "title": "nginx and PM2 configs are in version control",
+    "severity": "medium",
+    "verify_by": "evidence.nginx.file and evidence.pm2.file are tracked repo files.",
+    "fix_hint": "Commit the nginx and PM2 configs and deploy them from the repo."
+  },
+  {
+    "id": "DEP-08",
+    "category": "DEP",
+    "title": "Staging mirrors prod; deploy and rollback rehearsed on staging",
+    "severity": "medium",
+    "verify_by": "Find docs describing staging parity and a rehearsal record.",
+    "fix_hint": "Align staging versions/config with production and rehearse deploy and rollback there."
+  },
+  {
+    "id": "DEP-09",
+    "category": "DEP",
+    "title": "Deploy runs nginx -t then reload, never restart",
+    "severity": "medium",
+    "verify_by": "evidence.repo.deploy.nginxTest true, nginxReload true, nginxRestart false.",
+    "fix_hint": "Run nginx -t and abort on failure, then nginx -s reload (never restart)."
+  },
+  {
+    "id": "DEP-10",
+    "category": "DEP",
+    "title": "Persistence paths tested against a real database, not mocks",
+    "severity": "high",
+    "verify_by": "Review test setup for a real Postgres (docker/service container) used by persistence tests.",
+    "fix_hint": "Run persistence tests against a disposable real Postgres in CI."
+  },
+  {
+    "id": "DEP-11",
+    "category": "DEP",
+    "title": "Every production change traceable to a reviewed PR",
+    "severity": "medium",
+    "verify_by": "Repo settings or docs show PR review required and deploys tied to merged commits.",
+    "fix_hint": "Require pull-request review on main and deploy only tagged/merged commits."
+  },
+  {
+    "id": "OBS-01",
+    "category": "OBS",
+    "title": "Structured logs with correlation IDs; no tokens or PII",
+    "severity": "high",
+    "verify_by": "evidence.observability.loggers and correlationId hits; review log calls for tokens/PII.",
+    "fix_hint": "Use a structured logger (pino/winston), attach a request ID to every log line, and redact tokens and PII."
+  },
+  {
+    "id": "OBS-02",
+    "category": "OBS",
+    "title": "Error monitoring (Sentry or similar)",
+    "severity": "high",
+    "verify_by": "evidence.observability.errorMonitoring lists an SDK and it is initialised in the server entry.",
+    "fix_hint": "Install and initialise an error-monitoring SDK in server and client with release tagging."
+  },
+  {
+    "id": "OBS-03",
+    "category": "OBS",
+    "title": "Symptom-based alerts page a named on-call",
+    "severity": "high",
+    "verify_by": "Find alert rules and an on-call roster in docs.",
+    "fix_hint": "Create alerts on error rate, latency and health failures that page a named on-call person."
+  },
+  {
+    "id": "OBS-04",
+    "category": "OBS",
+    "title": "Latency, error-rate and saturation metrics; SLOs defined",
+    "severity": "medium",
+    "verify_by": "evidence.observability.metrics (prom-client etc.) and SLO docs.",
+    "fix_hint": "Expose request latency, error-rate and saturation metrics and define SLOs."
+  },
+  {
+    "id": "OBS-05",
+    "category": "OBS",
+    "title": "Runbook per alert; incident process preserves evidence first",
+    "severity": "medium",
+    "verify_by": "Find a runbook per alert and an incident process that says to capture evidence before restarting.",
+    "fix_hint": "Write a runbook per alert and add an incident step to capture logs/state before remediation."
+  },
+  {
+    "id": "OBS-06",
+    "category": "OBS",
+    "title": "External uptime monitor on the readiness endpoint",
+    "severity": "medium",
+    "verify_by": "Find monitor configuration or docs pointing at the readiness URL.",
+    "fix_hint": "Configure an external uptime monitor on the readiness endpoint with alerting."
+  },
+  {
+    "id": "OBS-07",
+    "category": "OBS",
+    "title": "Log rotation configured",
+    "severity": "medium",
+    "verify_by": "evidence.observability.logRotation (logrotate, pm2-logrotate or library).",
+    "fix_hint": "Configure logrotate or pm2-logrotate with size/age limits and compression."
+  },
+  {
+    "id": "GOV-01",
+    "category": "GOV",
+    "title": "Least-privilege roles; MFA for admin, server and cloud access",
+    "severity": "high",
+    "verify_by": "Find access policy docs or screenshots showing roles and MFA enforcement.",
+    "fix_hint": "Enforce MFA on cloud, server and admin accounts and prune roles to least privilege."
+  },
+  {
+    "id": "GOV-02",
+    "category": "GOV",
+    "title": "Individual, logged production DB access; no shared credential",
+    "severity": "medium",
+    "verify_by": "Find docs on DB access: named accounts and audit logging.",
+    "fix_hint": "Issue named DB accounts, enable connection and statement logging, and remove shared credentials."
+  },
+  {
+    "id": "GOV-03",
+    "category": "GOV",
+    "title": "Immutable audit log of sensitive changes and admin actions",
+    "severity": "medium",
+    "verify_by": "Find an audit log table/service written on sensitive actions and protected from edits.",
+    "fix_hint": "Record who/what/when for sensitive actions to an append-only audit log."
+  },
+  {
+    "id": "GOV-04",
+    "category": "GOV",
+    "title": "Data-protection mapping: retention, deletion/export, PII masked in logs and non-prod",
+    "severity": "medium",
+    "verify_by": "Find a data inventory/retention policy and non-prod masking practice.",
+    "fix_hint": "Document PII locations, retention and deletion/export procedures; mask PII in logs and non-prod data."
+  },
+  {
+    "id": "GOV-05",
+    "category": "GOV",
+    "title": "Breach-notification process with named owners",
+    "severity": "medium",
+    "verify_by": "Find a breach response document with named owners and notification timelines.",
+    "fix_hint": "Write a breach-notification procedure with owners, contacts and regulatory deadlines."
+  },
+  {
+    "id": "GOV-06",
+    "category": "GOV",
+    "title": "Named system owner; at least two people can deploy and recover; architecture documented",
+    "severity": "medium",
+    "verify_by": "Find an owner list and architecture doc; confirm two people have deploy and recovery access.",
+    "fix_hint": "Name a system owner, train a second deployer, and document the architecture."
+  },
+  {
+    "id": "GOV-07",
+    "category": "GOV",
+    "title": "Same-day access revocation on departure",
+    "severity": "low",
+    "verify_by": "Find an offboarding checklist that revokes access the same day.",
+    "fix_hint": "Add an offboarding checklist covering cloud, server, repo, DB and secrets rotation."
+  },
+  {
+    "id": "GOV-08",
+    "category": "GOV",
+    "title": "OS and runtime patching schedule",
+    "severity": "medium",
+    "verify_by": "Find a patching schedule/policy for OS, Node and Postgres.",
+    "fix_hint": "Define a monthly patching window with automated security updates and a Node LTS upgrade plan."
+  }
+]

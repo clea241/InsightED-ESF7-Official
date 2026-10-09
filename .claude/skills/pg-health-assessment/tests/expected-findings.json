@@ -1,0 +1,6 @@
+{
+  "required": ["SCH-01", "SCH-02", "SCH-03", "SCH-04", "SCH-05", "SCH-06", "SCH-09", "IDX-02", "IDX-03", "JSN-01", "JSN-02", "CFG-01", "CFG-02", "CFG-05", "CFG-07", "CFG-10", "CFG-11", "CFG-13", "HLT-09"],
+  "allowed_extra": ["CFG-03", "CFG-04", "CFG-06", "CFG-08", "CFG-09", "CFG-12", "CFG-14", "SCH-07", "IDX-01", "IDX-04", "IDX-05", "HLT-01", "HLT-02", "HLT-03", "HLT-04", "HLT-05", "HLT-06", "HLT-07", "HLT-08"],
+  "json_classification": { "documents.body": "split", "legacy_events.meta": "watch" },
+  "notes": "required = ids the fixture must produce. allowed_extra = environment-dependent ids that may appear. Anything else is reported as unexpected. The test passes --ram-gb 16 --storage ssd so the RAM/storage-relative config checks are deterministic."
+}

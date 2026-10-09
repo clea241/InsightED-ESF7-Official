@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 2026-10-09 (prelaunch-readiness-check skill)
+- Tooling only, no app code changed: new read-only skill `.claude/skills/prelaunch-readiness-check/` (108-check catalog, `collect-evidence.js`, `score.js`, tests). Safe mode by default; staging/DB/npm-audit/nginx -t probes are opt-in. `readiness-reports/` added to `.gitignore`. Rollback: delete the skill folder and the .gitignore lines.
+
 ## 2026-10-09 (endpoint health fixes)
 - Server: `/api/health`, `/health`, `/api/health/deep`, `/health/deep` now return 503 only when PostgreSQL is unreachable; with Redis down they return 200 with `degraded: true` and per-dependency status (body shape otherwise unchanged).
 - Server: global JSON error handler after all routes. Malformed JSON -> 400 `{error: "Invalid JSON body"}`; other errors -> JSON `{error}` with file paths scrubbed; stacks are logged server-side only. `GET /api/room-profiling/snapshots/:id` returns 400 for a malformed id (guard in server.js).
