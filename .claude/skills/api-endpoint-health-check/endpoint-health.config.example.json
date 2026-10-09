@@ -20,8 +20,18 @@
     "tokenField": "token",
     "gateFile": "server/middleware/auth.js",
     "gateNames": ["apiAuthGate"],
-    "middlewareNames": ["requireAuth", "authenticate", "verifyToken", "authMiddleware"],
-    "publicPrefixes": ["/api/health", "/api/auth", "/api/room-profiling", "/api/salary-matrix"],
+    "middlewareNames": [
+      "requireAuth",
+      "authenticate",
+      "verifyToken",
+      "authMiddleware"
+    ],
+    "publicPrefixes": [
+      "/api/health",
+      "/api/auth",
+      "/api/room-profiling",
+      "/api/salary-matrix"
+    ],
     "credentialsEnvFile": null
   },
   "database": {
@@ -33,17 +43,37 @@
     "intentionalSpellings": ["esf7_perssonel_educ"],
     "extraTables": ["school_drafts"],
     "queryWrapperFiles": ["server/db/index.js"],
-    "staticSchemaGlobs": ["server/schema.sql", "server/create_*.js", "server/migrations/*.js"],
+    "staticSchemaGlobs": [
+      "server/schema.sql",
+      "server/create_*.js",
+      "server/migrations/*.js"
+    ],
     "settleMs": 1200
   },
-  "thresholds": { "slowMs": 1500, "timeoutMs": 15000, "bodyPreviewChars": 300, "maxLargeBodyBytes": 5000000 },
-  "rate": { "concurrency": 1, "delayMs": 25, "abortAfterConsecutiveFailures": 5 },
+  "thresholds": {
+    "slowMs": 1500,
+    "timeoutMs": 15000,
+    "bodyPreviewChars": 300,
+    "maxLargeBodyBytes": 5000000
+  },
+  "rate": {
+    "concurrency": 1,
+    "delayMs": 25,
+    "abortAfterConsecutiveFailures": 5
+  },
   "sampleParams": { "schoolId": "$HC_SCHOOL_ID", "school_id": "$HC_SCHOOL_ID" },
   "queryDefaults": { "schoolYear": "SY 26-27" },
   "destructivePathPattern": "(clear|delete-all|truncate|reset|purge|wipe|drop|migrate|seed|restore|import|upload|submit)",
   "skip": [
-    { "match": "^[A-Z]+ /api/dev(/|$)", "reason": "developer snapshot tooling; not an application endpoint" }
+    {
+      "match": "^[A-Z]+ /api/dev(/|$)",
+      "reason": "developer snapshot tooling; not an application endpoint"
+    }
   ],
-  "logs": { "file": null, "pm2App": null, "ignorePatterns": ["POSTGRES-FALLBACK mode"] },
+  "logs": {
+    "file": null,
+    "pm2App": null,
+    "ignorePatterns": ["POSTGRES-FALLBACK mode"]
+  },
   "outDir": null
 }
