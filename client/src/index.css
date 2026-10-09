@@ -2848,8 +2848,70 @@
 }
 
 .hgp-advisory-banner.glassmorphic-warning {
-  background: rgba(254, 242, 242, 0.85);
+  background: rgba(242, 242, 242, 0.85);
   backdrop-filter: blur(10px);
   border: 1.5px solid #fca5a5;
   color: #991b1b;
-}
+}
+
+/* InsightED SweetAlert2 Unsaved Changes Modal Styling */
+.insighted-swal-modal {
+  border-radius: 20px !important;
+  font-family: inherit !important;
+  padding: 24px 20px 20px 20px !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+  background: #ffffff !important;
+}
+
+.insighted-swal-title {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  color: #0F172A !important;
+  margin-bottom: 6px !important;
+  letter-spacing: -0.02em !important;
+}
+
+.insighted-swal-text {
+  font-size: 13.5px !important;
+  color: #475569 !important;
+  line-height: 1.55 !important;
+  font-weight: 500 !important;
+}
+
+.insighted-swal-stay-btn {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+  color: #FFFFFF !important;
+  font-weight: 800 !important;
+  font-size: 12.5px !important;
+  border-radius: 12px !important;
+  padding: 10px 22px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.insighted-swal-stay-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45) !important;
+}
+
+.insighted-swal-discard-btn {
+  background: #DC2626 !important;
+  color: #FFFFFF !important;
+  font-weight: 800 !important;
+  font-size: 12.5px !important;
+  border-radius: 12px !important;
+  padding: 10px 22px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3) !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.insighted-swal-discard-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.45) !important;
+}
+

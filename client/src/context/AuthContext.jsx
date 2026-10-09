@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 
 import { pauseForAuth, resumeAfterLogin } from '../services/draftSaver';
 import { onSessionExpired, clearSessionExpired } from '../services/session';
+import { checkBeforeLeave, isAnyScreenDirty } from '../services/dirtyGuard';
 
 const AuthContext = createContext(null);
 
@@ -49,7 +50,14 @@ export const AuthProvider = ({ children }) => {
         resumeAfterLogin(userData.school_id || userData.schoolId || null);
     };
 
-    const logout = () => {
+    const logout = async (options = {}) => {
+        const { skipGuard = false } = typeof options === 'boolean' ? { skipGuard: options } : options;
+        if (!skipGuard && isAnyScreenDirty()) {
+            const canProceed = await checkBeforeLeave({ actionType: 'logout' });
+            if (!canProceed) {
+                return false;
+            }
+        }
         localStorage.removeItem('token');
         localStorage.removeItem('remembered_user');
         localStorage.removeItem('schoolId');
@@ -58,12 +66,13 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('insighted_personnel_cache');
         setUser(null);
         setToken(null);
+        return true;
     };
 
     logoutRef.current = logout;
 
-    const confirmLogout = () => {
-        logout();
+    const confirmLogout = async () => {
+        return await logout();
     };
 
     return (

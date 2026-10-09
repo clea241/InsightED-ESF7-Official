@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { getLocalDraft, setLocalDraft } from '../services/db';
 import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 import {
   FiShield,
   FiMapPin,
@@ -33,7 +34,7 @@ const JHS_PROGRAM_OPTIONS = [
 ];
 
 export default function SchoolProfile() {
-  const { schoolInfo, setSchoolInfo, showAlert, showConfirm, completeNode, setActiveView, registerAutoSaveHandler } = useApp();
+  const { schoolInfo, setSchoolInfo, showToast, showAlert, showConfirm, completeNode, setActiveView, registerAutoSaveHandler } = useApp();
   const currentOfferings = Array.isArray(schoolInfo.curricularOffering) ? schoolInfo.curricularOffering : [];
 
   const isElemActive = currentOfferings.includes('Elementary');
@@ -63,6 +64,48 @@ export default function SchoolProfile() {
   // Confirmation Modal & Spotlight Glow State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
+
+  const savedSnapshotRef = useRef(null);
+
+  const getCurrentConfigSnapshot = () => ({
+    hasElemSpecialPrograms,
+    elemSpecialProgram: !!elemSpecialProgram,
+    hasJhsSpecialPrograms,
+    jhsSpecialPrograms: [...(jhsSpecialPrograms || [])].sort(),
+    hasElemInclusive,
+    elemInclusivePrograms: [...(elemInclusivePrograms || [])].sort(),
+    hasJhsInclusive,
+    jhsInclusivePrograms: [...(jhsInclusivePrograms || [])].sort(),
+    hasShsInclusive,
+    shsInclusivePrograms: [...(shsInclusivePrograms || [])].sort(),
+    shsCurriculumModel
+  });
+
+  const isDirty = Boolean(savedSnapshotRef.current && JSON.stringify(getCurrentConfigSnapshot()) !== savedSnapshotRef.current);
+
+  const handleDiscard = () => {
+    if (!savedSnapshotRef.current) return;
+    try {
+      const snap = JSON.parse(savedSnapshotRef.current);
+      setHasElemSpecialPrograms(snap.hasElemSpecialPrograms);
+      setElemSpecialProgram(snap.elemSpecialProgram);
+      setHasJhsSpecialPrograms(snap.hasJhsSpecialPrograms);
+      setJhsSpecialPrograms(snap.jhsSpecialPrograms || []);
+      setHasElemInclusive(snap.hasElemInclusive);
+      setElemInclusivePrograms(snap.elemInclusivePrograms || []);
+      setHasJhsInclusive(snap.hasJhsInclusive);
+      setJhsInclusivePrograms(snap.jhsInclusivePrograms || []);
+      setHasShsInclusive(snap.hasShsInclusive);
+      setShsInclusivePrograms(snap.shsInclusivePrograms || []);
+      setShsCurriculumModel(snap.shsCurriculumModel);
+    } catch (e) {}
+  };
+
+  useDirtyGuard({
+    screenId: 'school_profile',
+    isDirty,
+    onDiscard: handleDiscard
+  });
 
   // Load configuration on mount or when schoolInfo updates
   useEffect(() => {
@@ -125,6 +168,10 @@ export default function SchoolProfile() {
             setShsCurriculumModel(schoolInfo.shsCurriculumModel);
           }
         }
+
+        setTimeout(() => {
+          savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
+        }, 50);
       } catch (err) {
         console.error('Error loading school profile configuration:', err);
       }
@@ -297,14 +344,16 @@ export default function SchoolProfile() {
         }));
       }
 
+      savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
       setIsConfirmModalOpen(false);
       setConfirmInput('');
 
-      // 4. Complete Node & Navigate to Roster
+      // Complete Node without auto-navigating to Roster
       if (completeNode) {
-        completeNode('school', 'roster');
-      } else if (setActiveView) {
-        setActiveView('roster');
+        completeNode('school', null);
+      }
+      if (showToast) {
+        showToast('School Profile configuration saved to database.', 'success');
       }
     } catch (err) {
       console.error('Failed to save configuration:', err);
@@ -352,7 +401,8 @@ export default function SchoolProfile() {
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
         onContinue={() => setIsConfirmModalOpen(true)}
-        continueText="Save & Continue to Roster ➔"
+        continueText="Save"
+        continueDisabled={!isDirty || isSaving}
       />
 
       {/* 2-Column Split Dashboard Layout */}
@@ -1322,7 +1372,7 @@ export default function SchoolProfile() {
                   transition: 'all 0.2s ease'
                 }}
               >
-                {isSaving ? 'Saving & Certifying...' : 'Certify & Continue to Roster ➔'}
+                {isSaving ? 'Saving...' : 'Confirm & Save'}
               </button>
             </div>
           </div>

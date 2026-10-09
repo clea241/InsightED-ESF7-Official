@@ -7,6 +7,7 @@ import { chooseDraftSource } from '../services/draftSync';
 import { getSessionSchoolId, resolveSchoolId } from '../services/session';
 import { saveDraft, flushDrafts, markDraftDirty, registerSnapshotProvider, subscribeDraftSave, getSyncedVersion, setSyncedVersion, acceptServerVersion, retryNow, DraftConflictError } from '../services/draftSaver';
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from '../services/db';
+import { checkBeforeLeave, isAnyScreenDirty, discardAllDirtyScreens } from '../services/dirtyGuard';
 
 const AppContext = createContext();
 
@@ -2831,8 +2832,20 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   const setActiveView = async (view, options = {}) => {
-    const { replace = false, skipAutoSave = false } = typeof options === 'boolean' ? { replace: options } : options;
+    const { replace = false, skipAutoSave = false, skipGuard = false } = typeof options === 'boolean' ? { replace: options } : options;
     
+    if (!view || view === activeView) return false;
+
+    // Unsaved Changes Navigation Guard (SweetAlert2 Modal)
+    if (!skipGuard && isAnyScreenDirty()) {
+      const canProceed = await checkBeforeLeave({ actionType: 'navigate' });
+      if (!canProceed) {
+        // User chose to stay and save -> abort navigation
+        return false;
+      }
+      // User chose to discard and leave -> dirty state is reset, proceed
+    }
+
     // Auto-save active module changes whenever navigating
     if (!skipAutoSave && activeView && activeView !== view && view) {
       try {
@@ -2852,6 +2865,7 @@ export const AppProvider = ({ children }) => {
       localStorage.setItem('insighted_active_view', view);
     }
     syncUrlWithView(view, !replace);
+    return true;
   };
 
   // Sync initial URL on mount and handle Browser Back/Forward navigation
@@ -2864,20 +2878,34 @@ export const AppProvider = ({ children }) => {
       syncUrlWithView(activeView, false);
     }
 
-    const handlePopState = (event) => {
+    const handlePopState = async (event) => {
       const currentParams = new URLSearchParams(window.location.search);
       const viewFromUrl = currentParams.get('view');
       const targetView = viewFromUrl || (event.state && event.state.view) || 'landing';
       
+      if (targetView === activeView) return;
+
+      if (isAnyScreenDirty()) {
+        // Temporarily keep URL on current view while SweetAlert modal is open
+        syncUrlWithView(activeView, false);
+
+        const canProceed = await checkBeforeLeave({ actionType: 'navigate' });
+        if (!canProceed) {
+          // User chose to stay and save -> stay on current view
+          return;
+        }
+      }
+
       setActiveViewState(targetView);
       if (typeof localStorage !== 'undefined' && targetView) {
         localStorage.setItem('insighted_active_view', targetView);
       }
+      syncUrlWithView(targetView, false);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [activeView]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState(null);
@@ -6863,6 +6891,8 @@ export const AppProvider = ({ children }) => {
       showConfirm,
       hasUnsavedChanges,
       setHasUnsavedChanges,
+      checkBeforeLeave,
+      isAnyScreenDirty,
       isSyncing,
       submissionStatus,
       setSubmissionStatus,

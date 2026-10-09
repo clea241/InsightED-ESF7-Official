@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import PortalHeader from '../components/PortalHeader';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 import { api } from '../services/api';
 import { 
   FiCreditCard, 
@@ -1398,6 +1399,30 @@ export default function PersonnelProfile() {
   const dbPerson = nonDraftPersonnel.find(p => p.id === activePersonnelId) || nonDraftPersonnel[0];
   const [editPerson, setEditPerson] = useState(null);
 
+  const currentPersonDirty = Boolean(
+    editPerson && dbPerson && JSON.stringify(editPerson) !== JSON.stringify(dbPerson)
+  ) || Boolean(dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`));
+
+  const anyOtherDrafts = useMemo(() => {
+    return (personnel || []).some(p => p.id !== dbPerson?.id && localStorage.getItem(`draft_personnel_${p.id}`));
+  }, [personnel, dbPerson?.id]);
+
+  const isDirty = currentPersonDirty || anyOtherDrafts;
+
+  const handleDiscard = useCallback(() => {
+    if (dbPerson) {
+      localStorage.removeItem(`draft_personnel_${dbPerson.id}`);
+      localStorage.removeItem(`draft_learning_areas_${dbPerson.id}`);
+      setEditPerson(dbPerson);
+    }
+  }, [dbPerson]);
+
+  const { confirmAction } = useDirtyGuard({
+    screenId: 'personnel_profile',
+    isDirty,
+    onDiscard: handleDiscard
+  });
+
   useEffect(() => {
     if (dbPerson) {
       const draftKey = `draft_personnel_${dbPerson.id}`;
@@ -2096,119 +2121,36 @@ export default function PersonnelProfile() {
 
 
 
-  const handleContinueToClasses = async () => {
-    // 1. Scan ONLY Teaching and Related-Teaching personnel (excluding shared borrowed teachers and Non-Teaching staff)
-    const targetPersonnel = (personnel || []).filter(p => {
-      if (p.isShared) return false;
-      const pos = p.position || p.plantilla_position || p.position_title || '';
-      const pType = detectPersonnelTypeFromPosition(pos) || p.type || 'teaching';
-      const isNonTeaching = ['non-teaching', 'NON-TEACHING'].includes(pType) || ['non-teaching', 'NON-TEACHING'].includes(p.type) || ['NON-TEACHING'].includes(p.positionCategory);
-      return !isNonTeaching;
-    });
-
-    const incompleteList = [];
-
-    targetPersonnel.forEach(p => {
-      // Use active in-memory editPerson if IDs match, otherwise check localStorage draft or raw personnel object
-      let personToCheck = p;
-      if (currentPerson && currentPerson.id === p.id) {
-        personToCheck = currentPerson;
-      } else {
-        const savedDraft = localStorage.getItem(`draft_personnel_${p.id}`);
-        if (savedDraft) {
-          try {
-            personToCheck = { ...p, ...JSON.parse(savedDraft) };
-          } catch (e) {
-            personToCheck = p;
-          }
-        }
-      }
-
-      const errors = getTeachingPrerequisitesValidationErrors(personToCheck);
-      if (errors.length > 0) {
-        const personName = `${personToCheck.firstName || ''} ${personToCheck.lastName || ''}`.trim() || 'Unnamed Personnel';
-        const pos = personToCheck.position || personToCheck.plantilla_position || personToCheck.position_title || 'Unassigned Position';
-        const pType = detectPersonnelTypeFromPosition(pos) || personToCheck.type || 'teaching';
-        const dept = pType === 'teaching' ? 'Teaching Faculty' : 'Related Teaching';
-
-        incompleteList.push({
-          id: personToCheck.id,
-          personName,
-          position: pos,
-          department: dept,
-          errors
-        });
-      }
-    });
-
-    // 2. If ANY teaching personnel are incomplete in Employment or Teaching tabs, block progression
-    if (incompleteList.length > 0) {
-      setAllPersonnelValidationModal({
-        isOpen: true,
-        incompleteList,
-        totalPersonnel: targetPersonnel.length
-      });
-      return;
-    }
-
-    // 3. All personnel are validated! Commit & save ALL personnel drafts across the whole school
+  const handleSave = async () => {
     try {
-      const updatedList = (personnel || []).map(p => {
-        let pData = { ...p };
-        if (currentPerson && String(currentPerson.id) === String(p.id)) {
-          pData = { ...currentPerson };
-        } else {
+      const recordsToSave = [];
+
+      // 1. If currentPerson is edited vs dbPerson, validate and add to recordsToSave
+      if (currentPerson && (currentPersonDirty || (editPerson && JSON.stringify(editPerson) !== JSON.stringify(dbPerson)))) {
+        const conflict = checkSchoolHeadConflict(currentPerson);
+        if (conflict) {
+          await showAlert("School Head Conflict", conflict);
+          return;
+        }
+        recordsToSave.push(currentPerson);
+      }
+
+      // 2. Add other personnel with pending local drafts
+      (personnel || []).forEach(p => {
+        if (p.id !== dbPerson?.id) {
           const savedDraft = localStorage.getItem(`draft_personnel_${p.id}`);
           if (savedDraft) {
             try {
-              pData = { ...pData, ...JSON.parse(savedDraft) };
+              recordsToSave.push({ ...p, ...JSON.parse(savedDraft) });
             } catch (e) {}
           }
         }
-
-        // Auto-confirm step increment & defaults if missing
-        if (!pData.stepIncrementConfirmed) {
-          const computed = computeStepIncrement(pData.firstServiceDate, pData.lastPromotionDate);
-          if (computed && computed.step) {
-            pData.stepIncrement = pData.stepIncrement || computed.step;
-            pData.step_increment = pData.stepIncrement;
-            pData.stepIncrementConfirmed = true;
-            pData.step_increment_confirmed = true;
-          }
-        }
-
-        if (pData.lastPromotionDate === undefined || pData.lastPromotionDate === '') {
-          pData.lastPromotionDate = 'N/A';
-          pData.last_promotion_date = 'N/A';
-        }
-        if (pData.newStationDate === undefined || pData.newStationDate === '') {
-          pData.newStationDate = pData.firstServiceDate || 'N/A';
-          pData.new_station_date = pData.firstServiceDate || 'N/A';
-        }
-        if (pData.lastLateralMovementDate === undefined || pData.lastLateralMovementDate === '') {
-          pData.lastLateralMovementDate = 'N/A';
-          pData.last_lateral_movement_date = 'N/A';
-        }
-
-        // Merge learningAreaMap from draft if present
-        const savedLa = localStorage.getItem(`draft_learning_areas_${p.id}`);
-        if (savedLa) {
-          try {
-            const parsedLa = JSON.parse(savedLa);
-            if (parsedLa) {
-              pData.learningAreaMap = parsedLa;
-              pData.matrix_data = parsedLa;
-            }
-          } catch (e) {}
-        }
-
-        pData.personalVerified = true;
-        pData.workloadVerified = true;
-        return pData;
       });
 
-      // Save all updated records
-      for (const p of updatedList) {
+      if (recordsToSave.length === 0) return;
+
+      // 3. Save ONLY the changed records to database
+      for (const p of recordsToSave) {
         if (typeof savePersonnelChanges === 'function') {
           await savePersonnelChanges(p.id, p);
         }
@@ -2217,17 +2159,22 @@ export default function PersonnelProfile() {
       }
 
       if (currentPerson) {
-        const activeUpdated = updatedList.find(x => String(x.id) === String(currentPerson.id));
-        if (activeUpdated) setEditPerson(activeUpdated);
+        setEditPerson(currentPerson);
       }
-    } catch (e) {
-      console.warn("Auto-save all personnel on continue warning:", e);
-    }
 
-    if (completeNode) {
-      completeNode('profile', 'classes');
-    } else if (setActiveView) {
-      setActiveView('classes');
+      // Complete Node without forcing navigation
+      if (completeNode) {
+        completeNode('profile', null);
+      }
+
+      if (showToast) {
+        showToast("Personnel profile changes saved to database.", "success");
+      }
+    } catch (err) {
+      console.warn("Save personnel changes error:", err);
+      if (showToast) {
+        showToast("Failed to save personnel profile: " + err.message, "error");
+      }
     }
   };
 
@@ -2527,8 +2474,9 @@ export default function PersonnelProfile() {
         description="Detailed personnel identity, employment history, degree specializations, and Learning Area matrix."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={handleContinueToClasses}
-        continueText="Save & Continue to Organized Classes ➔"
+        onContinue={handleSave}
+        continueText="Save"
+        continueDisabled={!isDirty}
       />
       <article className="card" style={{ overflow: 'hidden' }}>
 
@@ -2642,7 +2590,7 @@ export default function PersonnelProfile() {
                         return (
                           <div
                             key={p.id}
-                            onClick={() => { setActivePersonnelId(p.id); setActiveTab('identity'); }}
+                            onClick={() => confirmAction(() => { setActivePersonnelId(p.id); setActiveTab('identity'); }, { actionType: 'tab' })}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -2894,7 +2842,7 @@ export default function PersonnelProfile() {
                 <button
                   key={tab}
                   type="button"
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => confirmAction(() => setActiveTab(tab), { actionType: 'tab' })}
                   style={{
                     padding: '12px 18px',
                     fontSize: '13px',

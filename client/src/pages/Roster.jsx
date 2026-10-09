@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useApp, POSITION_OPTIONS_BY_CATEGORY, detectPersonnelTypeFromPosition, isCanonicalPosition, getCategoryForCanonicalPosition, validateDepEdEmail } from '../context/AppContext';
 import SearchableDropdown from '../components/SearchableDropdown';
 import DepEdEmailInfoModal from '../components/DepEdEmailInfoModal';
 import ESF7UploadModal from '../components/ESF7UploadModal';
 import PortalHeader from '../components/PortalHeader';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 import { api } from '../services/api';
 import { FiPlus, FiSave, FiTag, FiLink, FiUser, FiTrash2, FiInfo, FiX, FiUploadCloud, FiRefreshCw, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
@@ -452,6 +453,35 @@ export default function Roster() {
   const [isHeadRequiredModalOpen, setIsHeadRequiredModalOpen] = useState(false);
   const [highlightHeadColumn, setHighlightHeadColumn] = useState(false);
 
+  const savedRosterSnapshotRef = useRef(null);
+
+  const getRosterSnapshot = useCallback(() => (personnel || []).map(p => ({
+    id: p.id,
+    isDraft: !!p.isDraft,
+    isSchoolHead: !!(p.isSchoolHead || p.is_school_head),
+    position: p.position || p.plantilla_position,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    depedEmail: p.depedEmail || p.email
+  })), [personnel]);
+
+  useEffect(() => {
+    if (savedRosterSnapshotRef.current === null && personnel && personnel.length > 0) {
+      savedRosterSnapshotRef.current = JSON.stringify(getRosterSnapshot());
+    }
+  }, [personnel, getRosterSnapshot]);
+
+  const hasPendingDrafts = Boolean((personnel || []).some(p => p.isDraft));
+  const isDirty = Boolean(hasPendingDrafts || (savedRosterSnapshotRef.current && JSON.stringify(getRosterSnapshot()) !== savedRosterSnapshotRef.current));
+
+  useDirtyGuard({
+    screenId: 'roster',
+    isDirty,
+    onDiscard: () => {
+      // Discard dirty state
+    }
+  });
+
   // Poll eSF7 Harvester Queue status if roster is empty
   useEffect(() => {
     const rawSchoolId = schoolInfo?.schoolId ? String(schoolInfo.schoolId).replace(/^SCH-/i, '').trim() : '';
@@ -540,7 +570,7 @@ export default function Roster() {
     setSortConfig({ key, direction });
   };
 
-  const handleSaveAndContinue = async () => {
+  const handleSave = async () => {
     // 1. DepEd eSF7 School Head Verification Gate
     const currentHead = personnel.find(p => p.isSchoolHead === true || p.is_school_head === true);
     if (!currentHead) {
@@ -549,28 +579,31 @@ export default function Roster() {
       return;
     }
 
-    // 2. Commit any pending auto-fill drafts
-    const drafts = personnel.filter(p => p.isDraft);
-    if (drafts.length > 0) {
-      try {
-        setIsSavingDrafts(true);
+    setIsSavingDrafts(true);
+    try {
+      // 2. Commit any pending auto-fill drafts
+      const drafts = personnel.filter(p => p.isDraft);
+      if (drafts.length > 0) {
         await commitDraftPersonnel();
-      } catch (err) {
-        console.warn('Draft auto-commit warning:', err);
-      } finally {
-        setIsSavingDrafts(false);
       }
-    }
 
-    // 3. Confirm and transition to Profiling
-    if (showToast) {
-      showToast(`School Head verified: ${currentHead.firstName} ${currentHead.lastName}`, 'success');
-    }
+      // 3. Mark completed node without forcing navigation
+      if (completeNode) {
+        completeNode('roster', null);
+      }
 
-    if (completeNode) {
-      completeNode('roster', 'profile');
-    } else if (setActiveView) {
-      setActiveView('profile');
+      savedRosterSnapshotRef.current = JSON.stringify(getRosterSnapshot());
+
+      if (showToast) {
+        showToast(`Roster saved to database. School Head verified: ${currentHead.firstName} ${currentHead.lastName}`, 'success');
+      }
+    } catch (err) {
+      console.warn('Save roster error:', err);
+      if (showToast) {
+        showToast('Failed to save roster changes: ' + err.message, 'error');
+      }
+    } finally {
+      setIsSavingDrafts(false);
     }
   };
 
@@ -677,8 +710,9 @@ export default function Roster() {
         description="Master roster of all registered school personnel, position items, and status tracking."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={handleSaveAndContinue}
-        continueText="Save & Continue to Profiling ➔"
+        onContinue={handleSave}
+        continueText="Save"
+        continueDisabled={!isDirty || isSavingDrafts}
       />
       <article className="card">
 

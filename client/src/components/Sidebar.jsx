@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { checkBeforeLeave, isAnyScreenDirty } from '../services/dirtyGuard';
 import LogoutPasscodeModal from './LogoutPasscodeModal';
 import { 
   FiHome, 
@@ -23,6 +24,14 @@ import {
 export default function Sidebar() {
   const { activeView, setActiveView, incomingRequests, bypassNodeLocks, setBypassNodeLocks } = useApp();
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+
+  const handleLogoutClick = async () => {
+    if (isAnyScreenDirty()) {
+      const canProceed = await checkBeforeLeave({ actionType: 'logout' });
+      if (!canProceed) return;
+    }
+    setIsLogoutModalOpen(true);
+  };
 
   const [openSections, setOpenSections] = useState({
     general: true,
@@ -180,7 +189,7 @@ export default function Sidebar() {
             {/* Sign Out Button */}
             <button
               className="signout-btn"
-              onClick={() => setIsLogoutModalOpen(true)}
+              onClick={handleLogoutClick}
               type="button"
               style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
             >

@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp, DIVISION_SCHOOL_OPTIONS } from '../context/AppContext';
 import PortalHeader from '../components/PortalHeader';
 import { FiAlertCircle } from 'react-icons/fi';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 
 export default function Deployment() {
   const {
@@ -18,6 +19,7 @@ export default function Deployment() {
 
   const dbPerson = personnel.find(p => p.id === activePersonnelId) || personnel[0];
   const [editPerson, setEditPerson] = React.useState(null);
+  const [isSaving, setIsSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (dbPerson) {
@@ -39,6 +41,42 @@ export default function Deployment() {
 
   const currentPerson = editPerson || dbPerson;
 
+  const getPersonDeploymentSnapshot = (p) => {
+    if (!p) return null;
+    return {
+      deploymentStatus: p.deploymentStatus || 'OWN STATION',
+      profileOwner: p.profileOwner || '',
+      recordVisibility: p.recordVisibility || 'Owned full profile',
+      clusteredSchools: p.clusteredSchools || '',
+      clusteredAcceptanceStatus: p.clusteredAcceptanceStatus || 'N/A',
+      transferStatus: p.transferStatus || 'N/A',
+      assignedSchools: Array.isArray(p.assignedSchools) ? p.assignedSchools : []
+    };
+  };
+
+  const dbSnapshot = React.useMemo(() => JSON.stringify(getPersonDeploymentSnapshot(dbPerson)), [dbPerson]);
+  const currentSnapshot = React.useMemo(() => JSON.stringify(getPersonDeploymentSnapshot(currentPerson)), [currentPerson]);
+  const isDirty = Boolean(dbPerson && (currentSnapshot !== dbSnapshot || localStorage.getItem(`draft_deployment_${dbPerson.id}`)));
+
+  const handleDiscard = () => {
+    if (dbPerson) {
+      localStorage.removeItem(`draft_deployment_${dbPerson.id}`);
+      setEditPerson(dbPerson);
+    }
+  };
+
+  const { confirmAction } = useDirtyGuard({
+    screenId: 'deployment',
+    isDirty,
+    onDiscard: handleDiscard
+  });
+
+  const handleSelectPerson = (newId) => {
+    confirmAction(() => {
+      setActivePersonnelId(newId);
+    });
+  };
+
   if (!currentPerson) {
     return (
       <div className="card-inner">
@@ -55,14 +93,26 @@ export default function Deployment() {
     localStorage.setItem(`draft_deployment_${currentPerson.id}`, JSON.stringify(updated));
   };
 
-  const handleSaveChangesDirectly = async () => {
-    if (!currentPerson) return;
+  const handleSave = async () => {
+    if (!currentPerson || !isDirty) return;
+    setIsSaving(true);
     try {
       await savePersonnelChanges(currentPerson.id, currentPerson);
       localStorage.removeItem(`draft_deployment_${currentPerson.id}`);
+      setEditPerson(currentPerson);
+      if (completeNode) {
+        completeNode('deployment', null);
+      }
       showToast("Deployment changes saved to database successfully.");
     } catch (err) {
-      await showAlert("Error", "Failed to save deployment changes: " + err.message);
+      console.warn("Failed to save deployment changes:", err);
+      if (showAlert) {
+        await showAlert("Error", "Failed to save deployment changes: " + err.message);
+      } else if (showToast) {
+        showToast("Failed to save deployment changes: " + err.message, "error");
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -73,11 +123,9 @@ export default function Deployment() {
         description="Manage deployment statuses, clustered school links, and cross-school personnel visibility."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={() => {
-          if (completeNode) completeNode('deployment', 'designations');
-          setActiveView('designations');
-        }}
-        continueText="Save & Continue to Designations ➔"
+        onContinue={handleSave}
+        continueText="Save"
+        continueDisabled={!isDirty || isSaving}
       />
       <article className="card">
         <div className="card-inner">
@@ -91,8 +139,7 @@ export default function Deployment() {
               </span>
               <button className="btn secondary" style={{ minHeight: '28px', padding: '0 10px', fontSize: '12px', background: 'white', color: '#B45309', borderColor: '#FCD34D' }} type="button" onClick={async () => {
                 if (await showConfirm("Discard Draft?", "Are you sure you want to discard your unsaved changes and revert to the server data?")) {
-                  localStorage.removeItem(`draft_deployment_${dbPerson.id}`);
-                  setEditPerson(dbPerson);
+                  handleDiscard();
                 }
               }}>
                 Discard Draft
@@ -105,7 +152,7 @@ export default function Deployment() {
               <label>Selected Personnel</label>
               <select
                 value={currentPerson.id}
-                onChange={(e) => setActivePersonnelId(e.target.value)}
+                onChange={(e) => handleSelectPerson(e.target.value)}
               >
                 {personnel.map(p => (
                   <option key={p.id} value={p.id}>
@@ -192,8 +239,20 @@ export default function Deployment() {
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '20px', borderTop: '1.5px solid var(--line)', paddingTop: '15px' }}>
-            <button className="btn" type="button" onClick={handleSaveChangesDirectly} style={{ background: '#0284c7', borderColor: '#0284c7', color: 'white' }}>
-              Save Changes
+            <button
+              className="btn"
+              type="button"
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+              style={{
+                background: !isDirty ? '#94A3B8' : '#0284c7',
+                borderColor: !isDirty ? '#94A3B8' : '#0284c7',
+                color: 'white',
+                opacity: !isDirty ? 0.65 : 1,
+                cursor: !isDirty ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiArrowLeft, FiLogOut, FiRotateCcw, FiMap } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
+import { checkBeforeLeave, isAnyScreenDirty } from '../services/dirtyGuard';
 import LogoutPasscodeModal from './LogoutPasscodeModal';
 
 export default function PortalHeader({
@@ -19,8 +20,11 @@ export default function PortalHeader({
   showNodeMap = false,
   onNodeMap,
   onContinue,
-  continueText = "Save & Continue ➔",
-  continueDisabled = false
+  continueText = "Save",
+  continueDisabled = false,
+  onSave,
+  saveText,
+  saveDisabled
 }) {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
@@ -46,7 +50,11 @@ export default function PortalHeader({
 
   const dynamicBureauText = bureauText || (schoolInfo && schoolInfo.schoolName ? `${String(schoolInfo.schoolName).toUpperCase()} • ${schoolInfo.schoolYear || 'SY 2026-2027'}` : "PURO INTEGRATED SCHOOL • SY 2026-2027");
 
-  const handleLogoutClick = () => {
+  const handleLogoutClick = async () => {
+    if (isAnyScreenDirty()) {
+      const canProceed = await checkBeforeLeave({ actionType: 'logout' });
+      if (!canProceed) return;
+    }
     setIsLogoutModalOpen(true);
   };
 
@@ -291,11 +299,11 @@ export default function PortalHeader({
                 </button>
               )}
 
-              {onContinue && (
+              {(onSave || onContinue) && (
                 <button
                   type="button"
-                  onClick={onContinue}
-                  disabled={continueDisabled}
+                  onClick={onSave || onContinue}
+                  disabled={saveDisabled !== undefined ? saveDisabled : continueDisabled}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -305,26 +313,29 @@ export default function PortalHeader({
                     fontSize: '12px',
                     fontWeight: '800',
                     color: '#FFFFFF',
-                    background: continueDisabled ? '#94A3B8' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    background: (saveDisabled !== undefined ? saveDisabled : continueDisabled) ? '#94A3B8' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                     border: 'none',
-                    cursor: continueDisabled ? 'not-allowed' : 'pointer',
-                    boxShadow: continueDisabled ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.35)',
+                    cursor: (saveDisabled !== undefined ? saveDisabled : continueDisabled) ? 'not-allowed' : 'pointer',
+                    boxShadow: (saveDisabled !== undefined ? saveDisabled : continueDisabled) ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.35)',
+                    opacity: (saveDisabled !== undefined ? saveDisabled : continueDisabled) ? 0.65 : 1,
                     transition: 'all 0.2s ease'
                   }}
                   onMouseEnter={(e) => {
-                    if (!continueDisabled) {
+                    const isDisabled = (saveDisabled !== undefined ? saveDisabled : continueDisabled);
+                    if (!isDisabled) {
                       e.currentTarget.style.transform = 'translateY(-1px)';
                       e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.45)';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!continueDisabled) {
+                    const isDisabled = (saveDisabled !== undefined ? saveDisabled : continueDisabled);
+                    if (!isDisabled) {
                       e.currentTarget.style.transform = 'none';
                       e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.35)';
                     }
                   }}
                 >
-                  <span>{continueText}</span>
+                  <span>{saveText || (continueText === "Save & Continue ➔" ? "Save" : continueText)}</span>
                 </button>
               )}
 

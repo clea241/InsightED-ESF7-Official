@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 import {
   useApp,
   OFFICIAL_DESIGNATIONS,
@@ -121,17 +122,8 @@ export default function Designations() {
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'matrix'
   const [activeKsTab, setActiveKsTab] = useState('all'); // 'all', 'ks1', 'ks2', 'ks3', 'ks4'
 
-  // Key Stage 1 Checklist Assignment Form State
-  const [ks1SelectedTeacherId, setKs1SelectedTeacherId] = useState('');
-  const [ks1CheckedGrades, setKs1CheckedGrades] = useState([]);
-  const [showKs1AssignForm, setShowKs1AssignForm] = useState(false);
-
-  // Dynamic enrollment calculation from regular sections
-  const regularEnrollment = useMemo(() => {
-    return getRegularSectionsEnrollment(classSections);
-  }, [classSections]);
-
-  const isAshRequired = regularEnrollment >= 1001;
+  const savedDesignationsSnapshotRef = useRef(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // N/A Map State for Mandatory Designations (persisted in raw_payload and localStorage)
   const [designationsNaMap, setDesignationsNaMap] = useState(() => {
@@ -145,6 +137,73 @@ export default function Designations() {
     } catch (e) {}
     return {};
   });
+
+  const getDesignationsSnapshot = useCallback(() => ({
+    personnel: (personnel || []).map(p => ({
+      id: p.id,
+      prn: p.prn,
+      designation: typeof p.designation === 'string' ? p.designation : (p.designation?.name || p.designation?.designation || ''),
+      designations: Array.isArray(p.designations)
+        ? p.designations.map(d => typeof d === 'string' ? d : (d?.name || d?.designation || d?.title || ''))
+        : []
+    })),
+    naMap: { ...(designationsNaMap || {}) }
+  }), [personnel, designationsNaMap]);
+
+  useEffect(() => {
+    if (savedDesignationsSnapshotRef.current === null && personnel && personnel.length > 0) {
+      savedDesignationsSnapshotRef.current = JSON.stringify(getDesignationsSnapshot());
+    }
+  }, [personnel, getDesignationsSnapshot]);
+
+  const currentSnapshotStr = useMemo(() => JSON.stringify(getDesignationsSnapshot()), [getDesignationsSnapshot]);
+  const isDirty = Boolean(savedDesignationsSnapshotRef.current && currentSnapshotStr !== savedDesignationsSnapshotRef.current);
+
+  const handleDiscard = () => {
+    if (savedDesignationsSnapshotRef.current) {
+      try {
+        const snap = JSON.parse(savedDesignationsSnapshotRef.current);
+        if (Array.isArray(snap.personnel)) {
+          const snapMap = new Map(snap.personnel.map(sp => [String(sp.id), sp]));
+          setPersonnel(prev => (prev || []).map(p => {
+            const saved = snapMap.get(String(p.id));
+            if (saved) {
+              return {
+                ...p,
+                designation: saved.designation,
+                designations: saved.designations
+              };
+            }
+            return p;
+          }));
+        }
+        if (snap.naMap) {
+          setDesignationsNaMap(snap.naMap);
+        }
+      } catch (e) {
+        console.warn('Error discarding designations changes:', e);
+      }
+    }
+  };
+
+  useDirtyGuard({
+    screenId: 'designations',
+    isDirty,
+    onDiscard: handleDiscard
+  });
+
+  // Key Stage 1 Checklist Assignment Form State
+  const [ks1SelectedTeacherId, setKs1SelectedTeacherId] = useState('');
+  const [ks1CheckedGrades, setKs1CheckedGrades] = useState([]);
+  const [showKs1AssignForm, setShowKs1AssignForm] = useState(false);
+
+  // Dynamic enrollment calculation from regular sections
+  const regularEnrollment = useMemo(() => {
+    return getRegularSectionsEnrollment(classSections);
+  }, [classSections]);
+
+  const isAshRequired = regularEnrollment >= 1001;
+
 
   // Modal State for Confirming N/A (requires user to type "CONFIRM")
   const [naConfirmModal, setNaConfirmModal] = useState({
@@ -340,14 +399,7 @@ export default function Designations() {
       designation: updatedPrimary,
       designations: uniqueDesigs
     };
-    localStorage.setItem(`draft_personnel_${person.id}`, JSON.stringify(updatedPerson));
-
-    if (savePersonnelChanges) {
-      await savePersonnelChanges(person.id, updatedPerson);
-    } else {
-      setPersonnel(prev => prev.map(p => (String(p.id) === String(person.id) || (p.prn && person.prn && String(p.prn) === String(person.prn))) ? updatedPerson : p));
-    }
-
+    setPersonnel(prev => prev.map(p => (String(p.id) === String(person.id) || (p.prn && person.prn && String(p.prn) === String(person.prn))) ? updatedPerson : p));
     showToast(`✓ Assigned ${person.firstName} ${person.lastName} as ${targetKey}`, 'success');
   };
 
@@ -374,14 +426,7 @@ export default function Designations() {
       designation: updatedPrimary,
       designations: uniqueRemaining
     };
-    localStorage.setItem(`draft_personnel_${person.id}`, JSON.stringify(updatedPerson));
-
-    if (savePersonnelChanges) {
-      await savePersonnelChanges(person.id, updatedPerson);
-    } else {
-      setPersonnel(prev => prev.map(p => (String(p.id) === String(person.id) || (p.prn && person.prn && String(p.prn) === String(person.prn))) ? updatedPerson : p));
-    }
-
+    setPersonnel(prev => prev.map(p => (String(p.id) === String(person.id) || (p.prn && person.prn && String(p.prn) === String(person.prn))) ? updatedPerson : p));
     showToast(`Unassigned ${person.firstName} ${person.lastName} from ${desigName}`, 'info');
   };
 
@@ -535,14 +580,7 @@ export default function Designations() {
       designation: updatedPrimary,
       designations: remainingDesigs.filter(d => d !== updatedPrimary)
     };
-    localStorage.setItem(`draft_personnel_${person.id}`, JSON.stringify(updatedPerson));
-
-    if (savePersonnelChanges) {
-      await savePersonnelChanges(person.id, updatedPerson);
-    } else {
-      setPersonnel(prev => prev.map(p => String(p.id) === String(person.id) ? updatedPerson : p));
-    }
-
+    setPersonnel(prev => prev.map(p => String(p.id) === String(person.id) ? updatedPerson : p));
     showToast(`Unassigned ${person.firstName} ${person.lastName} from Key Stage 1`, 'info');
   };
 
@@ -603,14 +641,7 @@ export default function Designations() {
       designation: updatedPrimary,
       designations: remainingDesigs.filter(d => d !== updatedPrimary)
     };
-    localStorage.setItem(`draft_personnel_${person.id}`, JSON.stringify(updatedPerson));
-
-    if (savePersonnelChanges) {
-      await savePersonnelChanges(person.id, updatedPerson);
-    } else {
-      setPersonnel(prev => prev.map(p => String(p.id) === String(person.id) ? updatedPerson : p));
-    }
-
+    setPersonnel(prev => prev.map(p => String(p.id) === String(person.id) ? updatedPerson : p));
     showToast(`✓ Assigned ${person.firstName} ${person.lastName} as Key Stage 1 Head (${ks1CheckedGrades.join(', ')})`, 'success');
     setKs1SelectedTeacherId('');
     setKs1CheckedGrades([]);
@@ -825,7 +856,7 @@ export default function Designations() {
     return missing;
   };
 
-  const handleContinueToWorkload = () => {
+  const handleSave = async () => {
     const missing = getMissingRequiredDesignations();
     if (missing.length > 0) {
       setMissingDesignationsModal({
@@ -835,8 +866,60 @@ export default function Designations() {
       return;
     }
 
-    if (completeNode) completeNode('designation', 'workload');
-    else if (setActiveView) setActiveView('workload');
+    setIsSaving(true);
+    try {
+      let prevPersonnelMap = new Map();
+      if (savedDesignationsSnapshotRef.current) {
+        try {
+          const parsed = JSON.parse(savedDesignationsSnapshotRef.current);
+          if (Array.isArray(parsed.personnel)) {
+            parsed.personnel.forEach(sp => prevPersonnelMap.set(String(sp.id), sp));
+          }
+        } catch (e) {}
+      }
+
+      const changedPersonnel = (personnel || []).filter(p => {
+        const prev = prevPersonnelMap.get(String(p.id));
+        if (!prev) return true;
+        const curDesig = typeof p.designation === 'string' ? p.designation : (p.designation?.name || p.designation?.designation || '');
+        const curList = Array.isArray(p.designations)
+          ? p.designations.map(d => typeof d === 'string' ? d : (d?.name || d?.designation || d?.title || ''))
+          : [];
+        if (curDesig !== prev.designation) return true;
+        if (JSON.stringify(curList.slice().sort()) !== JSON.stringify((prev.designations || []).slice().sort())) return true;
+        return false;
+      });
+
+      for (const p of changedPersonnel) {
+        if (savePersonnelChanges) {
+          await savePersonnelChanges(p.id, p);
+        }
+        localStorage.removeItem(`draft_personnel_${p.id}`);
+      }
+
+      if (schoolInfo?.schoolId) {
+        try {
+          localStorage.setItem(`esf7_designations_na_${schoolInfo.schoolId}`, JSON.stringify(designationsNaMap));
+        } catch (e) {}
+      }
+
+      savedDesignationsSnapshotRef.current = JSON.stringify(getDesignationsSnapshot());
+
+      if (completeNode) {
+        completeNode('designation', null);
+      }
+
+      if (showToast) {
+        showToast("Designations saved to database successfully.", "success");
+      }
+    } catch (err) {
+      console.warn("Failed to save designations:", err);
+      if (showToast) {
+        showToast("Failed to save designations: " + err.message, "error");
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Search filtering
@@ -935,8 +1018,9 @@ export default function Designations() {
         description="Assign official faculty roles, Key Stage Department Heads, and school program coordinators."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={handleContinueToWorkload}
-        continueText="Save & Continue to Workload ➔"
+        onContinue={handleSave}
+        continueText="Save"
+        continueDisabled={!isDirty || isSaving}
       />
 
       <article className="card">

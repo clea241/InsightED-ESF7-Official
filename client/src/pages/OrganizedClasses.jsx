@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useApp, isSpecialProgramSubjectAllowed, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import { setLocalDraft } from '../services/db';
+import { api } from '../services/api';
 import PortalHeader from '../components/PortalHeader';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 import SortableTableHead from '../components/SortableTableHead';
 import SearchableDropdown from '../components/SearchableDropdown';
 import useSortableFilterableTable from '../hooks/useSortableFilterableTable';
@@ -699,6 +701,46 @@ export const isTeacherQualifiedForGrade = (teacher, sectionGradeLevel, sectionTy
 
 export default function OrganizedClasses() {
   const { classSections, setClassSections, addClassSection, updateSectionDetails, updateSectionAdviser, updateSectionLearners, removeClassSection, personnel, setPersonnel, schoolInfo, saveSchoolSubjects, showAlert, showConfirm, showToast, setHasUnsavedChanges, completeNode, setActiveView, registerAutoSaveHandler } = useApp();
+
+  const savedSectionsSnapshotRef = useRef(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const getSectionsSnapshot = useCallback(() => (classSections || []).map(s => ({
+    id: s.id,
+    sectionName: s.sectionName,
+    gradeLevel: s.gradeLevel,
+    sectionType: s.sectionType,
+    advisorId: s.advisorId || s.adviserId,
+    numberOfLearners: s.numberOfLearners,
+    maleLearners: s.maleLearners,
+    femaleLearners: s.femaleLearners,
+    specialProgramType: s.specialProgramType,
+    aralBasis: s.aralBasis,
+    aralToolKey: s.aralToolKey
+  })), [classSections]);
+
+  useEffect(() => {
+    if (savedSectionsSnapshotRef.current === null && classSections && classSections.length > 0) {
+      savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+    }
+  }, [classSections, getSectionsSnapshot]);
+
+  const isDirty = Boolean(savedSectionsSnapshotRef.current && JSON.stringify(getSectionsSnapshot()) !== savedSectionsSnapshotRef.current);
+
+  const handleDiscard = () => {
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snap = JSON.parse(savedSectionsSnapshotRef.current);
+        setClassSections(snap);
+      } catch (e) {}
+    }
+  };
+
+  useDirtyGuard({
+    screenId: 'organized_classes',
+    isDirty,
+    onDiscard: handleDiscard
+  });
 
   const classSectionsRef = useRef(classSections);
   useEffect(() => {
@@ -1969,7 +2011,7 @@ export default function OrganizedClasses() {
     if (showToast) showToast('✓ ALS section added.');
   };
 
-  const handleContinueToDesignation = async () => {
+  const handleSave = async () => {
     // Validate that all sections have assigned advisers and valid enrollment
     const invalidSections = (classSections || []).filter(sec => {
       const isAral = String(sec.sectionType || '').startsWith('ARAL') ||
@@ -2028,16 +2070,84 @@ export default function OrganizedClasses() {
       if (showAlert) {
         await showAlert(
           'Incomplete Class Sections',
-          `Cannot continue: Section "${secName}" is ${reason}. All sections must have an assigned advisory teacher and valid learner enrollment before proceeding.`
+          `Cannot save: Section "${secName}" is ${reason}. All sections must have an assigned advisory teacher and valid learner enrollment.`
         );
       }
       return;
     }
 
-    if (completeNode) {
-      completeNode('classes', 'designation');
-    } else {
-      setActiveView('designation');
+    setIsSaving(true);
+    try {
+      // Find changed sections compared to snapshot
+      let snapshotList = [];
+      try {
+        snapshotList = savedSectionsSnapshotRef.current ? JSON.parse(savedSectionsSnapshotRef.current) : [];
+      } catch (e) {}
+
+      const snapMap = new Map(snapshotList.map(s => [String(s.id), JSON.stringify(s)]));
+      const currentIds = new Set((classSections || []).map(s => String(s.id)));
+
+      // 1. Identify added or modified sections
+      const changedSections = (classSections || []).filter(sec => {
+        const snapJson = snapMap.get(String(sec.id));
+        if (!snapJson) return true; // new
+        const secCompare = {
+          id: sec.id,
+          sectionName: sec.sectionName,
+          gradeLevel: sec.gradeLevel,
+          sectionType: sec.sectionType,
+          advisorId: sec.advisorId || sec.adviserId,
+          numberOfLearners: sec.numberOfLearners,
+          maleLearners: sec.maleLearners,
+          femaleLearners: sec.femaleLearners,
+          specialProgramType: sec.specialProgramType,
+          aralBasis: sec.aralBasis,
+          aralToolKey: sec.aralToolKey
+        };
+        return JSON.stringify(secCompare) !== snapJson;
+      });
+
+      // 2. Identify deleted sections
+      const deletedSections = snapshotList.filter(s => !currentIds.has(String(s.id)));
+
+      // Persist ONLY changed sections
+      for (const sec of changedSections) {
+        if (api && api.addSection) {
+          await api.addSection({
+            ...sec,
+            schoolId: schoolInfo?.schoolId,
+            schoolYear: schoolInfo?.schoolYear || 'SY 26-27'
+          });
+        }
+      }
+
+      // Persist deletions
+      for (const delSec of deletedSections) {
+        if (api && api.deleteSection) {
+          try {
+            await api.deleteSection(delSec.id);
+          } catch (e) {}
+        }
+      }
+
+      // Update snapshot
+      savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+
+      // Complete Node without forcing navigation
+      if (completeNode) {
+        completeNode('classes', null);
+      }
+
+      if (showToast) {
+        showToast("Organized classes and section setup saved to database.", "success");
+      }
+    } catch (err) {
+      console.warn("Failed to save class sections:", err);
+      if (showToast) {
+        showToast("Failed to save class sections: " + err.message, "error");
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2048,8 +2158,9 @@ export default function OrganizedClasses() {
         description="Configure curriculum-level sections, assign class advisers, and manage active subjects offered."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={handleContinueToDesignation}
-        continueText="Save & Continue to Designations ➔"
+        onContinue={handleSave}
+        continueText="Save"
+        continueDisabled={!isDirty || isSaving}
       />
       <section id="classes" className="view" style={{ width: '100%' }}>
         <article className="card" style={{ width: '100%', marginBottom: '24px' }}>

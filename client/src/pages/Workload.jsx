@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import useDirtyGuard from '../hooks/useDirtyGuard';
 import PortalHeader from '../components/PortalHeader';
 import { useApp, detectPersonnelTypeFromPosition } from '../context/AppContext';
 import { api } from '../services/api';
@@ -8370,6 +8371,101 @@ export default function Workload() {
 
   const currentPerson = editPerson || dbPerson;
 
+  const savedWorkloadSnapshotRef = useRef(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const getPersonWorkloadSnapshot = useCallback((p) => {
+    if (!p) return null;
+    return {
+      id: String(p.id),
+      workloadRows: (p.workloadRows || []).map(r => ({
+        id: String(r.id || ''),
+        term: r.term || '1st',
+        startTime: r.startTime || '',
+        endTime: r.endTime || '',
+        days: Array.isArray(r.days) ? [...r.days].sort() : [],
+        subject: r.subject || r.subject_name || '',
+        sectionId: r.sectionId ? String(r.sectionId) : '',
+        gradeLevel: r.gradeLevel || ''
+      })),
+      teachingRelatedRows: (p.teachingRelatedRows || p.teaching_related_rows || []).map(r => ({
+        task: r.task || '',
+        dates: Array.isArray(r.dates) ? r.dates : []
+      })),
+      administrativeRows: (p.administrativeRows || p.administrative_rows || []).map(r => ({
+        task: r.task || '',
+        dates: Array.isArray(r.dates) ? r.dates : []
+      }))
+    };
+  }, []);
+
+  const getFullWorkloadSnapshot = useCallback(() => {
+    return (personnel || []).map(p => {
+      const activeMatch = currentPerson && String(currentPerson.id) === String(p.id) ? currentPerson : p;
+      return getPersonWorkloadSnapshot(activeMatch);
+    });
+  }, [personnel, currentPerson, getPersonWorkloadSnapshot]);
+
+  useEffect(() => {
+    if (savedWorkloadSnapshotRef.current === null && personnel && personnel.length > 0) {
+      savedWorkloadSnapshotRef.current = JSON.stringify(getFullWorkloadSnapshot());
+    }
+  }, [personnel, getFullWorkloadSnapshot]);
+
+  const currentSnapshotStr = useMemo(() => JSON.stringify(getFullWorkloadSnapshot()), [getFullWorkloadSnapshot]);
+  const hasLocalDrafts = useMemo(() => {
+    return (personnel || []).some(p => Boolean(localStorage.getItem(`draft_workload_${p.id}`)));
+  }, [personnel, currentPerson]);
+
+  const isDirty = Boolean(savedWorkloadSnapshotRef.current && (currentSnapshotStr !== savedWorkloadSnapshotRef.current || hasLocalDrafts));
+
+  const handleDiscard = useCallback(() => {
+    if (savedWorkloadSnapshotRef.current) {
+      try {
+        const snap = JSON.parse(savedWorkloadSnapshotRef.current);
+        if (Array.isArray(snap)) {
+          const snapMap = new Map(snap.map(sp => [String(sp.id), sp]));
+          (personnel || []).forEach(p => {
+            localStorage.removeItem(`draft_workload_${p.id}`);
+          });
+          setPersonnel(prev => (prev || []).map(p => {
+            const saved = snapMap.get(String(p.id));
+            if (saved) {
+              return {
+                ...p,
+                workloadRows: saved.workloadRows,
+                teachingRelatedRows: saved.teachingRelatedRows,
+                administrativeRows: saved.administrativeRows
+              };
+            }
+            return p;
+          }));
+          if (dbPerson) {
+            const savedActive = snapMap.get(String(dbPerson.id));
+            if (savedActive) {
+              setEditPerson({
+                ...dbPerson,
+                workloadRows: savedActive.workloadRows,
+                teachingRelatedRows: savedActive.teachingRelatedRows,
+                administrativeRows: savedActive.administrativeRows
+              });
+            } else {
+              setEditPerson(dbPerson);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Error discarding workload changes:', e);
+      }
+    }
+  }, [personnel, dbPerson, setPersonnel]);
+
+  const { confirmAction } = useDirtyGuard({
+    screenId: 'workload',
+    isDirty,
+    onDiscard: handleDiscard
+  });
+
   const currentPersonRef = useRef(currentPerson);
   useEffect(() => {
     currentPersonRef.current = currentPerson;
@@ -10151,6 +10247,125 @@ export default function Workload() {
       await showAlert("Error", "Failed to save and validate workload: " + err.message);
     }
   };
+
+  const handleSave = async () => {
+    if (currentPerson) {
+      const hasIncompleteBlock = (currentPerson.workloadRows || []).some(row => {
+        if (!row.subject) return true;
+        if (isAdminTaskRow(row) || isNonTeachingTaskSubject(row.subject) || isNonTeachingPerson(currentPerson)) return false;
+        return !row.gradeLevel;
+      });
+      if (hasIncompleteBlock) {
+        await showAlert("Incomplete Schedule Block", "Cannot save. One or more schedule blocks are missing a Subject or Class Section/Grade Level. Please complete them first.");
+        return;
+      }
+
+      const currentTermRows = (currentPerson.workloadRows || []).filter(row => (row.term || '1st') === activeTerm);
+      const hasAnyConflict = currentTermRows.some((row, idx) => {
+        const rowDays = getNormalizedRowDays(row);
+        return currentTermRows.some((otherRow, otherIdx) => {
+          if (idx === otherIdx) return false;
+          if (row.id && otherRow.id && String(row.id) === String(otherRow.id)) return false;
+          if (!row.startTime || !row.endTime || !otherRow.startTime || !otherRow.endTime) return false;
+          const otherDays = getNormalizedRowDays(otherRow);
+          const daysOverlap = rowDays.some(d => otherDays.includes(d));
+          if (!daysOverlap) return false;
+          const ns = parseMins(row.startTime), ne = parseMins(row.endTime);
+          const rs = parseMins(otherRow.startTime), re = parseMins(otherRow.endTime);
+          if (ns < re && ne > rs) {
+            if (isAdvisoryOrHgpPair(row, otherRow)) return false;
+            return true;
+          }
+          return false;
+        });
+      });
+
+      if (hasAnyConflict) {
+        await showAlert("Schedule Conflict", `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`);
+        return;
+      }
+
+      const hasCrossSchoolConflict = currentTermRows.some(row => {
+        return checkCrossSchoolConflict(row, sharedWorkloadRows, 120);
+      });
+
+      if (hasCrossSchoolConflict) {
+        await showAlert("Cross-School Schedule Conflict", `Cannot save. Clustered personnel has a schedule collision or transit restriction (gap ≤ 2h between partner station classes) in ${activeTerm} Term. Please adjust times to avoid double-booking.`);
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    try {
+      let prevWorkloadMap = new Map();
+      if (savedWorkloadSnapshotRef.current) {
+        try {
+          const parsed = JSON.parse(savedWorkloadSnapshotRef.current);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(sp => prevWorkloadMap.set(String(sp.id), sp));
+          }
+        } catch (e) {}
+      }
+
+      const changedTeachers = (personnel || []).map(p => {
+        const effective = currentPerson && String(currentPerson.id) === String(p.id) ? currentPerson : p;
+        return effective;
+      }).filter(p => {
+        const prev = prevWorkloadMap.get(String(p.id));
+        if (!prev) return true;
+        const curSnap = getPersonWorkloadSnapshot(p);
+        if (JSON.stringify(curSnap) !== JSON.stringify(prev)) return true;
+        if (localStorage.getItem(`draft_workload_${p.id}`)) return true;
+        return false;
+      });
+
+      // Per teacher: only a server-confirmed write clears the browser copy and marks the teacher validated.
+      const failedSaves = [];
+      for (const p of changedTeachers) {
+        const updated = { ...p, workloadVerified: true, workloadValidated: true };
+        try {
+          await persistWorkloadToServer(updated);
+          if (savePersonnelChanges) {
+            await savePersonnelChanges(p.id, updated, { skipWorkloadSync: true });
+          }
+          localStorage.removeItem(`draft_workload_${p.id}`);
+          markTeacherValidated(p.id, true);
+        } catch (err) {
+          console.warn('Save workload batch error for', p.id, err);
+          failedSaves.push({ name: `${p.firstName || ''} ${p.lastName || ''}`.trim() || String(p.id), message: err?.message || 'Unknown error' });
+        }
+      }
+
+      if (failedSaves.length > 0) {
+        // Leave the saved snapshot and node status untouched so the failed teachers stay "changed" and can be retried.
+        const list = failedSaves.slice(0, 8).map(f => `• ${f.name}: ${f.message}`).join('\n');
+        const more = failedSaves.length > 8 ? `\n…and ${failedSaves.length - 8} more.` : '';
+        await showAlert("Some Workloads Were Not Saved", `${failedSaves.length} of ${changedTeachers.length} teacher(s) could not be saved to the database. Their changes are kept in this browser; press Save again to retry.\n${list}${more}`);
+        return;
+      }
+
+      if (currentPerson) {
+        broadcastClusteredSlots(currentPerson.workloadRows);
+      }
+
+      savedWorkloadSnapshotRef.current = JSON.stringify(getFullWorkloadSnapshot());
+
+      if (completeNode) {
+        completeNode('workload', null);
+      }
+
+      showToast("Workload schedule saved to database successfully.", "success");
+    } catch (err) {
+      console.warn("Failed to save workload schedule:", err);
+      if (showAlert) {
+        await showAlert("Error", "Failed to save workload schedule: " + err.message);
+      } else if (showToast) {
+        showToast("Failed to save workload schedule: " + err.message, "error");
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
   // ────────────────────────────────────────────────────────────────────────
   // ────────────────────────────────────────────────────────────────────────
 
@@ -10161,11 +10376,9 @@ export default function Workload() {
         description="Manage teacher teaching loads, HGP advisory rules, relieving duties, and schedule conflict resolution."
         onBack={() => setActiveView('dashboard')}
         showNodeMap={true}
-        onContinue={async () => {
-          if (completeNode) completeNode('workload', 'room-qr');
-          setActiveView('room-qr');
-        }}
-        continueText="Save & Continue to Deployment"
+        onContinue={handleSave}
+        continueText="Save"
+        continueDisabled={!isDirty || isSaving}
       />
 
       <datalist id="school-times">
@@ -11505,7 +11718,7 @@ export default function Workload() {
                           return (
                             <div
                               key={p.id}
-                              onClick={() => setActivePersonnelId(p.id)}
+                              onClick={() => confirmAction(() => setActivePersonnelId(p.id))}
                               style={{
                                 padding: '12px 14px',
                                 borderRadius: '10px',
