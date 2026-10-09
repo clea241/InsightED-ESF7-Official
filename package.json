@@ -29,7 +29,7 @@
     "format:check": "prettier --check .",
     "knip": "knip",
     "audit": "npm audit",
-    "validate": "npm run lint && npm run typecheck && npm run test:unit"
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm run test:unit"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
