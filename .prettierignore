@@ -12,7 +12,7 @@ server/backups
 *.md
 *.html
 .agents
-.claude
+.claude/settings.local.json
 docs
 esf7_agents
 server/drizzle/meta
