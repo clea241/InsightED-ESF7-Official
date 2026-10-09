@@ -4370,7 +4370,7 @@ export const AppProvider = ({ children }) => {
     setHasUnsavedChanges(true);
   };
 
-  const savePersonnelChanges = async (id, updatedPerson) => {
+  const savePersonnelChanges = async (id, updatedPerson, options = {}) => {
     if (!updatedPerson) return;
     const targetId = String(id || updatedPerson.id || '').trim().toLowerCase();
     const targetPrn = String(updatedPerson.prn || '').trim();
@@ -4671,7 +4671,8 @@ export const AppProvider = ({ children }) => {
         }
 
         // Persist workload rows directly to PostgreSQL esf7_workload_rows in the background
-        if (Array.isArray(merged.workloadRows) && typeof api !== 'undefined' && api.saveWorkloadBatch) {
+        // Callers that do their own awaited workload write (Workload page) pass skipWorkloadSync to avoid a racing duplicate write.
+        if (!options.skipWorkloadSync && Array.isArray(merged.workloadRows) && typeof api !== 'undefined' && api.saveWorkloadBatch) {
           api.saveWorkloadBatch({
             personnel_id: merged.id || p.id,
             workloadRows: merged.workloadRows,

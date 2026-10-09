@@ -10030,6 +10030,24 @@ export default function Workload() {
     });
   };
 
+  // Awaited write to esf7_workload_rows. Throws on any failure; a 422 surfaces the server's own message.
+  const persistWorkloadToServer = async (person) => {
+    try {
+      return await api.saveWorkloadBatch({
+        personnel_id: person.id,
+        workloadRows: person.workloadRows || [],
+        teachingRelatedRows: person.teachingRelatedRows || person.teaching_related_rows || [],
+        administrativeRows: person.administrativeRows || person.administrative_rows || [],
+        school_id: schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || '108348',
+        school_year: schoolInfo?.schoolYear || '2026-2027',
+        term: activeTerm || '1st'
+      });
+    } catch (err) {
+      if (err?.status === 422 && err?.body?.message) throw new Error(err.body.message);
+      throw err;
+    }
+  };
+
   const handleSaveChangesDirectly = async () => {
     if (!currentPerson) return;
 
@@ -10080,10 +10098,11 @@ export default function Workload() {
     }
 
     try {
-      await savePersonnelChanges(currentPerson.id, currentPerson);
+      await persistWorkloadToServer(currentPerson);
+      await savePersonnelChanges(currentPerson.id, currentPerson, { skipWorkloadSync: true });
       localStorage.removeItem(`draft_workload_${currentPerson.id}`);
       broadcastClusteredSlots(currentPerson.workloadRows);
-      showToast("Workload changes saved locally.");
+      showToast("Workload changes saved to database.");
     } catch (err) {
       await showAlert("Error", "Failed to save workload changes: " + err.message);
     }
@@ -10120,21 +10139,11 @@ export default function Workload() {
 
     try {
       const updated = { ...currentPerson, workloadVerified: true, workloadValidated: true };
-      setEditPerson(updated);
 
-      // Update local state and draft
-      await savePersonnelChanges(currentPerson.id, updated);
-      if (typeof api !== 'undefined' && api.saveWorkloadBatch) {
-        await api.saveWorkloadBatch({
-          personnel_id: currentPerson.id,
-          workloadRows: updated.workloadRows || [],
-          teachingRelatedRows: updated.teachingRelatedRows || updated.teaching_related_rows || [],
-          administrativeRows: updated.administrativeRows || updated.administrative_rows || [],
-          school_id: schoolInfo?.schoolId || localStorage.getItem('activeSchoolId') || '108348',
-          school_year: schoolInfo?.schoolYear || '2026-2027',
-          term: activeTerm || '1st'
-        }).catch(err => console.warn('Save workload batch error:', err));
-      }
+      // The server must confirm the write before anything is marked verified or the browser copy is removed.
+      await persistWorkloadToServer(updated);
+      setEditPerson(updated);
+      await savePersonnelChanges(currentPerson.id, updated, { skipWorkloadSync: true });
       localStorage.removeItem(`draft_workload_${currentPerson.id}`);
       markTeacherValidated(currentPerson.id, true);
       showToast("Workload verified and saved to database!");
