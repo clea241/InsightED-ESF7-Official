@@ -16,3 +16,4 @@ server/backups
 docs
 esf7_agents
 server/drizzle/meta
+server/test_worker.js
