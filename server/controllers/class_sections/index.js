@@ -84,10 +84,10 @@ function formatSnedRecord(row) {
     school_year: row.school_year,
     gradeLevel: 'SNED (NON-GRADED)',
     grade_level: 'SNED (NON-GRADED)',
-    sectionName: row.section_name,
-    section_name: row.section_name,
-    sectionType: 'SNED (NON-GRADED)',
-    section_type: 'SNED (NON-GRADED)',
+    sectionName: row.section_name || row.id,
+    section_name: row.section_name || row.id,
+    sectionType: row.section_type || 'SNED (NON-GRADED)',
+    section_type: row.section_type || 'SNED (NON-GRADED)',
     programType: row.program_type || null,
     program_type: row.program_type || null,
     adviserId: row.adviser_id ? String(row.adviser_id) : null,
@@ -122,10 +122,10 @@ function formatAlsRecord(row) {
     school_year: row.school_year,
     gradeLevel: row.grade_level || 'ALS',
     grade_level: row.grade_level || 'ALS',
-    sectionName: row.section_name,
-    section_name: row.section_name,
-    sectionType: 'ALS',
-    section_type: 'ALS',
+    sectionName: row.section_name || row.id,
+    section_name: row.section_name || row.id,
+    sectionType: row.section_type || 'ALS',
+    section_type: row.section_type || 'ALS',
     deliveryMode: row.delivery_mode || null,
     delivery_mode: row.delivery_mode || null,
     clcName: row.clc_name || null,
@@ -168,8 +168,10 @@ function formatAralRecord(row) {
     assessment_tool: row.assessment_tool || null,
     profileLevel: row.profile_level || null,
     profile_level: row.profile_level || null,
-    sectionName: row.section_name,
-    section_name: row.section_name,
+    sectionName: row.section_name || row.id,
+    section_name: row.section_name || row.id,
+    sectionType: row.section_type || 'ARAL',
+    section_type: row.section_type || 'ARAL',
     tutorId: row.tutor_id ? String(row.tutor_id) : null,
     tutor_id: row.tutor_id ? String(row.tutor_id) : null,
     maleLearners: m,
@@ -203,8 +205,8 @@ function formatRemedialRecord(row) {
     section_type: row.intervention_type || 'REMEDIAL',
     gradeLevel: row.grade_level,
     grade_level: row.grade_level,
-    sectionName: row.section_name,
-    section_name: row.section_name,
+    sectionName: row.section_name || row.id,
+    section_name: row.section_name || row.id,
     assignedTeacherId: row.assigned_teacher_id ? String(row.assigned_teacher_id) : null,
     assigned_teacher_id: row.assigned_teacher_id ? String(row.assigned_teacher_id) : null,
     adviserId: row.assigned_teacher_id ? String(row.assigned_teacher_id) : null,
@@ -451,6 +453,7 @@ router.post('/regular/sync', async (req, res) => {
 router.post('/sned', async (req, res) => {
   const {
     id, school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
+    section_type, sectionType,
     grade_level, gradeLevel, section_name, sectionName, program_type, programType,
     adviser_id, advisor_id, advisorId, adviserId,
     male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners,
@@ -473,7 +476,9 @@ router.post('/sned', async (req, res) => {
   try {
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_sned_sections WHERE school_id = $1`, [targetSchoolId]);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const secId = id || `SNED-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const secId = (id && !String(id).startsWith('sec-draft-')) ? id : `SNED-${targetSchoolId.replace(/^SCH-/i, '')}-${seq}`;
+    const targetSectionType = section_type || sectionType || 'SNED (NON-GRADED)';
+    const targetSectionName = (section_name || sectionName || secId).toUpperCase().trim();
 
     let validAdviserId = null;
     if (targetAdviserId) {
@@ -483,11 +488,12 @@ router.post('/sned', async (req, res) => {
 
     const query = `
       INSERT INTO esf7_sned_sections (
-        id, school_id, school_year, grade_level, section_name, program_type,
+        id, school_id, school_year, section_type, grade_level, section_name, program_type,
         adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
       ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+        section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
         program_type = EXCLUDED.program_type,
         adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_sned_sections.adviser_id),
@@ -501,7 +507,7 @@ router.post('/sned', async (req, res) => {
     `;
 
     const result = await db.query(query, [
-      secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetProgramType,
+      secId, targetSchoolId, targetSchoolYear, targetSectionType, targetGradeLevel, targetSectionName, targetProgramType,
       validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, JSON.stringify(req.body)
     ]);
     res.status(201).json(formatSnedRecord(result.rows[0]));
@@ -515,6 +521,7 @@ router.post('/sned', async (req, res) => {
 router.post('/als', async (req, res) => {
   const {
     id, school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
+    section_type, sectionType,
     grade_level, gradeLevel, section_name, sectionName, delivery_mode, deliveryMode, clc_name, clcName,
     adviser_id, advisor_id, advisorId, adviserId,
     male_learners, maleLearners, female_learners, femaleLearners, number_of_learners, numberOfLearners,
@@ -538,7 +545,9 @@ router.post('/als', async (req, res) => {
   try {
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_als_sections WHERE school_id = $1`, [targetSchoolId]);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const secId = id || `ALS-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const secId = (id && !String(id).startsWith('sec-draft-')) ? id : `ALS-${targetSchoolId.replace(/^SCH-/i, '')}-${seq}`;
+    const targetSectionType = section_type || sectionType || 'ALS';
+    const targetSectionName = (section_name || sectionName || secId).toUpperCase().trim();
 
     let validAdviserId = null;
     if (targetAdviserId) {
@@ -548,11 +557,12 @@ router.post('/als', async (req, res) => {
 
     const query = `
       INSERT INTO esf7_als_sections (
-        id, school_id, school_year, grade_level, section_name, delivery_mode, clc_name,
+        id, school_id, school_year, section_type, grade_level, section_name, delivery_mode, clc_name,
         adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
       ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
+        section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
         delivery_mode = EXCLUDED.delivery_mode,
         clc_name = EXCLUDED.clc_name,
@@ -567,7 +577,7 @@ router.post('/als', async (req, res) => {
     `;
 
     const result = await db.query(query, [
-      secId, targetSchoolId, targetSchoolYear, targetGradeLevel, targetSectionName, targetDeliveryMode, targetClcName,
+      secId, targetSchoolId, targetSchoolYear, targetSectionType, targetGradeLevel, targetSectionName, targetDeliveryMode, targetClcName,
       validAdviserId, mVal, fVal, totalLearners, targetSizeStatus, JSON.stringify(req.body)
     ]);
     res.status(201).json(formatAlsRecord(result.rows[0]));
@@ -581,6 +591,7 @@ router.post('/als', async (req, res) => {
 router.post('/aral', async (req, res) => {
   const {
     id, school_id, schoolId: bodySchoolId, school_year, schoolYear: bodySchoolYear,
+    section_type, sectionType,
     basis_type, basisType, grade_level, gradeLevel, assessment_tool, assessmentTool,
     profile_level, profileLevel, section_name, sectionName, tutor_id, tutorId,
     male_learners, maleLearners, female_learners, femaleLearners, total_learners, totalLearners
@@ -603,7 +614,9 @@ router.post('/aral', async (req, res) => {
   try {
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_aral_sections WHERE school_id = $1`, [targetSchoolId]);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const secId = id || `ARAL-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const secId = (id && !String(id).startsWith('sec-draft-')) ? id : `ARAL-${targetSchoolId.replace(/^SCH-/i, '')}-${seq}`;
+    const targetSectionType = section_type || sectionType || 'ARAL';
+    const targetName = (section_name || sectionName || secId).toUpperCase().trim();
 
     let validTutorId = null;
     if (targetTutorId) {
@@ -613,12 +626,13 @@ router.post('/aral', async (req, res) => {
 
     const query = `
       INSERT INTO esf7_aral_sections (
-        id, school_id, school_year, basis_type, grade_level, assessment_tool,
+        id, school_id, school_year, basis_type, section_type, grade_level, assessment_tool,
         profile_level, section_name, tutor_id, male_learners, female_learners, total_learners, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
       ON CONFLICT (id) DO UPDATE SET
         basis_type = EXCLUDED.basis_type,
+        section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
         assessment_tool = EXCLUDED.assessment_tool,
         profile_level = EXCLUDED.profile_level,
@@ -633,7 +647,7 @@ router.post('/aral', async (req, res) => {
     `;
 
     const result = await db.query(query, [
-      secId, targetSchoolId, targetSchoolYear, targetBasis, targetGrade, targetTool,
+      secId, targetSchoolId, targetSchoolYear, targetBasis, targetSectionType, targetGrade, targetTool,
       targetProfile, targetName, validTutorId, mVal, fVal, computedTotal, JSON.stringify(req.body)
     ]);
     res.status(201).json(formatAralRecord(result.rows[0]));
@@ -668,7 +682,10 @@ router.post('/remedial-enrichment', async (req, res) => {
   try {
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_remedial_enrichment_sections WHERE school_id = $1`, [targetSchoolId]);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, '0');
-    const secId = id || `REM-${targetSchoolId.replace('SCH-', '')}-${seq}`;
+    const prefix = targetIntervention.includes('ENRICHMENT') ? 'ENR' : 'REM';
+    const secId = (id && !String(id).startsWith('sec-draft-')) ? id : `${prefix}-${targetSchoolId.replace(/^SCH-/i, '')}-${seq}`;
+    const targetSectionType = targetIntervention.includes('ENRICHMENT') ? 'ENRICHMENT' : 'REMEDIAL';
+    const targetFinalName = (section_name || sectionName || secId).toUpperCase().trim();
 
     let validTeacherId = null;
     if (targetTeacherId) {
@@ -678,12 +695,13 @@ router.post('/remedial-enrichment', async (req, res) => {
 
     const query = `
       INSERT INTO esf7_remedial_enrichment_sections (
-        id, school_id, school_year, intervention_type, grade_level, section_name,
+        id, school_id, school_year, intervention_type, section_type, grade_level, section_name,
         assigned_teacher_id, male_learners, female_learners, total_learners, raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
       ON CONFLICT (id) DO UPDATE SET
         intervention_type = EXCLUDED.intervention_type,
+        section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
         section_name = EXCLUDED.section_name,
         assigned_teacher_id = EXCLUDED.assigned_teacher_id,
@@ -696,7 +714,7 @@ router.post('/remedial-enrichment', async (req, res) => {
     `;
 
     const result = await db.query(query, [
-      secId, targetSchoolId, targetSchoolYear, targetIntervention, targetGrade, targetName,
+      secId, targetSchoolId, targetSchoolYear, targetIntervention, targetSectionType, targetGrade, targetFinalName,
       validTeacherId, mVal, fVal, computedTotal, JSON.stringify(req.body)
     ]);
     res.status(201).json(formatRemedialRecord(result.rows[0]));

@@ -209,6 +209,10 @@ const handleGetSchool = async (req, res) => {
     let hasSned = false;
     let hasIped = false;
     let hasMadrasah = false;
+    let hasShifts = false;
+    let shiftStartTime = null;
+    let shiftEndTime = null;
+    let shiftsConfig = {};
     let elemSpecialPrograms = [];
 
     // 6. Query esf7_school_profile (for user-configured special programs & SHS model & inclusive programs)
@@ -257,6 +261,11 @@ const handleGetSchool = async (req, res) => {
       hasSned = Boolean(pRow.has_sned ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('SNED') || String(p).toUpperCase().includes('SPED')));
       hasIped = Boolean(pRow.has_iped ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('IPED') || String(p).toUpperCase().startsWith('IP-')));
       hasMadrasah = Boolean(pRow.has_madrasah ?? inclusivePrograms.some(p => String(p).toUpperCase().includes('MADRASAH') || String(p).toUpperCase().includes('MEP') || String(p).toUpperCase().includes('ALIVE')));
+
+      hasShifts = Boolean(pRow.has_shifts ?? pRow.raw_payload?.hasShifts);
+      shiftStartTime = pRow.shift_start_time || pRow.raw_payload?.shiftStartTime || null;
+      shiftEndTime = pRow.shift_end_time || pRow.raw_payload?.shiftEndTime || null;
+      shiftsConfig = pRow.shifts_config || pRow.raw_payload?.shiftsConfig || {};
 
       if (pRow.raw_payload && Array.isArray(pRow.raw_payload.specialPrograms)) {
         specialPrograms = pRow.raw_payload.specialPrograms;
@@ -331,6 +340,10 @@ const handleGetSchool = async (req, res) => {
       hasIped,
       hasMadrasah,
       inclusivePrograms,
+      hasShifts,
+      shiftStartTime,
+      shiftEndTime,
+      shiftsConfig,
       // true when esf7_school_profile has a saved row for this school (the database, not a draft, holds the configuration)
       curricularConfigSaved: localProf.rows.length > 0
     });
@@ -930,7 +943,20 @@ router.put('/subjects', async (req, res) => {
   }
 });
 
-// PUT /api/schools/curricular-config - Save esf7_school_profile Special Curricular & Inclusive Programs
+// Helper to convert time string (HH:MM or HH:MM AM/PM) to minutes from midnight
+function parseTimeToMins(tStr) {
+  if (!tStr) return null;
+  const match = String(tStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+  if (!match) return null;
+  let h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+// PUT /api/schools/curricular-config - Save esf7_school_profile Special Curricular & Inclusive Programs & Optional Shifts
 router.put('/curricular-config', async (req, res) => {
   try {
     const schoolId = getSchoolIdFromRequest(req) || req.body.schoolId || req.body.school_id || '108348';
@@ -947,8 +973,28 @@ router.put('/curricular-config', async (req, res) => {
       hasShsInclusive, has_shs_inclusive,
       shsInclusivePrograms, shs_inclusive_programs,
       inclusivePrograms, inclusive_programs,
+      hasShifts, has_shifts,
+      shiftStartTime, shift_start_time,
+      shiftEndTime, shift_end_time,
+      shiftsConfig, shifts_config,
       schoolYear = '2026-2027'
     } = req.body;
+
+    const shiftFlag = hasShifts === true || has_shifts === true;
+    const finalShiftStart = (shiftStartTime || shift_start_time || '').trim() || null;
+    const finalShiftEnd = (shiftEndTime || shift_end_time || '').trim() || null;
+    const finalShiftsConfig = shiftsConfig || shifts_config || {};
+
+    if (shiftFlag) {
+      const sMins = parseTimeToMins(finalShiftStart);
+      const eMins = parseTimeToMins(finalShiftEnd);
+      // Valid window: 4:00 AM (240 mins) to 10:00 PM (1320 mins)
+      if (sMins === null || eMins === null || sMins < 240 || eMins > 1320 || eMins <= sMins) {
+        return res.status(400).json({
+          error: 'Shift times must be between 4:00 AM and 10:00 PM, and End Time must be later than Start Time.'
+        });
+      }
+    }
 
     const profileId = `SCH-PROFILE-${schoolId.replace('SCH-', '')}`;
     const elemFlag = hasElemSpecialPrograms === true || has_elem_special_programs === true;
@@ -984,9 +1030,11 @@ router.put('/curricular-config', async (req, res) => {
         has_jhs_inclusive, jhs_inclusive_programs,
         has_shs_inclusive, shs_inclusive_programs,
         has_als, has_sned, has_iped, has_madrasah,
-        inclusive_programs, raw_payload
+        inclusive_programs,
+        has_shifts, shift_start_time, shift_end_time, shifts_config,
+        raw_payload
       )
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17, $18, $19::jsonb, $20::jsonb)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23::jsonb, $24::jsonb)
       ON CONFLICT (school_id, school_year) DO UPDATE
       SET
         has_elem_special_programs = EXCLUDED.has_elem_special_programs,
@@ -1005,6 +1053,10 @@ router.put('/curricular-config', async (req, res) => {
         has_iped = EXCLUDED.has_iped,
         has_madrasah = EXCLUDED.has_madrasah,
         inclusive_programs = EXCLUDED.inclusive_programs,
+        has_shifts = EXCLUDED.has_shifts,
+        shift_start_time = EXCLUDED.shift_start_time,
+        shift_end_time = EXCLUDED.shift_end_time,
+        shifts_config = EXCLUDED.shifts_config,
         raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
@@ -1030,6 +1082,10 @@ router.put('/curricular-config', async (req, res) => {
       hasIped,
       hasMadrasah,
       JSON.stringify(incProgs),
+      shiftFlag,
+      finalShiftStart,
+      finalShiftEnd,
+      JSON.stringify(finalShiftsConfig),
       JSON.stringify(req.body)
     ]);
 
@@ -1054,7 +1110,11 @@ router.put('/curricular-config', async (req, res) => {
         hasSned: result.rows[0].has_sned,
         hasIped: result.rows[0].has_iped,
         hasMadrasah: result.rows[0].has_madrasah,
-        inclusivePrograms: result.rows[0].inclusive_programs
+        inclusivePrograms: result.rows[0].inclusive_programs,
+        hasShifts: result.rows[0].has_shifts,
+        shiftStartTime: result.rows[0].shift_start_time,
+        shiftEndTime: result.rows[0].shift_end_time,
+        shiftsConfig: result.rows[0].shifts_config
       }
     });
   } catch (err) {
