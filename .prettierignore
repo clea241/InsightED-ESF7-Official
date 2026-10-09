@@ -8,3 +8,11 @@ readiness-reports
 package-lock.json
 pnpm-lock.yaml
 server/backups
+# docs, agent/skill files and static HTML are not reformatted (frozen docs must not be edited by tooling)
+*.md
+*.html
+.agents
+.claude
+docs
+esf7_agents
+server/drizzle/meta
