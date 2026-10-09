@@ -104,6 +104,24 @@ export const isNonTeachingPerson = (person) => {
   return false;
 };
 
+// Reads the teacher's assigned grade levels as saved in Personnel Profiling (Teaching tab).
+export const readAssignedGradeLevels = (p) => {
+  if (!p) return [];
+  let raw = p.assignedGradeLevels || p.assigned_grade_levels || p.gradeLevelsTaught || p.grade_levels_taught;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (e) { raw = raw.split(',').map(s => s.trim()); }
+  }
+  return Array.isArray(raw) ? raw.filter(Boolean) : [];
+};
+
+// Teaching / teaching-related personnel with no classes assigned in Personnel Profiling cannot have teaching blocks plotted.
+export const TEACHING_PLOT_LOCK_MESSAGE = "No classes assigned yet. Set this teacher's assigned grade level(s) in Personnel Profiling first.";
+export const isTeachingPlotLocked = (...people) => {
+  const person = people.find(Boolean);
+  if (!person || isNonTeachingPerson(person)) return false;
+  return !people.some(p => readAssignedGradeLevels(p).length > 0);
+};
+
 const isAdvisorySub = (sub) => {
   if (!sub) return false;
   const s = String(sub).toUpperCase();
@@ -3903,6 +3921,14 @@ function WorkloadGanttScheduleView({
     return [];
   }, [currentPerson, dbPerson, getAssignedGradeLevels]);
 
+  // Locked when a teaching / teaching-related teacher has no assigned classes in Personnel Profiling.
+  // Re-evaluated on every render from the saved assignments, so it follows teacher switches and profile edits.
+  const isPlottingLocked = isTeachingPlotLocked(currentPerson, dbPerson) && teacherAssignedGrades.length === 0;
+  const lockedLegacyBlockCount = isPlottingLocked
+    ? (currentPerson?.workloadRows || []).filter(r => !isAdminTaskRow(r) && !isNonTeachingTaskSubject(r.subject)).length
+    : 0;
+  const notifyPlottingLocked = () => { if (showToast) showToast(TEACHING_PLOT_LOCK_MESSAGE, 'warning'); };
+
   // Section Clipboard state for Ctrl+C / Ctrl+V copy-paste workflow (copies section only, NOT subject)
   const [copiedSection, setCopiedSection] = useState(null);
 
@@ -4991,6 +5017,7 @@ function WorkloadGanttScheduleView({
 
   const handleStartDrag = (e, rowIdx, row, dayCode, type) => {
     if (e.button !== 0) return; // Left mouse button only
+    if (isPlottingLocked && !isAdminTaskRow(row)) { e.preventDefault(); notifyPlottingLocked(); return; }
     const isMac = typeof navigator !== 'undefined' && navigator.platform && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
     if (isCmdOrCtrl) {
@@ -5032,6 +5059,7 @@ function WorkloadGanttScheduleView({
     }
     if (e.button !== 0) return; // Left mouse button only
     e.preventDefault();
+    if (isPlottingLocked && !isAdminTaskRow({ subject: pendingCreateSubjectRef.current })) { notifyPlottingLocked(); return; }
     const rect = e.currentTarget.getBoundingClientRect();
     const clickY = e.clientY - rect.top;
     const clickedMins = gridStartMins + Math.floor((clickY / pxPerMin) / 5) * 5;
@@ -5130,6 +5158,7 @@ function WorkloadGanttScheduleView({
 
   // Paste Section (Ctrl+V): Creates a new schedule block with the copied section, WITHOUT the subject (or with ADVISORY if copying Advisory)
   const handlePasteSection = useCallback(() => {
+    if (isPlottingLocked) { if (showToast) showToast(TEACHING_PLOT_LOCK_MESSAGE, 'warning'); return; }
     const secToUse = copiedSection || pendingCreateSection;
     if (!secToUse || (!secToUse.gradeLevel && !secToUse.sectionName)) {
       if (showToast) {
@@ -5198,7 +5227,7 @@ function WorkloadGanttScheduleView({
         showToast(`📋 Pasted section "${secToUse.sectionName}"! Select the subject for this block.`, 'success');
       }
     }
-  }, [copiedSection, pendingCreateSection, selectedRow, customStartHour, customEndHour, currentPerson?.workloadRows, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
+  }, [isPlottingLocked, copiedSection, pendingCreateSection, selectedRow, customStartHour, customEndHour, currentPerson?.workloadRows, handleFieldChange, setSelectedBlockIdx, showToast, recordUndoSnapshot]);
 
   const handleRemoveRow = useCallback((rowIdx) => {
     recordUndoSnapshot();
@@ -5508,6 +5537,17 @@ function WorkloadGanttScheduleView({
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {isPlottingLocked && (
+        <div role="alert" style={{ marginBottom: '12px', padding: '10px 14px', background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: '10px', color: '#92400E', fontSize: '12px', fontWeight: '600' }}>
+          {TEACHING_PLOT_LOCK_MESSAGE}
+          {lockedLegacyBlockCount > 0 && (
+            <div style={{ marginTop: '4px', fontWeight: '500' }}>
+              ⚠ {lockedLegacyBlockCount} previously saved teaching block{lockedLegacyBlockCount === 1 ? '' : 's'} remain below for review. They are kept, not deleted. Assign classes in Personnel Profiling, or remove them manually.
+            </div>
+          )}
         </div>
       )}
 
@@ -6189,7 +6229,9 @@ function WorkloadGanttScheduleView({
                         : `Pick a class/section first to automatically filter subjects below.`}
                     </div>
                   )}
-                  {organizedClassesList.length === 0 ? (
+                  {isPlottingLocked ? (
+                    <div style={{ fontSize: "11px", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "6px", padding: "8px" }}>{TEACHING_PLOT_LOCK_MESSAGE}</div>
+                  ) : organizedClassesList.length === 0 ? (
                     <div style={{ fontSize: '11px', color: '#94a3b8' }}>
                       {teacherAssignedGrades.length > 0
                         ? `No organized classes match assigned grades (${teacherAssignedGrades.join(', ')}). Configure them in Organized Classes Setup.`
@@ -6327,7 +6369,9 @@ function WorkloadGanttScheduleView({
                                   : `Pick a class section above to filter subjects by grade level, or pick a subject directly.`)}
                           </div>
                         )}
-                        {visibleSubjects.length === 0 ? (
+                        {isPlottingLocked ? (
+                          <div style={{ fontSize: "11px", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "6px", padding: "8px" }}>{TEACHING_PLOT_LOCK_MESSAGE}</div>
+                        ) : visibleSubjects.length === 0 ? (
                           <div style={{ fontSize: '11px', color: '#94a3b8' }}>
                             {activeSchoolSubjects.length === 0
                               ? 'No active subjects configured yet. Set them up in Curriculum & Subjects Taught.'
@@ -9885,6 +9929,11 @@ export default function Workload() {
   const handleAddSectionSlot = async () => {
     if (!selectedSectionId || !newSlot.teacherId || !newSlot.subject || !newSlot.startTime || !newSlot.endTime || !newSlot.days.length) {
       await showAlert("Fields Required", "Please fill in all fields before adding a slot.");
+      return;
+    }
+    const slotTeacher = personnel.find(p => p.id === newSlot.teacherId);
+    if (isTeachingPlotLocked(slotTeacher)) {
+      await showAlert("No Classes Assigned", TEACHING_PLOT_LOCK_MESSAGE);
       return;
     }
     const conflict = checkConflict(newSlot.teacherId, selectedSectionId, newSlot.startTime, newSlot.endTime, newSlot.days);

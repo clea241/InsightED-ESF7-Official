@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const { findBlockedTeachingRows } = require('../../utils/teachingAssignments');
 
 function formatWorkloadRecord(row) {
   if (!row) return null;
@@ -212,6 +213,26 @@ const saveWorkloadBatchHandler = async (req, res) => {
       `SELECT id, school_id, school_year, raw_payload FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
       [targetPersonnelId]
     );
+
+    // Rule: no teaching blocks for a teacher with no classes assigned in Personnel Profiling.
+    // Already-saved rows pass through (flagged client-side); only newly added teaching rows are rejected.
+    if (personRes.rows.length > 0) {
+      const empRes = await client.query(
+        `SELECT grade_levels_taught FROM esf7_personnel_employment WHERE personnel_id = $1 LIMIT 1`,
+        [personRes.rows[0].id]
+      );
+      const profileForRule = { ...personRes.rows[0], grade_levels_taught: empRes.rows[0] ? empRes.rows[0].grade_levels_taught : null };
+      const existingSaved = (personRes.rows[0].raw_payload || {}).workloadRows || [];
+      const blocked = findBlockedTeachingRows(profileForRule, rowsToSave, existingSaved);
+      if (blocked.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({
+          error: 'NO_CLASSES_ASSIGNED',
+          message: 'This teacher has no classes assigned. Set assignments in Personnel Profiling before adding teaching blocks.',
+          blockedRowIds: blocked.map(r => r.id || null)
+        });
+      }
+    }
 
     let targetPersonId = targetPersonnelId;
     let targetSchoolId = bodySchoolId || bodySnakeSchoolId || '108348';
