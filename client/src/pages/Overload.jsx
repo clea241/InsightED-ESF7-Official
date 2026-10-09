@@ -854,7 +854,8 @@ export default function Overload() {
     const loadFreshPersonnel = async () => {
       setFreshLoading(true);
       try {
-        const data = await api.getPersonnel();
+        const res = await api.getPersonnel();
+        const data = Array.isArray(res) ? res : res?.data || [];
         if (!cancelled && Array.isArray(data)) {
           // Merge any localStorage drafts on top of DB records
           const merged = data.map((p) => {

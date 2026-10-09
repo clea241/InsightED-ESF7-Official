@@ -334,16 +334,21 @@ export const api = {
   },
 
   // Personnel Roster
-  /** @param {string | null} [targetSchoolId] */
-  getPersonnel: async (targetSchoolId = null) => {
+  /**
+   * @param {string | null} [targetSchoolId]
+   * @param {{ page?: number, limit?: number }} [params]
+   */
+  getPersonnel: async (targetSchoolId = null, params = {}) => {
     targetSchoolId = resolveSchoolId(targetSchoolId) || null;
     const customHeaders = targetSchoolId
       ? { "x-school-id": targetSchoolId }
       : {};
-    const query = targetSchoolId
-      ? `?school_id=${encodeURIComponent(targetSchoolId)}`
-      : "";
-    return await fetchJsonWithRetry(`${API_BASE}/personnel${query}`, {
+    const queryParams = new URLSearchParams();
+    if (targetSchoolId) queryParams.set("school_id", targetSchoolId);
+    if (params && params.page) queryParams.set("page", String(params.page));
+    if (params && params.limit) queryParams.set("limit", String(params.limit));
+    const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
+    return await fetchJsonWithRetry(`${API_BASE}/personnel${qs}`, {
       headers: customHeaders,
     });
   },

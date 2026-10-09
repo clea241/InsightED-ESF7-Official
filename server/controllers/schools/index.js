@@ -698,6 +698,7 @@ async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
 
     let profilingDoneCount = 0;
     let workloadDoneCount = 0;
+    const rowsToUpsert = [];
 
     for (const p of personnelList) {
       // Never invent an id here: a random one would create a brand-new row on every save. No stable key = no derived row.
@@ -779,45 +780,78 @@ async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
         cash: true,
       };
 
-      await db
-        .query(
-          `
-        INSERT INTO esf7_personnel_node_status (
-          school_id, school_year, personnel_id, personnel_name, position_title, category, is_school_head, is_complete,
-          node_03_room_qr, node_04_profile, node_07_designation, node_08_workload, node_09_allowances, updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-        ON CONFLICT (school_id, school_year, personnel_id)
-        DO UPDATE SET
-          personnel_name = EXCLUDED.personnel_name,
-          position_title = EXCLUDED.position_title,
-          category = EXCLUDED.category,
-          is_school_head = EXCLUDED.is_school_head,
-          is_complete = EXCLUDED.is_complete,
-          node_03_room_qr = EXCLUDED.node_03_room_qr,
-          node_04_profile = EXCLUDED.node_04_profile,
-          node_07_designation = EXCLUDED.node_07_designation,
-          node_08_workload = EXCLUDED.node_08_workload,
-          node_09_allowances = EXCLUDED.node_09_allowances,
-          updated_at = NOW()
-      `,
-          [
-            schoolId,
-            schoolYear,
-            pId,
-            pName,
-            pPos,
-            pCat,
-            isHead,
-            profDone && workDone,
-            JSON.stringify(node03RoomQr),
-            JSON.stringify(node04Profile),
-            JSON.stringify(node07Designation),
-            JSON.stringify(node08Workload),
-            JSON.stringify(node09Allowances),
-          ],
-        )
-        .catch(() => {});
+      rowsToUpsert.push({
+        pId,
+        pName,
+        pPos,
+        pCat,
+        isHead,
+        isComplete: profDone && workDone,
+        node03: JSON.stringify(node03RoomQr),
+        node04: JSON.stringify(node04Profile),
+        node07: JSON.stringify(node07Designation),
+        node08: JSON.stringify(node08Workload),
+        node09: JSON.stringify(node09Allowances),
+      });
+    }
+
+    // Batched upsert: replaces N+1 individual serial queries with chunked multi-row upserts
+    if (rowsToUpsert.length > 0) {
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < rowsToUpsert.length; i += BATCH_SIZE) {
+        const chunk = rowsToUpsert.slice(i, i + BATCH_SIZE);
+        const valueClauses = [];
+        const params = [schoolId, schoolYear];
+        let pIdx = 3;
+
+        for (const r of chunk) {
+          valueClauses.push(
+            `($1, $2, $${pIdx}, $${pIdx + 1}, $${pIdx + 2}, $${pIdx + 3}, $${pIdx + 4}, $${pIdx + 5}, $${pIdx + 6}, $${pIdx + 7}, $${pIdx + 8}, $${pIdx + 9}, $${pIdx + 10}, NOW())`,
+          );
+          params.push(
+            r.pId,
+            r.pName,
+            r.pPos,
+            r.pCat,
+            r.isHead,
+            r.isComplete,
+            r.node03,
+            r.node04,
+            r.node07,
+            r.node08,
+            r.node09,
+          );
+          pIdx += 11;
+        }
+
+        const batchQuery = `
+          INSERT INTO esf7_personnel_node_status (
+            school_id, school_year, personnel_id, personnel_name, position_title, category, is_school_head, is_complete,
+            node_03_room_qr, node_04_profile, node_07_designation, node_08_workload, node_09_allowances, updated_at
+          )
+          VALUES ${valueClauses.join(", ")}
+          ON CONFLICT (school_id, school_year, personnel_id)
+          DO UPDATE SET
+            personnel_name = EXCLUDED.personnel_name,
+            position_title = EXCLUDED.position_title,
+            category = EXCLUDED.category,
+            is_school_head = EXCLUDED.is_school_head,
+            is_complete = EXCLUDED.is_complete,
+            node_03_room_qr = EXCLUDED.node_03_room_qr,
+            node_04_profile = EXCLUDED.node_04_profile,
+            node_07_designation = EXCLUDED.node_07_designation,
+            node_08_workload = EXCLUDED.node_08_workload,
+            node_09_allowances = EXCLUDED.node_09_allowances,
+            updated_at = NOW()
+        `;
+
+        await db.query(batchQuery, params).catch((err) => {
+          console.warn(
+            "[syncDraftToNodeStatus] Batch upsert warning:",
+            err.message,
+          );
+        });
+      }
     }
 
     const allReady =

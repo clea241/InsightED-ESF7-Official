@@ -681,7 +681,8 @@ export default function Roster() {
           // If status completed, trigger personnel reload from backend
           if (data.status === "VERIFIED") {
             try {
-              const pData = await api.getPersonnel(rawSchoolId);
+              const rawRes = await api.getPersonnel(rawSchoolId);
+              const pData = Array.isArray(rawRes) ? rawRes : rawRes?.data || [];
               if (Array.isArray(pData) && pData.length > 0 && isMounted) {
                 setPersonnel(pData);
                 if (showToast)

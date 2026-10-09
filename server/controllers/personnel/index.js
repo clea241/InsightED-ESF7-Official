@@ -1627,16 +1627,17 @@ router.get("/", async (req, res) => {
     timing.master = Date.now() - timing.start;
 
     // Start independent per-school lookups concurrently (previously run one after another)
+    // Select only columns utilized by the UI to eliminate TOAST overhead and prevent memory bloat
     const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
     const wklPromise = db
       .query(
-        `SELECT * FROM esf7_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`,
+        `SELECT id, personnel_id, school_id, school_year, grade_level, section_id, section_name, subject, subject_id, remediation_subject, start_time, end_time, days, term FROM esf7_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`,
         [sidPair],
       )
       .catch(() => ({ rows: [] }));
     const shsWklPromise = db
       .query(
-        `SELECT * FROM esf7_shs_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`,
+        `SELECT id, personnel_id, school_id, school_year, grade_level, section_id, section_name, subject, subject_id, remediation_subject, start_time, end_time, days, term, semester, track, strand FROM esf7_shs_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC`,
         [sidPair],
       )
       .catch(() => ({ rows: [] }));
@@ -2347,7 +2348,34 @@ router.get("/", async (req, res) => {
         `[Personnel Timing] school ${cleanSchoolId} slow: total=${timing.total}ms master=${timing.master}ms local=${timing.local}ms rows=${mergedList.length}`,
       );
     }
-    res.json(mergedList);
+
+    const total = mergedList.length;
+    if (req.query.page || req.query.limit) {
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const limit = Math.max(
+        1,
+        Math.min(1000, parseInt(req.query.limit, 10) || 100),
+      );
+      const totalPages = Math.ceil(total / limit) || 1;
+      const startIndex = (page - 1) * limit;
+      const paginatedList = mergedList.slice(startIndex, startIndex + limit);
+
+      return res.json({
+        data: paginatedList,
+        total,
+        page,
+        limit,
+        totalPages,
+      });
+    }
+
+    res.json({
+      data: mergedList,
+      total,
+      page: 1,
+      limit: total,
+      totalPages: 1,
+    });
   } catch (err) {
     console.error("Error fetching personnel profiles:", err);
     res.status(500).json({ error: err.message });

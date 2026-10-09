@@ -1206,7 +1206,8 @@ export default function RoomProfiling() {
 
       // 2. Query backend for database personnel
       try {
-        const res = await api.getPersonnel(targetSchoolId);
+        const rawRes = await api.getPersonnel(targetSchoolId);
+        const res = Array.isArray(rawRes) ? rawRes : rawRes?.data || [];
         if (Array.isArray(res) && res.length > 0) {
           const filtered = filterEligiblePersonnel(res);
           setPersonnelList(filtered);

@@ -4054,7 +4054,8 @@ export const AppProvider = ({ children }) => {
       user?.school_id ||
       user?.schoolId ||
       null;
-    const list = await api.getPersonnel(activeSchoolId);
+    const rawRes = await api.getPersonnel(activeSchoolId);
+    const list = Array.isArray(rawRes) ? rawRes : rawRes?.data || [];
     if (!Array.isArray(list)) return [];
 
     // The server flags records whose roster came from the cache (not confirmed saved) and why the real tables were skipped.

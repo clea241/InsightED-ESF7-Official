@@ -7,16 +7,41 @@ require("dotenv").config({ path: path.join(__dirname, "../.env") });
 // Prevent timezone-shifting of DATE columns by returning raw strings
 pg.types.setTypeParser(1082, (val) => val);
 
-const defaultDbName = process.env.DB_NAME || "insighted_esf7";
+let dbHost = process.env.DB_HOST;
+let dbUser = process.env.DB_USER;
+let dbPassword = process.env.DB_PASSWORD;
+let dbPort = process.env.DB_PORT || "5432";
+let defaultDbName = process.env.DB_NAME || "insighted_esf7";
+
+if (process.env.DATABASE_URL) {
+  try {
+    const parsedDbUrl = new URL(process.env.DATABASE_URL);
+    dbHost = dbHost || parsedDbUrl.hostname;
+    dbPort = dbPort || parsedDbUrl.port || "5432";
+    dbUser = dbUser || decodeURIComponent(parsedDbUrl.username);
+    dbPassword = dbPassword || decodeURIComponent(parsedDbUrl.password);
+    if (
+      !process.env.DB_NAME &&
+      parsedDbUrl.pathname &&
+      parsedDbUrl.pathname.length > 1
+    ) {
+      defaultDbName = decodeURIComponent(parsedDbUrl.pathname.slice(1));
+    }
+  } catch (err) {
+    // If not a parseable URL, will be caught by missing field validation below
+  }
+}
+
+if (!dbHost || !dbUser || !dbPassword) {
+  throw new Error(
+    "Missing required database configuration: DB_HOST, DB_USER, and DB_PASSWORD (or DATABASE_URL) must be set in the environment. Hardcoded production Azure defaults have been removed to prevent unintended connections.",
+  );
+}
+
 // The read-only master database (esf7_database, esf7_database_dummy, unit1_school_identity). Its name is case-sensitive in a
 // connection string ('insightEd' != 'insighted'). It is configured via INSIGHTED_DATABASE_URL or INSIGHTED_DB_NAME.
 // Default to defaultDbName so reads and writes share the same working database unless explicitly pointed elsewhere.
 const masterDbName = process.env.INSIGHTED_DB_NAME || defaultDbName;
-const dbHost =
-  process.env.DB_HOST || "stride-posgre-prod-01.postgres.database.azure.com";
-const dbUser = process.env.DB_USER || "Administrator1";
-const dbPassword = process.env.DB_PASSWORD || "pRZTbQ2T1JD7";
-const dbPort = process.env.DB_PORT || "5432";
 const isLocalHost = dbHost === "127.0.0.1" || dbHost === "localhost";
 const dbSsl =
   !isLocalHost &&
@@ -25,6 +50,12 @@ const dbSsl =
     : process.env.DB_SSL === "true" && !isLocalHost
       ? { rejectUnauthorized: false }
       : false;
+
+// When running load capacity tests or targeting a test database, strictly guard all pools to prevent accidental production/staging routing
+const isLoadTestMode =
+  process.env.NODE_ENV === "load-test" ||
+  defaultDbName.includes("test") ||
+  (process.env.DATABASE_URL && process.env.DATABASE_URL.includes("test"));
 
 // Base configuration with bounded connection timeout and quick idle recovery
 const baseConfig = {
@@ -68,6 +99,9 @@ function getPool() {
 
 // 2. Explicit Staging Pool (for division test accounts & staging QA)
 function getStagingPool() {
+  if (isLoadTestMode) {
+    return getPool();
+  }
   if (!_stagingPool) {
     console.log(
       `📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`,
@@ -75,7 +109,9 @@ function getStagingPool() {
     _stagingPool = new Pool({
       ...baseConfig,
       max: 5,
-      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`,
+      connectionString:
+        process.env.STAGING_DATABASE_URL ||
+        `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`,
     });
     _stagingPool.on("error", (err) =>
       console.warn(
@@ -89,6 +125,9 @@ function getStagingPool() {
 
 // 3. Explicit Production Pool
 function getProdPool() {
+  if (isLoadTestMode) {
+    return getPool();
+  }
   if (!_prodPool) {
     console.log(
       `📦 [DB Pool] Production Pool connected -> database: "insighted_esf7" on ${dbHost}:${dbPort}`,
@@ -96,7 +135,9 @@ function getProdPool() {
     _prodPool = new Pool({
       ...baseConfig,
       max: 8,
-      connectionString: `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`,
+      connectionString:
+        process.env.PROD_DATABASE_URL ||
+        `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`,
     });
     _prodPool.on("error", (err) =>
       console.warn(
@@ -226,6 +267,9 @@ function isDivisionOrTestAccount(schoolId) {
  * (Division test accounts / dummy accounts -> stagingPool; Real schools -> prodPool / default pool)
  */
 function getPoolForSchool(schoolId) {
+  if (isLoadTestMode) {
+    return getPool();
+  }
   if (isDivisionOrTestAccount(schoolId)) {
     return getStagingPool();
   }
@@ -279,12 +323,14 @@ function dbMiddleware(req, res, next) {
       }
     }
 
-    const isTest = isDivisionOrTestAccount(schoolId);
-    const activePool = isTest
-      ? getStagingPool()
-      : process.env.NODE_ENV === "production"
-        ? getProdPool()
-        : getPool();
+    const isTest = !isLoadTestMode && isDivisionOrTestAccount(schoolId);
+    const activePool = isLoadTestMode
+      ? getPool()
+      : isTest
+        ? getStagingPool()
+        : process.env.NODE_ENV === "production"
+          ? getProdPool()
+          : getPool();
 
     dbStorage.run({ schoolId, isStaging: isTest, pool: activePool }, () => {
       next();
@@ -298,12 +344,14 @@ function dbMiddleware(req, res, next) {
  * Runs a function within the context of a specific school ID
  */
 function runWithSchool(schoolId, callback) {
-  const isTest = isDivisionOrTestAccount(schoolId);
-  const activePool = isTest
-    ? getStagingPool()
-    : process.env.NODE_ENV === "production"
-      ? getProdPool()
-      : getPool();
+  const isTest = !isLoadTestMode && isDivisionOrTestAccount(schoolId);
+  const activePool = isLoadTestMode
+    ? getPool()
+    : isTest
+      ? getStagingPool()
+      : process.env.NODE_ENV === "production"
+        ? getProdPool()
+        : getPool();
   return dbStorage.run(
     { schoolId, isStaging: isTest, pool: activePool },
     callback,
@@ -320,6 +368,10 @@ function query(text, params) {
   }
 
   // Fallback if called outside HTTP request context (e.g. background job, CLI scripts)
+  if (isLoadTestMode) {
+    return getPool().query(text, params);
+  }
+
   if (containsTestAccountIndicator(text, params)) {
     return getStagingPool().query(text, params);
   }
@@ -336,6 +388,9 @@ function getClient() {
   const store = dbStorage.getStore();
   if (store && store.pool) {
     return store.pool.connect();
+  }
+  if (isLoadTestMode) {
+    return getPool().connect();
   }
   const defaultActivePool =
     process.env.NODE_ENV === "production" ? getProdPool() : getPool();
