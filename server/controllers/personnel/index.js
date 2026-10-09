@@ -974,37 +974,58 @@ router.get('/', async (req, res) => {
       designationsMap.get(pKey).push(dRow);
     }
 
-    // Build persistent deletion tombstone sets
+    // Build persistent deletion tombstone sets (strictly filter out generic/placeholder keys)
     const delRes = await delPromise;
     const deletedIdSet = new Set();
     const deletedPrnSet = new Set();
     const deletedEmpNoSet = new Set();
     const deletedNameSet = new Set();
 
+    const isNonGenericKey = (val) => {
+      if (!val || typeof val !== 'string') return false;
+      const s = val.trim().toUpperCase();
+      if (!s || s === 'N/A' || s === 'NA' || s === 'NONE' || s === 'NULL' || s === 'UNDEFINED' || s === '-' || s === 'TEACHER STAFF' || s === 'TEACHER' || s === 'STAFF') {
+        return false;
+      }
+      return s.length >= 2;
+    };
+
     for (const dRow of delRes.rows) {
-      if (dRow.personnel_id) deletedIdSet.add(String(dRow.personnel_id).trim().toUpperCase());
-      if (dRow.prn) deletedPrnSet.add(String(dRow.prn).trim().toUpperCase());
-      if (dRow.employee_no) deletedEmpNoSet.add(String(dRow.employee_no).trim().toUpperCase());
-      if (dRow.full_name_clean) deletedNameSet.add(String(dRow.full_name_clean).trim().toUpperCase());
+      if (isNonGenericKey(dRow.personnel_id)) deletedIdSet.add(String(dRow.personnel_id).trim().toUpperCase());
+      if (isNonGenericKey(dRow.prn)) deletedPrnSet.add(String(dRow.prn).trim().toUpperCase());
+      if (isNonGenericKey(dRow.employee_no)) deletedEmpNoSet.add(String(dRow.employee_no).trim().toUpperCase());
+      if (isNonGenericKey(dRow.full_name_clean) && String(dRow.full_name_clean).trim().toUpperCase() !== 'TEACHER STAFF') {
+        deletedNameSet.add(String(dRow.full_name_clean).trim().toUpperCase());
+      }
       if (dRow.first_name && dRow.last_name) {
-        deletedNameSet.add(`${String(dRow.first_name).trim()} ${String(dRow.last_name).trim()}`.trim().toUpperCase());
+        const full = `${String(dRow.first_name).trim()} ${String(dRow.last_name).trim()}`.trim().toUpperCase();
+        if (isNonGenericKey(full) && full !== 'TEACHER STAFF') {
+          deletedNameSet.add(full);
+        }
       }
     }
 
     timing.local = Date.now() - timing.start - timing.master;
 
+    const isRecordTombstoned = (pId, pPrn, pEmp, pName) => {
+      const idUpper = String(pId || '').trim().toUpperCase();
+      const prnUpper = String(pPrn || '').trim().toUpperCase();
+      const empUpper = String(pEmp || '').trim().toUpperCase();
+      const nameUpper = String(pName || '').trim().toUpperCase();
+
+      if (isNonGenericKey(idUpper) && deletedIdSet.has(idUpper)) return true;
+      if (isNonGenericKey(prnUpper) && deletedPrnSet.has(prnUpper)) return true;
+      if (isNonGenericKey(empUpper) && deletedEmpNoSet.has(empUpper)) return true;
+      if (isNonGenericKey(nameUpper) && nameUpper !== 'TEACHER STAFF' && deletedNameSet.has(nameUpper)) return true;
+      return false;
+    };
+
     const dbMap = new Map();
     for (const row of result.rows) {
-      const pIdUpper = String(row.id || '').trim().toUpperCase();
-      const pPrnUpper = String(row.prn || '').trim().toUpperCase();
-      const pEmpUpper = String(row.employee_no || '').trim().toUpperCase();
       const pNameUpper = `${String(row.first_name || '').trim()} ${String(row.last_name || '').trim()}`.trim().toUpperCase();
 
-      // Skip locally saved records if marked as deleted
-      if ((pIdUpper && deletedIdSet.has(pIdUpper)) || 
-          (pPrnUpper && deletedPrnSet.has(pPrnUpper)) || 
-          (pEmpUpper && deletedEmpNoSet.has(pEmpUpper)) || 
-          (pNameUpper && deletedNameSet.has(pNameUpper))) {
+      // Skip locally saved records only if explicitly tombstoned by valid non-generic key
+      if (isRecordTombstoned(row.id, row.prn, row.employee_no, pNameUpper)) {
         continue;
       }
 
@@ -1019,16 +1040,8 @@ router.get('/', async (req, res) => {
 
     // Filter master list against persistent tombstones
     const filteredMasterList = masterList.filter(m => {
-      const mId = String(m.id || '').trim().toUpperCase();
-      const mPrn = String(m.prn || '').trim().toUpperCase();
-      const mEmp = String(m.employee_no || m.employeeNo || '').trim().toUpperCase();
       const mName = `${String(m.first_name || m.firstName || '').trim()} ${String(m.last_name || m.lastName || '').trim()}`.trim().toUpperCase();
-
-      if (mId && deletedIdSet.has(mId)) return false;
-      if (mPrn && deletedPrnSet.has(mPrn)) return false;
-      if (mEmp && deletedEmpNoSet.has(mEmp)) return false;
-      if (mName && deletedNameSet.has(mName)) return false;
-      return true;
+      return !isRecordTombstoned(m.id, m.prn, m.employee_no || m.employeeNo, mName);
     });
 
     const mergedList = [];
@@ -2495,11 +2508,24 @@ router.delete('/:id', async (req, res) => {
       }
     }
 
-    const cleanFullName = `${String(fName || '').trim()} ${String(lName || '').trim()}`.trim().toUpperCase();
+    const isNonGenericVal = (val) => {
+      if (!val || typeof val !== 'string') return false;
+      const s = val.trim().toUpperCase();
+      if (!s || s === 'N/A' || s === 'NA' || s === 'NONE' || s === 'NULL' || s === 'UNDEFINED' || s === '-' || s === 'TEACHER STAFF' || s === 'TEACHER' || s === 'STAFF') {
+        return false;
+      }
+      return s.length >= 2;
+    };
 
-    // B. Record in esf7_deleted_personnel
-    if (sid) {
-      const tombstoneId = `DEL-${sid}-${String(prn || targetId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const cleanFullName = `${String(fName || '').trim()} ${String(lName || '').trim()}`.trim().toUpperCase();
+    const validTargetId = isNonGenericVal(targetId) ? targetId : null;
+    const validPrn = isNonGenericVal(prn) ? prn : null;
+    const validEmpNo = isNonGenericVal(empNo) ? empNo : null;
+    const validName = isNonGenericVal(cleanFullName) && cleanFullName !== 'TEACHER STAFF' ? cleanFullName : null;
+
+    // B. Record in esf7_deleted_personnel (only if at least one valid key exists)
+    if (sid && (validTargetId || validPrn || validEmpNo || validName)) {
+      const tombstoneId = `DEL-${sid}-${String(validPrn || validTargetId || Math.random().toString(36).substring(2, 9)).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
       await db.query(`
         INSERT INTO esf7_deleted_personnel (id, school_id, personnel_id, prn, employee_no, first_name, last_name, full_name_clean, deleted_by, deleted_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHOOL_HEAD', NOW())
@@ -2511,7 +2537,7 @@ router.delete('/:id', async (req, res) => {
           last_name = EXCLUDED.last_name,
           full_name_clean = EXCLUDED.full_name_clean,
           deleted_at = NOW()
-      `, [tombstoneId, sid, targetId, prn, empNo, String(fName).toUpperCase(), String(lName).toUpperCase(), cleanFullName]).catch((e) => {
+      `, [tombstoneId, sid, validTargetId, validPrn, validEmpNo, validName ? String(fName).toUpperCase() : null, validName ? String(lName).toUpperCase() : null, validName]).catch((e) => {
         console.warn('[Tombstone Record Notice]:', e.message);
       });
 
@@ -2529,17 +2555,17 @@ router.delete('/:id', async (req, res) => {
                 const pPrn = String(p.prn || '').trim().toLowerCase();
                 const pEmp = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
                 const pName = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-                const tId = String(targetId).toLowerCase();
-                const tPrn = String(prn || '').toLowerCase();
-                const tEmp = String(empNo || '').toLowerCase();
-                const tName = cleanFullName.toLowerCase();
-                return pId !== tId && pPrn !== tId && (!tPrn || pPrn !== tPrn) && (!tEmp || pEmp !== tEmp) && (!tName || pName !== tName);
+                const tId = validTargetId ? String(validTargetId).toLowerCase() : '';
+                const tPrn = validPrn ? String(validPrn).toLowerCase() : '';
+                const tEmp = validEmpNo ? String(validEmpNo).toLowerCase() : '';
+                const tName = validName ? validName.toLowerCase() : '';
+                return (!tId || (pId !== tId && pPrn !== tId)) && (!tPrn || pPrn !== tPrn) && (!tEmp || pEmp !== tEmp) && (!tName || pName !== tName);
               });
               if (pld.personnel.length !== beforeLen) changed = true;
             }
             if (Array.isArray(pld.classSections)) {
               pld.classSections = pld.classSections.map(sec => {
-                if (String(sec.advisorId) === String(targetId) || (prn && String(sec.advisorId) === String(prn))) {
+                if ((validTargetId && String(sec.advisorId) === String(validTargetId)) || (validPrn && String(sec.advisorId) === String(validPrn))) {
                   changed = true;
                   return { ...sec, advisorId: null };
                 }
@@ -2547,7 +2573,8 @@ router.delete('/:id', async (req, res) => {
               });
             }
             const existingDel = Array.isArray(pld.deletedPersonnelIds) ? pld.deletedPersonnelIds : [];
-            pld.deletedPersonnelIds = Array.from(new Set([...existingDel, targetId, prn, empNo, cleanFullName.toLowerCase()].filter(Boolean)));
+            const newKeys = [validTargetId, validPrn, validEmpNo, validName ? validName.toLowerCase() : null].filter(Boolean);
+            pld.deletedPersonnelIds = Array.from(new Set([...existingDel, ...newKeys]));
             changed = true;
             if (changed) {
               await db.query(

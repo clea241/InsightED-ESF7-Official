@@ -3407,11 +3407,20 @@ export const AppProvider = ({ children }) => {
     });
   };
 
+  const isNonGenericKey = (val) => {
+    if (!val || typeof val !== 'string') return false;
+    const s = val.trim().toLowerCase();
+    if (!s || s === 'n/a' || s === 'na' || s === 'none' || s === 'null' || s === 'undefined' || s === '-' || s === 'teacher staff' || s === 'teacher' || s === 'staff') {
+      return false;
+    }
+    return s.length >= 2;
+  };
+
   const refreshPersonnelList = async () => {
     try {
       const res = await fetchAndNormalizePersonnel();
       if (Array.isArray(res)) {
-        const deletedSet = new Set(deletedPersonnelIds.map(k => String(k).trim().toLowerCase()).filter(Boolean));
+        const deletedSet = new Set(deletedPersonnelIds.map(k => String(k).trim().toLowerCase()).filter(isNonGenericKey));
         setPersonnel(prev => {
           const currentList = Array.isArray(prev) ? prev : [];
           const currentKeys = new Set(
@@ -3419,13 +3428,16 @@ export const AppProvider = ({ children }) => {
               String(p.id || '').trim().toLowerCase(),
               String(p.prn || '').trim().toLowerCase(),
               `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
-            ]).filter(Boolean)
+            ]).filter(isNonGenericKey)
           );
           const newItems = res.filter(p => {
             const idKey = String(p.id || '').trim().toLowerCase();
             const prnKey = String(p.prn || '').trim().toLowerCase();
             const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            return !currentKeys.has(idKey) && !currentKeys.has(prnKey) && !currentKeys.has(nameKey) && !deletedSet.has(idKey) && !deletedSet.has(prnKey);
+            const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+                                 (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+                                 (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey));
+            return !currentKeys.has(idKey) && !currentKeys.has(prnKey) && !currentKeys.has(nameKey) && !isTombstoned;
           });
           return [...currentList, ...newItems];
         });
@@ -3688,8 +3700,8 @@ export const AppProvider = ({ children }) => {
             reportDraftError(DRAFT_ACTIONS.PERSONNEL_FETCH, e, { retry: () => loadInitialDataRef.current && loadInitialDataRef.current() });
           }
 
-          const rawDeleted = activeDraft.deletedPersonnelIds || activeDraft.deleted_personnel_ids || [];
-          const deletedSet = new Set(rawDeleted.map(k => String(k).trim().toLowerCase()).filter(Boolean));
+          const rawDeleted = (activeDraft.deletedPersonnelIds || activeDraft.deleted_personnel_ids || []).filter(isNonGenericKey);
+          const deletedSet = new Set(rawDeleted.map(k => String(k).trim().toLowerCase()).filter(isNonGenericKey));
           setDeletedPersonnelIds(rawDeleted);
           const rawDeletedSecs = activeDraft.deletedSectionIds || activeDraft.deleted_section_ids || [];
           setDeletedSectionIds(rawDeletedSecs);
@@ -3700,7 +3712,11 @@ export const AppProvider = ({ children }) => {
             const prnKey = String(p.prn || '').trim().toLowerCase();
             const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
             const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            return !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey) && (!empKey || !deletedSet.has(empKey));
+            const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+                                 (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+                                 (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey)) ||
+                                 (isNonGenericKey(empKey) && deletedSet.has(empKey));
+            return !isTombstoned;
           });
 
           let draftPersonnel = (activeDraft.personnel || []).filter(p => {
@@ -3708,7 +3724,11 @@ export const AppProvider = ({ children }) => {
             const prnKey = String(p.prn || '').trim().toLowerCase();
             const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
             const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-            return !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey) && (!empKey || !deletedSet.has(empKey));
+            const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+                                 (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+                                 (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey)) ||
+                                 (isNonGenericKey(empKey) && deletedSet.has(empKey));
+            return !isTombstoned;
           });
 
           // Only initialize from DB list if the draft is empty
@@ -3723,16 +3743,22 @@ export const AppProvider = ({ children }) => {
                 String(p.prn || '').trim().toLowerCase(),
                 String(p.employeeNo || p.employee_no || '').trim().toLowerCase(),
                 `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase()
-              ]).filter(Boolean)
+              ]).filter(isNonGenericKey)
             );
             const missingMasterPersonnel = filteredDbList.filter(p => {
               const idKey = String(p.id || '').trim().toLowerCase();
               const prnKey = String(p.prn || '').trim().toLowerCase();
               const empKey = String(p.employeeNo || p.employee_no || '').trim().toLowerCase();
               const nameKey = `${String(p.firstName || '').trim()} ${String(p.lastName || '').trim()}`.toLowerCase();
-              return !draftKeys.has(idKey) && !draftKeys.has(prnKey) && !draftKeys.has(nameKey) &&
-                     !deletedSet.has(idKey) && !deletedSet.has(prnKey) && !deletedSet.has(nameKey) &&
-                     (!empKey || (!draftKeys.has(empKey) && !deletedSet.has(empKey)));
+              const isTombstoned = (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
+                                   (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
+                                   (isNonGenericKey(nameKey) && nameKey !== 'teacher staff' && deletedSet.has(nameKey)) ||
+                                   (isNonGenericKey(empKey) && deletedSet.has(empKey));
+              const isInDraft = (isNonGenericKey(idKey) && draftKeys.has(idKey)) ||
+                                (isNonGenericKey(prnKey) && draftKeys.has(prnKey)) ||
+                                (isNonGenericKey(nameKey) && draftKeys.has(nameKey)) ||
+                                (isNonGenericKey(empKey) && draftKeys.has(empKey));
+              return !isInDraft && !isTombstoned;
             });
             if (missingMasterPersonnel.length > 0) {
               console.log(`[Draft Sync] Merging ${missingMasterPersonnel.length} master personnel from official database into draft...`);
