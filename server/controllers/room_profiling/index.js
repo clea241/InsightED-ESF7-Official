@@ -57,13 +57,6 @@ const initQueueTable = async () => {
         lockout_until BIGINT DEFAULT 0,
         last_attempt_at TIMESTAMPTZ DEFAULT NOW()
       );
-      CREATE UNLOGGED TABLE IF NOT EXISTS esf7_room_roster_cache (
-        school_id VARCHAR(64) PRIMARY KEY,
-        roster_json JSONB NOT NULL,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_room_roster_cache_school ON esf7_room_roster_cache(school_id);
-      CREATE OR REPLACE VIEW esf7_room_cache AS SELECT * FROM esf7_room_roster_cache;
     `);
     isTableInitialized = true;
     console.log(
@@ -1728,58 +1721,11 @@ router.get("/approved", async (req, res) => {
             });
           }
         }
-      } else {
-        // Fallback to esf7_room_roster_cache only if no normalized profiles exist
-        const { rows: cacheRows } = await db.query(
-          `
-          SELECT school_id, roster_json, updated_at
-          FROM esf7_room_roster_cache
-          WHERE (school_id = $1 OR school_id = ('SCH-' || $1) OR REPLACE(school_id, 'SCH-', '') = $1)
-          LIMIT 1
-        `,
-          [cleanSchoolId],
-        );
-
-        if (
-          cacheRows &&
-          cacheRows.length > 0 &&
-          Array.isArray(cacheRows[0].roster_json)
-        ) {
-          const roster = cacheRows[0].roster_json;
-          const updatedAt = cacheRows[0].updated_at || new Date();
-          const updatedTimestamp = new Date(updatedAt).getTime();
-
-          for (const p of roster) {
-            const pId = String(p.id || p.prn || "").trim();
-
-            if (pId && !seenPersonnelIds.has(pId)) {
-              seenPersonnelIds.add(pId);
-              const fn = (p.firstName || p.first_name || "").trim();
-              const ln = (p.lastName || p.last_name || "").trim();
-              const pName =
-                p.name || (ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher");
-
-              results.push({
-                id: `CACHE_${cleanSchoolId}_${pId}`,
-                schoolId: cleanSchoolId,
-                personnelId: pId,
-                personnelName: pName,
-                roomName: p.roomName || p.room || "Faculty Room",
-                profileData: p,
-                submittedAt: p.submitted_at || p.submittedAt || updatedAt,
-                submittedTimestamp: p.submitted_at
-                  ? new Date(p.submitted_at).getTime()
-                  : updatedTimestamp,
-                status: "APPROVED",
-              });
-            }
-          }
-        }
       }
-    } catch (cacheErr) {
+    } catch (profErr) {
       console.warn(
-        "[Room Profiling Approved GET] Fallback notice:",
-        cacheErr.message,
+        "[Room Profiling Approved GET] Profile query notice:",
+        profErr.message,
       );
     }
 
@@ -2504,31 +2450,6 @@ router.get("/roster", async (req, res) => {
       return res.json(formatted);
     }
 
-    // 2. Last-Resort Fallback: esf7_room_roster_cache (flagged NOT confirmed saved)
-    console.warn(
-      `[Room Profiling][SOURCE] Using esf7_room_roster_cache as a LAST RESORT for School ID ${cleanSchoolId} - this roster is NOT confirmed saved data.`,
-    );
-    const { rows: cacheRows } = await db
-      .query(
-        `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1`,
-        [cleanSchoolId],
-      )
-      .catch(() => ({ rows: [] }));
-
-    if (
-      cacheRows &&
-      cacheRows.length > 0 &&
-      Array.isArray(cacheRows[0].roster_json) &&
-      cacheRows[0].roster_json.length > 0
-    ) {
-      const fallbackList = cacheRows[0].roster_json.map((item) => ({
-        ...item,
-        sourceConfirmed: false,
-        isFallback: true,
-      }));
-      return res.json(fallbackList);
-    }
-
     res.json([]);
   } catch (err) {
     console.error("[Room Profiling Get Roster Error]:", err);
@@ -2638,30 +2559,6 @@ router.post(
             isFallback: false,
           };
         });
-      } else {
-        // 2. Last-Resort Fallback: esf7_room_roster_cache (flagged NOT confirmed saved)
-        console.warn(
-          `[Room Profiling Passcode][SOURCE] Using esf7_room_roster_cache as a LAST RESORT for School ID ${cleanSchoolId} - this roster is NOT confirmed saved data.`,
-        );
-        const { rows: cacheRows } = await db
-          .query(
-            `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1`,
-            [cleanSchoolId],
-          )
-          .catch(() => ({ rows: [] }));
-
-        if (
-          cacheRows &&
-          cacheRows.length > 0 &&
-          Array.isArray(cacheRows[0].roster_json) &&
-          cacheRows[0].roster_json.length > 0
-        ) {
-          roster = cacheRows[0].roster_json.map((item) => ({
-            ...item,
-            sourceConfirmed: false,
-            isFallback: true,
-          }));
-        }
       }
 
       let matched = null;

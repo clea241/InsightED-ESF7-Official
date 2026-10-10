@@ -77,8 +77,8 @@ const generateESF7Xlsb = async (req, res) => {
     let personnelList = [];
 
     // 1. Check school_drafts for active payload
+    // 1. Load school and personnel from normalized esf7 tables
     try {
-      // Scoped to the requesting school (an unscoped LIMIT 1 could use another school's draft); no school = no draft lookup.
       const reqSchool = String(
         req.params?.schoolId ||
           req.query?.schoolId ||
@@ -86,22 +86,34 @@ const generateESF7Xlsb = async (req, res) => {
           (req.auth && req.auth.schoolId) ||
           "",
       ).replace(/^SCH-/i, "");
-      const draftRes = reqSchool
-        ? await db.query(
-            "SELECT payload FROM school_drafts WHERE school_id = $1 OR school_id = $2 ORDER BY updated_at DESC LIMIT 1",
+
+      if (reqSchool) {
+        const [sRes, pRes] = await Promise.all([
+          db.query(
+            "SELECT * FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1",
             [reqSchool, `SCH-${reqSchool}`],
-          )
-        : { rows: [] };
-      if (draftRes.rows.length > 0 && draftRes.rows[0].payload) {
-        const payload = draftRes.rows[0].payload;
-        if (payload.schoolInfo) school = payload.schoolInfo;
-        if (Array.isArray(payload.personnel)) personnelList = payload.personnel;
+          ),
+          db.query(
+            `SELECT p.*, pe.position, pe.fund_source, pe.nature_of_appointment,
+                    pe.raw_payload as employment_raw,
+                    pq.college_degree, pq.major, pq.minor, pq.raw_payload as educ_raw
+             FROM esf7_personnel_profile p
+             LEFT JOIN esf7_personnel_employment pe ON pe.personnel_id = p.id
+             LEFT JOIN esf7_perssonel_educ pq ON pq.personnel_id = p.id
+             WHERE p.school_id = $1 OR p.school_id = $2
+             ORDER BY p.last_name ASC, p.first_name ASC`,
+            [reqSchool, `SCH-${reqSchool}`],
+          ),
+        ]);
+
+        if (sRes.rows.length > 0) school = sRes.rows[0];
+        if (pRes.rows.length > 0) personnelList = pRes.rows;
       }
-    } catch (draftErr) {
-      console.warn("[eSF7] school_drafts lookup failed:", draftErr.message);
+    } catch (normErr) {
+      console.warn("[eSF7-XLSB] Normalized tables lookup failed:", normErr.message);
     }
 
-    // 2. Fallback to DB tables if draft is empty
+    // 2. Fallback to DB tables if normalized lookup is empty
     if (personnelList.length === 0) {
       try {
         const schoolRes = await db.query("SELECT * FROM schools LIMIT 1");

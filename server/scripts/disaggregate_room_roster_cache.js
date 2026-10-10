@@ -48,12 +48,25 @@ function parseArgs(argv) {
     return out;
   };
   const apply = argv.includes("--apply");
-  const schools = get("--school")
+  const cacheOnlyFlag = argv.includes("--cache-only");
+  let schools = get("--school")
     .flatMap((s) => s.split(","))
     .map((s) => s.trim().replace(/^SCH-/i, ""))
     .filter(Boolean);
+  const schoolFile = get("--school-file")[0] || null;
+  if (schoolFile && fs.existsSync(schoolFile)) {
+    try {
+      const fileData = JSON.parse(fs.readFileSync(schoolFile, "utf8"));
+      if (Array.isArray(fileData)) {
+        schools = [...new Set([...schools, ...fileData.map(s => String(s).trim().replace(/^SCH-/i, ""))])];
+      }
+    } catch (e) {
+      console.warn(`[room-roster] Warning: failed to parse school-file ${schoolFile}:`, e.message);
+    }
+  }
   return {
     apply,
+    cacheOnlyFlag,
     confirmDb: get("--confirm-db")[0] || null,
     schools,
     batchSize: Math.max(1, parseInt(get("--batch-size")[0] || "50", 10) || 50),
@@ -528,7 +541,7 @@ async function writeBackup(file, schoolIds, sessionDb) {
   let ok = 0;
   for await (let line of rl) {
     if (!line.startsWith("{\"school_id\"") && !line.startsWith(",{\"school_id\"")) continue;
-    line = line.replace(/^,/, "");
+    line = line.replace(/^,/, "").replace(/,$/, "");
     const sid = JSON.parse(line).school_id;
     if (shas.get(sid) !== crypto.createHash("sha256").update(line).digest("hex")) throw new Error(`Backup verification failed for school ${sid}`);
     ok++;
@@ -555,10 +568,11 @@ async function main(argv = process.argv.slice(2)) {
   const before = await cacheSnapshot();
   const all = (await db.query("SELECT school_id FROM esf7_room_roster_cache ORDER BY school_id")).rows.map((r) => r.school_id);
   const known = new Set(all);
-  const selected = opts.schools.length ? opts.schools.filter((s) => known.has(s)) : all;
-  const missingSchools = opts.schools.filter((s) => !known.has(s));
-
   const cacheOnly = new Set((await db.query("SELECT c.school_id FROM esf7_room_roster_cache c WHERE NOT EXISTS (SELECT 1 FROM esf7_personnel_profile p WHERE p.school_id = c.school_id)")).rows.map((r) => r.school_id));
+  const selected = opts.schools.length 
+    ? opts.schools.filter((s) => known.has(s)) 
+    : (opts.cacheOnlyFlag ? [...cacheOnly] : all);
+  const missingSchools = opts.schools.filter((s) => !known.has(s));
 
   let backup = null;
   if (opts.apply && selected.length) {

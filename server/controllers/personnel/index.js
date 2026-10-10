@@ -730,36 +730,9 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     }
   }
 
-  // 3. Tertiary Fallback: Check esf7_room_roster_cache in local database
   if (masterRes.rows.length === 0) {
     console.log(
-      `[LocalDraft] No master records in esf7_database/dummy for School ID ${cleanSchoolId}, checking esf7_room_roster_cache...`,
-    );
-    const cacheRes = await db
-      .query(
-        `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1`,
-        [cleanSchoolId],
-      )
-      .catch(() => ({ rows: [] }));
-    if (
-      cacheRes.rows.length > 0 &&
-      Array.isArray(cacheRes.rows[0].roster_json) &&
-      cacheRes.rows[0].roster_json.length > 0
-    ) {
-      console.log(
-        `[LocalDraft] Found ${cacheRes.rows[0].roster_json.length} records in esf7_room_roster_cache for School ID ${cleanSchoolId}`,
-      );
-      masterRes = { rows: cacheRes.rows[0].roster_json };
-      sourceTable = "esf7_room_roster_cache";
-      console.warn(
-        `[LocalDraft][SOURCE] Using esf7_room_roster_cache as a LAST RESORT for ${cleanSchoolId} - this roster is NOT confirmed saved data.`,
-      );
-    }
-  }
-
-  if (masterRes.rows.length === 0) {
-    console.log(
-      `[LocalDraft] No master records found in esf7_database, esf7_database_dummy, or esf7_room_roster_cache for School ID ${cleanSchoolId}.`,
+      `[LocalDraft] No master records found in esf7_database or esf7_database_dummy for School ID ${cleanSchoolId}.`,
     );
     return [];
   }
@@ -794,7 +767,7 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
         `[LocalDraft] Dropped ${before - masterRes.rows.length} duplicate master row(s) from ${sourceTable} for ${cleanSchoolId}.`,
       );
   }
-  const sourceConfirmed = sourceTable !== "esf7_room_roster_cache";
+  const sourceConfirmed = true;
 
   console.log(
     `[LocalDraft] Formatting ${masterRes.rows.length} personnel records from ${sourceTable} in-memory (0 database inserts)...`,
@@ -4380,41 +4353,6 @@ router.delete("/:id", async (req, res) => {
       }
     }
 
-    // Also check esf7_room_roster_cache if still missing name or PRN
-    if ((!fName || !lName) && sid) {
-      const checkCache = async (pool) => {
-        if (!pool || !pool.query) return null;
-        try {
-          const cRes = await pool.query(
-            `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1 OR school_id = $2`,
-            [sid, `SCH-${sid}`],
-          );
-          for (const row of cRes.rows) {
-            if (Array.isArray(row.roster_json)) {
-              const matched = row.roster_json.find(
-                (r) =>
-                  String(r.id || "").toLowerCase() === targetId.toLowerCase() ||
-                  String(r.prn || "").toLowerCase() === targetId.toLowerCase() ||
-                  String(r.employeeNo || r.employee_no || "").toLowerCase() ===
-                    targetId.toLowerCase(),
-              );
-              if (matched) return matched;
-            }
-          }
-        } catch (e) {}
-        return null;
-      };
-      const foundInCache =
-        (await checkCache(db)) ||
-        (db.getStagingPool && (await checkCache(db.getStagingPool())));
-      if (foundInCache) {
-        fName = foundInCache.firstName || foundInCache.first_name || fName;
-        lName = foundInCache.lastName || foundInCache.last_name || lName;
-        prn = foundInCache.prn || prn;
-        empNo = foundInCache.employeeNo || foundInCache.employee_no || empNo;
-      }
-    }
-
     const isNonGenericVal = (val) => {
       if (!val || typeof val !== "string") return false;
       const s = val.trim().toUpperCase();
@@ -4569,57 +4507,6 @@ router.delete("/:id", async (req, res) => {
       await scrubDraft(db);
       if (db.getStagingPool) await scrubDraft(db.getStagingPool());
       if (db.getProdPool) await scrubDraft(db.getProdPool());
-
-      // B3. Scrub deleted personnel from esf7_room_roster_cache across BOTH pools
-      const scrubCache = async (pool) => {
-        if (!pool || !pool.query) return;
-        try {
-          const cRes = await pool.query(
-            `SELECT school_id, roster_json FROM esf7_room_roster_cache WHERE school_id = $1 OR school_id = $2`,
-            [sid, `SCH-${sid}`],
-          );
-          for (const row of cRes.rows) {
-            if (Array.isArray(row.roster_json)) {
-              const beforeLen = row.roster_json.length;
-              const filtered = row.roster_json.filter((r) => {
-                const rId = String(r.id || "")
-                  .trim()
-                  .toLowerCase();
-                const rPrn = String(r.prn || "")
-                  .trim()
-                  .toLowerCase();
-                const rEmp = String(r.employeeNo || r.employee_no || "")
-                  .trim()
-                  .toLowerCase();
-                const rName =
-                  `${String(r.firstName || r.first_name || "").trim()} ${String(r.lastName || r.last_name || "").trim()}`.toLowerCase();
-                const tId = validTargetId
-                  ? String(validTargetId).toLowerCase()
-                  : "";
-                const tPrn = validPrn ? String(validPrn).toLowerCase() : "";
-                const tEmp = validEmpNo ? String(validEmpNo).toLowerCase() : "";
-                const tName = validName ? validName.toLowerCase() : "";
-                return (
-                  (!tId || (rId !== tId && rPrn !== tId)) &&
-                  (!tPrn || rPrn !== tPrn) &&
-                  (!tEmp || rEmp !== tEmp) &&
-                  (!tName || rName !== tName)
-                );
-              });
-              if (filtered.length !== beforeLen) {
-                await pool.query(
-                  `UPDATE esf7_room_roster_cache SET roster_json = $1, updated_at = NOW() WHERE school_id = $2`,
-                  [JSON.stringify(filtered), row.school_id],
-                );
-              }
-            }
-          }
-        } catch (e) {}
-      };
-
-      await scrubCache(db);
-      if (db.getStagingPool) await scrubCache(db.getStagingPool());
-      if (db.getProdPool) await scrubCache(db.getProdPool());
     }
 
     // Execute cascade cleanups across BOTH pools

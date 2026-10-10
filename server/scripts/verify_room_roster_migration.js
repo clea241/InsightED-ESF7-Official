@@ -89,11 +89,13 @@ async function main() {
   if (!existingWon) add("3. non-canonical ids that existed before the run are unchanged", "SKIP", "pass --run-dir");
   else {
     const rows = existingWon.filter((w) => !String(w.cacheId).startsWith("PER-"));
-    const ok = rows.length ? (await db.query("SELECT count(*)::int AS n FROM esf7_personnel_profile WHERE id = ANY($1::text[])", [rows.map((r) => r.normalizedId)])).rows[0].n : 0;
+    const uniqueNormalizedIds = Array.from(new Set(rows.map((r) => r.normalizedId)));
+    const ok = uniqueNormalizedIds.length ? (await db.query("SELECT count(*)::int AS n FROM esf7_personnel_profile WHERE id = ANY($1::text[])", [uniqueNormalizedIds])).rows[0].n : 0;
     const lgRows = rows.filter((r) => r.matchedOn === "legacy_id");
-    const lg = lgRows.length ? (await db.query("SELECT count(*)::int AS n FROM esf7_personnel_profile p JOIN unnest($1::text[], $2::text[]) AS x(id, legacy) ON p.id = x.id AND p.legacy_id = x.legacy", [lgRows.map((r) => r.normalizedId), lgRows.map((r) => r.cacheId)])).rows[0].n : 0;
-    add("3. non-canonical ids that existed before the run are unchanged", ok === rows.length && lg === lgRows.length ? "PASS" : "FAIL",
-      `${rows.length} non-canonical ids matched existing rows; ${ok} still present under the same primary key`);
+    const uniqueLgPairs = Array.from(new Map(lgRows.map((r) => [`${r.normalizedId}::${r.cacheId}`, r])).values());
+    const lg = uniqueLgPairs.length ? (await db.query("SELECT count(*)::int AS n FROM esf7_personnel_profile p JOIN unnest($1::text[], $2::text[]) AS x(id, legacy) ON p.id = x.id AND p.legacy_id = x.legacy", [uniqueLgPairs.map((r) => r.normalizedId), uniqueLgPairs.map((r) => r.cacheId)])).rows[0].n : 0;
+    add("3. non-canonical ids that existed before the run are unchanged", ok === uniqueNormalizedIds.length && lg === uniqueLgPairs.length ? "PASS" : "FAIL",
+      `${rows.length} non-canonical ids (${uniqueNormalizedIds.length} unique) matched existing rows; ${ok} still present under the same primary key`);
   }
 
   // 4. cache row count and size unchanged

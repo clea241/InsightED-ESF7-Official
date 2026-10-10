@@ -532,10 +532,19 @@ const handleGetDraft = async (req, res) => {
     const schoolYear = req.query.schoolYear || "SY 26-27";
     const withVersion = await hasDraftVersionColumn();
 
-    const result = await db.query(
-      `SELECT payload, updated_at${withVersion ? ", version" : ""} FROM school_drafts WHERE school_id = $1 AND school_year = $2`,
-      [schoolId, schoolYear],
-    );
+    let result = { rows: [] };
+    try {
+      result = await db.query(
+        `SELECT payload, updated_at${withVersion ? ", version" : ""} FROM school_drafts WHERE school_id = $1 AND school_year = $2`,
+        [schoolId, schoolYear],
+      );
+    } catch (tblErr) {
+      if (tblErr.code === "42P01") { // undefined_table
+        console.warn("[DraftLoad] school_drafts table not found or deprecated, returning empty draft.");
+      } else {
+        throw tblErr;
+      }
+    }
 
     res.set("Cache-Control", "no-store");
     if (result.rows.length === 0) {
@@ -1590,11 +1599,16 @@ const handleSaveDraft = async (req, res) => {
       "123456";
     schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
 
-    // Fetch existing draft for merge protection
-    const existing = await db.query(
-      "SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2",
-      [schoolId, schoolYear],
-    );
+    // Fetch existing draft for merge protection (guarded if school_drafts is renamed)
+    let existing = { rows: [] };
+    try {
+      existing = await db.query(
+        "SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2",
+        [schoolId, schoolYear],
+      );
+    } catch (e) {
+      if (e.code !== "42P01") throw e;
+    }
     const existingPayload = existing.rows[0] && existing.rows[0].payload;
     const oldPersonnel = Array.isArray(existingPayload?.personnel)
       ? existingPayload.personnel
@@ -1982,48 +1996,59 @@ const handleSaveDraft = async (req, res) => {
       // Atomic, idempotent normalized table upsert (personnel BEFORE sections so adviser FKs resolve)
       await persistNormalizedDraft(client, schoolId, schoolYear, finalPayload);
 
-      const withVersion = await hasDraftVersionColumn();
-      if (withVersion) {
-        const r = await client.query(
-          `INSERT INTO school_drafts (school_id, school_year, payload, updated_at, version)
-           VALUES ($1, $2, $3, NOW(), 1)
-           ON CONFLICT (school_id, school_year)
-           DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW(), version = school_drafts.version + 1
-           WHERE $4::bigint IS NULL OR school_drafts.version = $4::bigint
-           RETURNING version, updated_at`,
-          [schoolId, schoolYear, JSON.stringify(finalPayload), baseVersion],
-        );
-        if (r.rows.length === 0) {
-          await client.query("ROLLBACK").catch(() => {});
-          const cur = await db.query(
-            "SELECT version, updated_at FROM school_drafts WHERE school_id = $1 AND school_year = $2",
-            [schoolId, schoolYear],
+      await client.query("SAVEPOINT sp_school_drafts");
+      try {
+        const withVersion = await hasDraftVersionColumn();
+        if (withVersion) {
+          const r = await client.query(
+            `INSERT INTO school_drafts (school_id, school_year, payload, updated_at, version)
+             VALUES ($1, $2, $3, NOW(), 1)
+             ON CONFLICT (school_id, school_year)
+             DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW(), version = school_drafts.version + 1
+             WHERE $4::bigint IS NULL OR school_drafts.version = $4::bigint
+             RETURNING version, updated_at`,
+            [schoolId, schoolYear, JSON.stringify(finalPayload), baseVersion],
           );
-          const curRow = cur.rows[0] || {};
-          console.warn(
-            `[DraftSave][CONFLICT] school=${schoolId} user=${(req.auth && req.auth.uid) || "-"} year=${schoolYear} base=${baseVersion} current=${curRow.version}`,
+          if (r.rows.length === 0) {
+            await client.query("ROLLBACK").catch(() => {});
+            const cur = await db.query(
+              "SELECT version, updated_at FROM school_drafts WHERE school_id = $1 AND school_year = $2",
+              [schoolId, schoolYear],
+            );
+            const curRow = cur.rows[0] || {};
+            console.warn(
+              `[DraftSave][CONFLICT] school=${schoolId} user=${(req.auth && req.auth.uid) || "-"} year=${schoolYear} base=${baseVersion} current=${curRow.version}`,
+            );
+            return res.status(409).json({
+              error: "Draft was changed by another session",
+              conflict: true,
+              currentVersion: Number(curRow.version),
+              updatedAt: curRow.updated_at,
+            });
+          }
+          saved = {
+            version: Number(r.rows[0].version),
+            updatedAt: r.rows[0].updated_at,
+          };
+        } else {
+          const r = await client.query(
+            `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (school_id, school_year)
+             DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+             RETURNING updated_at`,
+            [schoolId, schoolYear, JSON.stringify(finalPayload)],
           );
-          return res.status(409).json({
-            error: "Draft was changed by another session",
-            conflict: true,
-            currentVersion: Number(curRow.version),
-            updatedAt: curRow.updated_at,
-          });
+          saved = { version: undefined, updatedAt: r.rows[0].updated_at };
         }
-        saved = {
-          version: Number(r.rows[0].version),
-          updatedAt: r.rows[0].updated_at,
-        };
-      } else {
-        const r = await client.query(
-          `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (school_id, school_year)
-           DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
-           RETURNING updated_at`,
-          [schoolId, schoolYear, JSON.stringify(finalPayload)],
-        );
-        saved = { version: undefined, updatedAt: r.rows[0].updated_at };
+      } catch (draftErr) {
+        if (draftErr.code === "42P01") {
+          console.warn("[DraftSave] school_drafts table not found or deprecated; normalized tables persisted.");
+          await client.query("ROLLBACK TO SAVEPOINT sp_school_drafts");
+          saved = { version: baseVersion ? Number(baseVersion) + 1 : 1, updatedAt: new Date().toISOString() };
+        } else {
+          throw draftErr;
+        }
       }
 
       await client.query("COMMIT");
@@ -2071,10 +2096,14 @@ router.delete("/draft", async (req, res) => {
     const schoolId = getSchoolIdFromRequest(req) || "123456";
     const schoolYear = req.query.schoolYear || "SY 26-27";
 
-    await db.query(
-      "DELETE FROM school_drafts WHERE school_id = $1 AND school_year = $2",
-      [schoolId, schoolYear],
-    );
+    try {
+      await db.query(
+        "DELETE FROM school_drafts WHERE school_id = $1 AND school_year = $2",
+        [schoolId, schoolYear],
+      );
+    } catch (e) {
+      if (e.code !== "42P01") throw e;
+    }
 
     res.json({ success: true });
   } catch (err) {

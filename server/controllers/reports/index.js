@@ -480,59 +480,41 @@ router.get("/esf7/:schoolId", async (req, res) => {
     };
     let personnel = [];
 
-    // 1. Try school_drafts payload lookup
+    // 1. Load from normalized tables (esf7_school_profile, esf7_personnel_profile, etc.)
     try {
-      // Scoped to THIS school: an unscoped LIMIT 1 printed whichever school's draft happened to be first.
       const cleanReportSchool = String(schoolId || "").replace(/^SCH-/i, "");
-      const draftRes = await db.query(
-        "SELECT payload FROM school_drafts WHERE school_id = $1 OR school_id = $2 ORDER BY updated_at DESC LIMIT 1",
-        [cleanReportSchool, `SCH-${cleanReportSchool}`],
-      );
-      if (draftRes.rows.length > 0 && draftRes.rows[0].payload) {
-        const payload = draftRes.rows[0].payload;
-        if (payload.schoolInfo) {
-          school = {
-            school_id:
-              payload.schoolInfo.schoolId ||
-              payload.schoolInfo.school_id ||
-              school.school_id,
-            school_name:
-              payload.schoolInfo.schoolName ||
-              payload.schoolInfo.school_name ||
-              school.school_name,
-            region: payload.schoolInfo.region || school.region,
-            division: payload.schoolInfo.division || school.division,
-            district: payload.schoolInfo.district || school.district,
-            school_year:
-              payload.schoolInfo.schoolYear ||
-              payload.schoolInfo.school_year ||
-              school.school_year,
-          };
-        }
-        if (Array.isArray(payload.personnel)) {
-          personnel = payload.personnel;
-        }
-      }
-    } catch (draftErr) {
-      console.warn("[eSF7-PDF] school_drafts lookup failed:", draftErr.message);
-    }
+      const [sRes, pRes] = await Promise.all([
+        db.query(
+          "SELECT * FROM esf7_school_profile WHERE school_id = $1 OR school_id = $2 LIMIT 1",
+          [cleanReportSchool, `SCH-${cleanReportSchool}`],
+        ),
+        db.query(
+          `SELECT p.*, e.position, e.fund_source, e.nature_of_appointment, ed.college_degree, ed.major, ed.minor
+           FROM esf7_personnel_profile p
+           LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+           LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
+           WHERE p.school_id = $1 OR p.school_id = $2
+           ORDER BY p.last_name ASC, p.first_name ASC`,
+          [cleanReportSchool, `SCH-${cleanReportSchool}`],
+        ),
+      ]);
 
-    // 2. Fallback to DB query if personnel is empty
-    if (personnel.length === 0) {
-      try {
-        const schoolRes = await db.query(
-          "SELECT * FROM schools WHERE school_id = $1 LIMIT 1",
-          [schoolId],
-        );
-        if (schoolRes.rows.length > 0) school = schoolRes.rows[0];
-
-        const personnelRes = await db.query(
-          "SELECT * FROM personnel ORDER BY last_name ASC",
-        );
-        personnel = personnelRes.rows;
-      } catch (dbErr) {
-        console.warn("[eSF7-PDF] DB lookup failed:", dbErr.message);
+      if (sRes.rows.length > 0) {
+        const sRow = sRes.rows[0];
+        school = {
+          school_id: sRow.school_id || school.school_id,
+          school_name: sRow.school_name || school.school_name,
+          region: sRow.region || school.region,
+          division: sRow.division || school.division,
+          district: sRow.district || school.district,
+          school_year: sRow.school_year || school.school_year,
+        };
       }
+      if (pRes.rows.length > 0) {
+        personnel = pRes.rows;
+      }
+    } catch (normErr) {
+      console.warn("[eSF7-PDF] Normalized tables lookup failed:", normErr.message);
     }
 
     // 3. Load PDF Template

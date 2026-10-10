@@ -38,3 +38,7 @@ pg-health-reports/
 # security-testing: keep the example env file, ignore the real one
 !.env.security.example
 security/targets.json
+
+# Migration outputs & verification runs (contain large DB dumps and personnel data)
+migration-output/
+verify.json
