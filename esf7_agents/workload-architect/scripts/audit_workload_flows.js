@@ -40,7 +40,7 @@ function checkRule(name, condition, errorMsg, isWarning = false) {
 
 console.log('\n--- 1. Subject Normalization & HGP Logic Audit ---');
 checkRule('normalizeSubjectName Helper', code.includes('normalizeSubjectName'), 'Must define normalizeSubjectName helper.');
-checkRule('HGP Normalization Rule', code.includes("return 'HGP'"), 'Must normalize Homeroom Guidance variants to HGP.');
+checkRule('HGP Normalization Rule', code.includes("return 'HGP'") || code.includes('return "HGP"'), 'Must normalize Homeroom Guidance variants to HGP.');
 checkRule('Advisory Subject Detector', code.includes('isAdvisorySub'), 'Must define isAdvisorySub helper.');
 checkRule('Advisory/HGP Pair Exclusion', code.includes('isAdvisoryOrHgpPair'), 'Must define isAdvisoryOrHgpPair conflict exclusion rule.');
 

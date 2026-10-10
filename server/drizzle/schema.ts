@@ -59,7 +59,7 @@ export const esf7PersonnelEmployment = pgTable(
     unique("esf7_personnel_employment_personnel_id_key").on(table.personnelId),
     check(
       "esf7_personnel_employment_position_category_check",
-      sql`position_category = ANY (ARRAY['TEACHING'::text, 'RELATED TEACHING'::text, 'NON-TEACHING'::text, 'teaching'::text, 'teaching-related'::text, 'non-teaching'::text])`,
+      sql`position_category = ANY (ARRAY['TEACHING'::text, 'RELATED TEACHING'::text, 'NON-TEACHING'::text, 'TEACHING-RELATED'::text, 'teaching'::text, 'teaching-related'::text, 'non-teaching'::text, 'related teaching'::text])`,
     ),
     check(
       "esf7_personnel_employment_step_increment_check",

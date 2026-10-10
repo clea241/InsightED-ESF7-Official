@@ -3079,7 +3079,15 @@ export default function OrganizedClasses() {
               multigradeGrades[0] || "Grade 1",
               multigradeGrades[1] || "Grade 2",
             ],
-      sectionName: sec.sectionName || "",
+      sectionName: (() => {
+        const raw = String(sec.sectionName || sec.section_name || "").trim();
+        const isGenId =
+          raw.startsWith("sec-draft-") ||
+          raw.startsWith("sec-") ||
+          raw.startsWith("ALS-") ||
+          raw === String(sec.id);
+        return isGenId ? "" : raw;
+      })(),
       maleLearners:
         sec.maleLearners !== undefined && sec.maleLearners !== null
           ? String(sec.maleLearners)
@@ -3261,7 +3269,9 @@ export default function OrganizedClasses() {
 
     let cleanSectionName = isReg
       ? editingRowData.sectionName.toUpperCase().trim()
-      : sec.sectionName || sec.id;
+      : isAls && editingRowData.sectionName !== undefined
+        ? editingRowData.sectionName.toUpperCase().trim()
+        : sec.sectionName || sec.id;
 
     // Check duplicate name within the same grade level and program category (excluding self) - only for regular classes
     if (isReg) {
@@ -3708,7 +3718,9 @@ export default function OrganizedClasses() {
     await addClassSection({
       id: secId,
       gradeLevel: inlineAlsData.gradeLevel || availableAlsGrades[0] || "ALS-ES",
-      sectionName: secId,
+      sectionName: inlineAlsData.sectionName
+        ? inlineAlsData.sectionName.toUpperCase().trim()
+        : "",
       advisorId: inlineAlsData.advisorId || null,
       adviserId: inlineAlsData.advisorId || null,
       sectionType: "ALS",
@@ -4404,10 +4416,11 @@ export default function OrganizedClasses() {
               getSortValue: (sec) => getGradeRank(sec.gradeLevel),
             },
             {
-              key: "sectionId",
-              label: "Section ID & Type",
+              key: "sectionName",
+              label: "Section Name",
               width: COL_W.sectionName,
-              getValue: (sec) => `${sec.id} [${sec.sectionType || "SNED"}]`,
+              filterPlaceholder: "Section Name",
+              getValue: (sec) => sec.sectionName || "",
             },
             {
               key: "male",
@@ -4468,12 +4481,6 @@ export default function OrganizedClasses() {
               width: COL_W.gradeLevel,
               getValue: (sec) => sec.gradeLevel || "SNED-ES (NON-GRADED)",
               getSortValue: (sec) => getGradeRank(sec.gradeLevel),
-            },
-            {
-              key: "sectionId",
-              label: "Section ID & Type",
-              width: COL_W.sectionName,
-              getValue: (sec) => `${sec.id} [${sec.sectionType || "ALS"}]`,
             },
             {
               key: "male",
@@ -4539,7 +4546,16 @@ export default function OrganizedClasses() {
               key: "sectionName",
               label: "Section Name",
               width: COL_W.sectionName,
-              getValue: (sec) => sec.sectionName,
+              filterPlaceholder: "Section Name",
+              getValue: (sec) => {
+                const name = String(sec.sectionName || sec.section_name || "").trim();
+                const isGenId =
+                  name.startsWith("sec-draft-") ||
+                  name.startsWith("sec-") ||
+                  name.startsWith("ALS-") ||
+                  name === String(sec.id);
+                return !isGenId && name ? name : "";
+              },
             },
             {
               key: "male",
@@ -4643,11 +4659,6 @@ export default function OrganizedClasses() {
               },
             },
             {
-              key: "sectionId",
-              label: "Section ID & Type",
-              getValue: (sec) => `${sec.id} [${sec.sectionType || "ARAL"}]`,
-            },
-            {
               key: "learners",
               label: "Learners",
               align: "center",
@@ -4682,7 +4693,7 @@ export default function OrganizedClasses() {
           const aralTable = useSortableFilterableTable(
             aralSections,
             aralColumns,
-            { key: "sectionName", direction: "asc" },
+            { key: "basis", direction: "asc" },
           );
 
           const remedialColumns = [
@@ -4699,11 +4710,6 @@ export default function OrganizedClasses() {
               width: COL_W.gradeLevel,
               getValue: (sec) => sec.gradeLevel,
               getSortValue: (sec) => getGradeRank(sec.gradeLevel),
-            },
-            {
-              key: "sectionId",
-              label: "Section ID & Type",
-              getValue: (sec) => `${sec.id} [${sec.sectionType || "REMEDIAL"}]`,
             },
             {
               key: "male",
@@ -4864,39 +4870,7 @@ export default function OrganizedClasses() {
                       </span>
                     )}
                   </td>
-                  <td>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          fontWeight: "800",
-                          fontSize: "11px",
-                          color: "#0F172A",
-                        }}
-                      >
-                        {sec.id}
-                      </span>
-                      <span
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: "800",
-                          background: "#FEF08A",
-                          color: "#854D0E",
-                          border: "1px solid #FDE047",
-                        }}
-                      >
-                        SNED
-                      </span>
-                    </div>
-                  </td>
+
                   <td>
                     <input
                       style={{
@@ -5055,38 +5029,26 @@ export default function OrganizedClasses() {
                       </span>
                     )}
                   </td>
-                  <td>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          fontWeight: "800",
-                          fontSize: "11px",
-                          color: "#0F172A",
-                        }}
-                      >
-                        {sec.id}
-                      </span>
-                      <span
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: "800",
-                          background: "#CCFBF1",
-                          color: "#115E59",
-                          border: "1px solid #99F6E4",
-                        }}
-                      >
-                        ALS
-                      </span>
-                    </div>
+                  <td style={{ padding: "8px 10px" }}>
+                    <input
+                      style={cellInput}
+                      value={
+                        d.sectionName &&
+                        !d.sectionName.startsWith("sec-draft-") &&
+                        !d.sectionName.startsWith("sec-") &&
+                        !d.sectionName.startsWith("ALS-") &&
+                        d.sectionName !== String(sec.id)
+                          ? d.sectionName
+                          : ""
+                      }
+                      onChange={(e) =>
+                        setEditingRowData({
+                          ...d,
+                          sectionName: e.target.value.toUpperCase(),
+                        })
+                      }
+                      placeholder="SECTION NAME"
+                    />
                   </td>
                   <td>
                     <input
@@ -5301,41 +5263,7 @@ export default function OrganizedClasses() {
                       </select>
                     )}
                   </td>
-                  <td style={{ padding: "8px 10px" }}>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        background: "#F0FDF4",
-                        padding: "5px 8px",
-                        borderRadius: "6px",
-                        border: "1px dashed #BBF7D0",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          color: "#15803D",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        Auto ID
-                      </span>
-                      <span
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: "800",
-                          background: "#DCFCE7",
-                          color: "#15803D",
-                        }}
-                      >
-                        ARAL
-                      </span>
-                    </div>
-                  </td>
+
                   <td>
                     <input
                       style={{ ...cellInput, width: "70px" }}
@@ -5459,39 +5387,7 @@ export default function OrganizedClasses() {
                       }
                     />
                   </td>
-                  <td>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          fontWeight: "800",
-                          fontSize: "11px",
-                          color: "#0F172A",
-                        }}
-                      >
-                        {sec.id}
-                      </span>
-                      <span
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: "800",
-                          background: "#DCFCE7",
-                          color: "#15803D",
-                          border: "1px solid #BBF7D0",
-                        }}
-                      >
-                        {sec.sectionType || "ARAL"}
-                      </span>
-                    </div>
-                  </td>
+
                   <td>
                     <input
                       style={{
@@ -5714,47 +5610,18 @@ export default function OrganizedClasses() {
                       />
                     )}
                   </td>
-                  <td>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          fontWeight: "800",
-                          fontSize: "11px",
-                          color: "#0F172A",
-                        }}
-                      >
-                        {sec.id}
-                      </span>
-                      <span
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: "800",
-                          background:
-                            sec.sectionType === "ENRICHMENT"
-                              ? "#E0E7FF"
-                              : "#FFEDD5",
-                          color:
-                            sec.sectionType === "ENRICHMENT"
-                              ? "#4338CA"
-                              : "#C2410C",
-                          border:
-                            sec.sectionType === "ENRICHMENT"
-                              ? "1px solid #C7D2FE"
-                              : "1px solid #FED7AA",
-                        }}
-                      >
-                        {sec.sectionType || "REMEDIAL"}
-                      </span>
-                    </div>
+                  <td style={{ padding: "8px 10px" }}>
+                    <input
+                      style={cellInput}
+                      value={d.sectionName || ""}
+                      onChange={(e) =>
+                        setEditingRowData({
+                          ...d,
+                          sectionName: e.target.value.toUpperCase(),
+                        })
+                      }
+                      placeholder="SECTION NAME"
+                    />
                   </td>
                   <td>
                     <input
@@ -6564,38 +6431,14 @@ export default function OrganizedClasses() {
                                         ))
                                     : sec.gradeLevel}
                                 </td>
-                                <td style={{ padding: "10px 12px" }}>
-                                  <div
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        fontFamily: "monospace",
-                                        fontWeight: "800",
-                                        color: "#0F172A",
-                                        fontSize: "12px",
-                                      }}
-                                    >
-                                      {sec.id}
-                                    </span>
-                                    <span
-                                      style={{
-                                        padding: "2px 6px",
-                                        borderRadius: "4px",
-                                        fontSize: "10px",
-                                        fontWeight: "800",
-                                        background: "#FEF9C3",
-                                        color: "#92400E",
-                                        border: "1px solid #FDE68A",
-                                      }}
-                                    >
-                                      {sec.sectionType || "SNED"}
-                                    </span>
-                                  </div>
+                                <td
+                                  style={{
+                                    padding: "10px 12px",
+                                    fontWeight: "700",
+                                    color: "#0F172A",
+                                  }}
+                                >
+                                  {sec.sectionName}
                                 </td>
                                 <td
                                   style={{
@@ -7353,39 +7196,6 @@ export default function OrganizedClasses() {
                                       {sec.gradeLevel || "SNED-ES (NON-GRADED)"}
                                     </span>
                                   </td>
-                                  <td style={{ padding: "10px 12px" }}>
-                                    <div
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontFamily: "monospace",
-                                          fontWeight: "800",
-                                          color: "#0F172A",
-                                          fontSize: "12px",
-                                        }}
-                                      >
-                                        {sec.id}
-                                      </span>
-                                      <span
-                                        style={{
-                                          padding: "2px 6px",
-                                          borderRadius: "4px",
-                                          fontSize: "10px",
-                                          fontWeight: "800",
-                                          background: "#CCFBF1",
-                                          color: "#115E59",
-                                          border: "1px solid #99F6E4",
-                                        }}
-                                      >
-                                        {sec.sectionType || "ALS"}
-                                      </span>
-                                    </div>
-                                  </td>
                                   <td
                                     style={{
                                       padding: "10px 12px",
@@ -7512,7 +7322,7 @@ export default function OrganizedClasses() {
                               !showInlineAddSned && (
                                 <tr>
                                   <td
-                                    colSpan="7"
+                                    colSpan="6"
                                     style={{
                                       textAlign: "center",
                                       padding: "16px",
@@ -7570,41 +7380,6 @@ export default function OrganizedClasses() {
                                             "SNED-ES (NON-GRADED)"}
                                         </span>
                                       )}
-                                    </td>
-                                    <td style={{ padding: "8px 10px" }}>
-                                      <div
-                                        style={{
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: "6px",
-                                          background: "#FEF9C3",
-                                          padding: "5px 8px",
-                                          borderRadius: "6px",
-                                          border: "1px dashed #FDE68A",
-                                        }}
-                                      >
-                                        <span
-                                          style={{
-                                            fontSize: "11px",
-                                            color: "#854D0E",
-                                            fontStyle: "italic",
-                                          }}
-                                        >
-                                          Auto ID
-                                        </span>
-                                        <span
-                                          style={{
-                                            padding: "2px 6px",
-                                            borderRadius: "4px",
-                                            fontSize: "10px",
-                                            fontWeight: "800",
-                                            background: "#FEF08A",
-                                            color: "#854D0E",
-                                          }}
-                                        >
-                                          SNED
-                                        </span>
-                                      </div>
                                     </td>
                                     <td style={{ padding: "8px 10px" }}>
                                       <input
@@ -7771,7 +7546,7 @@ export default function OrganizedClasses() {
                                 }}
                               >
                                 <td
-                                  colSpan="7"
+                                  colSpan="6"
                                   style={{
                                     padding: "10px 16px",
                                     textAlign: "center",
@@ -7927,38 +7702,26 @@ export default function OrganizedClasses() {
                                       {sec.gradeLevel || "ALS-ES"}
                                     </span>
                                   </td>
-                                  <td style={{ padding: "10px 12px" }}>
-                                    <div
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontFamily: "monospace",
-                                          fontWeight: "800",
-                                          color: "#0F172A",
-                                          fontSize: "12px",
-                                        }}
-                                      >
-                                        {sec.id}
-                                      </span>
-                                      <span
-                                        style={{
-                                          padding: "2px 6px",
-                                          borderRadius: "4px",
-                                          fontSize: "10px",
-                                          fontWeight: "800",
-                                          background: "#DCFCE7",
-                                          color: "#15803D",
-                                          border: "1px solid #BBF7D0",
-                                        }}
-                                      >
-                                        {sec.sectionType || "ARAL"}
-                                      </span>
-                                    </div>
+                                  <td
+                                    style={{
+                                      padding: "10px 12px",
+                                      fontWeight: "700",
+                                      color: "#0F172A",
+                                    }}
+                                  >
+                                    {(() => {
+                                      const raw = String(
+                                        sec.sectionName ||
+                                          sec.section_name ||
+                                          "",
+                                      ).trim();
+                                      const isGenId =
+                                        raw.startsWith("sec-draft-") ||
+                                        raw.startsWith("sec-") ||
+                                        raw.startsWith("ALS-") ||
+                                        raw === String(sec.id);
+                                      return !isGenId && raw ? raw : "—";
+                                    })()}
                                   </td>
                                   <td
                                     style={{
@@ -8144,39 +7907,18 @@ export default function OrganizedClasses() {
                                       )}
                                     </td>
                                     <td style={{ padding: "8px 10px" }}>
-                                      <div
-                                        style={{
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: "6px",
-                                          background: "#F0FDFA",
-                                          padding: "5px 8px",
-                                          borderRadius: "6px",
-                                          border: "1px dashed #99F6E4",
-                                        }}
-                                      >
-                                        <span
-                                          style={{
-                                            fontSize: "11px",
-                                            color: "#115E59",
-                                            fontStyle: "italic",
-                                          }}
-                                        >
-                                          Auto ID
-                                        </span>
-                                        <span
-                                          style={{
-                                            padding: "2px 6px",
-                                            borderRadius: "4px",
-                                            fontSize: "10px",
-                                            fontWeight: "800",
-                                            background: "#CCFBF1",
-                                            color: "#115E59",
-                                          }}
-                                        >
-                                          ALS
-                                        </span>
-                                      </div>
+                                      <input
+                                        style={cellInput}
+                                        value={d.sectionName || ""}
+                                        onChange={(e) =>
+                                          setInlineAlsData({
+                                            ...d,
+                                            sectionName:
+                                              e.target.value.toUpperCase(),
+                                          })
+                                        }
+                                        placeholder="SECTION NAME"
+                                      />
                                     </td>
                                     <td style={{ padding: "8px 10px" }}>
                                       <input
@@ -8579,48 +8321,6 @@ export default function OrganizedClasses() {
                                     </span>
                                   )}
                                 </td>
-                                <td style={{ padding: "10px 12px" }}>
-                                  <div
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        fontFamily: "monospace",
-                                        fontWeight: "800",
-                                        color: "#0F172A",
-                                        fontSize: "12px",
-                                      }}
-                                    >
-                                      {sec.id}
-                                    </span>
-                                    <span
-                                      style={{
-                                        padding: "2px 6px",
-                                        borderRadius: "4px",
-                                        fontSize: "10px",
-                                        fontWeight: "800",
-                                        background:
-                                          sec.sectionType === "ENRICHMENT"
-                                            ? "#E0E7FF"
-                                            : "#FFEDD5",
-                                        color:
-                                          sec.sectionType === "ENRICHMENT"
-                                            ? "#4338CA"
-                                            : "#C2410C",
-                                        border:
-                                          sec.sectionType === "ENRICHMENT"
-                                            ? "1px solid #C7D2FE"
-                                            : "1px solid #FED7AA",
-                                      }}
-                                    >
-                                      {sec.sectionType || "REMEDIAL"}
-                                    </span>
-                                  </div>
-                                </td>
                                 <td
                                   style={{
                                     padding: "10px 12px",
@@ -8726,7 +8426,7 @@ export default function OrganizedClasses() {
                           {aralSections.length === 0 && !showInlineAddAral && (
                             <tr>
                               <td
-                                colSpan="7"
+                                colSpan="6"
                                 style={{
                                   textAlign: "center",
                                   padding: "16px",
@@ -8861,60 +8561,6 @@ export default function OrganizedClasses() {
                                     )}
                                   </td>
                                   <td style={{ padding: "8px 10px" }}>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        background: "white",
-                                        border: "1.5px solid #86EFAC",
-                                        borderRadius: "6px",
-                                        overflow: "hidden",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          padding: "4px 6px",
-                                          background: "#DCFCE7",
-                                          color: "#15803D",
-                                          fontWeight: "800",
-                                          fontSize: "11px",
-                                          borderRight: "1px solid #BBF7D0",
-                                          userSelect: "none",
-                                          whiteSpace: "nowrap",
-                                        }}
-                                      >
-                                        ARAL -
-                                      </span>
-                                      <input
-                                        style={{
-                                          border: "none",
-                                          outline: "none",
-                                          padding: "5px 8px",
-                                          fontSize: "12px",
-                                          fontWeight: "700",
-                                          width: "100%",
-                                          textTransform: "uppercase",
-                                          background: "transparent",
-                                        }}
-                                        value={(d.sectionName || "").replace(
-                                          /^ARAL\s*-\s*/i,
-                                          "",
-                                        )}
-                                        onChange={(e) => {
-                                          const raw = e.target.value
-                                            .toUpperCase()
-                                            .replace(/^ARAL\s*-\s*/i, "");
-                                          setInlineAralData({
-                                            ...d,
-                                            sectionName: `ARAL - ${raw}`,
-                                          });
-                                        }}
-                                        placeholder="SECTION NAME (e.g. APPLE)"
-                                        autoFocus
-                                      />
-                                    </div>
-                                  </td>
-                                  <td style={{ padding: "8px 10px" }}>
                                     <input
                                       style={{ ...cellInput, width: "70px" }}
                                       type="number"
@@ -9033,7 +8679,7 @@ export default function OrganizedClasses() {
                               }}
                             >
                               <td
-                                colSpan="7"
+                                colSpan="6"
                                 style={{
                                   padding: "10px 16px",
                                   textAlign: "center",
@@ -9204,15 +8850,6 @@ export default function OrganizedClasses() {
                                 <td
                                   style={{
                                     padding: "10px 12px",
-                                    fontWeight: "700",
-                                    color: "#0F172A",
-                                  }}
-                                >
-                                  {sec.sectionName}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "10px 12px",
                                     textAlign: "center",
                                     color: "#1D4ED8",
                                     fontWeight: "700",
@@ -9335,7 +8972,7 @@ export default function OrganizedClasses() {
                             !showInlineAddRemedial && (
                               <tr>
                                 <td
-                                  colSpan="8"
+                                  colSpan="7"
                                   style={{
                                     textAlign: "center",
                                     padding: "16px",
@@ -9394,49 +9031,6 @@ export default function OrganizedClasses() {
                                         })
                                       }
                                     />
-                                  </td>
-                                  <td style={{ padding: "8px 10px" }}>
-                                    <div
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                        background: "#FEF3C7",
-                                        padding: "5px 8px",
-                                        borderRadius: "6px",
-                                        border: "1px dashed #FDE68A",
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          fontSize: "11px",
-                                          color: "#78350F",
-                                          fontStyle: "italic",
-                                        }}
-                                      >
-                                        Auto ID
-                                      </span>
-                                      <span
-                                        style={{
-                                          padding: "2px 6px",
-                                          borderRadius: "4px",
-                                          fontSize: "10px",
-                                          fontWeight: "800",
-                                          background:
-                                            d.interventionCategory ===
-                                            "ENRICHMENT"
-                                              ? "#E0E7FF"
-                                              : "#FFEDD5",
-                                          color:
-                                            d.interventionCategory ===
-                                            "ENRICHMENT"
-                                              ? "#4338CA"
-                                              : "#C2410C",
-                                        }}
-                                      >
-                                        {d.interventionCategory || "REMEDIAL"}
-                                      </span>
-                                    </div>
                                   </td>
                                   <td style={{ padding: "8px 10px" }}>
                                     <input
@@ -9604,7 +9198,7 @@ export default function OrganizedClasses() {
                               }}
                             >
                               <td
-                                colSpan="8"
+                                colSpan="7"
                                 style={{
                                   padding: "10px 16px",
                                   textAlign: "center",

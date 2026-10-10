@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_employment (
     id VARCHAR(50) PRIMARY KEY,
     personnel_id VARCHAR(50) NOT NULL UNIQUE REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
     
-    position_category TEXT NOT NULL CHECK (position_category IN ('TEACHING', 'RELATED TEACHING', 'NON-TEACHING', 'teaching', 'teaching-related', 'non-teaching')),
+    position_category TEXT NOT NULL CHECK (position_category IN ('TEACHING', 'RELATED TEACHING', 'NON-TEACHING', 'TEACHING-RELATED', 'teaching', 'teaching-related', 'non-teaching', 'related teaching')),
     position TEXT NOT NULL,
     step_increment INTEGER DEFAULT 1 CHECK (step_increment BETWEEN 1 AND 8),
     fund_source TEXT NOT NULL,

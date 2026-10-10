@@ -1,74 +1,162 @@
+function normalizeDay(dayStr) {
+  if (!dayStr) return "M";
+  const u = String(dayStr).trim().toUpperCase();
+  if (u === "M" || u.startsWith("MON")) return "M";
+  if (u === "TH" || u.startsWith("THU")) return "TH";
+  if (u === "T" || u.startsWith("TUE")) return "T";
+  if (u === "W" || u.startsWith("WED")) return "W";
+  if (u === "F" || u.startsWith("FRI")) return "F";
+  if (u === "SAT" || u.startsWith("SAT")) return "SAT";
+  if (u === "SUN" || u.startsWith("SUN")) return "SUN";
+  return u;
+}
+
+function getRowDays(row) {
+  if (!row) return [];
+  const raw =
+    Array.isArray(row.days) && row.days.length > 0
+      ? row.days
+      : typeof row.days === "string" && row.days.trim()
+        ? row.days.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
+        : row.daySchedule
+          ? String(row.daySchedule).split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
+          : [];
+  return raw.map(normalizeDay);
+}
+
 function timeToMins(t) {
-  if (!t) return 0;
-  const [h, m] = String(t).substring(0, 5).split(":").map(Number);
-  return h * 60 + (m || 0);
+  if (!t || typeof t !== "string") return 99999;
+  let str = t.trim();
+  if (str.includes("-")) {
+    str = str.split("-")[0].trim();
+  }
+  const upperStr = str.toUpperCase();
+  const isPM = upperStr.includes("PM");
+  const isAM = upperStr.includes("AM");
+  const cleanStr = upperStr.replace(/[^\d:]/g, "");
+  const parts = cleanStr.split(":");
+  if (parts.length < 2 || isNaN(parseInt(parts[0], 10))) return 99999;
+
+  let hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+
+  if (isPM && hours < 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+
+  if (!isPM && !isAM && hours >= 1 && hours < 6) {
+    hours += 12;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function isPerGradeSharedSlot(a, b) {
+  if (!a || !b) return false;
+  const secA = String(a.sectionId || a.section_id || "");
+  const secB = String(b.sectionId || b.section_id || "");
+  if (!secA || secA !== secB) return false;
+  const gA = String(a.subjectGradeLevel || a.subject_grade_level || "").trim().toUpperCase();
+  const gB = String(b.subjectGradeLevel || b.subject_grade_level || "").trim().toUpperCase();
+  return Boolean(gA && gB && gA !== gB);
+}
+
+function isAdvisoryRow(row) {
+  if (!row) return false;
+  const sub = String(row.subject || row.task || "").trim().toUpperCase();
+  return sub === "ADVISORY" || sub === "HGP" || sub.includes("HOMEROOM GUIDANCE");
 }
 
 /**
- * Returns true if the row represents an ADVISORY workload entry.
- * Only the exact subject "ADVISORY" qualifies.
+ * Returns true if the pair qualifies for the ADVISORY nested co-existence rule.
+ * ADVISORY is permitted to overlap with other subjects, tasks, and HGP.
+ * Two HGP rows, or HGP with regular subjects (e.g. SCIENCE), are NOT permitted to overlap.
  */
-function isAdvisoryRow(row) {
-  if (!row) return false;
-  const sub = String(row.subject || row.task || "")
-    .trim()
-    .toUpperCase();
-  return (
-    sub === "ADVISORY" || sub === "HGP" || sub.includes("HOMEROOM GUIDANCE")
-  );
+function isAdvisoryOrHgpPair(rA, rB) {
+  if (!rA || !rB) return false;
+  const subA = String(rA.subject || rA.task || "").trim().toUpperCase();
+  const subB = String(rB.subject || rB.task || "").trim().toUpperCase();
+  const isAdvA = subA === "ADVISORY";
+  const isAdvB = subB === "ADVISORY";
+  const isHgpA = subA === "HGP" || subA.includes("HOMEROOM GUIDANCE");
+  const isHgpB = subB === "HGP" || subB.includes("HOMEROOM GUIDANCE");
+
+  if (isAdvA || isAdvB) return true;
+  if (isHgpA && isHgpB) return false;
+
+  return false;
 }
 
 /**
  * Validates a list of workload rows for schedule conflicts.
  * Returns null if valid, or { error: string, type: string } if invalid.
- *
- * Note: ADVISORY rows are allowed to overlap with other ADVISORY rows
- * belonging to the same section (they share the same time block).
- * All other overlapping pairs are treated as conflicts.
  */
 function validateWorkloadSchedules(rows) {
   if (!rows || !Array.isArray(rows)) return null;
 
   for (let i = 0; i < rows.length; i++) {
     const rowA = rows[i];
+    if (!rowA) continue;
     const startA = rowA.startTime || rowA.start_time;
     const endA = rowA.endTime || rowA.end_time;
-    const daysA = rowA.days || [];
+    const daysA = getRowDays(rowA);
     if (!startA || !endA || !daysA.length) continue;
 
     const nsA = timeToMins(startA);
     const neA = timeToMins(endA);
+    if (nsA >= 99999 || neA >= 99999 || nsA < 0 || neA < 0 || nsA >= neA) continue;
 
     for (let j = i + 1; j < rows.length; j++) {
       const rowB = rows[j];
+      if (!rowB) continue;
+
+      if (rowA === rowB) continue;
+      if (rowA.id && rowB.id && String(rowA.id) === String(rowB.id)) continue;
+
+      // Stale/duplicate block in state
+      const isDuplicate =
+        String(rowA.subject || rowA.task || "").trim().toUpperCase() ===
+          String(rowB.subject || rowB.task || "").trim().toUpperCase() &&
+        String(rowA.sectionId || rowA.section_id || "").trim() ===
+          String(rowB.sectionId || rowB.section_id || "").trim() &&
+        startA === (rowB.startTime || rowB.start_time) &&
+        endA === (rowB.endTime || rowB.end_time);
+      if (isDuplicate) continue;
+
+      // Term isolation
+      const termA = rowA.term || "1st";
+      const termB = rowB.term || "1st";
+      if (termA !== termB) continue;
+
+      // Scoping to same teacher if personnel IDs exist
+      const pA = rowA.personnelId || rowA.personnel_id;
+      const pB = rowB.personnelId || rowB.personnel_id;
+      if (pA && pB && String(pA) !== String(pB)) continue;
+
+      // Multigrade side-by-side slot sharing
+      if (isPerGradeSharedSlot(rowA, rowB)) continue;
+
       const startB = rowB.startTime || rowB.start_time;
       const endB = rowB.endTime || rowB.end_time;
-      const daysB = rowB.days || [];
+      const daysB = getRowDays(rowB);
       if (!startB || !endB || !daysB.length) continue;
 
-      const daysOverlap = daysA.some((d) => daysB.includes(d));
-      if (!daysOverlap) continue;
+      const sharedDays = daysA.filter((d) => daysB.includes(d));
+      if (!sharedDays.length) continue;
 
       const nsB = timeToMins(startB);
       const neB = timeToMins(endB);
+      if (nsB >= 99999 || neB >= 99999 || nsB < 0 || neB < 0 || nsB >= neB) continue;
 
-      // Overlap condition: StartA < EndB AND EndA > StartB
+      // Strictly open-interval overlap: StartA < EndB AND EndA > StartB
       if (nsA < neB && neA > nsB) {
-        const isAAdvisory = isAdvisoryRow(rowA);
-        const isBAdvisory = isAdvisoryRow(rowB);
-
-        // Two ADVISORY rows for the same section are allowed to share time
-        if (isAAdvisory && isBAdvisory) {
-          const secA = String(rowA.section_id || rowA.sectionId || "");
-          const secB = String(rowB.section_id || rowB.sectionId || "");
-          if (secA && secB && secA === secB) continue;
-        }
+        if (isAdvisoryOrHgpPair(rowA, rowB)) continue;
 
         // Collision detected
         const nameA = rowA.subject || rowA.task || "Subject A";
         const nameB = rowB.subject || rowB.task || "Subject B";
+        const daysLabel = sharedDays.join(", ");
         return {
-          error: `Schedule conflict: ${nameA} (${startA} - ${endA}) overlaps with ${nameB} (${startB} - ${endB}).`,
+          error: `Schedule conflict: ${nameA} (${startA} - ${endA}) overlaps with ${nameB} (${startB} - ${endB}) on ${daysLabel}.`,
           type: "conflict",
         };
       }
@@ -271,6 +359,7 @@ function validateCrossSchoolClusteredSchedules(
 module.exports = {
   timeToMins,
   isAdvisoryRow,
+  isAdvisoryOrHgpPair,
   validateWorkloadSchedules,
   validateHgpWeeklyMinutes,
   getClusteredLocksForDay,

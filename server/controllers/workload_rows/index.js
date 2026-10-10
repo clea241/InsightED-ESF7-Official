@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require("../../db");
 const { findBlockedTeachingRows } = require("../../utils/teachingAssignments");
 const { loadTimeAllotment } = require("../../utils/sharedRules");
+const { validateWorkloadSchedules } = require("../../utils/scheduleValidator");
 
 function formatWorkloadRecord(row) {
   if (!row) return null;
@@ -448,6 +449,16 @@ const saveWorkloadBatchHandler = async (req, res) => {
           subject: v.subject,
           message: v.message,
         })),
+      });
+    }
+
+    // Rule: Schedule conflict validation (overlap checking across days & times)
+    const scheduleConflict = validateWorkloadSchedules(rowsToSave);
+    if (scheduleConflict && scheduleConflict.error) {
+      await client.query("ROLLBACK");
+      return res.status(422).json({
+        error: "SCHEDULE_CONFLICT",
+        message: scheduleConflict.error,
       });
     }
 

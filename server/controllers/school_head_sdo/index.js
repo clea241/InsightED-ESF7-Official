@@ -36,8 +36,19 @@ router.get("/", async (req, res) => {
       `SELECT * FROM esf7_school_head_sdo WHERE school_id = $1`,
       [schoolId],
     );
-    res.json({ success: true, data: format(r.rows[0]) || null });
+    return res.json({ success: true, data: format(r.rows[0]) || null });
   } catch (e) {
+    if (e.code === "42P01") {
+      try {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS esf7_school_head_sdo (
+            id TEXT PRIMARY KEY, school_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, email TEXT NOT NULL,
+            position_title TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+        return res.json({ success: true, data: null });
+      } catch (createErr) {
+        console.error("[SchoolHeadSdo Auto-Create Table]", createErr.message);
+      }
+    }
     console.error("[SchoolHeadSdo GET]", e.message);
     res.status(500).json({ success: false, error: e.message });
   }
@@ -45,28 +56,28 @@ router.get("/", async (req, res) => {
 
 // PUT /api/school-head-sdo  Body: { name, email, positionTitle }  (one record per school; saving again replaces it)
 router.put("/", async (req, res) => {
-  try {
-    const schoolId = cleanSchool(req);
-    if (!schoolId)
-      return res
-        .status(400)
-        .json({ success: false, error: "school id is required." });
-    const name = String(req.body?.name || "").trim();
-    const email = String(req.body?.email || "").trim();
-    const positionTitle = String(
-      req.body?.positionTitle || req.body?.position_title || "",
-    ).trim();
-    if (!name || !email || !positionTitle) {
-      return res.status(400).json({
-        success: false,
-        error: "Name, Email and Position Title are all required.",
-      });
-    }
-    if (!EMAIL_RE.test(email))
-      return res
-        .status(400)
-        .json({ success: false, error: "Enter a valid email address." });
+  const schoolId = cleanSchool(req);
+  if (!schoolId)
+    return res
+      .status(400)
+      .json({ success: false, error: "school id is required." });
+  const name = String(req.body?.name || "").trim();
+  const email = String(req.body?.email || "").trim();
+  const positionTitle = String(
+    req.body?.positionTitle || req.body?.position_title || "",
+  ).trim();
+  if (!name || !email || !positionTitle) {
+    return res.status(400).json({
+      success: false,
+      error: "Name, Email and Position Title are all required.",
+    });
+  }
+  if (!EMAIL_RE.test(email))
+    return res
+      .status(400)
+      .json({ success: false, error: "Enter a valid email address." });
 
+  try {
     // A roster school head always takes precedence, so the fallback is only accepted while the roster has none.
     const head = await db.query(
       `SELECT 1 FROM esf7_personnel_profile
@@ -90,6 +101,25 @@ router.put("/", async (req, res) => {
     );
     res.json({ success: true, data: format(r.rows[0]) });
   } catch (e) {
+    if (e.code === "42P01") {
+      try {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS esf7_school_head_sdo (
+            id TEXT PRIMARY KEY, school_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, email TEXT NOT NULL,
+            position_title TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+        const rRetry = await db.query(
+          `INSERT INTO esf7_school_head_sdo (id, school_id, name, email, position_title)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (school_id) DO UPDATE
+             SET name = EXCLUDED.name, email = EXCLUDED.email, position_title = EXCLUDED.position_title, updated_at = NOW()
+           RETURNING *`,
+          [`SHS-${schoolId}`, schoolId, name, email, positionTitle],
+        );
+        return res.json({ success: true, data: format(rRetry.rows[0]) });
+      } catch (retryErr) {
+        console.error("[SchoolHeadSdo Auto-Create Table on PUT]", retryErr.message);
+      }
+    }
     console.error("[SchoolHeadSdo PUT]", e.message);
     res.status(500).json({ success: false, error: e.message });
   }

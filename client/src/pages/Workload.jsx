@@ -180,6 +180,7 @@ export const formatSectionDisplay = (secOrName, secType, secId) => {
     .toUpperCase()
     .trim();
   const idStr = String(secId || "").trim();
+  const isDraftId = idStr.startsWith("sec-draft-") || idStr.startsWith("sec-");
   const isNonReg =
     ["SNED", "ALS", "ARAL", "REMEDIAL", "ENRICHMENT"].some((k) =>
       typeStr.includes(k),
@@ -201,11 +202,17 @@ export const formatSectionDisplay = (secOrName, secType, secId) => {
               : idStr.startsWith("REM-")
                 ? "REMEDIAL"
                 : "NON-REGULAR");
-    return `${idStr || secOrName} [${fallbackType}]`;
+    const label = !isDraftId && idStr ? idStr : (secOrName || fallbackType);
+    return `${label} [${fallbackType}]`;
   }
-  return typeof secOrName === "string"
-    ? secOrName
-    : secOrName?.sectionName || secOrName?.id || "Section";
+  if (typeof secOrName === "string") {
+    return secOrName.startsWith("sec-draft-") ? "Section" : secOrName;
+  }
+  return (
+    secOrName?.sectionName ||
+    (!String(secOrName?.id || "").startsWith("sec-draft-") && secOrName?.id ? secOrName.id : "Section") ||
+    "Section"
+  );
 };
 
 export const normalizeWorkloadRowForComparison = (r) => {
@@ -4891,6 +4898,151 @@ export const checkCrossSchoolConflict = (
   return false;
 };
 
+/**
+ * Detects schedule conflicts between workload rows for a teacher in an active term.
+ * - Handles 12h/24h AM/PM formats cleanly via normalized minutes (0..1440).
+ * - Enforces strictly open intervals (startA < endB && endA > startB) so back-to-back blocks are valid.
+ * - Skips empty, null, inverted, or invalid times (sMins >= eMins or >= 99999).
+ * - Skips identical rows, same IDs, or duplicate blocks in state.
+ * - Respects DepEd multigrade side-by-side slot sharing (isPerGradeSharedSlot).
+ * - Respects ADVISORY / HGP nested co-existence (isAdvisoryOrHgpPair).
+ * - Returns null if valid, or a detailed traceable conflict descriptor.
+ */
+export const findWorkloadScheduleConflict = (
+  rows = [],
+  person = null,
+  activeTerm = "1st",
+) => {
+  if (!Array.isArray(rows) || rows.length < 2) return null;
+
+  const teacherName = person
+    ? `${person.firstName || ""} ${person.lastName || ""}`.trim() || "Teacher"
+    : "Teacher";
+
+  // Filter rows for the active term and target teacher (if rows contain teacher IDs)
+  const termRows = rows.filter((r) => {
+    if (!r) return false;
+    const rTerm = r.term || "1st";
+    if (rTerm !== activeTerm) return false;
+    if (
+      person?.id &&
+      (r.personnelId || r.personnel_id) &&
+      String(r.personnelId || r.personnel_id) !== String(person.id)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  if (termRows.length < 2) return null;
+
+  // Pre-parse valid rows
+  const parsedRows = [];
+  for (let idx = 0; idx < termRows.length; idx++) {
+    const r = termRows[idx];
+    const startStr = r.startTime || r.start_time;
+    const endStr = r.endTime || r.end_time;
+    if (!startStr || !endStr) continue;
+
+    const sMins = parseMins(startStr);
+    const eMins = parseMins(endStr);
+    if (sMins >= 99999 || eMins >= 99999 || sMins < 0 || eMins < 0) continue;
+    if (sMins >= eMins) continue;
+
+    const days = getNormalizedRowDays(r);
+    if (!days || days.length === 0) continue;
+
+    parsedRows.push({
+      row: r,
+      idx,
+      sMins,
+      eMins,
+      days,
+      startStr,
+      endStr,
+      subject: r.subject || r.task || "Class",
+      section: r.sectionName || r.section_name || "",
+    });
+  }
+
+  if (parsedRows.length < 2) return null;
+
+  const DAY_LABELS = {
+    M: "Mon",
+    T: "Tue",
+    W: "Wed",
+    TH: "Thu",
+    F: "Fri",
+    SAT: "Sat",
+    SUN: "Sun",
+  };
+
+  for (let i = 0; i < parsedRows.length; i++) {
+    const itemA = parsedRows[i];
+    for (let j = i + 1; j < parsedRows.length; j++) {
+      const itemB = parsedRows[j];
+
+      // 1. Same reference or same index
+      if (itemA.idx === itemB.idx || itemA.row === itemB.row) continue;
+
+      // 2. Same ID
+      if (
+        itemA.row.id &&
+        itemB.row.id &&
+        String(itemA.row.id) === String(itemB.row.id)
+      ) {
+        continue;
+      }
+
+      // 3. Stale/duplicate identical block in state (same subject, section, time)
+      const isDuplicateBlock =
+        String(itemA.subject).trim().toUpperCase() ===
+          String(itemB.subject).trim().toUpperCase() &&
+        String(itemA.section).trim() === String(itemB.section).trim() &&
+        itemA.sMins === itemB.sMins &&
+        itemA.eMins === itemB.eMins;
+      if (isDuplicateBlock) continue;
+
+      // 4. Multigrade co-running class exception
+      if (isPerGradeSharedSlot(itemA.row, itemB.row)) continue;
+
+      // 5. Advisory / HGP nested exception
+      if (isAdvisoryOrHgpPair(itemA.row, itemB.row)) continue;
+
+      // 6. Day overlap check
+      const sharedDays = itemA.days.filter((d) => itemB.days.includes(d));
+      if (sharedDays.length === 0) continue;
+
+      // 7. Strictly open-interval overlap: StartA < EndB AND StartB < EndA
+      if (itemA.sMins < itemB.eMins && itemB.sMins < itemA.eMins) {
+        const readableDays = sharedDays
+          .map((d) => DAY_LABELS[d] || d)
+          .join(", ");
+        const timeA = `${formatMinutesTo12Hour(itemA.sMins)} – ${formatMinutesTo12Hour(itemA.eMins)}`;
+        const timeB = `${formatMinutesTo12Hour(itemB.sMins)} – ${formatMinutesTo12Hour(itemB.eMins)}`;
+        const secA = itemA.section ? ` (${itemA.section})` : "";
+        const secB = itemB.section ? ` (${itemB.section})` : "";
+
+        return {
+          hasConflict: true,
+          teacherName,
+          conflictingDays: readableDays,
+          rowA: itemA.row,
+          rowB: itemB.row,
+          message:
+            `Cannot save. There is an overlapping schedule in the ${activeTerm} Term workload for ${teacherName}:\n\n` +
+            `• Conflicting Day(s): ${readableDays}\n` +
+            `• Class 1: "${itemA.subject}"${secA} [${timeA}]\n` +
+            `• Class 2: "${itemB.subject}"${secB} [${timeB}]\n\n` +
+            `Please adjust the conflicting time ranges to avoid double-booking.`,
+        };
+      }
+    }
+  }
+
+  return null;
+};
+
 export const isSectionMatchingTeacherGrades = (
   sec,
   assignedGrades,
@@ -5576,21 +5728,61 @@ function WorkloadGanttScheduleView({
       );
       const targetRow = rawRows[rowIdx];
       const allRows = [...(currentPerson?.workloadRows || [])];
-      const matchIdx = targetRow
+      let matchIdx = targetRow
         ? allRows.findIndex(
-            (r) => (r.id && r.id === targetRow.id) || r === targetRow,
+            (r) =>
+              (r?.id && targetRow?.id && String(r.id) === String(targetRow.id)) ||
+              (r?._id && targetRow?._id && String(r._id) === String(targetRow._id)) ||
+              r === targetRow,
           )
         : -1;
+
+      if (matchIdx === -1 && targetRow) {
+        matchIdx = allRows.findIndex(
+          (r) =>
+            (r.term || "1st") === (targetRow.term || "1st") &&
+            String(r.subject || r.task || "").trim().toUpperCase() ===
+              String(targetRow.subject || targetRow.task || "").trim().toUpperCase() &&
+            String(r.sectionId || r.section_id || "") ===
+              String(targetRow.sectionId || targetRow.section_id || "") &&
+            (r.startTime || r.start_time) === (targetRow.startTime || targetRow.start_time) &&
+            (r.endTime || r.end_time) === (targetRow.endTime || targetRow.end_time),
+        );
+      }
+
+      if (matchIdx === -1 && targetRow) {
+        let termCounter = 0;
+        for (let k = 0; k < allRows.length; k++) {
+          if ((allRows[k]?.term || "1st") === activeTerm) {
+            if (termCounter === rowIdx) {
+              matchIdx = k;
+              break;
+            }
+            termCounter++;
+          }
+        }
+      }
 
       const rowToUpdate =
         matchIdx !== -1 ? allRows[matchIdx] : rawRows[rowIdx] || targetRow;
       if (!rowToUpdate) return;
 
+      const normalizedUpdates = { ...updates };
+      if (normalizedUpdates.days && Array.isArray(normalizedUpdates.days)) {
+        normalizedUpdates.daySchedule = normalizedUpdates.days.join(",");
+        normalizedUpdates.day_schedule = normalizedUpdates.days.join(",");
+      } else if (normalizedUpdates.daySchedule && !normalizedUpdates.days) {
+        normalizedUpdates.days = String(normalizedUpdates.daySchedule)
+          .split(/[,;\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+
       if (typeof updateWorkloadRowFields === "function") {
-        updateWorkloadRowFields(rowToUpdate, updates);
+        updateWorkloadRowFields(rowToUpdate, normalizedUpdates);
       } else {
         if (matchIdx !== -1) {
-          allRows[matchIdx] = { ...allRows[matchIdx], ...updates };
+          allRows[matchIdx] = { ...allRows[matchIdx], ...normalizedUpdates };
           if (typeof handleFieldChange === "function") {
             handleFieldChange("workloadRows", allRows);
           }
@@ -6426,20 +6618,43 @@ function WorkloadGanttScheduleView({
         );
         const targetRow = rawRows[cur.rowIdx];
         if (targetRow) {
-          const rowDays =
-            Array.isArray(targetRow.days) && targetRow.days.length > 0
-              ? [...targetRow.days]
-              : targetRow.daySchedule
-                ? String(targetRow.daySchedule)
-                    .split(",")
-                    .map((s) => s.trim())
-                : ["M", "T", "W", "TH", "F"];
+          const rowDays = getNormalizedRowDays(targetRow);
 
           recordUndoSnapshot();
           const allRows = [...(currentPerson?.workloadRows || [])];
-          const matchIdx = allRows.findIndex(
-            (r) => (r.id && r.id === targetRow.id) || r === targetRow,
+          let matchIdx = allRows.findIndex(
+            (r) =>
+              (r?.id && targetRow?.id && String(r.id) === String(targetRow.id)) ||
+              (r?._id && targetRow?._id && String(r._id) === String(targetRow._id)) ||
+              r === targetRow,
           );
+
+          if (matchIdx === -1) {
+            matchIdx = allRows.findIndex(
+              (r) =>
+                (r.term || "1st") === (targetRow.term || "1st") &&
+                String(r.subject || r.task || "").trim().toUpperCase() ===
+                  String(targetRow.subject || targetRow.task || "").trim().toUpperCase() &&
+                String(r.sectionId || r.section_id || "") ===
+                  String(targetRow.sectionId || targetRow.section_id || "") &&
+                (r.startTime || r.start_time) === (targetRow.startTime || targetRow.start_time) &&
+                (r.endTime || r.end_time) === (targetRow.endTime || targetRow.end_time),
+            );
+          }
+
+          if (matchIdx === -1) {
+            let termCounter = 0;
+            for (let k = 0; k < allRows.length; k++) {
+              if ((allRows[k]?.term || "1st") === activeTerm) {
+                if (termCounter === cur.rowIdx) {
+                  matchIdx = k;
+                  break;
+                }
+                termCounter++;
+              }
+            }
+          }
+
           const subUpper = String(targetRow.subject || "")
             .toUpperCase()
             .trim();
@@ -6450,16 +6665,20 @@ function WorkloadGanttScheduleView({
 
           if (isSpecialSingletonRow || rowDays.length <= 1) {
             // Row is a singleton special slot (HGP/SNED/ALS) or single-day cell — update it directly in-place
+            const newDay =
+              cur.type === "move" ? targetDay : (rowDays[0] || targetDay);
             const updatedRow = {
               ...targetRow,
               startTime: formatMinutesToTime(finalStart),
               endTime: formatMinutesToTime(finalEnd),
-              days: isSpecialSingletonRow ? rowDays : [targetDay],
+              days: [newDay],
+              daySchedule: newDay,
+              day_schedule: newDay,
             };
             if (matchIdx !== -1) {
               allRows[matchIdx] = updatedRow;
             } else {
-              allRows[cur.rowIdx] = updatedRow;
+              allRows.push(updatedRow);
             }
             if (typeof handleFieldChange === "function") {
               handleFieldChange("workloadRows", allRows);
@@ -6470,6 +6689,8 @@ function WorkloadGanttScheduleView({
             const updatedOriginalRow = {
               ...targetRow,
               days: remainingDays,
+              daySchedule: remainingDays.join(","),
+              day_schedule: remainingDays.join(","),
             };
 
             const newSingleCellRow = {
@@ -6478,6 +6699,8 @@ function WorkloadGanttScheduleView({
               startTime: formatMinutesToTime(finalStart),
               endTime: formatMinutesToTime(finalEnd),
               days: [targetDay],
+              daySchedule: targetDay,
+              day_schedule: targetDay,
               term: activeTerm,
             };
 
@@ -6485,8 +6708,7 @@ function WorkloadGanttScheduleView({
               allRows[matchIdx] = updatedOriginalRow;
               allRows.splice(matchIdx + 1, 0, newSingleCellRow);
             } else {
-              allRows[cur.rowIdx] = updatedOriginalRow;
-              allRows.splice(cur.rowIdx + 1, 0, newSingleCellRow);
+              allRows.push(updatedOriginalRow, newSingleCellRow);
             }
 
             if (typeof handleFieldChange === "function") {
@@ -6497,7 +6719,7 @@ function WorkloadGanttScheduleView({
               (r) => (r.term || "1st") === activeTerm,
             );
             const newSelectedIdx = newRawRows.findIndex(
-              (r) => r.id === newSingleCellRow.id,
+              (r) => String(r.id) === String(newSingleCellRow.id),
             );
             if (newSelectedIdx !== -1) {
               setSelectedBlockIdx(newSelectedIdx);
@@ -6507,8 +6729,13 @@ function WorkloadGanttScheduleView({
       } else if (cur.type === "extend-days") {
         const finalDays =
           cur.currentDays !== undefined ? cur.currentDays : cur.initialDays;
+        const normDays = Array.from(new Set(finalDays)).map((d) =>
+          typeof normalizeGhostDay === "function" ? normalizeGhostDay(d) : d,
+        );
         updateWorkloadRowWithHistory(cur.rowIdx, {
-          days: Array.from(new Set(finalDays)),
+          days: normDays,
+          daySchedule: normDays.join(","),
+          day_schedule: normDays.join(","),
         });
       }
 
@@ -6536,6 +6763,127 @@ function WorkloadGanttScheduleView({
     daysList,
     pxPerMin,
   ]);
+
+  const rawRows = (currentPerson?.workloadRows || []).filter(
+    (r) => (r.term || "1st") === activeTerm,
+  );
+  const selectedRow =
+    selectedBlockIdx !== null &&
+    selectedBlockIdx >= 0 &&
+    selectedBlockIdx < (rawRows || []).length &&
+    rawRows[selectedBlockIdx]
+      ? rawRows[selectedBlockIdx]
+      : null;
+
+  // Track popover open/closed state in a ref so outside-click listeners and grid handlers
+  // share a single source of truth without closure lag
+  const isPopoverOpenRef = useRef(false);
+  isPopoverOpenRef.current = Boolean(selectedRow);
+
+  // Timestamp of the most recent outside dismissal to swallow trailing mousedown/click events
+  // from the same physical user click/pointer interaction
+  const justDismissedRef = useRef(0);
+
+  const handleClosePopover = useCallback(() => {
+    justDismissedRef.current = Date.now();
+    setSelectedBlockIdx(null);
+    setSelectedCellKeys(new Set());
+  }, [setSelectedBlockIdx]);
+
+  // Checks whether a click/pointer event is inside the popover, its shadow DOM,
+  // or any associated portaled menus / native selects / pickers
+  const isInsidePopover = useCallback((e) => {
+    if (!panelRef.current) return false;
+    const target = e.target;
+    if (!target) return false;
+
+    // 1. Direct DOM containment
+    if (panelRef.current.contains(target)) return true;
+
+    // 2. Composed path (penetrates shadow DOM for time inputs, custom elements, etc.)
+    if (typeof e.composedPath === "function") {
+      const path = e.composedPath();
+      if (Array.isArray(path) && path.includes(panelRef.current)) return true;
+    }
+
+    // 3. Native options / optgroups / datalists belonging to selects inside the popover
+    const optOrGroup = target.closest?.("option, optgroup, datalist");
+    if (optOrGroup) {
+      const parentSelect = target.closest?.("select");
+      if (!parentSelect || panelRef.current.contains(parentSelect)) return true;
+    }
+
+    // 4. Portaled dropdown menus (e.g. SearchableDropdown / SearchableSelect portals)
+    if (
+      target.closest?.(
+        ".searchable-dropdown-menu, .searchable-select-dropdown",
+      )
+    ) {
+      return true;
+    }
+
+    // 5. Modals / alerts (e.g. SweetAlert2)
+    if (target.closest?.(".swal2-container")) {
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  // Dismiss Block Inspector Popover on outside click/pointerdown while preventing fall-through
+  // to the Gantt chart empty slot creation or block dragging
+  useEffect(() => {
+    if (!selectedRow) return;
+
+    const handleOutsideCapture = (e) => {
+      // If currently dragging the inspector panel itself, ignore
+      if (panelDragRef.current) return;
+      // If currently dragging a Gantt chart block / resizing, ignore
+      if (dragStateRef.current) return;
+
+      // If clicked inside the popover or its associated dropdowns / pickers, do not dismiss
+      if (isInsidePopover(e)) return;
+
+      // If clicking another existing schedule block card, allow the event to pass through
+      // so that the clicked block can be selected immediately
+      if (e.target?.closest?.(".gantt-block-card")) return;
+
+      // Outside click: dismiss the popover and consume the event completely
+      // so it does NOT fall through to create or drag a block on the Gantt grid!
+      handleClosePopover();
+
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") {
+        e.stopImmediatePropagation();
+      }
+      e.preventDefault();
+    };
+
+    const handleSubsequentCapture = (e) => {
+      // If an outside dismissal just occurred on this interaction, swallow any secondary
+      // events (e.g. mousedown following pointerdown, or click following mouseup)
+      if (Date.now() - justDismissedRef.current < 400) {
+        if (!isInsidePopover(e) && !e.target?.closest?.(".gantt-block-card")) {
+          e.stopPropagation();
+          if (typeof e.stopImmediatePropagation === "function") {
+            e.stopImmediatePropagation();
+          }
+          e.preventDefault();
+        }
+      }
+    };
+
+    // Use capture phase so we intercept before React root or the Gantt grid element
+    document.addEventListener("pointerdown", handleOutsideCapture, true);
+    document.addEventListener("mousedown", handleOutsideCapture, true);
+    document.addEventListener("click", handleSubsequentCapture, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideCapture, true);
+      document.removeEventListener("mousedown", handleOutsideCapture, true);
+      document.removeEventListener("click", handleSubsequentCapture, true);
+    };
+  }, [selectedRow, handleClosePopover, isInsidePopover]);
 
   const handleStartDrag = (e, rowIdx, row, dayCode, type) => {
     if (e.button !== 0) return; // Left mouse button only
@@ -6586,6 +6934,23 @@ function WorkloadGanttScheduleView({
 
   const handleGridMouseDown = (e, dayCode) => {
     if (e.target.closest(".gantt-block-card")) return;
+
+    // Root fix: If the inspector popover is currently open, or was just dismissed on this
+    // same event/interaction, only dismiss the popover and IGNORE the grid interaction.
+    // Never create a new block or start dragging on the dismissal click!
+    if (
+      selectedBlockIdx !== null ||
+      isPopoverOpenRef.current ||
+      Date.now() - justDismissedRef.current < 400
+    ) {
+      if (selectedBlockIdx !== null || isPopoverOpenRef.current) {
+        handleClosePopover();
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     const isMac =
       typeof navigator !== "undefined" &&
       navigator.platform &&
@@ -6621,17 +6986,6 @@ function WorkloadGanttScheduleView({
       createCurrentMins: startMins + 60,
     });
   };
-
-  const rawRows = (currentPerson?.workloadRows || []).filter(
-    (r) => (r.term || "1st") === activeTerm,
-  );
-  const selectedRow =
-    selectedBlockIdx !== null &&
-    selectedBlockIdx >= 0 &&
-    selectedBlockIdx < (rawRows || []).length &&
-    rawRows[selectedBlockIdx]
-      ? rawRows[selectedBlockIdx]
-      : null;
 
   // Copy Section Only (Ctrl+C): Copies sectionId, sectionName, gradeLevel, category, days (and preserves ADVISORY if copying Advisory)
   const handleCopySelectedSection = useCallback(() => {
@@ -6856,13 +7210,14 @@ function WorkloadGanttScheduleView({
       if (typeof removeWorkloadRow === "function") {
         removeWorkloadRow(targetRow);
       }
-      setSelectedBlockIdx(null);
+      handleClosePopover();
     },
     [
       recordUndoSnapshot,
       currentPerson?.workloadRows,
       activeTerm,
       removeWorkloadRow,
+      handleClosePopover,
     ],
   );
 
@@ -6910,8 +7265,7 @@ function WorkloadGanttScheduleView({
           handlePasteSection();
         }
       } else if (e.key === "Escape") {
-        setSelectedCellKeys(new Set());
-        setSelectedBlockIdx(null);
+        handleClosePopover();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedBlockIdx !== null && selectedRow) {
           e.preventDefault();
@@ -6933,6 +7287,7 @@ function WorkloadGanttScheduleView({
     pendingCreateSection,
     handleUndo,
     handleRedo,
+    handleClosePopover,
   ]);
 
   // Default duration to MATATAG-mandated length for new blocks without an explicit endTime,
@@ -9341,7 +9696,7 @@ function WorkloadGanttScheduleView({
             </div>
             <button
               type="button"
-              onClick={() => setSelectedBlockIdx(null)}
+              onClick={handleClosePopover}
               title="Close panel"
               style={{
                 background: "#F1F5F9",
@@ -11167,36 +11522,9 @@ function WorkloadInner() {
       }
 
       // Check if this teacher has duration or overlap blocking errors (term-isolated)
-      const hasErrors = tRows.some((r, rIdx) => {
-        if (getRowDurationError(r)) return true;
-        const rTerm = r.term || "1st";
-        const rDays = getNormalizedRowDays(r);
-        return tRows.some((otherR, oIdx) => {
-          if (rIdx === oIdx) return false;
-          if (r.id && otherR.id && String(r.id) === String(otherR.id))
-            return false;
-          if ((otherR.term || "1st") !== rTerm) return false; // Term isolation
-          if (
-            !r.startTime ||
-            !r.endTime ||
-            !otherR.startTime ||
-            !otherR.endTime
-          )
-            return false;
-          const otherDays = getNormalizedRowDays(otherR);
-          const daysOverlap = rDays.some((d) => otherDays.includes(d));
-          if (!daysOverlap) return false;
-          const ns = parseMins(r.startTime),
-            ne = parseMins(r.endTime);
-          const rs = parseMins(otherR.startTime),
-            re = parseMins(otherR.endTime);
-          if (ns < re && ne > rs) {
-            if (isAdvisoryOrHgpPair(r, otherR)) return false;
-            return true;
-          }
-          return false;
-        });
-      });
+      const conflict = findWorkloadScheduleConflict(tRows, p, activeTerm);
+      const hasErrors =
+        tRows.some((r) => getRowDurationError(r)) || Boolean(conflict);
 
       if (hasErrors) {
         errorTeachers.push(`${p.lastName || "Teacher"}, ${p.firstName || ""}`);
@@ -11769,7 +12097,11 @@ function WorkloadInner() {
     (personnel || [])[0] ||
     null;
   const [editPerson, setEditPerson] = useState(null);
-  const currentPerson = editPerson || dbPerson;
+  const currentPerson =
+    editPerson &&
+    String(editPerson.id) === String(dbPerson?.id || activePersonnelId)
+      ? editPerson
+      : dbPerson;
 
   // Clear selectedBlockIdx whenever switching active teachers to prevent stale index pointer collisions
   useEffect(() => {
@@ -13520,6 +13852,28 @@ function WorkloadInner() {
     isDirty: isDirty || hasDeclinedDraft,
     onDiscard: handleDiscard,
     onSave: () => runWorkloadSaveRef.current(),
+    getDirtyReasons: () => {
+      const reasons = [];
+      if (isCurrentTeacherDirty)
+        reasons.push({
+          section: `workload rows of ${currentPerson?.id} (${activeTerm})`,
+          from: "saved snapshot",
+          to: "edited rows differ",
+        });
+      if (hasLocalDrafts)
+        reasons.push({
+          section: "another teacher's browser draft",
+          from: "saved snapshot",
+          to: "draft differs",
+        });
+      if (hasDeclinedDraft)
+        reasons.push({
+          section: "declined draft still in browser",
+          from: "-",
+          to: "-",
+        });
+      return reasons;
+    },
   });
 
   const currentPersonRef = useRef(currentPerson);
@@ -13583,14 +13937,23 @@ function WorkloadInner() {
 
   const handleFieldChangeForPerson = (personId, key, value) => {
     if (!personId) return;
-    const baseP = personnel.find((p) => p.id === personId);
+    const baseP =
+      (personnel || []).find(
+        (p) =>
+          p &&
+          (String(p.id) === String(personId) ||
+            String(p._id) === String(personId)),
+      ) ||
+      (currentPerson && String(currentPerson.id) === String(personId)
+        ? currentPerson
+        : null);
     if (!baseP) return;
 
     markTeacherValidated(personId, false);
 
     const draftKey = `draft_workload_${personId}`;
     let targetPerson = baseP;
-    if (editPerson && editPerson.id === personId) {
+    if (editPerson && String(editPerson.id) === String(personId)) {
       targetPerson = editPerson;
     } else {
       const savedDraft = localStorage.getItem(draftKey);
@@ -13610,8 +13973,19 @@ function WorkloadInner() {
     };
     // The user is editing: from now on the editor's own rows are the ones that count for this teacher and term.
     noteUserEdit(personId, activeTerm);
-    if (currentPerson && currentPerson.id === personId) {
+    if (currentPerson && String(currentPerson.id) === String(personId)) {
       setEditPerson(updated);
+    }
+    if (typeof setPersonnel === "function") {
+      setPersonnel((prev) =>
+        (prev || []).map((p) =>
+          p &&
+          (String(p.id) === String(personId) ||
+            String(p._id) === String(personId))
+            ? { ...p, ...updated }
+            : p,
+        ),
+      );
     }
     try {
       localStorage.setItem(draftKey, JSON.stringify(updated));
@@ -14426,11 +14800,36 @@ function WorkloadInner() {
           (r.id &&
             targetRowOrIndex.id &&
             String(r.id) === String(targetRowOrIndex.id)) ||
+          (r._id &&
+            targetRowOrIndex._id &&
+            String(r._id) === String(targetRowOrIndex._id)) ||
           r === targetRowOrIndex,
       );
+      if (index === -1) {
+        index = allRows.findIndex(
+          (r) =>
+            (r.term || "1st") === (targetRowOrIndex.term || "1st") &&
+            String(r.subject || r.task || "").trim().toUpperCase() ===
+              String(targetRowOrIndex.subject || targetRowOrIndex.task || "")
+                .trim()
+                .toUpperCase() &&
+            String(r.sectionId || r.section_id || "") ===
+              String(
+                targetRowOrIndex.sectionId ||
+                  targetRowOrIndex.section_id ||
+                  "",
+              ) &&
+            (r.startTime || r.start_time) ===
+              (targetRowOrIndex.startTime || targetRowOrIndex.start_time) &&
+            (r.endTime || r.end_time) ===
+              (targetRowOrIndex.endTime || targetRowOrIndex.end_time),
+        );
+      }
     } else if (typeof targetRowOrIndex === "string") {
       index = allRows.findIndex(
-        (r) => String(r.id) === String(targetRowOrIndex),
+        (r) =>
+          String(r.id) === String(targetRowOrIndex) ||
+          String(r._id) === String(targetRowOrIndex),
       );
     }
     if (index === -1 || index >= allRows.length) return;
@@ -15021,13 +15420,57 @@ function WorkloadInner() {
           (r.id &&
             targetRowOrIndex.id &&
             String(r.id) === String(targetRowOrIndex.id)) ||
+          (r._id &&
+            targetRowOrIndex._id &&
+            String(r._id) === String(targetRowOrIndex._id)) ||
           r === targetRowOrIndex,
       );
+      if (index === -1) {
+        index = rows.findIndex(
+          (r) =>
+            (r.term || "1st") === (targetRowOrIndex.term || "1st") &&
+            String(r.subject || r.task || "").trim().toUpperCase() ===
+              String(targetRowOrIndex.subject || targetRowOrIndex.task || "")
+                .trim()
+                .toUpperCase() &&
+            String(r.sectionId || r.section_id || "") ===
+              String(
+                targetRowOrIndex.sectionId ||
+                  targetRowOrIndex.section_id ||
+                  "",
+              ) &&
+            (r.startTime || r.start_time) ===
+              (targetRowOrIndex.startTime || targetRowOrIndex.start_time) &&
+            (r.endTime || r.end_time) ===
+              (targetRowOrIndex.endTime || targetRowOrIndex.end_time),
+        );
+      }
     } else if (typeof targetRowOrIndex === "string") {
-      index = rows.findIndex((r) => String(r.id) === String(targetRowOrIndex));
+      index = rows.findIndex(
+        (r) =>
+          String(r.id) === String(targetRowOrIndex) ||
+          String(r._id) === String(targetRowOrIndex),
+      );
     }
     if (index === -1 || index >= rows.length) return;
     let updatedRow = { ...rows[index], ...fieldValues };
+
+    if (fieldValues.days) {
+      const daysArr = Array.isArray(fieldValues.days)
+        ? fieldValues.days
+        : [fieldValues.days];
+      updatedRow.days = daysArr;
+      updatedRow.daySchedule = daysArr.join(",");
+      updatedRow.day_schedule = daysArr.join(",");
+    } else if (fieldValues.daySchedule) {
+      const daysArr = String(fieldValues.daySchedule)
+        .split(/[,;\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      updatedRow.days = daysArr;
+      updatedRow.daySchedule = daysArr.join(",");
+      updatedRow.day_schedule = daysArr.join(",");
+    }
 
     const isAdv =
       String(updatedRow.subject || "")
@@ -15084,7 +15527,10 @@ function WorkloadInner() {
           if (oStart === curStart && oEnd === curEnd) {
             // Same time -> merge days into updatedRow and delete redundant other row
             const oDays = getNormalizedRowDays(other);
-            updatedRow.days = Array.from(new Set([...curDays, ...oDays]));
+            const mergedDays = Array.from(new Set([...curDays, ...oDays]));
+            updatedRow.days = mergedDays;
+            updatedRow.daySchedule = mergedDays.join(",");
+            updatedRow.day_schedule = mergedDays.join(",");
             rows.splice(i, 1);
             if (i < index) index--;
           } else if (fieldValues.days && curSub !== "ADVISORY") {
@@ -15095,7 +15541,12 @@ function WorkloadInner() {
               rows.splice(i, 1);
               if (i < index) index--;
             } else {
-              rows[i] = { ...other, days: remainingODays };
+              rows[i] = {
+                ...other,
+                days: remainingODays,
+                daySchedule: remainingODays.join(","),
+                day_schedule: remainingODays.join(","),
+              };
             }
           }
         }
@@ -16149,39 +16600,14 @@ function WorkloadInner() {
     const currentTermRows = (currentPerson.workloadRows || []).filter(
       (row) => (row.term || "1st") === activeTerm,
     );
-    const hasAnyConflict = currentTermRows.some((row, idx) => {
-      const rowDays = getNormalizedRowDays(row);
-      return currentTermRows.some((otherRow, otherIdx) => {
-        if (idx === otherIdx) return false;
-        if (row.id && otherRow.id && String(row.id) === String(otherRow.id))
-          return false;
-        if (
-          !row.startTime ||
-          !row.endTime ||
-          !otherRow.startTime ||
-          !otherRow.endTime
-        )
-          return false;
-        const otherDays = getNormalizedRowDays(otherRow);
-        const daysOverlap = rowDays.some((d) => otherDays.includes(d));
-        if (!daysOverlap) return false;
-        const ns = parseMins(row.startTime),
-          ne = parseMins(row.endTime);
-        const rs = parseMins(otherRow.startTime),
-          re = parseMins(otherRow.endTime);
-        if (ns < re && ne > rs) {
-          if (isAdvisoryOrHgpPair(row, otherRow)) return false;
-          return true;
-        }
-        return false;
-      });
-    });
+    const conflict = findWorkloadScheduleConflict(
+      currentTermRows,
+      currentPerson,
+      activeTerm,
+    );
 
-    if (hasAnyConflict) {
-      await showAlert(
-        "Schedule Conflict",
-        `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`,
-      );
+    if (conflict) {
+      await showAlert("Schedule Conflict", conflict.message);
       return;
     }
 
@@ -16235,39 +16661,14 @@ function WorkloadInner() {
     const currentTermRows = (currentPerson.workloadRows || []).filter(
       (row) => (row.term || "1st") === activeTerm,
     );
-    const hasAnyConflict = currentTermRows.some((row, idx) => {
-      const rowDays = getNormalizedRowDays(row);
-      return currentTermRows.some((otherRow, otherIdx) => {
-        if (idx === otherIdx) return false;
-        if (row.id && otherRow.id && String(row.id) === String(otherRow.id))
-          return false;
-        if (
-          !row.startTime ||
-          !row.endTime ||
-          !otherRow.startTime ||
-          !otherRow.endTime
-        )
-          return false;
-        const otherDays = getNormalizedRowDays(otherRow);
-        const daysOverlap = rowDays.some((d) => otherDays.includes(d));
-        if (!daysOverlap) return false;
-        const ns = parseMins(row.startTime),
-          ne = parseMins(row.endTime);
-        const rs = parseMins(otherRow.startTime),
-          re = parseMins(otherRow.endTime);
-        if (ns < re && ne > rs) {
-          if (isAdvisoryOrHgpPair(row, otherRow)) return false;
-          return true;
-        }
-        return false;
-      });
-    });
+    const conflict = findWorkloadScheduleConflict(
+      currentTermRows,
+      currentPerson,
+      activeTerm,
+    );
 
-    if (hasAnyConflict) {
-      await showAlert(
-        "Schedule Conflict",
-        `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`,
-      );
+    if (conflict) {
+      await showAlert("Schedule Conflict", conflict.message);
       return;
     }
 
@@ -16347,39 +16748,17 @@ function WorkloadInner() {
       const currentTermRows = (currentPerson.workloadRows || []).filter(
         (row) => (row.term || "1st") === activeTerm,
       );
-      const hasAnyConflict = currentTermRows.some((row, idx) => {
-        const rowDays = getNormalizedRowDays(row);
-        return currentTermRows.some((otherRow, otherIdx) => {
-          if (idx === otherIdx) return false;
-          if (row.id && otherRow.id && String(row.id) === String(otherRow.id))
-            return false;
-          if (
-            !row.startTime ||
-            !row.endTime ||
-            !otherRow.startTime ||
-            !otherRow.endTime
-          )
-            return false;
-          const otherDays = getNormalizedRowDays(otherRow);
-          const daysOverlap = rowDays.some((d) => otherDays.includes(d));
-          if (!daysOverlap) return false;
-          const ns = parseMins(row.startTime),
-            ne = parseMins(row.endTime);
-          const rs = parseMins(otherRow.startTime),
-            re = parseMins(otherRow.endTime);
-          if (ns < re && ne > rs) {
-            if (isAdvisoryOrHgpPair(row, otherRow)) return false;
-            return true;
-          }
-          return false;
-        });
-      });
+      const conflict = findWorkloadScheduleConflict(
+        currentTermRows,
+        currentPerson,
+        activeTerm,
+      );
 
-      if (hasAnyConflict) {
+      if (conflict) {
         return {
           ok: false,
           title: "Schedule Conflict",
-          message: `Cannot save. There are overlapping schedule times in the ${activeTerm} Term workload rows. Please resolve them first.`,
+          message: conflict.message,
         };
       }
 
@@ -19651,42 +20030,14 @@ function WorkloadInner() {
                     const currentTeacherRows = (
                       currentPerson?.workloadRows || []
                     ).filter((r) => (r.term || "1st") === activeTerm);
-                    const hasBlockingErrors = currentTeacherRows.some(
-                      (r, rIdx) => {
-                        if (getRowDurationError(r)) return true;
-                        const rDays = getNormalizedRowDays(r);
-                        return currentTeacherRows.some((otherR, oIdx) => {
-                          if (rIdx === oIdx) return false;
-                          if (
-                            r.id &&
-                            otherR.id &&
-                            String(r.id) === String(otherR.id)
-                          )
-                            return false;
-                          if (
-                            !r.startTime ||
-                            !r.endTime ||
-                            !otherR.startTime ||
-                            !otherR.endTime
-                          )
-                            return false;
-                          const otherDays = getNormalizedRowDays(otherR);
-                          const daysOverlap = rDays.some((d) =>
-                            otherDays.includes(d),
-                          );
-                          if (!daysOverlap) return false;
-                          const ns = parseMins(r.startTime),
-                            ne = parseMins(r.endTime);
-                          const rs = parseMins(otherR.startTime),
-                            re = parseMins(otherR.endTime);
-                          if (ns < re && ne > rs) {
-                            if (isAdvisoryOrHgpPair(r, otherR)) return false;
-                            return true;
-                          }
-                          return false;
-                        });
-                      },
+                    const scheduleConflict = findWorkloadScheduleConflict(
+                      currentTeacherRows,
+                      currentPerson,
+                      activeTerm,
                     );
+                    const hasBlockingErrors =
+                      currentTeacherRows.some((r) => getRowDurationError(r)) ||
+                      Boolean(scheduleConflict);
 
                     if (
                       !currentPerson ||
@@ -21201,20 +21552,7 @@ function WorkloadInner() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          const globalIdx = (
-                                            currentPerson.workloadRows || []
-                                          )
-                                            .filter(
-                                              (row) =>
-                                                (row.term || "1st") ===
-                                                activeTerm,
-                                            )
-                                            .findIndex(
-                                              (row) => row.id === r.id,
-                                            );
-                                          if (globalIdx !== -1) {
-                                            removeWorkloadRow(globalIdx);
-                                          }
+                                          removeWorkloadRow(r);
                                         }}
                                         style={{
                                           padding: "4px 8px",

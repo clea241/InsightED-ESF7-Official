@@ -97,6 +97,18 @@ Each row object inside `workloadRows` contains:
 
 ## 4. Versioned Flow History Log
 
+* **Version 1.8 (2026-10-10)**: Real-Time Dynamic Workload Schedule Conflict Validation & In-Memory Desynchronization Root Fix.
+  * Resolved ghost row duplication in Gantt drag-to-move, edge-resize, time-input edits, and day-splitting (`handleMouseUp`, `updateWorkloadRowWithHistory`, `updateWorkloadRowFields`). Fixed index lookup fallback that previously indexed into `allRows` using `rawRows` activeTerm index, creating duplicate/stale rows in state.
+  * Corrected singleton special slot day-lock bug (`isSpecialSingletonRow ? rowDays : [targetDay]`) so moving HGP or single-day blocks across days updates `days`, `daySchedule`, and `day_schedule` properly.
+  * Fixed loose string equality for teacher IDs in `handleFieldChangeForPerson` and `currentPerson` resolution, synchronizing in-memory edits to `setPersonnel`, `setEditPerson`, and `localStorage` simultaneously.
+  * Fixed admin task table delete handler to pass row object directly to `removeWorkloadRow` rather than computing a filtered array index that previously deleted unrelated rows.
+  * Unified dynamic schedule conflict detection across Header Save (`handleSave`), floating toolbar Save (`handleSaveChangesDirectly`), modal actions ("Stay & Save" and "Save & Switch" via `dirtyGuard.js`), and Schedule Time Verification Banner using `findWorkloadScheduleConflict`.
+  * Wired server-side PostgreSQL transactional conflict gatekeeper via `validateWorkloadSchedules(rowsToSave)` in `server/controllers/workload_rows/index.js`, rejecting overlapping schedules with HTTP 422 `SCHEDULE_CONFLICT`.
+* **Version 1.7 (2026-10-10)**: Block Inspector Popover Outside-Click Dismissal & Gantt Grid Fall-Through Isolation.
+  * Implemented capture-phase pointerdown/mousedown/click listeners (`document.addEventListener(..., true)`) that intercept clicks outside the floating Block Inspector popover.
+  * Consumed outside click events (`e.stopPropagation()`, `e.preventDefault()`, `e.stopImmediatePropagation()`) to dismiss the popover without falling through to Gantt grid create/drag handlers.
+  * Tracked single-source open/closed state via `isPopoverOpenRef`, `selectedBlockIdx`, and `justDismissedRef`, preventing accidental schedule block creation or drag activation on dismissal clicks.
+  * Preserved full functionality for inside clicks (SearchableSelect dropdowns, time inputs with Shadow DOM / native pickers, day toggles, action buttons), existing block selection (`.gantt-block-card`), X close button, and Escape key dismissal.
 * **Version 1.6 (2026-09-15)**: Real-Time Clustered Teacher Ghost Sync & 60fps rAF Smoothing.
   * Integrated PostgreSQL atomic ghost sync (`api.getClusteredGhostSlots` and `api.broadcastClusteredGhostSlots`) backed by `esf7_clustered_ghost_sync`.
   * Wrapped incoming ghost slot state updates in `window.requestAnimationFrame()` to completely eliminate schedule blinking and layout thrashing across partner schools in PM2 clusters.

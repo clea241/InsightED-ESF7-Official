@@ -2206,6 +2206,42 @@ function MultiSelectDropdown({
   );
 }
 
+// Canonical form for comparing form values: null/undefined/"" are the same "empty", numbers and strings compare as
+// text, strings are trimmed, objects are key-order independent.
+function canonicalValue(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map(canonicalValue);
+  if (typeof v === "object") {
+    const out = {};
+    Object.keys(v)
+      .sort()
+      .forEach((k) => {
+        const c = canonicalValue(v[k]);
+        if (c !== "" && !(Array.isArray(c) && c.length === 0)) out[k] = c;
+      });
+    return out;
+  }
+  return String(v);
+}
+
+// Lists the fields whose normalized value differs: [{ field, from, to }]. `onlyDraftKeys` ignores keys the other side lacks.
+function diffNormalized(base, current, onlyDraftKeys = false) {
+  const diffs = [];
+  const keys = new Set(
+    onlyDraftKeys
+      ? Object.keys(current || {})
+      : [...Object.keys(base || {}), ...Object.keys(current || {})],
+  );
+  keys.forEach((k) => {
+    const a = JSON.stringify(canonicalValue(base?.[k]));
+    const b = JSON.stringify(canonicalValue(current?.[k]));
+    if (a !== b) diffs.push({ field: k, from: a, to: b });
+  });
+  return diffs;
+}
+
 export default function PersonnelProfile() {
   const {
     personnel,
@@ -2289,21 +2325,42 @@ export default function PersonnelProfile() {
     nonDraftPersonnel[0];
   const [editPerson, setEditPerson] = useState(null);
 
-  const currentPersonDirty =
-    Boolean(
-      editPerson &&
-      dbPerson &&
-      JSON.stringify(editPerson) !== JSON.stringify(dbPerson),
-    ) ||
-    Boolean(dbPerson && localStorage.getItem(`draft_personnel_${dbPerson.id}`));
+  // Baseline = the saved record normalized like the editable copy; re-derived whenever the record is (re)loaded or saved.
+  const baselinePerson = useMemo(
+    () => (dbPerson ? buildEditPerson(dbPerson, false) : null),
+    [dbPerson],
+  );
 
-  const anyOtherDrafts = useMemo(() => {
-    return (personnel || []).some(
-      (p) =>
-        p.id !== dbPerson?.id &&
-        localStorage.getItem(`draft_personnel_${p.id}`),
-    );
-  }, [personnel, dbPerson?.id]);
+  const diffCurrentPerson = () =>
+    editPerson && baselinePerson && editPerson.id === baselinePerson.id
+      ? diffNormalized(baselinePerson, editPerson)
+      : [];
+
+  const currentPersonDirty = diffCurrentPerson().length > 0;
+
+  // Other people's browser drafts count only when they truly differ from that person's saved record.
+  const otherDraftDiffs = () => {
+    const out = [];
+    (personnel || []).forEach((p) => {
+      if (p.isDraft || p.id === dbPerson?.id) return;
+      const raw = localStorage.getItem(`draft_personnel_${p.id}`);
+      if (!raw) return;
+      try {
+        const draft = JSON.parse(raw);
+        diffNormalized(buildEditPerson(p, false), draft, true).forEach((d) =>
+          out.push({ ...d, field: `${p.id}.${d.field}` }),
+        );
+      } catch (e) {
+        /* unreadable draft: ignore, it cannot be restored anyway */
+      }
+    });
+    return out;
+  };
+
+  const anyOtherDrafts = useMemo(
+    () => otherDraftDiffs().length > 0,
+    [personnel, dbPerson?.id],
+  );
 
   const isDirty = currentPersonDirty || anyOtherDrafts;
 
@@ -2321,13 +2378,17 @@ export default function PersonnelProfile() {
     isDirty,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
+    getDirtyReasons: () => [...diffCurrentPerson(), ...otherDraftDiffs()],
   });
 
-  useEffect(() => {
-    if (dbPerson) {
+  // Builds the editable copy of a saved person (fills defaults, mirrors snake/camel fields). `withDraft` overlays the
+  // browser draft; without it the result is the dirty-guard BASELINE, normalized exactly like the editable copy so
+  // that load-time defaults are never mistaken for user edits.
+  function buildEditPerson(dbPerson, withDraft = true) {
+    {
       const draftKey = `draft_personnel_${dbPerson.id}`;
-      const savedDraft = localStorage.getItem(draftKey);
-      let personObj = dbPerson;
+      const savedDraft = withDraft ? localStorage.getItem(draftKey) : null;
+      let personObj = { ...dbPerson };
       if (savedDraft) {
         try {
           const parsed = JSON.parse(savedDraft);
@@ -2433,12 +2494,14 @@ export default function PersonnelProfile() {
         personObj.learningAreaMap = laMap;
         personObj.matrix_data = laMap;
         personObj.matrixData = laMap;
-        try {
-          localStorage.setItem(
-            `draft_learning_areas_${dbPerson.id}`,
-            JSON.stringify(laMap),
-          );
-        } catch (e) {}
+        if (withDraft) {
+          try {
+            localStorage.setItem(
+              `draft_learning_areas_${dbPerson.id}`,
+              JSON.stringify(laMap),
+            );
+          } catch (e) {}
+        }
       }
 
       // Ensure Education degree rows & post-grad disciplines
@@ -2638,8 +2701,12 @@ export default function PersonnelProfile() {
         }
       }
 
-      setEditPerson(personObj);
+      return personObj;
     }
+  }
+
+  useEffect(() => {
+    if (dbPerson) setEditPerson(buildEditPerson(dbPerson, true));
   }, [activePersonnelId, dbPerson]);
 
   const currentPerson = editPerson || dbPerson;
