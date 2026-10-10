@@ -1,0 +1,46 @@
+{
+  "counts": {
+    "routes": 3,
+    "writeRoutes": 2,
+    "tables": 2,
+    "writes": 3,
+    "validators": 2,
+    "clientCalls": 1
+  },
+  "tables": ["audit_log", "reports"],
+  "routes": {
+    "POST /api/reports": {
+      "roundTrips": 2,
+      "writes": 2,
+      "inTransaction": true
+    },
+    "POST /api/audit/ping": {
+      "roundTrips": 1,
+      "writes": 1,
+      "inTransaction": false
+    },
+    "GET /api/reports/:id": {
+      "roundTrips": 1,
+      "writes": 0,
+      "inTransaction": false
+    }
+  },
+  "headings": [
+    "## 1. Coverage and assumptions",
+    "## 2. System overview",
+    "## 3. Write routes",
+    "## 4. Entity-relationship diagram",
+    "## 5. Field-to-column table",
+    "## 6. Client save behavior",
+    "## 7. Findings",
+    "## 8. Unresolved items"
+  ],
+  "mustContain": [
+    "### POST /api/reports",
+    "### POST /api/audit/ping",
+    "### 5.2 Unmapped client fields",
+    "### 5.3 Unmapped columns",
+    "JSON/JSONB columns are written",
+    "Tenant read from client input"
+  ]
+}

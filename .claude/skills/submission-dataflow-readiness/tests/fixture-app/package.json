@@ -1,0 +1,11 @@
+{
+  "name": "fixture-app",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "drizzle-orm": "^0.30.0",
+    "express": "^4.19.0",
+    "pg": "^8.11.0",
+    "zod": "^3.22.0"
+  }
+}
