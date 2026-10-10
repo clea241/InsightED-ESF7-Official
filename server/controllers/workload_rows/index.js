@@ -294,10 +294,30 @@ async function findTimeAllotmentViolations(
   );
   if (changedIds.size === 0) return [];
 
-  const secRes = await client.query(
-    `SELECT id, grade_level, section_name, section_type FROM esf7_class_sections WHERE id = ANY($1)`,
-    [sectionIds],
-  );
+  let secRes;
+  try {
+    secRes = await client.query(
+      `SELECT id, grade_level, section_name, COALESCE(section_type, 'MONO GRADE') AS section_type FROM esf7_regular_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, 'SNED' AS section_type FROM esf7_sned_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, 'ALS' AS section_type FROM esf7_als_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, 'ARAL' AS section_type FROM esf7_aral_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, COALESCE(intervention_type, 'REMEDIAL') AS section_type FROM esf7_remedial_enrichment_sections WHERE id = ANY($1)`,
+      [sectionIds],
+    );
+  } catch (secErr) {
+    try {
+      secRes = await client.query(
+        `SELECT id, grade_level, section_name, section_type FROM esf7_class_sections WHERE id = ANY($1)`,
+        [sectionIds],
+      );
+    } catch (fallbackErr) {
+      secRes = { rows: [] };
+    }
+  }
   const othersRes = await client.query(
     `SELECT id, section_id, subject, start_time, end_time, days, raw_payload
        FROM esf7_workload_rows WHERE section_id = ANY($1) AND personnel_id <> $2`,

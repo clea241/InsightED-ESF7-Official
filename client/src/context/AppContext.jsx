@@ -3124,6 +3124,28 @@ const sanitizeClassSectionList = (list) => {
         grade_level: cleanGrade,
       };
 
+      let cleanSectionName = sanitized.sectionName || sanitized.section_name || "";
+      if (
+        (!cleanSectionName ||
+          cleanSectionName.startsWith("sec-draft-") ||
+          cleanSectionName === String(sanitized.id)) &&
+        sanitized.raw_payload
+      ) {
+        if (
+          sanitized.raw_payload.sectionName &&
+          !sanitized.raw_payload.sectionName.startsWith("sec-draft-")
+        ) {
+          cleanSectionName = sanitized.raw_payload.sectionName;
+        } else if (
+          sanitized.raw_payload.section_name &&
+          !sanitized.raw_payload.section_name.startsWith("sec-draft-")
+        ) {
+          cleanSectionName = sanitized.raw_payload.section_name;
+        }
+      }
+      sanitized.sectionName = cleanSectionName;
+      sanitized.section_name = cleanSectionName;
+
       if (isRegType) {
         delete sanitized.aralBasis;
         delete sanitized.aralGrade;
@@ -4055,7 +4077,9 @@ export const AppProvider = ({ children }) => {
       user?.schoolId ||
       null;
     const rawRes = await api.getPersonnel(activeSchoolId);
-    const list = Array.isArray(rawRes) ? rawRes : rawRes?.data || [];
+    const list = Array.isArray(rawRes)
+      ? rawRes
+      : (rawRes?.data || rawRes?.personnel || []);
     if (!Array.isArray(list)) return [];
 
     // The server flags records whose roster came from the cache (not confirmed saved) and why the real tables were skipped.
@@ -4764,8 +4788,9 @@ export const AppProvider = ({ children }) => {
             [];
           setDeletedSectionIds(rawDeletedSecs);
 
-          // Filter out deleted teachers from DB list
-          const filteredDbList = dbList.filter((p) => {
+          // Check if person matches any tombstone key
+          const checkIfTombstoned = (p) => {
+            if (!p) return false;
             const idKey = String(p.id || "")
               .trim()
               .toLowerCase();
@@ -4777,37 +4802,31 @@ export const AppProvider = ({ children }) => {
               .toLowerCase();
             const nameKey =
               `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-            const isTombstoned =
-              (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-              (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-              (isNonGenericKey(nameKey) &&
-                nameKey !== "teacher staff" &&
-                deletedSet.has(nameKey)) ||
-              (isNonGenericKey(empKey) && deletedSet.has(empKey));
-            return !isTombstoned;
-          });
+            const stripId = idKey.replace(/^per-/, "").replace(/^prn-/, "");
+            const stripPrn = prnKey.replace(/^prn-/, "");
 
-          let draftPersonnel = (activeDraft.personnel || []).filter((p) => {
-            const idKey = String(p.id || "")
-              .trim()
-              .toLowerCase();
-            const prnKey = String(p.prn || "")
-              .trim()
-              .toLowerCase();
-            const empKey = String(p.employeeNo || p.employee_no || "")
-              .trim()
-              .toLowerCase();
-            const nameKey =
-              `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-            const isTombstoned =
+            return (
               (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
               (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
               (isNonGenericKey(nameKey) &&
                 nameKey !== "teacher staff" &&
                 deletedSet.has(nameKey)) ||
-              (isNonGenericKey(empKey) && deletedSet.has(empKey));
-            return !isTombstoned;
-          });
+              (isNonGenericKey(empKey) && deletedSet.has(empKey)) ||
+              (stripId &&
+                isNonGenericKey(stripId) &&
+                deletedSet.has(stripId)) ||
+              (stripPrn &&
+                isNonGenericKey(stripPrn) &&
+                deletedSet.has(stripPrn))
+            );
+          };
+
+          // Filter out deleted teachers from DB list
+          const filteredDbList = dbList.filter((p) => !checkIfTombstoned(p));
+
+          let draftPersonnel = (activeDraft.personnel || []).filter(
+            (p) => !checkIfTombstoned(p),
+          );
 
           // Only initialize from DB list if the draft is empty
           if (draftPersonnel.length === 0 && filteredDbList.length > 0) {
@@ -4845,13 +4864,7 @@ export const AppProvider = ({ children }) => {
                 .toLowerCase();
               const nameKey =
                 `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-              const isTombstoned =
-                (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-                (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-                (isNonGenericKey(nameKey) &&
-                  nameKey !== "teacher staff" &&
-                  deletedSet.has(nameKey)) ||
-                (isNonGenericKey(empKey) && deletedSet.has(empKey));
+              const isTombstoned = checkIfTombstoned(p);
               const isInDraft =
                 (isNonGenericKey(idKey) && draftKeys.has(idKey)) ||
                 (isNonGenericKey(prnKey) && draftKeys.has(prnKey)) ||
@@ -5646,7 +5659,7 @@ export const AppProvider = ({ children }) => {
     }
   }, [user, user?.school_id, user?.schoolId]);
 
-  // Sync advisorId for existing classSections if missing but teacher has ADVISORY workload
+  // Sync advisorId and recover sectionName for existing classSections if missing/synthetic but teacher has matching workload
   useEffect(() => {
     if (
       classSections.length > 0 &&
@@ -5655,7 +5668,43 @@ export const AppProvider = ({ children }) => {
     ) {
       let modified = false;
       const updatedSecs = classSections.map((sec) => {
-        if (!sec.advisorId) {
+        let updatedSec = { ...sec };
+        const rawName = String(updatedSec.sectionName || updatedSec.section_name || "").trim();
+        const isSyntheticName =
+          !rawName ||
+          rawName.startsWith("sec-draft-") ||
+          rawName.startsWith("sec-") ||
+          rawName === String(updatedSec.id);
+
+        if (isSyntheticName) {
+          for (const p of personnel) {
+            if (Array.isArray(p.workloadRows)) {
+              const matchedWk = p.workloadRows.find(
+                (wk) =>
+                  (wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
+                  (wk.section_id && String(wk.section_id) === String(sec.id)),
+              );
+              if (matchedWk) {
+                const wkName = String(
+                  matchedWk.sectionName || matchedWk.section_name || "",
+                ).trim();
+                if (
+                  wkName &&
+                  !wkName.startsWith("sec-draft-") &&
+                  !wkName.startsWith("sec-") &&
+                  wkName !== String(sec.id)
+                ) {
+                  updatedSec.sectionName = wkName;
+                  updatedSec.section_name = wkName;
+                  modified = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        if (!updatedSec.advisorId) {
           const advTeacher = personnel.find(
             (p) =>
               Array.isArray(p.workloadRows) &&
@@ -5667,23 +5716,24 @@ export const AppProvider = ({ children }) => {
                   ((wk.sectionId && String(wk.sectionId) === String(sec.id)) ||
                     (wk.sectionName &&
                       String(wk.sectionName).trim().toLowerCase() ===
-                        String(sec.sectionName).trim().toLowerCase() &&
+                        String(updatedSec.sectionName).trim().toLowerCase() &&
                       String(wk.gradeLevel).trim().toLowerCase() ===
-                        String(sec.gradeLevel).trim().toLowerCase())),
+                        String(updatedSec.gradeLevel).trim().toLowerCase())),
               ),
           );
           if (advTeacher) {
             modified = true;
-            return { ...sec, advisorId: String(advTeacher.id) };
+            updatedSec.advisorId = String(advTeacher.id);
           }
         }
-        return sec;
+        return updatedSec;
       });
       if (modified) {
         setClassSections(updatedSecs);
       }
     }
   }, [personnel, classSections]);
+
 
   // Poll requests every 10 seconds while logged in. Always calls the LATEST refreshRequests through a ref (a closure
   // captured at login would keep using whatever school state existed then), stops after a 401/403, and backs off
@@ -5738,7 +5788,8 @@ export const AppProvider = ({ children }) => {
           schoolInfo,
           personnel,
           classSections,
-          deletedSectionIds,
+          deletedSectionIds: (deletedSectionIds || []).map(String),
+          allowSectionDeletion: true,
           workloadTransfers,
           absences,
           journey_state: journeyState,
@@ -5814,6 +5865,8 @@ export const AppProvider = ({ children }) => {
         schoolInfo,
         personnel,
         classSections,
+        deletedSectionIds: (deletedSectionIds || []).map(String),
+        allowSectionDeletion: true,
         workloadTransfers,
         absences,
         deletedPersonnelIds,
@@ -5825,18 +5878,20 @@ export const AppProvider = ({ children }) => {
     schoolInfo,
     personnel,
     classSections,
+    deletedSectionIds,
     workloadTransfers,
     absences,
     deletedPersonnelIds,
     journeyState,
   ]);
 
+
   // Handlers read the latest closures through a ref so they are registered once.
   healthHandlersRef.current.syncLocalDraft = async () => {
-    if (loadIncompleteRef.current)
-      throw new Error(
-        "Initial data load is incomplete; not syncing a partial state",
-      );
+    if (!initialLoadCompleteRef.current || loadIncompleteRef.current) {
+      // Initial load is still in progress or incomplete; nothing to sync yet
+      return true;
+    }
     await flushDrafts();
     clearDraftError();
     return true;
@@ -5928,6 +5983,7 @@ export const AppProvider = ({ children }) => {
     schoolInfo,
     personnel,
     classSections,
+    deletedSectionIds,
     workloadTransfers,
     absences,
     deletedPersonnelIds,
@@ -5952,6 +6008,8 @@ export const AppProvider = ({ children }) => {
             schoolInfo: cur.schoolInfo,
             personnel: cur.personnel,
             classSections: cur.classSections,
+            deletedSectionIds: (cur.deletedSectionIds || []).map(String),
+            allowSectionDeletion: true,
             workloadTransfers: cur.workloadTransfers,
             absences: cur.absences,
             deletedPersonnelIds: cur.deletedPersonnelIds,
@@ -5960,6 +6018,7 @@ export const AppProvider = ({ children }) => {
           },
         };
       }
+
       markDraftDirty();
       flushDrafts().catch((err) => {
         if (
@@ -6795,6 +6854,12 @@ export const AppProvider = ({ children }) => {
         deletedPersonnelIds: newDeletedIds,
         lastUpdated: new Date().toISOString(),
       };
+      userEditedRef.current = true;
+      latestDraftRef.current = {
+        key: draftKey,
+        schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+        data: newDraftData,
+      };
       await setLocalDraft(draftKey, newDraftData);
       if (!loadIncompleteRef.current && schoolInfo?.schoolId) {
         markDraftDirty();
@@ -7582,10 +7647,11 @@ export const AppProvider = ({ children }) => {
       }),
     );
 
-    if (targetSec && strAdvisorId !== undefined) {
+    if (targetSec && (strAdvisorId !== undefined || sectionName !== undefined)) {
       setPersonnel((prevPersonnel) => {
         return prevPersonnel.map((p) => {
           let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
+
           const isTargetTeacher = strAdvisorId && String(p.id) === strAdvisorId;
           const isRemedial = targetSec.sectionType === "REMEDIAL";
           const isEnrichment = targetSec.sectionType === "ENRICHMENT";
@@ -7991,6 +8057,22 @@ export const AppProvider = ({ children }) => {
             );
           }
 
+          if (targetSec?.sectionName) {
+            rows = rows.map((r) => {
+              if (
+                (r.sectionId && String(r.sectionId) === String(targetSec.id)) ||
+                (r.section_id && String(r.section_id) === String(targetSec.id))
+              ) {
+                return {
+                  ...r,
+                  sectionName: targetSec.sectionName,
+                  section_name: targetSec.sectionName,
+                };
+              }
+              return r;
+            });
+          }
+
           // Sync localStorage draft if present for this teacher
           const draftKey = `draft_workload_${p.id}`;
           const savedDraft = localStorage.getItem(draftKey);
@@ -8045,7 +8127,22 @@ export const AppProvider = ({ children }) => {
       setDeletedSectionIds((prev) =>
         Array.from(new Set([...prev, String(id)])),
       );
+      if (!String(id).startsWith("local-") && !String(id).startsWith("sec-new-")) {
+        try {
+          if (api && api.deleteSection) {
+            api.deleteSection(id).catch((delErr) => {
+              console.warn(
+                "[removeClassSection] Database delete warning:",
+                delErr?.message || delErr,
+              );
+            });
+          }
+        } catch (e) {}
+      }
     }
+    userEditedRef.current = true;
+    markDraftDirty();
+
     if (target) {
       setPersonnel((prevPersonnel) => {
         return prevPersonnel.map((p) => {

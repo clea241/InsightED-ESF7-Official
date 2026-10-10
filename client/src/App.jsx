@@ -147,23 +147,126 @@ function MainAppContent() {
     );
   }
 
+  const renderCustomModal = () => {
+    if (!customModal) return null;
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(10, 25, 47, 0.4)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 100005,
+        }}
+      >
+        <div
+          style={{
+            background: "#FFFFFF",
+            borderRadius: "16px",
+            width: "440px",
+            maxWidth: "90%",
+            padding: "24px",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            border: "1.5px solid var(--line)",
+            animation: "scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+          }}
+        >
+          <h3
+            style={{
+              margin: "0 0 10px",
+              fontSize: "18px",
+              color: "var(--navy)",
+              fontWeight: "800",
+            }}
+          >
+            {customModal.title}
+          </h3>
+          <p
+            style={{
+              margin: "0 0 20px",
+              fontSize: "14px",
+              color: "#475569",
+              lineHeight: "1.5",
+            }}
+          >
+            {customModal.message}
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              justifyContent: "flex-end",
+            }}
+          >
+            {customModal.type === "confirm" && (
+              <button
+                className="btn secondary"
+                onClick={customModal.onCancel}
+                style={{ minHeight: "38px", padding: "0 16px" }}
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              className="btn"
+              onClick={customModal.onConfirm}
+              style={{
+                minHeight: "38px",
+                padding: "0 16px",
+                background:
+                  "linear-gradient(180deg, var(--blue), var(--navy))",
+                borderColor: "var(--navy)",
+                color: "white",
+              }}
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (authLoading) {
-    return <LoadingScreen message="Authenticating session..." />;
+    return (
+      <>
+        <LoadingScreen message="Authenticating session..." />
+        {renderCustomModal()}
+      </>
+    );
   }
 
   // Enforce Login first: Users see Login BEFORE entering the app
   if (!user) {
-    return <Login />;
+    return (
+      <>
+        <Login />
+        {renderCustomModal()}
+      </>
+    );
   }
 
   // If user is authenticated and AppContext is still initializing initial data from DB / cloud draft
   if (!isInitialized) {
-    return <LoadingScreen message="Loading InsightED eSF7 Database..." />;
+    return (
+      <>
+        <LoadingScreen message="Loading InsightED eSF7 Database..." />
+        {renderCustomModal()}
+      </>
+    );
   }
 
   // After login: show Landing Page when activeView === 'landing'
   if (activeView === "landing") {
-    return <Landing onGetStarted={() => setActiveView("dashboard")} />;
+    return (
+      <>
+        <Landing onGetStarted={() => setActiveView("dashboard")} />
+        {renderCustomModal()}
+      </>
+    );
   }
 
   return (
@@ -324,85 +427,7 @@ function MainAppContent() {
       )}
 
       {/* Global Custom Modal Pop-up */}
-      {customModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15, 23, 42, 0.45)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99998,
-          }}
-        >
-          <div
-            style={{
-              background: "white",
-              borderRadius: "16px",
-              width: "420px",
-              maxWidth: "90%",
-              padding: "24px",
-              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-              border: "1.5px solid var(--line)",
-              animation: "scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0 0 10px",
-                fontSize: "18px",
-                color: "var(--navy)",
-                fontWeight: "800",
-              }}
-            >
-              {customModal.title}
-            </h3>
-            <p
-              style={{
-                margin: "0 0 20px",
-                fontSize: "14px",
-                color: "#475569",
-                lineHeight: "1.5",
-              }}
-            >
-              {customModal.message}
-            </p>
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                justifyContent: "flex-end",
-              }}
-            >
-              {customModal.type === "confirm" && (
-                <button
-                  className="btn secondary"
-                  onClick={customModal.onCancel}
-                  style={{ minHeight: "38px", padding: "0 16px" }}
-                >
-                  Cancel
-                </button>
-              )}
-              <button
-                className="btn"
-                onClick={customModal.onConfirm}
-                style={{
-                  minHeight: "38px",
-                  padding: "0 16px",
-                  background:
-                    "linear-gradient(180deg, var(--blue), var(--navy))",
-                  borderColor: "var(--navy)",
-                  color: "white",
-                }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderCustomModal()}
 
       <SaveStatusIndicator />
 

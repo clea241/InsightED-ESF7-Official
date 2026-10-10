@@ -537,19 +537,30 @@ const handleGetDraft = async (req, res) => {
     let payload = row.payload;
 
     // Filter out any deleted personnel from the retrieved draft payload
-    if (
-      payload &&
-      typeof payload === "object" &&
-      Array.isArray(payload.personnel)
-    ) {
+    if (payload && typeof payload === "object") {
       try {
-        const delRes = await db.query(
-          `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = $1 OR school_id = $2`,
-          [schoolId, `SCH-${schoolId}`],
-        );
-        if (delRes.rows.length > 0) {
+        const sidPair = [schoolId, `SCH-${schoolId}`];
+        const [r1, r2] = await Promise.all([
+          db
+            .query(
+              `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
+              [sidPair],
+            )
+            .catch(() => ({ rows: [] })),
+          db.getStagingPool
+            ? db
+                .getStagingPool()
+                .query(
+                  `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
+                  [sidPair],
+                )
+                .catch(() => ({ rows: [] }))
+            : Promise.resolve({ rows: [] }),
+        ]);
+        const delRows = [...(r1.rows || []), ...(r2.rows || [])];
+        if (delRows.length > 0) {
           const delKeys = new Set();
-          for (const d of delRes.rows) {
+          for (const d of delRows) {
             if (d.personnel_id)
               delKeys.add(String(d.personnel_id).trim().toLowerCase());
             if (d.prn) delKeys.add(String(d.prn).trim().toLowerCase());
@@ -558,25 +569,39 @@ const handleGetDraft = async (req, res) => {
             if (d.full_name_clean)
               delKeys.add(String(d.full_name_clean).trim().toLowerCase());
           }
-          payload.personnel = payload.personnel.filter((p) => {
-            const idK = String(p.id || "")
-              .trim()
-              .toLowerCase();
-            const prnK = String(p.prn || "")
-              .trim()
-              .toLowerCase();
-            const empK = String(p.employeeNo || p.employee_no || "")
-              .trim()
-              .toLowerCase();
-            const nameK =
-              `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-            return (
-              !delKeys.has(idK) &&
-              !delKeys.has(prnK) &&
-              (!empK || !delKeys.has(empK)) &&
-              (!nameK || !delKeys.has(nameK))
-            );
-          });
+          if (Array.isArray(payload.personnel)) {
+            payload.personnel = payload.personnel.filter((p) => {
+              const idK = String(p.id || "")
+                .trim()
+                .toLowerCase();
+              const prnK = String(p.prn || "")
+                .trim()
+                .toLowerCase();
+              const empK = String(p.employeeNo || p.employee_no || "")
+                .trim()
+                .toLowerCase();
+              const nameK =
+                `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+              const stripId = idK.replace(/^per-/, "").replace(/^prn-/, "");
+              const stripPrn = prnK.replace(/^prn-/, "");
+              return (
+                !delKeys.has(idK) &&
+                !delKeys.has(prnK) &&
+                (!empK || !delKeys.has(empK)) &&
+                (!nameK || !delKeys.has(nameK)) &&
+                (!stripId || !delKeys.has(stripId)) &&
+                (!stripPrn || !delKeys.has(stripPrn))
+              );
+            });
+          }
+          payload.deletedPersonnelIds = Array.from(
+            new Set([
+              ...(Array.isArray(payload.deletedPersonnelIds)
+                ? payload.deletedPersonnelIds
+                : []),
+              ...delKeys,
+            ]),
+          );
         }
       } catch (e) {
         console.warn(
@@ -967,22 +992,72 @@ const handleSaveDraft = async (req, res) => {
 
     // 1. Personnel Deletion Filter & Protection
     if (Array.isArray(payload.personnel)) {
+      const cleanSchoolId = schoolId.replace(/^SCH-/i, "");
+      const sidPair = [schoolId, cleanSchoolId, "SCH-" + cleanSchoolId];
+
+      const delDbRes = await Promise.all([
+        db
+          .query(
+            `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
+            [sidPair],
+          )
+          .catch(() => ({ rows: [] })),
+        db.getStagingPool
+          ? db
+              .getStagingPool()
+              .query(
+                `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
+                [sidPair],
+              )
+              .catch(() => ({ rows: [] }))
+          : Promise.resolve({ rows: [] }),
+      ]).then(([r1, r2]) => [...(r1.rows || []), ...(r2.rows || [])]);
+
+      const dbTombstoneKeys = delDbRes
+        .flatMap((d) => [
+          d.personnel_id,
+          d.prn,
+          d.employee_no,
+          d.full_name_clean,
+        ])
+        .filter(Boolean)
+        .map((k) => String(k).trim().toLowerCase());
+
+      const rawDeletedPers = [
+        ...(Array.isArray(payload.deletedPersonnelIds)
+          ? payload.deletedPersonnelIds
+          : []),
+        ...(Array.isArray(existingPayload?.deletedPersonnelIds)
+          ? existingPayload.deletedPersonnelIds
+          : []),
+        ...dbTombstoneKeys,
+      ];
+
+      const deletedPersSet = new Set(
+        rawDeletedPers
+          .map((k) => String(k).trim().toLowerCase())
+          .filter(
+            (k) =>
+              k &&
+              k.length >= 2 &&
+              k !== "teacher staff" &&
+              k !== "teacher" &&
+              k !== "staff",
+          ),
+      );
+
+      if (deletedPersSet.size > 0) {
+        finalPayload.deletedPersonnelIds = Array.from(deletedPersSet);
+      }
+
       if (
         payload.personnel.length === 0 &&
         oldPersonnel.length > 0 &&
-        (!payload.deletedPersonnelIds ||
-          payload.deletedPersonnelIds.length === 0)
+        deletedPersSet.size === 0
       ) {
         finalPayload.personnel = oldPersonnel;
       } else {
-        const deletedIds = Array.isArray(payload.deletedPersonnelIds)
-          ? new Set(
-              payload.deletedPersonnelIds.map((k) =>
-                String(k).trim().toLowerCase(),
-              ),
-            )
-          : new Set();
-        if (deletedIds.size > 0) {
+        if (deletedPersSet.size > 0) {
           finalPayload.personnel = payload.personnel.filter((p) => {
             const idKey = String(p.id || "")
               .trim()
@@ -995,11 +1070,15 @@ const handleSaveDraft = async (req, res) => {
               .toLowerCase();
             const nameKey =
               `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+            const stripId = idKey.replace(/^per-/, "").replace(/^prn-/, "");
+            const stripPrn = prnKey.replace(/^prn-/, "");
             return (
-              !deletedIds.has(idKey) &&
-              !deletedIds.has(prnKey) &&
-              (!empKey || !deletedIds.has(empKey)) &&
-              (!nameKey || !deletedIds.has(nameKey))
+              !deletedPersSet.has(idKey) &&
+              !deletedPersSet.has(prnKey) &&
+              (!empKey || !deletedPersSet.has(empKey)) &&
+              (!nameKey || !deletedPersSet.has(nameKey)) &&
+              (!stripId || !deletedPersSet.has(stripId)) &&
+              (!stripPrn || !deletedPersSet.has(stripPrn))
             );
           });
         } else {
@@ -1022,6 +1101,10 @@ const handleSaveDraft = async (req, res) => {
         ? new Set(payload.deletedSectionIds.map(String))
         : new Set();
 
+      const getPrimaryId = (s) => {
+        return s && s.id && String(s.id).trim() ? String(s.id).trim() : null;
+      };
+
       const getNaturalKey = (s) => {
         if (!s) return null;
         const gl = String(s.gradeLevel || s.grade_level || "")
@@ -1037,9 +1120,17 @@ const handleSaveDraft = async (req, res) => {
         return `${gl}::${sn}::${st}`;
       };
 
-      const getPrimaryId = (s) => {
-        return s && s.id && String(s.id).trim() ? String(s.id).trim() : null;
-      };
+      if (allowDeletion && oldSections.length > 0) {
+        const incomingIdSet = new Set(
+          incomingSections.map(getPrimaryId).filter(Boolean),
+        );
+        oldSections.forEach((oldSec) => {
+          const oldId = getPrimaryId(oldSec);
+          if (oldId && !incomingIdSet.has(oldId)) {
+            deletedIds.add(oldId);
+          }
+        });
+      }
 
       if (oldSections.length > 0) {
         // If incoming list is empty and deletion was not explicitly confirmed, preserve existing sections
@@ -1187,7 +1278,75 @@ const handleSaveDraft = async (req, res) => {
 
         finalPayload.classSections = Array.from(sectionMap.values());
       }
+
+      if (deletedIds.size > 0) {
+        finalPayload.deletedSectionIds = Array.from(deletedIds);
+        finalPayload.classSections = (finalPayload.classSections || []).filter(
+          (s) => !deletedIds.has(getPrimaryId(s)),
+        );
+        const delArr = Array.from(deletedIds);
+        const cleanSchoolId = schoolId.replace(/^SCH-/i, "");
+        const schoolIds = [schoolId, cleanSchoolId, "SCH-" + cleanSchoolId];
+
+        const executeDelete = async (dbClient) => {
+          if (!dbClient || !dbClient.query) return;
+          await Promise.all([
+            dbClient
+              .query(
+                "DELETE FROM esf7_regular_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch((e) =>
+                console.warn(
+                  "[DraftSave] Error deleting regular sections:",
+                  e.message,
+                ),
+              ),
+            dbClient
+              .query(
+                "DELETE FROM esf7_sned_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {}),
+            dbClient
+              .query(
+                "DELETE FROM esf7_als_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {}),
+            dbClient
+              .query(
+                "DELETE FROM esf7_aral_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {}),
+            dbClient
+              .query(
+                "DELETE FROM esf7_remedial_enrichment_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {}),
+            dbClient
+              .query(
+                "DELETE FROM esf7_class_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {}),
+            dbClient
+              .query(
+                "DELETE FROM class_sections WHERE id = ANY($1) AND (school_id = ANY($2) OR school_id IS NULL)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {}),
+          ]);
+        };
+
+        await executeDelete(db);
+        if (db.getStagingPool) await executeDelete(db.getStagingPool()).catch(() => {});
+        if (db.getProdPool) await executeDelete(db.getProdPool()).catch(() => {});
+      }
     }
+
 
     // Last line of defence: whatever path built the lists, a draft is never stored with two copies of one record.
     if (Array.isArray(finalPayload.classSections))

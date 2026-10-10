@@ -1659,11 +1659,34 @@ router.get("/", async (req, res) => {
         [sidPair],
       )
       .catch(() => ({ rows: [] }));
-    const delPromise = db
-      .query(`SELECT * FROM esf7_deleted_personnel WHERE school_id = ANY($1)`, [
-        sidPair,
-      ])
-      .catch(() => ({ rows: [] }));
+    const delPromise = Promise.all([
+      db
+        .query(
+          `SELECT * FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+      db.getStagingPool
+        ? db
+            .getStagingPool()
+            .query(
+              `SELECT * FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
+              [sidPair],
+            )
+            .catch(() => ({ rows: [] }))
+        : Promise.resolve({ rows: [] }),
+    ]).then(([r1, r2]) => {
+      const combined = [...(r1?.rows || []), ...(r2?.rows || [])];
+      const seen = new Set();
+      const deduped = [];
+      for (const row of combined) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id);
+          deduped.push(row);
+        }
+      }
+      return { rows: deduped };
+    });
 
     // 2. Fetch locally saved records from esf7_personnel_profile
     let result = await db.query(
@@ -1869,6 +1892,28 @@ router.get("/", async (req, res) => {
         deletedNameSet.has(nameUpper)
       )
         return true;
+
+      const stripId = idUpper.replace(/^PER-/, "").replace(/^PRN-/, "");
+      if (
+        stripId &&
+        isNonGenericKey(stripId) &&
+        (deletedIdSet.has(stripId) ||
+          deletedPrnSet.has(stripId) ||
+          deletedEmpNoSet.has(stripId))
+      ) {
+        return true;
+      }
+      const stripPrn = prnUpper.replace(/^PRN-/, "");
+      if (
+        stripPrn &&
+        isNonGenericKey(stripPrn) &&
+        (deletedPrnSet.has(stripPrn) ||
+          deletedIdSet.has(stripPrn) ||
+          deletedEmpNoSet.has(stripPrn))
+      ) {
+        return true;
+      }
+
       return false;
     };
 
@@ -4246,6 +4291,41 @@ router.delete("/:id", async (req, res) => {
       }
     }
 
+    // Also check esf7_room_roster_cache if still missing name or PRN
+    if ((!fName || !lName) && sid) {
+      const checkCache = async (pool) => {
+        if (!pool || !pool.query) return null;
+        try {
+          const cRes = await pool.query(
+            `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1 OR school_id = $2`,
+            [sid, `SCH-${sid}`],
+          );
+          for (const row of cRes.rows) {
+            if (Array.isArray(row.roster_json)) {
+              const matched = row.roster_json.find(
+                (r) =>
+                  String(r.id || "").toLowerCase() === targetId.toLowerCase() ||
+                  String(r.prn || "").toLowerCase() === targetId.toLowerCase() ||
+                  String(r.employeeNo || r.employee_no || "").toLowerCase() ===
+                    targetId.toLowerCase(),
+              );
+              if (matched) return matched;
+            }
+          }
+        } catch (e) {}
+        return null;
+      };
+      const foundInCache =
+        (await checkCache(db)) ||
+        (db.getStagingPool && (await checkCache(db.getStagingPool())));
+      if (foundInCache) {
+        fName = foundInCache.firstName || foundInCache.first_name || fName;
+        lName = foundInCache.lastName || foundInCache.last_name || lName;
+        prn = foundInCache.prn || prn;
+        empNo = foundInCache.employeeNo || foundInCache.employee_no || empNo;
+      }
+    }
+
     const isNonGenericVal = (val) => {
       if (!val || typeof val !== "string") return false;
       const s = val.trim().toUpperCase();
@@ -4278,62 +4358,152 @@ router.delete("/:id", async (req, res) => {
         ? cleanFullName
         : null;
 
-    // B. Record in esf7_deleted_personnel (only if at least one valid key exists)
+    // B. Record in esf7_deleted_personnel across BOTH pools
     if (sid && (validTargetId || validPrn || validEmpNo || validName)) {
       const tombstoneId = `DEL-${sid}-${String(validPrn || validTargetId || Math.random().toString(36).substring(2, 9)).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-      await db
-        .query(
-          `
-        INSERT INTO esf7_deleted_personnel (id, school_id, personnel_id, prn, employee_no, first_name, last_name, full_name_clean, deleted_by, deleted_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHOOL_HEAD', NOW())
-        ON CONFLICT (id) DO UPDATE SET
-          personnel_id = EXCLUDED.personnel_id,
-          prn = EXCLUDED.prn,
-          employee_no = EXCLUDED.employee_no,
-          first_name = EXCLUDED.first_name,
-          last_name = EXCLUDED.last_name,
-          full_name_clean = EXCLUDED.full_name_clean,
-          deleted_at = NOW()
-      `,
-          [
-            tombstoneId,
-            sid,
-            validTargetId,
-            validPrn,
-            validEmpNo,
-            validName ? String(fName).toUpperCase() : null,
-            validName ? String(lName).toUpperCase() : null,
-            validName,
-          ],
-        )
-        .catch((e) => {
-          console.warn("[Tombstone Record Notice]:", e.message);
-        });
+      const recordTombstone = async (pool) => {
+        if (!pool || !pool.query) return;
+        await pool
+          .query(
+            `
+          INSERT INTO esf7_deleted_personnel (id, school_id, personnel_id, prn, employee_no, first_name, last_name, full_name_clean, deleted_by, deleted_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHOOL_HEAD', NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            personnel_id = EXCLUDED.personnel_id,
+            prn = EXCLUDED.prn,
+            employee_no = EXCLUDED.employee_no,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            full_name_clean = EXCLUDED.full_name_clean,
+            deleted_at = NOW()
+        `,
+            [
+              tombstoneId,
+              sid,
+              validTargetId,
+              validPrn,
+              validEmpNo,
+              validName ? String(fName).toUpperCase() : null,
+              validName ? String(lName).toUpperCase() : null,
+              validName,
+            ],
+          )
+          .catch((e) => {
+            console.warn("[Tombstone Record Notice]:", e.message);
+          });
+      };
 
-      // B2. Scrub deleted personnel from school_drafts for this school
-      try {
-        const dRes = await db.query(
-          `SELECT payload, school_year FROM school_drafts WHERE school_id = $1`,
-          [sid],
-        );
-        for (const row of dRes.rows) {
-          let pld = row.payload;
-          if (pld && typeof pld === "object") {
-            let changed = false;
-            if (Array.isArray(pld.personnel)) {
-              const beforeLen = pld.personnel.length;
-              pld.personnel = pld.personnel.filter((p) => {
-                const pId = String(p.id || "")
+      await recordTombstone(db);
+      if (db.getStagingPool) await recordTombstone(db.getStagingPool());
+      if (db.getProdPool) await recordTombstone(db.getProdPool());
+
+      // B2. Scrub deleted personnel from school_drafts across BOTH pools
+      const scrubDraft = async (pool) => {
+        if (!pool || !pool.query) return;
+        try {
+          const dRes = await pool.query(
+            `SELECT payload, school_year, school_id FROM school_drafts WHERE school_id = $1 OR school_id = $2`,
+            [sid, `SCH-${sid}`],
+          );
+          for (const row of dRes.rows) {
+            let pld = row.payload;
+            if (pld && typeof pld === "object") {
+              let changed = false;
+              if (Array.isArray(pld.personnel)) {
+                const beforeLen = pld.personnel.length;
+                pld.personnel = pld.personnel.filter((p) => {
+                  const pId = String(p.id || "")
+                    .trim()
+                    .toLowerCase();
+                  const pPrn = String(p.prn || "")
+                    .trim()
+                    .toLowerCase();
+                  const pEmp = String(p.employeeNo || p.employee_no || "")
+                    .trim()
+                    .toLowerCase();
+                  const pName =
+                    `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+                  const tId = validTargetId
+                    ? String(validTargetId).toLowerCase()
+                    : "";
+                  const tPrn = validPrn ? String(validPrn).toLowerCase() : "";
+                  const tEmp = validEmpNo ? String(validEmpNo).toLowerCase() : "";
+                  const tName = validName ? validName.toLowerCase() : "";
+                  return (
+                    (!tId || (pId !== tId && pPrn !== tId)) &&
+                    (!tPrn || pPrn !== tPrn) &&
+                    (!tEmp || pEmp !== tEmp) &&
+                    (!tName || pName !== tName)
+                  );
+                });
+                if (pld.personnel.length !== beforeLen) changed = true;
+              }
+              if (Array.isArray(pld.classSections)) {
+                pld.classSections = pld.classSections.map((sec) => {
+                  if (
+                    (validTargetId &&
+                      String(sec.advisorId) === String(validTargetId)) ||
+                    (validPrn && String(sec.advisorId) === String(validPrn))
+                  ) {
+                    changed = true;
+                    return { ...sec, advisorId: null };
+                  }
+                  return sec;
+                });
+              }
+              const existingDel = Array.isArray(pld.deletedPersonnelIds)
+                ? pld.deletedPersonnelIds
+                : [];
+              const newKeys = [
+                validTargetId,
+                validPrn,
+                validEmpNo,
+                validName ? validName.toLowerCase() : null,
+              ].filter(Boolean);
+              pld.deletedPersonnelIds = Array.from(
+                new Set([...existingDel, ...newKeys]),
+              );
+              changed = true;
+              if (changed) {
+                await pool.query(
+                  `UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3`,
+                  [JSON.stringify(pld), row.school_id, row.school_year],
+                );
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[Draft scrub notice]:", e.message);
+        }
+      };
+
+      await scrubDraft(db);
+      if (db.getStagingPool) await scrubDraft(db.getStagingPool());
+      if (db.getProdPool) await scrubDraft(db.getProdPool());
+
+      // B3. Scrub deleted personnel from esf7_room_roster_cache across BOTH pools
+      const scrubCache = async (pool) => {
+        if (!pool || !pool.query) return;
+        try {
+          const cRes = await pool.query(
+            `SELECT school_id, roster_json FROM esf7_room_roster_cache WHERE school_id = $1 OR school_id = $2`,
+            [sid, `SCH-${sid}`],
+          );
+          for (const row of cRes.rows) {
+            if (Array.isArray(row.roster_json)) {
+              const beforeLen = row.roster_json.length;
+              const filtered = row.roster_json.filter((r) => {
+                const rId = String(r.id || "")
                   .trim()
                   .toLowerCase();
-                const pPrn = String(p.prn || "")
+                const rPrn = String(r.prn || "")
                   .trim()
                   .toLowerCase();
-                const pEmp = String(p.employeeNo || p.employee_no || "")
+                const rEmp = String(r.employeeNo || r.employee_no || "")
                   .trim()
                   .toLowerCase();
-                const pName =
-                  `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+                const rName =
+                  `${String(r.firstName || r.first_name || "").trim()} ${String(r.lastName || r.last_name || "").trim()}`.toLowerCase();
                 const tId = validTargetId
                   ? String(validTargetId).toLowerCase()
                   : "";
@@ -4341,119 +4511,108 @@ router.delete("/:id", async (req, res) => {
                 const tEmp = validEmpNo ? String(validEmpNo).toLowerCase() : "";
                 const tName = validName ? validName.toLowerCase() : "";
                 return (
-                  (!tId || (pId !== tId && pPrn !== tId)) &&
-                  (!tPrn || pPrn !== tPrn) &&
-                  (!tEmp || pEmp !== tEmp) &&
-                  (!tName || pName !== tName)
+                  (!tId || (rId !== tId && rPrn !== tId)) &&
+                  (!tPrn || rPrn !== tPrn) &&
+                  (!tEmp || rEmp !== tEmp) &&
+                  (!tName || rName !== tName)
                 );
               });
-              if (pld.personnel.length !== beforeLen) changed = true;
-            }
-            if (Array.isArray(pld.classSections)) {
-              pld.classSections = pld.classSections.map((sec) => {
-                if (
-                  (validTargetId &&
-                    String(sec.advisorId) === String(validTargetId)) ||
-                  (validPrn && String(sec.advisorId) === String(validPrn))
-                ) {
-                  changed = true;
-                  return { ...sec, advisorId: null };
-                }
-                return sec;
-              });
-            }
-            const existingDel = Array.isArray(pld.deletedPersonnelIds)
-              ? pld.deletedPersonnelIds
-              : [];
-            const newKeys = [
-              validTargetId,
-              validPrn,
-              validEmpNo,
-              validName ? validName.toLowerCase() : null,
-            ].filter(Boolean);
-            pld.deletedPersonnelIds = Array.from(
-              new Set([...existingDel, ...newKeys]),
-            );
-            changed = true;
-            if (changed) {
-              await db.query(
-                `UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3`,
-                [JSON.stringify(pld), sid, row.school_year],
-              );
+              if (filtered.length !== beforeLen) {
+                await pool.query(
+                  `UPDATE esf7_room_roster_cache SET roster_json = $1, updated_at = NOW() WHERE school_id = $2`,
+                  [JSON.stringify(filtered), row.school_id],
+                );
+              }
             }
           }
-        }
-      } catch (e) {
-        console.warn("[Draft scrub notice]:", e.message);
-      }
+        } catch (e) {}
+      };
+
+      await scrubCache(db);
+      if (db.getStagingPool) await scrubCache(db.getStagingPool());
+      if (db.getProdPool) await scrubCache(db.getProdPool());
     }
 
-    // 1. Unassign advisor from any class sections
-    await db
-      .query(
-        `UPDATE esf7_class_sections SET advisor_id = NULL WHERE advisor_id = $1`,
-        [targetId],
-      )
-      .catch(() => {});
+    // Execute cascade cleanups across BOTH pools
+    const executeCascadeDeletes = async (pool) => {
+      if (!pool || !pool.query) return;
+      await Promise.all([
+        pool
+          .query(
+            `UPDATE esf7_class_sections SET advisor_id = NULL WHERE advisor_id = $1`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_ld_trainings WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_trainings WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_designations WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_extra_tasks WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_allowances WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_overload_late_undertime WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_overload_no_work WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
+            [targetId],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`,
+            [targetId],
+          )
+          .catch(() => {}),
+      ]);
+    };
 
-    // 2. Clean up child records (workloads, designations, trainings, tasks, allowances)
-    await db
-      .query(
-        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_shs_workload_rows WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_personnel_trainings WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_personnel_designations WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_personnel_extra_tasks WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_personnel_allowances WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_overload_late_undertime WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
-    await db
-      .query(
-        `DELETE FROM esf7_overload_no_work WHERE personnel_id = $1 OR personnel_id IN (SELECT id FROM esf7_personnel_profile WHERE prn = $1)`,
-        [targetId],
-      )
-      .catch(() => {});
+    await executeCascadeDeletes(db);
+    if (db.getStagingPool) await executeCascadeDeletes(db.getStagingPool());
+    if (db.getProdPool) await executeCascadeDeletes(db.getProdPool());
 
-    // 3. Remove from esf7_personnel_profile
-    const delRes = await db.query(
-      `DELETE FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`,
-      [targetId],
-    );
     res.json({
       success: true,
-      count: delRes.rowCount,
+      count: 1,
       message: `Personnel profile ${targetId} and all linked records deleted successfully.`,
     });
   } catch (err) {

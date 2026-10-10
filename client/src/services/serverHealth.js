@@ -329,7 +329,10 @@ if (typeof window !== "undefined") {
       existing.type === "lock" &&
       Date.now() - existing.t < 5 * 60 * 1000
     ) {
-      setTimeout(() => handleRemote("lock"), 0);
+      setTimeout(() => {
+        handleRemote("lock");
+        schedulePoll(0);
+      }, 0);
     }
   } catch (e) {}
 }

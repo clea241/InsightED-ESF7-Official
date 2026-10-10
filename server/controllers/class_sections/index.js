@@ -635,11 +635,64 @@ router.post("/regular/sync", async (req, res) => {
       }
       let removed = 0;
       if (deletedIds.length) {
+        const delArr = deletedIds.map(String);
+        const schoolIds = [schoolId, "SCH-" + schoolId];
         const d = await client.query(
           "DELETE FROM esf7_regular_sections WHERE id = ANY($1) AND school_id = ANY($2)",
-          [deletedIds.map(String), [schoolId, "SCH-" + schoolId]],
+          [delArr, schoolIds],
         );
         removed = d.rowCount;
+
+        const purgeCrossPool = async (dbPool) => {
+          if (!dbPool || !dbPool.query) return;
+          try {
+            await dbPool.query(
+              "DELETE FROM esf7_regular_sections WHERE id = ANY($1) AND school_id = ANY($2)",
+              [delArr, schoolIds],
+            ).catch(() => {});
+
+            const draftRes = await dbPool.query(
+              "SELECT school_year, payload FROM school_drafts WHERE school_id = $1 OR school_id = $2",
+              schoolIds,
+            );
+            for (const r of draftRes.rows) {
+              if (r.payload) {
+                let modified = false;
+                const delSet = new Set(delArr);
+                if (Array.isArray(r.payload.classSections)) {
+                  const origLen = r.payload.classSections.length;
+                  r.payload.classSections = r.payload.classSections.filter(
+                    (s) => !delSet.has(String(s.id)),
+                  );
+                  if (r.payload.classSections.length !== origLen) modified = true;
+                }
+                if (Array.isArray(r.payload.sections)) {
+                  const origLen = r.payload.sections.length;
+                  r.payload.sections = r.payload.sections.filter(
+                    (s) => !delSet.has(String(s.id)),
+                  );
+                  if (r.payload.sections.length !== origLen) modified = true;
+                }
+                if (modified) {
+                  const curDel = Array.isArray(r.payload.deletedSectionIds)
+                    ? r.payload.deletedSectionIds.map(String)
+                    : [];
+                  delArr.forEach((id) => {
+                    if (!curDel.includes(id)) curDel.push(id);
+                  });
+                  r.payload.deletedSectionIds = curDel;
+                  await dbPool.query(
+                    "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE (school_id = $2 OR school_id = $3) AND school_year = $4",
+                    [r.payload, schoolId, "SCH-" + schoolId, r.school_year],
+                  );
+                }
+              }
+            }
+          } catch (e) {}
+        };
+
+        if (db.getStagingPool) await purgeCrossPool(db.getStagingPool());
+        if (db.getProdPool) await purgeCrossPool(db.getProdPool());
       }
       return { saved, removed };
     });
@@ -1276,35 +1329,98 @@ router.delete("/clear-all", async (req, res) => {
   }
 });
 
-// Generic DELETE endpoint (checks all 5 section tables)
+// Generic DELETE endpoint (checks all 5 section tables and purges from drafts across pools)
 router.delete("/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    await Promise.all([
-      db
-        .query(`DELETE FROM esf7_regular_sections WHERE id = $1`, [id])
-        .catch(() => {}),
-      db
-        .query(`DELETE FROM esf7_sned_sections WHERE id = $1`, [id])
-        .catch(() => {}),
-      db
-        .query(`DELETE FROM esf7_als_sections WHERE id = $1`, [id])
-        .catch(() => {}),
-      db
-        .query(`DELETE FROM esf7_aral_sections WHERE id = $1`, [id])
-        .catch(() => {}),
-      db
-        .query(`DELETE FROM esf7_remedial_enrichment_sections WHERE id = $1`, [
-          id,
-        ])
-        .catch(() => {}),
-      db
-        .query(`DELETE FROM esf7_class_sections WHERE id = $1`, [id])
-        .catch(() => {}),
-      db
-        .query(`DELETE FROM class_sections WHERE id = $1`, [id])
-        .catch(() => {}),
-    ]);
+    const schoolId =
+      getSchoolIdFromRequest(req) ||
+      req.headers["x-school-id"] ||
+      req.query.schoolId ||
+      req.query.school_id ||
+      null;
+    const cleanSchoolId = schoolId
+      ? String(schoolId).replace(/^SCH-/i, "").trim()
+      : null;
+    const schoolIds = [schoolId, cleanSchoolId, "SCH-" + cleanSchoolId].filter(
+      Boolean,
+    );
+
+    const executeDelete = async (dbPool) => {
+      if (!dbPool || !dbPool.query) return;
+      await Promise.all([
+        dbPool
+          .query(`DELETE FROM esf7_regular_sections WHERE id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_sned_sections WHERE id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_als_sections WHERE id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_aral_sections WHERE id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(
+            `DELETE FROM esf7_remedial_enrichment_sections WHERE id = $1`,
+            [id],
+          )
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_class_sections WHERE id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM class_sections WHERE id = $1`, [id])
+          .catch(() => {}),
+      ]);
+
+      // Also clean up school_drafts in this pool
+      try {
+        const queryText =
+          schoolIds.length > 0
+            ? "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)"
+            : "SELECT school_id, school_year, payload FROM school_drafts WHERE payload::text LIKE $1";
+        const queryParams =
+          schoolIds.length > 0 ? [schoolIds] : [`%${id}%`];
+        const draftRes = await dbPool.query(queryText, queryParams);
+        for (const r of draftRes.rows) {
+          if (r.payload) {
+            let modified = false;
+            if (Array.isArray(r.payload.classSections)) {
+              const origLen = r.payload.classSections.length;
+              r.payload.classSections = r.payload.classSections.filter(
+                (s) => String(s.id) !== String(id),
+              );
+              if (r.payload.classSections.length !== origLen) modified = true;
+            }
+            if (Array.isArray(r.payload.sections)) {
+              const origLen = r.payload.sections.length;
+              r.payload.sections = r.payload.sections.filter(
+                (s) => String(s.id) !== String(id),
+              );
+              if (r.payload.sections.length !== origLen) modified = true;
+            }
+            if (modified) {
+              const delList = Array.isArray(r.payload.deletedSectionIds)
+                ? r.payload.deletedSectionIds.map(String)
+                : [];
+              if (!delList.includes(String(id))) delList.push(String(id));
+              r.payload.deletedSectionIds = delList;
+              await dbPool.query(
+                "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3",
+                [r.payload, r.school_id, r.school_year],
+              );
+            }
+          }
+        }
+      } catch (e) {}
+    };
+
+    await executeDelete(db);
+    if (db.getStagingPool) await executeDelete(db.getStagingPool()).catch(() => {});
+    if (db.getProdPool) await executeDelete(db.getProdPool()).catch(() => {});
+
     res.json({ success: true, message: `Section ${id} deleted successfully.` });
   } catch (err) {
     res.status(500).json({ error: err.message });

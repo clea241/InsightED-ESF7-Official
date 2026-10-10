@@ -1631,6 +1631,7 @@ export default function OrganizedClasses() {
     updateSectionAdviser,
     updateSectionLearners,
     removeClassSection,
+    deletedSectionIds,
     personnel,
     setPersonnel,
     schoolInfo,
@@ -1821,7 +1822,71 @@ export default function OrganizedClasses() {
   ];
 
   // Inline row editing state
+  const resolveSectionName = useCallback(
+    (sec) => {
+      if (!sec) return "";
+      const raw = String(sec.sectionName || sec.section_name || "").trim();
+      const isSynthetic =
+        !raw ||
+        raw.startsWith("sec-draft-") ||
+        raw.startsWith("sec-") ||
+        raw === String(sec.id);
+      if (!isSynthetic) return raw;
+      if (
+        sec.raw_payload?.sectionName &&
+        !sec.raw_payload.sectionName.startsWith("sec-draft-")
+      ) {
+        return sec.raw_payload.sectionName;
+      }
+      if (
+        sec.raw_payload?.section_name &&
+        !sec.raw_payload.section_name.startsWith("sec-draft-")
+      ) {
+        return sec.raw_payload.section_name;
+      }
+      for (const p of personnel || []) {
+        if (Array.isArray(p.workloadRows)) {
+          const w = p.workloadRows.find(
+            (r) =>
+              (r.sectionId === sec.id || r.section_id === sec.id) &&
+              r.sectionName &&
+              !r.sectionName.startsWith("sec-draft-"),
+          );
+          if (w) return w.sectionName;
+        }
+      }
+      return raw || sec.id || "";
+    },
+    [personnel],
+  );
+
+  const handleDeleteSection = useCallback(
+    async (sec, label = "Section") => {
+      if (!sec) return;
+      const secName = resolveSectionName(sec);
+      const confirmed = await showConfirm(
+        `Remove ${label}`,
+        `Remove ${secName || sec.id}?`,
+      );
+      if (!confirmed) return;
+
+      await removeClassSection(sec.id);
+
+      // Immediately purge from snapshot so discard / logout doesn't restore this deleted section
+      if (savedSectionsSnapshotRef.current) {
+        try {
+          const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+          savedSectionsSnapshotRef.current = JSON.stringify(
+            snapList.filter((s) => String(s.id) !== String(sec.id)),
+          );
+        } catch (e) {}
+      }
+    },
+    [resolveSectionName, showConfirm, removeClassSection],
+  );
+
   const [editingRowId, setEditingRowId] = useState(null);
+
   const [editingRowData, setEditingRowData] = useState(null);
   // Inline add section row state (Regular Sections)
   const [showInlineAdd, setShowInlineAdd] = useState(false);
@@ -3086,8 +3151,33 @@ export default function OrganizedClasses() {
           raw.startsWith("sec-") ||
           raw.startsWith("ALS-") ||
           raw === String(sec.id);
-        return isGenId ? "" : raw;
+        if (!isGenId && raw) return raw;
+        if (
+          sec.raw_payload?.sectionName &&
+          !sec.raw_payload.sectionName.startsWith("sec-draft-")
+        ) {
+          return sec.raw_payload.sectionName;
+        }
+        if (
+          sec.raw_payload?.section_name &&
+          !sec.raw_payload.section_name.startsWith("sec-draft-")
+        ) {
+          return sec.raw_payload.section_name;
+        }
+        for (const p of personnel || []) {
+          if (Array.isArray(p.workloadRows)) {
+            const w = p.workloadRows.find(
+              (r) =>
+                (r.sectionId === sec.id || r.section_id === sec.id) &&
+                r.sectionName &&
+                !r.sectionName.startsWith("sec-draft-"),
+            );
+            if (w) return w.sectionName;
+          }
+        }
+        return "";
       })(),
+
       maleLearners:
         sec.maleLearners !== undefined && sec.maleLearners !== null
           ? String(sec.maleLearners)
@@ -3895,23 +3985,24 @@ export default function OrganizedClasses() {
         return JSON.stringify(secCompare) !== snapJson;
       });
 
-      // 2. Identify deleted sections
-      const deletedSections = snapshotList.filter(
+      // 2. Identify deleted sections (combine snapshot differences and deletedSectionIds)
+      const snapDeleted = snapshotList.filter(
         (s) => !currentIds.has(String(s.id)),
       );
-
+      const allDeletedIds = new Set([
+        ...snapDeleted.map((s) => String(s.id)),
+        ...(deletedSectionIds || []).map(String),
+      ]);
+      const regularDeleted = Array.from(allDeletedIds);
+      const otherDeleted = snapDeleted.filter(
+        (sec) => api.sectionKind(sec) !== "regular",
+      );
       // Regular sections are saved together in ONE awaited database transaction (idempotent upserts keyed by the
       // section id / grade+name, plus the explicit deletions). Other section kinds keep their own tables and routes.
       const regularChanged = changedSections.filter(
         (sec) => api.sectionKind(sec) === "regular",
       );
       const otherChanged = changedSections.filter(
-        (sec) => api.sectionKind(sec) !== "regular",
-      );
-      const regularDeleted = deletedSections.filter(
-        (sec) => api.sectionKind(sec) === "regular",
-      );
-      const otherDeleted = deletedSections.filter(
         (sec) => api.sectionKind(sec) !== "regular",
       );
       const saveYear = schoolInfo?.schoolYear || "SY 26-27";
@@ -3925,7 +4016,7 @@ export default function OrganizedClasses() {
             schoolId: schoolInfo?.schoolId,
             schoolYear: saveYear,
           })),
-          deletedIds: regularDeleted.map((sec) => String(sec.id)),
+          deletedIds: regularDeleted.map(String),
         });
         // Verify what the database stored before anything is reported as saved: same number of sections, and each section's
         // stored adviser equals the one that was sent ("" = Unassigned on purpose). A mismatch is a failed save.
@@ -4420,7 +4511,7 @@ export default function OrganizedClasses() {
               label: "Section Name",
               width: COL_W.sectionName,
               filterPlaceholder: "Section Name",
-              getValue: (sec) => sec.sectionName || "",
+              getValue: (sec) => resolveSectionName(sec),
             },
             {
               key: "male",
@@ -4548,14 +4639,16 @@ export default function OrganizedClasses() {
               width: COL_W.sectionName,
               filterPlaceholder: "Section Name",
               getValue: (sec) => {
-                const name = String(sec.sectionName || sec.section_name || "").trim();
+                const resolved = resolveSectionName(sec);
                 const isGenId =
-                  name.startsWith("sec-draft-") ||
-                  name.startsWith("sec-") ||
-                  name.startsWith("ALS-") ||
-                  name === String(sec.id);
-                return !isGenId && name ? name : "";
+                  !resolved ||
+                  resolved.startsWith("sec-draft-") ||
+                  resolved.startsWith("sec-") ||
+                  resolved.startsWith("ALS-") ||
+                  resolved === String(sec.id);
+                return !isGenId && resolved ? resolved : "";
               },
+
             },
             {
               key: "male",
@@ -6438,7 +6531,7 @@ export default function OrganizedClasses() {
                                     color: "#0F172A",
                                   }}
                                 >
-                                  {sec.sectionName}
+                                  {resolveSectionName(sec)}
                                 </td>
                                 <td
                                   style={{
@@ -6577,15 +6670,7 @@ export default function OrganizedClasses() {
                                     <button
                                       type="button"
                                       disabled={isBeingEdited}
-                                      onClick={async () => {
-                                        if (
-                                          await showConfirm(
-                                            "Remove Section",
-                                            `Remove ${sec.sectionName}?`,
-                                          )
-                                        )
-                                          removeClassSection(sec.id);
-                                      }}
+                                      onClick={() => handleDeleteSection(sec, "Section")}
                                       style={{
                                         background: "none",
                                         color: "#EF4444",
@@ -7288,15 +7373,7 @@ export default function OrganizedClasses() {
                                       <button
                                         type="button"
                                         disabled={isBeingEdited}
-                                        onClick={async () => {
-                                          if (
-                                            await showConfirm(
-                                              "Remove SNED Section",
-                                              `Remove ${sec.sectionName}?`,
-                                            )
-                                          )
-                                            removeClassSection(sec.id);
-                                        }}
+                                        onClick={() => handleDeleteSection(sec, "SNED Section")}
                                         style={{
                                           background: "none",
                                           color: "#EF4444",
@@ -7710,18 +7787,16 @@ export default function OrganizedClasses() {
                                     }}
                                   >
                                     {(() => {
-                                      const raw = String(
-                                        sec.sectionName ||
-                                          sec.section_name ||
-                                          "",
-                                      ).trim();
+                                      const res = resolveSectionName(sec);
                                       const isGenId =
-                                        raw.startsWith("sec-draft-") ||
-                                        raw.startsWith("sec-") ||
-                                        raw.startsWith("ALS-") ||
-                                        raw === String(sec.id);
-                                      return !isGenId && raw ? raw : "—";
+                                        !res ||
+                                        res.startsWith("sec-draft-") ||
+                                        res.startsWith("sec-") ||
+                                        res.startsWith("ALS-") ||
+                                        res === String(sec.id);
+                                      return !isGenId && res ? res : "—";
                                     })()}
+
                                   </td>
                                   <td
                                     style={{
@@ -7815,15 +7890,7 @@ export default function OrganizedClasses() {
                                       <button
                                         type="button"
                                         disabled={isBeingEdited}
-                                        onClick={async () => {
-                                          if (
-                                            await showConfirm(
-                                              "Remove ALS Section",
-                                              `Remove ${sec.sectionName}?`,
-                                            )
-                                          )
-                                            removeClassSection(sec.id);
-                                        }}
+                                        onClick={() => handleDeleteSection(sec, "ALS Section")}
                                         style={{
                                           background: "none",
                                           color: "#EF4444",
@@ -8393,15 +8460,7 @@ export default function OrganizedClasses() {
                                     <button
                                       type="button"
                                       disabled={isBeingEdited}
-                                      onClick={async () => {
-                                        if (
-                                          await showConfirm(
-                                            "Remove ARAL Section",
-                                            `Remove ${sec.sectionName}?`,
-                                          )
-                                        )
-                                          removeClassSection(sec.id);
-                                      }}
+                                      onClick={() => handleDeleteSection(sec, "ARAL Section")}
                                       style={{
                                         background: "none",
                                         color: "#EF4444",
@@ -8938,15 +8997,7 @@ export default function OrganizedClasses() {
                                     <button
                                       type="button"
                                       disabled={isBeingEdited}
-                                      onClick={async () => {
-                                        if (
-                                          await showConfirm(
-                                            "Remove Section",
-                                            `Remove ${sec.sectionName}?`,
-                                          )
-                                        )
-                                          removeClassSection(sec.id);
-                                      }}
+                                      onClick={() => handleDeleteSection(sec, "Remedial / Enrichment Section")}
                                       style={{
                                         background: "none",
                                         color: "#EF4444",
