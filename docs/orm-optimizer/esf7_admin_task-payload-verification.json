@@ -1,0 +1,190 @@
+{
+  "status": "PASS",
+  "table": "esf7_admin_task",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T14:18:31.384Z",
+  "finishedAt": "2026-10-10T14:18:31.910Z",
+  "rowCountAtStart": 15313,
+  "rowCountAtEnd": 15313,
+  "rowsChecked": 15313,
+  "newFormatRowsSkipped": 0,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 80973,
+    "heldByTypedColumn": 65660,
+    "heldByExtras": 15313,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "bytes": {
+    "avgPayload": 136,
+    "avgExtras": 17
+  },
+  "payloadFingerprint": {
+    "current": "5fa96c930bfb3befa0bc9304ecaa7b5b",
+    "backup": "5fa96c930bfb3befa0bc9304ecaa7b5b"
+  },
+  "perKey": {
+    "days": {
+      "viaColumn": 11670,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "task": {
+      "viaColumn": 15313,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "term": {
+      "viaColumn": 11670,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hours": {
+      "viaColumn": 0,
+      "viaExtras": 11669,
+      "unaccounted": 0
+    },
+    "endTime": {
+      "viaColumn": 11670,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "startTime": {
+      "viaColumn": 11670,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "id": {
+      "viaColumn": 1,
+      "viaExtras": 3643,
+      "unaccounted": 0
+    },
+    "dates": {
+      "viaColumn": 3644,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "status": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "endDate": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "category": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "end_date": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "end_time": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "schoolId": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "taskName": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "school_id": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "startDate": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "task_name": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "rawPayload": {
+      "viaColumn": 0,
+      "viaExtras": 1,
+      "unaccounted": 0
+    },
+    "schoolYear": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "start_date": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "start_time": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "personnelId": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "school_year": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "personnel_id": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "taskCategory": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "termTotalHours": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "durationMinutes": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "duration_minutes": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "isDesignationSynced": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "is_designation_synced": {
+      "viaColumn": 1,
+      "viaExtras": 0,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of alias copies (a camelCase or snake_case spelling of a typed column with the same value) is not preserved; the formatters regenerate the ones the API returns."
+}

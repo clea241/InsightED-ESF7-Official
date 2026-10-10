@@ -25,7 +25,8 @@ const TABLES_SQL = `
     id VARCHAR(80) PRIMARY KEY, personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
     school_id TEXT NOT NULL, school_year TEXT NOT NULL, grade_level TEXT, section_id VARCHAR(50), section_name TEXT,
     subject TEXT NOT NULL, subject_id VARCHAR(50), remediation_subject TEXT, start_time TIME, end_time TIME,
-    days JSONB DEFAULT '["M","T","W","TH","F"]'::jsonb, term TEXT DEFAULT '1st', raw_payload JSONB DEFAULT '{}'::jsonb,
+    days JSONB DEFAULT '["M","T","W","TH","F"]'::jsonb, term TEXT DEFAULT '1st', extras JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   );
   CREATE TABLE esf7_shs_workload_rows (

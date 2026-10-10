@@ -47,6 +47,7 @@ let isShuttingDown = false;
 app.use((req, res, next) => {
   if (isShuttingDown) {
     res.set("Connection", "close");
+    res.set("Retry-After", "5");
     return res
       .status(503)
       .json({ error: "Server is restarting for maintenance, please retry." });
@@ -732,7 +733,7 @@ const startServer = (port) => {
         `⚠️ Force exiting after timeout with ${activeRequests} remaining in-flight requests.`,
       );
       process.exit(0); // Postgres rolls back any open transaction when the connection drops
-    }, 12000);
+    }, 18000);
   };
 
   process.once("SIGUSR2", () => {

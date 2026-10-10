@@ -33,7 +33,7 @@ async function createSchoolProfileTable() {
           jhs_special_programs JSONB DEFAULT '[]'::jsonb,
           shs_curriculum_model TEXT,
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
+          extras JSONB NOT NULL DEFAULT '{}'::jsonb,
           
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -14,7 +14,7 @@ module.exports = {
       cwd: "/var/www/html/InsightED-ROSDO/insighted-esf7-prod",
       instances: 4,
       exec_mode: "cluster",
-      kill_timeout: 15000,
+      kill_timeout: 25000,
       wait_ready: true,
       listen_timeout: 10000,
       env: {
@@ -45,7 +45,7 @@ module.exports = {
       cwd: "/var/www/html/InsightED-ROSDO/insighted-esf7-prod",
       instances: 1,
       exec_mode: "fork",
-      kill_timeout: 15000,
+      kill_timeout: 25000,
       wait_ready: true,
       listen_timeout: 10000,
       env: {

@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 2026-10-10 (security: report download path traversal, SEC-571)
+- Server: `GET /api/reports/download-overload-pay/:filename` now only serves a plain `*.xlsx` file name that resolves inside `server/scratch/`; `..`, slashes, encoded separators, null bytes and other extensions return 400. Previously an encoded `..%2F` let any logged-in user read files such as `server/package.json` or `server/.env`.
+- Tests: `e2e/security/report-download-traversal.spec.mjs` (traversal variants refused, a legitimate file still downloads intact).
+- Not changed: any logged-in school can still download another school's report if it knows the file name (names embed the school id and a timestamp). Worth a separate decision.
+
+## 2026-10-10 (six more tables stop storing the request body, esf7_local only)
+- DB: `raw_payload` replaced by `extras` JSONB on `esf7_personnel_allowances`, `esf7_requests`, `esf7_school_profile`, `esf7_related_task`, `esf7_admin_task`, `esf7_regular_sections` (generic CLI `migrations/payload_extras.js expand|backfill|verify|drop <table>`). Applied to `esf7_local` only; heap 117 -> 62 MB across the six tables.
+- Server: allowance toggle/bulk, request create, regular-section save, workload bulk save (related and admin tasks), draft persistence, the submission queue worker and five one-off scripts now write typed columns + `extras`; the allowance, request, regular-section and admin-task formatters and the school-profile fallbacks read typed columns + `extras`. API responses are unchanged for every row (checked against the old formatters).
+- The duplicate-request check now uses `extras->>'personnelId'` instead of `raw_payload->>'personnelId'`.
+- Proof and numbers: `docs/orm-optimizer/payload-six-tables.md`.
+
+## 2026-10-10 (esf7_workload_rows stops storing the request body, pilot, esf7_local only)
+- DB: `esf7_workload_rows.raw_payload` replaced by `extras` JSONB (only keys without a typed column, plus alias values that differ from the column). Migrations: `expand_workload_rows_extras.js`, `backfill_workload_rows_extras.js`, `verify_workload_rows_extras.js`, `drop_workload_rows_raw_payload.js`. Applied to `esf7_local` only; heap 405 MB -> 194 MB, full scan buffers 51,848 -> 24,836.
+- Server: POST /api/workloads, bulk save (PUT/POST /personnel/:id, /bulk), PUT /:id, the submission queue worker and two one-off scripts now write typed columns + extras; the two `formatWorkloadRecord` functions and the section-conflict check read typed columns + extras. API responses keep every existing key and value; `subjectName` / `subject_name` are now always present (equal to `subject`).
+- Proof and details: `docs/orm-optimizer/workload-rows-payload-pilot.md`. The other six duplicated-payload tables are unchanged.
+
+## 2026-10-10 (Global Server-Health Modal / AppContext Autosave & Offline Queue / Recovery Sync / PM2 Shutdown)
+- Client Autosave: Debounce 3500ms preserved in AppContext.jsx. Immediate flush of latestDraftRef.current added for visibilitychange (hidden) and pagehide. Added periodic background save (20s interval, unmount cleanup) with normalized signature dirty check.
+- Form State & Dirty Guards: flushAllDirtyGuards() integrated into window blur, focusout, pagehide, visibilitychange, and onServerLock. Registered onFlush across PersonnelProfile.jsx, Workload.jsx, and Deployment.jsx to flush uncommitted editPerson component state to AppContext before IndexedDB persistence.
+- Storage Keys: Re-keyed local storage keys to canonical format via storageKeys.js. Provided transparent migration fallback with legacy cleanup.
+- Recovery Sync: Eliminated page reloads on server recovery (window.location.reload() removed). Single-flight recovery lock (isRecoveringRef), database baseline load, stable-key diff overlay with conflict prompt for newer server records, and transactional save replay.
+- Backend Persistence: In handleSaveDraft, implemented transactional upsert (persistNormalizedDraft) writing into normalized tables (esf7_school_profile, esf7_personnel_profile, esf7_personnel_employment, esf7_perssonel_educ, esf7_regular_sections, esf7_workload_rows, syncDraftToNodeStatus). Personnel inserted before sections for adviser FK resolution. Backwards-compatible school_drafts update.
+- Server Shutdown Margin: 503 with Retry-After: 5 and Connection: close during shutdown. Statement timeout 8000ms. PM2 kill_timeout 25000ms across ecosystem configs with 18000ms exit timeout.
+
+
+## 2026-10-10 (paginated workload list)
+- Server: `GET /api/workloads` now returns one page (default 100, max 500) ordered by `created_at, id`, instead of all ~652k rows. Body is still an array; paging info is in headers `X-Next-Cursor`, `X-Page-Limit`, and `X-Total-Count` (first page only). Bad cursor -> 400.
+- DB: new index `idx_esf7_workload_rows_created_at_id (created_at, id)` in `drizzle/schema.ts` and idempotent migration `migrations/add_workload_rows_created_at_index.js` (CONCURRENTLY). Applied to `esf7_local` only.
+- Measured on `esf7_local` (see `docs/orm-optimizer/plans/workload-rows-*`): full list 1,443 ms with disk sort -> page query 0.13 ms via index scan. All 1,304 pages of 500 equal the old result (same rows, same order, same total).
+- No client change: no screen calls this list route (checked `client/src`, server tests, e2e).
+
 ## 2026-10-09 (prelaunch-readiness-check skill)
 - Tooling only, no app code changed: new read-only skill `.claude/skills/prelaunch-readiness-check/` (108-check catalog, `collect-evidence.js`, `score.js`, tests). Safe mode by default; staging/DB/npm-audit/nginx -t probes are opt-in. `readiness-reports/` added to `.gitignore`. Rollback: delete the skill folder and the .gitignore lines.
 

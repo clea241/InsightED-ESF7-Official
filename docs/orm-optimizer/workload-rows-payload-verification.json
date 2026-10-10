@@ -1,0 +1,208 @@
+{
+  "status": "PASS",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T13:52:15.675Z",
+  "finishedAt": "2026-10-10T13:52:32.823Z",
+  "rowCountAtStart": 651940,
+  "rowCountAtEnd": 651940,
+  "rowsChecked": 651940,
+  "newFormatRowsSkipped": 0,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "universalKeysRebuiltExactly": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 8663841,
+    "heldByTypedColumn": 6990259,
+    "heldByExtras": 1673582,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "exactKeySetRows": 1408,
+  "bytes": {
+    "legacyPayloadTotal": 227999419,
+    "extrasTotal": 36145832,
+    "avgPayload": 350,
+    "avgExtras": 55
+  },
+  "payloadFingerprint": {
+    "current": "c5d24ff14cf955a6598b8ebbc60cc9e5",
+    "backup": "c5d24ff14cf955a6598b8ebbc60cc9e5"
+  },
+  "perKey": {
+    "id": {
+      "viaColumn": 651940,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "days": {
+      "viaColumn": 651940,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "term": {
+      "viaColumn": 299201,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "endTime": {
+      "viaColumn": 651898,
+      "viaExtras": 42,
+      "unaccounted": 0
+    },
+    "subject": {
+      "viaColumn": 648473,
+      "viaExtras": 3467,
+      "unaccounted": 0
+    },
+    "category": {
+      "viaColumn": 0,
+      "viaExtras": 191070,
+      "unaccounted": 0
+    },
+    "sectionId": {
+      "viaColumn": 627661,
+      "viaExtras": 24279,
+      "unaccounted": 0
+    },
+    "startTime": {
+      "viaColumn": 651907,
+      "viaExtras": 33,
+      "unaccounted": 0
+    },
+    "gradeLevel": {
+      "viaColumn": 643094,
+      "viaExtras": 8846,
+      "unaccounted": 0
+    },
+    "sectionName": {
+      "viaColumn": 651940,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "end_time": {
+      "viaColumn": 596,
+      "viaExtras": 13,
+      "unaccounted": 0
+    },
+    "schoolId": {
+      "viaColumn": 0,
+      "viaExtras": 608,
+      "unaccounted": 0
+    },
+    "school_id": {
+      "viaColumn": 0,
+      "viaExtras": 609,
+      "unaccounted": 0
+    },
+    "subjectId": {
+      "viaColumn": 608,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "rawPayload": {
+      "viaColumn": 0,
+      "viaExtras": 608,
+      "unaccounted": 0
+    },
+    "schoolYear": {
+      "viaColumn": 0,
+      "viaExtras": 608,
+      "unaccounted": 0
+    },
+    "section_id": {
+      "viaColumn": 330722,
+      "viaExtras": 21403,
+      "unaccounted": 0
+    },
+    "start_time": {
+      "viaColumn": 598,
+      "viaExtras": 11,
+      "unaccounted": 0
+    },
+    "subject_id": {
+      "viaColumn": 608,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "grade_level": {
+      "viaColumn": 351857,
+      "viaExtras": 269,
+      "unaccounted": 0
+    },
+    "personnelId": {
+      "viaColumn": 0,
+      "viaExtras": 608,
+      "unaccounted": 0
+    },
+    "school_year": {
+      "viaColumn": 0,
+      "viaExtras": 609,
+      "unaccounted": 0
+    },
+    "personnel_id": {
+      "viaColumn": 0,
+      "viaExtras": 609,
+      "unaccounted": 0
+    },
+    "section_name": {
+      "viaColumn": 351225,
+      "viaExtras": 901,
+      "unaccounted": 0
+    },
+    "remediationSubject": {
+      "viaColumn": 109,
+      "viaExtras": 10875,
+      "unaccounted": 0
+    },
+    "remediation_subject": {
+      "viaColumn": 0,
+      "viaExtras": 608,
+      "unaccounted": 0
+    },
+    "daySchedule": {
+      "viaColumn": 0,
+      "viaExtras": 123142,
+      "unaccounted": 0
+    },
+    "subjectName": {
+      "viaColumn": 124598,
+      "viaExtras": 294,
+      "unaccounted": 0
+    },
+    "durationMinutes": {
+      "viaColumn": 0,
+      "viaExtras": 123142,
+      "unaccounted": 0
+    },
+    "trackStrand": {
+      "viaColumn": 0,
+      "viaExtras": 105916,
+      "unaccounted": 0
+    },
+    "task": {
+      "viaColumn": 0,
+      "viaExtras": 351574,
+      "unaccounted": 0
+    },
+    "rowType": {
+      "viaColumn": 0,
+      "viaExtras": 351574,
+      "unaccounted": 0
+    },
+    "minsPerDay": {
+      "viaColumn": 0,
+      "viaExtras": 351574,
+      "unaccounted": 0
+    },
+    "subject_name": {
+      "viaColumn": 351284,
+      "viaExtras": 290,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of snake_case alias copies (e.g. section_name) is not preserved: their values equal the typed columns and the formatters regenerate them. exactKeySetRows counts rows whose payload keys are all reproduced with equal values."
+}

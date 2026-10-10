@@ -162,3 +162,5 @@ When my message contains the word "replicate" (e.g. "replicate the deploy"), run
 Keep skill-specific details out of this file; they belong in the skills.
 
 Code-quality setup and checks: use the `quality-gate` skill (`.claude/skills/quality-gate/`).
+
+Room roster cache migration: see `.claude/skills/room-roster-cache-migration/`.

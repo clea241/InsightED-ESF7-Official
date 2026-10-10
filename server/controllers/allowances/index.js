@@ -3,6 +3,10 @@ const router = express.Router();
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const { loadAllowanceRules } = require("../../utils/sharedRules");
+const { codec } = require("../../utils/payloadExtras");
+
+// esf7_personnel_allowances keeps typed columns plus a slim `extras` JSONB (keys without a typed column), not a copy of the request body.
+const payload = codec("esf7_personnel_allowances");
 
 const ALLOWED_KEYS = ["pera", "uniform", "supplies", "medical", "hardship"];
 
@@ -67,7 +71,7 @@ async function isPersonnelNonTeaching(personnelId) {
 
 function formatAllowanceRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -140,7 +144,7 @@ function formatAllowanceRecord(row) {
         : null,
 
     disabled: toDisabledList(row),
-    rawPayload: raw,
+    rawPayload: payload.reconstruct(row),
   };
 }
 
@@ -207,7 +211,7 @@ router.get("/", async (req, res) => {
             id, personnel_id, school_id, school_year,
             has_pera, pera_amount, has_uniform, uniform_amount,
             has_supplies, supplies_amount, has_medical, medical_amount,
-            has_hardship, hardship_amount, raw_payload
+            has_hardship, hardship_amount, extras
           ) VALUES ($1, $2, $3, $4, FALSE, NULL, FALSE, NULL, FALSE, NULL, FALSE, NULL, FALSE, NULL, '{}'::jsonb)
            ON CONFLICT (personnel_id, school_year) DO UPDATE SET updated_at = NOW()
            RETURNING *;`,
@@ -334,7 +338,7 @@ router.post("/toggle", async (req, res) => {
 
     const sql = `
       INSERT INTO esf7_personnel_allowances (
-        id, personnel_id, school_id, school_year, ${hasCol}, ${amtCol}, raw_payload
+        id, personnel_id, school_id, school_year, ${hasCol}, ${amtCol}, extras
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
       ON CONFLICT (personnel_id, school_year)
@@ -352,7 +356,16 @@ router.post("/toggle", async (req, res) => {
       schoolYear,
       grantedBool,
       grantedBool ? targetAmount : null,
-      JSON.stringify(req.body),
+      JSON.stringify(
+        payload.buildExtras(req.body, {
+          id: alwId,
+          personnel_id: personnelId,
+          school_id: targetSchoolId,
+          school_year: schoolYear,
+          [hasCol]: grantedBool,
+          [amtCol]: grantedBool ? targetAmount : null,
+        }),
+      ),
     ]);
 
     res.json({
@@ -518,7 +531,7 @@ router.post("/bulk", async (req, res) => {
         has_supplies, supplies_amount,
         has_medical, medical_amount,
         has_hardship, hardship_amount,
-        raw_payload
+        extras
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
       ON CONFLICT (personnel_id, school_year)
@@ -552,7 +565,24 @@ router.post("/bulk", async (req, res) => {
       medicalAmt,
       hasHardship,
       hardshipAmt,
-      JSON.stringify(req.body),
+      JSON.stringify(
+        payload.buildExtras(req.body, {
+          id: alwId,
+          personnel_id: personnelId,
+          school_id: targetSchoolId,
+          school_year: schoolYear,
+          has_pera: hasPera,
+          pera_amount: peraAmt,
+          has_uniform: hasUniform,
+          uniform_amount: uniformAmt,
+          has_supplies: hasSupplies,
+          supplies_amount: suppliesAmt,
+          has_medical: hasMedical,
+          medical_amount: medicalAmt,
+          has_hardship: hasHardship,
+          hardship_amount: hardshipAmt,
+        }),
+      ),
     ]);
 
     res.json({

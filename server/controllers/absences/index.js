@@ -51,8 +51,6 @@ router.get("/", async (req, res) => {
       personnelId,
       school_id,
       schoolId,
-      school_year,
-      schoolYear,
     } = req.query;
     const targetPersonnelId = personnel_id || personnelId;
 

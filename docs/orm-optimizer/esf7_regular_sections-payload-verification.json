@@ -1,0 +1,215 @@
+{
+  "status": "PASS",
+  "table": "esf7_regular_sections",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T14:18:32.287Z",
+  "finishedAt": "2026-10-10T14:18:35.646Z",
+  "rowCountAtStart": 139797,
+  "rowCountAtEnd": 139797,
+  "rowsChecked": 139797,
+  "newFormatRowsSkipped": 0,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 1663154,
+    "heldByTypedColumn": 1286336,
+    "heldByExtras": 376818,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "bytes": {
+    "avgPayload": 318,
+    "avgExtras": 62
+  },
+  "payloadFingerprint": {
+    "current": "c88faa386169e36e72b9a77f1d6fde21",
+    "backup": "c88faa386169e36e72b9a77f1d6fde21"
+  },
+  "perKey": {
+    "id": {
+      "viaColumn": 139203,
+      "viaExtras": 594,
+      "unaccounted": 0
+    },
+    "adviserId": {
+      "viaColumn": 29323,
+      "viaExtras": 2941,
+      "unaccounted": 0
+    },
+    "advisorId": {
+      "viaColumn": 96616,
+      "viaExtras": 3134,
+      "unaccounted": 0
+    },
+    "adviser_id": {
+      "viaColumn": 23955,
+      "viaExtras": 2859,
+      "unaccounted": 0
+    },
+    "gradeLevel": {
+      "viaColumn": 139797,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "grade_level": {
+      "viaColumn": 120217,
+      "viaExtras": 210,
+      "unaccounted": 0
+    },
+    "sectionName": {
+      "viaColumn": 130642,
+      "viaExtras": 9155,
+      "unaccounted": 0
+    },
+    "sectionType": {
+      "viaColumn": 132939,
+      "viaExtras": 6858,
+      "unaccounted": 0
+    },
+    "maleLearners": {
+      "viaColumn": 70088,
+      "viaExtras": 7077,
+      "unaccounted": 0
+    },
+    "section_name": {
+      "viaColumn": 57089,
+      "viaExtras": 11011,
+      "unaccounted": 0
+    },
+    "section_type": {
+      "viaColumn": 67942,
+      "viaExtras": 158,
+      "unaccounted": 0
+    },
+    "adviserRemarks": {
+      "viaColumn": 0,
+      "viaExtras": 75740,
+      "unaccounted": 0
+    },
+    "femaleLearners": {
+      "viaColumn": 70248,
+      "viaExtras": 6919,
+      "unaccounted": 0
+    },
+    "adviser_remarks": {
+      "viaColumn": 0,
+      "viaExtras": 75740,
+      "unaccounted": 0
+    },
+    "numberOfLearners": {
+      "viaColumn": 75736,
+      "viaExtras": 2021,
+      "unaccounted": 0
+    },
+    "schoolId": {
+      "viaColumn": 2519,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hgpMinutes": {
+      "viaColumn": 0,
+      "viaExtras": 71730,
+      "unaccounted": 0
+    },
+    "schoolYear": {
+      "viaColumn": 2519,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "advisoryMinutes": {
+      "viaColumn": 0,
+      "viaExtras": 71730,
+      "unaccounted": 0
+    },
+    "sizeStatus": {
+      "viaColumn": 63739,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "size_status": {
+      "viaColumn": 63739,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "tutorId": {
+      "viaColumn": 0,
+      "viaExtras": 4821,
+      "unaccounted": 0
+    },
+    "aralBasis": {
+      "viaColumn": 0,
+      "viaExtras": 4821,
+      "unaccounted": 0
+    },
+    "aralGrade": {
+      "viaColumn": 0,
+      "viaExtras": 4055,
+      "unaccounted": 0
+    },
+    "aralToolKey": {
+      "viaColumn": 0,
+      "viaExtras": 4821,
+      "unaccounted": 0
+    },
+    "aralLearners": {
+      "viaColumn": 0,
+      "viaExtras": 4821,
+      "unaccounted": 0
+    },
+    "aralProfileLevel": {
+      "viaColumn": 0,
+      "viaExtras": 4821,
+      "unaccounted": 0
+    },
+    "aralTool": {
+      "viaColumn": 0,
+      "viaExtras": 766,
+      "unaccounted": 0
+    },
+    "school_id": {
+      "viaColumn": 5,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "updatedAt": {
+      "viaColumn": 0,
+      "viaExtras": 5,
+      "unaccounted": 0
+    },
+    "advisor_id": {
+      "viaColumn": 0,
+      "viaExtras": 5,
+      "unaccounted": 0
+    },
+    "rawPayload": {
+      "viaColumn": 0,
+      "viaExtras": 5,
+      "unaccounted": 0
+    },
+    "school_year": {
+      "viaColumn": 5,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "male_learners": {
+      "viaColumn": 5,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "female_learners": {
+      "viaColumn": 5,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "number_of_learners": {
+      "viaColumn": 5,
+      "viaExtras": 0,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of alias copies (a camelCase or snake_case spelling of a typed column with the same value) is not preserved; the formatters regenerate the ones the API returns."
+}

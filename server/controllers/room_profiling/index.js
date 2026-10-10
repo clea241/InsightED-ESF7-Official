@@ -693,16 +693,19 @@ router.post("/accept", async (req, res) => {
         (targetPrnKey ? existingByPrn.get(targetPrnKey) : null) ||
         (nameKey ? existingByName.get(nameKey) : null);
 
+      const rawCandidateId = String(norm.personnelId || sub.id || "").trim();
+      const isClientUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCandidateId);
       const resolvedId =
         existing?.id ||
-        norm.personnelId ||
-        sub.id ||
-        `PER-${cleanSchoolId}-${timestampNow}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        (isClientUuid ? rawCandidateId : null) ||
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : require("crypto").randomUUID());
       const resolvedPrn =
         existing?.prn ||
         norm.prn ||
         sub.prn ||
-        `PRN-${resolvedId.replace(/[^A-Za-z0-9]/g, "")}`;
+        `PRN-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
       personnelIdsInBatch.push(resolvedId);
 
       const selKeys =
@@ -1685,56 +1688,97 @@ router.get("/approved", async (req, res) => {
       results.map((r) => String(r.personnelId || "").trim()).filter(Boolean),
     );
 
-    // 2. Fetch from esf7_room_roster_cache / esf7_room_cache for verified/profiled teachers not already in archive
+    // 2. Database-First: Load verified/profiled teachers from esf7_personnel_profile
     try {
-      const { rows: cacheRows } = await db.query(
+      const { rows: profRows } = await db.query(
         `
-        SELECT school_id, roster_json, updated_at
-        FROM esf7_room_roster_cache
-        WHERE (school_id = $1 OR school_id = ('SCH-' || $1) OR REPLACE(school_id, 'SCH-', '') = $1)
-        LIMIT 1
+        SELECT p.*, e.position, e.position_category, ed.highest_educational_attainment, ed.college_degree
+        FROM esf7_personnel_profile p
+        LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+        LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
+        WHERE p.school_id = $1 OR p.school_id = ('SCH-' || $1)
       `,
         [cleanSchoolId],
       );
 
-      if (
-        cacheRows &&
-        cacheRows.length > 0 &&
-        Array.isArray(cacheRows[0].roster_json)
-      ) {
-        const roster = cacheRows[0].roster_json;
-        const updatedAt = cacheRows[0].updated_at || new Date();
-        const updatedTimestamp = new Date(updatedAt).getTime();
-
-        for (const p of roster) {
+      if (profRows && profRows.length > 0) {
+        for (const p of profRows) {
           const pId = String(p.id || p.prn || "").trim();
-
           if (pId && !seenPersonnelIds.has(pId)) {
             seenPersonnelIds.add(pId);
-            const fn = (p.firstName || p.first_name || "").trim();
-            const ln = (p.lastName || p.last_name || "").trim();
-            const pName =
-              p.name || (ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher");
-
+            const fn = (p.first_name || "").trim();
+            const ln = (p.last_name || "").trim();
+            const pName = ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher";
             results.push({
-              id: `CACHE_${cleanSchoolId}_${pId}`,
+              id: `PROF_${cleanSchoolId}_${pId}`,
               schoolId: cleanSchoolId,
               personnelId: pId,
               personnelName: pName,
-              roomName: p.roomName || p.room || "Faculty Room",
-              profileData: p,
-              submittedAt: p.submitted_at || p.submittedAt || updatedAt,
-              submittedTimestamp: p.submitted_at
-                ? new Date(p.submitted_at).getTime()
-                : updatedTimestamp,
+              roomName: "Faculty Room",
+              profileData: {
+                ...p,
+                firstName: fn,
+                lastName: ln,
+                name: pName,
+                position: p.position || "Teacher",
+              },
+              submittedAt: p.updated_at || p.created_at || new Date(),
+              submittedTimestamp: new Date(p.updated_at || p.created_at || Date.now()).getTime(),
               status: "APPROVED",
             });
+          }
+        }
+      } else {
+        // Fallback to esf7_room_roster_cache only if no normalized profiles exist
+        const { rows: cacheRows } = await db.query(
+          `
+          SELECT school_id, roster_json, updated_at
+          FROM esf7_room_roster_cache
+          WHERE (school_id = $1 OR school_id = ('SCH-' || $1) OR REPLACE(school_id, 'SCH-', '') = $1)
+          LIMIT 1
+        `,
+          [cleanSchoolId],
+        );
+
+        if (
+          cacheRows &&
+          cacheRows.length > 0 &&
+          Array.isArray(cacheRows[0].roster_json)
+        ) {
+          const roster = cacheRows[0].roster_json;
+          const updatedAt = cacheRows[0].updated_at || new Date();
+          const updatedTimestamp = new Date(updatedAt).getTime();
+
+          for (const p of roster) {
+            const pId = String(p.id || p.prn || "").trim();
+
+            if (pId && !seenPersonnelIds.has(pId)) {
+              seenPersonnelIds.add(pId);
+              const fn = (p.firstName || p.first_name || "").trim();
+              const ln = (p.lastName || p.last_name || "").trim();
+              const pName =
+                p.name || (ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher");
+
+              results.push({
+                id: `CACHE_${cleanSchoolId}_${pId}`,
+                schoolId: cleanSchoolId,
+                personnelId: pId,
+                personnelName: pName,
+                roomName: p.roomName || p.room || "Faculty Room",
+                profileData: p,
+                submittedAt: p.submitted_at || p.submittedAt || updatedAt,
+                submittedTimestamp: p.submitted_at
+                  ? new Date(p.submitted_at).getTime()
+                  : updatedTimestamp,
+                status: "APPROVED",
+              });
+            }
           }
         }
       }
     } catch (cacheErr) {
       console.warn(
-        "[Room Profiling Approved GET] Cache fallback notice:",
+        "[Room Profiling Approved GET] Fallback notice:",
         cacheErr.message,
       );
     }
@@ -1857,84 +1901,616 @@ router.post("/sync-roster", async (req, res) => {
     if (!isTableInitialized) await initQueueTable();
     const { schoolId, school_id, roster } = req.body;
     const cleanSchoolId = String(schoolId || school_id || "502624")
-      .replace("SCH-", "")
+      .replace(/^SCH-/i, "")
       .trim();
 
-    if (Array.isArray(roster) && roster.length > 0) {
-      const sanitized = roster.map((p) => {
-        const fn = (p.firstName || p.first_name || "").trim();
-        const ln = (p.lastName || p.last_name || "").trim();
-        return {
-          ...p,
-          firstName: fn,
-          lastName: ln,
-          middleName: p.middleName || p.middle_name || "",
-          name: p.name || (ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher"),
-          birthdate: p.birthdate || p.birth_date || "",
-          birthYear: p.birthYear || p.birth_year || "",
-          position:
-            p.position ||
-            p.plantilla_position ||
-            p.position_title ||
-            p.psn ||
-            "",
-          type: p.type || p.positionCategory || "teaching",
-          profilingCode: p.profilingCode || "",
-        };
+    if (!Array.isArray(roster) || roster.length === 0) {
+      return res.json({
+        success: true,
+        count: 0,
+        message: "No personnel changes to sync",
       });
-
-      activeRosterCache.set(cleanSchoolId, {
-        roster: sanitized,
-        syncedAt: Date.now(),
-      });
-
-      await db
-        .query(
-          `
-        INSERT INTO esf7_room_roster_cache (school_id, roster_json, updated_at)
-        VALUES ($1, $2, NOW())
-        ON CONFLICT (school_id) DO UPDATE
-        SET roster_json = EXCLUDED.roster_json, updated_at = NOW()
-      `,
-          [cleanSchoolId, JSON.stringify(sanitized)],
-        )
-        .catch((err) =>
-          console.warn("[Roster Cache DB Warning]:", err.message),
-        );
-      await cacheService.delPattern("room_profiling:*");
     }
 
-    res.json({
+    const profileUpsertRows = [];
+    const employmentUpsertRows = [];
+    const educUpsertRows = [];
+    const designationsRows = [];
+
+    for (let i = 0; i < roster.length; i++) {
+      const p = roster[i];
+      if (!p || typeof p !== "object") continue;
+
+      let pId = String(p.id || "").trim();
+      let legacyId = null;
+      if (pId) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pId);
+        if (!isUuid) {
+          legacyId = pId;
+          const mapped = await db
+            .query(
+              `SELECT id FROM esf7_personnel_profile WHERE legacy_id = $1 OR id = $1 LIMIT 1`,
+              [legacyId],
+            )
+            .catch(() => ({ rows: [] }));
+          if (mapped.rows.length > 0) {
+            pId = mapped.rows[0].id;
+          } else {
+            const mTable = await db
+              .query(
+                `SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1`,
+                [legacyId],
+              )
+              .catch(() => ({ rows: [] }));
+            if (mTable.rows.length > 0) {
+              pId = mTable.rows[0].new_id;
+            }
+          }
+        }
+      }
+
+      if (!pId || legacyId === pId) {
+        if (p.prn) {
+          const existingPrn = await db
+            .query(
+              `SELECT id FROM esf7_personnel_profile WHERE (school_id = $1 OR school_id = $2) AND prn = $3 LIMIT 1`,
+              [cleanSchoolId, `SCH-${cleanSchoolId}`, String(p.prn).trim()],
+            )
+            .catch(() => ({ rows: [] }));
+          if (existingPrn.rows.length > 0) {
+            pId = existingPrn.rows[0].id;
+          }
+        }
+        if (!pId || legacyId === pId) {
+          pId =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : require("crypto").randomUUID();
+        }
+      }
+
+      const pStatus =
+        p.status ||
+        (legacyId?.startsWith("local-p-")
+          ? "client-created"
+          : legacyId?.startsWith("P-HARVEST-")
+            ? "harvester-created"
+            : "canonical");
+
+      const fn = String(p.firstName || p.first_name || "").trim().toUpperCase();
+      const ln = String(p.lastName || p.last_name || "").trim().toUpperCase();
+      const mn = String(p.middleName || p.middle_name || "").trim().toUpperCase();
+      const ext = String(p.nameExtension || p.name_extension || "").trim().toUpperCase();
+      const sal = String(p.salutation || "MR.").trim().toUpperCase();
+      const prn = String(p.prn || "").trim();
+      const tin = String(p.tin || "").trim();
+      const noTin = Boolean(p.noTin || p.no_tin || !tin);
+      const sex = String(p.sexAtBirth || p.sex_at_birth || p.sex || "FEMALE").trim().toUpperCase();
+      const civil = String(p.civilStatus || p.civil_status || "SINGLE").trim().toUpperCase();
+      const solo = Boolean(
+        p.soloParent === true ||
+          p.solo_parent === true ||
+          p.soloParent === "YES" ||
+          p.solo_parent === "YES",
+      );
+      const rel = String(p.religion || "CHRISTIANITY").trim().toUpperCase();
+      const eth = String(p.ethnicGroup || p.ethnic_group || "").trim().toUpperCase();
+      const bDate = parseDateVal(p.birthdate || p.birth_date);
+      const computedAge = calcAge(bDate) || Number(p.age) || null;
+      const empNo = String(p.employeeNo || p.employee_no || "").trim();
+      const depedEmail = String(p.depedEmail || p.deped_email || "").trim();
+      const noDepedEmail = Boolean(p.noDepedEmail || p.no_deped_email || !depedEmail);
+      const isHead = Boolean(p.isSchoolHead || p.is_school_head);
+      const pos = String(
+        p.position ||
+          p.plantilla_position ||
+          p.position_title ||
+          "TEACHER I",
+      ).trim().toUpperCase();
+      const posCat = String(
+        p.positionCategory ||
+          p.position_category ||
+          getPositionCategory(pos),
+      ).trim().toUpperCase();
+      const type = p.type || (posCat.includes("NON") ? "non-teaching" : "teaching");
+      const step = Number(p.stepIncrement || p.step_increment || 1);
+      const fund = String(p.fundSource || p.fund_source || "DEPED").trim().toUpperCase();
+      const natAppt = String(
+        p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT",
+      ).trim().toUpperCase();
+      const hireArr = String(
+        p.hiringArrangement || p.hiring_arrangement || "REGULAR",
+      ).trim().toUpperCase();
+      const depStat = String(
+        p.deploymentStatus || p.deployment_status || "OWN STATION",
+      ).trim().toUpperCase();
+      const assignedSchools = Array.isArray(p.assignedSchools) ? p.assignedSchools : [];
+      const gradeLevelsTaught = Array.isArray(p.gradeLevelsTaught || p.grade_levels_taught)
+        ? p.gradeLevelsTaught || p.grade_levels_taught
+        : [];
+      const firstSvcDate = parseDateVal(p.firstServiceDate || p.first_service_date);
+      const lastPromoDate = parseDateVal(p.lastPromotionDate || p.last_promotion_date);
+      const newStationDate = parseDateVal(p.newStationDate || p.new_station_date);
+      const lastLateralMovementDate = parseDateVal(
+        p.lastLateralMovementDate || p.last_lateral_movement_date,
+      );
+
+      const attainment = String(
+        p.highestEducationalAttainment ||
+          p.highest_educational_attainment ||
+          "COLLEGE GRADUATE / BACCALAUREATE",
+      ).trim().toUpperCase();
+      const collegeDeg = String(
+        p.collegeDegree || p.college_degree || "BACHELOR OF SECONDARY EDUCATION",
+      ).trim().toUpperCase();
+      const collegeDegs = p.degreeRows || p.collegeDegrees || [];
+      const major = String(p.major || "GENERAL EDUCATION").trim().toUpperCase();
+      const minor = String(p.minor || "N/A").trim().toUpperCase();
+      const postGrad = String(
+        p.postGraduateDegree || p.post_graduate_degree || "N/A",
+      ).trim().toUpperCase();
+      const postGradDisc = p.postGraduateDiscipline || p.post_graduate_discipline || null;
+      const elig = Array.isArray(p.eligibility)
+        ? p.eligibility
+        : [p.eligibility || "Licensure Examination for Teachers"];
+      const prcSpec = String(
+        p.prcSpecialization || p.prc_specialization || major,
+      ).trim().toUpperCase();
+
+      profileUpsertRows.push({
+        id: pId,
+        prn: prn || null,
+        status: pStatus,
+        legacy_id: legacyId || null,
+        school_id: cleanSchoolId,
+        school_year: "2025-2026",
+        type,
+        salutation: sal,
+        first_name: fn || "TEACHER",
+        middle_name: mn,
+        last_name: ln || "STAFF",
+        name_extension: ext,
+        tin: tin || null,
+        no_tin: noTin,
+        sex_at_birth: sex,
+        civil_status: civil,
+        solo_parent: solo,
+        religion: rel,
+        ethnic_group: eth,
+        birthdate: bDate,
+        age: computedAge,
+        philsys_no: String(p.philsysNo || p.philsys_no || "").trim() || null,
+        no_philsys: Boolean(p.noPhilsys || p.no_philsys),
+        employee_no: empNo || null,
+        deped_email: depedEmail || null,
+        no_deped_email: noDepedEmail,
+        allow_email_discrepancy: Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
+        is_school_head: isHead,
+        raw_payload: JSON.stringify({
+          position: pos,
+          positionCategory: posCat,
+          stepIncrement: step,
+          profilingCode: p.profilingCode || "",
+          learningAreaMap: p.learningAreaMap || p.matrix_data || {},
+        }),
+      });
+
+      const safeSuffix = pId.replace(/[^a-zA-Z0-9]/g, "").slice(-12) || String(i);
+      employmentUpsertRows.push({
+        id: `EMP-${cleanSchoolId}-${safeSuffix}`,
+        personnel_id: pId,
+        position_category: posCat,
+        position: pos,
+        step_increment: step,
+        fund_source: fund,
+        nature_of_appointment: natAppt,
+        hiring_arrangement: hireArr,
+        deployment_status: depStat,
+        assigned_schools: JSON.stringify(assignedSchools),
+        grade_levels_taught: JSON.stringify(gradeLevelsTaught),
+        first_service_date: firstSvcDate,
+        last_promotion_date: lastPromoDate,
+        new_station_date: newStationDate,
+        last_lateral_movement_date: lastLateralMovementDate,
+        raw_payload: JSON.stringify({ position: pos, stepIncrement: step }),
+      });
+
+      educUpsertRows.push({
+        id: `EDU-${cleanSchoolId}-${safeSuffix}`,
+        personnel_id: pId,
+        highest_educational_attainment: attainment,
+        shs_track: p.shsTrack || p.shs_track || null,
+        vocational_course: p.vocationalCourse || p.vocational_course || null,
+        vocational_level: p.vocationalLevel || p.vocational_level || null,
+        college_degree: collegeDeg,
+        college_degrees: JSON.stringify(collegeDegs),
+        major,
+        minor,
+        post_graduate_degree: postGrad,
+        post_graduate_discipline: postGradDisc ? JSON.stringify(postGradDisc) : null,
+        eligibility: JSON.stringify(elig),
+        prc_specialization: prcSpec,
+        raw_payload: JSON.stringify({ collegeDegree: collegeDeg, major }),
+      });
+
+      if (Array.isArray(p.designations) && p.designations.length > 0) {
+        for (let dIdx = 0; dIdx < p.designations.length; dIdx++) {
+          const dItem = p.designations[dIdx];
+          const dName = typeof dItem === "string" ? dItem : dItem?.designation_name || dItem?.name;
+          if (!dName) continue;
+          designationsRows.push({
+            id: `DSG-${cleanSchoolId}-${safeSuffix}-${dIdx}`,
+            personnel_id: pId,
+            designation_name: dName.toUpperCase(),
+            grade_level: dItem?.grade_level || dItem?.gradeLevel || null,
+            subject_area: dItem?.subject_area || dItem?.subjectArea || null,
+            track: dItem?.track || null,
+            is_sds_approved: Boolean(dItem?.is_sds_approved || dItem?.isSdsApproved),
+            sds_confirmed: Boolean(dItem?.sds_confirmed || dItem?.sdsConfirmed),
+            serialized_key: `${cleanSchoolId}_${pId}_${dName.toUpperCase()}`,
+            raw_payload: JSON.stringify(typeof dItem === "object" ? dItem : { name: dName }),
+          });
+        }
+      }
+    }
+
+    profileUpsertRows.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    employmentUpsertRows.sort((a, b) =>
+      String(a.personnel_id).localeCompare(String(b.personnel_id)),
+    );
+    educUpsertRows.sort((a, b) =>
+      String(a.personnel_id).localeCompare(String(b.personnel_id)),
+    );
+
+    const client = await db.getClient();
+    try {
+      await client.query("BEGIN");
+
+      await executeMultiRowUpsert(
+        client,
+        "esf7_personnel_profile",
+        [
+          "id",
+          "prn",
+          "status",
+          "legacy_id",
+          "school_id",
+          "school_year",
+          "type",
+          "salutation",
+          "first_name",
+          "middle_name",
+          "last_name",
+          "name_extension",
+          "tin",
+          "no_tin",
+          "sex_at_birth",
+          "civil_status",
+          "solo_parent",
+          "religion",
+          "ethnic_group",
+          "birthdate",
+          "age",
+          "philsys_no",
+          "no_philsys",
+          "employee_no",
+          "deped_email",
+          "no_deped_email",
+          "allow_email_discrepancy",
+          "is_school_head",
+          "raw_payload",
+        ],
+        "(id)",
+        `UPDATE SET
+          prn = COALESCE(EXCLUDED.prn, esf7_personnel_profile.prn),
+          status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
+          legacy_id = COALESCE(esf7_personnel_profile.legacy_id, EXCLUDED.legacy_id),
+          type = COALESCE(EXCLUDED.type, esf7_personnel_profile.type),
+          salutation = COALESCE(EXCLUDED.salutation, esf7_personnel_profile.salutation),
+          first_name = CASE 
+            WHEN EXCLUDED.first_name IS NOT NULL AND EXCLUDED.first_name != '' AND EXCLUDED.first_name != 'TEACHER' 
+            THEN EXCLUDED.first_name 
+            ELSE esf7_personnel_profile.first_name 
+          END,
+          middle_name = COALESCE(EXCLUDED.middle_name, esf7_personnel_profile.middle_name),
+          last_name = CASE 
+            WHEN EXCLUDED.last_name IS NOT NULL AND EXCLUDED.last_name != '' AND EXCLUDED.last_name NOT LIKE 'STAFF%' 
+            THEN EXCLUDED.last_name 
+            ELSE esf7_personnel_profile.last_name 
+          END,
+          name_extension = COALESCE(EXCLUDED.name_extension, esf7_personnel_profile.name_extension),
+          tin = COALESCE(EXCLUDED.tin, esf7_personnel_profile.tin),
+          no_tin = EXCLUDED.no_tin,
+          sex_at_birth = COALESCE(EXCLUDED.sex_at_birth, esf7_personnel_profile.sex_at_birth),
+          civil_status = COALESCE(EXCLUDED.civil_status, esf7_personnel_profile.civil_status),
+          solo_parent = EXCLUDED.solo_parent,
+          religion = COALESCE(EXCLUDED.religion, esf7_personnel_profile.religion),
+          ethnic_group = COALESCE(EXCLUDED.ethnic_group, esf7_personnel_profile.ethnic_group),
+          birthdate = COALESCE(EXCLUDED.birthdate, esf7_personnel_profile.birthdate),
+          age = COALESCE(EXCLUDED.age, esf7_personnel_profile.age),
+          philsys_no = COALESCE(EXCLUDED.philsys_no, esf7_personnel_profile.philsys_no),
+          no_philsys = EXCLUDED.no_philsys,
+          employee_no = COALESCE(EXCLUDED.employee_no, esf7_personnel_profile.employee_no),
+          deped_email = COALESCE(EXCLUDED.deped_email, esf7_personnel_profile.deped_email),
+          no_deped_email = EXCLUDED.no_deped_email,
+          allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
+          is_school_head = EXCLUDED.is_school_head,
+          raw_payload = COALESCE(esf7_personnel_profile.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
+          updated_at = NOW()`,
+        profileUpsertRows,
+      );
+
+      // Upsert mappings for any legacy IDs encountered during sync
+      for (const pRow of profileUpsertRows) {
+        if (pRow.legacy_id && pRow.legacy_id !== pRow.id) {
+          await client.query(
+            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
+            [pRow.legacy_id, pRow.id, pRow.status || "canonical"],
+          ).catch(() => {});
+        }
+      }
+
+      await executeMultiRowUpsert(
+        client,
+        "esf7_personnel_employment",
+        [
+          "id",
+          "personnel_id",
+          "position_category",
+          "position",
+          "step_increment",
+          "fund_source",
+          "nature_of_appointment",
+          "hiring_arrangement",
+          "deployment_status",
+          "assigned_schools",
+          "grade_levels_taught",
+          "first_service_date",
+          "last_promotion_date",
+          "new_station_date",
+          "last_lateral_movement_date",
+          "raw_payload",
+        ],
+        "(personnel_id)",
+        `UPDATE SET
+          position_category = EXCLUDED.position_category,
+          position = EXCLUDED.position,
+          step_increment = EXCLUDED.step_increment,
+          fund_source = EXCLUDED.fund_source,
+          nature_of_appointment = EXCLUDED.nature_of_appointment,
+          hiring_arrangement = EXCLUDED.hiring_arrangement,
+          deployment_status = EXCLUDED.deployment_status,
+          assigned_schools = CASE 
+            WHEN EXCLUDED.assigned_schools::text != '[]' THEN EXCLUDED.assigned_schools 
+            ELSE esf7_personnel_employment.assigned_schools 
+          END,
+          grade_levels_taught = CASE 
+            WHEN EXCLUDED.grade_levels_taught::text != '[]' THEN EXCLUDED.grade_levels_taught 
+            ELSE esf7_personnel_employment.grade_levels_taught 
+          END,
+          first_service_date = COALESCE(EXCLUDED.first_service_date, esf7_personnel_employment.first_service_date),
+          last_promotion_date = COALESCE(EXCLUDED.last_promotion_date, esf7_personnel_employment.last_promotion_date),
+          new_station_date = COALESCE(EXCLUDED.new_station_date, esf7_personnel_employment.new_station_date),
+          last_lateral_movement_date = COALESCE(EXCLUDED.last_lateral_movement_date, esf7_personnel_employment.last_lateral_movement_date),
+          raw_payload = COALESCE(esf7_personnel_employment.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
+          updated_at = NOW()`,
+        employmentUpsertRows,
+      );
+
+      await executeMultiRowUpsert(
+        client,
+        "esf7_perssonel_educ",
+        [
+          "id",
+          "personnel_id",
+          "highest_educational_attainment",
+          "shs_track",
+          "vocational_course",
+          "vocational_level",
+          "college_degree",
+          "college_degrees",
+          "major",
+          "minor",
+          "post_graduate_degree",
+          "post_graduate_discipline",
+          "eligibility",
+          "prc_specialization",
+          "raw_payload",
+        ],
+        "(personnel_id)",
+        `UPDATE SET
+          highest_educational_attainment = EXCLUDED.highest_educational_attainment,
+          shs_track = COALESCE(EXCLUDED.shs_track, esf7_perssonel_educ.shs_track),
+          vocational_course = COALESCE(EXCLUDED.vocational_course, esf7_perssonel_educ.vocational_course),
+          vocational_level = COALESCE(EXCLUDED.vocational_level, esf7_perssonel_educ.vocational_level),
+          college_degree = EXCLUDED.college_degree,
+          college_degrees = CASE 
+            WHEN EXCLUDED.college_degrees::text != '[]' THEN EXCLUDED.college_degrees 
+            ELSE esf7_perssonel_educ.college_degrees 
+          END,
+          major = EXCLUDED.major,
+          minor = EXCLUDED.minor,
+          post_graduate_degree = EXCLUDED.post_graduate_degree,
+          post_graduate_discipline = CASE 
+            WHEN EXCLUDED.post_graduate_discipline IS NOT NULL 
+                 AND EXCLUDED.post_graduate_discipline::text != '{}' 
+                 AND EXCLUDED.post_graduate_discipline::text != 'null'
+            THEN EXCLUDED.post_graduate_discipline 
+            ELSE esf7_perssonel_educ.post_graduate_discipline 
+          END,
+          eligibility = CASE 
+            WHEN EXCLUDED.eligibility::text != '[]' THEN EXCLUDED.eligibility 
+            ELSE esf7_perssonel_educ.eligibility 
+          END,
+          prc_specialization = EXCLUDED.prc_specialization,
+          raw_payload = COALESCE(esf7_perssonel_educ.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
+          updated_at = NOW()`,
+        educUpsertRows,
+      );
+
+      if (designationsRows.length > 0) {
+        await executeMultiRowUpsert(
+          client,
+          "esf7_personnel_designations",
+          [
+            "id",
+            "personnel_id",
+            "designation_name",
+            "grade_level",
+            "subject_area",
+            "track",
+            "is_sds_approved",
+            "sds_confirmed",
+            "serialized_key",
+            "raw_payload",
+          ],
+          "(id)",
+          "NOTHING",
+          designationsRows,
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    // Keep activeRosterCache hot in memory for same-process lookups, but NEVER write to esf7_room_roster_cache
+    activeRosterCache.set(cleanSchoolId, {
+      roster,
+      syncedAt: Date.now(),
+    });
+    await cacheService.delPattern("room_profiling:*");
+
+    return res.json({
       success: true,
-      count: Array.isArray(roster) ? roster.length : 0,
+      count: profileUpsertRows.length,
+      syncedToNormalizedTables: true,
     });
   } catch (err) {
     console.error("[Room Profiling Sync Roster Error]:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message, detail: err.detail });
   }
 });
 
-// GET /api/room-profiling/roster — Mobile device retrieves active School Head roster
+// GET /api/room-profiling/roster — Mobile device retrieves active School Head roster (Database-First)
 router.get("/roster", async (req, res) => {
   try {
     if (!isTableInitialized) await initQueueTable();
     const schoolId = req.query.schoolId || req.query.school_id || "502624";
-    const cleanSchoolId = String(schoolId).replace("SCH-", "").trim();
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
-    // 1. In-memory cache
-    const cached = activeRosterCache.get(cleanSchoolId);
-    if (cached && Array.isArray(cached.roster) && cached.roster.length > 0) {
-      return res.json(cached.roster);
-    }
-
-    // 2. Persistent unlogged table cache
-    const { rows: cacheRows } = await db
+    // 1. Database-First: Load registered personnel from normalized tables
+    const { rows } = await db
       .query(
         `
-      SELECT roster_json 
-      FROM esf7_room_roster_cache 
-      WHERE school_id = $1
+      SELECT 
+        p.id, p.prn, p.status, p.legacy_id AS "legacyId", p.first_name AS "firstName", p.last_name AS "lastName", p.middle_name AS "middleName",
+        p.name_extension AS "nameExtension", p.salutation, p.tin, p.no_tin AS "noTin",
+        p.sex_at_birth AS "sexAtBirth", p.civil_status AS "civilStatus", p.solo_parent AS "soloParent",
+        p.religion, p.ethnic_group AS "ethnicGroup", p.birthdate, p.age, p.employee_no AS "employeeNo",
+        p.deped_email AS "depedEmail", p.no_deped_email AS "noDepedEmail", p.is_school_head AS "isSchoolHead",
+        p.type, p.raw_payload,
+        e.position, e.position_category AS "positionCategory", e.step_increment AS "stepIncrement",
+        e.fund_source AS "fundSource", e.nature_of_appointment AS "natureOfAppointment",
+        e.hiring_arrangement AS "hiringArrangement", e.deployment_status AS "deploymentStatus",
+        ed.highest_educational_attainment AS "highestEducationalAttainment",
+        ed.college_degree AS "collegeDegree", ed.college_degrees AS "degreeRows",
+        ed.major, ed.minor, ed.post_graduate_degree AS "postGraduateDegree",
+        ed.post_graduate_discipline AS "postGraduateDiscipline",
+        ed.eligibility, ed.prc_specialization AS "prcSpecialization"
+      FROM esf7_personnel_profile p
+      LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+      LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
+      WHERE p.school_id = $1 OR p.school_id = $2
+      ORDER BY p.last_name ASC, p.first_name ASC
     `,
+        [cleanSchoolId, `SCH-${cleanSchoolId}`],
+      )
+      .catch(() => ({ rows: [] }));
+
+    if (rows && rows.length > 0) {
+      const formatted = rows.map((r) => {
+        const fn = String(r.firstName || "").trim();
+        const ln = String(r.lastName || "").trim();
+        const pName = ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher";
+        const bDateStr = r.birthdate
+          ? r.birthdate instanceof Date
+            ? r.birthdate.toISOString().split("T")[0]
+            : String(r.birthdate).substring(0, 10)
+          : "";
+        const bYear = bDateStr ? bDateStr.substring(0, 4) : "";
+        return {
+          ...(r.raw_payload || {}),
+          id: r.id,
+          prn: r.prn || "",
+          status: r.status || "canonical",
+          legacyId: r.legacyId || null,
+          name: pName,
+          firstName: fn,
+          lastName: ln,
+          middleName: r.middleName || "",
+          nameExtension: r.nameExtension || "",
+          salutation: r.salutation || "MR.",
+          tin: r.tin || "",
+          noTin: Boolean(r.noTin),
+          sexAtBirth: r.sexAtBirth || "FEMALE",
+          civilStatus: r.civilStatus || "SINGLE",
+          soloParent: Boolean(r.soloParent),
+          religion: r.religion || "CHRISTIANITY",
+          ethnicGroup: r.ethnicGroup || "",
+          birthdate: bDateStr,
+          birthYear: bYear,
+          age: r.age,
+          employeeNo: r.employeeNo || "",
+          depedEmail: r.depedEmail || "",
+          noDepedEmail: Boolean(r.noDepedEmail),
+          isSchoolHead: Boolean(r.isSchoolHead),
+          position: r.position || r.raw_payload?.position || "TEACHER I",
+          positionCategory: r.positionCategory || "TEACHING",
+          stepIncrement: r.stepIncrement || 1,
+          fundSource: r.fundSource || "DEPED",
+          natureOfAppointment: r.natureOfAppointment || "REGULAR PERMANENT",
+          highestEducationalAttainment:
+            r.highestEducationalAttainment ||
+            "COLLEGE GRADUATE / BACCALAUREATE",
+          collegeDegree:
+            r.collegeDegree || "BACHELOR OF SECONDARY EDUCATION",
+          degreeRows: r.degreeRows || [],
+          major: r.major || "GENERAL EDUCATION",
+          minor: r.minor || "N/A",
+          postGraduateDegree: r.postGraduateDegree || "N/A",
+          postGraduateDiscipline: r.postGraduateDiscipline,
+          eligibility: r.eligibility || [
+            "Licensure Examination for Teachers",
+          ],
+          prcSpecialization: r.prcSpecialization || r.major || "",
+          type: r.type || "teaching",
+          profilingCode: r.raw_payload?.profilingCode || "",
+          sourceConfirmed: true,
+          isFallback: false,
+        };
+      });
+
+      activeRosterCache.set(cleanSchoolId, {
+        roster: formatted,
+        syncedAt: Date.now(),
+      });
+      return res.json(formatted);
+    }
+
+    // 2. Last-Resort Fallback: esf7_room_roster_cache (flagged NOT confirmed saved)
+    console.warn(
+      `[Room Profiling][SOURCE] Using esf7_room_roster_cache as a LAST RESORT for School ID ${cleanSchoolId} - this roster is NOT confirmed saved data.`,
+    );
+    const { rows: cacheRows } = await db
+      .query(
+        `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1`,
         [cleanSchoolId],
       )
       .catch(() => ({ rows: [] }));
@@ -1945,43 +2521,12 @@ router.get("/roster", async (req, res) => {
       Array.isArray(cacheRows[0].roster_json) &&
       cacheRows[0].roster_json.length > 0
     ) {
-      activeRosterCache.set(cleanSchoolId, {
-        roster: cacheRows[0].roster_json,
-        syncedAt: Date.now(),
-      });
-      return res.json(cacheRows[0].roster_json);
-    }
-
-    // (The old school_drafts step was removed: it queried a column that does not exist, so it never returned anything,
-    // and the draft is a backup of unsaved work, not a roster source.)
-
-    // 3. Registered personnel from the database
-    const { rows } = await db
-      .query(
-        `
-      SELECT id, prn, first_name as "firstName", last_name as "lastName", middle_name as "middleName",
-             birthdate, raw_payload
-      FROM esf7_personnel_profile
-      WHERE school_id = $1 OR school_id = $2
-      ORDER BY last_name ASC, first_name ASC
-    `,
-        [cleanSchoolId, `SCH-${cleanSchoolId}`],
-      )
-      .catch(() => ({ rows: [] }));
-
-    if (rows && rows.length > 0) {
-      return res.json(
-        rows.map((r) => ({
-          ...(r.raw_payload || {}),
-          id: r.id,
-          prn: r.prn,
-          firstName: r.firstName,
-          lastName: r.lastName,
-          middleName: r.middleName,
-          birthdate: r.birthdate || r.raw_payload?.birthdate,
-          position: r.raw_payload?.position || "Teacher",
-        })),
-      );
+      const fallbackList = cacheRows[0].roster_json.map((item) => ({
+        ...item,
+        sourceConfirmed: false,
+        isFallback: true,
+      }));
+      return res.json(fallbackList);
     }
 
     res.json([]);
@@ -2049,17 +2594,58 @@ router.post(
 
       const { QR_VALIDITY_MS } = await loadScheduleRules();
 
-      // Load active roster
+      // 1. Database-First: Load active roster from normalized tables
       let roster = [];
-      const cached = activeRosterCache.get(cleanSchoolId);
-      if (cached && Array.isArray(cached.roster) && cached.roster.length > 0) {
-        roster = cached.roster;
+      const { rows: profileRows } = await db
+        .query(
+          `
+        SELECT 
+          p.id, p.prn, p.first_name AS "firstName", p.last_name AS "lastName", p.middle_name AS "middleName",
+          p.birthdate, p.age, p.raw_payload,
+          e.position, e.position_category AS "positionCategory"
+        FROM esf7_personnel_profile p
+        LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+        WHERE p.school_id = $1 OR school_id = $2
+        ORDER BY p.last_name ASC, p.first_name ASC
+      `,
+          [cleanSchoolId, `SCH-${cleanSchoolId}`],
+        )
+        .catch(() => ({ rows: [] }));
+
+      if (profileRows && profileRows.length > 0) {
+        roster = profileRows.map((r) => {
+          const fn = String(r.firstName || "").trim();
+          const ln = String(r.lastName || "").trim();
+          const pName = ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher";
+          const bDateStr = r.birthdate
+            ? r.birthdate instanceof Date
+              ? r.birthdate.toISOString().split("T")[0]
+              : String(r.birthdate).substring(0, 10)
+            : "";
+          const bYear = bDateStr ? bDateStr.substring(0, 4) : "";
+          return {
+            id: r.id,
+            prn: r.prn || "",
+            name: pName,
+            firstName: fn,
+            lastName: ln,
+            middleName: r.middleName || "",
+            birthdate: bDateStr,
+            birthYear: bYear,
+            position: r.position || r.raw_payload?.position || "Teacher",
+            profilingCode: r.raw_payload?.profilingCode || "",
+            sourceConfirmed: true,
+            isFallback: false,
+          };
+        });
       } else {
+        // 2. Last-Resort Fallback: esf7_room_roster_cache (flagged NOT confirmed saved)
+        console.warn(
+          `[Room Profiling Passcode][SOURCE] Using esf7_room_roster_cache as a LAST RESORT for School ID ${cleanSchoolId} - this roster is NOT confirmed saved data.`,
+        );
         const { rows: cacheRows } = await db
           .query(
-            `
-        SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1
-      `,
+            `SELECT roster_json FROM esf7_room_roster_cache WHERE school_id = $1`,
             [cleanSchoolId],
           )
           .catch(() => ({ rows: [] }));
@@ -2070,37 +2656,12 @@ router.post(
           Array.isArray(cacheRows[0].roster_json) &&
           cacheRows[0].roster_json.length > 0
         ) {
-          roster = cacheRows[0].roster_json;
-          activeRosterCache.set(cleanSchoolId, {
-            roster,
-            syncedAt: Date.now(),
-          });
+          roster = cacheRows[0].roster_json.map((item) => ({
+            ...item,
+            sourceConfirmed: false,
+            isFallback: true,
+          }));
         }
-      }
-
-      if (!roster || roster.length === 0) {
-        const { rows } = await db
-          .query(
-            `
-        SELECT id, prn, first_name as "firstName", last_name as "lastName", middle_name as "middleName",
-               birthdate, raw_payload
-        FROM esf7_personnel_profile
-        WHERE school_id = $1 OR school_id = $2
-      `,
-            [cleanSchoolId, `SCH-${cleanSchoolId}`],
-          )
-          .catch(() => ({ rows: [] }));
-
-        roster = (rows || []).map((r) => ({
-          ...(r.raw_payload || {}),
-          id: r.id,
-          prn: r.prn,
-          firstName: r.firstName,
-          lastName: r.lastName,
-          middleName: r.middleName,
-          birthdate: r.birthdate || r.raw_payload?.birthdate,
-          position: r.raw_payload?.position || "Teacher",
-        }));
       }
 
       let matched = null;

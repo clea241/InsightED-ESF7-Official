@@ -1,4 +1,8 @@
 const { prodPool, insightEdPool } = require("../db");
+const { codec } = require("../utils/payloadExtras");
+
+// esf7_requests keeps typed columns + a slim `extras` JSONB instead of a copy of the request body (run the expand migration first)
+const requestsPayload = codec("esf7_requests");
 
 async function inspectAndReconstructRequests() {
   console.log("=== High-Speed SQL Request Reconstruction ===");
@@ -105,14 +109,24 @@ async function inspectAndReconstructRequests() {
         c.personnel_name || "TEACHER",
         c.status || "pending",
         c.remarks,
-        JSON.stringify(c.raw_payload),
+        JSON.stringify(
+          requestsPayload.buildExtras(c.raw_payload, {
+            requester_school_id: sId,
+            target_school_id: tId,
+            school_year: c.school_year || "2026-2027",
+            request_type: c.request_type,
+            personnel_name: c.personnel_name || "TEACHER",
+            status: c.status || "pending",
+            remarks: c.remarks,
+          }),
+        ),
       );
     }
 
     const query = `
       INSERT INTO esf7_requests (
         id, requester_school_id, target_school_id, school_year,
-        request_type, personnel_id, personnel_name, status, remarks, raw_payload,
+        request_type, personnel_id, personnel_name, status, remarks, extras,
         created_at, updated_at
       )
       VALUES ${valuePlaceholders.join(",\n")}

@@ -24,3 +24,12 @@ Created `shared/` for rules used by both sides (ARCHITECTURE.md still says "does
 - Own table + one record per school (re-saving replaces it) rather than a list: the fallback is a single stand-in head.
 - DB unique index lives in a reviewed migration (refuses to run if duplicates exist) instead of auto-running at startup.
 - Row 15 (NTP function notes) not started: no 5-category NTP functions dropdown found (Workload has 6 ADMIN TASK categories) and the task text must come from the user.
+
+## 2026-10-10 Keyset (cursor) paging for the workload list, body stays an array
+Keyset on (created_at, id) reads each page straight off an index; OFFSET would re-scan skipped rows on deep pages. Paging data goes in headers so any unknown caller still receives the same array shape. Index built CONCURRENTLY to avoid blocking workload saves.
+
+## 2026-10-10 Expand, backfill, verify, then contract for payload columns
+The whole-body copy is removed in separate steps so a failed check leaves the old column in place: add `extras` (additive), copy, verify key by key against the old payload and a backup, deploy code that works before and after the drop, and drop only when a PASS report exists for the same database and row count (the drop script enforces it). `extras` (JSONB, strict equality rule) was chosen over new typed columns for the pilot because it is lossless for every observed key type; hot keys can be promoted later. Dropping a column does not shrink the table: a rewrite (VACUUM FULL or pg_repack) is a separate, planned step.
+
+## 2026-10-10 One generic payload engine instead of per-table scripts
+The six remaining tables share `utils/payloadExtras.js` (per-table column kinds, strict equality) and one CLI (`migrations/payload_extras.js`). No fills into typed columns: filling would change foreign-key and empty-value behavior (for example `esf7_regular_sections.adviser_id`), so a differing or empty value stays in `extras`. Aliases that a formatter does not re-emit can be listed in the table's `exclude` config so they stay in `extras`; the old-vs-new response comparison is what shows whether any is needed (none was).

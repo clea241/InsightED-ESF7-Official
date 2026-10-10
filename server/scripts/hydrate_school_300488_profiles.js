@@ -64,7 +64,11 @@ async function main() {
     for (const p of profRes.rows) {
       // Find matching teacher in roster
       const match = roster.find(
-        (r) => r.id === p.id || r.personnel_id === p.id || r.prn === p.prn,
+        (r) =>
+          r.id === p.id ||
+          r.personnel_id === p.id ||
+          r.prn === p.prn ||
+          (p.legacy_id && (r.id === p.legacy_id || r.personnel_id === p.legacy_id)),
       );
       if (!match) {
         console.warn(

@@ -21,6 +21,7 @@ export function useDirtyGuard({
   isDirty: externalIsDirty,
   onDiscard: externalOnDiscard,
   onSave: externalOnSave,
+  onFlush: externalOnFlush,
   getDirtyReasons: externalGetDirtyReasons,
   initialSnapshot = null,
 }) {
@@ -43,6 +44,9 @@ export function useDirtyGuard({
   onSaveRef.current = externalOnSave;
   const supportsSave = typeof externalOnSave === "function";
 
+  const onFlushRef = useRef(externalOnFlush);
+  onFlushRef.current = externalOnFlush;
+
   useEffect(() => {
     const unregister = registerDirtyGuard(screenId, {
       isDirty: () => isDirtyRef.current,
@@ -61,6 +65,19 @@ export function useDirtyGuard({
           }
         }
         setInternalIsDirty(false);
+      },
+      onFlush: () => {
+        if (typeof onFlushRef.current === "function") {
+          try {
+            return onFlushRef.current();
+          } catch (err) {
+            console.warn(
+              `[useDirtyGuard] Error in onFlush for ${screenId}:`,
+              err,
+            );
+          }
+        }
+        return Promise.resolve();
       },
       ...(supportsSave ? { onSave: () => onSaveRef.current() } : {}),
     });

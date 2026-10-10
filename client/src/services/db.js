@@ -85,6 +85,36 @@ export async function deleteLocalDraft(key) {
   }
 }
 
+export async function readMigratedLocalDraft(newKey, legacyKeys = []) {
+  try {
+    const currentVal = await getLocalDraft(newKey);
+    if (currentVal !== null && currentVal !== undefined) return currentVal;
+
+    for (const oldKey of legacyKeys) {
+      if (!oldKey || oldKey === newKey) continue;
+      const oldVal = await getLocalDraft(oldKey);
+      if (oldVal !== null && oldVal !== undefined) {
+        await setLocalDraft(newKey, oldVal);
+        await deleteLocalDraft(oldKey);
+        console.info(`[IndexedDBMigration] Migrated key "${oldKey}" -> "${newKey}"`);
+        return oldVal;
+      }
+    }
+  } catch (err) {
+    console.warn(`[IndexedDBMigration] Error migrating key ${newKey}:`, err);
+  }
+  return null;
+}
+
+export async function deleteLocalDraftWithLegacy(newKey, legacyKeys = []) {
+  await deleteLocalDraft(newKey);
+  for (const oldKey of legacyKeys) {
+    if (oldKey && oldKey !== newKey) {
+      await deleteLocalDraft(oldKey).catch(() => {});
+    }
+  }
+}
+
 export async function clearAllLocalDatabases() {
   try {
     if (cachedDbPromise) {

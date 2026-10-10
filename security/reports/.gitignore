@@ -1,0 +1,4 @@
+raw/
+*.md
+*.json
+!.gitignore

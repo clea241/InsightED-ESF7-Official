@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
+const { codec } = require("../../utils/payloadExtras");
+
+// esf7_regular_sections keeps typed columns plus a slim `extras` JSONB, not a copy of the request body (utils/payloadExtras.js).
+const regularPayload = codec("esf7_regular_sections");
 const {
   normalizeSchoolYear,
   sameSchoolYear,
@@ -34,14 +38,14 @@ function isInvalidSectionRecord(row) {
 // The adviser of a regular section: the foreign-key column first, else the id the UI saved in raw_payload.
 function storedAdviser(row) {
   if (row.adviser_id) return String(row.adviser_id);
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const v = raw.advisorId || raw.adviserId || raw.adviser_id || raw.advisor_id;
   return v ? String(v) : null;
 }
 
 function formatRegularRecord(row) {
   if (!row || isInvalidSectionRecord(row)) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const m = Number(row.male_learners || 0);
   const f = Number(row.female_learners || 0);
   const total =
@@ -84,7 +88,7 @@ function formatRegularRecord(row) {
     sizeStatus: row.size_status || "WITHIN STANDARD",
     size_status: row.size_status || "WITHIN STANDARD",
     updatedAt: row.updated_at,
-    rawPayload: raw,
+    rawPayload: regularPayload.reconstruct(row),
   };
 }
 
@@ -518,23 +522,62 @@ async function upsertRegularSection(client, body) {
     throw err;
   }
   const existing = byId || byNatural;
-  // raw_payload keeps what the UI sent (including the adviser id for people without a profile row yet). A partial update
-  // is merged over the stored payload, so fields it does not mention (like the adviser) survive.
-  const payloadJson = JSON.stringify(
-    adviserProvided
-      ? body
-      : {
-          ...(existing && existing.raw_payload ? existing.raw_payload : {}),
-          ...body,
-        },
+  // `extras` keeps what the UI sent that no typed column holds (including the adviser id for people without a profile row
+  // yet). A partial update is merged over the stored extras, so fields it does not mention (like the adviser) survive.
+  // A row not yet backfilled still carries the old raw_payload: fold it into extras first so nothing is lost.
+  const hasLegacyPayload = Boolean(
+    existing &&
+    existing.raw_payload &&
+    Object.keys(existing.raw_payload).length > 0,
   );
+  const baseExtras = !existing
+    ? {}
+    : hasLegacyPayload
+      ? regularPayload.buildExtras(existing.raw_payload, existing, {
+          dropEcho: false,
+        })
+      : existing.extras || {};
+  const payloadJson = JSON.stringify(
+    regularPayload.buildExtras(
+      adviserProvided ? body : { ...baseExtras, ...body },
+      {
+        id: existing ? existing.id : id || null,
+        school_id: existing ? existing.school_id : targetSchoolId,
+        school_year: existing ? existing.school_year : targetSchoolYear,
+        grade_level: targetGradeLevel,
+        section_name: targetSectionName,
+        adviser_id: adviserProvided
+          ? validAdviserId
+          : existing
+            ? existing.adviser_id
+            : validAdviserId,
+        section_type: targetType,
+        male_learners: mVal,
+        female_learners: fVal,
+        number_of_learners: totalLearners,
+        size_status: targetSizeStatus,
+      },
+    ),
+  );
+  const clearLegacyPayload = async (rowId) => {
+    // before the raw_payload column is dropped: the old payload now lives in extras; a missing column (already dropped) is fine
+    if (!hasLegacyPayload) return;
+    try {
+      await client.query(
+        "UPDATE esf7_regular_sections SET raw_payload = '{}'::jsonb WHERE id = $1",
+        [rowId],
+      );
+    } catch (e) {
+      if (e.code !== "42703") throw e;
+    }
+  };
 
   if (existing) {
     const r = await client.query(
       "UPDATE esf7_regular_sections SET " +
         "grade_level = $2, section_name = $3, adviser_id = CASE WHEN $11::boolean THEN $4 ELSE adviser_id END, section_type = $5, " +
         "male_learners = $6, female_learners = $7, number_of_learners = $8, size_status = $9, " +
-        "raw_payload = $10::jsonb, updated_at = NOW() WHERE id = $1 RETURNING *",
+        "extras = $10::jsonb, updated_at = NOW() WHERE id = $1 RETURNING *",
       [
         existing.id,
         targetGradeLevel,
@@ -549,6 +592,7 @@ async function upsertRegularSection(client, body) {
         adviserProvided,
       ],
     );
+    await clearLegacyPayload(existing.id);
     return r.rows[0];
   }
 
@@ -560,13 +604,13 @@ async function upsertRegularSection(client, body) {
   const secId = id || "REG-" + targetSchoolId + "-" + seq;
   const r = await client.query(
     "INSERT INTO esf7_regular_sections (id, school_id, school_year, grade_level, section_name, section_type, " +
-      "adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload) " +
+      "adviser_id, male_learners, female_learners, number_of_learners, size_status, extras) " +
       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb) " +
       "ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET " +
       "adviser_id = EXCLUDED.adviser_id, section_type = EXCLUDED.section_type, " +
       "male_learners = EXCLUDED.male_learners, female_learners = EXCLUDED.female_learners, " +
       "number_of_learners = EXCLUDED.number_of_learners, size_status = EXCLUDED.size_status, " +
-      "raw_payload = EXCLUDED.raw_payload, updated_at = NOW() RETURNING *",
+      "extras = EXCLUDED.extras, updated_at = NOW() RETURNING *",
     [
       secId,
       targetSchoolId,
@@ -582,6 +626,7 @@ async function upsertRegularSection(client, body) {
       payloadJson,
     ],
   );
+  await clearLegacyPayload(r.rows[0].id);
   return r.rows[0];
 }
 
@@ -646,10 +691,12 @@ router.post("/regular/sync", async (req, res) => {
         const purgeCrossPool = async (dbPool) => {
           if (!dbPool || !dbPool.query) return;
           try {
-            await dbPool.query(
-              "DELETE FROM esf7_regular_sections WHERE id = ANY($1) AND school_id = ANY($2)",
-              [delArr, schoolIds],
-            ).catch(() => {});
+            await dbPool
+              .query(
+                "DELETE FROM esf7_regular_sections WHERE id = ANY($1) AND school_id = ANY($2)",
+                [delArr, schoolIds],
+              )
+              .catch(() => {});
 
             const draftRes = await dbPool.query(
               "SELECT school_year, payload FROM school_drafts WHERE school_id = $1 OR school_id = $2",
@@ -664,7 +711,8 @@ router.post("/regular/sync", async (req, res) => {
                   r.payload.classSections = r.payload.classSections.filter(
                     (s) => !delSet.has(String(s.id)),
                   );
-                  if (r.payload.classSections.length !== origLen) modified = true;
+                  if (r.payload.classSections.length !== origLen)
+                    modified = true;
                 }
                 if (Array.isArray(r.payload.sections)) {
                   const origLen = r.payload.sections.length;
@@ -1381,8 +1429,7 @@ router.delete("/:id", async (req, res) => {
           schoolIds.length > 0
             ? "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)"
             : "SELECT school_id, school_year, payload FROM school_drafts WHERE payload::text LIKE $1";
-        const queryParams =
-          schoolIds.length > 0 ? [schoolIds] : [`%${id}%`];
+        const queryParams = schoolIds.length > 0 ? [schoolIds] : [`%${id}%`];
         const draftRes = await dbPool.query(queryText, queryParams);
         for (const r of draftRes.rows) {
           if (r.payload) {
@@ -1418,7 +1465,8 @@ router.delete("/:id", async (req, res) => {
     };
 
     await executeDelete(db);
-    if (db.getStagingPool) await executeDelete(db.getStagingPool()).catch(() => {});
+    if (db.getStagingPool)
+      await executeDelete(db.getStagingPool()).catch(() => {});
     if (db.getProdPool) await executeDelete(db.getProdPool()).catch(() => {});
 
     res.json({ success: true, message: `Section ${id} deleted successfully.` });

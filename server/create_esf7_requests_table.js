@@ -36,7 +36,7 @@ async function createRequestsTable() {
           status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'CANCELLED')),
           remarks TEXT,
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
+          extras JSONB NOT NULL DEFAULT '{}'::jsonb,
           
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

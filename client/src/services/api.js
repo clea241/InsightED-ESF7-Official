@@ -960,16 +960,26 @@ export const api = {
     return parseJsonOrThrow(res);
   },
   syncRoomRoster: async (schoolId, roster = []) => {
-    try {
-      const res = await fetch(`${API_BASE}/room-profiling/sync-roster`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ schoolId, roster }),
-      });
-      return res.ok ? await res.json() : { success: false };
-    } catch (e) {
-      return { success: false };
+    const res = await fetch(`${API_BASE}/room-profiling/sync-roster`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schoolId, roster }),
+    });
+    if (!res.ok) {
+      let errMsg = "Failed to sync roster to database";
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.error) errMsg = errJson.error;
+        else if (errJson && errJson.message) errMsg = errJson.message;
+      } catch (_) {
+        try {
+          const errText = await res.text();
+          if (errText) errMsg = errText;
+        } catch (__) {}
+      }
+      throw new Error(errMsg);
     }
+    return parseJsonOrThrow(res);
   },
   getRoomRoster: async (schoolId = "502624") => {
     try {

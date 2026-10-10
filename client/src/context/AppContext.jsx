@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 import { api } from "../services/api";
 import {
@@ -33,8 +34,23 @@ import {
   acceptServerVersion,
   retryNow,
   DraftConflictError,
+  getDraftSaveState,
 } from "../services/draftSaver";
-import { getLocalDraft, setLocalDraft, deleteLocalDraft } from "../services/db";
+import {
+  getLocalDraft,
+  setLocalDraft,
+  deleteLocalDraft,
+  readMigratedLocalDraft,
+  deleteLocalDraftWithLegacy,
+} from "../services/db";
+import {
+  getSchoolDraftKey,
+  cleanSchoolId,
+  canonicalSchoolYear,
+  canonicalTermSlug,
+  readMigratedLocalStorage,
+  writeWithLegacyCleanup,
+} from "../services/storageKeys";
 import { dedupeSections, dedupePersonnel } from "../services/dedupe";
 import { mergeSectionsByKey, inSchoolYear } from "../services/sectionMerge";
 import { cleanPersonnelDates } from "../services/dateFields";
@@ -55,6 +71,7 @@ import {
   allowNextUnload,
   isAnyScreenDirty,
   discardAllDirtyScreens,
+  flushAllDirtyGuards,
 } from "../services/dirtyGuard";
 
 const AppContext = createContext();
@@ -4466,7 +4483,15 @@ export const AppProvider = ({ children }) => {
           );
 
         // 3. Local draft (IndexedDB), cloud draft (Postgres) and milestone node status are independent: fetch together
-        const draftKey = `draft_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}`;
+        const canonicalDraftKey = getSchoolDraftKey(
+          currentSchoolInfo.schoolId,
+          currentSchoolInfo.schoolYear,
+        );
+        const legacyDraftKeys = [
+          `draft_${currentSchoolInfo.schoolId}_${currentSchoolInfo.schoolYear}`,
+          `draft_${cleanSchoolId(currentSchoolInfo.schoolId)}_${currentSchoolInfo.schoolYear}`,
+        ];
+        const draftKey = canonicalDraftKey;
         // The database is the source of truth for sections: always fetch it, whatever draft is chosen below.
         const dbSectionsPromise = api
           .getSections()
@@ -4480,7 +4505,7 @@ export const AppProvider = ({ children }) => {
           }))
           .catch((error) => ({ ok: false, error }));
         const [localDraft, cloudDraftRes, nodeRes] = await Promise.all([
-          getLocalDraft(draftKey),
+          readMigratedLocalDraft(canonicalDraftKey, legacyDraftKeys),
           api.getSchoolDraft(currentSchoolInfo.schoolYear).catch((e) => {
             console.error("Failed to load cloud draft from backend:", e);
             return null;
@@ -5760,12 +5785,21 @@ export const AppProvider = ({ children }) => {
     };
   }, [user]);
 
+  const canonicalSchoolDraftKey = useMemo(() => {
+    if (!schoolInfo?.schoolId) return null;
+    return getSchoolDraftKey(
+      schoolInfo.schoolId,
+      schoolInfo.schoolYear || "SY 26-27",
+      activeTerm,
+    );
+  }, [schoolInfo?.schoolId, schoolInfo?.schoolYear, activeTerm]);
+
   // Debounced Local and Cloud Save hook
   useEffect(() => {
     if (!initialLoadCompleteRef.current) return;
     if (!schoolInfo || !schoolInfo.schoolId || !schoolInfo.schoolYear) return;
 
-    const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
+    const draftKey = canonicalSchoolDraftKey;
     // Before the first user interaction every state change is load-derived: keep the baseline current and do not sync.
     if (!userEditedRef.current) {
       lastSavedSigRef.current = draftSignature({
@@ -5805,7 +5839,9 @@ export const AppProvider = ({ children }) => {
           return;
         }
         // 1. Save to local IndexedDB
-        await setLocalDraft(draftKey, draftData);
+        if (draftKey) {
+          await setLocalDraft(draftKey, draftData);
+        }
         try {
           if (Array.isArray(personnel) && personnel.length > 0) {
             localStorage.setItem(
@@ -5838,6 +5874,7 @@ export const AppProvider = ({ children }) => {
 
     return () => clearTimeout(debounceId);
   }, [
+    canonicalSchoolDraftKey,
     schoolInfo,
     personnel,
     classSections,
@@ -5859,8 +5896,8 @@ export const AppProvider = ({ children }) => {
       return;
     if (userEditedRef.current) markDraftDirty();
     latestDraftRef.current = {
-      key: `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
-      schoolYear: schoolInfo.schoolYear,
+      key: canonicalSchoolDraftKey,
+      schoolYear: canonicalSchoolYear(schoolInfo.schoolYear),
       data: {
         schoolInfo,
         personnel,
@@ -5875,6 +5912,7 @@ export const AppProvider = ({ children }) => {
       },
     };
   }, [
+    canonicalSchoolDraftKey,
     schoolInfo,
     personnel,
     classSections,
@@ -5885,16 +5923,257 @@ export const AppProvider = ({ children }) => {
     journeyState,
   ]);
 
+  // Direct flush of latestDraftRef to storage on tab-hide/pagehide/blur and periodic intervals
+  const flushLatestDraftToStorage = useCallback(async (reason = "flush") => {
+    try {
+      await flushAllDirtyGuards();
+    } catch (e) {
+      console.warn("[DraftFlush] Error flushing dirty guards:", e);
+    }
+
+    const latest = latestDraftRef.current;
+    if (!latest || !latest.key || !latest.data) return false;
+
+    const sig = draftSignature(latest.data);
+    if (!userEditedRef.current || (sig !== null && sig === lastSavedSigRef.current)) {
+      return false;
+    }
+
+    try {
+      const ok = await setLocalDraft(latest.key, latest.data);
+      if (ok === false) throw new Error("IndexedDB write failed");
+      lastSavedSigRef.current = sig;
+      return true;
+    } catch (idbErr) {
+      console.warn(`[DraftFlush] IndexedDB save failed (${reason}), attempting localStorage fallback:`, idbErr);
+      try {
+        localStorage.setItem(`insighted_fallback_${latest.key}`, JSON.stringify(latest.data));
+        lastSavedSigRef.current = sig;
+        return true;
+      } catch (localErr) {
+        console.error(`[DraftFlush] Dual storage failure on ${reason}:`, localErr);
+        reportError(localErr, {
+          action: "Saving local draft backup",
+          handler: `flushLatestDraftToStorage (${reason})`,
+          schoolId: latest?.data?.schoolInfo?.schoolId,
+        });
+        return false;
+      }
+    }
+  }, []);
+
+  // Listeners for visibilitychange (hidden), pagehide, and periodic interval
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushLatestDraftToStorage("visibilitychange (hidden)");
+      }
+    };
+    const handlePageHide = () => {
+      flushLatestDraftToStorage("pagehide");
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+
+    const periodicInterval = setInterval(() => {
+      flushLatestDraftToStorage("periodic background interval");
+    }, 20000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      clearInterval(periodicInterval);
+    };
+  }, [flushLatestDraftToStorage]);
+
+  const isRecoveringRef = useRef(false);
+
+  // Merge personnel by stable key (id or prn), local edits overlay server baseline
+  const mergePersonnelByStableKey = (serverList = [], localList = []) => {
+    const map = new Map();
+    const prnMap = new Map();
+    serverList.forEach((p) => {
+      if (!p) return;
+      const key = String(p.id || "").toLowerCase();
+      if (key) map.set(key, { ...p });
+      if (p.prn) prnMap.set(String(p.prn).toLowerCase(), key);
+    });
+    localList.forEach((p) => {
+      if (!p) return;
+      const key = String(p.id || "").toLowerCase();
+      const prnKey = p.prn ? String(p.prn).toLowerCase() : null;
+      let matchedKey = key;
+      if (!map.has(key) && prnKey && prnMap.has(prnKey)) {
+        matchedKey = prnMap.get(prnKey);
+      }
+      if (map.has(matchedKey)) {
+        map.set(matchedKey, { ...map.get(matchedKey), ...p });
+      } else {
+        map.set(key, { ...p });
+      }
+    });
+    return Array.from(map.values());
+  };
+
+  // Merge sections by stable key (id or natural key), local edits overlay server baseline
+  const mergeSectionsByStableKey = (serverList = [], localList = []) => {
+    const map = new Map();
+    const naturalMap = new Map();
+    const natKey = (s) =>
+      `${String(s?.gradeLevel || "").trim()}::${String(s?.sectionName || "").trim()}`.toUpperCase();
+
+    serverList.forEach((s) => {
+      if (!s) return;
+      const idKey = String(s.id || "").toLowerCase();
+      if (idKey) map.set(idKey, { ...s });
+      const nk = natKey(s);
+      if (nk !== "::") naturalMap.set(nk, idKey);
+    });
+    localList.forEach((s) => {
+      if (!s) return;
+      const idKey = String(s.id || "").toLowerCase();
+      const nk = natKey(s);
+      let matchedKey = idKey;
+      if (!map.has(idKey) && naturalMap.has(nk)) {
+        matchedKey = naturalMap.get(nk);
+      }
+      if (map.has(matchedKey)) {
+        map.set(matchedKey, { ...map.get(matchedKey), ...s });
+      } else {
+        map.set(idKey, { ...s });
+      }
+    });
+    return Array.from(map.values());
+  };
 
   // Handlers read the latest closures through a ref so they are registered once.
   healthHandlersRef.current.syncLocalDraft = async () => {
+    if (isRecoveringRef.current) return true; // Single-flight recovery lock
     if (!initialLoadCompleteRef.current || loadIncompleteRef.current) {
-      // Initial load is still in progress or incomplete; nothing to sync yet
       return true;
     }
-    await flushDrafts();
-    clearDraftError();
-    return true;
+    isRecoveringRef.current = true;
+    try {
+      const sid = schoolInfo?.schoolId;
+      const sy = schoolInfo?.schoolYear || "SY 26-27";
+      if (!sid || !sy) return true;
+
+      // (a) Load database baseline (loading never writes)
+      const cloudDraftRes = await api.getSchoolDraft(sy).catch(() => null);
+      const serverPayload = cloudDraftRes?.payload || null;
+      const serverVersion = cloudDraftRes?.version || null;
+
+      const latest = latestDraftRef.current;
+      const localData = latest?.data;
+
+      let mergedPayload = localData;
+
+      if (serverPayload && localData) {
+        // (b) Compare local draft against it by stable key and overlay local version only where it genuinely differs
+        const serverLength = JSON.stringify(serverPayload).length;
+        const localLength = JSON.stringify(localData).length;
+        const serverIsNewer =
+          (serverVersion && serverVersion > (getSyncedVersion(sid, sy) || 0)) ||
+          (cloudDraftRes?.updatedAt &&
+            localData.lastUpdated &&
+            new Date(cloudDraftRes.updatedAt).getTime() >
+              new Date(localData.lastUpdated).getTime());
+        const serverIsLarger = serverLength > localLength;
+
+        if (serverIsNewer || serverIsLarger) {
+          const keepLocal = await showConfirm(
+            "Newer Server Copy Found",
+            "The server has a newer or larger version of your school data. Confirm = keep the changes on this screen. Cancel = load the server version.",
+          );
+          if (!keepLocal) {
+            // User chose server version: update in place without page reload
+            if (serverPayload.schoolInfo) setSchoolInfo(serverPayload.schoolInfo);
+            if (Array.isArray(serverPayload.personnel))
+              setPersonnel(serverPayload.personnel);
+            if (Array.isArray(serverPayload.classSections))
+              setClassSections(serverPayload.classSections);
+            if (serverPayload.journey_state)
+              setJourneyState(serverPayload.journey_state);
+
+            setSyncedVersion(sid, sy, serverVersion);
+            if (latest?.key) {
+              await deleteLocalDraftWithLegacy(latest.key, [
+                `draft_${sid}_${sy}`,
+                `draft_${cleanSchoolId(sid)}_${sy}`,
+              ]);
+            }
+            markSynced();
+            setHasUnsavedChanges(false);
+            clearDraftError();
+            return true;
+          }
+        }
+
+        // Overlay local version where it genuinely differs
+        const mergedPersonnel = mergePersonnelByStableKey(
+          serverPayload.personnel || [],
+          localData.personnel || [],
+        );
+        const mergedSections = mergeSectionsByStableKey(
+          serverPayload.classSections || [],
+          localData.classSections || [],
+        );
+
+        mergedPayload = {
+          ...serverPayload,
+          ...localData,
+          schoolInfo: localData.schoolInfo || serverPayload.schoolInfo,
+          personnel: mergedPersonnel,
+          classSections: mergedSections,
+          lastUpdated: new Date().toISOString(),
+        };
+
+        // Resume without a reload and without losing user's place or in-progress form state
+        if (mergedPayload.schoolInfo) setSchoolInfo(mergedPayload.schoolInfo);
+        if (Array.isArray(mergedPayload.personnel))
+          setPersonnel(mergedPayload.personnel);
+        if (Array.isArray(mergedPayload.classSections))
+          setClassSections(mergedPayload.classSections);
+      }
+
+      // (c) Replay the queued/pending saves through the path in point 5, awaited
+      if (mergedPayload) {
+        await saveDraft(sid, sy, mergedPayload);
+      }
+      await flushDrafts();
+
+      // (d) Verify each response and clear the local draft only after server confirmation
+      const saveState = getDraftSaveState();
+      if (saveState.status === "failed" || saveState.status === "conflict") {
+        throw (
+          saveState.lastError ||
+          new Error("Server did not confirm the recovery save.")
+        );
+      }
+
+      if (latest?.key) {
+        await deleteLocalDraftWithLegacy(latest.key, [
+          `draft_${sid}_${sy}`,
+          `draft_${cleanSchoolId(sid)}_${sy}`,
+        ]);
+      }
+      markSynced();
+      setHasUnsavedChanges(false);
+      clearDraftError();
+      return true;
+    } catch (err) {
+      // (e) If any replay fails, keep local draft and queue intact and show error with Copy Details
+      console.error("[SeamlessRestore] Recovery replay failed:", err);
+      reportError(err, {
+        action: "Restoring and syncing changes to the server",
+        handler: "syncLocalDraft",
+        schoolId: schoolInfo?.schoolId,
+      });
+      throw err;
+    } finally {
+      isRecoveringRef.current = false;
+    }
   };
 
   const conflictPromptOpenRef = useRef(false);
@@ -5929,9 +6208,16 @@ export const AppProvider = ({ children }) => {
           latest.data,
         );
         await setLocalDraft(latest.key, cloud?.payload || latest.data);
+        if (cloud?.payload?.schoolInfo) setSchoolInfo(cloud.payload.schoolInfo);
+        if (Array.isArray(cloud?.payload?.personnel))
+          setPersonnel(cloud.payload.personnel);
+        if (Array.isArray(cloud?.payload?.classSections))
+          setClassSections(cloud.payload.classSections);
+        if (cloud?.payload?.journey_state)
+          setJourneyState(cloud.payload.journey_state);
         acceptServerVersion(sid, sy, cloud?.version);
         markSynced();
-        window.location.reload();
+        setHasUnsavedChanges(false);
       }
     } catch (e) {
       reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, e);
@@ -5952,17 +6238,33 @@ export const AppProvider = ({ children }) => {
         payload: latest.data,
       };
     });
-    const offLock = onServerLock(() => {
+    const offLock = onServerLock(async () => {
+      try {
+        await flushAllDirtyGuards();
+      } catch (e) {
+        console.warn("[ServerLock] flushAllDirtyGuards error:", e);
+      }
       const latest = latestDraftRef.current;
-      if (latest)
-        setLocalDraft(latest.key, latest.data).catch(() => {
-          try {
-            localStorage.setItem(
-              `insighted_fallback_${latest.key}`,
-              JSON.stringify(latest.data),
-            );
-          } catch (e) {}
-        });
+      if (!latest) return;
+      try {
+        const idbOk = await setLocalDraft(latest.key, latest.data);
+        if (idbOk === false) throw new Error("IndexedDB returned failure status");
+      } catch (idbErr) {
+        console.warn("[ServerLock] IndexedDB save failed, trying localStorage fallback:", idbErr);
+        try {
+          localStorage.setItem(
+            `insighted_fallback_${latest.key}`,
+            JSON.stringify(latest.data),
+          );
+        } catch (localErr) {
+          console.error("[ServerLock] Dual storage failure: draft is not protected on this device", localErr);
+          reportError(localErr, {
+            action: "Local device draft backup during server outage",
+            handler: "onServerLock fallback",
+            schoolId: latest?.data?.schoolInfo?.schoolId,
+          });
+        }
+      }
     });
     const offRecover = onServerRecover(() =>
       healthHandlersRef.current.syncLocalDraft(),
@@ -6685,9 +6987,17 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPersonnel = async (newPerson) => {
-    const newId = `local-p-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+            const r = (Math.random() * 16) | 0;
+            return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+          });
     const newRecord = {
       id: newId,
+      status: "client-created",
+      legacyId: null,
       prn:
         newPerson.prn ||
         Math.floor(100000000000 + Math.random() * 900000000000).toString(),
@@ -8403,8 +8713,11 @@ export const AppProvider = ({ children }) => {
     if (!confirmReset) return;
 
     if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
-      const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
-      await deleteLocalDraft(draftKey);
+      const canonicalKey = getSchoolDraftKey(schoolInfo.schoolId, schoolInfo.schoolYear);
+      await deleteLocalDraftWithLegacy(canonicalKey, [
+        `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
+        `draft_${cleanSchoolId(schoolInfo.schoolId)}_${schoolInfo.schoolYear}`,
+      ]);
       try {
         await api.deleteSchoolDraft(schoolInfo.schoolYear);
       } catch (err) {
@@ -8543,8 +8856,11 @@ export const AppProvider = ({ children }) => {
 
   const fetchPersonnel = async () => {
     if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
-      const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
-      await deleteLocalDraft(draftKey);
+      const canonicalKey = getSchoolDraftKey(schoolInfo.schoolId, schoolInfo.schoolYear);
+      await deleteLocalDraftWithLegacy(canonicalKey, [
+        `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
+        `draft_${cleanSchoolId(schoolInfo.schoolId)}_${schoolInfo.schoolYear}`,
+      ]);
       try {
         await api.deleteSchoolDraft(schoolInfo.schoolYear);
       } catch (err) {}
@@ -10476,8 +10792,14 @@ export const AppProvider = ({ children }) => {
             discardAllDirtyScreens();
 
             if (schoolInfo && schoolInfo.schoolId) {
-              const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear || "SY 26-27"}`;
-              await deleteLocalDraft(draftKey);
+              const canonicalKey = getSchoolDraftKey(
+                schoolInfo.schoolId,
+                schoolInfo.schoolYear || "SY 26-27",
+              );
+              await deleteLocalDraftWithLegacy(canonicalKey, [
+                `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear || "SY 26-27"}`,
+                `draft_${cleanSchoolId(schoolInfo.schoolId)}_${schoolInfo.schoolYear || "SY 26-27"}`,
+              ]);
             }
             showToast("Local draft discarded! Reloading master template...");
             setTimeout(() => {

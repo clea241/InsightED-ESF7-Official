@@ -777,22 +777,33 @@ export default function Roster() {
         await commitDraftPersonnel();
       }
 
-      // 2b. People added on this roster exist only in the browser (local-p-… ids) until they are created in
+      // 2b. People added on this roster exist only in the browser (client-created status or legacy local-p-… ids) until they are created in
       //     esf7_personnel_profile. The create is idempotent on that id, so a retry or a second save never duplicates them.
-      const unsavedNew = personnel.filter((p) =>
-        String(p.id || "").startsWith("local-p-"),
+      const unsavedNew = personnel.filter(
+        (p) =>
+          p.status === "client-created" ||
+          String(p.id || "").startsWith("local-p-"),
       );
       for (const p of unsavedNew) {
         const created = await api.addPersonnel({
           ...cleanPersonnelDates(p),
           id: p.id,
+          status: p.status || "client-created",
           school_id: schoolInfo?.schoolId,
           school_year: schoolInfo?.schoolYear,
         });
-        if (!created || String(created.id) !== String(p.id)) {
+        if (
+          !created ||
+          (String(created.id) !== String(p.id) &&
+            String(created.legacy_id || created.legacyId || "") !== String(p.id))
+        ) {
           throw new Error(
             `The database did not confirm ${p.firstName || ""} ${p.lastName || ""} (sent ${p.id}, got ${created && created.id}).`,
           );
+        }
+        if (created && created.id) {
+          p.id = created.id;
+          p.status = created.status || "canonical";
         }
       }
 

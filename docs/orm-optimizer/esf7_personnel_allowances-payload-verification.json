@@ -1,0 +1,55 @@
+{
+  "status": "PASS",
+  "table": "esf7_personnel_allowances",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T14:18:27.361Z",
+  "finishedAt": "2026-10-10T14:18:28.538Z",
+  "rowCountAtStart": 63980,
+  "rowCountAtEnd": 63980,
+  "rowsChecked": 37682,
+  "newFormatRowsSkipped": 26298,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 150728,
+    "heldByTypedColumn": 75364,
+    "heldByExtras": 75364,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "bytes": {
+    "avgPayload": 101,
+    "avgExtras": 43
+  },
+  "payloadFingerprint": {
+    "current": "3b6d6256c9302ce5214be4bc8b7c9b51",
+    "backup": "3b6d6256c9302ce5214be4bc8b7c9b51"
+  },
+  "perKey": {
+    "isGranted": {
+      "viaColumn": 0,
+      "viaExtras": 37682,
+      "unaccounted": 0
+    },
+    "schoolYear": {
+      "viaColumn": 37682,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "personnelId": {
+      "viaColumn": 37682,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "allowanceKey": {
+      "viaColumn": 0,
+      "viaExtras": 37682,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of alias copies (a camelCase or snake_case spelling of a typed column with the same value) is not preserved; the formatters regenerate the ones the API returns."
+}

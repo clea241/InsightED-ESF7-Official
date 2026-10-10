@@ -1,11 +1,35 @@
 const express = require("express");
 const router = express.Router();
-const fs = require("fs");
-const path = require("path");
 const db = require("../../db");
 const { insightEdPool } = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
+const { reconstructPayload } = require("../../utils/workloadPayload");
+const { codec } = require("../../utils/payloadExtras");
+
+const adminTaskPayload = codec("esf7_admin_task");
 const { coerceDateField, isDatePlaceholder } = require("../../utils/dateInput");
+
+async function resolvePersonnelId(dbClient, rawId) {
+  if (!rawId || typeof rawId !== "string") return rawId;
+  const trimmed = rawId.trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return trimmed;
+  }
+  const poolOrClient = dbClient || db;
+  try {
+    const res = await poolOrClient.query(
+      "SELECT id FROM esf7_personnel_profile WHERE legacy_id = $1 OR id = $1 LIMIT 1",
+      [trimmed],
+    );
+    if (res.rows.length > 0) return res.rows[0].id;
+    const mapRes = await poolOrClient.query(
+      "SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1",
+      [trimmed],
+    );
+    if (mapRes.rows.length > 0) return mapRes.rows[0].new_id;
+  } catch (e) {}
+  return trimmed;
+}
 
 function convertExcelTimeToHHMM(val) {
   if (val === null || val === undefined || val === "") return null;
@@ -780,7 +804,11 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
   for (let i = 0; i < masterRes.rows.length; i++) {
     const row = masterRes.rows[i];
     const seq = String(i + 1).padStart(3, "0");
-    const profileId = row.id || `PER-${cleanSchoolId}-${seq}`;
+    const profileId =
+      row.id ||
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : require("crypto").randomUUID());
     const empId = row.employmentId || `EMP-${cleanSchoolId}-${seq}`;
     const educId = row.educationId || `EDU-${cleanSchoolId}-${seq}`;
 
@@ -886,6 +914,15 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
         ? `${masterError.query}: ${masterError.message}${masterError.code ? ` (code ${masterError.code})` : ""}`
         : null,
       id: profileId,
+      status:
+        row.status ||
+        (profileId.startsWith("local-p-")
+          ? "client-created"
+          : profileId.startsWith("P-HARVEST-")
+            ? "harvester-created"
+            : "canonical"),
+      legacyId: row.legacy_id || row.legacyId || null,
+      legacy_id: row.legacy_id || row.legacyId || null,
       prn,
       schoolId: cleanSchoolId,
       school_id: cleanSchoolId,
@@ -1239,9 +1276,10 @@ function formatDesignationRecord(row) {
   };
 }
 
+// esf7_workload_rows keeps a slim `extras` JSONB instead of a copy of the request body (list queries omit it on purpose).
 function formatWorkloadRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -1268,13 +1306,20 @@ function formatWorkloadRecord(row) {
     end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
     days: row.days || ["M", "T", "W", "TH", "F"],
     term: row.term || raw.term || "1st",
-    rawPayload: raw,
+    // aliases of the typed `subject` column (detail queries only; list queries select typed columns without extras)
+    ...(row.extras
+      ? {
+          subjectName: raw.subjectName ?? row.subject ?? "",
+          subject_name: raw.subject_name ?? row.subject ?? "",
+        }
+      : {}),
+    rawPayload: row.extras ? reconstructPayload(row) : raw,
   };
 }
 
 function formatAdminTaskRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -1316,7 +1361,7 @@ function formatAdminTaskRecord(row) {
     isDesignationSynced: !!row.is_designation_synced,
     is_designation_synced: !!row.is_designation_synced,
     status: row.status || "ACTIVE",
-    rawPayload: raw,
+    rawPayload: adminTaskPayload.reconstruct(row),
   };
 }
 
@@ -1391,6 +1436,9 @@ function formatPersonnelRecord(
     ...rawEduc,
     ...rawLA,
     id: row.id,
+    status: row.status || "canonical",
+    legacyId: row.legacy_id || null,
+    legacy_id: row.legacy_id || null,
     prn: row.prn,
     schoolId: row.school_id,
     school_id: row.school_id,
@@ -1767,8 +1815,11 @@ router.get("/", async (req, res) => {
       }
     }
 
-    const getWorkloadForTeacher = (id, prn, empNo) => {
+    const getWorkloadForTeacher = (id, prn, empNo, legacyId) => {
       const kId = String(id || "")
+        .trim()
+        .toUpperCase();
+      const kLegacy = String(legacyId || "")
         .trim()
         .toUpperCase();
       const kPrn = String(prn || "")
@@ -1779,11 +1830,17 @@ router.get("/", async (req, res) => {
         .toUpperCase();
       const direct =
         (kId && workloadMap.get(kId)) ||
+        (kLegacy && workloadMap.get(kLegacy)) ||
         (kPrn && workloadMap.get(kPrn)) ||
         (kEmp && workloadMap.get(kEmp));
       if (direct && direct.length > 0) return direct;
       if (kId) {
         const stripped = kId.replace(/^PER-/, "").replace(/^PRN-/, "");
+        if (stripped && workloadMap.has(stripped))
+          return workloadMap.get(stripped);
+      }
+      if (kLegacy) {
+        const stripped = kLegacy.replace(/^PER-/, "").replace(/^PRN-/, "");
         if (stripped && workloadMap.has(stripped))
           return workloadMap.get(stripped);
       }
@@ -3069,11 +3126,13 @@ router.post("/", async (req, res) => {
       school_id || bodySchoolId || (req.auth && req.auth.schoolId) || "108348";
     const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
 
-    // Idempotent create: a client-chosen id (or PRN) that already exists is the same person. A retry or a second save
-    // answers "existing" and writes nothing instead of failing on the primary key or creating a second record.
-    if (req.body.id || inputPrn) {
+    // Match existing records by PRN or by ID/legacy_id
+    if (inputPrn || req.body.id) {
       const dup = await client.query(
-        "SELECT id, prn, school_id FROM esf7_personnel_profile WHERE ($1::text IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND prn = $2) LIMIT 1",
+        `SELECT id, prn, school_id, status FROM esf7_personnel_profile 
+         WHERE ($1::text IS NOT NULL AND (id = $1 OR legacy_id = $1)) 
+            OR ($2::text IS NOT NULL AND prn = $2) 
+         LIMIT 1`,
         [req.body.id || null, inputPrn || null],
       );
       if (dup.rows.length > 0) {
@@ -3082,6 +3141,7 @@ router.post("/", async (req, res) => {
           id: dup.rows[0].id,
           prn: dup.rows[0].prn,
           schoolId: dup.rows[0].school_id,
+          status: dup.rows[0].status,
           existing: true,
         });
       }
@@ -3104,14 +3164,29 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // Sequence ID Generation
-    const countRes = await client.query(
-      `SELECT COUNT(*) FROM esf7_personnel_profile WHERE school_id = $1`,
-      [targetSchoolId],
-    );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const customId =
-      req.body.id || `PER-${targetSchoolId.replace("SCH-", "")}-${seq}`;
+    // Generate UUID and determine status & legacy_id
+    const isClientUuid =
+      req.body.id &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        req.body.id,
+      );
+    const newId =
+      isClientUuid
+        ? req.body.id
+        : typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : require("crypto").randomUUID();
+    const legacyId =
+      !isClientUuid && req.body.id ? String(req.body.id).trim() : null;
+    const personnelStatus =
+      req.body.status ||
+      (req.body.id?.startsWith("local-p-")
+        ? "client-created"
+        : req.body.id?.startsWith("P-HARVEST-")
+          ? "harvester-created"
+          : "canonical");
+
+    const customId = newId;
 
     const prn =
       inputPrn ||
@@ -3134,9 +3209,10 @@ router.post("/", async (req, res) => {
       INSERT INTO esf7_personnel_profile (
         id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
         tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-        philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, raw_payload
+        philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, raw_payload,
+        status, legacy_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
       RETURNING *;
     `;
 
@@ -3186,10 +3262,21 @@ router.post("/", async (req, res) => {
       finalAllowEmailDiscrepancy,
       is_school_head === true || isSchoolHead === true,
       JSON.stringify(req.body),
+      personnelStatus,
+      legacyId,
     ];
 
     const profileRes = await client.query(insertProfileQuery, profileValues);
     const createdProfile = profileRes.rows[0];
+
+    if (legacyId) {
+      await client
+        .query(
+          `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status) VALUES ($1, $2, $3) ON CONFLICT (legacy_id) DO NOTHING`,
+          [legacyId, newId, personnelStatus],
+        )
+        .catch(() => {});
+    }
 
     // Insert linked employment
     const empPos = (position || "TEACHER I").toUpperCase();
@@ -3228,7 +3315,7 @@ router.post("/", async (req, res) => {
       deploymentStatus ||
       "OWN STATION"
     ).toUpperCase();
-    const empId = `EMP-${targetSchoolId.replace("SCH-", "")}-${seq}`;
+    const empId = `EMP-${targetSchoolId.replace("SCH-", "")}-${newId.slice(0, 8)}`;
 
     const insertEmpQuery = `
       INSERT INTO esf7_personnel_employment (
@@ -3359,7 +3446,7 @@ router.post("/", async (req, res) => {
       prcSpecialization ||
       ""
     ).toUpperCase();
-    const eduId = `EDU-${targetSchoolId.replace("SCH-", "")}-${seq}`;
+    const eduId = `EDU-${targetSchoolId.replace("SCH-", "")}-${newId.slice(0, 8)}`;
 
     let eligibilityArray = [];
     if (Array.isArray(eligibility)) {
@@ -3658,7 +3745,7 @@ router.put("/:id", async (req, res) => {
     if (isTargetHead) {
       const headCheck = await client.query(
         `SELECT id, first_name, last_name, position FROM esf7_personnel_profile 
-         WHERE (school_id = $1 OR school_id = $2) AND is_school_head = TRUE AND id != $3 LIMIT 1`,
+         WHERE (school_id = $1 OR school_id = $2) AND is_school_head = TRUE AND id != $3 AND (legacy_id IS NULL OR legacy_id != $3) LIMIT 1`,
         [targetSchoolId, `SCH-${targetSchoolId}`, req.params.id],
       );
       if (headCheck.rows.length > 0) {
@@ -3671,7 +3758,7 @@ router.put("/:id", async (req, res) => {
     }
 
     const currentRes = await client.query(
-      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR prn = $1 LIMIT 1`,
+      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) OR prn = $1 LIMIT 1`,
       [req.params.id],
     );
 
@@ -3836,8 +3923,9 @@ router.put("/:id", async (req, res) => {
         allow_email_discrepancy = $22,
         is_school_head = $23,
         raw_payload = $24::jsonb,
+        status = COALESCE($25, esf7_personnel_profile.status),
         updated_at = NOW()
-      WHERE id = $25
+      WHERE id = $26
       RETURNING *;
     `;
 
@@ -3866,6 +3954,7 @@ router.put("/:id", async (req, res) => {
       finalAllowEmailDiscrepancy,
       isTargetHead,
       JSON.stringify(req.body),
+      req.body.status || null,
       current.id,
     ];
 
@@ -4244,7 +4333,7 @@ router.delete("/:id", async (req, res) => {
     // A. Query existing details to construct persistent tombstone
     let existingRec = null;
     const profRes = await db
-      .query(`SELECT * FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`, [
+      .query(`SELECT * FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1`, [
         targetId,
       ])
       .catch(() => ({ rows: [] }));
@@ -4599,7 +4688,7 @@ router.delete("/:id", async (req, res) => {
           .catch(() => {}),
         pool
           .query(
-            `DELETE FROM esf7_personnel_profile WHERE id = $1 OR prn = $1`,
+            `DELETE FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1`,
             [targetId],
           )
           .catch(() => {}),
@@ -4621,6 +4710,7 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+router.resolvePersonnelId = resolvePersonnelId;
 router.parsePostGraduateDiscipline = parsePostGraduateDiscipline;
 router.formatPersonnelRecord = formatPersonnelRecord;
 

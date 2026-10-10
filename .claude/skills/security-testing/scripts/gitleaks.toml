@@ -1,0 +1,41 @@
+# Extends the default gitleaks rules. Keep every exclusion as narrow as possible and explain it.
+[extend]
+useDefault = true
+
+# 1) Path exclusions (apply to every rule). Only folders with no source code.
+[[allowlists]]
+description = "dependencies, build output and generated reports"
+paths = [
+  '''(^|/)node_modules/''',
+  '''^client/dist/''',
+  '''^coverage/''',
+  '''^test-results/''',
+  '''^security/reports/''',
+]
+
+[[allowlists]]
+description = "gitignored, untracked database dumps (checked 2026-10: only generic-api-key noise from row data)"
+paths = ['''^server/backups/''']
+
+# 2) Confirmed dummy fixtures, scoped by rule AND file (triaged without printing values).
+[[allowlists]]
+description = "jwt.io-style sample tokens with short fake signatures in unit tests"
+targetRules = ["jwt"]
+paths = [
+  '''^client/tests/unit/errorAlert\.test\.js$''',
+  '''^client/tests/unit/draftErrorReporter\.test\.js$''',
+]
+
+[[allowlists]]
+description = "TEST_SECRET constants for the disposable test database; not equal to any value in server/.env"
+targetRules = ["generic-api-key"]
+paths = [
+  '''^server/tests/integration/workload_state\.integration\.test\.js$''',
+  '''^server/tests/integration/workload_extras\.integration\.test\.js$''',
+  '''^server/tests/integration/drafts\.integration\.test\.js$''',
+]
+
+[[allowlists]]
+description = "local data backup in scratch: row data, not credentials"
+targetRules = ["generic-api-key"]
+paths = ['''^server/scratch/302261_payload_backup_before_dedup\.json$''']

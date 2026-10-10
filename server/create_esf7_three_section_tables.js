@@ -18,7 +18,7 @@ async function createThreeSectionTables() {
         male_learners INTEGER DEFAULT 0,
         female_learners INTEGER DEFAULT 0,
         number_of_learners INTEGER DEFAULT 0,
-        raw_payload JSONB DEFAULT '{}'::jsonb,
+        extras JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         CONSTRAINT uq_regular_section_school_sy UNIQUE (school_id, school_year, grade_level, section_name)

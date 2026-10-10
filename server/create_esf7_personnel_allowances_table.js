@@ -45,7 +45,7 @@ async function createAllowancesTable() {
           has_hardship BOOLEAN NOT NULL DEFAULT FALSE,
           hardship_amount NUMERIC(10,2) DEFAULT 0.00,
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
+          extras JSONB NOT NULL DEFAULT '{}'::jsonb,
           
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

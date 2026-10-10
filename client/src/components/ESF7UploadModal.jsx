@@ -207,7 +207,13 @@ export default function ESF7UploadModal({
         if (existingIdx !== -1) {
           targetPersonId = updatedPersonnel[existingIdx].id;
         } else {
-          targetPersonId = `P-HARVEST-${Date.now()}-${pIdx}`;
+          targetPersonId =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+                  const r = (Math.random() * 16) | 0;
+                  return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+                });
         }
 
         // Map extracted workloads into appropriate task categories
@@ -449,6 +455,8 @@ export default function ESF7UploadModal({
           const generatedEmail = `${(p.firstName || "teacher").toLowerCase().replace(/[^a-z0-9]/g, "")}.${(p.lastName || "deped").toLowerCase().replace(/[^a-z0-9]/g, "")}@deped.gov.ph`;
           updatedPersonnel.push({
             id: targetPersonId,
+            status: "harvester-created",
+            legacyId: null,
             prn: p.tin ? `PRN-${p.tin}` : `PRN-HARVEST-${Date.now()}-${pIdx}`,
             firstName: p.firstName,
             middleName: p.middleName || "",

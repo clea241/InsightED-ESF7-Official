@@ -11,6 +11,11 @@ import DepEdEmailInfoModal from "../components/DepEdEmailInfoModal";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
 import { confirmServerDraftSaved } from "../services/screenSave";
+import {
+  getPersonnelDraftKey,
+  readMigratedLocalStorage,
+  writeWithLegacyCleanup,
+} from "../services/storageKeys";
 import { api } from "../services/api";
 import {
   FiCreditCard,
@@ -2343,7 +2348,14 @@ export default function PersonnelProfile() {
     const out = [];
     (personnel || []).forEach((p) => {
       if (p.isDraft || p.id === dbPerson?.id) return;
-      const raw = localStorage.getItem(`draft_personnel_${p.id}`);
+      const canonicalKey = getPersonnelDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+        p.id,
+      );
+      const raw = readMigratedLocalStorage(canonicalKey, [
+        `draft_personnel_${p.id}`,
+      ]);
       if (!raw) return;
       try {
         const draft = JSON.parse(raw);
@@ -2366,11 +2378,35 @@ export default function PersonnelProfile() {
 
   const handleDiscard = useCallback(() => {
     if (dbPerson) {
+      const canonicalKey = getPersonnelDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+        dbPerson.id,
+      );
+      localStorage.removeItem(canonicalKey);
       localStorage.removeItem(`draft_personnel_${dbPerson.id}`);
       localStorage.removeItem(`draft_learning_areas_${dbPerson.id}`);
       setEditPerson(dbPerson);
     }
-  }, [dbPerson]);
+  }, [dbPerson, schoolInfo]);
+
+  const flushCurrentPersonToContext = useCallback(() => {
+    if (editPerson && editPerson.id && currentPersonDirty) {
+      if (typeof updatePersonnelInfo === "function") {
+        updatePersonnelInfo(editPerson.id, editPerson);
+      }
+      try {
+        const canonicalKey = getPersonnelDraftKey(
+          schoolInfo?.schoolId,
+          schoolInfo?.schoolYear,
+          editPerson.id,
+        );
+        writeWithLegacyCleanup(canonicalKey, editPerson, [
+          `draft_personnel_${editPerson.id}`,
+        ]);
+      } catch (e) {}
+    }
+  }, [editPerson, currentPersonDirty, updatePersonnelInfo, schoolInfo]);
 
   const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   const { confirmAction } = useDirtyGuard({
@@ -2378,6 +2414,7 @@ export default function PersonnelProfile() {
     isDirty,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
+    onFlush: flushCurrentPersonToContext,
     getDirtyReasons: () => [...diffCurrentPerson(), ...otherDraftDiffs()],
   });
 
@@ -2386,8 +2423,16 @@ export default function PersonnelProfile() {
   // that load-time defaults are never mistaken for user edits.
   function buildEditPerson(dbPerson, withDraft = true) {
     {
-      const draftKey = `draft_personnel_${dbPerson.id}`;
-      const savedDraft = withDraft ? localStorage.getItem(draftKey) : null;
+      const canonicalKey = getPersonnelDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+        dbPerson.id,
+      );
+      const savedDraft = withDraft
+        ? readMigratedLocalStorage(canonicalKey, [
+            `draft_personnel_${dbPerson.id}`,
+          ])
+        : null;
       let personObj = { ...dbPerson };
       if (savedDraft) {
         try {
@@ -3630,6 +3675,12 @@ export default function PersonnelProfile() {
       if (!confirmed.ok) return confirmed;
 
       for (const p of recordsToSave) {
+        const canonicalKey = getPersonnelDraftKey(
+          schoolInfo?.schoolId,
+          schoolInfo?.schoolYear,
+          p.id,
+        );
+        localStorage.removeItem(canonicalKey);
         localStorage.removeItem(`draft_personnel_${p.id}`);
         localStorage.removeItem(`draft_learning_areas_${p.id}`);
       }

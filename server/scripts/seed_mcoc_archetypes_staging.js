@@ -1,5 +1,9 @@
 const { stagingPool, prodPool } = require("../db");
 const { MCOC_ARCHETYPES } = require("../utils/divisionTestRegistry");
+const { codec } = require("../utils/payloadExtras");
+
+// esf7_school_profile keeps typed columns + a slim `extras` JSONB (run the expand migration on the target first)
+const schoolProfilePayload = codec("esf7_school_profile");
 
 async function seedStaging() {
   console.log("=====================================================");
@@ -265,7 +269,7 @@ async function seedStaging() {
         has_jhs_inclusive, jhs_inclusive_programs,
         has_shs_inclusive, shs_inclusive_programs,
         has_als, has_sned, has_iped, has_madrasah,
-        inclusive_programs, raw_payload, updated_at
+        inclusive_programs, extras, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17, $18, $19::jsonb, $20::jsonb, NOW()
       )
@@ -286,7 +290,7 @@ async function seedStaging() {
         has_iped = EXCLUDED.has_iped,
         has_madrasah = EXCLUDED.has_madrasah,
         inclusive_programs = EXCLUDED.inclusive_programs,
-        raw_payload = EXCLUDED.raw_payload,
+        extras = EXCLUDED.extras,
         updated_at = NOW()
     `,
       [
@@ -309,7 +313,29 @@ async function seedStaging() {
         config.hasIped,
         config.hasMadrasah,
         JSON.stringify(config.inclusivePrograms),
-        JSON.stringify(config),
+        JSON.stringify(
+          schoolProfilePayload.buildExtras(config, {
+            id: profileId,
+            school_id: config.schoolId,
+            school_year: config.schoolYear,
+            has_elem_special_programs: config.hasElemSpecialPrograms,
+            elem_special_programs: config.elemSpecialPrograms,
+            has_jhs_special_programs: config.hasJhsSpecialPrograms,
+            jhs_special_programs: config.jhsSpecialPrograms,
+            shs_curriculum_model: config.shsCurriculumModel,
+            has_elem_inclusive: config.hasElemInclusive,
+            elem_inclusive_programs: config.elemInclusivePrograms,
+            has_jhs_inclusive: config.hasJhsInclusive,
+            jhs_inclusive_programs: config.jhsInclusivePrograms,
+            has_shs_inclusive: config.hasShsInclusive,
+            shs_inclusive_programs: config.shsInclusivePrograms,
+            has_als: config.hasAls,
+            has_sned: config.hasSned,
+            has_iped: config.hasIped,
+            has_madrasah: config.hasMadrasah,
+            inclusive_programs: config.inclusivePrograms,
+          }),
+        ),
       ],
     );
 

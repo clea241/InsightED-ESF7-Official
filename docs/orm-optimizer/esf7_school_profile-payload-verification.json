@@ -1,0 +1,195 @@
+{
+  "status": "PASS",
+  "table": "esf7_school_profile",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T14:18:29.397Z",
+  "finishedAt": "2026-10-10T14:18:30.052Z",
+  "rowCountAtStart": 14804,
+  "rowCountAtEnd": 14804,
+  "rowsChecked": 14804,
+  "newFormatRowsSkipped": 0,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 426831,
+    "heldByTypedColumn": 259610,
+    "heldByExtras": 167221,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "bytes": {
+    "avgPayload": 726,
+    "avgExtras": 287
+  },
+  "payloadFingerprint": {
+    "current": "42bbbd75766b336f3c6d579db95668b1",
+    "backup": "42bbbd75766b336f3c6d579db95668b1"
+  },
+  "perKey": {
+    "hasAls": {
+      "viaColumn": 14283,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "region": {
+      "viaColumn": 0,
+      "viaExtras": 14804,
+      "unaccounted": 0
+    },
+    "hasIped": {
+      "viaColumn": 14283,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hasSned": {
+      "viaColumn": 14283,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "district": {
+      "viaColumn": 0,
+      "viaExtras": 14804,
+      "unaccounted": 0
+    },
+    "division": {
+      "viaColumn": 0,
+      "viaExtras": 14804,
+      "unaccounted": 0
+    },
+    "schoolId": {
+      "viaColumn": 14694,
+      "viaExtras": 110,
+      "unaccounted": 0
+    },
+    "schoolName": {
+      "viaColumn": 0,
+      "viaExtras": 14804,
+      "unaccounted": 0
+    },
+    "schoolYear": {
+      "viaColumn": 14804,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "certifiedAt": {
+      "viaColumn": 0,
+      "viaExtras": 14283,
+      "unaccounted": 0
+    },
+    "certifiedBy": {
+      "viaColumn": 0,
+      "viaExtras": 14283,
+      "unaccounted": 0
+    },
+    "hasMadrasah": {
+      "viaColumn": 14283,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "numberOfShifts": {
+      "viaColumn": 0,
+      "viaExtras": 14804,
+      "unaccounted": 0
+    },
+    "subjectsConfig": {
+      "viaColumn": 0,
+      "viaExtras": 14283,
+      "unaccounted": 0
+    },
+    "hasJhsInclusive": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hasShsInclusive": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "specialPrograms": {
+      "viaColumn": 0,
+      "viaExtras": 14566,
+      "unaccounted": 0
+    },
+    "hasElemInclusive": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "inclusivePrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "certifiedSignature": {
+      "viaColumn": 0,
+      "viaExtras": 14283,
+      "unaccounted": 0
+    },
+    "curricularOffering": {
+      "viaColumn": 0,
+      "viaExtras": 14804,
+      "unaccounted": 0
+    },
+    "jhsSpecialPrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "shsCurriculumModel": {
+      "viaColumn": 13037,
+      "viaExtras": 1529,
+      "unaccounted": 0
+    },
+    "elemSpecialPrograms": {
+      "viaColumn": 14283,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "jhsInclusivePrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "shsInclusivePrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "elemInclusivePrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hasJhsSpecialPrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hasElemSpecialPrograms": {
+      "viaColumn": 14566,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "elemSpecialProgram": {
+      "viaColumn": 0,
+      "viaExtras": 4580,
+      "unaccounted": 0
+    },
+    "raw_payload": {
+      "viaColumn": 0,
+      "viaExtras": 240,
+      "unaccounted": 0
+    },
+    "designations_na": {
+      "viaColumn": 0,
+      "viaExtras": 240,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of alias copies (a camelCase or snake_case spelling of a typed column with the same value) is not preserved; the formatters regenerate the ones the API returns."
+}

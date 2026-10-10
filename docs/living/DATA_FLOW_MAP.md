@@ -34,3 +34,12 @@ Roster "Add/Edit SDO School Head" modal -> PUT /api/school-head-sdo -> esf7_scho
 
 ## Disable Years (2026-10-09)
 Personnel Profile > Learning Area > "Disable Years" -> person.disabledServiceYears -> saved by Save Changes via PUT /api/personnel/:id -> esf7_personnel_profile.disabled_service_years. Read back in the joined personnel GET; the Learning Area capacity (display and limits) uses gross years minus this value.
+
+## Workload list (2026-10-10)
+- No screen reads it today. `GET /api/workloads?limit=&cursor=` (read-only) -> `esf7_workload_rows` ordered by (created_at, id) via `idx_esf7_workload_rows_created_at_id`; first page also runs `COUNT(*)` for `X-Total-Count`. Writes nothing.
+
+## Workload row storage (2026-10-10)
+- Workload page Save / Save & Validate (`POST /api/workloads/bulk`, `PUT /api/workloads/personnel/:id`), `POST /api/workloads`, `PUT /api/workloads/:id` and the submission queue worker write `esf7_workload_rows` typed columns plus `extras`; they no longer write a copy of the request body. Reads (`GET /api/workloads`, `/personnel/:id/state`, personnel detail) rebuild the same response keys from columns + `extras`. The personnel list query still selects typed columns only.
+
+## Payload storage for allowances, requests, school profile, tasks and regular sections (2026-10-10)
+- Allowance toggle/bulk (`POST /api/allowances/toggle|bulk`), request create (`POST /api/requests/create`), regular section save (`POST /api/sections/regular`), curricular-config save (`PUT /api/schools/curricular-config`), workload bulk save (teaching-related and administrative tasks) and the queue worker write typed columns plus `extras` on `esf7_personnel_allowances`, `esf7_requests`, `esf7_regular_sections`, `esf7_school_profile`, `esf7_related_task`, `esf7_admin_task`; none writes a copy of the body any more. The allowance `ON CONFLICT` still does not refresh `extras` (unchanged behavior).

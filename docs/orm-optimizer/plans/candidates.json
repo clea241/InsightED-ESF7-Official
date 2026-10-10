@@ -1,0 +1,3981 @@
+{
+  "scannedAt": "2026-10-10T14:20:44.169Z",
+  "root": "D:\\InsightED\\InsightED-ESF7-Official",
+  "schemaPath": "server/drizzle/schema.ts",
+  "poolerHint": false,
+  "filesScanned": 315,
+  "includeScripts": false,
+  "excludedScriptHits": 282,
+  "excludedScriptHitsByDir": {
+    "(top-level script files)": 112,
+    "scratch": 2,
+    "scripts": 3,
+    "server/scratch": 58,
+    "server/scripts": 107
+  },
+  "candidates": [
+    {
+      "file": "server/controllers/absences/index.js",
+      "line": 161,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_absences (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into overload_absences.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/absences/index.js"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 172,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/allowances/index.js"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 203,
+      "pattern": "query-in-loop",
+      "snippet": "const countRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/allowances/index.js"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 209,
+      "pattern": "write-in-loop",
+      "snippet": "const insertRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/allowances/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 274,
+      "pattern": "select-all",
+      "snippet": "db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 274,
+      "pattern": "orderby-unindexed",
+      "snippet": "db.query(",
+      "note": "ORDER BY esf7_regular_sections.grade_level: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 278,
+      "pattern": "select-all",
+      "snippet": "db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 282,
+      "pattern": "select-all",
+      "snippet": "db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 286,
+      "pattern": "select-all",
+      "snippet": "db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 286,
+      "pattern": "orderby-unindexed",
+      "snippet": "db.query(",
+      "note": "ORDER BY esf7_aral_sections.grade_level: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 290,
+      "pattern": "select-all",
+      "snippet": "db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 290,
+      "pattern": "orderby-unindexed",
+      "snippet": "db.query(",
+      "note": "ORDER BY esf7_remedial_enrichment_sections.grade_level: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 497,
+      "pattern": "select-all",
+      "snippet": "await client.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 504,
+      "pattern": "select-all",
+      "snippet": "await client.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 504,
+      "pattern": "orderby-unindexed",
+      "snippet": "await client.query(",
+      "note": "ORDER BY esf7_regular_sections.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 732,
+      "pattern": "write-in-loop",
+      "snippet": "await dbPool.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 856,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_sned_sections (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_sned_sections.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 979,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_als_sections (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_als_sections.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1096,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_aral_sections (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_aral_sections.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1222,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_remedial_enrichment_sections (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_remedial_enrichment_sections.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1457,
+      "pattern": "write-in-loop",
+      "snippet": "await dbPool.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/class_sections/index.js"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 20,
+      "pattern": "select-all",
+      "snippet": "const profileRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/dev_snapshot.js"
+    },
+    {
+      "file": "server/controllers/esf7_upload/index.js",
+      "line": 214,
+      "pattern": "orderby-unindexed",
+      "snippet": "const queueRes = await pool.query(",
+      "note": "ORDER BY esf7_link.updated_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/esf7_upload/index.js"
+    },
+    {
+      "file": "server/controllers/esf7_upload/index.js",
+      "line": 365,
+      "pattern": "select-all",
+      "snippet": "let sourceRes = await pool.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/esf7_upload/index.js"
+    },
+    {
+      "file": "server/controllers/esf7_upload/index.js",
+      "line": 371,
+      "pattern": "select-all",
+      "snippet": "sourceRes = await pool.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/esf7_upload/index.js"
+    },
+    {
+      "file": "server/controllers/node_status/index.js",
+      "line": 260,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/node_status/index.js"
+    },
+    {
+      "file": "server/controllers/overload_late_undertime/index.js",
+      "line": 299,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_late_undertime (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into overload_late_undertime.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/overload_late_undertime/index.js"
+    },
+    {
+      "file": "server/controllers/overload_no_work/index.js",
+      "line": 145,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_no_work (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into overload_no_work.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/overload_no_work/index.js"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 181,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_pay_and_reason (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into overload_pay_and_reason.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/overload_pay_and_reason/index.js"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 230,
+      "pattern": "query-in-loop",
+      "snippet": "const personRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/overload_pay_and_reason/index.js"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 242,
+      "pattern": "query-in-loop",
+      "snippet": "const countRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/overload_pay_and_reason/index.js"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 276,
+      "pattern": "query-in-loop",
+      "snippet": "const result = await db.query(sql, [",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/overload_pay_and_reason/index.js"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 276,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_pay_and_reason (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into overload_pay_and_reason.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/overload_pay_and_reason/index.js"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 22,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/overload_reasons/index.js"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 175,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_pay_and_reason (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into overload_pay_and_reason.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/overload_reasons/index.js"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 228,
+      "pattern": "query-in-loop",
+      "snippet": "const personRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/overload_reasons/index.js"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 240,
+      "pattern": "query-in-loop",
+      "snippet": "const countRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/overload_reasons/index.js"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 274,
+      "pattern": "query-in-loop",
+      "snippet": "const result = await db.query(sql, [",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/overload_reasons/index.js"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 274,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO overload_pay_and_reason (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into overload_pay_and_reason.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/overload_reasons/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 36,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 36,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_personnel_designations.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 50,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 50,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_personnel_designations.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 63,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 63,
+      "pattern": "missing-limit",
+      "snippet": "const result = await db.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 63,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_personnel_designations.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 190,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_designations (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_designations.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_designations/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_employment/index.js",
+      "line": 169,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_employment/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_employment/index.js",
+      "line": 312,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_employment (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_employment.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_employment/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 48,
+      "pattern": "select-all",
+      "snippet": "result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_extra_tasks/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 48,
+      "pattern": "orderby-unindexed",
+      "snippet": "result = await db.query(",
+      "note": "ORDER BY esf7_personnel_extra_tasks.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel_extra_tasks/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 53,
+      "pattern": "select-all",
+      "snippet": "result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_extra_tasks/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 53,
+      "pattern": "orderby-unindexed",
+      "snippet": "result = await db.query(",
+      "note": "ORDER BY esf7_personnel_extra_tasks.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel_extra_tasks/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 106,
+      "pattern": "write-in-loop",
+      "snippet": "const insertRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel_extra_tasks/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 106,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_extra_tasks (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_extra_tasks.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_extra_tasks/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 27,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_learning_areas/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 136,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_learning_areas (matrix_data) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_learning_areas.matrix_data",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_learning_areas/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 162,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_learning_areas/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 252,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_learning_areas (matrix_data) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_learning_areas.matrix_data",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_learning_areas/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_qualifications/index.js",
+      "line": 302,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_qualifications/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_qualifications/index.js",
+      "line": 477,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_perssonel_educ (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_perssonel_educ.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_qualifications/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_trainings/index.js",
+      "line": 39,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel_trainings/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_trainings/index.js",
+      "line": 39,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_personnel_ld_trainings.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel_trainings/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_trainings/index.js",
+      "line": 113,
+      "pattern": "write-in-loop",
+      "snippet": "const result = await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel_trainings/index.js"
+    },
+    {
+      "file": "server/controllers/personnel_trainings/index.js",
+      "line": 113,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_ld_trainings (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_ld_trainings.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel_trainings/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 1704,
+      "pattern": "select-all",
+      "snippet": "let result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2489,
+      "pattern": "write-in-loop",
+      "snippet": "await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2511,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2562,
+      "pattern": "select-all",
+      "snippet": "const trRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2562,
+      "pattern": "orderby-unindexed",
+      "snippet": "const trRes = await db.query(",
+      "note": "ORDER BY esf7_personnel_ld_trainings.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2566,
+      "pattern": "select-all",
+      "snippet": "const dsgRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2566,
+      "pattern": "orderby-unindexed",
+      "snippet": "const dsgRes = await db.query(",
+      "note": "ORDER BY esf7_personnel_designations.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2593,
+      "pattern": "select-all",
+      "snippet": "const admRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2593,
+      "pattern": "orderby-unindexed",
+      "snippet": "const admRes = await db.query(",
+      "note": "ORDER BY esf7_admin_task.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2642,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2642,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_ld_trainings (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_ld_trainings.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2680,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_learning_areas (matrix_data) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_learning_areas.matrix_data",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2947,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3203,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_profile (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_profile.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3307,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_employment (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_employment.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3432,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_perssonel_educ (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_perssonel_educ.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3466,
+      "pattern": "select-all",
+      "snippet": "const completeRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3512,
+      "pattern": "select-all",
+      "snippet": "const trRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3512,
+      "pattern": "orderby-unindexed",
+      "snippet": "const trRes = await db.query(",
+      "note": "ORDER BY esf7_personnel_ld_trainings.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3516,
+      "pattern": "select-all",
+      "snippet": "const dsgRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3516,
+      "pattern": "orderby-unindexed",
+      "snippet": "const dsgRes = await db.query(",
+      "note": "ORDER BY esf7_personnel_designations.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3685,
+      "pattern": "select-all",
+      "snippet": "const currentRes = await client.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3884,
+      "pattern": "payload-write-whole-body",
+      "snippet": "UPDATE esf7_personnel_profile (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_profile.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4010,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_employment (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_employment.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4135,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_perssonel_educ (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_perssonel_educ.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4168,
+      "pattern": "select-all",
+      "snippet": "const trRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4168,
+      "pattern": "orderby-unindexed",
+      "snippet": "const trRes = await db.query(",
+      "note": "ORDER BY esf7_personnel_ld_trainings.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4173,
+      "pattern": "select-all",
+      "snippet": "const laRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4178,
+      "pattern": "select-all",
+      "snippet": "const dsgRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4178,
+      "pattern": "orderby-unindexed",
+      "snippet": "const dsgRes = await db.query(",
+      "note": "ORDER BY esf7_personnel_designations.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4480,
+      "pattern": "write-in-loop",
+      "snippet": "await pool.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4480,
+      "pattern": "payload-write-whole-body",
+      "snippet": "UPDATE school_drafts (payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into school_drafts.payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4533,
+      "pattern": "write-in-loop",
+      "snippet": "await pool.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4533,
+      "pattern": "payload-write-whole-body",
+      "snippet": "UPDATE esf7_room_roster_cache (roster_json) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_room_roster_cache.roster_json",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/personnel/index.js"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 90,
+      "pattern": "orderby-unindexed",
+      "snippet": "? await db.query(",
+      "note": "ORDER BY school_drafts.updated_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/reports/esf7_xlsb.js"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 107,
+      "pattern": "select-all",
+      "snippet": "const schoolRes = await db.query(\"SELECT * FROM schools LIMIT 1\");",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/reports/esf7_xlsb.js"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 110,
+      "pattern": "select-all",
+      "snippet": "const pRes = await db.query(`",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/reports/esf7_xlsb.js"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 110,
+      "pattern": "missing-limit",
+      "snippet": "const pRes = await db.query(`",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/controllers/reports/esf7_xlsb.js"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 124,
+      "pattern": "select-all",
+      "snippet": "const wRes = await db.query(`",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/reports/esf7_xlsb.js"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 124,
+      "pattern": "missing-limit",
+      "snippet": "const wRes = await db.query(`",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/controllers/reports/esf7_xlsb.js"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 207,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/reports/index.js"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 473,
+      "pattern": "orderby-unindexed",
+      "snippet": "const draftRes = await db.query(",
+      "note": "ORDER BY school_drafts.updated_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/reports/index.js"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 509,
+      "pattern": "select-all",
+      "snippet": "const schoolRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/reports/index.js"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 515,
+      "pattern": "select-all",
+      "snippet": "const personnelRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/reports/index.js"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 515,
+      "pattern": "missing-limit",
+      "snippet": "const personnelRes = await db.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/controllers/reports/index.js"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "pattern": "select-all",
+      "snippet": "const checkDup = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/requests/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 318,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_submission (payload_json) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_personnel_submission.payload_json",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 413,
+      "pattern": "write-in-loop",
+      "snippet": "await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 486,
+      "pattern": "query-in-loop",
+      "snippet": "const res = await client.query(sql, flatParams);",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 1661,
+      "pattern": "select-all",
+      "snippet": "const { rows: subRows } = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 1795,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_profiling_snapshots (snapshot_json) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_profiling_snapshots.snapshot_json",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 1838,
+      "pattern": "select-all",
+      "snippet": "const { rows } = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 1892,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_room_roster_cache (roster_json) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_room_roster_cache.roster_json",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/room_profiling/index.js"
+    },
+    {
+      "file": "server/controllers/school_head_sdo/index.js",
+      "line": 35,
+      "pattern": "select-all",
+      "snippet": "const r = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/school_head_sdo/index.js"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 42,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/school_subjects/index.js"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 42,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_school_subjects.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/school_subjects/index.js"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 117,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_school_subjects (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_school_subjects.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/school_subjects/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 880,
+      "pattern": "query-in-loop",
+      "snippet": "await db.query(batchQuery, params).catch((err) => {",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1147,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1147,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_profile (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_profile.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1229,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1229,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_personnel_employment (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_employment.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1278,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1278,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_perssonel_educ (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_perssonel_educ.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1355,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1435,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1929,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO school_drafts (payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into school_drafts.payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1960,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO school_drafts (payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into school_drafts.payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/schools/index.js"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 72,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/shs_workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 72,
+      "pattern": "missing-limit",
+      "snippet": "const result = await db.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/controllers/shs_workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 72,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_shs_workload_rows.term: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/shs_workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 171,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_shs_workload_rows (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_shs_workload_rows.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/shs_workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/shs_workload_transfers/index.js",
+      "line": 182,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_workload_transfer (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_workload_transfer.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/shs_workload_transfers/index.js"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 132,
+      "pattern": "orderby-unindexed",
+      "snippet": "const result = await db.query(",
+      "note": "ORDER BY esf7_submission_queue.created_at: no index in schema.ts leads with this column",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "orderby-unindexed:server/controllers/submissions/index.js"
+    },
+    {
+      "file": "server/controllers/validation/index.js",
+      "line": 49,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/validation/index.js"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 77,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/work_immersion/index.js"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 95,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/work_immersion/index.js"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 95,
+      "pattern": "missing-limit",
+      "snippet": "const result = await db.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/controllers/work_immersion/index.js"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 187,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_work_immersion (raw_payload) <- JSON.stringify(whole request body)",
+      "note": "writes a whole request body into esf7_work_immersion.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/work_immersion/index.js"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 232,
+      "pattern": "write-in-loop",
+      "snippet": "const result = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/work_immersion/index.js"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 232,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_work_immersion (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_work_immersion.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/work_immersion/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 124,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 142,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 208,
+      "pattern": "select-all",
+      "snippet": "const pageQuery = db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 665,
+      "pattern": "payload-write-whole-body",
+      "snippet": "UPDATE esf7_personnel_profile (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_profile.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 808,
+      "pattern": "query-in-loop",
+      "snippet": "const resRow = await client.query(insertQuery, insertValues);",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 847,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 847,
+      "pattern": "payload-write-whole-body",
+      "snippet": "INSERT INTO esf7_shs_workload_rows (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_shs_workload_rows.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 933,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1042,
+      "pattern": "write-in-loop",
+      "snippet": "await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1147,
+      "pattern": "select-all",
+      "snippet": "const existingRes = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1308,
+      "pattern": "payload-write-whole-body",
+      "snippet": "UPDATE esf7_personnel_profile (raw_payload) <- JSON.stringify(whole object variable)",
+      "note": "writes a whole object variable into esf7_personnel_profile.raw_payload",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "payload-write-whole-body:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1375,
+      "pattern": "select-all",
+      "snippet": "? await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1379,
+      "pattern": "select-all",
+      "snippet": ": await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/controllers/workload_rows/index.js"
+    },
+    {
+      "file": "server/controllers/workload_transfers/index.js",
+      "line": 84,
+      "pattern": "write-in-loop",
+      "snippet": "const result = await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "write-in-loop:server/controllers/workload_transfers/index.js"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 41,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_employment.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_employment"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 85,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_extra_tasks.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_extra_tasks"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 134,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_profile.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_profile"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 178,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_perssonel_educ.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_perssonel_educ"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 266,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_ld_trainings.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_ld_trainings"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 308,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_remedial_enrichment_sections.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_remedial_enrichment_sections"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 339,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_link.preview_data (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_link"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 357,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_learning_areas.matrix_data (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_learning_areas"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 358,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_learning_areas.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_learning_areas"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 414,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_designations.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_designations"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 515,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_room_submissions_staging.profile_data (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_room_submissions_staging"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 576,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_shs_workload_rows.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_shs_workload_rows"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 622,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_aral_sections.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_aral_sections"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 658,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_personnel_submission.payload_json (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_personnel_submission"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 784,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_workload_transfer.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_workload_transfer"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 834,
+      "pattern": "duplicated-json-payload",
+      "snippet": "overload_absences.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:overload_absences"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 927,
+      "pattern": "duplicated-json-payload",
+      "snippet": "overload_pay_and_reason.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:overload_pay_and_reason"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 984,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_school_subjects.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_school_subjects"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 1018,
+      "pattern": "duplicated-json-payload",
+      "snippet": "overload_no_work.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:overload_no_work"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 1102,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_submission_queue.payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_submission_queue"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 1107,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_submission_queue.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_submission_queue"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 1244,
+      "pattern": "duplicated-json-payload",
+      "snippet": "esf7_work_immersion.raw_payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:esf7_work_immersion"
+    },
+    {
+      "file": "server/drizzle/schema.ts",
+      "line": 1284,
+      "pattern": "duplicated-json-payload",
+      "snippet": "school_drafts.payload (jsonb)",
+      "note": "payload-style JSON column; check whether it re-stores fields that already have typed columns",
+      "source": "drizzle",
+      "access_layer": "drizzle",
+      "tier": "app",
+      "oneOff": false,
+      "group": "duplicated-json-payload:school_drafts"
+    },
+    {
+      "file": "server/middleware/auth.js",
+      "line": 123,
+      "pattern": "query-in-loop",
+      "snippet": "const r = await pool.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/middleware/auth.js"
+    },
+    {
+      "file": "server/queue_worker.js",
+      "line": 524,
+      "pattern": "query-in-loop",
+      "snippet": "await client.query(batch.query, batch.values);",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/queue_worker.js"
+    },
+    {
+      "file": "server/queue_worker.js",
+      "line": 2872,
+      "pattern": "missing-limit",
+      "snippet": "const smRes = await client.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/queue_worker.js"
+    },
+    {
+      "file": "server/safe_truncate_esf7_tables.js",
+      "line": 78,
+      "pattern": "query-in-loop",
+      "snippet": "const countRes = await client.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/safe_truncate_esf7_tables.js"
+    },
+    {
+      "file": "server/server.js",
+      "line": 321,
+      "pattern": "select-all",
+      "snippet": "const result = await db.query(",
+      "note": "SELECT * in raw SQL",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "select-all:server/server.js"
+    },
+    {
+      "file": "server/server.js",
+      "line": 321,
+      "pattern": "missing-limit",
+      "snippet": "const result = await db.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/server.js"
+    },
+    {
+      "file": "server/server.js",
+      "line": 649,
+      "pattern": "query-in-loop",
+      "snippet": "await db.pool.query(\"SELECT 1\");",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/server.js"
+    },
+    {
+      "file": "server/services/overloadSync.js",
+      "line": 22,
+      "pattern": "missing-limit",
+      "snippet": "const pRes = await db.query(",
+      "note": "raw SELECT with no WHERE and no LIMIT",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "missing-limit:server/services/overloadSync.js"
+    },
+    {
+      "file": "server/services/overloadSync.js",
+      "line": 348,
+      "pattern": "query-in-loop",
+      "snippet": "const countRes = await db.query(",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/services/overloadSync.js"
+    },
+    {
+      "file": "server/services/overloadSync.js",
+      "line": 374,
+      "pattern": "query-in-loop",
+      "snippet": "await db.query(sql, [",
+      "note": "query call lexically inside a loop/callback (N+1 candidate)",
+      "source": "raw-pg",
+      "access_layer": "raw-pg",
+      "tier": "app",
+      "oneOff": false,
+      "group": "query-in-loop:server/services/overloadSync.js"
+    }
+  ],
+  "columnUsage": [
+    {
+      "file": "server/check_queue.js",
+      "line": 5,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/absences/index.js",
+      "line": 114,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/absences/index.js",
+      "line": 114,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 42,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 42,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 166,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 166,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 172,
+      "table": "esf7_personnel_allowances",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 172,
+      "table": "esf7_personnel_allowances",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 282,
+      "table": "esf7_personnel_allowances",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 282,
+      "table": "esf7_personnel_allowances",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 310,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 310,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 402,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 402,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 467,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/allowances/index.js",
+      "line": 467,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 274,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 274,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 274,
+      "table": "esf7_regular_sections",
+      "column": "grade_level",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 286,
+      "table": "esf7_aral_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 286,
+      "table": "esf7_aral_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 286,
+      "table": "esf7_aral_sections",
+      "column": "grade_level",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 290,
+      "table": "esf7_remedial_enrichment_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 290,
+      "table": "esf7_remedial_enrichment_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 290,
+      "table": "esf7_remedial_enrichment_sections",
+      "column": "grade_level",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 487,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 487,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 497,
+      "table": "esf7_regular_sections",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 497,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 504,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 504,
+      "table": "esf7_regular_sections",
+      "column": "grade_level",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 504,
+      "table": "esf7_regular_sections",
+      "column": "section_name",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 504,
+      "table": "esf7_regular_sections",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 599,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 701,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 701,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 829,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 829,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 951,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 951,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1051,
+      "table": "esf7_aral_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1067,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1067,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1176,
+      "table": "esf7_remedial_enrichment_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1195,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/class_sections/index.js",
+      "line": 1195,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 20,
+      "table": "esf7_school_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 27,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 40,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 47,
+      "table": "esf7_aral_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 53,
+      "table": "esf7_remedial_enrichment_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 61,
+      "table": "esf7_workload_rows",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 65,
+      "table": "esf7_shs_workload_rows",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 77,
+      "table": "esf7_personnel_allowances",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 83,
+      "table": "overload_no_work",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 83,
+      "table": "overload_no_work",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 87,
+      "table": "overload_absences",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 91,
+      "table": "esf7_workload_transfer",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 95,
+      "table": "overload_late",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 99,
+      "table": "overload_pay_and_reason",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 105,
+      "table": "esf7_requests",
+      "column": "requester_school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/dev_snapshot.js",
+      "line": 105,
+      "table": "esf7_requests",
+      "column": "target_school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/esf7_upload/index.js",
+      "line": 214,
+      "table": "esf7_link",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/esf7_upload/index.js",
+      "line": 214,
+      "table": "esf7_link",
+      "column": "updated_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 119,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 119,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 230,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_pay_and_reason/index.js",
+      "line": 230,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 22,
+      "table": "overload_pay_and_reason",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 22,
+      "table": "overload_pay_and_reason",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 22,
+      "table": "overload_pay_and_reason",
+      "column": "term",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 22,
+      "table": "overload_pay_and_reason",
+      "column": "term",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 117,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 117,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 228,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/overload_reasons/index.js",
+      "line": 228,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2562,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2562,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2566,
+      "table": "esf7_personnel_designations",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2566,
+      "table": "esf7_personnel_designations",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2593,
+      "table": "esf7_admin_task",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 2593,
+      "table": "esf7_admin_task",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3087,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3087,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3105,
+      "table": "esf7_personnel_profile",
+      "column": "is_school_head",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3120,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3512,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3512,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3516,
+      "table": "esf7_personnel_designations",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3516,
+      "table": "esf7_personnel_designations",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3671,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3671,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3671,
+      "table": "esf7_personnel_profile",
+      "column": "is_school_head",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3685,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 3685,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4168,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4168,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4173,
+      "table": "esf7_personnel_learning_areas",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4178,
+      "table": "esf7_personnel_designations",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4178,
+      "table": "esf7_personnel_designations",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4416,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel/index.js",
+      "line": 4416,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 36,
+      "table": "esf7_personnel_designations",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 36,
+      "table": "esf7_personnel_designations",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 50,
+      "table": "esf7_personnel_designations",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 63,
+      "table": "esf7_personnel_designations",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 138,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_designations/index.js",
+      "line": 138,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_employment/index.js",
+      "line": 169,
+      "table": "esf7_personnel_employment",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_employment/index.js",
+      "line": 217,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_employment/index.js",
+      "line": 217,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 48,
+      "table": "esf7_personnel_extra_tasks",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 48,
+      "table": "esf7_personnel_extra_tasks",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 53,
+      "table": "esf7_personnel_extra_tasks",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 53,
+      "table": "esf7_personnel_extra_tasks",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_extra_tasks/index.js",
+      "line": 53,
+      "table": "esf7_personnel_extra_tasks",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 27,
+      "table": "esf7_personnel_learning_areas",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 49,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 49,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 103,
+      "table": "esf7_personnel_learning_areas",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 162,
+      "table": "esf7_personnel_learning_areas",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 162,
+      "table": "esf7_personnel_learning_areas",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 182,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_learning_areas/index.js",
+      "line": 182,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_qualifications/index.js",
+      "line": 302,
+      "table": "esf7_perssonel_educ",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_qualifications/index.js",
+      "line": 344,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_qualifications/index.js",
+      "line": 344,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_trainings/index.js",
+      "line": 39,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/personnel_trainings/index.js",
+      "line": 39,
+      "table": "esf7_personnel_ld_trainings",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 90,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 90,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/reports/esf7_xlsb.js",
+      "line": 90,
+      "table": "school_drafts",
+      "column": "updated_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 473,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 473,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/reports/index.js",
+      "line": 473,
+      "table": "school_drafts",
+      "column": "updated_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 308,
+      "table": "esf7_school_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 379,
+      "table": "esf7_school_profile",
+      "column": "school_name",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "requester_school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "requester_school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "target_school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "target_school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "request_type",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 525,
+      "table": "esf7_requests",
+      "column": "personnel_name",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 553,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 553,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 732,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 732,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 732,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 752,
+      "table": "esf7_requests",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/requests/index.js",
+      "line": 752,
+      "table": "esf7_requests",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 361,
+      "table": "esf7_personnel_submission",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 361,
+      "table": "esf7_personnel_submission",
+      "column": "status",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/room_profiling/index.js",
+      "line": 361,
+      "table": "esf7_personnel_submission",
+      "column": "created_timestamp",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 534,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 534,
+      "table": "school_drafts",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1092,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1092,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1536,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1536,
+      "table": "school_drafts",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1940,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/schools/index.js",
+      "line": 1940,
+      "table": "school_drafts",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/school_head_sdo/index.js",
+      "line": 82,
+      "table": "esf7_personnel_profile",
+      "column": "is_school_head",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 42,
+      "table": "esf7_school_subjects",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 42,
+      "table": "esf7_school_subjects",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 42,
+      "table": "esf7_school_subjects",
+      "column": "is_active",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/school_subjects/index.js",
+      "line": 42,
+      "table": "esf7_school_subjects",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 72,
+      "table": "esf7_shs_workload_rows",
+      "column": "term",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 120,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/shs_workload_rows/index.js",
+      "line": 120,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/shs_workload_transfers/index.js",
+      "line": 131,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/shs_workload_transfers/index.js",
+      "line": 131,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 66,
+      "table": "esf7_submission_queue",
+      "column": "status",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 66,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 92,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 106,
+      "table": "esf7_submission_queue",
+      "column": "status",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 106,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 132,
+      "table": "esf7_submission_queue",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/submissions/index.js",
+      "line": 132,
+      "table": "esf7_submission_queue",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 208,
+      "table": "esf7_workload_rows",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 268,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 268,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 419,
+      "table": "esf7_workload_rows",
+      "column": "section_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 419,
+      "table": "esf7_workload_rows",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 490,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 490,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 502,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 502,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 510,
+      "table": "esf7_personnel_employment",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1147,
+      "table": "esf7_workload_rows",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1285,
+      "table": "esf7_workload_rows",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1297,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1375,
+      "table": "esf7_workload_rows",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1375,
+      "table": "esf7_workload_rows",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1379,
+      "table": "esf7_workload_rows",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/workload_rows/index.js",
+      "line": 1379,
+      "table": "esf7_workload_rows",
+      "column": "created_at",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 77,
+      "table": "esf7_work_immersion",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 77,
+      "table": "esf7_work_immersion",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 77,
+      "table": "esf7_work_immersion",
+      "column": "visit_date",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 95,
+      "table": "esf7_work_immersion",
+      "column": "visit_date",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 131,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/controllers/work_immersion/index.js",
+      "line": 131,
+      "table": "esf7_personnel_profile",
+      "column": "prn",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/queue_worker.js",
+      "line": 548,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/queue_worker.js",
+      "line": 568,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/queue_worker.js",
+      "line": 645,
+      "table": "esf7_school_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/queue_worker.js",
+      "line": 645,
+      "table": "esf7_school_profile",
+      "column": "school_year",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/analyze_phase1_sql.js",
+      "line": 29,
+      "table": "school_drafts",
+      "column": "cnt",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/scratch/analyze_phase1_sql.js",
+      "line": 38,
+      "table": "school_drafts",
+      "column": "pg_column_size",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/scratch/baseline_collector.js",
+      "line": 97,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_acupido_profile.js",
+      "line": 5,
+      "table": "esf7_personnel_profile",
+      "column": "id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_draft_acupido.js",
+      "line": 5,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_draft_personnel_300488.js",
+      "line": 7,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_emp_slots.js",
+      "line": 5,
+      "table": "esf7_personnel_employment",
+      "column": "personnel_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_match_14_roster.js",
+      "line": 9,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_sections_300488.js",
+      "line": 4,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/check_sections_300488.js",
+      "line": 14,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_connection_target.js",
+      "line": 45,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_connection_target.js",
+      "line": 45,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_stage1_300488.js",
+      "line": 8,
+      "table": "esf7_school_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_stage1_300488.js",
+      "line": 9,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_stage1_300488.js",
+      "line": 12,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_stage1_300488.js",
+      "line": 15,
+      "table": "esf7_workload_rows",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_stage1_300488.js",
+      "line": 62,
+      "table": "esf7_workload_rows",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scratch/verify_stage1_300488.js",
+      "line": 72,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/check_section_pk.js",
+      "line": 4,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/inspect_schools.js",
+      "line": 5,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/inspect_schools.js",
+      "line": 19,
+      "table": "school_drafts",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/verify_school.js",
+      "line": 7,
+      "table": "esf7_school_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/verify_school.js",
+      "line": 11,
+      "table": "esf7_personnel_profile",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/verify_school.js",
+      "line": 23,
+      "table": "esf7_regular_sections",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/scripts/verify_school.js",
+      "line": 27,
+      "table": "esf7_workload_rows",
+      "column": "school_id",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/server.js",
+      "line": 321,
+      "table": "salary_matrix",
+      "column": "salary_grade",
+      "kind": "orderBy"
+    },
+    {
+      "file": "server/services/queueClaims.js",
+      "line": 40,
+      "table": "esf7_submission_queue",
+      "column": "status",
+      "kind": "where-eq"
+    },
+    {
+      "file": "server/services/queueClaims.js",
+      "line": 40,
+      "table": "esf7_submission_queue",
+      "column": "id",
+      "kind": "orderBy"
+    }
+  ]
+}

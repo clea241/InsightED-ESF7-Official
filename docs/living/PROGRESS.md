@@ -1,5 +1,26 @@
 # PROGRESS
 
+## 2026-10-10 (payload change finished for all seven tables on esf7_local)
+- Done on `esf7_local`: backup of the six tables (restore-tested), expand, backfill, per-table verification PASS (2.5M keys, 0 unaccounted), old-vs-new response comparison (0 differences), write-route functional test before and after the drop (22 checks), drop + rewrite, post-drop proof against the backup PASS, unit tests 236 pass.
+- Not done: nothing has run on staging/production; follow the runbook in `docs/orm-optimizer/payload-six-tables.md` per table. Integration: 8 draft/startup tests fail with missing tables (`esf7_school_profile`, `esf7_deleted_personnel`) in their test fixture; they failed the same way before this change and relate to the uncommitted draft-persistence work in `schools/index.js`.
+- Untouched on purpose: personnel employment/profile/education, `esf7_personnel_submission.payload_json`, `school_drafts.payload` (size is a `pg-health-assessment` question).
+
+## 2026-10-10 (payload pilot: esf7_workload_rows)
+- Done on `esf7_local`: backup (restore-tested), expand, backfill (idempotent), verification PASS (8.66M keys, 0 unaccounted), drop, table rewrite, post-drop proof against the backup PASS, unit (230) + integration (19) tests pass.
+- Not done: nothing has run on staging/production. Follow the runbook in `docs/orm-optimizer/workload-rows-payload-pilot.md` (backup, expand, backfill, deploy, backfill again, verify, then the drop).
+- Next, one table at a time and only after review of the pilot: `esf7_personnel_allowances`, `esf7_school_profile`, `esf7_requests`, `esf7_related_task`, `esf7_admin_task`, `esf7_regular_sections` (needs its own key analysis; it merges the stored payload with the body on update). Open question: promote `task`, `rowType`, `minsPerDay`, `category` (on 190k to 350k rows) to typed columns?
+
+## 2026-10-10 (Global Server-Health Modal & Recovery Sync Complete)
+- All 6 requirements for the Server Health Modal, uncommitted form flush, autosave timing, canonical storage keys, PM2 shutdown margins, and recovery sync path completed.
+- Unit test suite (225 tests) passes cleanly.
+- Client builds in 1.19s with 0 errors.
+
+
+## 2026-10-10 (workload list pagination, esf7_local only)
+- Done on `esf7_local`: paginated `GET /api/workloads`, new index + migration, before/after EXPLAIN saved, equivalence check passed, unit tests (225) pass and lint is clean; the workload integration test was skipped (needs the throwaway test DB via `npm run test:integration`).
+- Not done: migration has NOT been run on staging/production. Run `node server/migrations/add_workload_rows_created_at_index.js` there after a backup; it builds the index without blocking writes.
+- Open: the route is still not scoped by school (returns every school's rows) and nothing uses it; consider removing it or requiring a school filter (product decision).
+
 ## 2026-10-09 (endpoint health check, esf7_local only)
 - Ran the endpoint health check against a local server + `esf7_local` (public routes only; 200 protected routes gate-checked, 75 protected GETs not called). CRITICAL 18 -> 0 after the health/error-handler fixes.
 - Open, report only: `esf7_class_sections` is read by `workload_rows` (findTimeAllotmentViolations) but does not exist (replaced by the esf7_*_sections tables) - workload saves with changed rows may fail; `DELETE /api/personnel/:id` is not transactional, swallows every cleanup error, and uses wrong names (`esf7_personnel_trainings`, `esf7_overload_late_undertime`, `esf7_overload_no_work`, `esf7_class_sections`); `esf7_validation` / `esf7_clustered_ghost_sync` are created lazily at runtime.

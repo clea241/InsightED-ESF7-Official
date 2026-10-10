@@ -438,7 +438,21 @@ router.post("/generate-overload-pay", async (req, res) => {
 // GET /api/reports/download-overload-pay/:filename - Serve generated report file
 router.get("/download-overload-pay/:filename", (req, res) => {
   const { filename } = req.params;
-  const filePath = path.join(__dirname, "../../scratch", filename);
+  // Path traversal guard: only a plain *.xlsx file name inside the scratch folder may be served.
+  const baseDir = path.resolve(__dirname, "../../scratch");
+  if (
+    typeof filename !== "string" ||
+    filename.includes("\0") ||
+    filename.includes("..") ||
+    filename !== path.basename(filename) ||
+    !/^[\w.-]+\.xlsx$/i.test(filename)
+  ) {
+    return res.status(400).json({ error: "Invalid report file name" });
+  }
+  const filePath = path.resolve(baseDir, filename);
+  if (!filePath.startsWith(baseDir + path.sep)) {
+    return res.status(400).json({ error: "Invalid report file name" });
+  }
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "Report file not found or expired" });

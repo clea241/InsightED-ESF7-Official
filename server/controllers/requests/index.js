@@ -4,10 +4,14 @@ const db = require("../../db");
 const { insightEdPool, usersDbPool } = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const cacheService = require("../../services/cacheService");
+const { codec } = require("../../utils/payloadExtras");
+
+// esf7_requests keeps typed columns plus a slim `extras` JSONB (keys without a typed column), not a copy of the request body.
+const payload = codec("esf7_requests");
 
 function formatRequestRecord(row) {
   if (!row) return null;
-  let raw = row.raw_payload || {};
+  let raw = row.extras || {};
   if (typeof raw === "string") {
     try {
       raw = JSON.parse(raw);
@@ -32,7 +36,7 @@ function formatRequestRecord(row) {
     personnel_name: row.personnel_name,
     status: row.status,
     remarks: row.remarks || "",
-    rawPayload: raw,
+    rawPayload: payload.reconstruct(row),
   };
 }
 
@@ -523,7 +527,7 @@ router.post("/create", async (req, res) => {
        WHERE (requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(requester_school_id, 'SCH-', '') = $1)
          AND (target_school_id = $3 OR target_school_id = $4 OR REPLACE(target_school_id, 'SCH-', '') = $3)
          AND request_type = $5 
-         AND (personnel_id = $6 OR raw_payload->>'personnelId' = $6 OR personnel_name ILIKE $7)
+         AND (personnel_id = $6 OR extras->>'personnelId' = $6 OR personnel_name ILIKE $7)
          AND LOWER(status) = 'pending'`,
       [
         requesterId,
@@ -615,7 +619,7 @@ router.post("/create", async (req, res) => {
       `REQ-${requesterId}-${seq}-${Math.floor(Math.random() * 1000)}`;
 
     const insertRes = await db.query(
-      `INSERT INTO esf7_requests (id, requester_school_id, target_school_id, request_type, personnel_id, personnel_name, remarks, raw_payload)
+      `INSERT INTO esf7_requests (id, requester_school_id, target_school_id, request_type, personnel_id, personnel_name, remarks, extras)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) RETURNING *`,
       [
         reqId,
@@ -625,13 +629,26 @@ router.post("/create", async (req, res) => {
         targetPersonnelId,
         pName || null,
         remarks || null,
-        JSON.stringify({
-          ...req.body,
-          requesterId,
-          targetSchoolId: tSchoolId,
-          personnelId: targetPersonnelId,
-          personnelName: pName,
-        }),
+        JSON.stringify(
+          payload.buildExtras(
+            {
+              ...req.body,
+              requesterId,
+              targetSchoolId: tSchoolId,
+              personnelId: targetPersonnelId,
+              personnelName: pName,
+            },
+            {
+              id: reqId,
+              requester_school_id: requesterId,
+              target_school_id: tSchoolId,
+              request_type: rType,
+              personnel_id: targetPersonnelId,
+              personnel_name: pName || null,
+              remarks: remarks || null,
+            },
+          ),
+        ),
       ],
     );
 

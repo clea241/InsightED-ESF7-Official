@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_profile (
     no_deped_email BOOLEAN NOT NULL DEFAULT FALSE,
     allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE,
     is_school_head BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(32) NOT NULL DEFAULT 'canonical',
+    legacy_id VARCHAR(128),
     
     -- FLEXIBLE DATA STORAGE (JSONB)
     raw_payload JSONB DEFAULT '{}'::jsonb,
@@ -56,6 +58,17 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_profile (
 
 CREATE INDEX IF NOT EXISTS idx_esf7_personnel_profile_school_sy ON esf7_personnel_profile (school_id, school_year);
 CREATE INDEX IF NOT EXISTS idx_esf7_personnel_profile_prn ON esf7_personnel_profile (prn);
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_profile_legacy_id ON esf7_personnel_profile (legacy_id);
+CREATE INDEX IF NOT EXISTS idx_esf7_personnel_profile_status ON esf7_personnel_profile (status);
+
+-- Personnel ID Mapping Table (Legacy ID -> RFC 4122 v4 UUID)
+CREATE TABLE IF NOT EXISTS esf7_personnel_id_mapping (
+    legacy_id VARCHAR(128) PRIMARY KEY,
+    new_id VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pers_mapping_new_id ON esf7_personnel_id_mapping (new_id);
 
 -- 3. Personnel Employment Table (Role, Appointment, Tenure & JSON Arrays)
 CREATE TABLE IF NOT EXISTS esf7_personnel_employment (

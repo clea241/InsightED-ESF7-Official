@@ -34,3 +34,7 @@ pg-health-reports/
 
 # load-capacity-test: keep the example env file, ignore the real one
 !.env.load.example
+
+# security-testing: keep the example env file, ignore the real one
+!.env.security.example
+security/targets.json

@@ -1,0 +1,15 @@
+{
+  "comparedAt": "2026-10-10T13:55:30.131Z",
+  "backupRows": 651940,
+  "liveRows": 651940,
+  "rowCountsMatch": true,
+  "sameIds": true,
+  "rowsCompared": 651940,
+  "payloadKeysCompared": 8663841,
+  "unaccountedKeys": 0,
+  "rowsWithProblems": 0,
+  "universalKeyMismatches": 0,
+  "samples": [],
+  "status": "PASS",
+  "note": "Original raw_payload (from the pre-change pg_dump, restored to a scratch database) vs the live typed columns + extras after raw_payload was dropped and the table rewritten. Row ids and key names only."
+}

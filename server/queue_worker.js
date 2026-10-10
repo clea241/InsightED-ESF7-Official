@@ -1,20 +1,31 @@
 const db = require("./db");
 const redisQueue = require("./services/redisQueue");
+const { buildExtras: buildWorkloadExtras } = require("./utils/workloadPayload");
+const { codec } = require("./utils/payloadExtras");
+
+// tables that keep typed columns + a slim `extras` JSONB instead of a copy of the request body (see utils/payloadExtras.js)
+const payloadCodecs = Object.fromEntries(
+  [
+    "esf7_personnel_allowances",
+    "esf7_requests",
+    "esf7_school_profile",
+    "esf7_related_task",
+    "esf7_admin_task",
+    "esf7_regular_sections",
+  ].map((t) => [t, codec(t)]),
+);
 const {
   claimJob,
   recoverStaleJobs,
   pickNextPendingJob,
 } = require("./services/queueClaims");
 const {
-  generateSchoolId,
   generatePersonnelId,
   generateEmploymentId,
   generateQualificationId,
   generateTrainingId,
   generateSectionId,
-  generateWorkloadId,
   generateTransferId,
-  generateDesignationId,
 } = require("./db/idGenerator");
 
 const parseDate = (d) => {
@@ -812,7 +823,7 @@ async function processJobById(targetJobId, specificClient = null) {
          has_als, has_sned, has_iped, has_madrasah,
          inclusive_programs,
          has_shifts, shift_start_time, shift_end_time, shifts_config,
-         raw_payload, created_at, updated_at
+         extras, created_at, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
        ON CONFLICT (school_id, school_year) DO UPDATE SET
          has_elem_special_programs = EXCLUDED.has_elem_special_programs,
@@ -835,7 +846,7 @@ async function processJobById(targetJobId, specificClient = null) {
          shift_start_time = EXCLUDED.shift_start_time,
          shift_end_time = EXCLUDED.shift_end_time,
          shifts_config = EXCLUDED.shifts_config,
-         raw_payload = EXCLUDED.raw_payload,
+         extras = EXCLUDED.extras,
          updated_at = NOW()`,
       [
         schoolDbId,
@@ -865,7 +876,39 @@ async function processJobById(targetJobId, specificClient = null) {
         JSON.stringify(
           schoolInfo.shiftsConfig || schoolInfo.shifts_config || {},
         ),
-        JSON.stringify(schoolInfo),
+        JSON.stringify(
+          payloadCodecs.esf7_school_profile.buildExtras(schoolInfo, {
+            id: schoolDbId,
+            school_id: cleanSchoolId,
+            school_year: cleanSchoolYear,
+            has_elem_special_programs: elemSpecialFlag,
+            elem_special_programs: elemSpecialProgs,
+            has_jhs_special_programs: jhsSpecialFlag,
+            jhs_special_programs: jhsSpecialProgs,
+            shs_curriculum_model:
+              schoolInfo.shsCurriculumModel ||
+              schoolInfo.shs_curriculum_model ||
+              "Model A",
+            has_elem_inclusive: elemInc,
+            elem_inclusive_programs: elemIncProgs,
+            has_jhs_inclusive: jhsInc,
+            jhs_inclusive_programs: jhsIncProgs,
+            has_shs_inclusive: shsInc,
+            shs_inclusive_programs: shsIncProgs,
+            has_als: hasAls,
+            has_sned: hasSned,
+            has_iped: hasIped,
+            has_madrasah: hasMadrasah,
+            inclusive_programs: incProgs,
+            has_shifts: Boolean(schoolInfo.hasShifts ?? schoolInfo.has_shifts),
+            shift_start_time:
+              schoolInfo.shiftStartTime || schoolInfo.shift_start_time || null,
+            shift_end_time:
+              schoolInfo.shiftEndTime || schoolInfo.shift_end_time || null,
+            shifts_config:
+              schoolInfo.shiftsConfig || schoolInfo.shifts_config || {},
+          }),
+        ),
       ],
     );
 
@@ -890,10 +933,28 @@ async function processJobById(targetJobId, specificClient = null) {
       const p = personnelList[i];
       if (!p || typeof p !== "object") continue;
 
-      const pId =
-        p.id ||
-        p.personnel_id ||
-        `PER-${cleanSchoolId}-${String(i + 1).padStart(3, "0")}`;
+      let pId = p.id || p.personnel_id;
+      let legacyId = null;
+      let pStatus = p.status || null;
+
+      const isUuid = pId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pId);
+      if (pId && !isUuid) {
+        legacyId = pId;
+        pId = null;
+      }
+
+      if (!pId) {
+        pId = generatePersonnelId();
+      }
+
+      if (!pStatus) {
+        pStatus = (legacyId && legacyId.startsWith("local-p-"))
+          ? "client-created"
+          : (legacyId && legacyId.startsWith("P-HARVEST-"))
+            ? "harvester-created"
+            : "canonical";
+      }
+
       const prn = String(p.prn || p.employee_no || pId).trim();
       const isShared = !!p.isShared;
       processedPersonnelIds.push(pId);
@@ -903,6 +964,8 @@ async function processJobById(targetJobId, specificClient = null) {
         profileBatch.push({
           id: pId,
           prn: prn,
+          status: pStatus,
+          legacy_id: legacyId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
           type: p.type || "teaching",
@@ -943,6 +1006,8 @@ async function processJobById(targetJobId, specificClient = null) {
         profileBatch.push({
           id: pId,
           prn: prn,
+          status: pStatus,
+          legacy_id: legacyId,
           school_id: cleanSchoolId,
           school_year: cleanSchoolYear,
           type: p.type || "teaching",
@@ -1580,7 +1645,20 @@ async function processJobById(targetJobId, specificClient = null) {
             duration_minutes: durMins,
             term1_hours: t1Hrs,
             is_designation_synced: isDesig,
-            raw_payload: JSON.stringify(tr),
+            // only keys without a typed column (or with a different value), see utils/payloadExtras.js
+            extras: JSON.stringify(
+              payloadCodecs.esf7_related_task.buildExtras(tr, {
+                id: trId,
+                personnel_id: pId,
+                school_id: cleanSchoolId,
+                school_year: cleanSchoolYear,
+                task_name: tName,
+                frequency: freq,
+                duration_minutes: durMins,
+                term1_hours: t1Hrs,
+                is_designation_synced: isDesig,
+              }),
+            ),
           });
         }
 
@@ -1720,7 +1798,27 @@ async function processJobById(targetJobId, specificClient = null) {
             term_total_hours: termTotalHours,
             is_designation_synced: isDesig,
             status: "ACTIVE",
-            raw_payload: JSON.stringify(adm),
+            extras: JSON.stringify(
+              payloadCodecs.esf7_admin_task.buildExtras(adm, {
+                id: admId,
+                personnel_id: pId,
+                school_id: cleanSchoolId,
+                school_year: cleanSchoolYear,
+                task_name: tName,
+                task_category: category,
+                start_date: startDate,
+                end_date: endDate,
+                start_time: startTime,
+                end_time: endTime,
+                days,
+                dates: datesArr,
+                term,
+                duration_minutes: durMins,
+                term_total_hours: termTotalHours,
+                is_designation_synced: isDesig,
+                status: "ACTIVE",
+              }),
+            ),
           });
         }
       }
@@ -1738,6 +1836,8 @@ async function processJobById(targetJobId, specificClient = null) {
         `
         ON CONFLICT (id) DO UPDATE SET
           prn = EXCLUDED.prn,
+          status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
+          legacy_id = COALESCE(esf7_personnel_profile.legacy_id, EXCLUDED.legacy_id),
           school_id = EXCLUDED.school_id,
           school_year = EXCLUDED.school_year,
           type = EXCLUDED.type,
@@ -1767,6 +1867,18 @@ async function processJobById(targetJobId, specificClient = null) {
       `,
         50,
       );
+
+      for (const pRow of profileBatch) {
+        if (pRow.legacy_id && pRow.legacy_id !== pRow.id) {
+          await client.query(
+            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
+            [pRow.legacy_id, pRow.id, pRow.status || "canonical"],
+          ).catch(() => {});
+        }
+      }
+
       profileBatch.length = 0;
     }
 
@@ -2169,12 +2281,17 @@ async function processJobById(targetJobId, specificClient = null) {
           female_learners: femaleL,
           number_of_learners: totalL,
           size_status: sizeStat,
-          raw_payload: JSON.stringify(s),
+          extras: s, // reduced to the keys without a typed column just before the insert
         });
       }
     }
 
     if (regSecBatch.length > 0) {
+      for (const rec of regSecBatch) {
+        rec.extras = JSON.stringify(
+          payloadCodecs.esf7_regular_sections.buildExtras(rec.extras, rec),
+        );
+      }
       await executeBatchInsertInChunks(
         client,
         "esf7_regular_sections",
@@ -2188,7 +2305,7 @@ async function processJobById(targetJobId, specificClient = null) {
           female_learners = EXCLUDED.female_learners,
           number_of_learners = EXCLUDED.number_of_learners,
           size_status = EXCLUDED.size_status,
-          raw_payload = EXCLUDED.raw_payload,
+          extras = EXCLUDED.extras,
           updated_at = NOW()
       `,
         50,
@@ -2353,14 +2470,20 @@ async function processJobById(targetJobId, specificClient = null) {
           end_time: wk.endTime || wk.end_time || "09:00",
           days: JSON.stringify(daysArr),
           term: rowTerm,
-          raw_payload: JSON.stringify({ ...wk, term: rowTerm }),
         };
-
-        workloadBatch.push(record);
+        // esf7_workload_rows keeps only the keys that have no typed column (see utils/workloadPayload.js)
+        const wkTyped = { ...record, days: daysArr };
+        workloadBatch.push({
+          ...record,
+          extras: JSON.stringify(
+            buildWorkloadExtras({ ...wk, term: rowTerm }, wkTyped),
+          ),
+        });
 
         if (isShsRow) {
           shsWorkloadBatch.push({
             ...record,
+            raw_payload: JSON.stringify({ ...wk, term: rowTerm }),
             track_strand: wk.trackStrand || wk.track_strand || "",
             shs_subject_category:
               wk.shsSubjectCategory ||
@@ -2471,9 +2594,10 @@ async function processJobById(targetJobId, specificClient = null) {
       const p = personnelList[i];
       if (!p || typeof p !== "object") continue;
       const pId =
+        processedPersonnelIds[i] ||
         p.id ||
         p.personnel_id ||
-        `PER-${cleanSchoolId}-${String(i + 1).padStart(3, "0")}`;
+        generatePersonnelId();
       if (seenAllowancePersonnel.has(pId)) continue;
       seenAllowancePersonnel.add(pId);
 
@@ -2545,7 +2669,7 @@ async function processJobById(targetJobId, specificClient = null) {
         medical_amount: null,
         has_hardship: hasHardship,
         hardship_amount: null,
-        raw_payload: JSON.stringify(allowObj),
+        extras: allowObj, // reduced to the keys without a typed column just before the insert
       });
     }
 
@@ -2617,11 +2741,16 @@ async function processJobById(targetJobId, specificClient = null) {
         medical_amount: null,
         has_hardship: hasHardship,
         hardship_amount: null,
-        raw_payload: JSON.stringify(allowObj),
+        extras: allowObj, // reduced to the keys without a typed column just before the insert
       });
     }
 
     if (allowancesBatch.length > 0) {
+      for (const rec of allowancesBatch) {
+        rec.extras = JSON.stringify(
+          payloadCodecs.esf7_personnel_allowances.buildExtras(rec.extras, rec),
+        );
+      }
       await executeBatchInsertInChunks(
         client,
         "esf7_personnel_allowances",
@@ -2639,7 +2768,7 @@ async function processJobById(targetJobId, specificClient = null) {
           medical_amount = EXCLUDED.medical_amount,
           has_hardship = EXCLUDED.has_hardship,
           hardship_amount = EXCLUDED.hardship_amount,
-          raw_payload = EXCLUDED.raw_payload,
+          extras = EXCLUDED.extras,
           updated_at = NOW()
       `,
         50,
@@ -2821,9 +2950,10 @@ async function processJobById(targetJobId, specificClient = null) {
         const p = personnelList[pIdx];
         if (!p) continue;
         const pId =
+          processedPersonnelIds[pIdx] ||
           p.id ||
           p.personnel_id ||
-          `PER-${cleanSchoolId}-${String(pIdx + 1).padStart(3, "0")}`;
+          generatePersonnelId();
         if (seenOverloadPersonnel.has(pId)) continue;
 
         const pWorkloads = p.workloadRows || [];

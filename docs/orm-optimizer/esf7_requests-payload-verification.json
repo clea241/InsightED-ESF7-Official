@@ -1,0 +1,75 @@
+{
+  "status": "PASS",
+  "table": "esf7_requests",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T14:18:28.894Z",
+  "finishedAt": "2026-10-10T14:18:29.015Z",
+  "rowCountAtStart": 3208,
+  "rowCountAtEnd": 3208,
+  "rowsChecked": 3208,
+  "newFormatRowsSkipped": 0,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 20171,
+    "heldByTypedColumn": 15490,
+    "heldByExtras": 4681,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "bytes": {
+    "avgPayload": 214,
+    "avgExtras": 53
+  },
+  "payloadFingerprint": {
+    "current": "a2057bf0330bea307f26f944db3f8c84",
+    "backup": "a2057bf0330bea307f26f944db3f8c84"
+  },
+  "perKey": {
+    "personnelId": {
+      "viaColumn": 1781,
+      "viaExtras": 1427,
+      "unaccounted": 0
+    },
+    "requestType": {
+      "viaColumn": 3208,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "personnelName": {
+      "viaColumn": 3196,
+      "viaExtras": 12,
+      "unaccounted": 0
+    },
+    "targetSchoolId": {
+      "viaColumn": 3176,
+      "viaExtras": 32,
+      "unaccounted": 0
+    },
+    "requesterSchoolId": {
+      "viaColumn": 3192,
+      "viaExtras": 2,
+      "unaccounted": 0
+    },
+    "allAssignedSchools": {
+      "viaColumn": 0,
+      "viaExtras": 1258,
+      "unaccounted": 0
+    },
+    "requesterId": {
+      "viaColumn": 0,
+      "viaExtras": 1950,
+      "unaccounted": 0
+    },
+    "remarks": {
+      "viaColumn": 937,
+      "viaExtras": 0,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of alias copies (a camelCase or snake_case spelling of a typed column with the same value) is not preserved; the formatters regenerate the ones the API returns."
+}

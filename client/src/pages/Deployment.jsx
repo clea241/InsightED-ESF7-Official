@@ -11,6 +11,7 @@ export default function Deployment() {
     activePersonnelId,
     setActivePersonnelId,
     savePersonnelChanges,
+    updatePersonnelInfo,
     showToast,
     showAlert,
     showConfirm,
@@ -22,6 +23,18 @@ export default function Deployment() {
     personnel.find((p) => p.id === activePersonnelId) || personnel[0];
   const [editPerson, setEditPerson] = React.useState(null);
   const [isSaving, setIsSaving] = React.useState(false);
+
+  const latestEditPersonRef = React.useRef(editPerson);
+  React.useEffect(() => {
+    latestEditPersonRef.current = editPerson;
+  }, [editPerson]);
+
+  const flushDeploymentToContext = React.useCallback(() => {
+    const cur = latestEditPersonRef.current;
+    if (cur && cur.id && typeof updatePersonnelInfo === "function") {
+      updatePersonnelInfo(cur.id, cur);
+    }
+  }, [updatePersonnelInfo]);
 
   React.useEffect(() => {
     if (dbPerson) {
@@ -85,6 +98,7 @@ export default function Deployment() {
     isDirty,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
+    onFlush: flushDeploymentToContext,
   });
 
   const handleSelectPerson = (newId) => {

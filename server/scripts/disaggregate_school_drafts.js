@@ -34,6 +34,17 @@ const fs = require("fs");
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 const db = require("../db");
+const {
+  buildExtras: buildWorkloadExtras,
+} = require("../utils/workloadPayload");
+const { codec } = require("../utils/payloadExtras");
+
+// tables that keep typed columns + a slim `extras` JSONB instead of a copy of the request body
+const payloadCodecs = {
+  esf7_school_profile: codec("esf7_school_profile"),
+  esf7_related_task: codec("esf7_related_task"),
+  esf7_regular_sections: codec("esf7_regular_sections"),
+};
 const { coerceDateField, isDatePlaceholder } = require("../utils/dateInput");
 const { normalizeSchoolYear } = require("../utils/schoolYear");
 
@@ -279,7 +290,7 @@ async function disaggregateSchoolInfo(
         jhs_special_programs, elem_special_programs, shs_curriculum_model,
         has_elem_inclusive, elem_inclusive_programs, has_jhs_inclusive, jhs_inclusive_programs,
         has_shs_inclusive, shs_inclusive_programs, inclusive_programs,
-        has_als, has_sned, has_iped, has_madrasah, raw_payload, updated_at
+        has_als, has_sned, has_iped, has_madrasah, extras, updated_at
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
       ON CONFLICT (school_id, school_year) DO UPDATE SET
@@ -299,7 +310,7 @@ async function disaggregateSchoolInfo(
         has_sned = COALESCE(esf7_school_profile.has_sned, EXCLUDED.has_sned),
         has_iped = COALESCE(esf7_school_profile.has_iped, EXCLUDED.has_iped),
         has_madrasah = COALESCE(esf7_school_profile.has_madrasah, EXCLUDED.has_madrasah),
-        raw_payload = EXCLUDED.raw_payload,
+        extras = EXCLUDED.extras,
         updated_at = NOW();
     `,
       [
@@ -322,7 +333,34 @@ async function disaggregateSchoolInfo(
         sanitizeBoolean(schoolInfo.hasSned),
         sanitizeBoolean(schoolInfo.hasIped),
         sanitizeBoolean(schoolInfo.hasMadrasah),
-        JSON.stringify(schoolInfo),
+        JSON.stringify(
+          payloadCodecs.esf7_school_profile.buildExtras(schoolInfo, {
+            id,
+            school_id: cleanId,
+            school_year: targetSy,
+            has_elem_special_programs: sanitizeBoolean(
+              schoolInfo.hasElemSpecialPrograms,
+            ),
+            has_jhs_special_programs: sanitizeBoolean(
+              schoolInfo.hasJhsSpecialPrograms,
+            ),
+            jhs_special_programs: schoolInfo.jhsSpecialPrograms || [],
+            elem_special_programs: schoolInfo.elemSpecialPrograms || [],
+            shs_curriculum_model:
+              schoolInfo.shsCurriculumModel || "Standard K-12 SHS Curriculum",
+            has_elem_inclusive: sanitizeBoolean(schoolInfo.hasElemInclusive),
+            elem_inclusive_programs: schoolInfo.elemInclusivePrograms || [],
+            has_jhs_inclusive: sanitizeBoolean(schoolInfo.hasJhsInclusive),
+            jhs_inclusive_programs: schoolInfo.jhsInclusivePrograms || [],
+            has_shs_inclusive: sanitizeBoolean(schoolInfo.hasShsInclusive),
+            shs_inclusive_programs: schoolInfo.shsInclusivePrograms || [],
+            inclusive_programs: schoolInfo.inclusivePrograms || [],
+            has_als: sanitizeBoolean(schoolInfo.hasAls),
+            has_sned: sanitizeBoolean(schoolInfo.hasSned),
+            has_iped: sanitizeBoolean(schoolInfo.hasIped),
+            has_madrasah: sanitizeBoolean(schoolInfo.hasMadrasah),
+          }),
+        ),
       ],
     );
   }
@@ -847,7 +885,7 @@ async function disaggregatePersonnel(
             `
             INSERT INTO esf7_workload_rows (
               id, personnel_id, school_id, school_year, grade_level, section_id,
-              section_name, subject, start_time, end_time, days, term, raw_payload, updated_at
+              section_name, subject, start_time, end_time, days, term, extras, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
             ON CONFLICT (id) DO NOTHING;
@@ -865,7 +903,23 @@ async function disaggregatePersonnel(
               endTime,
               JSON.stringify(wDays),
               w.term || "1st",
-              JSON.stringify(w),
+              // only keys without a typed column (see utils/workloadPayload.js), not a copy of the whole row
+              JSON.stringify(
+                buildWorkloadExtras(w, {
+                  id: wId,
+                  personnel_id: finalId,
+                  school_id: cleanId,
+                  school_year: targetSy,
+                  grade_level: w.gradeLevel || w.grade_level || "Grade 7",
+                  section_id: w.sectionId || w.section_id || null,
+                  section_name: w.sectionName || w.section_name || "",
+                  subject,
+                  start_time: startTime,
+                  end_time: endTime,
+                  days: wDays,
+                  term: w.term || "1st",
+                }),
+              ),
             ],
           );
         }
@@ -923,7 +977,7 @@ async function disaggregatePersonnel(
             `
             INSERT INTO esf7_related_task (
               id, personnel_id, school_id, school_year, task_name, hours_per_week,
-              frequency, term, raw_payload, updated_at
+              frequency, term, extras, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
             ON CONFLICT (id) DO NOTHING;
@@ -937,7 +991,16 @@ async function disaggregatePersonnel(
               sanitizeNumber(r.hoursPerWeek || r.hours_per_week, 6),
               r.frequency || "Weekly",
               r.term || "1st",
-              JSON.stringify(r),
+              JSON.stringify(
+                payloadCodecs.esf7_related_task.buildExtras(r, {
+                  id: rId,
+                  personnel_id: finalId,
+                  school_id: cleanId,
+                  school_year: targetSy,
+                  task_name: r.taskName || r.task_name || "Lesson Prep",
+                  frequency: r.frequency || "Weekly",
+                }),
+              ),
             ],
           );
         }
@@ -1183,7 +1246,7 @@ async function disaggregateSections(
             INSERT INTO esf7_regular_sections (
               id, school_id, school_year, grade_level, section_name, adviser_id,
               section_type, male_learners, female_learners, number_of_learners,
-              size_status, term, raw_payload, updated_at
+              size_status, term, extras, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
             ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
@@ -1203,7 +1266,22 @@ async function disaggregateSections(
               totalLearners,
               sizeStatus,
               s.term || "1st",
-              JSON.stringify(s),
+              JSON.stringify(
+                payloadCodecs.esf7_regular_sections.buildExtras(s, {
+                  id: secId,
+                  school_id: cleanId,
+                  school_year: targetSy,
+                  grade_level: gradeLevel,
+                  section_name: sectionName,
+                  adviser_id: resolvedAdviserId,
+                  section_type: normalizedType,
+                  male_learners: maleLearners,
+                  female_learners: femaleLearners,
+                  number_of_learners: totalLearners,
+                  size_status: sizeStatus,
+                  term: s.term || "1st",
+                }),
+              ),
             ],
           );
         }

@@ -58,6 +58,12 @@ db.query = async (sql, params = []) => {
   }
   return { rows: [] };
 };
+const fakeClient = {
+  query: async (sql, params) => (await db.query(sql, params)) || { rows: [] },
+  release() {},
+};
+db.getClient = async () => fakeClient;
+
 
 let server;
 let base;

@@ -224,6 +224,8 @@ function defaultHttpRequest({ method, url, headers, timeoutMs }) {
 function defaultTlsInfo(host, port) {
   return new Promise((resolve) => {
     const s = tls.connect(
+      // Verified false positive: this probe only reads the peer certificate (expiry, authorized flag) and sends no data.
+      // nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
       {
         host,
         port,

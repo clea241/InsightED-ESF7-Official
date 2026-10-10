@@ -1,0 +1,79 @@
+{
+  "comparedAt": "2026-10-10T14:20:08.814Z",
+  "status": "PASS",
+  "note": "Original raw_payload (from the pre-change pg_dump, restored to a scratch database) vs the live typed columns + extras after raw_payload was dropped and the tables rewritten. Row ids and key names only.",
+  "tables": {
+    "esf7_personnel_allowances": {
+      "backupRows": 63980,
+      "liveRows": 63980,
+      "rowCountsMatch": true,
+      "sameIds": true,
+      "rowsCompared": 63980,
+      "payloadKeysCompared": 150728,
+      "unaccountedKeys": 0,
+      "rowsWithProblems": 0,
+      "samples": [],
+      "status": "PASS"
+    },
+    "esf7_requests": {
+      "backupRows": 3208,
+      "liveRows": 3208,
+      "rowCountsMatch": true,
+      "sameIds": true,
+      "rowsCompared": 3208,
+      "payloadKeysCompared": 20171,
+      "unaccountedKeys": 0,
+      "rowsWithProblems": 0,
+      "samples": [],
+      "status": "PASS"
+    },
+    "esf7_school_profile": {
+      "backupRows": 14804,
+      "liveRows": 14804,
+      "rowCountsMatch": true,
+      "sameIds": true,
+      "rowsCompared": 14804,
+      "payloadKeysCompared": 426831,
+      "unaccountedKeys": 0,
+      "rowsWithProblems": 0,
+      "samples": [],
+      "status": "PASS"
+    },
+    "esf7_related_task": {
+      "backupRows": 15589,
+      "liveRows": 15589,
+      "rowCountsMatch": true,
+      "sameIds": true,
+      "rowsCompared": 15589,
+      "payloadKeysCompared": 171479,
+      "unaccountedKeys": 0,
+      "rowsWithProblems": 0,
+      "samples": [],
+      "status": "PASS"
+    },
+    "esf7_admin_task": {
+      "backupRows": 15313,
+      "liveRows": 15313,
+      "rowCountsMatch": true,
+      "sameIds": true,
+      "rowsCompared": 15313,
+      "payloadKeysCompared": 80973,
+      "unaccountedKeys": 0,
+      "rowsWithProblems": 0,
+      "samples": [],
+      "status": "PASS"
+    },
+    "esf7_regular_sections": {
+      "backupRows": 139797,
+      "liveRows": 139797,
+      "rowCountsMatch": true,
+      "sameIds": true,
+      "rowsCompared": 139797,
+      "payloadKeysCompared": 1663154,
+      "unaccountedKeys": 0,
+      "rowsWithProblems": 0,
+      "samples": [],
+      "status": "PASS"
+    }
+  }
+}

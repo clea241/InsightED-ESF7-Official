@@ -7,7 +7,7 @@ function generateAlphanumericId(prefix) {
 
 module.exports = {
   generateSchoolId: () => generateAlphanumericId("SCH"),
-  generatePersonnelId: () => generateAlphanumericId("PER"),
+  generatePersonnelId: () => crypto.randomUUID(),
   generateEmploymentId: () => generateAlphanumericId("EMP"),
   generateQualificationId: () => generateAlphanumericId("QLF"),
   generateTrainingId: () => generateAlphanumericId("TRN"),

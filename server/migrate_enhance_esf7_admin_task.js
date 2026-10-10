@@ -49,7 +49,7 @@ async function migrateEnhanceAdminTask() {
           is_designation_synced BOOLEAN DEFAULT FALSE,
           status VARCHAR(20) DEFAULT 'ACTIVE',
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
+          extras JSONB NOT NULL DEFAULT '{}'::jsonb,
           
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

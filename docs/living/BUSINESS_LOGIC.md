@@ -69,3 +69,12 @@ Sections live in `esf7_regular_sections` (and sibling sned/als/aral/remedial tab
 - Department Head per key stage is required only if JHS or SHS is offered (`requiresDepartmentHead`, shared/schoolLevel.js). Elementary-only schools are not blocked. Unknown/empty offering keeps the old (required) behavior.
 - School Principal positions (shared/personnelClass.js) stay Related-Teaching but get no Classes-Organized workload: no advisory/section rows are generated and organized-class grades are not counted.
 - JHS/SHS sections: two classes may share a time slot in the By-Section builder when subjects differ; a clash is the same subject repeated, or the same teacher double-booked. Elementary sections keep one class per slot. Room double-booking is not checked (workload rows carry no room).
+
+## Workload list paging (2026-10-10)
+- `GET /api/workloads` never returns more than 500 rows per call (default 100). Rows are ordered oldest first, ties broken by id. A caller continues with the `X-Next-Cursor` header value; no header means last page. The total is sent only with the first page.
+
+## Workload row storage rule (2026-10-10)
+- A workload row's schedule fields live in typed columns; any other field the screen sends (task, row type, category, day schedule, track/strand, minutes) is kept in `extras` and returned unchanged. A value that differs from its typed column is kept in `extras` instead of being discarded. Rows saved before the change are folded into `extras` the first time they are edited if the backfill has not reached them.
+
+## Extras rule for the other six tables (2026-10-10)
+- Same rule as workload rows: only fields with no typed column, or whose value differs from the typed column, are kept in `extras` and returned as before. A section adviser who has no profile row yet is still kept in `extras` (the adviser foreign key cannot hold it) and shown as before.

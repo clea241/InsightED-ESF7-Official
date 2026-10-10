@@ -1,0 +1,90 @@
+{
+  "status": "PASS",
+  "table": "esf7_related_task",
+  "database": "esf7_local",
+  "startedAt": "2026-10-10T14:18:30.413Z",
+  "finishedAt": "2026-10-10T14:18:30.994Z",
+  "rowCountAtStart": 15589,
+  "rowCountAtEnd": 15589,
+  "rowsChecked": 15589,
+  "newFormatRowsSkipped": 0,
+  "checks": {
+    "rowCountStableDuringRun": true,
+    "everyKeyAccountedFor": true,
+    "payloadsUnchangedSinceBackup": true
+  },
+  "keys": {
+    "total": 171479,
+    "heldByTypedColumn": 92736,
+    "heldByExtras": 78743,
+    "unaccounted": 0,
+    "rowsWithUnaccountedKeys": 0
+  },
+  "bytes": {
+    "avgPayload": 282,
+    "avgExtras": 93
+  },
+  "payloadFingerprint": {
+    "current": "8846c654a6e568d28dad9489cd07415e",
+    "backup": "8846c654a6e568d28dad9489cd07415e"
+  },
+  "perKey": {
+    "task": {
+      "viaColumn": 15589,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "hours": {
+      "viaColumn": 0,
+      "viaExtras": 15589,
+      "unaccounted": 0
+    },
+    "cadence": {
+      "viaColumn": 0,
+      "viaExtras": 15589,
+      "unaccounted": 0
+    },
+    "isLocked": {
+      "viaColumn": 0,
+      "viaExtras": 15589,
+      "unaccounted": 0
+    },
+    "frequency": {
+      "viaColumn": 15100,
+      "viaExtras": 489,
+      "unaccounted": 0
+    },
+    "task_name": {
+      "viaColumn": 15589,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "isSdsApproved": {
+      "viaColumn": 0,
+      "viaExtras": 15589,
+      "unaccounted": 0
+    },
+    "designatedBySds": {
+      "viaColumn": 0,
+      "viaExtras": 15589,
+      "unaccounted": 0
+    },
+    "durationMinutes": {
+      "viaColumn": 15280,
+      "viaExtras": 309,
+      "unaccounted": 0
+    },
+    "duration_minutes": {
+      "viaColumn": 15589,
+      "viaExtras": 0,
+      "unaccounted": 0
+    },
+    "isDesignationSynced": {
+      "viaColumn": 15589,
+      "viaExtras": 0,
+      "unaccounted": 0
+    }
+  },
+  "unaccountedSamples": [],
+  "note": "Key presence of alias copies (a camelCase or snake_case spelling of a typed column with the same value) is not preserved; the formatters regenerate the ones the API returns."
+}

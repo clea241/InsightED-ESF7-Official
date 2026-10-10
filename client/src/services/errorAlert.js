@@ -84,6 +84,10 @@ const ROUTES = [
   ],
   [/\/esf7[-_]?upload|\/upload/i, () => "Importing an ESF7 file"],
   [/\/auth\b/i, () => "Signing in"],
+  [
+    /\/room-profiling\/sync-roster/i,
+    () => "Syncing room personnel roster to database",
+  ],
 ];
 
 export const describeRequest = (method, url, ids = {}) => {
@@ -93,7 +97,7 @@ export const describeRequest = (method, url, ids = {}) => {
     ids.personnel_id ||
     ids.personnelId ||
     ids.id ||
-    (path.match(/\/(PER-[\w-]+|local-p-[\w-]+)/i) || [])[1] ||
+    (path.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|PER-[\w-]+|local-p-[\w-]+|P-HARVEST-[\w-]+)/i) || [])[1] ||
     "";
   const hit = ROUTES.find(
     (entry) => entry[0] instanceof RegExp && entry[0].test(path),

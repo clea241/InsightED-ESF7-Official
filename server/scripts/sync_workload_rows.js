@@ -1,4 +1,7 @@
 const db = require("../db");
+const {
+  buildExtras: buildWorkloadExtras,
+} = require("../utils/workloadPayload");
 
 async function syncWorkloadRows() {
   const client = await db.pool.connect();
@@ -45,7 +48,7 @@ async function syncWorkloadRows() {
           `
           INSERT INTO esf7_workload_rows (
             id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
-            subject, start_time, end_time, days, term, raw_payload, created_at, updated_at
+            subject, start_time, end_time, days, term, extras, created_at, updated_at
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::jsonb, NOW(), NOW())
         `,
@@ -62,7 +65,23 @@ async function syncWorkloadRows() {
             endTime,
             JSON.stringify(days),
             term,
-            JSON.stringify(wk),
+            // only keys without a typed column (see utils/workloadPayload.js)
+            JSON.stringify(
+              buildWorkloadExtras(wk, {
+                id: wklId,
+                personnel_id: pId,
+                school_id: schoolId,
+                school_year: schoolYear,
+                grade_level: gradeLevel,
+                section_id: sectionId,
+                section_name: sectionName,
+                subject,
+                start_time: startTime,
+                end_time: endTime,
+                days,
+                term,
+              }),
+            ),
           ],
         );
         totalInserted++;

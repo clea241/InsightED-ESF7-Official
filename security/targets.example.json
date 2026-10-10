@@ -1,0 +1,9 @@
+{
+  "allowActiveScanOnStaging": false,
+  "login": { "path": "/api/auth/password-login", "bodyFields": { "school_id": "TENANT_A_SCHOOL_ID", "password": "TENANT_A_PASSWORD" }, "tokenField": "token" },
+  "endpoints": [
+    { "method": "GET", "path": "/api/personnel", "params": ["school_id"], "auth": true },
+    { "method": "GET", "path": "/api/requests", "params": ["school_id"], "auth": true },
+    { "method": "POST", "path": "/api/auth/password-login", "body": { "school_id": "100000", "password": "x" }, "params": ["school_id"], "auth": false }
+  ]
+}

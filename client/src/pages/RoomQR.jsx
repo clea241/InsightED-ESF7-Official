@@ -38,6 +38,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import { getEffectivePostGradDisciplines } from "./RoomProfiling";
+import { reportError } from "../services/errorAlert";
 
 export default function RoomQR() {
   const {
@@ -172,31 +173,107 @@ export default function RoomQR() {
     );
   }, [localSnapshots, serverSnapshots]);
 
-  // Sync active personnel to localStorage & server cache so RoomProfiling on mobile has identical roster
+  // Baseline fingerprint map of personnel confirmed saved/synced
+  const lastSyncedRosterRef = useRef(null);
+  const isSyncingRosterRef = useRef(false);
+
+  const getPersonnelFingerprint = useCallback((p) => {
+    if (!p) return "";
+    return JSON.stringify({
+      id: p.id,
+      prn: p.prn || "",
+      fn: p.firstName || p.first_name || "",
+      ln: p.lastName || p.last_name || "",
+      mn: p.middleName || p.middle_name || "",
+      ext: p.nameExtension || p.name_extension || "",
+      dob: p.birthdate || p.birth_date || "",
+      pos: p.position || p.plantilla_position || "",
+      posCat: p.positionCategory || p.position_category || "",
+      step: p.stepIncrement || p.step_increment || 1,
+      fund: p.fundSource || p.fund_source || "",
+      natAppt: p.natureOfAppointment || p.nature_of_appointment || "",
+      attain: p.highestEducationalAttainment || p.highest_educational_attainment || "",
+      degree: p.collegeDegree || p.college_degree || "",
+      major: p.major || "",
+      email: p.depedEmail || p.deped_email || "",
+      tin: p.tin || "",
+      civil: p.civilStatus || p.civil_status || "",
+      isHead: Boolean(p.isSchoolHead || p.is_school_head),
+      code: p.profilingCode || "",
+    });
+  }, []);
+
+  // Sync active personnel ONLY when roster actually changes (no unthrottled intervals)
   useEffect(() => {
-    if (Array.isArray(effectivePersonnel) && effectivePersonnel.length > 0) {
-      try {
-        localStorage.setItem(
-          "insighted_personnel_cache",
-          JSON.stringify(effectivePersonnel),
-        );
-        localStorage.setItem(
-          "insighted_active_personnel",
-          JSON.stringify(effectivePersonnel),
-        );
-      } catch (e) {}
+    if (!Array.isArray(effectivePersonnel) || effectivePersonnel.length === 0) return;
 
-      // Initial broadcast to backend ephemeral cache for cross-device mobile scanners
-      api.syncRoomRoster(activeSchoolId, effectivePersonnel);
+    // Cache locally for fast UI response
+    try {
+      localStorage.setItem(
+        "insighted_personnel_cache",
+        JSON.stringify(effectivePersonnel),
+      );
+      localStorage.setItem(
+        "insighted_active_personnel",
+        JSON.stringify(effectivePersonnel),
+      );
+    } catch (e) {}
 
-      // Periodic heartbeat sync (every 15 seconds) to ensure cache remains hot across server restarts
-      const syncInterval = setInterval(() => {
-        api.syncRoomRoster(activeSchoolId, effectivePersonnel);
-      }, 15000);
-
-      return () => clearInterval(syncInterval);
+    // On initial mount / load, establish baseline fingerprint without writing to database
+    if (!lastSyncedRosterRef.current) {
+      const initialMap = new Map();
+      effectivePersonnel.forEach((p) => {
+        if (p?.id) initialMap.set(p.id, getPersonnelFingerprint(p));
+      });
+      lastSyncedRosterRef.current = initialMap;
+      return;
     }
-  }, [effectivePersonnel, activeSchoolId]);
+
+    // Identify genuine personnel modifications
+    const changed = [];
+    effectivePersonnel.forEach((p) => {
+      if (!p?.id) return;
+      const fp = getPersonnelFingerprint(p);
+      if (!lastSyncedRosterRef.current.has(p.id) || lastSyncedRosterRef.current.get(p.id) !== fp) {
+        changed.push(p);
+      }
+    });
+
+    if (changed.length === 0 || isSyncingRosterRef.current) return;
+
+    let isCancelled = false;
+    isSyncingRosterRef.current = true;
+
+    (async () => {
+      try {
+        const res = await api.syncRoomRoster(activeSchoolId, changed);
+        if (res && res.success) {
+          if (!isCancelled && lastSyncedRosterRef.current) {
+            changed.forEach((p) => {
+              lastSyncedRosterRef.current.set(p.id, getPersonnelFingerprint(p));
+            });
+          }
+        } else {
+          throw new Error(
+            res?.error || res?.message || "Failed to persist personnel roster changes to database",
+          );
+        }
+      } catch (err) {
+        console.error("[RoomQR] Roster sync failed:", err);
+        reportError(err, {
+          action: "Syncing changed personnel to database",
+          handler: "RoomQR.syncRoomRoster",
+          ids: { school_id: activeSchoolId, changed_count: changed.length },
+        });
+      } finally {
+        isSyncingRosterRef.current = false;
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [effectivePersonnel, activeSchoolId, getPersonnelFingerprint]);
 
   // Masking & 24-hour rotation state
   const [revealedIds, setRevealedIds] = useState([]);

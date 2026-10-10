@@ -57,6 +57,33 @@ export const registerDirtyGuard = (screenId, config) => {
 };
 
 /**
+ * Run registered onFlush / onCommit callbacks across all screens.
+ * Ensures in-memory component state is flushed to context / local storage.
+ */
+export const flushAllDirtyGuards = async () => {
+  for (const [screenId, config] of guards.entries()) {
+    if (typeof config?.onFlush === "function") {
+      try {
+        await config.onFlush();
+      } catch (err) {
+        console.warn(`[dirtyGuard] Error running onFlush for screen ${screenId}:`, err);
+      }
+    }
+  }
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("blur", () => {
+    flushAllDirtyGuards().catch(() => {});
+  });
+  window.addEventListener("focusout", (e) => {
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) {
+      flushAllDirtyGuards().catch(() => {});
+    }
+  });
+}
+
+/**
  * Unregister a dirty guard.
  * @param {string} screenId
  */

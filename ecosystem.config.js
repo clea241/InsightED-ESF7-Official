@@ -12,7 +12,7 @@ module.exports = {
       script: "./server/server.js",
       instances: "max",
       exec_mode: "cluster",
-      kill_timeout: 15000,
+      kill_timeout: 25000,
       wait_ready: true,
       listen_timeout: 10000,
       max_memory_restart: "1500M",

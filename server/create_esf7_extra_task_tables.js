@@ -17,7 +17,7 @@ async function createExtraTaskTables() {
           term1_hours NUMERIC(6, 2) DEFAULT 0.00,
           is_designation_synced BOOLEAN DEFAULT FALSE,
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
+          extras JSONB NOT NULL DEFAULT '{}'::jsonb,
           
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -36,7 +36,7 @@ async function createExtraTaskTables() {
           dates JSONB DEFAULT '[]'::jsonb,
           duration_minutes INTEGER NOT NULL DEFAULT 60,
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
+          extras JSONB NOT NULL DEFAULT '{}'::jsonb,
           
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

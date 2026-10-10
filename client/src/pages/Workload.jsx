@@ -23,6 +23,11 @@ import {
   editedSinceSent,
 } from "../services/workloadSave";
 import { showWorkloadRestoreModal } from "../services/dirtyGuard";
+import {
+  getWorkloadDraftKey,
+  readMigratedLocalStorage,
+  writeWithLegacyCleanup,
+} from "../services/storageKeys";
 import { reportError } from "../services/errorAlert";
 import { isAllowanceDisabled, isAllowanceActive } from "@shared/allowances.js";
 import {
@@ -12123,10 +12128,54 @@ function WorkloadInner() {
     return map;
   }, [personnel, workloadTransfers]);
 
+  const getTeacherWorkloadDraftKey = useCallback(
+    (personId, term = activeTerm) => {
+      return getWorkloadDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear || currentSchoolYear,
+        personId,
+        term,
+      );
+    },
+    [schoolInfo?.schoolId, schoolInfo?.schoolYear, currentSchoolYear, activeTerm],
+  );
+
+  const readTeacherWorkloadDraft = useCallback(
+    (personId, term = activeTerm) => {
+      const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
+      return readMigratedLocalStorage(canonicalKey, [
+        `draft_workload_${personId}`,
+        `draft_workload_${schoolInfo?.schoolId}_${personId}`,
+      ]);
+    },
+    [getTeacherWorkloadDraftKey, schoolInfo?.schoolId],
+  );
+
+  const writeTeacherWorkloadDraft = useCallback(
+    (personId, data, term = activeTerm) => {
+      const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
+      return writeWithLegacyCleanup(canonicalKey, data, [
+        `draft_workload_${personId}`,
+        `draft_workload_${schoolInfo?.schoolId}_${personId}`,
+      ]);
+    },
+    [getTeacherWorkloadDraftKey, schoolInfo?.schoolId],
+  );
+
+  const removeTeacherWorkloadDraft = useCallback(
+    (personId, term = activeTerm) => {
+      const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
+      try {
+        localStorage.removeItem(canonicalKey);
+        localStorage.removeItem(`draft_workload_${personId}`);
+      } catch (e) {}
+    },
+    [getTeacherWorkloadDraftKey],
+  );
+
   useEffect(() => {
     if (dbPerson) {
-      const draftKey = `draft_workload_${dbPerson.id}`;
-      const savedDraft = localStorage.getItem(draftKey);
+      const savedDraft = readTeacherWorkloadDraft(dbPerson.id);
       let person = dbPerson;
       const draftOverlaid = draftRowsMayOverlay(
         dbPerson.id,
@@ -13124,11 +13173,9 @@ function WorkloadInner() {
           savedNorm &&
           JSON.stringify(currentNorm) === JSON.stringify(savedNorm)
         ) {
-          localStorage.removeItem(draftKey);
+          removeTeacherWorkloadDraft(dbPerson.id, activeTerm);
         } else {
-          try {
-            localStorage.setItem(draftKey, JSON.stringify(updatedPerson));
-          } catch (e) {}
+          writeTeacherWorkloadDraft(dbPerson.id, activeTerm, updatedPerson);
         }
       }
     } else {
@@ -13461,16 +13508,15 @@ function WorkloadInner() {
         prev && String(prev.id) === String(personId) ? patch(prev) : prev,
       );
       if (skipDraft) return; // a declined draft stays exactly as it was
-      const key = `draft_workload_${personId}`;
       try {
-        const raw = localStorage.getItem(key);
+        const raw = readTeacherWorkloadDraft(personId);
         if (raw)
-          localStorage.setItem(key, JSON.stringify(patch(JSON.parse(raw))));
+          writeTeacherWorkloadDraft(personId, patch(JSON.parse(raw)));
       } catch (e) {
         /* the draft is left as it was */
       }
     },
-    [setPersonnel, classSections],
+    [setPersonnel, classSections, readTeacherWorkloadDraft, writeTeacherWorkloadDraft],
   );
 
   const hydrateWorkloadFromServer = useCallback(
@@ -13744,10 +13790,9 @@ function WorkloadInner() {
         workloadBaseVersion: versionOf(res?.workloadSavedAt),
         workloadBaseRows: serverRows,
       };
-      const draftKey = `draft_workload_${personId}`;
       try {
-        if (edited) localStorage.setItem(draftKey, JSON.stringify(person));
-        else localStorage.removeItem(draftKey);
+        if (edited) writeTeacherWorkloadDraft(personId, person);
+        else removeTeacherWorkloadDraft(personId);
       } catch (e) {
         /* storage unavailable: nothing to clear */
       }
@@ -13806,7 +13851,7 @@ function WorkloadInner() {
         return false;
       const snapKey = `${cleanSchool}__${p.id}__${activeTerm}`;
       if (!savedTeacherTermSnapshotRef.current.has(snapKey)) return false;
-      const raw = localStorage.getItem(`draft_workload_${p.id}`);
+      const raw = readTeacherWorkloadDraft(p.id);
       if (!raw) return false;
       try {
         const parsed = JSON.parse(raw);
@@ -13827,31 +13872,48 @@ function WorkloadInner() {
     activeTerm,
     schoolInfo?.schoolId,
     workloadSync,
+    readTeacherWorkloadDraft,
   ]);
 
   const isDirty = Boolean(isCurrentTeacherDirty || hasLocalDrafts);
   // A draft the user declined to restore stays in the browser; leaving the page still offers it through the unsaved-changes alert.
   const hasDeclinedDraft = [...restoreDeclined].some((id) =>
-    Boolean(localStorage.getItem(`draft_workload_${id}`)),
+    Boolean(readTeacherWorkloadDraft(id)),
   );
 
   const handleDiscard = useCallback(() => {
     (personnel || []).forEach((p) => {
-      localStorage.removeItem(`draft_workload_${p.id}`);
+      removeTeacherWorkloadDraft(p.id);
     });
     if (dbPerson?.id) {
       hydrateWorkloadFromServer(dbPerson.id, activeTerm, { afterSave: true });
     }
-  }, [personnel, dbPerson?.id, activeTerm, hydrateWorkloadFromServer]);
+  }, [personnel, dbPerson?.id, activeTerm, hydrateWorkloadFromServer, removeTeacherWorkloadDraft]);
 
   const isSavingRef = useRef(false);
   const runWorkloadSaveRef = useRef(() => Promise.resolve({ ok: true }));
+
+  const flushWorkloadToContext = useCallback(() => {
+    const cur = latestWorkloadRef.current?.editPerson || currentPersonRef.current;
+    if (cur && cur.id && typeof setPersonnel === "function") {
+      setPersonnel((prev) =>
+        (prev || []).map((p) =>
+          p &&
+          (String(p.id) === String(cur.id) ||
+            String(p._id) === String(cur.id))
+            ? { ...p, ...cur }
+            : p,
+        ),
+      );
+    }
+  }, [setPersonnel]);
 
   const { confirmAction } = useDirtyGuard({
     screenId: "workload",
     isDirty: isDirty || hasDeclinedDraft,
     onDiscard: handleDiscard,
     onSave: () => runWorkloadSaveRef.current(),
+    onFlush: flushWorkloadToContext,
     getDirtyReasons: () => {
       const reasons = [];
       if (isCurrentTeacherDirty)
@@ -13951,12 +14013,11 @@ function WorkloadInner() {
 
     markTeacherValidated(personId, false);
 
-    const draftKey = `draft_workload_${personId}`;
     let targetPerson = baseP;
     if (editPerson && String(editPerson.id) === String(personId)) {
       targetPerson = editPerson;
     } else {
-      const savedDraft = localStorage.getItem(draftKey);
+      const savedDraft = readTeacherWorkloadDraft(personId);
       if (savedDraft) {
         try {
           const parsed = JSON.parse(savedDraft);
@@ -13988,7 +14049,7 @@ function WorkloadInner() {
       );
     }
     try {
-      localStorage.setItem(draftKey, JSON.stringify(updated));
+      writeTeacherWorkloadDraft(personId, updated);
     } catch (e) {}
   };
 
@@ -20264,9 +20325,7 @@ function WorkloadInner() {
                                 "Are you sure you want to discard your unsaved changes and revert to the server data?",
                               )
                             ) {
-                              localStorage.removeItem(
-                                `draft_workload_${dbPerson.id}`,
-                              );
+                              removeTeacherWorkloadDraft(dbPerson.id);
                               await hydrateWorkloadFromServer(
                                 dbPerson.id,
                                 activeTerm,

@@ -1,0 +1,6 @@
+[
+  { "method": "ALL", "path": "/api/health", "reason": "PROPOSED - confirm: liveness probe" },
+  { "method": "ALL", "path": "/api/auth/*", "reason": "PROPOSED - confirm: login endpoints (rate limited)" },
+  { "method": "ALL", "path": "/api/room-profiling/*", "reason": "PROPOSED - confirm: gate PUBLIC_PREFIXES" },
+  { "method": "ALL", "path": "/api/salary-matrix", "reason": "PROPOSED - confirm: gate PUBLIC_PREFIXES" }
+]

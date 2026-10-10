@@ -140,6 +140,8 @@ export const esf7PersonnelProfile = pgTable(
       .notNull(),
     term: text().default("1st"),
     noPhilsys: boolean("no_philsys").default(false).notNull(),
+    status: varchar({ length: 32 }).default("canonical").notNull(),
+    legacyId: varchar("legacy_id", { length: 128 }),
   },
   (table) => [
     index("idx_esf7_personnel_profile_prn").using(
@@ -151,6 +153,14 @@ export const esf7PersonnelProfile = pgTable(
       table.schoolId.asc().nullsLast().op("text_ops"),
       table.schoolYear.asc().nullsLast().op("text_ops"),
     ),
+    index("idx_esf7_personnel_profile_legacy_id").using(
+      "btree",
+      table.legacyId.asc().nullsLast().op("text_ops"),
+    ),
+    index("idx_esf7_personnel_profile_status").using(
+      "btree",
+      table.status.asc().nullsLast().op("text_ops"),
+    ),
     unique("esf7_personnel_profile_prn_key").on(table.prn),
     check(
       "esf7_personnel_profile_type_check",
@@ -159,6 +169,24 @@ export const esf7PersonnelProfile = pgTable(
     check(
       "esf7_personnel_profile_sex_at_birth_check",
       sql`sex_at_birth = ANY (ARRAY['Male'::text, 'Female'::text, 'MALE'::text, 'FEMALE'::text])`,
+    ),
+  ],
+);
+
+export const esf7PersonnelIdMapping = pgTable(
+  "esf7_personnel_id_mapping",
+  {
+    legacyId: varchar("legacy_id", { length: 128 }).primaryKey().notNull(),
+    newId: varchar("new_id", { length: 64 }).notNull(),
+    status: varchar({ length: 32 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_pers_mapping_new_id").using(
+      "btree",
+      table.newId.asc().nullsLast().op("text_ops"),
     ),
   ],
 );
@@ -216,7 +244,8 @@ export const esf7RegularSections = pgTable(
     maleLearners: integer("male_learners").default(0),
     femaleLearners: integer("female_learners").default(0),
     numberOfLearners: integer("number_of_learners").default(0),
-    rawPayload: jsonb("raw_payload").default({}),
+    // slim replacement for the old raw_payload copy (utils/payloadExtras.js)
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -447,7 +476,8 @@ export const esf7RelatedTask = pgTable(
       "0.00",
     ),
     isDesignationSynced: boolean("is_designation_synced").default(false),
-    rawPayload: jsonb("raw_payload").default({}),
+    // slim replacement for the old raw_payload copy (utils/payloadExtras.js)
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -480,7 +510,8 @@ export const esf7AdminTask = pgTable(
     taskName: text("task_name").notNull(),
     dates: jsonb().default([]),
     durationMinutes: integer("duration_minutes").default(60).notNull(),
-    rawPayload: jsonb("raw_payload").default({}),
+    // slim replacement for the old raw_payload copy (utils/payloadExtras.js)
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -719,7 +750,10 @@ export const esf7WorkloadRows = pgTable(
     startTime: time("start_time"),
     endTime: time("end_time"),
     days: jsonb().default(["M", "T", "W", "TH", "F"]),
-    rawPayload: jsonb("raw_payload").default({}),
+    // Replaces the old raw_payload copy of the request body (dropped by migrations/drop_workload_rows_raw_payload.js):
+    // only keys that have no typed column (task, rowType, category, ...) and alias keys whose value differs from the
+    // typed column. See server/utils/workloadPayload.js.
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -741,6 +775,11 @@ export const esf7WorkloadRows = pgTable(
     index("idx_esf7_workload_rows_section").using(
       "btree",
       table.sectionId.asc().nullsLast().op("text_ops"),
+    ),
+    index("idx_esf7_workload_rows_created_at_id").using(
+      "btree",
+      table.createdAt.asc().nullsLast().op("timestamptz_ops"),
+      table.id.asc().nullsLast().op("text_ops"),
     ),
     foreignKey({
       columns: [table.personnelId],
@@ -1063,7 +1102,8 @@ export const esf7SchoolProfile = pgTable(
     hasIped: boolean("has_iped").default(false).notNull(),
     hasMadrasah: boolean("has_madrasah").default(false).notNull(),
     inclusivePrograms: jsonb("inclusive_programs").default([]),
-    rawPayload: jsonb("raw_payload").default({}),
+    // slim replacement for the old raw_payload copy (utils/payloadExtras.js)
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1149,7 +1189,8 @@ export const esf7PersonnelAllowances = pgTable(
       precision: 10,
       scale: 2,
     }).default("0.00"),
-    rawPayload: jsonb("raw_payload").default({}),
+    // slim replacement for the old raw_payload copy (utils/payloadExtras.js)
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1181,7 +1222,8 @@ export const esf7Requests = pgTable(
     personnelName: text("personnel_name"),
     status: text().default("pending").notNull(),
     remarks: text(),
-    rawPayload: jsonb("raw_payload").default({}),
+    // slim replacement for the old raw_payload copy (utils/payloadExtras.js)
+    extras: jsonb().default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),

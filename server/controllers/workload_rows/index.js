@@ -4,10 +4,18 @@ const db = require("../../db");
 const { findBlockedTeachingRows } = require("../../utils/teachingAssignments");
 const { loadTimeAllotment } = require("../../utils/sharedRules");
 const { validateWorkloadSchedules } = require("../../utils/scheduleValidator");
+const {
+  buildExtras,
+  splitLegacyPayload,
+  reconstructPayload,
+} = require("../../utils/workloadPayload");
+const { codec } = require("../../utils/payloadExtras");
 
+// esf7_workload_rows keeps typed columns plus a slim `extras` JSONB (keys without a typed column). The old whole-body
+// copy in raw_payload is no longer written or read here; see utils/workloadPayload.js.
 function formatWorkloadRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -51,13 +59,19 @@ function formatWorkloadRecord(row) {
       : raw.endTime || null,
     days: row.days || raw.days || ["M", "T", "W", "TH", "F"],
     term: row.term || raw.term || "1st",
-    rawPayload: raw,
+    // aliases of the typed `subject` column that the old payload spread supplied on some rows; now always present
+    subjectName: raw.subjectName ?? row.subject ?? "",
+    subject_name: raw.subject_name ?? row.subject ?? "",
+    rawPayload: reconstructPayload(row),
   };
 }
 
+const adminTaskPayload = codec("esf7_admin_task");
+const relatedTaskPayload = codec("esf7_related_task");
+
 function formatAdminTaskRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -99,7 +113,7 @@ function formatAdminTaskRecord(row) {
     isDesignationSynced: !!row.is_designation_synced,
     is_designation_synced: !!row.is_designation_synced,
     status: row.status || "ACTIVE",
-    rawPayload: raw,
+    rawPayload: adminTaskPayload.reconstruct(row),
   };
 }
 
@@ -139,13 +153,80 @@ router.get("/personnel/:personnel_id/admin-tasks", async (req, res) => {
   }
 });
 
-// GET all workload rows in school
+// GET workload rows, one page at a time (keyset pagination on (created_at, id)).
+// Query: ?limit=1..500 (default 100) &cursor=<X-Next-Cursor from the previous page>.
+// The body stays a plain array. Paging info is in response headers:
+//   X-Next-Cursor (absent on the last page), X-Page-Limit, and X-Total-Count (first page only, i.e. when no cursor is sent).
+const WORKLOAD_LIST_DEFAULT_LIMIT = 100;
+const WORKLOAD_LIST_MAX_LIMIT = 500;
+const CURSOR_TS = /^\d{4}-\d{2}-\d{2}[ T][\d:.]+(?:Z|[+-]\d{2}(?::?\d{2})?)?$/;
+
+function encodeWorkloadCursor(ts, id) {
+  return Buffer.from(JSON.stringify([ts, id])).toString("base64url");
+}
+function decodeWorkloadCursor(cursor) {
+  try {
+    const [ts, id] = JSON.parse(
+      Buffer.from(String(cursor), "base64url").toString("utf8"),
+    );
+    if (
+      typeof ts === "string" &&
+      CURSOR_TS.test(ts) &&
+      typeof id === "string" &&
+      id.length <= 200
+    )
+      return { ts, id };
+  } catch (_e) {
+    /* fall through */
+  }
+  return null;
+}
+
 router.get("/", async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT * FROM esf7_workload_rows ORDER BY created_at ASC`,
+    const requested = parseInt(req.query.limit, 10);
+    const limit = Math.min(
+      Math.max(
+        Number.isFinite(requested) ? requested : WORKLOAD_LIST_DEFAULT_LIMIT,
+        1,
+      ),
+      WORKLOAD_LIST_MAX_LIMIT,
     );
-    res.json(result.rows.map(formatWorkloadRecord));
+    let cursor = null;
+    if (req.query.cursor) {
+      cursor = decodeWorkloadCursor(req.query.cursor);
+      if (!cursor) return res.status(400).json({ error: "Invalid cursor" });
+    }
+
+    const params = [];
+    let where = "";
+    if (cursor) {
+      params.push(cursor.ts, cursor.id);
+      where = "WHERE (created_at, id) > ($1::timestamptz, $2::text)";
+    }
+    params.push(limit + 1); // one extra row tells us whether a next page exists
+    const pageQuery = db.query(
+      `SELECT *, created_at::text AS _cursor_ts FROM esf7_workload_rows ${where} ORDER BY created_at ASC, id ASC LIMIT $${params.length}`,
+      params,
+    );
+    const totalQuery = cursor
+      ? null
+      : db.query("SELECT COUNT(*)::int AS n FROM esf7_workload_rows");
+    const [result, total] = await Promise.all([pageQuery, totalQuery]);
+
+    const hasMore = result.rows.length > limit;
+    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    res.set(
+      "Access-Control-Expose-Headers",
+      "X-Next-Cursor, X-Total-Count, X-Page-Limit",
+    );
+    res.set("X-Page-Limit", String(limit));
+    if (total) res.set("X-Total-Count", String(total.rows[0].n));
+    if (hasMore) {
+      const last = rows[rows.length - 1];
+      res.set("X-Next-Cursor", encodeWorkloadCursor(last._cursor_ts, last.id));
+    }
+    res.json(rows.map(({ _cursor_ts, ...row }) => formatWorkloadRecord(row)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -205,27 +286,44 @@ router.post("/", async (req, res) => {
     const query = `
       INSERT INTO esf7_workload_rows (
         id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
-        subject, subject_id, remediation_subject, start_time, end_time, days, raw_payload
+        subject, subject_id, remediation_subject, start_time, end_time, days, extras
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb)
       RETURNING *;
     `;
 
+    const typedRow = {
+      id: wklId,
+      personnel_id: targetPersonnelId,
+      school_id: targetSchoolId,
+      school_year: targetSchoolYear,
+      grade_level: grade_level || gradeLevel || null,
+      section_id: section_id || sectionId || null,
+      section_name: section_name || sectionName || null,
+      subject: subject || "MATHEMATICS",
+      subject_id: subject_id || subjectId || null,
+      remediation_subject: remediation_subject || remediationSubject || null,
+      start_time: start_time || startTime || null,
+      end_time: end_time || endTime || null,
+      days: days || ["M", "T", "W", "TH", "F"],
+      term: "1st", // column default; this endpoint has never written the term column
+    };
     const values = [
-      wklId,
-      targetPersonnelId,
-      targetSchoolId,
-      targetSchoolYear,
-      grade_level || gradeLevel || null,
-      section_id || sectionId || null,
-      section_name || sectionName || null,
-      subject || "MATHEMATICS",
-      subject_id || subjectId || null,
-      remediation_subject || remediationSubject || null,
-      start_time || startTime || null,
-      end_time || endTime || null,
-      JSON.stringify(days || ["M", "T", "W", "TH", "F"]),
-      JSON.stringify(req.body),
+      typedRow.id,
+      typedRow.personnel_id,
+      typedRow.school_id,
+      typedRow.school_year,
+      typedRow.grade_level,
+      typedRow.section_id,
+      typedRow.section_name,
+      typedRow.subject,
+      typedRow.subject_id,
+      typedRow.remediation_subject,
+      typedRow.start_time,
+      typedRow.end_time,
+      JSON.stringify(typedRow.days),
+      // only keys without a typed column (or with a different value) are kept, not the whole body
+      JSON.stringify(buildExtras(req.body, typedRow)),
     ];
 
     const result = await db.query(query, values);
@@ -319,16 +417,15 @@ async function findTimeAllotmentViolations(
     }
   }
   const othersRes = await client.query(
-    `SELECT id, section_id, subject, start_time, end_time, days, raw_payload
+    `SELECT id, section_id, subject, start_time, end_time, days, term, extras
        FROM esf7_workload_rows WHERE section_id = ANY($1) AND personnel_id <> $2`,
     [sectionIds, personId],
   );
-  const others = othersRes.rows.map((r) => ({
+  const others = othersRes.rows.map(({ extras, ...r }) => ({
     ...r,
-    term: (r.raw_payload && r.raw_payload.term) || "1st",
+    term: r.term || "1st",
     subjectGradeLevel:
-      r.raw_payload &&
-      (r.raw_payload.subjectGradeLevel || r.raw_payload.subject_grade_level),
+      extras && (extras.subjectGradeLevel || extras.subject_grade_level),
   }));
 
   const found = [];
@@ -651,12 +748,29 @@ const saveWorkloadBatchHandler = async (req, res) => {
       const insertQuery = `
         INSERT INTO esf7_workload_rows (
           id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
-          subject, subject_id, remediation_subject, start_time, end_time, days, term, raw_payload, created_at, updated_at
+          subject, subject_id, remediation_subject, start_time, end_time, days, term, extras, created_at, updated_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15::jsonb, NOW(), NOW())
         RETURNING *;
       `;
 
+      // typed values as stored; extras keeps only the keys of the incoming row that these do not already hold
+      const typedRow = {
+        id: wklId,
+        personnel_id: targetPersonId,
+        school_id: targetSchoolId,
+        school_year: targetSchoolYear,
+        grade_level: gradeLevel,
+        section_id: sectionId,
+        section_name: sectionName,
+        subject,
+        subject_id: subjectId,
+        remediation_subject: remediationSubject,
+        start_time: startTime,
+        end_time: endTime,
+        days,
+        term,
+      };
       const insertValues = [
         wklId,
         targetPersonId,
@@ -672,18 +786,23 @@ const saveWorkloadBatchHandler = async (req, res) => {
         endTime,
         JSON.stringify(days),
         term,
-        JSON.stringify({
-          ...r,
-          id: wklId,
-          sectionId,
-          sectionName,
-          gradeLevel,
-          subject,
-          startTime,
-          endTime,
-          days,
-          term,
-        }),
+        JSON.stringify(
+          buildExtras(
+            {
+              ...r,
+              id: wklId,
+              sectionId,
+              sectionName,
+              gradeLevel,
+              subject,
+              startTime,
+              endTime,
+              days,
+              term,
+            },
+            typedRow,
+          ),
+        ),
       ];
 
       const resRow = await client.query(insertQuery, insertValues);
@@ -814,7 +933,7 @@ const saveWorkloadBatchHandler = async (req, res) => {
         await client.query(
           `INSERT INTO esf7_related_task (
              id, personnel_id, school_id, school_year, task_name, frequency,
-             duration_minutes, term1_hours, is_designation_synced, raw_payload, created_at, updated_at
+             duration_minutes, term1_hours, is_designation_synced, extras, created_at, updated_at
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
           [
             trId,
@@ -826,7 +945,20 @@ const saveWorkloadBatchHandler = async (req, res) => {
             durMins,
             t1Hrs,
             isDesig,
-            JSON.stringify(tr),
+            // only keys without a typed column (or with a different value), not a copy of the whole row
+            JSON.stringify(
+              relatedTaskPayload.buildExtras(tr, {
+                id: trId,
+                personnel_id: targetPersonId,
+                school_id: targetSchoolId,
+                school_year: targetSchoolYear,
+                task_name: tName,
+                frequency: freq,
+                duration_minutes: durMins,
+                term1_hours: t1Hrs,
+                is_designation_synced: isDesig,
+              }),
+            ),
           ],
         );
       }
@@ -912,7 +1044,7 @@ const saveWorkloadBatchHandler = async (req, res) => {
              id, personnel_id, school_id, school_year, task_name, task_category,
              start_date, end_date, start_time, end_time, days, dates, term,
              duration_minutes, term_total_hours, is_designation_synced, status,
-             raw_payload, created_at, updated_at
+             extras, created_at, updated_at
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16, $17, $18::jsonb, NOW(), NOW())`,
           [
             admId,
@@ -932,7 +1064,27 @@ const saveWorkloadBatchHandler = async (req, res) => {
             termTotalHours,
             isDesig,
             "ACTIVE",
-            JSON.stringify(adm),
+            JSON.stringify(
+              adminTaskPayload.buildExtras(adm, {
+                id: admId,
+                personnel_id: targetPersonId,
+                school_id: targetSchoolId,
+                school_year: targetSchoolYear,
+                task_name: tName,
+                task_category: category,
+                start_date: startDate,
+                end_date: endDate,
+                start_time: startTime,
+                end_time: endTime,
+                days,
+                dates: datesArr,
+                term,
+                duration_minutes: durMins,
+                term_total_hours: termTotalHours,
+                is_designation_synced: isDesig,
+                status: "ACTIVE",
+              }),
+            ),
           ],
         );
       }
@@ -1001,7 +1153,34 @@ router.put("/:id", async (req, res) => {
     }
 
     const current = existingRes.rows[0];
-    const mergedRaw = { ...(current.raw_payload || {}), ...req.body };
+    // Rows not yet backfilled still carry the old payload: fold it into extras first so nothing is lost on this update.
+    const legacy =
+      current.raw_payload && Object.keys(current.raw_payload).length > 0
+        ? splitLegacyPayload(current.raw_payload, current)
+        : null;
+    const baseExtras = legacy ? legacy.extras : current.extras || {};
+    const fill = legacy ? legacy.fills : {};
+    const nextColumns = {
+      grade_level: grade_level || gradeLevel || fill.grade_level || null,
+      section_id: section_id || sectionId || fill.section_id || null,
+      section_name: section_name || sectionName || fill.section_name || null,
+      subject: subject || fill.subject || null,
+      subject_id: subject_id || subjectId || fill.subject_id || null,
+      remediation_subject:
+        remediation_subject ||
+        remediationSubject ||
+        fill.remediation_subject ||
+        null,
+      start_time: start_time || startTime || fill.start_time || null,
+      end_time: end_time || endTime || fill.end_time || null,
+      days: days || null,
+    };
+    // typed values as they will be stored (same COALESCE rule as the UPDATE below)
+    const after = { ...current };
+    for (const [col, v] of Object.entries(nextColumns)) {
+      if (v !== null && v !== undefined) after[col] = v;
+    }
+    const nextExtras = buildExtras({ ...baseExtras, ...req.body }, after);
 
     const query = `
       UPDATE esf7_workload_rows
@@ -1015,27 +1194,39 @@ router.put("/:id", async (req, res) => {
         start_time = COALESCE($7, start_time),
         end_time = COALESCE($8, end_time),
         days = COALESCE($9::jsonb, days),
-        raw_payload = $10::jsonb,
+        extras = $10::jsonb,
         updated_at = NOW()
       WHERE id = $11
       RETURNING *;
     `;
 
     const values = [
-      grade_level || gradeLevel || null,
-      section_id || sectionId || null,
-      section_name || sectionName || null,
-      subject || null,
-      subject_id || subjectId || null,
-      remediation_subject || remediationSubject || null,
-      start_time || startTime || null,
-      end_time || endTime || null,
+      nextColumns.grade_level,
+      nextColumns.section_id,
+      nextColumns.section_name,
+      nextColumns.subject,
+      nextColumns.subject_id,
+      nextColumns.remediation_subject,
+      nextColumns.start_time,
+      nextColumns.end_time,
       days ? JSON.stringify(days) : null,
-      JSON.stringify(mergedRaw),
+      JSON.stringify(nextExtras),
       id,
     ];
 
     const result = await db.query(query, values);
+    if (legacy) {
+      // Before the raw_payload column is dropped: the old payload now lives in extras, so clear it (the verification
+      // would otherwise compare a stale payload). A missing column (already dropped) is fine.
+      try {
+        await db.query(
+          "UPDATE esf7_workload_rows SET raw_payload = '{}'::jsonb WHERE id = $1",
+          [id],
+        );
+      } catch (clearErr) {
+        if (clearErr.code !== "42703") throw clearErr;
+      }
+    }
     res.json(formatWorkloadRecord(result.rows[0]));
   } catch (err) {
     console.error("Error updating esf7_workload_rows:", err);
