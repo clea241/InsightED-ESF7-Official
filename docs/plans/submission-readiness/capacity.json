@@ -1,0 +1,116 @@
+{
+  "inputs": {
+    "normalPerMin": {
+      "value": 60,
+      "source": "default"
+    },
+    "worstPerMin": {
+      "value": 600,
+      "source": "default"
+    },
+    "spikeFactor": {
+      "value": 3,
+      "source": "default"
+    },
+    "queriesPerSubmission": {
+      "value": 30,
+      "source": "inventory"
+    },
+    "payloadBytes": {
+      "value": 500000,
+      "source": "default"
+    },
+    "instances": {
+      "value": 5,
+      "source": "inventory"
+    },
+    "poolPerInstance": {
+      "value": 17,
+      "source": "inventory"
+    },
+    "dbMaxConnections": {
+      "value": null,
+      "source": "unknown"
+    },
+    "txnMs": {
+      "value": null,
+      "source": "unknown"
+    },
+    "outageMin": {
+      "value": 30,
+      "source": "default"
+    }
+  },
+  "results": {
+    "normalAvgRps": 1,
+    "worstAvgRps": 10,
+    "peakRps": 30,
+    "queriesPerSecondAtPeak": 900,
+    "connectionsAvailableFromPools": 85,
+    "dbMaxConnections": null,
+    "poolsExceedDbLimit": null,
+    "scenarios": [
+      {
+        "txnMs": 5,
+        "kind": "scenario (not a measurement)",
+        "connectionsNeeded": 0.15,
+        "fitsPool": true,
+        "poolUtilizationPct": 0.2,
+        "fitsDbLimit": null
+      },
+      {
+        "txnMs": 20,
+        "kind": "scenario (not a measurement)",
+        "connectionsNeeded": 0.6,
+        "fitsPool": true,
+        "poolUtilizationPct": 0.7,
+        "fitsDbLimit": null
+      },
+      {
+        "txnMs": 50,
+        "kind": "scenario (not a measurement)",
+        "connectionsNeeded": 1.5,
+        "fitsPool": true,
+        "poolUtilizationPct": 1.8,
+        "fitsDbLimit": null
+      }
+    ],
+    "redisBacklog": {
+      "label": "estimate",
+      "outageMinutes": 30,
+      "submissionsBuffered": 54000,
+      "overheadFactor": 2,
+      "estimatedMiB": 51498.4,
+      "estimatedMiBAtWorstAverageRate": 17166.1
+    }
+  },
+  "display": {
+    "normalAvgRps": "1.00",
+    "worstAvgRps": "10.00",
+    "peakRps": "30.00",
+    "queriesPerSecondAtPeak": "900.00",
+    "connectionsAvailable": "85",
+    "redisBacklogSubmissions": "54000",
+    "redisBacklogMiB": "51498.4",
+    "redisBacklogWorstAvgMiB": "17166.1",
+    "connectionsNeeded_5ms": "0.15",
+    "connectionsNeeded_20ms": "0.60",
+    "connectionsNeeded_50ms": "1.50"
+  },
+  "formulas": [
+    "normalAvgRps = normalPerMin / 60",
+    "worstAvgRps = worstPerMin / 60",
+    "peakRps = worstAvgRps x spikeFactor",
+    "queriesPerSecondAtPeak = peakRps x queriesPerSubmission",
+    "connectionsNeeded = peakRps x (txnMs / 1000)   (Little's law: concurrency = arrival rate x time in system)",
+    "connectionsAvailable = instances x poolPerInstance",
+    "redisBacklogMiB = peakRps x outageMinutes x 60 x payloadBytes x 2 / 1048576   (estimate; 2 = overhead factor for stream and replication structures)",
+    "redisBacklogWorstAvgMiB = worstAvgRps x outageMinutes x 60 x payloadBytes x 2 / 1048576   (estimate at the sustained worst-case average instead of the spike peak)"
+  ],
+  "caveats": [
+    "These are arithmetic estimates from the stated inputs, not measurements. Staging results do not prove production capacity.",
+    "Transaction time was not supplied; 5, 20 and 50 ms are shown as scenarios only.",
+    "Little's law assumes the connection is held for the whole transaction; connections held longer (idle in transaction, slow clients) raise the need.",
+    "Database max_connections is unknown; compare connectionsAvailable with it before trusting the pool settings."
+  ]
+}

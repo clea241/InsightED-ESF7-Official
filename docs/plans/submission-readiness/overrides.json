@@ -1,0 +1,62 @@
+{
+  "routeLinks": [
+    { "route": "PUT /api/employment/:personnel_id", "delegatesTo": "POST /api/employment/:personnel_id", "note": "server/controllers/personnel_employment/index.js:321 re-dispatches to the POST handler with router.handle, so the PUT does the same work." },
+    { "route": "PUT /api/learning-areas/:personnel_id", "delegatesTo": "POST /api/learning-areas/:personnel_id", "note": "PUT re-dispatches to the POST handler (same pattern as employment); verified by the PUT handler body being a single router.handle call." },
+    { "route": "PUT /api/qualifications/:personnel_id", "delegatesTo": "POST /api/qualifications/:personnel_id", "note": "PUT re-dispatches to the POST handler (same pattern as employment); verified by the PUT handler body being a single router.handle call." }
+  ],
+  "routeNotes": [
+    { "route": "POST /api/allowances/toggle", "note": "The INSERT at server/controllers/allowances/index.js:348 picks its flag and amount columns at runtime (${hasCol}, ${amtCol}); the fixed columns are id, personnel_id, school_id, school_year, raw_payload." },
+    { "route": "PUT /api/school", "note": "server/controllers/schools/index.js:1615 always answers 403 (read-only); it performs no write." }
+  ],
+  "dismissUnresolved": [
+    { "id": "unresolved:dynamic-sql:server/db/index.js:367", "reason": "db.query is a wrapper that forwards the caller's SQL to the context-selected pool; it is not a write path of its own." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:3344", "reason": "Background consumer of esf7_submission_queue (marks jobs). It is reached from POST /api/submissions through setImmediate when START_LOCAL_WORKER is not 'false' and otherwise runs in the separate worker process; reviewed as part of the submissions route." },
+    { "id": "unresolved:unlinked-write:server/services/queueClaims.js:11", "reason": "Claim/recover SQL used by queue_worker.js (UPDATE ... status = 'processing'); background path, not an HTTP route." },
+    { "id": "unresolved:column-mapping:server/controllers/node_status/index.js:226", "reason": "Dynamic column is a node id chosen from a fixed list; the other columns are listed in the SQL (school_id, school_year, overall_status, overall_percentage)." },
+    { "id": "unresolved:column-mapping:server/controllers/node_status/index.js:349", "reason": "Same node-id pattern for personnel node status; fixed columns visible in the SQL." }
+  ],
+  "judgmentFindings": [
+    {
+      "severity": "high",
+      "title": "Certified submission has no client submission ID; a retry creates a second queue job",
+      "evidence": ["server/controllers/submissions/index.js:26", "server/create_esf7_submission_queue_table.js:29"],
+      "detail": "POST /api/submissions inserts into esf7_submission_queue whose key is a server-side SERIAL and whose create script (server/create_esf7_submission_queue_table.js) defines no unique (school_id, school_year, client ID). A double click or client retry queues the same submission twice, and each job runs the heavy processing in queue_worker.js."
+    },
+    {
+      "severity": "high",
+      "title": "Tenant for a submission can come from the request body, with a hardcoded fallback school",
+      "evidence": ["server/controllers/submissions/index.js:12", "server/controllers/workload_rows/index.js:194", "server/controllers/workload_rows/index.js:466"],
+      "detail": "schoolId is getSchoolIdFromRequest(req) || req.body.schoolId || a literal school number. If the verified lookup returns nothing the body value or a literal id decides which school the data is filed under. The tenant must come only from the verified token."
+    },
+    {
+      "severity": "high",
+      "title": "One worker job is a very long single transaction",
+      "evidence": ["server/queue_worker.js:621", "server/queue_worker.js:3020"],
+      "detail": "The job runs BEGIN at line 621 and COMMIT at line 3020, with deletes and re-inserts across about twenty normalized tables in between, on one checked-out connection. Up to MAX_CONCURRENT_WORKERS = 5 jobs run per process (server/queue_worker.js:516), so during a burst a few jobs can hold connections and row locks for the whole run and starve the web pool if START_LOCAL_WORKER is not false."
+    },
+    {
+      "severity": "medium",
+      "title": "Workload ID is built from COUNT(*) of the whole table",
+      "evidence": ["server/controllers/workload_rows/index.js:200"],
+      "detail": "POST /api/workloads reads SELECT COUNT(*) FROM esf7_workload_rows and uses count+1 in the new id. Two simultaneous saves can read the same count; the id collides or the save fails. Use a sequence or a client-generated UUID."
+    },
+    {
+      "severity": "medium",
+      "title": "Redis carries only a job pointer; PostgreSQL is already the durable store",
+      "evidence": ["server/services/redisQueue.js:202", "server/controllers/submissions/index.js:26"],
+      "detail": "The payload is committed to esf7_submission_queue first and Redis (XADD with jobId, schoolId, schoolYear) is a best-effort wake-up with a polling fallback. This is already an outbox pattern: an accepted submission survives a Redis outage. The residual risks are the payload size in the queue table, the unbounded body limit, and worker throughput, not Redis durability."
+    },
+    {
+      "severity": "medium",
+      "title": "Client retry backoff has no jitter; draft retry is a fixed 10 s",
+      "evidence": ["client/src/services/api.js:232", "client/src/services/api.js:159", "client/src/services/draftSaver.js:8"],
+      "detail": "fetchJsonWithRetry retries 502/503/504 at 0.5 s, 1 s, 2 s without randomization, and the draft saver retries every 10 s. After an outage all clients retry on the same schedule."
+    },
+    {
+      "severity": "medium",
+      "title": "Request body limit is 50 MB while the queue payload is stored whole",
+      "evidence": ["server/server.js:134", "server/controllers/submissions/index.js:23"],
+      "detail": "express.json({ limit: '50mb' }) lets each request hold up to 50 MB in memory before any validation. A burst of large certified payloads is held in the Node process (1500M restart limit per PM2 app) and then written whole into a JSONB column."
+    }
+  ]
+}
