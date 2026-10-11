@@ -51,14 +51,11 @@ describe("server startup refuses malformed configuration", () => {
 
 describe("server startup requires a real JWT secret in production (no hard-coded fallback)", () => {
   // An empty JWT_SECRET also stops dotenv from filling it in from a developer's server/.env.
-  // KNOWN REGRESSION (not made by the tests' author): server.js currently only WARNS when JWT_SECRET is missing in
-  // production instead of exiting. test.fails keeps CI green and turns red the day fail-fast is restored, so convert
-  // these back to plain tests then.
-  test.fails.each([
+  test.each([
     [
       "missing",
       { NODE_ENV: "production", JWT_SECRET: "" },
-      /JWT_SECRET is not set/,
+      /JWT_SECRET is (not set|required)/,
     ],
     [
       "too short",

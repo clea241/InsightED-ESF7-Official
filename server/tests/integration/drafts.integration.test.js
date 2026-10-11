@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   TEST_DATABASE_URL,
   SCHEMA_SQL,
+  applyAppSchema,
   pointServerAtTestDatabase,
   nodeRequire,
 } from "./helpers.mjs";
@@ -34,6 +35,7 @@ describe.skipIf(!enabled)("draft routes + migration (real PostgreSQL)", () => {
     pointServerAtTestDatabase();
     const { Pool } = nodeRequire("pg");
     pool = new Pool({ connectionString: TEST_DATABASE_URL });
+    await applyAppSchema(pool);
     await pool.query(SCHEMA_SQL);
     // Existing production-like rows BEFORE the migration: must survive it untouched.
     await pool.query(
