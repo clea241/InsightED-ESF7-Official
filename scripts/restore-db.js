@@ -5,7 +5,11 @@
 const { spawn } = require("child_process");
 const fs = require("fs");
 const { Pool } = require("pg");
-require("dotenv").config();
+try {
+  require("../server/loadEnv");
+} catch {
+  require("dotenv").config();
+}
 
 const backupFile = process.argv[2];
 const targetDb =

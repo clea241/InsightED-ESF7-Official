@@ -1,19 +1,9 @@
 const pg = require("pg");
 const { Pool } = pg;
-const path = require("path");
-const fs = require("fs");
 const { AsyncLocalStorage } = require("async_hooks");
 
-// Resolve consolidated root .env (or server/.env fallback)
-const rootEnvPath = path.resolve(__dirname, "../../.env");
-const serverEnvPath = path.resolve(__dirname, "../.env");
-if (fs.existsSync(rootEnvPath)) {
-  require("dotenv").config({ path: rootEnvPath });
-} else if (fs.existsSync(serverEnvPath)) {
-  require("dotenv").config({ path: serverEnvPath });
-} else {
-  require("dotenv").config();
-}
+// Load consolidated environment configuration and synthesize database variables
+require("../loadEnv");
 
 // Prevent timezone-shifting of DATE columns by returning raw strings
 pg.types.setTypeParser(1082, (val) => val);

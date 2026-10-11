@@ -39,10 +39,20 @@ const ssl =
   (!isLocal && (env.DB_SSL === "true" || dbHost.includes("azure.com"))) ||
   (env.DB_SSL === "true" && !isLocal);
 
-const authDbName =
-  env.USERS_DB_NAME ||
-  env.AUTH_DB_NAME ||
-  (isLocal ? "users_local" : "users_database");
+let authDbName = env.USERS_DB_NAME || env.AUTH_DB_NAME;
+if (!authDbName && env.USERS_DATABASE_URL) {
+  try {
+    const u = new URL(env.USERS_DATABASE_URL);
+    if (u.pathname && u.pathname.length > 1) {
+      authDbName = decodeURIComponent(u.pathname.slice(1));
+    }
+  } catch {
+    // Ignore parse error
+  }
+}
+if (!authDbName) {
+  authDbName = isLocal ? "users_local" : "users_database";
+}
 
 console.log(
   "\n========================================================================",

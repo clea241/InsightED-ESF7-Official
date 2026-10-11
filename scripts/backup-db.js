@@ -7,7 +7,11 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-require("dotenv").config();
+try {
+  require("../server/loadEnv");
+} catch {
+  require("dotenv").config();
+}
 
 const BACKUP_DIR =
   process.env.BACKUP_DIR ||
