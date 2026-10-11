@@ -3,8 +3,7 @@
 //  2. One designated school head per school, enforced by the database (partial unique index).
 // The index is only created when no school currently has 2+ designated heads; otherwise it lists them and skips,
 // so nothing is changed or deleted. Review the output, fix the duplicates in the Roster, then re-run.
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 
 (async () => {

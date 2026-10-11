@@ -1,7 +1,7 @@
 const { Pool } = require("pg");
 const path = require("path");
 const bcrypt = require("bcryptjs"); // declared in server/package.json
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv"); });
 
 const poolString = process.env.DATABASE_URL
   ? process.env.DATABASE_URL.replace("insighted_esf7", "insightEd")

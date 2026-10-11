@@ -5,14 +5,18 @@ import psycopg2
 print("=== Legazpi City National High School (302261) Restore Prep ===")
 
 # 1. Connect to PostgreSQL
-conn = psycopg2.connect(
-    host=os.environ.get('DB_HOST', 'stride-posgre-prod-01.postgres.database.azure.com'),
-    user=os.environ.get('DB_USER', 'Administrator1'),
-    password=os.environ.get('DB_PASSWORD', 'pRZTbQ2T1JD7'),
-    dbname='insighted_esf7',
-    port=5432,
-    sslmode='require'
-)
+db_url = os.environ.get('DATABASE_URL')
+if db_url:
+    conn = psycopg2.connect(db_url)
+else:
+    conn = psycopg2.connect(
+        host=os.environ.get('DB_HOST', 'stride-posgre-prod-01.postgres.database.azure.com'),
+        user=os.environ.get('DB_USER', 'Administrator1'),
+        password=os.environ.get('DB_PASSWORD', 'pRZTbQ2T1JD7'),
+        dbname='insighted_esf7',
+        port=5432,
+        sslmode='require'
+    )
 cur = conn.cursor()
 
 # 2. Backup current live row

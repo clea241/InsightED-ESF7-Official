@@ -16,8 +16,7 @@
  * 8. Verification pass: Validates row counts before/after and confirms ZERO orphaned FKs.
  */
 
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("../loadEnv");
 const { Client } = require("pg");
 
 // CLI argument parsing

@@ -7,8 +7,7 @@
 //
 // Safety: optimistic check per row (the row is only updated if raw_payload is still what was read), updated_at is not touched.
 // Back up esf7_workload_rows first. Rows written by the new code have raw_payload = '{}' and are skipped.
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 const { splitLegacyPayload, deepEqual } = require("../utils/workloadPayload");
 

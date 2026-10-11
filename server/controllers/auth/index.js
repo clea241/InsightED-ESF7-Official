@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { resolveTestDivision } = require("../../utils/divisionTestRegistry");
-require("dotenv").config();
+require("../../loadEnv");
 
 // ── Hardcoded Pilot School Credentials ────────────────────────────────────
 // These are for pilot testing only. Remove before official rollout.

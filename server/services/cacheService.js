@@ -1,7 +1,6 @@
 const Redis = require("ioredis");
 const { parseRedisConfig } = require("../utils/redisConfig");
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("../loadEnv");
 
 // In-memory fallback map in case Redis is momentarily reconnecting
 const memoryCache = new Map();

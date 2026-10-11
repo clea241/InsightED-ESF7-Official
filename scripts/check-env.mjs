@@ -11,9 +11,14 @@ const { parseRedisConfig } = require("../server/utils/redisConfig.js");
 
 const args = process.argv.slice(2);
 const strict = args.includes("--strict");
+const defaultEnvFile = existsSync(path.resolve(".env"))
+  ? ".env"
+  : existsSync(path.resolve("server/.env"))
+    ? "server/.env"
+    : ".env";
 const fileArg = args.includes("--file")
   ? args[args.indexOf("--file") + 1]
-  : "server/.env";
+  : defaultEnvFile;
 
 const env = { ...process.env };
 const filePath = path.resolve(fileArg);
@@ -76,8 +81,8 @@ if (strict) {
     problems.push(
       "JWT_SECRET is missing (the server refuses to start in production without it)",
     );
-  else if (String(env.JWT_SECRET).length < 16)
-    problems.push("JWT_SECRET is too short (use at least 16 characters)");
+  else if (String(env.JWT_SECRET).length < 32)
+    problems.push("JWT_SECRET is too short (use at least 32 characters / 256 bits)");
 }
 
 const checked = [

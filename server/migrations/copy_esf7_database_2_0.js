@@ -12,8 +12,7 @@
 const { Pool } = require('pg');
 const { pipeline } = require('stream/promises');
 const { to: copyTo, from: copyFrom } = require('pg-copy-streams');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require("../loadEnv");
 
 const plan = require('../migration_esf7_2.0_plan.json');
 

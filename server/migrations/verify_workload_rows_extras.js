@@ -9,7 +9,7 @@
 // the report also proves raw_payload is byte-identical to the backed-up state.
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 const {
   unaccountedKeys,

@@ -7,7 +7,7 @@
  *   pm2 start server/run_redis_worker.js --name insighted-esf7-worker
  */
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv");
 const redisQueue = require("./services/redisQueue");
 const {
   startRedisStreamWorker,

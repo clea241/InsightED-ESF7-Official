@@ -14,7 +14,7 @@
 // (pg_restore -t esf7_workload_rows into another database), then UPDATE esf7_workload_rows t SET raw_payload = s.raw_payload FROM scratch s WHERE s.id = t.id.
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 
 const argv = process.argv.slice(2);

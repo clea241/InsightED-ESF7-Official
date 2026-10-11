@@ -8,8 +8,7 @@
 //   4. backfill again (catches rows the old code wrote in between), then node migrations/verify_workload_rows_extras.js
 //   5. only if the verification report says PASS: node migrations/drop_workload_rows_raw_payload.js --confirm  (separate, later)
 // Take a pg_dump of esf7_workload_rows first. Run on the local esf7_local database before anything else.
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 
 (async () => {

@@ -11,7 +11,7 @@
 // file is named, and --confirm is given. Fingerprint = md5(string_agg(id || ':' || md5(raw_payload::text), ',' ORDER BY id)).
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 const { TABLES, codec, deepEqual } = require("../utils/payloadExtras");
 

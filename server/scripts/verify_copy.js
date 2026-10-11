@@ -1,15 +1,24 @@
 const path = require('path');
 const { Pool } = require(path.join(__dirname, '../node_modules/pg'));
-require(path.join(__dirname, '../node_modules/dotenv')).config({ path: path.join(__dirname, '../.env') });
+require("../loadEnv");
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT || 5432,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: 'insighted_esf7',
-  ssl: { rejectUnauthorized: false }
-});
+const pool = new Pool(
+  process.env.PROD_DATABASE_URL || process.env.DATABASE_URL
+    ? {
+        connectionString:
+          process.env.PROD_DATABASE_URL ||
+          process.env.DATABASE_URL.replace(/\/[^/?]+(\?|$)/, "/insighted_esf7$1"),
+        ssl: { rejectUnauthorized: false },
+      }
+    : {
+        host: process.env.DB_HOST,
+        port: process.env.DB_PORT || 5432,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: "insighted_esf7",
+        ssl: { rejectUnauthorized: false },
+      },
+);
 
 async function verify() {
   const count = await pool.query('SELECT count(*)::bigint as total FROM "esf7_database_2.0";');

@@ -26,7 +26,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const readline = require("readline");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("../loadEnv");
 
 const db = require("../db");
 const { buildExtras: buildWorkloadExtras } = require("../utils/workloadPayload");

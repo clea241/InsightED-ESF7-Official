@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-require("dotenv").config();
+require("../loadEnv");
 const { getJwtSecret } = require("./jwtSecret");
 
 function isDepEdSchoolId(val) {

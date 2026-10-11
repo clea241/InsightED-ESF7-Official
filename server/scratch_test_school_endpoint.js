@@ -1,6 +1,6 @@
 const db = require("./db");
 const { Pool } = require("pg");
-require("dotenv").config();
+require("./loadEnv");
 
 async function testGetSchoolEndpoint() {
   console.log("Testing school retrieval for 100093...");

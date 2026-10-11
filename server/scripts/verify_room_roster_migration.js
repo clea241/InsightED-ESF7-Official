@@ -11,7 +11,7 @@
 const path = require("path");
 const fs = require("fs");
 const readline = require("readline");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("../loadEnv");
 const db = require("../db");
 
 const ALLOWED_DATABASES = new Set(["esf7_local", "insighted_esf7"]);

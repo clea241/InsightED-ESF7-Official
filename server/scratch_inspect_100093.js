@@ -1,6 +1,6 @@
 const db = require("./db");
 const { Pool } = require("pg");
-require("dotenv").config();
+require("./loadEnv");
 
 async function inspect100093() {
   console.log("Inspecting school 100093...");

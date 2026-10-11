@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "include": [
+    "src/**/*.ts",
     "client/src/env.d.ts",
     "client/src/services/api.js",
     "client/src/services/draftSaver.js",

@@ -1,7 +1,7 @@
 const { Client } = require("pg");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv"); });
 
 const sslConfig =
   process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false;

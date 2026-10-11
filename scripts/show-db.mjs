@@ -1,7 +1,9 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
-const envPath = path.resolve("server/.env");
+const rootEnvPath = path.resolve(".env");
+const serverEnvPath = path.resolve("server/.env");
+const envPath = existsSync(rootEnvPath) ? rootEnvPath : serverEnvPath;
 const env = { ...process.env };
 
 if (existsSync(envPath)) {
@@ -10,6 +12,20 @@ if (existsSync(envPath)) {
     if (m && env[m[1]] === undefined) {
       env[m[1]] = m[2].replace(/^["']|["']$/g, "").trim();
     }
+  }
+}
+
+if (env.DATABASE_URL) {
+  try {
+    const u = new URL(env.DATABASE_URL);
+    if (!env.DB_NAME && u.pathname && u.pathname.length > 1) {
+      env.DB_NAME = decodeURIComponent(u.pathname.slice(1));
+    }
+    if (!env.DB_HOST && u.hostname) env.DB_HOST = u.hostname;
+    if (!env.DB_PORT && u.port) env.DB_PORT = u.port;
+    if (!env.DB_USER && u.username) env.DB_USER = decodeURIComponent(u.username);
+  } catch {
+    // Ignore invalid database URL; fall back to individual DB_* env variables
   }
 }
 

@@ -2,8 +2,7 @@
 // Safe to re-run. Built CONCURRENTLY so writes to esf7_workload_rows are not blocked.
 // Run with the target database set in the environment (server/.env or DB_* vars); the target is printed first.
 // Try on the local database (esf7_local) before any shared environment.
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("../loadEnv");
 const db = require("../db");
 
 const INDEX = "idx_esf7_workload_rows_created_at_id";

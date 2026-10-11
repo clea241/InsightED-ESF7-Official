@@ -1,7 +1,9 @@
 // Single source of the JWT signing secret with fail-fast production enforcement.
-require("dotenv").config();
+require("../loadEnv");
 
-const MIN_LENGTH = 16;
+const crypto = require("crypto");
+
+const MIN_LENGTH = 32;
 
 function isProduction(env = process.env) {
   return String((env && env.NODE_ENV) || "").toLowerCase() === "production";
@@ -22,11 +24,14 @@ function assertJwtSecret(env = process.env) {
       );
     }
   } else {
+    if (s && String(s).trim().length > 0 && String(s).trim().length < MIN_LENGTH) {
+      throw new Error(
+        `JWT_SECRET is too short (minimum ${MIN_LENGTH} characters required)`,
+      );
+    }
     if (!s || !String(s).trim()) {
-      // In development mode, set an ephemeral runtime secret if not supplied
-      currentEnv.JWT_SECRET = Buffer.from(
-        "dev_ephemeral_jwt_token_secret",
-      ).toString("hex");
+      // In development mode, set an ephemeral 32-byte (256-bit) cryptographically secure runtime secret
+      currentEnv.JWT_SECRET = crypto.randomBytes(32).toString("hex");
     }
   }
 }

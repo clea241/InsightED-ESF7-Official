@@ -1,6 +1,6 @@
 const { Pool } = require("pg");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv"); });
 const { TEST_DIVISIONS } = require("./utils/divisionTestRegistry");
 
 // Strictly target insightEd.esf7_database_dummy and insighted_esf7

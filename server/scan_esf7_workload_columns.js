@@ -1,7 +1,7 @@
 const pg = require("pg");
 const { Pool } = pg;
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv"); });
 
 const poolString = process.env.DATABASE_URL
   ? process.env.DATABASE_URL.replace("insighted_esf7", "insightEd")

@@ -4,7 +4,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv");
 // Fail fast with a clear message if the Redis settings are malformed (e.g. a port above 65535),
 // instead of silently dropping into PostgreSQL fallback mode.
 try {

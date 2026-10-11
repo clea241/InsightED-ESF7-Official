@@ -3,7 +3,7 @@
  * Designed to be executed as a background daemon (e.g. systemd, PM2, or VM worker process)
  */
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("./loadEnv");
 const { startWorker } = require("./queue_worker");
 
 console.log("================================================================");

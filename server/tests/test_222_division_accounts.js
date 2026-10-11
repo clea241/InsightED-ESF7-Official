@@ -2,7 +2,7 @@ const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const assert = require("assert");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("../loadEnv");
 
 const {
   resolveTestDivision,

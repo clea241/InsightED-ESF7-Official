@@ -1,8 +1,19 @@
 const pg = require("pg");
 const { Pool } = pg;
 const path = require("path");
+const fs = require("fs");
 const { AsyncLocalStorage } = require("async_hooks");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+
+// Resolve consolidated root .env (or server/.env fallback)
+const rootEnvPath = path.resolve(__dirname, "../../.env");
+const serverEnvPath = path.resolve(__dirname, "../.env");
+if (fs.existsSync(rootEnvPath)) {
+  require("dotenv").config({ path: rootEnvPath });
+} else if (fs.existsSync(serverEnvPath)) {
+  require("dotenv").config({ path: serverEnvPath });
+} else {
+  require("dotenv").config();
+}
 
 // Prevent timezone-shifting of DATE columns by returning raw strings
 pg.types.setTypeParser(1082, (val) => val);
@@ -13,9 +24,12 @@ let dbPassword = process.env.DB_PASSWORD;
 let dbPort = process.env.DB_PORT || "5432";
 let defaultDbName = process.env.DB_NAME || "insighted_esf7";
 
-if (process.env.DATABASE_URL) {
+const primaryConnUrl =
+  process.env.PRIMARY_DATABASE_URL || process.env.DATABASE_URL;
+
+if (primaryConnUrl) {
   try {
-    const parsedDbUrl = new URL(process.env.DATABASE_URL);
+    const parsedDbUrl = new URL(primaryConnUrl);
     dbHost = dbHost || parsedDbUrl.hostname;
     dbPort = dbPort || parsedDbUrl.port || "5432";
     dbUser = dbUser || decodeURIComponent(parsedDbUrl.username);
@@ -77,6 +91,7 @@ let _usersDbPool = null;
 function getPool() {
   if (!_pool) {
     const connStr =
+      process.env.PRIMARY_DATABASE_URL ||
       process.env.DATABASE_URL ||
       `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`;
     console.log(
@@ -103,15 +118,21 @@ function getStagingPool() {
     return getPool();
   }
   if (!_stagingPool) {
+    const connStr =
+      process.env.STAGING_DATABASE_URL ||
+      (primaryConnUrl
+        ? primaryConnUrl.replace(
+            /\/[^/?]+(\?|$)/,
+            `/insighted_esf7_staging$1`,
+          )
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`);
     console.log(
       `📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`,
     );
     _stagingPool = new Pool({
       ...baseConfig,
       max: 5,
-      connectionString:
-        process.env.STAGING_DATABASE_URL ||
-        `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`,
+      connectionString: connStr,
     });
     _stagingPool.on("error", (err) =>
       console.warn(
@@ -129,15 +150,19 @@ function getProdPool() {
     return getPool();
   }
   if (!_prodPool) {
+    const connStr =
+      process.env.PROD_DATABASE_URL ||
+      process.env.PRODUCTION_DATABASE_URL ||
+      (primaryConnUrl
+        ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/insighted_esf7$1`)
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`);
     console.log(
       `📦 [DB Pool] Production Pool connected -> database: "insighted_esf7" on ${dbHost}:${dbPort}`,
     );
     _prodPool = new Pool({
       ...baseConfig,
       max: 8,
-      connectionString:
-        process.env.PROD_DATABASE_URL ||
-        `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`,
+      connectionString: connStr,
     });
     _prodPool.on("error", (err) =>
       console.warn(
@@ -158,20 +183,21 @@ function getInsightEdPool() {
   }
 
   if (!_insightEdPool) {
+    const connStr =
+      process.env.INSIGHTED_DATABASE_URL ||
+      (primaryConnUrl
+        ? primaryConnUrl.replace(
+            /\/[^/?]+(\?|$)/,
+            `/${masterDbName}$1`,
+          )
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`);
     console.log(
       `📦 [DB Pool] insightEd (Master) Pool connected -> database: "${masterDbName}" on ${dbHost}:${dbPort}`,
     );
     _insightEdPool = new Pool({
       ...baseConfig,
       max: 5,
-      connectionString:
-        process.env.INSIGHTED_DATABASE_URL ||
-        (process.env.DATABASE_URL
-          ? process.env.DATABASE_URL.replace(
-              /\/[^/?]+(\?|$)/,
-              `/${masterDbName}$1`,
-            )
-          : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`),
+      connectionString: connStr,
     });
     _insightEdPool.on("error", (err) =>
       console.warn(
@@ -190,20 +216,22 @@ function getUsersDbPool() {
       process.env.USERS_DB_NAME ||
       process.env.AUTH_DB_NAME ||
       (isLocalHost ? "users_local" : "users_database");
+    const connStr =
+      process.env.USERS_DATABASE_URL ||
+      process.env.AUTH_DATABASE_URL ||
+      (primaryConnUrl
+        ? primaryConnUrl.replace(
+            /\/[^/?]+(\?|$)/,
+            `/${usersDbName}$1`,
+          )
+        : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`);
     console.log(
       `📦 [DB Pool] Auth/Users Pool connected -> database: "${usersDbName}" on ${dbHost}:${dbPort}`,
     );
     _usersDbPool = new Pool({
       ...baseConfig,
       max: 4,
-      connectionString:
-        process.env.USERS_DATABASE_URL ||
-        (process.env.DATABASE_URL
-          ? process.env.DATABASE_URL.replace(
-              /insighted_esf7(_staging)?/,
-              usersDbName,
-            )
-          : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`),
+      connectionString: connStr,
     });
     _usersDbPool.on("error", (err) =>
       console.warn(

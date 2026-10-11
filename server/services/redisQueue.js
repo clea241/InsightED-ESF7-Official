@@ -1,6 +1,5 @@
 const Redis = require("ioredis");
-const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("../loadEnv");
 
 const DEFAULT_SUBMISSION_STREAM = "esf7:submission_stream";
 const STREAM_KEY = process.env.REDIS_STREAM_KEY || DEFAULT_SUBMISSION_STREAM;
