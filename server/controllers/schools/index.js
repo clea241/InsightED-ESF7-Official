@@ -1195,7 +1195,7 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head,
           raw_payload, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28::jsonb, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29::jsonb, NOW())
         ON CONFLICT (id) DO UPDATE SET
           prn = COALESCE(EXCLUDED.prn, esf7_personnel_profile.prn),
           status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
