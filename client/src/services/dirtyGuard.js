@@ -74,7 +74,6 @@ export const flushAllDirtyGuards = async () => {
 
 import {
   upsertOutboxEntry,
-  removeOutboxEntryByModule,
 } from "./outbox";
 
 /**

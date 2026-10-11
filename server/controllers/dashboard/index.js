@@ -235,8 +235,6 @@ router.get("/stats", async (req, res) => {
           .catch(() => ({ rows: [] }));
         if (identityRes.rows.length > 0 && identityRes.rows[0].school_name) {
           schoolInfo = identityRes.rows[0];
-        } else if (esfMatch.rows.length > 0 && esfMatch.rows[0].school_name) {
-          schoolInfo = esfMatch.rows[0];
         }
       } catch (e) {}
       console.log(

@@ -85,7 +85,6 @@ function getMethodColor(method) {
 
 function devLogger(req, res, next) {
   const startHr = process.hrtime();
-  const startTime = Date.now();
   const method = req.method;
   const url = req.originalUrl || req.url;
 

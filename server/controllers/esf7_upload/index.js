@@ -167,7 +167,6 @@ router.get("/check/:schoolId", async (req, res) => {
 
     const isNewlyEstablished =
       pendingRow?.registration_type === "newly-established";
-    const isConversion = pendingRow?.registration_type === "conversion";
 
     // 5. Check queue table esf7_link for active harvesting
     const queueRes = await pool

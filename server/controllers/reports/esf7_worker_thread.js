@@ -217,7 +217,6 @@ try {
 
     const workloads =
       p.workloadRows && p.workloadRows.length > 0 ? p.workloadRows : [{}];
-    const firstRow = curRow;
     let personTotalMins = 0;
 
     workloads.forEach((w) => {

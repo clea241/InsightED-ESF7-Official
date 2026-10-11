@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   FiClock,
   FiAlertTriangle,
-  FiAlertCircle,
   FiRefreshCw,
   FiTrash2,
   FiEye,
   FiDownload,
-  FiCheckCircle,
   FiWifi,
   FiX,
-  FiLayers,
 } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useApp } from "../context/AppContext";
@@ -26,7 +23,7 @@ import {
 
 export default function UnsyncedChangesQueue() {
   const { user } = useAuth();
-  const { schoolInfo, showToast, showAlert, showConfirm } = useApp();
+  const { schoolInfo, showToast, showConfirm } = useApp();
 
   const [entries, setEntries] = useState([]);
   const [retryingId, setRetryingId] = useState(null);
