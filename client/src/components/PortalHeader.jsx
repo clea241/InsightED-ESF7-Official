@@ -28,25 +28,13 @@ export default function PortalHeader({
 }) {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
-  let authLogout = null;
-  try {
-    const auth = useAuth();
-    if (auth && auth.logout) {
-      authLogout = auth.logout;
-    }
-  } catch (e) {}
+  const auth = useAuth();
+  const app = useApp();
 
-  let schoolInfo = null;
-  let appDiscardDraft = null;
-  let appSetActiveView = null;
-  try {
-    const app = useApp();
-    if (app) {
-      schoolInfo = app.schoolInfo;
-      appDiscardDraft = app.discardLocalDraft;
-      appSetActiveView = app.setActiveView;
-    }
-  } catch (e) {}
+  const authLogout = auth?.logout || null;
+  const schoolInfo = app?.schoolInfo || null;
+  const appDiscardDraft = app?.discardLocalDraft || null;
+  const appSetActiveView = app?.setActiveView || null;
 
   const dynamicBureauText =
     bureauText ||

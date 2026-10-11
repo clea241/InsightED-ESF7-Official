@@ -8,6 +8,12 @@ import React, {
 import { isOrganizedClassWorkloadExempt } from "@shared/personnelClass.js";
 import { isSectionSlotClash } from "@shared/schoolLevel.js";
 import useDirtyGuard from "../hooks/useDirtyGuard";
+import { useAuth } from "../context/AuthContext";
+import {
+  upsertOutboxEntry,
+  removeOutboxEntryByModule,
+  checkAndPromptOutboxOnSectionOpen,
+} from "../services/outbox";
 import PortalHeader from "../components/PortalHeader";
 import { useApp, detectPersonnelTypeFromPosition } from "../context/AppContext";
 import { api } from "../services/api";
@@ -11231,7 +11237,6 @@ function WorkloadInner() {
     copyTermData,
     completeNode,
     setActiveView,
-    registerAutoSaveHandler,
     incomingRequests,
     outgoingRequests,
     requestHistory,
@@ -11242,6 +11247,7 @@ function WorkloadInner() {
     setAllowanceDisabled,
     currentSchoolYear,
   } = useApp();
+  const { user } = useAuth();
 
   // Term Unlock / Copy Modal state
   const [showUnlockTermModal, setShowUnlockTermModal] = useState(null);
@@ -11481,24 +11487,11 @@ function WorkloadInner() {
       return prev;
     });
 
-    // 3. Update localStorage draft if present
+    // 3. Clean up legacy localStorage draft if present
     const draftKey = `draft_workload_${personId}`;
-    const savedDraft = localStorage.getItem(draftKey);
-    if (savedDraft) {
-      try {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed) {
-          localStorage.setItem(
-            draftKey,
-            JSON.stringify({
-              ...parsed,
-              workloadVerified: true,
-              needsTimeReview: false,
-            }),
-          );
-        }
-      } catch (e) {}
-    }
+    try {
+      localStorage.removeItem(draftKey);
+    } catch (e) {}
 
     verifiedModalDismissedMap.current[personId] = true;
     setShowAttentionModal(false);
@@ -11692,20 +11685,11 @@ function WorkloadInner() {
           baseVersion: clearedVersion,
         });
 
-      // 3. Update local storage workload draft only
+      // 3. Clean up legacy localStorage draft if present
       const draftKey = `draft_workload_${activePersonId}`;
-      const savedDraft = localStorage.getItem(draftKey);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          if (parsed) {
-            localStorage.setItem(
-              draftKey,
-              JSON.stringify({ ...parsed, workloadRows: otherTermRows }),
-            );
-          }
-        } catch (e) {}
-      }
+      try {
+        localStorage.removeItem(draftKey);
+      } catch (e) {}
 
       // 4. Clear SHS map for this teacher and term
       setShsWorkloadMap((prev) => ({
@@ -11760,22 +11744,9 @@ function WorkloadInner() {
           (r) => (r.term || "1st") !== activeTerm,
         );
         const draftKey = `draft_workload_${p.id}`;
-        const savedDraft = localStorage.getItem(draftKey);
-        if (savedDraft) {
-          try {
-            const parsed = JSON.parse(savedDraft);
-            if (parsed) {
-              localStorage.setItem(
-                draftKey,
-                JSON.stringify({
-                  ...parsed,
-                  workloadRows: preservedRows,
-                  workloadBaseVersion: clearedVersion,
-                }),
-              );
-            }
-          } catch (e) {}
-        }
+        try {
+          localStorage.removeItem(draftKey);
+        } catch (e) {}
         return {
           ...p,
           workloadBaseVersion: clearedVersion,
@@ -11954,20 +11925,17 @@ function WorkloadInner() {
     Object.entries(teachersMap).forEach(([personnelId, rows]) => {
       const targetPerson = personnel.find((p) => p.id === personnelId);
       if (targetPerson) {
-        const draftKey = `draft_workload_${personnelId}`;
-        const savedDraft = localStorage.getItem(draftKey);
-        let basePerson = targetPerson;
-        if (savedDraft) {
-          try {
-            const parsed = JSON.parse(savedDraft);
-            if (parsed) basePerson = parsed;
-          } catch (e) {}
-        }
-        const updated = { ...basePerson, workloadRows: rows };
-        localStorage.setItem(draftKey, JSON.stringify(updated));
         mergedCount++;
       }
     });
+
+    if (mergedCount > 0 && typeof setPersonnel === "function") {
+      setPersonnel((prev) =>
+        (prev || []).map((p) =>
+          teachersMap[p.id] ? { ...p, workloadRows: teachersMap[p.id] } : p,
+        ),
+      );
+    }
 
     if (dbPerson && teachersMap[dbPerson.id]) {
       const updatedActive = {
@@ -13702,37 +13670,20 @@ function WorkloadInner() {
               baseVersion: version,
               baseRows: { term, rows: dbRows },
             });
-            try {
-              localStorage.setItem(
-                draftKey,
-                JSON.stringify({
-                  ...person,
-                  workloadRows: [...outsideTerm(localCopy), ...comparison.rows],
-                  workloadBaseVersion: version,
-                  workloadBaseRows: [
-                    ...outsideTerm(person.workloadBaseRows),
-                    ...dbRows,
-                  ],
-                  workloadDraftSavedAt: new Date().toISOString(),
-                }),
-              );
-            } catch (e) {
-              /* the restored rows are still in the editor */
-            }
           } else {
-            // Declined: the editor shows the saved rows; the draft is kept untouched (stashed first if it only lived in the roster).
+            // Declined: user explicitly chose not to restore; clear the draft from localStorage and outbox.
             restoreDeclined.add(String(personId));
             restoreResolutions.set(key, "declined");
-            if (!draftObj) {
-              try {
-                localStorage.setItem(
-                  draftKey,
-                  JSON.stringify({ ...person, workloadRows: localCopy }),
-                );
-              } catch (e) {
-                /* nothing to keep */
-              }
-            }
+            try {
+              localStorage.removeItem(draftKey);
+              removeOutboxEntryByModule({
+                schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
+                user: user?.username || user?.email || "anonymous",
+                term: activeTerm || "1st",
+                module: "workload",
+                recordId: personId,
+              });
+            } catch (e) {}
             applyWorkloadToPerson(personId, {
               termRows: { term, rows: dbRows },
               baseVersion: version,
@@ -13914,6 +13865,14 @@ function WorkloadInner() {
     onDiscard: handleDiscard,
     onSave: () => runWorkloadSaveRef.current(),
     onFlush: flushWorkloadToContext,
+    getPayload: () => currentPerson?.workloadRows || currentPersonRef.current?.workloadRows,
+    getMetadata: () => ({
+      schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
+      user: user?.username || user?.email || "anonymous",
+      term: activeTerm || "1st",
+      module: "workload",
+      recordId: currentPerson?.id || currentPersonRef.current?.id,
+    }),
     getDirtyReasons: () => {
       const reasons = [];
       if (isCurrentTeacherDirty)
@@ -13943,23 +13902,35 @@ function WorkloadInner() {
     currentPersonRef.current = currentPerson;
   }, [currentPerson]);
 
-  // Register auto-save handler on navigation (e.g. clicking Node Map)
+  // Check outbox entries on section open
   useEffect(() => {
-    if (!registerAutoSaveHandler) return;
-    return registerAutoSaveHandler("workload", async () => {
-      const p = currentPersonRef.current;
-      if (!p || !p.id) return false;
-      try {
-        const draftKey = `draft_personnel_${p.id}`;
-        localStorage.setItem(draftKey, JSON.stringify(p));
-        localStorage.removeItem(`draft_workload_${p.id}`);
-        return true;
-      } catch (e) {
-        console.warn("[Workload Auto-Save Notice]:", e);
-      }
-      return false;
+    const sId = schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
+    const uName = user?.username || user?.email || "anonymous";
+    checkAndPromptOutboxOnSectionOpen({
+      schoolId: sId,
+      user: uName,
+      term: activeTerm || "1st",
+      module: "workload",
+      onRestore: (entry) => {
+        if (entry && entry.payload) {
+          const restoredRows = Array.isArray(entry.payload)
+            ? entry.payload
+            : (entry.payload.workloadRows || []);
+          if (restoredRows.length && typeof setPersonnel === "function") {
+            setPersonnel((prev) =>
+              (prev || []).map((p) =>
+                p &&
+                (String(p.id) === String(currentPerson?.id) ||
+                  String(p.id) === String(entry.recordId))
+                  ? { ...p, workloadRows: restoredRows }
+                  : p,
+              ),
+            );
+          }
+        }
+      },
     });
-  }, [registerAutoSaveHandler]);
+  }, [schoolInfo, user, activeTerm, currentPerson?.id, setPersonnel]);
 
   const [validatedTeacherMap, setValidatedTeacherMap] = useState(() => {
     try {
@@ -16890,9 +16861,17 @@ function WorkloadInner() {
           }
           markTeacherValidated(p.id, !edited);
           successfulTeachers.push(fullyUpdated);
+          await removeOutboxEntryByModule({
+            schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
+            user: user?.username || user?.email || "anonymous",
+            term: activeTerm || "1st",
+            module: "workload",
+            recordId: p.id,
+          });
         } catch (err) {
           console.warn("Save workload batch error for", p.id, err);
           failedSaves.push({
+            id: p.id,
             name:
               `${p.firstName || ""} ${p.lastName || ""}`.trim() || String(p.id),
             message: err?.message || "Unknown error",
@@ -16913,6 +16892,29 @@ function WorkloadInner() {
       }
 
       if (failedSaves.length > 0) {
+        const sId = schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
+        const uName = user?.username || user?.email || "anonymous";
+        for (const f of failedSaves) {
+          const failP = changedTeachers.find((t) => String(t.id) === String(f.id));
+          await upsertOutboxEntry({
+            schoolId: sId,
+            user: uName,
+            term: activeTerm || "1st",
+            module: "workload",
+            recordId: f.id,
+            kind: "failed",
+            payload: failP?.workloadRows || [],
+            baseVersion: prevWorkloadMap.get(String(f.id))?.workloadRows || null,
+            lastError: f.message,
+          });
+        }
+        await reportError({
+          title: "Some Workloads Were Not Saved",
+          message: `${failedSaves.length} teacher(s) could not be saved to the database.`,
+          details: { failedSaves },
+          canRetry: true,
+        });
+
         // Leave the saved snapshot and node status untouched so the failed teachers stay "changed" and can be retried.
         const list = failedSaves
           .slice(0, 8)
@@ -16929,6 +16931,13 @@ function WorkloadInner() {
         };
       }
 
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
+        user: user?.username || user?.email || "anonymous",
+        term: activeTerm || "1st",
+        module: "workload",
+      });
+
       if (currentPerson) {
         broadcastClusteredSlots(currentPerson.workloadRows);
       }
@@ -16942,6 +16951,26 @@ function WorkloadInner() {
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save workload schedule:", err);
+      const sId = schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
+      const uName = user?.username || user?.email || "anonymous";
+      if (currentPerson) {
+        await upsertOutboxEntry({
+          schoolId: sId,
+          user: uName,
+          term: activeTerm || "1st",
+          module: "workload",
+          recordId: currentPerson.id,
+          kind: "failed",
+          payload: currentPerson.workloadRows || [],
+          lastError: err?.message || String(err),
+        });
+      }
+      await reportError({
+        title: "Workload Save Failed",
+        message: err?.message || "Failed to save workload schedule",
+        error: err,
+        canRetry: true,
+      });
       return {
         ok: false,
         title: "Error",

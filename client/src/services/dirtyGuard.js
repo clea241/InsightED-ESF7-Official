@@ -72,13 +72,55 @@ export const flushAllDirtyGuards = async () => {
   }
 };
 
-if (typeof window !== "undefined") {
-  window.addEventListener("blur", () => {
-    flushAllDirtyGuards().catch(() => {});
-  });
-  window.addEventListener("focusout", (e) => {
-    if (e.target && /input|textarea|select/i.test(e.target.tagName)) {
-      flushAllDirtyGuards().catch(() => {});
+import {
+  upsertOutboxEntry,
+  removeOutboxEntryByModule,
+} from "./outbox";
+
+/**
+ * Snapshot all dirty registered guards to the local outbox as crash-safety 'unsaved' entries.
+ * Only writes dirty sections, never writes when clean.
+ */
+export const snapshotDirtyGuardsToOutbox = async (reason = "visibilitychange") => {
+  for (const [screenId, config] of guards.entries()) {
+    try {
+      const isDirty =
+        typeof config.isDirty === "function"
+          ? config.isDirty()
+          : Boolean(config.isDirty);
+      if (isDirty && typeof config.getPayload === "function") {
+        const payload = config.getPayload();
+        const meta =
+          typeof config.getMetadata === "function" ? config.getMetadata() : {};
+        if (payload) {
+          await upsertOutboxEntry({
+            kind: "unsaved",
+            module: screenId,
+            payload,
+            schoolId: meta.schoolId,
+            user: meta.user,
+            schoolYear: meta.schoolYear,
+            term: meta.term,
+            endpoint: meta.endpoint,
+            baseVersion: meta.baseVersion,
+            lastError: null,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[dirtyGuard] Error snapshotting screen "${screenId}" to outbox (${reason}):`,
+        err,
+      );
+    }
+  }
+};
+
+// Primary crash-safety trigger: visibilitychange to hidden (pagehide/beforeunload are unreliable for async storage)
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      snapshotDirtyGuardsToOutbox("visibilitychange (hidden)").catch(() => {});
     }
   });
 }

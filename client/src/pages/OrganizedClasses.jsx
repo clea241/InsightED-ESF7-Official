@@ -14,8 +14,15 @@ import { setLocalDraft } from "../services/db";
 import { api } from "../services/api";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
+import { useAuth } from "../context/AuthContext";
 import { confirmServerDraftSaved } from "../services/screenSave";
 import { diffSections } from "../services/sectionMerge";
+import {
+  upsertOutboxEntry,
+  removeOutboxEntryByModule,
+  checkAndPromptOutboxOnSectionOpen,
+} from "../services/outbox";
+import { reportError } from "../services/errorAlert";
 import SortableTableHead from "../components/SortableTableHead";
 import SearchableDropdown from "../components/SearchableDropdown";
 import useSortableFilterableTable from "../hooks/useSortableFilterableTable";
@@ -1642,13 +1649,14 @@ export default function OrganizedClasses() {
     setHasUnsavedChanges,
     completeNode,
     setActiveView,
-    registerAutoSaveHandler,
+    activeTerm,
     sectionsBaseline,
     sectionsLoadError,
     retrySectionsLoad,
     sectionsOverlayApplied,
     setSectionsOverlayApplied,
   } = useApp();
+  const { user } = useAuth();
 
   const savedSectionsSnapshotRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -1735,6 +1743,14 @@ export default function OrganizedClasses() {
     getDirtyReasons: () => dirtyReasons,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
+    getPayload: () => classSectionsRef.current,
+    getMetadata: () => ({
+      schoolId: schoolInfo?.schoolId,
+      user: user?.username || user?.email,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      term: activeTerm,
+      endpoint: "/api/sections/bulk",
+    }),
   });
 
   const classSectionsRef = useRef(classSections);
@@ -1742,33 +1758,20 @@ export default function OrganizedClasses() {
     classSectionsRef.current = classSections;
   }, [classSections]);
 
-  // Register auto-save handler on navigation (e.g. clicking Node Map)
+  // Prompt user if outbox contains queued unsent changes for organized_classes
   useEffect(() => {
-    if (!registerAutoSaveHandler) return;
-    return registerAutoSaveHandler("organized_classes", async () => {
-      try {
-        const secs = classSectionsRef.current;
-        if (schoolInfo?.schoolId && schoolInfo?.schoolYear) {
-          const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
-          const existingDraft = localStorage.getItem(draftKey);
-          let parsed = {};
-          if (existingDraft) {
-            try {
-              parsed = JSON.parse(existingDraft) || {};
-            } catch (e) {}
-          }
-          parsed.classSections = secs || [];
-          parsed.sections = secs || [];
-          localStorage.setItem(draftKey, JSON.stringify(parsed));
-          await setLocalDraft(draftKey, parsed);
+    checkAndPromptOutboxOnSectionOpen({
+      schoolId: schoolInfo?.schoolId,
+      user: user?.username || user?.email,
+      term: activeTerm,
+      module: "organized_classes",
+      onLoadPayload: (queuedSecs) => {
+        if (Array.isArray(queuedSecs) && queuedSecs.length > 0) {
+          setClassSections(queuedSecs);
         }
-        return true;
-      } catch (e) {
-        console.warn("[OrganizedClasses Auto-Save Notice]:", e);
-        return false;
-      }
-    });
-  }, [registerAutoSaveHandler, schoolInfo?.schoolId, schoolInfo?.schoolYear]);
+      },
+    }).catch(() => {});
+  }, [schoolInfo?.schoolId, user]);
 
   const handleClearOrganizedClasses = async () => {
     const totalCount = (classSections || []).length;
@@ -1782,23 +1785,6 @@ export default function OrganizedClasses() {
       // 1. Reset classSections in React state
       if (typeof setClassSections === "function") {
         setClassSections([]);
-      }
-
-      // 2. Clear from local storage and IndexedDB draft (zero database deletions)
-      if (schoolInfo?.schoolId && schoolInfo?.schoolYear) {
-        const draftKey = `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`;
-        const existingDraft = localStorage.getItem(draftKey);
-        if (existingDraft) {
-          try {
-            const parsed = JSON.parse(existingDraft);
-            if (parsed) {
-              parsed.classSections = [];
-              parsed.sections = [];
-              parsed.sectionsCleared = true;
-              localStorage.setItem(draftKey, JSON.stringify(parsed));
-            }
-          } catch (e) {}
-        }
       }
 
       if (typeof setHasUnsavedChanges === "function")
@@ -4112,6 +4098,14 @@ export default function OrganizedClasses() {
       const confirmed = await confirmServerDraftSaved();
       if (!confirmed.ok) return confirmed;
 
+      // Remove outbox entry right away on verified success
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo?.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: "organized_classes",
+      });
+
       // Update snapshot
       savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
       if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
@@ -4130,10 +4124,31 @@ export default function OrganizedClasses() {
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save class sections:", err);
+      try {
+        await upsertOutboxEntry({
+          kind: "failed",
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+          term: activeTerm,
+          module: "organized_classes",
+          endpoint: "/api/sections/bulk",
+          payload: classSectionsRef.current,
+          lastError: err?.message || "Failed to save class sections",
+        });
+      } catch (outboxErr) {
+        console.warn("[Outbox Failed Save Error]:", outboxErr);
+      }
+      reportError(err, {
+        action: "Saving Organized Classes",
+        handler: "runClassesSave",
+        schoolId: schoolInfo?.schoolId,
+      });
       return {
         ok: false,
         title: "Class Sections Not Saved",
-        message: "Failed to save class sections: " + err.message,
+        message:
+          "Failed to save class sections: " + (err?.message || "Unknown error"),
       };
     } finally {
       setIsSaving(false);

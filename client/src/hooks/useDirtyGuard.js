@@ -4,6 +4,7 @@ import {
   notifyDirtyStateChanged,
   showUnsavedChangesModal,
 } from "../services/dirtyGuard";
+import { removeOutboxEntryByModule } from "../services/outbox";
 
 /**
  * Reusable hook for setup screens to track dirty state and guard unsaved changes.
@@ -12,6 +13,8 @@ import {
  * @param {string} options.screenId - Unique identifier for the screen (e.g. 'school_profile', 'roster')
  * @param {boolean} [options.isDirty] - Optional external boolean controlling dirty state
  * @param {Function} [options.getDirtyReasons] - Optional: returns [{ section|field, from, to }] explaining WHY the screen is dirty (logged in development)
+ * @param {Function} [options.getPayload] - Optional: returns the section's current payload for crash-safety outbox snapshotting
+ * @param {Function} [options.getMetadata] - Optional: returns { schoolId, user, schoolYear, term, module, endpoint, baseVersion }
  * @param {Function} [options.onDiscard] - Callback to revert screen data when changes are discarded
  * @param {Function} [options.onSave] - Async save used by the dialog's Save button; resolves { ok, title?, message? } (same handler as the screen's Save button)
  * @param {any} [options.initialSnapshot] - Baseline snapshot for data comparison
@@ -23,6 +26,8 @@ export function useDirtyGuard({
   onSave: externalOnSave,
   onFlush: externalOnFlush,
   getDirtyReasons: externalGetDirtyReasons,
+  getPayload: externalGetPayload,
+  getMetadata: externalGetMetadata,
   initialSnapshot = null,
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -40,6 +45,12 @@ export function useDirtyGuard({
   const reasonsRef = useRef(externalGetDirtyReasons);
   reasonsRef.current = externalGetDirtyReasons;
 
+  const payloadRef = useRef(externalGetPayload);
+  payloadRef.current = externalGetPayload;
+
+  const metaRef = useRef(externalGetMetadata);
+  metaRef.current = externalGetMetadata;
+
   const onSaveRef = useRef(externalOnSave);
   onSaveRef.current = externalOnSave;
   const supportsSave = typeof externalOnSave === "function";
@@ -52,8 +63,22 @@ export function useDirtyGuard({
       isDirty: () => isDirtyRef.current,
       getDirtyReasons: () =>
         typeof reasonsRef.current === "function" ? reasonsRef.current() : null,
+      getPayload: () =>
+        typeof payloadRef.current === "function" ? payloadRef.current() : null,
+      getMetadata: () =>
+        typeof metaRef.current === "function" ? metaRef.current() : {},
       screenId,
       onDiscard: () => {
+        const meta =
+          typeof metaRef.current === "function" ? metaRef.current() : {};
+        if (meta.schoolId && meta.user) {
+          removeOutboxEntryByModule(
+            meta.schoolId,
+            meta.user,
+            screenId,
+            meta.term,
+          ).catch(() => {});
+        }
         if (typeof onDiscardRef.current === "function") {
           try {
             onDiscardRef.current();

@@ -6,6 +6,7 @@ import ESF7UploadModal from "../components/ESF7UploadModal";
 import ForceLogoutNoticeModal from "../components/ForceLogoutNoticeModal";
 import LoadingScreen from "../components/LoadingScreen";
 import PortalHeader from "../components/PortalHeader";
+import UnsyncedChangesQueue from "../components/UnsyncedChangesQueue";
 import {
   FiUsers,
   FiSliders,
@@ -1001,6 +1002,9 @@ export default function Dashboard() {
         />
       ) : (
         <>
+          {/* UNSYNCED CHANGES OUTBOX QUEUE */}
+          <UnsyncedChangesQueue />
+
           {/* TOP ROW: 3 STAT SUMMARY CARDS */}
           <div
             style={{

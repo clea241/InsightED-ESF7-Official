@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
+import { useAuth } from "../context/AuthContext";
 import { getLocalDraft, setLocalDraft } from "../services/db";
 import { api } from "../services/api";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
 import { confirmServerDraftSaved } from "../services/screenSave";
+import {
+  upsertOutboxEntry,
+  removeOutboxEntryByModule,
+  checkAndPromptOutboxOnSectionOpen,
+} from "../services/outbox";
+import { reportError } from "../services/errorAlert";
 import {
   FiShield,
   FiMapPin,
@@ -65,8 +72,9 @@ export default function SchoolProfile() {
     showConfirm,
     completeNode,
     setActiveView,
-    registerAutoSaveHandler,
+    activeTerm,
   } = useApp();
+  const { user } = useAuth();
   const currentOfferings = Array.isArray(schoolInfo.curricularOffering)
     ? schoolInfo.curricularOffering
     : [];
@@ -156,6 +164,14 @@ export default function SchoolProfile() {
     isDirty,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
+    getPayload: () => getCurrentConfigSnapshot(),
+    getMetadata: () => ({
+      schoolId: schoolInfo?.schoolId,
+      user: user?.username || user?.email,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      term: activeTerm,
+      endpoint: "/api/schools/curricular-config",
+    }),
   });
 
   // Load configuration on mount or when schoolInfo updates
@@ -308,6 +324,45 @@ export default function SchoolProfile() {
         setTimeout(() => {
           savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
         }, 50);
+
+        // Prompt user if outbox contains queued unsent changes for school_profile
+        checkAndPromptOutboxOnSectionOpen({
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          term: activeTerm,
+          module: "school_profile",
+          onLoadPayload: (queued) => {
+            if (queued) {
+              if (queued.hasElemSpecialPrograms != null)
+                setHasElemSpecialPrograms(queued.hasElemSpecialPrograms);
+              if (queued.elemSpecialProgram != null)
+                setElemSpecialProgram(queued.elemSpecialProgram);
+              if (queued.hasJhsSpecialPrograms != null)
+                setHasJhsSpecialPrograms(queued.hasJhsSpecialPrograms);
+              if (Array.isArray(queued.jhsSpecialPrograms))
+                setJhsSpecialPrograms(queued.jhsSpecialPrograms);
+              if (queued.hasElemInclusive != null)
+                setHasElemInclusive(queued.hasElemInclusive);
+              if (Array.isArray(queued.elemInclusivePrograms))
+                setElemInclusivePrograms(queued.elemInclusivePrograms);
+              if (queued.hasJhsInclusive != null)
+                setHasJhsInclusive(queued.hasJhsInclusive);
+              if (Array.isArray(queued.jhsInclusivePrograms))
+                setJhsInclusivePrograms(queued.jhsInclusivePrograms);
+              if (queued.hasShsInclusive != null)
+                setHasShsInclusive(queued.hasShsInclusive);
+              if (Array.isArray(queued.shsInclusivePrograms))
+                setShsInclusivePrograms(queued.shsInclusivePrograms);
+              if (queued.shsCurriculumModel != null)
+                setShsCurriculumModel(queued.shsCurriculumModel);
+              if (queued.hasShifts != null) setHasShifts(queued.hasShifts);
+              if (queued.shiftStartTime != null)
+                setShiftStartTime(queued.shiftStartTime);
+              if (queued.shiftEndTime != null)
+                setShiftEndTime(queued.shiftEndTime);
+            }
+          },
+        }).catch(() => {});
       } catch (err) {
         console.error("Error loading school profile configuration:", err);
       }
@@ -317,79 +372,6 @@ export default function SchoolProfile() {
     schoolInfo.schoolId,
     schoolInfo.inclusivePrograms,
     schoolInfo.specialPrograms,
-  ]);
-
-  // Register auto-save handler on navigation (e.g. clicking Node Map)
-  useEffect(() => {
-    if (!registerAutoSaveHandler) return;
-    return registerAutoSaveHandler("school_profile", async () => {
-      try {
-        const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || "default"}`;
-        const selectedPrograms = [
-          ...(hasElemSpecialPrograms === "yes" && elemSpecialProgram
-            ? ["SPECIAL SCIENCE ELEMENTARY SCHOOL"]
-            : []),
-          ...(hasJhsSpecialPrograms === "yes" ? jhsSpecialPrograms : []),
-        ];
-        const selectedInclusive = [
-          ...(hasElemInclusive === "yes" ? elemInclusivePrograms : []),
-          ...(hasJhsInclusive === "yes" ? jhsInclusivePrograms : []),
-          ...(hasShsInclusive === "yes" ? shsInclusivePrograms : []),
-        ];
-        const configData = {
-          hasElemSpecialPrograms: hasElemSpecialPrograms === "yes",
-          elemSpecialProgram:
-            hasElemSpecialPrograms === "yes" && elemSpecialProgram,
-          hasElemInclusive: hasElemInclusive === "yes",
-          elemInclusivePrograms,
-          hasJhsSpecialPrograms: hasJhsSpecialPrograms === "yes",
-          jhsSpecialPrograms,
-          hasJhsInclusive: hasJhsInclusive === "yes",
-          jhsInclusivePrograms,
-          hasShsInclusive: hasShsInclusive === "yes",
-          shsInclusivePrograms,
-          shsCurriculumModel,
-          hasShifts: hasShifts === "yes",
-          shiftStartTime: hasShifts === "yes" ? shiftStartTime : "07:00",
-          shiftEndTime: hasShifts === "yes" ? shiftEndTime : "18:00",
-          specialPrograms: selectedPrograms,
-          inclusivePrograms: selectedInclusive,
-        };
-        localStorage.setItem(draftKey, JSON.stringify(configData));
-        await setLocalDraft(draftKey, configData);
-        if (setSchoolInfo) {
-          setSchoolInfo((prev) => ({
-            ...prev,
-            ...configData,
-            specialPrograms: selectedPrograms,
-            shsCurriculumModel: configData.shsCurriculumModel,
-            inclusivePrograms: selectedInclusive,
-          }));
-        }
-        return true;
-      } catch (e) {
-        console.warn("[SchoolProfile Auto-Save Notice]:", e);
-        return false;
-      }
-    });
-  }, [
-    registerAutoSaveHandler,
-    schoolInfo?.schoolId,
-    hasElemSpecialPrograms,
-    elemSpecialProgram,
-    hasElemInclusive,
-    elemInclusivePrograms,
-    hasJhsSpecialPrograms,
-    jhsSpecialPrograms,
-    hasJhsInclusive,
-    jhsInclusivePrograms,
-    hasShsInclusive,
-    shsInclusivePrograms,
-    shsCurriculumModel,
-    hasShifts,
-    shiftStartTime,
-    shiftEndTime,
-    setSchoolInfo,
   ]);
 
   const syncConfigDraft = (overrides = {}) => {
@@ -478,8 +460,6 @@ export default function SchoolProfile() {
         schoolYear: schoolInfo.schoolYear || "SY 26-27",
       };
 
-      localStorage.setItem(draftKey, JSON.stringify(configData));
-      setLocalDraft(draftKey, configData).catch(() => {});
       if (setSchoolInfo) {
         setSchoolInfo((prev) => ({
           ...prev,
@@ -505,6 +485,7 @@ export default function SchoolProfile() {
   // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
   const runSchoolProfileSave = async () => {
     setIsSaving(true);
+    let configData = null;
     try {
       if (hasShifts === "yes") {
         const parseM = (t) => {
@@ -550,7 +531,7 @@ export default function SchoolProfile() {
           : []),
       ];
 
-      const configData = {
+      configData = {
         hasElemSpecialPrograms: hasElemSpecialPrograms === "yes",
         elemSpecialProgram:
           hasElemSpecialPrograms === "yes" && elemSpecialProgram,
@@ -575,13 +556,7 @@ export default function SchoolProfile() {
         schoolYear: schoolInfo.schoolYear || "SY 26-27",
       };
 
-      const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || "default"}`;
-
-      // 1. Save to Local Storage & IndexedDB Draft (Local Database First)
-      localStorage.setItem(draftKey, JSON.stringify(configData));
-      await setLocalDraft(draftKey, configData);
-
-      // 2. Update Global App Context
+      // 1. Update Global App Context
       if (setSchoolInfo) {
         setSchoolInfo((prev) => ({
           ...prev,
@@ -592,8 +567,8 @@ export default function SchoolProfile() {
         }));
       }
 
-      // 3. The configuration lives in esf7_school_profile: write it there (idempotent upsert on school + year) and check the
-      //    row the server stored before anything is called saved. The draft below is only the backup of unsaved work.
+      // 2. The configuration lives in esf7_school_profile: write it there (idempotent upsert on school + year) and check the
+      //    row the server stored before anything is called saved.
       const stored = await api.updateCurricularConfig({
         ...configData,
         elemSpecialPrograms:
@@ -620,9 +595,15 @@ export default function SchoolProfile() {
           "The database did not return the school configuration that was sent, so it was not marked as saved.",
         );
       }
-      const savedConfig = { ...configData, savedToServer: true };
-      localStorage.setItem(draftKey, JSON.stringify(savedConfig));
-      await setLocalDraft(draftKey, savedConfig);
+
+      // 3. Remove outbox entry right away on verified success
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: "school_profile",
+      });
+
       if (setSchoolInfo)
         setSchoolInfo((prev) => ({ ...prev, curricularConfigSaved: true }));
 
@@ -644,6 +625,29 @@ export default function SchoolProfile() {
       return { ok: true };
     } catch (err) {
       console.error("Failed to save configuration:", err);
+      // Upsert failed section payload into outbox as 'failed'
+      try {
+        await upsertOutboxEntry({
+          kind: "failed",
+          schoolId: schoolInfo.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: schoolInfo.schoolYear || "SY 26-27",
+          term: activeTerm,
+          module: "school_profile",
+          endpoint: "/api/schools/curricular-config",
+          payload: configData,
+          lastError: err?.message || "Failed to save configuration",
+        });
+      } catch (outboxErr) {
+        console.warn("[Outbox Failed Save Error]:", outboxErr);
+      }
+
+      reportError(err, {
+        action: "Saving School Profile",
+        handler: "runSchoolProfileSave",
+        schoolId: schoolInfo.schoolId,
+      });
+
       return {
         ok: false,
         title: "School Profile Not Saved",

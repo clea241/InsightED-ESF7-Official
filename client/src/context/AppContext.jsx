@@ -72,7 +72,12 @@ import {
   isAnyScreenDirty,
   discardAllDirtyScreens,
   flushAllDirtyGuards,
+  snapshotDirtyGuardsToOutbox,
 } from "../services/dirtyGuard";
+import {
+  runOneTimeLegacyCleanup,
+  reconcileOutboxWithDatabase,
+} from "../services/outbox";
 
 const AppContext = createContext();
 
@@ -3319,24 +3324,18 @@ export const AppProvider = ({ children }) => {
       leftByDiscarding = outcome === "discard";
     }
 
-    // Auto-save active module changes whenever navigating
-    // (Not after a discard: the auto-save would write the changes the user just threw away back into the local draft.)
+    // Crash-safety snapshot: when navigating away from a dirty screen, write dirty section to outbox as 'unsaved'
     if (
-      !skipAutoSave &&
       !leftByDiscarding &&
       activeView &&
       activeView !== view &&
-      view
+      view &&
+      isAnyScreenDirty()
     ) {
       try {
-        const didSave = await triggerAutoSave(view);
-        if (view === "nodemap") {
-          showToast("✓ Auto-saved your changes to Node Map", "success");
-        } else if (didSave) {
-          showToast("✓ Auto-saved changes", "success");
-        }
+        await snapshotDirtyGuardsToOutbox("navigate away");
       } catch (e) {
-        console.warn("[Auto-Save Navigation Notice]:", e);
+        console.warn("[Outbox Navigation Snapshot Notice]:", e);
       }
     }
 
@@ -3479,22 +3478,6 @@ export const AppProvider = ({ children }) => {
             term: toTerm,
           }));
           const updatedRows = [...otherRows, ...clonedRows];
-
-          // Also update local storage draft if present
-          try {
-            const draftKey = `esf7_workload_draft_${p.id}`;
-            const localDraft = localStorage.getItem(draftKey);
-            if (localDraft) {
-              const parsed = JSON.parse(localDraft);
-              localStorage.setItem(
-                draftKey,
-                JSON.stringify({ ...parsed, workloadRows: updatedRows }),
-              );
-            }
-          } catch (err) {
-            // ignore draft storage error
-          }
-
           return {
             ...p,
             workloadRows: updatedRows,
@@ -4409,6 +4392,8 @@ export const AppProvider = ({ children }) => {
       setSectionsOverlayApplied(false);
       userEditedRef.current = false;
       lastSavedSigRef.current = null;
+      let loadedPersonnel = [];
+      let loadedSections = [];
       try {
         // 1. Fetch current school configuration
         const activeSchoolId =
@@ -5135,6 +5120,47 @@ export const AppProvider = ({ children }) => {
                 loadedDraftSecs = m.merged;
                 setSectionsOverlayApplied(true);
                 userEditedRef.current = true; // restored work is the user's: let auto-save keep the draft
+              } else {
+                // User chose Cancel: discard stale section changes and show official database version
+                loadedDraftSecs = baseline;
+                setSectionsOverlayApplied(false);
+                userEditedRef.current = false;
+                if (activeDraft) {
+                  activeDraft.classSections = baseline;
+                  activeDraft.sections = baseline;
+                  activeDraft.deletedSectionIds = [];
+                  activeDraft.deleted_section_ids = [];
+                }
+                try {
+                  // Purge persisted draft keys from localStorage and sessionStorage without mutating database records
+                  localStorage.removeItem("draft_sections");
+                  sessionStorage.removeItem("draft_sections");
+                  localStorage.removeItem(canonicalDraftKey);
+                  legacyDraftKeys.forEach((lk) => {
+                    if (lk) {
+                      localStorage.removeItem(lk);
+                      deleteLocalDraft(lk).catch(() => {});
+                    }
+                  });
+                  if (currentSchoolInfo?.schoolId) {
+                    const sid = currentSchoolInfo.schoolId;
+                    const cleanSid = cleanSchoolId(sid);
+                    const sy = currentSchoolInfo.schoolYear;
+                    localStorage.removeItem(`draft_sections_${sid}`);
+                    localStorage.removeItem(`draft_sections_${cleanSid}`);
+                    localStorage.removeItem(`draft_sections_${sid}_${sy}`);
+                    localStorage.removeItem(`draft_sections_${cleanSid}_${sy}`);
+                    localStorage.removeItem(`draft_${sid}`);
+                    localStorage.removeItem(`draft_${cleanSid}`);
+                    localStorage.removeItem(`draft_${sid}_${sy}`);
+                    localStorage.removeItem(`draft_${cleanSid}_${sy}`);
+                  }
+                  if (canonicalDraftKey && activeDraft) {
+                    await setLocalDraft(canonicalDraftKey, activeDraft);
+                  }
+                } catch (err) {
+                  console.warn("[Draft Sync] Failed to purge discarded draft keys:", err);
+                }
               }
             }
           } else {
@@ -5442,7 +5468,9 @@ export const AppProvider = ({ children }) => {
               currentNode: jState.currentNode || "school",
             },
           });
-          setHasUnsavedChanges(true);
+          loadedPersonnel = draftPersonnel;
+          loadedSections = cleanDraftSecs;
+          setHasUnsavedChanges(Boolean(userEditedRef.current));
         } else {
           // Initialize from official PostgreSQL DB
           let mergedSchoolInfo = { ...currentSchoolInfo };
@@ -5479,7 +5507,7 @@ export const AppProvider = ({ children }) => {
           const list = await fetchAndNormalizePersonnel(
             currentSchoolInfo.schoolId,
           );
-          let loadedPersonnel = [];
+          loadedPersonnel = [];
           if (Array.isArray(list) && list.length > 0) {
             loadedPersonnel = list;
           } else {
@@ -5492,7 +5520,7 @@ export const AppProvider = ({ children }) => {
           loadedPersonnel = autoEnrichPersonnel(loadedPersonnel);
 
           const rawSections = await sectionsReq;
-          let loadedSections = Array.isArray(rawSections)
+          loadedSections = Array.isArray(rawSections)
             ? rawSections
             : rawSections && Array.isArray(rawSections.allSections)
               ? rawSections.allSections
@@ -5646,6 +5674,29 @@ export const AppProvider = ({ children }) => {
         loadDistrictSchools(currentSchoolInfo.schoolId);
         fetchAllowances(currentSchoolInfo.schoolYear);
         fetchSdoSchoolHead();
+
+        // One-time legacy cleanup: migrate old differing localStorage keys to outbox as 'unsaved'
+        runOneTimeLegacyCleanup({
+          schoolId: currentSchoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: currentSchoolInfo?.schoolYear,
+          dbBaseline: {
+            school_profile: currentSchoolInfo,
+            personnel_profile: loadedPersonnel,
+            organized_classes: loadedSections,
+          },
+        }).catch((e) => console.warn("[Outbox] Legacy cleanup notice:", e));
+
+        // Reconcile outbox with database (ownership check, silent delete if identical to DB)
+        reconcileOutboxWithDatabase({
+          schoolId: currentSchoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          dbBaseline: {
+            school_profile: currentSchoolInfo,
+            personnel_profile: loadedPersonnel,
+            organized_classes: loadedSections,
+          },
+        }).catch((e) => console.warn("[Outbox] Reconciliation notice:", e));
       } catch (err) {
         // Failed load: keep auto-save blocked (never save an empty/partial state) and let the user retry.
         loadIncompleteRef.current = true;
@@ -5794,200 +5845,12 @@ export const AppProvider = ({ children }) => {
     );
   }, [schoolInfo?.schoolId, schoolInfo?.schoolYear, activeTerm]);
 
-  // Debounced Local and Cloud Save hook
-  useEffect(() => {
-    if (!initialLoadCompleteRef.current) return;
-    if (!schoolInfo || !schoolInfo.schoolId || !schoolInfo.schoolYear) return;
-
-    const draftKey = canonicalSchoolDraftKey;
-    // Before the first user interaction every state change is load-derived: keep the baseline current and do not sync.
-    if (!userEditedRef.current) {
-      lastSavedSigRef.current = draftSignature({
-        schoolInfo,
-        personnel,
-        classSections,
-        deletedSectionIds,
-        workloadTransfers,
-        absences,
-        journey_state: journeyState,
-      });
-      return;
-    }
-    setIsSyncing(true);
-
-    const debounceId = setTimeout(async () => {
-      try {
-        const timestamp = new Date().toISOString();
-        const draftData = {
-          schoolInfo,
-          personnel,
-          classSections,
-          deletedSectionIds: (deletedSectionIds || []).map(String),
-          allowSectionDeletion: true,
-          workloadTransfers,
-          absences,
-          journey_state: journeyState,
-          lastUpdated: timestamp,
-        };
-        // 0. Login/load is read-only: nothing here has been edited by the user yet, so just remember the loaded state.
-        const sig = draftSignature(draftData);
-        if (
-          !userEditedRef.current ||
-          (sig !== null && sig === lastSavedSigRef.current)
-        ) {
-          lastSavedSigRef.current = sig;
-          return;
-        }
-        // 1. Save to local IndexedDB
-        if (draftKey) {
-          await setLocalDraft(draftKey, draftData);
-        }
-        try {
-          if (Array.isArray(personnel) && personnel.length > 0) {
-            localStorage.setItem(
-              "insighted_personnel_cache",
-              JSON.stringify(personnel),
-            );
-          }
-        } catch (e) {}
-        // 2. Save to cloud Postgres drafts table (blocked while the initial load is incomplete)
-        if (loadIncompleteRef.current) {
-          markUnsynced();
-          return;
-        }
-        await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
-        lastSavedSigRef.current = sig;
-        clearDraftError();
-        setHasUnsavedChanges(true);
-      } catch (err) {
-        // Conflicts are handled by the resolution prompt; everything else shows the shared error notice.
-        // A 401 means the session ended: the auth layer keeps the work queued and returns the user to login.
-        if (
-          !(err instanceof DraftConflictError) &&
-          /** @type {any} */ (err)?.status !== 401
-        )
-          reportDraftError(DRAFT_ACTIONS.AUTO_SAVE, err);
-      } finally {
-        setIsSyncing(false);
-      }
-    }, 3500);
-
-    return () => clearTimeout(debounceId);
-  }, [
-    canonicalSchoolDraftKey,
-    schoolInfo,
-    personnel,
-    classSections,
-    deletedSectionIds,
-    workloadTransfers,
-    absences,
-    journeyState,
-  ]);
-
-  // ---- Server-health lock integration: protect local work, then re-sync on recovery ----
-  const latestDraftRef = useRef(null);
+  // Outbox-driven persistence replaces legacy debounced autosave and periodic intervals.
+  // Crash-safety snapshotting is handled on visibilitychange (hidden) and on navigating away.
   const healthHandlersRef = useRef({});
-  useEffect(() => {
-    if (
-      !initialLoadCompleteRef.current ||
-      !schoolInfo?.schoolId ||
-      !schoolInfo?.schoolYear
-    )
-      return;
-    if (userEditedRef.current) markDraftDirty();
-    latestDraftRef.current = {
-      key: canonicalSchoolDraftKey,
-      schoolYear: canonicalSchoolYear(schoolInfo.schoolYear),
-      data: {
-        schoolInfo,
-        personnel,
-        classSections,
-        deletedSectionIds: (deletedSectionIds || []).map(String),
-        allowSectionDeletion: true,
-        workloadTransfers,
-        absences,
-        deletedPersonnelIds,
-        journey_state: journeyState,
-        lastUpdated: new Date().toISOString(),
-      },
-    };
-  }, [
-    canonicalSchoolDraftKey,
-    schoolInfo,
-    personnel,
-    classSections,
-    deletedSectionIds,
-    workloadTransfers,
-    absences,
-    deletedPersonnelIds,
-    journeyState,
-  ]);
-
-  // Direct flush of latestDraftRef to storage on tab-hide/pagehide/blur and periodic intervals
-  const flushLatestDraftToStorage = useCallback(async (reason = "flush") => {
-    try {
-      await flushAllDirtyGuards();
-    } catch (e) {
-      console.warn("[DraftFlush] Error flushing dirty guards:", e);
-    }
-
-    const latest = latestDraftRef.current;
-    if (!latest || !latest.key || !latest.data) return false;
-
-    const sig = draftSignature(latest.data);
-    if (!userEditedRef.current || (sig !== null && sig === lastSavedSigRef.current)) {
-      return false;
-    }
-
-    try {
-      const ok = await setLocalDraft(latest.key, latest.data);
-      if (ok === false) throw new Error("IndexedDB write failed");
-      lastSavedSigRef.current = sig;
-      return true;
-    } catch (idbErr) {
-      console.warn(`[DraftFlush] IndexedDB save failed (${reason}), attempting localStorage fallback:`, idbErr);
-      try {
-        localStorage.setItem(`insighted_fallback_${latest.key}`, JSON.stringify(latest.data));
-        lastSavedSigRef.current = sig;
-        return true;
-      } catch (localErr) {
-        console.error(`[DraftFlush] Dual storage failure on ${reason}:`, localErr);
-        reportError(localErr, {
-          action: "Saving local draft backup",
-          handler: `flushLatestDraftToStorage (${reason})`,
-          schoolId: latest?.data?.schoolInfo?.schoolId,
-        });
-        return false;
-      }
-    }
-  }, []);
-
-  // Listeners for visibilitychange (hidden), pagehide, and periodic interval
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        flushLatestDraftToStorage("visibilitychange (hidden)");
-      }
-    };
-    const handlePageHide = () => {
-      flushLatestDraftToStorage("pagehide");
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
-
-    const periodicInterval = setInterval(() => {
-      flushLatestDraftToStorage("periodic background interval");
-    }, 20000);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", handlePageHide);
-      clearInterval(periodicInterval);
-    };
-  }, [flushLatestDraftToStorage]);
 
   const isRecoveringRef = useRef(false);
+  const latestDraftRef = useRef(null);
 
   // Merge personnel by stable key (id or prn), local edits overlay server baseline
   const mergePersonnelByStableKey = (serverList = [], localList = []) => {
@@ -6055,6 +5918,7 @@ export const AppProvider = ({ children }) => {
     }
     isRecoveringRef.current = true;
     try {
+      const latest = latestDraftRef.current;
       const sid = schoolInfo?.schoolId;
       const sy = schoolInfo?.schoolYear || "SY 26-27";
       if (!sid || !sy) return true;
@@ -6064,8 +5928,12 @@ export const AppProvider = ({ children }) => {
       const serverPayload = cloudDraftRes?.payload || null;
       const serverVersion = cloudDraftRes?.version || null;
 
-      const latest = latestDraftRef.current;
-      const localData = latest?.data;
+      const localData = {
+        schoolInfo,
+        personnel,
+        classSections,
+        journey_state: journeyState,
+      };
 
       let mergedPayload = localData;
 
@@ -6097,8 +5965,8 @@ export const AppProvider = ({ children }) => {
               setJourneyState(serverPayload.journey_state);
 
             setSyncedVersion(sid, sy, serverVersion);
-            if (latest?.key) {
-              await deleteLocalDraftWithLegacy(latest.key, [
+            if (canonicalSchoolDraftKey) {
+              await deleteLocalDraftWithLegacy(canonicalSchoolDraftKey, [
                 `draft_${sid}_${sy}`,
                 `draft_${cleanSchoolId(sid)}_${sy}`,
               ]);
@@ -6731,36 +6599,7 @@ export const AppProvider = ({ children }) => {
             merged.learningAreaMap = laMap;
             merged.matrix_data = laMap;
             merged.matrixData = laMap;
-            try {
-              localStorage.setItem(
-                `draft_learning_areas_${p.id}`,
-                JSON.stringify(laMap),
-              );
-              if (
-                updatedPerson.id &&
-                String(updatedPerson.id) !== String(p.id)
-              ) {
-                localStorage.setItem(
-                  `draft_learning_areas_${updatedPerson.id}`,
-                  JSON.stringify(laMap),
-                );
-              }
-            } catch (e) {}
           }
-
-          // Immediately update localStorage draft key so PersonnelProfile gets fresh data
-          try {
-            localStorage.setItem(
-              `draft_personnel_${p.id}`,
-              JSON.stringify(merged),
-            );
-            if (updatedPerson.id && String(updatedPerson.id) !== String(p.id)) {
-              localStorage.setItem(
-                `draft_personnel_${updatedPerson.id}`,
-                JSON.stringify(merged),
-              );
-            }
-          } catch (e) {}
 
           // Bidirectional sync: extract administrative rows from workloadRows
           const adminFromWorkload = (
@@ -7579,18 +7418,6 @@ export const AppProvider = ({ children }) => {
                 ),
             );
             if (filteredRows.length !== rows.length) {
-              const draftKey = `draft_workload_${p.id}`;
-              const savedDraft = localStorage.getItem(draftKey);
-              if (savedDraft) {
-                try {
-                  const parsed = JSON.parse(savedDraft);
-                  if (parsed)
-                    localStorage.setItem(
-                      draftKey,
-                      JSON.stringify({ ...parsed, workloadRows: filteredRows }),
-                    );
-                } catch (e) {}
-              }
               return { ...p, workloadRows: filteredRows };
             }
             return p;
@@ -7856,21 +7683,6 @@ export const AppProvider = ({ children }) => {
                   : r,
               );
             }
-          }
-
-          // Sync localStorage draft if present for this teacher
-          const draftKey = `draft_workload_${p.id}`;
-          const savedDraft = localStorage.getItem(draftKey);
-          if (savedDraft) {
-            try {
-              const parsed = JSON.parse(savedDraft);
-              if (parsed) {
-                localStorage.setItem(
-                  draftKey,
-                  JSON.stringify({ ...parsed, workloadRows: rows }),
-                );
-              }
-            } catch (e) {}
           }
 
           return { ...p, workloadRows: rows };
@@ -8383,21 +8195,6 @@ export const AppProvider = ({ children }) => {
             });
           }
 
-          // Sync localStorage draft if present for this teacher
-          const draftKey = `draft_workload_${p.id}`;
-          const savedDraft = localStorage.getItem(draftKey);
-          if (savedDraft) {
-            try {
-              const parsed = JSON.parse(savedDraft);
-              if (parsed) {
-                localStorage.setItem(
-                  draftKey,
-                  JSON.stringify({ ...parsed, workloadRows: rows }),
-                );
-              }
-            } catch (e) {}
-          }
-
           return { ...p, workloadRows: rows };
         });
       });
@@ -8476,19 +8273,6 @@ export const AppProvider = ({ children }) => {
                   ].includes(r.subject))
               ),
           );
-          const draftKey = `draft_workload_${p.id}`;
-          const savedDraft = localStorage.getItem(draftKey);
-          if (savedDraft) {
-            try {
-              const parsed = JSON.parse(savedDraft);
-              if (parsed) {
-                localStorage.setItem(
-                  draftKey,
-                  JSON.stringify({ ...parsed, workloadRows: rows }),
-                );
-              }
-            } catch (e) {}
-          }
           return { ...p, workloadRows: rows };
         });
       });

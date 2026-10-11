@@ -6,6 +6,12 @@ import React, {
   useRef,
 } from "react";
 import { reportError } from "../services/errorAlert";
+import { useAuth } from "../context/AuthContext";
+import {
+  upsertOutboxEntry,
+  removeOutboxEntryByModule,
+  checkAndPromptOutboxOnSectionOpen,
+} from "../services/outbox";
 import SearchableDropdown from "../components/SearchableDropdown";
 import DepEdEmailInfoModal from "../components/DepEdEmailInfoModal";
 import PortalHeader from "../components/PortalHeader";
@@ -2271,8 +2277,9 @@ export default function PersonnelProfile() {
     refreshRequests,
     completeNode,
     setActiveView,
-    registerAutoSaveHandler,
+    activeTerm,
   } = useApp();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState("identity");
   const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
@@ -2416,6 +2423,14 @@ export default function PersonnelProfile() {
     onSave: () => runSaveRef.current(),
     onFlush: flushCurrentPersonToContext,
     getDirtyReasons: () => [...diffCurrentPerson(), ...otherDraftDiffs()],
+    getPayload: () => currentPerson,
+    getMetadata: () => ({
+      schoolId: schoolInfo?.schoolId,
+      user: user?.username || user?.email,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      term: activeTerm,
+      endpoint: "/api/personnel",
+    }),
   });
 
   // Builds the editable copy of a saved person (fills defaults, mirrors snake/camel fields). `withDraft` overlays the
@@ -2761,22 +2776,20 @@ export default function PersonnelProfile() {
     currentPersonRef.current = currentPerson;
   }, [currentPerson]);
 
-  // Register auto-save handler on navigation (e.g. clicking Node Map)
+  // Prompt user if outbox contains queued unsent changes for personnel_profile
   useEffect(() => {
-    if (!registerAutoSaveHandler) return;
-    return registerAutoSaveHandler("personnel_profile", async () => {
-      const p = currentPersonRef.current;
-      if (!p || !p.id) return false;
-      try {
-        const draftKey = `draft_personnel_${p.id}`;
-        localStorage.setItem(draftKey, JSON.stringify(p));
-        return true;
-      } catch (e) {
-        console.warn("[PersonnelProfile Auto-Save Notice]:", e);
-      }
-      return false;
-    });
-  }, [registerAutoSaveHandler]);
+    checkAndPromptOutboxOnSectionOpen({
+      schoolId: schoolInfo?.schoolId,
+      user: user?.username || user?.email,
+      term: activeTerm,
+      module: "personnel_profile",
+      onLoadPayload: (queuedPerson) => {
+        if (queuedPerson && typeof setEditPerson === "function") {
+          setEditPerson(queuedPerson);
+        }
+      },
+    }).catch(() => {});
+  }, [schoolInfo?.schoolId, user]);
 
   // Personnel who are Reassigned Out from Mother School (Workload tracked at receiving school, full editing in Mother School)
   const isReassignedOutInMotherSchool = false;
@@ -3365,14 +3378,6 @@ export default function PersonnelProfile() {
         updated.stepIncrementConfirmed = true;
       }
 
-      if (base.id) {
-        try {
-          localStorage.setItem(
-            `draft_personnel_${base.id}`,
-            JSON.stringify(updated),
-          );
-        } catch (e) {}
-      }
       return updated;
     });
   };
@@ -3382,14 +3387,6 @@ export default function PersonnelProfile() {
       const base = prev || dbPerson;
       if (!base) return base;
       const updated = { ...base, ...fieldsObj };
-      if (base.id) {
-        try {
-          localStorage.setItem(
-            `draft_personnel_${base.id}`,
-            JSON.stringify(updated),
-          );
-        } catch (e) {}
-      }
       return updated;
     });
   };
@@ -3674,6 +3671,14 @@ export default function PersonnelProfile() {
       const confirmed = await confirmServerDraftSaved();
       if (!confirmed.ok) return confirmed;
 
+      // Remove outbox entry right away on verified success
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo?.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: "personnel_profile",
+      });
+
       for (const p of recordsToSave) {
         const canonicalKey = getPersonnelDraftKey(
           schoolInfo?.schoolId,
@@ -3700,10 +3705,31 @@ export default function PersonnelProfile() {
       return { ok: true };
     } catch (err) {
       console.warn("Save personnel changes error:", err);
+      try {
+        await upsertOutboxEntry({
+          kind: "failed",
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+          term: activeTerm,
+          module: "personnel_profile",
+          endpoint: "/api/personnel",
+          payload: currentPerson,
+          lastError: err?.message || "Failed to save personnel profile",
+        });
+      } catch (outboxErr) {
+        console.warn("[Outbox Failed Save Error]:", outboxErr);
+      }
+      reportError(err, {
+        action: "Saving Personnel Profile",
+        handler: "runProfileSave",
+        schoolId: schoolInfo?.schoolId,
+      });
       return {
         ok: false,
         title: "Personnel Profile Not Saved",
-        message: "Failed to save personnel profile: " + err.message,
+        message:
+          "Failed to save personnel profile: " + (err?.message || "Unknown error"),
       };
     }
   };

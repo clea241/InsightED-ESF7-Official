@@ -9,6 +9,7 @@ import React, {
 import { pauseForAuth, resumeAfterLogin } from "../services/draftSaver";
 import { onSessionExpired, clearSessionExpired } from "../services/session";
 import { checkBeforeLeave, isAnyScreenDirty } from "../services/dirtyGuard";
+import { hasFailedEntries } from "../services/outbox";
 
 const AuthContext = createContext(null);
 
@@ -69,6 +70,41 @@ export const AuthProvider = ({ children }) => {
         return false;
       }
     }
+
+    if (!skipGuard) {
+      try {
+        const sId =
+          user?.school_id ||
+          user?.schoolId ||
+          localStorage.getItem("schoolId") ||
+          localStorage.getItem("activeSchoolId");
+        const uName = user?.username || user?.email || "anonymous";
+        const hasFailed = await hasFailedEntries(sId, uName);
+        if (hasFailed) {
+          const [{ default: Swal }] = await Promise.all([
+            import("sweetalert2"),
+            import("sweetalert2/dist/sweetalert2.min.css"),
+          ]);
+          const result = await Swal.fire({
+            title: "Unsaved Changes Exist",
+            text: "You have unsent changes that failed to save to the server. If you log out now, they will remain on this device only and won't be visible on other devices.",
+            icon: "warning",
+            iconColor: "#d97706",
+            showCancelButton: true,
+            confirmButtonColor: "#dc2626",
+            cancelButtonColor: "#4f46e5",
+            confirmButtonText: "Log Out Anyway",
+            cancelButtonText: "Stay & Review Changes",
+            reverseButtons: true,
+          });
+          if (!result.isConfirmed) {
+            return false;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed checking outbox before logout:", e);
+      }
+    }
     localStorage.removeItem("token");
     localStorage.removeItem("remembered_user");
     localStorage.removeItem("schoolId");
@@ -106,8 +142,5 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+  return context || {};
 };
