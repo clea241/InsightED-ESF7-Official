@@ -1155,9 +1155,7 @@ router.post("/accept", async (req, res) => {
 
       // 2. Row for esf7_personnel_employment
       employmentUpsertRows.push({
-        id:
-          existing?.emp_id ||
-          `EMP-${cleanSchoolId}-${resolvedId.split("-").pop()}`,
+        id: resolvedId,
         personnel_id: resolvedId,
         position_category: posCat,
         position: pos,
@@ -1172,7 +1170,6 @@ router.post("/accept", async (req, res) => {
         last_promotion_date: lpd,
         new_station_date: nsd,
         last_lateral_movement_date: lmd,
-        raw_payload: JSON.stringify(fullRawPayload),
         updated_at: now,
       });
 
@@ -1473,11 +1470,11 @@ router.post("/accept", async (req, res) => {
           "last_promotion_date",
           "new_station_date",
           "last_lateral_movement_date",
-          "raw_payload",
           "updated_at",
         ],
         "(personnel_id)",
         `UPDATE SET
+          id = EXCLUDED.id,
           position_category = EXCLUDED.position_category,
           position = EXCLUDED.position,
           step_increment = EXCLUDED.step_increment,
@@ -1491,7 +1488,6 @@ router.post("/accept", async (req, res) => {
           last_promotion_date = EXCLUDED.last_promotion_date,
           new_station_date = EXCLUDED.new_station_date,
           last_lateral_movement_date = EXCLUDED.last_lateral_movement_date,
-          raw_payload = COALESCE(esf7_personnel_employment.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
           updated_at = NOW()`,
         employmentUpsertRows,
       );
@@ -2041,9 +2037,8 @@ router.post("/sync-roster", async (req, res) => {
         }),
       });
 
-      const safeSuffix = pId.replace(/[^a-zA-Z0-9]/g, "").slice(-12) || String(i);
       employmentUpsertRows.push({
-        id: `EMP-${cleanSchoolId}-${safeSuffix}`,
+        id: pId,
         personnel_id: pId,
         position_category: posCat,
         position: pos,
@@ -2061,6 +2056,7 @@ router.post("/sync-roster", async (req, res) => {
         raw_payload: JSON.stringify({ position: pos, stepIncrement: step }),
       });
 
+      const safeSuffix = String(pId).replace(/[^a-zA-Z0-9_-]/g, "_");
       educUpsertRows.push({
         id: `EDU-${cleanSchoolId}-${safeSuffix}`,
         personnel_id: pId,
@@ -2217,10 +2213,10 @@ router.post("/sync-roster", async (req, res) => {
           "last_promotion_date",
           "new_station_date",
           "last_lateral_movement_date",
-          "raw_payload",
         ],
         "(personnel_id)",
         `UPDATE SET
+          id = EXCLUDED.id,
           position_category = EXCLUDED.position_category,
           position = EXCLUDED.position,
           step_increment = EXCLUDED.step_increment,
@@ -2240,7 +2236,6 @@ router.post("/sync-roster", async (req, res) => {
           last_promotion_date = COALESCE(EXCLUDED.last_promotion_date, esf7_personnel_employment.last_promotion_date),
           new_station_date = COALESCE(EXCLUDED.new_station_date, esf7_personnel_employment.new_station_date),
           last_lateral_movement_date = COALESCE(EXCLUDED.last_lateral_movement_date, esf7_personnel_employment.last_lateral_movement_date),
-          raw_payload = COALESCE(esf7_personnel_employment.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
           updated_at = NOW()`,
         employmentUpsertRows,
       );

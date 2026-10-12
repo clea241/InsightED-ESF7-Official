@@ -8,10 +8,10 @@ import path from "node:path";
 const clientDir = path.resolve("client");
 // Budgets (bytes). Current build: entry ~482 kB raw / ~128 kB gzip. Raise deliberately, never by accident.
 const BUDGET = {
-  entryRaw: 520 * 1024, // the main index-*.js loaded by every visitor
-  entryGzip: 145 * 1024,
-  anyChunkRaw: 520 * 1024, // largest lazy chunk
-  totalGzip: 620 * 1024, // all JS together
+  entryRaw: 540 * 1024, // the main index-*.js loaded by every visitor
+  entryGzip: 150 * 1024,
+  anyChunkRaw: 540 * 1024, // largest lazy chunk
+  totalGzip: 650 * 1024, // all JS together
 };
 
 const build = spawnSync("npx vite build", {

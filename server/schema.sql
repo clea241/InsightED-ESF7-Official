@@ -91,8 +91,6 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_employment (
     new_station_date DATE,
     last_lateral_movement_date DATE,
     
-    raw_payload JSONB DEFAULT '{}'::jsonb,
-    
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -400,7 +398,7 @@ CREATE TABLE IF NOT EXISTS esf7_workload_rows (
     school_year TEXT NOT NULL,
     
     grade_level TEXT,
-    section_id VARCHAR(50) REFERENCES esf7_class_sections(id) ON DELETE SET NULL,
+    section_id VARCHAR(50),
     section_name TEXT,
     
     subject TEXT NOT NULL,
@@ -434,7 +432,7 @@ CREATE TABLE IF NOT EXISTS esf7_shs_workload_rows (
     grade_level TEXT NOT NULL,
     track_strand TEXT,
     shs_subject_category TEXT,
-    section_id VARCHAR(50) REFERENCES esf7_class_sections(id) ON DELETE SET NULL,
+    section_id VARCHAR(50),
     section_name TEXT,
     
     subject TEXT NOT NULL,
@@ -671,30 +669,38 @@ CREATE INDEX IF NOT EXISTS idx_esf7_requests_personnel ON esf7_requests (personn
 CREATE TABLE IF NOT EXISTS esf7_school_profile (
     id VARCHAR(50) PRIMARY KEY,
     school_id TEXT NOT NULL,
-    school_year TEXT NOT NULL DEFAULT '2026-2027',
+    school_year TEXT NOT NULL DEFAULT 'SY 26-27',
+    iern TEXT,
     
     -- Special Programs (SSES, SPA, SPFL, SPJ, SPS, STE, SPTVE)
     has_elem_special_programs BOOLEAN NOT NULL DEFAULT FALSE,
     elem_special_programs JSONB DEFAULT '[]'::jsonb,
     has_jhs_special_programs BOOLEAN NOT NULL DEFAULT FALSE,
     jhs_special_programs JSONB DEFAULT '[]'::jsonb,
-    shs_curriculum_model TEXT,
+    shs_curriculum_model TEXT DEFAULT 'Standard K-12 SHS Curriculum',
 
-    -- Inclusive Education Level Offerings (ALS, SNED, IPED, MADRASAH)
-    has_elem_inclusive BOOLEAN NOT NULL DEFAULT FALSE,
-    elem_inclusive_programs JSONB DEFAULT '[]'::jsonb,
-    has_jhs_inclusive BOOLEAN NOT NULL DEFAULT FALSE,
-    jhs_inclusive_programs JSONB DEFAULT '[]'::jsonb,
-    has_shs_inclusive BOOLEAN NOT NULL DEFAULT FALSE,
-    shs_inclusive_programs JSONB DEFAULT '[]'::jsonb,
-    
-    -- Dedicated Program Boolean Flags
-    has_als BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Elementary (ES) Inclusive Education
+    has_es_sned BOOLEAN NOT NULL DEFAULT FALSE,
+    has_es_als BOOLEAN NOT NULL DEFAULT FALSE,
+    has_es_iped BOOLEAN NOT NULL DEFAULT FALSE,
+    has_es_mad BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Junior High (JHS) Inclusive Education
+    has_jhs_sned BOOLEAN NOT NULL DEFAULT FALSE,
+    has_jhs_als BOOLEAN NOT NULL DEFAULT FALSE,
+    has_jhs_iped BOOLEAN NOT NULL DEFAULT FALSE,
+    has_jhs_mad BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Senior High (SHS) Inclusive Education
+    has_shs_sned BOOLEAN NOT NULL DEFAULT FALSE,
+    has_shs_iped BOOLEAN NOT NULL DEFAULT FALSE,
+    has_shs_mad BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Summary / Roll-up Flags
     has_sned BOOLEAN NOT NULL DEFAULT FALSE,
+    has_als BOOLEAN NOT NULL DEFAULT FALSE,
     has_iped BOOLEAN NOT NULL DEFAULT FALSE,
     has_madrasah BOOLEAN NOT NULL DEFAULT FALSE,
-    
-    -- Aggregate Array of Active Inclusive Program Tags
     inclusive_programs JSONB DEFAULT '[]'::jsonb,
 
     -- School Shift Declaration (Optional, within 4:00 AM - 10:00 PM)
@@ -702,9 +708,7 @@ CREATE TABLE IF NOT EXISTS esf7_school_profile (
     shift_start_time TEXT,
     shift_end_time TEXT,
     shifts_config JSONB DEFAULT '{}'::jsonb,
-    
-    raw_payload JSONB DEFAULT '{}'::jsonb,
-    
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     

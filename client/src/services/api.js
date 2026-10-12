@@ -367,11 +367,11 @@ export const api = {
     );
     return parseJsonOrThrow(res);
   },
-  saveBulkPersonnel: async (personnelList) => {
+  saveBulkPersonnel: async (personnelList, schoolId = null, schoolYear = null) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/bulk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personnelList }),
+      body: JSON.stringify({ personnelList, schoolId, schoolYear }),
     });
     return parseJsonOrThrow(res);
   },

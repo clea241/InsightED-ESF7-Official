@@ -744,7 +744,7 @@ async function disaggregatePersonnel(
     } else {
       stats.personnel_employment.inserted++;
       existingEmpMap.set(finalId, {
-        id: `EMP-${finalId}`,
+        id: finalId,
         personnel_id: finalId,
       });
       if (isApply) {
@@ -754,16 +754,17 @@ async function disaggregatePersonnel(
             id, personnel_id, position_category, position, step_increment, fund_source,
             nature_of_appointment, hiring_arrangement, deployment_status, assigned_schools,
             grade_levels_taught, first_service_date, last_promotion_date, new_station_date,
-            last_lateral_movement_date, raw_payload, updated_at
+            last_lateral_movement_date, updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
           ON CONFLICT (personnel_id) DO UPDATE SET
+            id = EXCLUDED.id,
             position = COALESCE(esf7_personnel_employment.position, EXCLUDED.position),
             first_service_date = COALESCE(esf7_personnel_employment.first_service_date, EXCLUDED.first_service_date),
             updated_at = NOW();
         `,
           [
-            `EMP-${finalId}`,
+            finalId,
             finalId,
             posCategory,
             p.position || "TEACHER I",

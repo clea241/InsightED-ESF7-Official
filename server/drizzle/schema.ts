@@ -38,7 +38,6 @@ export const esf7PersonnelEmployment = pgTable(
     lastPromotionDate: date("last_promotion_date"),
     newStationDate: date("new_station_date"),
     lastLateralMovementDate: date("last_lateral_movement_date"),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),

@@ -7,11 +7,11 @@ const rootEnvPath = path.resolve(__dirname, "../.env");
 const serverEnvPath = path.resolve(__dirname, ".env");
 
 if (fs.existsSync(rootEnvPath)) {
-  dotenv.config({ path: rootEnvPath });
+  dotenv.config({ path: rootEnvPath, override: true });
 } else if (fs.existsSync(serverEnvPath)) {
-  dotenv.config({ path: serverEnvPath });
+  dotenv.config({ path: serverEnvPath, override: true });
 } else {
-  dotenv.config();
+  dotenv.config({ override: true });
 }
 
 // Automatically synthesize legacy individual database fields from standardized URLs

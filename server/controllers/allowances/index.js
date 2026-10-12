@@ -19,19 +19,37 @@ const DEFAULT_AMOUNTS = {
 };
 
 // Additive, idempotent: records without a disabled list keep their current behaviour.
-let disabledColumnReady;
+let tableReadyPromise;
 function ensureDisabledColumn() {
-  if (!disabledColumnReady) {
-    disabledColumnReady = db
-      .query(
+  if (!tableReadyPromise) {
+    tableReadyPromise = (async () => {
+      await db.query(
         `ALTER TABLE esf7_personnel_allowances ADD COLUMN IF NOT EXISTS disabled_allowances JSONB NOT NULL DEFAULT '[]'::jsonb`,
-      )
-      .catch((e) => {
-        disabledColumnReady = null;
-        throw e;
-      });
+      );
+      await db.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conrelid = 'esf7_personnel_allowances'::regclass AND contype = 'u'
+            AND conname IN ('uq_personnel_sy_allowances', 'uq_allowances_personnel_school_year')
+          ) THEN
+            ALTER TABLE esf7_personnel_allowances ADD CONSTRAINT uq_personnel_sy_allowances UNIQUE (personnel_id, school_year);
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conrelid = 'esf7_personnel_allowances'::regclass AND contype = 'p'
+          ) THEN
+            ALTER TABLE esf7_personnel_allowances ADD CONSTRAINT esf7_personnel_allowances_pkey PRIMARY KEY (id);
+          END IF;
+        END $$;
+      `);
+    })().catch((e) => {
+      tableReadyPromise = null;
+      throw e;
+    });
   }
-  return disabledColumnReady;
+  return tableReadyPromise;
 }
 
 const toDisabledList = (row) =>

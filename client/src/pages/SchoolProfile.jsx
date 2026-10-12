@@ -103,6 +103,8 @@ export default function SchoolProfile() {
   const [shsCurriculumModel, setShsCurriculumModel] = useState(
     "Standard K-12 SHS Curriculum",
   );
+  // IERN (Integrated / Entity Reference Number)
+  const [iern, setIern] = useState(schoolInfo?.iern || "");
   // School Shift Schedule State (Optional)
   const [hasShifts, setHasShifts] = useState("no"); // 'yes' | 'no'
   const [shiftStartTime, setShiftStartTime] = useState("07:00");
@@ -116,6 +118,7 @@ export default function SchoolProfile() {
   const savedSnapshotRef = useRef(null);
 
   const getCurrentConfigSnapshot = () => ({
+    iern: String(iern || "").trim(),
     hasElemSpecialPrograms,
     elemSpecialProgram: !!elemSpecialProgram,
     hasJhsSpecialPrograms,
@@ -152,6 +155,7 @@ export default function SchoolProfile() {
       setHasShsInclusive(snap.hasShsInclusive);
       setShsInclusivePrograms(snap.shsInclusivePrograms || []);
       setShsCurriculumModel(snap.shsCurriculumModel);
+      setIern(snap.iern || "");
       setHasShifts(snap.hasShifts || "no");
       setShiftStartTime(snap.shiftStartTime || "07:00");
       setShiftEndTime(snap.shiftEndTime || "18:00");
@@ -256,6 +260,12 @@ export default function SchoolProfile() {
                 [],
         );
 
+        if (config?.iern !== undefined) {
+          setIern(config.iern);
+        } else if (schoolInfo?.iern) {
+          setIern(schoolInfo.iern);
+        }
+
         const hasShiftsVal =
           config?.hasShifts !== undefined
             ? config.hasShifts
@@ -355,6 +365,7 @@ export default function SchoolProfile() {
                 setShsInclusivePrograms(queued.shsInclusivePrograms);
               if (queued.shsCurriculumModel != null)
                 setShsCurriculumModel(queued.shsCurriculumModel);
+              if (queued.iern !== undefined) setIern(queued.iern);
               if (queued.hasShifts != null) setHasShifts(queued.hasShifts);
               if (queued.shiftStartTime != null)
                 setShiftStartTime(queued.shiftStartTime);
@@ -417,6 +428,7 @@ export default function SchoolProfile() {
         overrides.shsInclusivePrograms !== undefined
           ? overrides.shsInclusivePrograms
           : shsInclusivePrograms;
+      const curIern = overrides.iern !== undefined ? overrides.iern : iern;
       const curHasShifts =
         overrides.hasShifts !== undefined ? overrides.hasShifts : hasShifts;
       const curShiftStart =
@@ -454,6 +466,7 @@ export default function SchoolProfile() {
         shsInclusivePrograms: curHasShsInc === "yes" ? curShsInc : [],
         inclusivePrograms: selectedInclusive,
         shsCurriculumModel,
+        iern: curIern,
         hasShifts: curHasShifts === "yes",
         shiftStartTime: curHasShifts === "yes" ? curShiftStart : "07:00",
         shiftEndTime: curHasShifts === "yes" ? curShiftEnd : "18:00",
@@ -531,7 +544,22 @@ export default function SchoolProfile() {
           : []),
       ];
 
+      const has_es_sned = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("SNED-ES");
+      const has_es_als = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("ALS-ES");
+      const has_es_iped = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("IPED-ES");
+      const has_es_mad = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("MADRASAH-ES");
+
+      const has_jhs_sned = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("SNED-JHS");
+      const has_jhs_als = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("ALS-JHS");
+      const has_jhs_iped = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("IPED-JHS");
+      const has_jhs_mad = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("MADRASAH-JHS");
+
+      const has_shs_sned = isSHSActive && hasShsInclusive === "yes" && shsInclusivePrograms.includes("SNED-SHS");
+      const has_shs_iped = isSHSActive && hasShsInclusive === "yes" && shsInclusivePrograms.includes("IPED-SHS");
+      const has_shs_mad = isSHSActive && hasShsInclusive === "yes" && shsInclusivePrograms.includes("MADRASAH-SHS");
+
       configData = {
+        iern: String(iern || "").trim() || null,
         hasElemSpecialPrograms: hasElemSpecialPrograms === "yes",
         elemSpecialProgram:
           hasElemSpecialPrograms === "yes" && elemSpecialProgram,
@@ -539,6 +567,17 @@ export default function SchoolProfile() {
         jhsSpecialPrograms:
           hasJhsSpecialPrograms === "yes" ? jhsSpecialPrograms : [],
         specialPrograms: selectedPrograms,
+        has_es_sned,
+        has_es_als,
+        has_es_iped,
+        has_es_mad,
+        has_jhs_sned,
+        has_jhs_als,
+        has_jhs_iped,
+        has_jhs_mad,
+        has_shs_sned,
+        has_shs_iped,
+        has_shs_mad,
         hasElemInclusive: hasElemInclusive === "yes",
         elemInclusivePrograms:
           hasElemInclusive === "yes" ? elemInclusivePrograms : [],
@@ -709,7 +748,7 @@ export default function SchoolProfile() {
         showNodeMap={true}
         onContinue={() => setIsConfirmModalOpen(true)}
         continueText="Save"
-        continueDisabled={!isDirty || isSaving}
+        continueDisabled={isSaving}
       />
 
       {/* 2-Column Split Dashboard Layout */}
@@ -858,6 +897,50 @@ export default function SchoolProfile() {
                     >
                       {schoolInfo.schoolId || "—"}
                     </span>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "14px 18px",
+                      background: "#f8fafc",
+                      borderRadius: "14px",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <label
+                      style={{
+                        fontSize: "11px",
+                        textTransform: "uppercase",
+                        color: "#64748b",
+                        fontWeight: "800",
+                        letterSpacing: "0.04em",
+                        display: "block",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      IERN (Entity Ref No.)
+                    </label>
+                    <input
+                      type="text"
+                      value={iern}
+                      onChange={(e) => {
+                        setIern(e.target.value);
+                        syncConfigDraft({ iern: e.target.value });
+                      }}
+                      placeholder="Optional IERN..."
+                      style={{
+                        width: "100%",
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid #cbd5e1",
+                        fontSize: "14px",
+                        fontWeight: "700",
+                        color: "#0f172a",
+                        background: "#ffffff",
+                        outline: "none",
+                        boxSizing: "border-box",
+                      }}
+                    />
                   </div>
 
                   <div
@@ -2129,7 +2212,7 @@ export default function SchoolProfile() {
                           onClick={() => {
                             setHasShsInclusive("yes");
                             if (shsInclusivePrograms.length === 0)
-                              setShsInclusivePrograms(["ALS-SHS", "SNED-SHS"]);
+                              setShsInclusivePrograms(["SNED-SHS"]);
                           }}
                           style={{
                             padding: "6px 18px",
@@ -2187,10 +2270,6 @@ export default function SchoolProfile() {
                         }}
                       >
                         {[
-                          {
-                            tag: "ALS-SHS",
-                            label: "ALS (Alternative Learning System)",
-                          },
                           {
                             tag: "SNED-SHS",
                             label: "SNED (Special Needs Education)",
@@ -2913,6 +2992,15 @@ export default function SchoolProfile() {
                 type="text"
                 value={confirmInput}
                 onChange={(e) => setConfirmInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    confirmInput.trim().toUpperCase() === "CONFIRM" &&
+                    !isSaving
+                  ) {
+                    handleConfirmAndProceed();
+                  }
+                }}
                 placeholder="Type CONFIRM"
                 disabled={isSaving}
                 autoFocus

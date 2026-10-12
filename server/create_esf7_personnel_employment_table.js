@@ -44,8 +44,6 @@ async function createEmploymentTable() {
           new_station_date DATE,
           last_lateral_movement_date DATE,
           
-          raw_payload JSONB DEFAULT '{}'::jsonb,
-          
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );

@@ -4791,7 +4791,26 @@ export const AppProvider = ({ children }) => {
               .map((k) => String(k).trim().toLowerCase())
               .filter(isNonGenericKey),
           );
-          setDeletedPersonnelIds(rawDeleted);
+
+          // If a personnel is actively loaded from the official database (dbList),
+          // ensure stale tombstone keys (especially name or recycled ID) do not suppress them.
+          if (Array.isArray(dbList) && dbList.length > 0) {
+            dbList.forEach((p) => {
+              const pId = String(p.id || "").trim().toLowerCase();
+              const pPrn = String(p.prn || "").trim().toLowerCase();
+              const pName = `${String(p.firstName || p.first_name || "").trim()} ${String(p.lastName || p.last_name || "").trim()}`.toLowerCase();
+              if (pName && pName !== "teacher staff") {
+                deletedSet.delete(pName);
+              }
+              // If actively saved in esf7_personnel_profile, prune from deletedSet
+              if (p.is_db_saved || p.plantilla_position || p.position) {
+                if (pId) deletedSet.delete(pId);
+                if (pPrn) deletedSet.delete(pPrn);
+              }
+            });
+          }
+
+          setDeletedPersonnelIds(Array.from(deletedSet));
           const rawDeletedSecs =
             activeDraft.deletedSectionIds ||
             activeDraft.deleted_section_ids ||
@@ -4811,24 +4830,31 @@ export const AppProvider = ({ children }) => {
               .trim()
               .toLowerCase();
             const nameKey =
-              `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
+              `${String(p.firstName || p.first_name || "").trim()} ${String(p.lastName || p.last_name || "").trim()}`.toLowerCase();
             const stripId = idKey.replace(/^per-/, "").replace(/^prn-/, "");
             const stripPrn = prnKey.replace(/^prn-/, "");
 
-            return (
-              (isNonGenericKey(idKey) && deletedSet.has(idKey)) ||
-              (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) ||
-              (isNonGenericKey(nameKey) &&
-                nameKey !== "teacher staff" &&
-                deletedSet.has(nameKey)) ||
-              (isNonGenericKey(empKey) && deletedSet.has(empKey)) ||
-              (stripId &&
-                isNonGenericKey(stripId) &&
-                deletedSet.has(stripId)) ||
-              (stripPrn &&
-                isNonGenericKey(stripPrn) &&
-                deletedSet.has(stripPrn))
-            );
+            // Explicit unique ID or PRN match takes precedence
+            if (isNonGenericKey(idKey) && deletedSet.has(idKey)) return true;
+            if (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) return true;
+            if (isNonGenericKey(empKey) && deletedSet.has(empKey)) return true;
+            if (stripId && isNonGenericKey(stripId) && deletedSet.has(stripId))
+              return true;
+            if (stripPrn && isNonGenericKey(stripPrn) && deletedSet.has(stripPrn))
+              return true;
+
+            // Only match nameKey if record has NO unique ID or PRN in deletedSet
+            // (prevents duplicate deletions or re-added teachers from wiping out canonical teachers)
+            if (
+              !idKey &&
+              isNonGenericKey(nameKey) &&
+              nameKey !== "teacher staff" &&
+              deletedSet.has(nameKey)
+            ) {
+              return true;
+            }
+
+            return false;
           };
 
           // Filter out deleted teachers from DB list
@@ -6826,20 +6852,36 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPersonnel = async (newPerson) => {
-    const newId =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0;
-            return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-          });
+    const existing = (personnel || []).find(
+      (p) =>
+        p.firstName &&
+        p.lastName &&
+        p.firstName.toUpperCase().trim() ===
+          String(newPerson.firstName || "").toUpperCase().trim() &&
+        p.lastName.toUpperCase().trim() ===
+          String(newPerson.lastName || "").toUpperCase().trim(),
+    );
+    if (existing) {
+      setActivePersonnelId(existing.id);
+      showToast("Personnel already exists in roster.");
+      return existing.id;
+    }
+
+    // Generate sequential numeric ID matching all existing personnel in the school
+    const maxExistingId = (personnel || []).reduce((max, p) => {
+      const num = parseInt(p.id, 10);
+      return !isNaN(num) && num > max ? num : max;
+    }, 0);
+    const newId = String(maxExistingId > 0 ? maxExistingId + 1 : 843141);
+
+    const nextSeq = (personnel || []).length + 1;
+    const newPrn = `PRN-${nextSeq}`;
+
     const newRecord = {
       id: newId,
-      status: "client-created",
-      legacyId: null,
-      prn:
-        newPerson.prn ||
-        Math.floor(100000000000 + Math.random() * 900000000000).toString(),
+      status: "canonical",
+      legacyId: newId,
+      prn: newPerson.prn || newPrn,
       school_id: schoolInfo.schoolId,
       school_year: schoolInfo.schoolYear,
       type: newPerson.type,
@@ -6927,6 +6969,17 @@ export const AppProvider = ({ children }) => {
 
     setPersonnel((prev) => [...prev, newRecord]);
     setActivePersonnelId(newId);
+
+    // Un-tombstone newly added personnel so stale deletion keys never hide them
+    const addedKeys = [
+      String(newId).toLowerCase(),
+      newRecord.prn ? String(newRecord.prn).toLowerCase() : "",
+      `${newRecord.firstName || ""} ${newRecord.lastName || ""}`.trim().toLowerCase(),
+    ].filter(Boolean);
+    setDeletedPersonnelIds((prev) =>
+      prev.filter((dKey) => !addedKeys.includes(String(dKey).trim().toLowerCase())),
+    );
+
     showToast("Personnel added to draft locally.");
     return newId;
   };
@@ -6962,10 +7015,7 @@ export const AppProvider = ({ children }) => {
     });
     setClassSections(updatedSections);
 
-    // Track deleted IDs in tombstone list
-    const targetName = target
-      ? `${target.firstName || ""} ${target.lastName || ""}`.trim()
-      : "";
+    // Track deleted IDs in tombstone list (strictly unique keys: ID, PRN, employeeNo — NEVER full name)
     const targetEmpNo = target?.employeeNo || target?.employee_no || "";
     const newDeletedIds = Array.from(
       new Set(
@@ -6975,7 +7025,6 @@ export const AppProvider = ({ children }) => {
           String(targetId),
           targetPrn ? String(targetPrn) : "",
           targetEmpNo ? String(targetEmpNo) : "",
-          targetName ? targetName.toLowerCase() : "",
         ].filter(Boolean),
       ),
     );

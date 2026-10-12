@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
+const { coerceDateField } = require("../../utils/dateInput");
 
 const sanitizeGradeLevel = (rawLvl, secName = "") => {
   if (!rawLvl && !secName) return null;
@@ -100,20 +101,12 @@ const sanitizeGradeArray = (arr) => {
 // Helper function to format employment DB row
 function formatEmploymentRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
   const grades = sanitizeGradeArray(row.grade_levels_taught || []);
   const hasShsGrade =
     Array.isArray(grades) &&
     grades.some((g) => String(g).includes("11") || String(g).includes("12"));
-  const teachesShsFlag =
-    raw.teachesShs !== undefined
-      ? !!raw.teachesShs
-      : raw.teaches_shs !== undefined
-        ? !!raw.teaches_shs
-        : hasShsGrade;
 
   return {
-    ...raw,
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
@@ -136,8 +129,8 @@ function formatEmploymentRecord(row) {
     grade_levels_taught: grades,
     assignedGradeLevels: grades,
     assigned_grade_levels: grades,
-    teachesShs: teachesShsFlag,
-    teaches_shs: teachesShsFlag,
+    teachesShs: hasShsGrade,
+    teaches_shs: hasShsGrade,
     firstServiceDate: row.first_service_date
       ? row.first_service_date instanceof Date
         ? row.first_service_date.toISOString().split("T")[0]
@@ -158,7 +151,7 @@ function formatEmploymentRecord(row) {
         ? row.last_lateral_movement_date.toISOString().split("T")[0]
         : String(row.last_lateral_movement_date).split("T")[0]
       : null,
-    rawPayload: raw,
+    rawPayload: {},
   };
 }
 
@@ -167,7 +160,10 @@ router.get("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const result = await db.query(
-      `SELECT * FROM esf7_personnel_employment WHERE personnel_id = $1 LIMIT 1`,
+      `SELECT e.* FROM esf7_personnel_employment e
+       LEFT JOIN esf7_personnel_profile p ON p.id = e.personnel_id
+       WHERE e.personnel_id = $1 OR e.id = $1 OR p.prn = $1
+       LIMIT 1`,
       [personnel_id],
     );
     if (result.rows.length === 0) {
@@ -213,27 +209,27 @@ router.post("/:personnel_id", async (req, res) => {
       lastLateralMovementDate,
     } = req.body;
 
-    // Get school_id from linked personnel profile to construct EMP ID
+    // Resolve canonical id from esf7_personnel_profile
     const personRes = await db.query(
-      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
       [personnel_id],
     );
+    const resolvedPersonnelId =
+      personRes.rows.length > 0 ? personRes.rows[0].id : personnel_id;
 
-    const schoolId =
-      personRes.rows.length > 0 ? personRes.rows[0].school_id : "108348";
+    // Unique Primary Key id for esf7_personnel_employment (distinct from personnel_id)
+    const crypto = require("crypto");
+    const empId = crypto.randomUUID();
 
-    // Count existing for sequence ID
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_personnel_employment`,
-    );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const empId = `EMP-${schoolId.replace("SCH-", "")}-${seq}`;
-
-    const cat = (
+    let cat = (
       position_category ||
       positionCategory ||
       "TEACHING"
     ).toUpperCase();
+    if (cat.includes("NON")) cat = "NON-TEACHING";
+    else if (cat.includes("RELATED")) cat = "RELATED TEACHING";
+    else cat = "TEACHING";
+
     const pos = (position || "TEACHER I").toUpperCase();
     const step = Number(step_increment || stepIncrement || 1);
     const fund = (fund_source || fundSource || "NATIONAL").toUpperCase();
@@ -268,9 +264,9 @@ router.post("/:personnel_id", async (req, res) => {
       INSERT INTO esf7_personnel_employment (
         id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
         hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
-        first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date, raw_payload
+        first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15)
       ON CONFLICT (personnel_id) DO UPDATE SET
         position_category = EXCLUDED.position_category,
         position = EXCLUDED.position,
@@ -285,14 +281,13 @@ router.post("/:personnel_id", async (req, res) => {
         last_promotion_date = EXCLUDED.last_promotion_date,
         new_station_date = EXCLUDED.new_station_date,
         last_lateral_movement_date = EXCLUDED.last_lateral_movement_date,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
 
     const values = [
       empId,
-      personnel_id,
+      resolvedPersonnelId,
       cat,
       pos,
       step,
@@ -302,14 +297,26 @@ router.post("/:personnel_id", async (req, res) => {
       deploy,
       schoolsJson,
       gradesJson,
-      first_service_date || firstServiceDate || null,
-      last_promotion_date || lastPromotionDate || null,
-      new_station_date || newStationDate || null,
-      last_lateral_movement_date || lastLateralMovementDate || null,
-      JSON.stringify(req.body),
+      coerceDateField(first_service_date || firstServiceDate, "first_service_date"),
+      coerceDateField(last_promotion_date || lastPromotionDate, "last_promotion_date"),
+      coerceDateField(new_station_date || newStationDate, "new_station_date"),
+      coerceDateField(last_lateral_movement_date || lastLateralMovementDate, "last_lateral_movement_date"),
     ];
 
     const result = await db.query(query, values);
+
+    // Keep type in esf7_personnel_profile in sync
+    const normType =
+      cat === "NON-TEACHING"
+        ? "non-teaching"
+        : cat === "RELATED TEACHING"
+          ? "teaching-related"
+          : "teaching";
+    await db.query(
+      `UPDATE esf7_personnel_profile SET type = $1, updated_at = NOW() WHERE id = $2`,
+      [normType, resolvedPersonnelId],
+    );
+
     res.json(formatEmploymentRecord(result.rows[0]));
   } catch (err) {
     console.error("Error upserting esf7_personnel_employment:", err);

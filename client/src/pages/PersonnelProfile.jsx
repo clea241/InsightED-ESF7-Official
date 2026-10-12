@@ -3755,6 +3755,59 @@ export default function PersonnelProfile() {
       return;
     }
 
+    // 1-by-1 direct persistence to esf7_personnel_employment when saving on Employment tab
+    if (activeTab === "employment") {
+      try {
+        const empCat =
+          currentPerson.positionCategory ||
+          (currentPerson.type === "non-teaching"
+            ? "NON-TEACHING"
+            : currentPerson.type === "teaching-related"
+              ? "RELATED TEACHING"
+              : "TEACHING");
+
+        const empPayload = {
+          positionCategory: empCat,
+          position: currentPerson.position || "TEACHER I",
+          stepIncrement: Number(currentPerson.stepIncrement || currentPerson.step_increment || 1),
+          fundSource: currentPerson.fundSource || currentPerson.fund_source || "NATIONAL",
+          natureOfAppointment: currentPerson.natureOfAppointment || currentPerson.nature_of_appointment || "REGULAR PERMANENT",
+          hiringArrangement: currentPerson.hiringArrangement || currentPerson.hiring_arrangement || "PERMANENT",
+          deploymentStatus: currentPerson.deploymentStatus || currentPerson.deployment_status || "OWN STATION",
+          assignedSchools: currentPerson.assignedSchools || currentPerson.assigned_schools || [],
+          gradeLevelsTaught: currentPerson.gradeLevelsTaught || currentPerson.grade_levels_taught || currentPerson.assignedGradeLevels || [],
+          firstServiceDate: currentPerson.firstServiceDate || currentPerson.first_service_date || null,
+          lastPromotionDate: currentPerson.lastPromotionDate || currentPerson.last_promotion_date || null,
+          newStationDate: currentPerson.newStationDate || currentPerson.new_station_date || null,
+          lastLateralMovementDate: currentPerson.lastLateralMovementDate || currentPerson.last_lateral_movement_date || null,
+        };
+
+        // 1-by-1 direct write to esf7_personnel_employment
+        await api.updateEmployment(currentPerson.id, empPayload);
+
+        // Update in-memory state in AppContext
+        if (typeof savePersonnelChanges === "function") {
+          savePersonnelChanges(
+            currentPerson.id,
+            {
+              ...currentPerson,
+              ...empPayload,
+            },
+            { skipApiUpdate: true },
+          );
+        }
+
+        localStorage.removeItem(`draft_personnel_${currentPerson.id}`);
+        if (setHasUnsavedChanges) setHasUnsavedChanges(false);
+        showToast("Personnel employment saved to database successfully.", "success");
+        return;
+      } catch (err) {
+        console.error("Failed to save employment details:", err);
+        await showAlert("Error", "Failed to save employment details: " + (err.message || err));
+        return;
+      }
+    }
+
     // If it's a draft, it MUST pass validation to be saved to the database!
     if (String(currentPerson.id).startsWith("draft-")) {
       const errors = [];

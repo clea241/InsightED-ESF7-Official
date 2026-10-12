@@ -373,9 +373,9 @@ async function processSchool({ client, schoolId, payload, apply, inv, needsRevie
       const step = Math.max(1, Math.min(8, int(first(e, "stepIncrement", "step_increment")) || 1));
       const n = await ins("emp",
         `INSERT INTO esf7_personnel_employment (id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment, hiring_arrangement,
-           deployment_status, assigned_schools, grade_levels_taught, first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date, raw_payload)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,$14,$15,'{}'::jsonb) ON CONFLICT DO NOTHING`,
-        [`EMP-${p.legacy}`, u, cat, req(first(e, "position", "position_title", "plantilla_position"), "position"), step, req(first(e, "fundSource", "fund_source"), "fund_source"),
+           deployment_status, assigned_schools, grade_levels_taught, first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,$14,$15) ON CONFLICT DO NOTHING`,
+        [u, u, cat, req(first(e, "position", "position_title", "plantilla_position"), "position"), step, req(first(e, "fundSource", "fund_source"), "fund_source"),
           req(first(e, "natureOfAppointment", "nature_of_appointment"), "nature_of_appointment"), req(first(e, "hiringArrangement", "hiring_arrangement"), "hiring_arrangement"),
           first(e, "deploymentStatus", "deployment_status", "status__item_") || "OWN STATION",
           JSON.stringify(arr(e.assignedSchools) || arr(e.assigned_schools) || []), JSON.stringify(arr(e.gradeLevelsTaught) || arr(e.grade_levels_taught) || arr(e.assignedGradeLevels) || arr(e.assigned_grade_levels) || []),

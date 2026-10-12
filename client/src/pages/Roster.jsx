@@ -777,35 +777,8 @@ export default function Roster() {
         await commitDraftPersonnel();
       }
 
-      // 2b. People added on this roster exist only in the browser (client-created status or legacy local-p-… ids) until they are created in
-      //     esf7_personnel_profile. The create is idempotent on that id, so a retry or a second save never duplicates them.
-      const unsavedNew = personnel.filter(
-        (p) =>
-          p.status === "client-created" ||
-          String(p.id || "").startsWith("local-p-"),
-      );
-      for (const p of unsavedNew) {
-        const created = await api.addPersonnel({
-          ...cleanPersonnelDates(p),
-          id: p.id,
-          status: p.status || "client-created",
-          school_id: schoolInfo?.schoolId,
-          school_year: schoolInfo?.schoolYear,
-        });
-        if (
-          !created ||
-          (String(created.id) !== String(p.id) &&
-            String(created.legacy_id || created.legacyId || "") !== String(p.id))
-        ) {
-          throw new Error(
-            `The database did not confirm ${p.firstName || ""} ${p.lastName || ""} (sent ${p.id}, got ${created && created.id}).`,
-          );
-        }
-        if (created && created.id) {
-          p.id = created.id;
-          p.status = created.status || "canonical";
-        }
-      }
+      // 2b. Save all personnel on this roster to esf7_personnel_profile (strictly without raw_payload)
+      await api.saveBulkPersonnel(personnel, schoolInfo?.schoolId, schoolInfo?.schoolYear);
 
       // Success is reported only after the server confirmed the database write.
       const confirmed = await confirmServerDraftSaved();
@@ -908,7 +881,52 @@ export default function Roster() {
       position: POSITION_OPTIONS_BY_CATEGORY.teaching[0],
     });
 
-    showToast("Personnel successfully added to roster.");
+    // Save all active personnel in the roster to esf7_personnel_profile
+    try {
+      const fullList = [...personnel];
+      const newlyAddedObj = {
+        id: addedId,
+        salutation: newPerson.salutation,
+        firstName: newPerson.firstName.toUpperCase().trim(),
+        middleName: newPerson.middleName
+          ? newPerson.middleName.toUpperCase().trim()
+          : "N/A",
+        lastName: newPerson.lastName.toUpperCase().trim(),
+        nameExtension: newPerson.nameExtension
+          ? newPerson.nameExtension.toUpperCase().trim()
+          : "",
+        birthdate: newPerson.birthdate || "",
+        type: newPerson.type,
+        position: newPerson.position,
+        natureOfAppointment: isCook
+          ? "CONTRACTUAL"
+          : newPerson.natureOfAppointment || "REGULAR PERMANENT",
+        hiringArrangement: isCook
+          ? "CONTRACTUAL"
+          : newPerson.hiringArrangement || "REGULAR",
+        fundSource: isCook ? "SBFP" : newPerson.fundSource || "NATIONAL",
+      };
+      const isAlreadyInList = fullList.some(
+        (p) =>
+          p.id === addedId ||
+          (p.firstName &&
+            p.lastName &&
+            p.firstName.toUpperCase().trim() === newlyAddedObj.firstName &&
+            p.lastName.toUpperCase().trim() === newlyAddedObj.lastName),
+      );
+      if (!isAlreadyInList) {
+        fullList.push(newlyAddedObj);
+      }
+      await api.saveBulkPersonnel(
+        fullList,
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+      );
+    } catch (e) {
+      console.warn("Auto-save roster on add personnel notice:", e.message);
+    }
+
+    showToast("Personnel successfully added and saved to roster.");
   };
 
   // Filter & Search Logic

@@ -1,4 +1,4 @@
-// Force nodemon restart for updated queue_worker.js uq_school_sy_profile fix
+// Force nodemon restart: strictly isolated local PostgreSQL (esf7_local)
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -615,10 +615,63 @@ const initDB = async () => {
         ALTER TABLE esf7_sned_sections ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'SNED (NON-GRADED)';
         ALTER TABLE esf7_als_sections ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'ALS';
 
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS iern TEXT;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_elem_special_programs BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS elem_special_programs JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_special_programs BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS jhs_special_programs JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shs_curriculum_model TEXT DEFAULT 'Standard K-12 SHS Curriculum';
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_sned BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_als BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_iped BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_mad BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_sned BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_als BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_iped BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_mad BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_sned BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_iped BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_mad BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_sned BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_als BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_iped BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_madrasah BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS inclusive_programs JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shift_start_time TEXT;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shift_end_time TEXT;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shifts_config JSONB DEFAULT '{}'::jsonb;
+
+        ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'canonical';
+        ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS legacy_id VARCHAR(128);
+        ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS raw_payload JSONB DEFAULT '{}'::jsonb;
+
+        ALTER TABLE school_drafts ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint c
+          JOIN pg_class t ON c.conrelid = t.oid
+          WHERE t.relname = 'school_drafts' AND c.contype = 'p'
+        ) THEN
+          ALTER TABLE school_drafts ADD CONSTRAINT pk_school_drafts PRIMARY KEY (school_id, school_year);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint c
+          JOIN pg_class t ON c.conrelid = t.oid
+          WHERE t.relname = 'esf7_school_node_status' AND c.contype IN ('p', 'u')
+        ) THEN
+          ALTER TABLE esf7_school_node_status ADD CONSTRAINT pk_esf7_school_node_status PRIMARY KEY (school_id, school_year);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint c
+          JOIN pg_class t ON c.conrelid = t.oid
+          WHERE t.relname = 'esf7_personnel_node_status' AND c.contype IN ('p', 'u')
+        ) THEN
+          ALTER TABLE esf7_personnel_node_status ADD CONSTRAINT pk_esf7_personnel_node_status PRIMARY KEY (school_id, school_year, personnel_id);
+        END IF;
       EXCEPTION WHEN OTHERS THEN NULL;
       END $$;
     `);

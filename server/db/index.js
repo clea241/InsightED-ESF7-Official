@@ -104,7 +104,7 @@ function getPool() {
 
 // 2. Explicit Staging Pool (for division test accounts & staging QA)
 function getStagingPool() {
-  if (isLoadTestMode) {
+  if (isLoadTestMode || isLocalHost) {
     return getPool();
   }
   if (!_stagingPool) {
@@ -136,7 +136,7 @@ function getStagingPool() {
 
 // 3. Explicit Production Pool
 function getProdPool() {
-  if (isLoadTestMode) {
+  if (isLoadTestMode || isLocalHost) {
     return getPool();
   }
   if (!_prodPool) {
@@ -166,9 +166,13 @@ function getProdPool() {
 
 // 4. Centralized insightEd Pool (Read-only master historical data: esf7_database, esf7_database_dummy, unit1_school_identity)
 function getInsightEdPool() {
-  // If master database name matches defaultDbName and no separate INSIGHTED_DATABASE_URL is provided,
-  // share the primary pool directly so reads and writes are guaranteed to use the exact same database.
-  if (!process.env.INSIGHTED_DATABASE_URL && masterDbName === defaultDbName) {
+  // On localhost, or if master database name matches defaultDbName,
+  // share the primary pool directly so reads and writes are guaranteed to use the local database.
+  if (
+    isLoadTestMode ||
+    isLocalHost ||
+    (!process.env.INSIGHTED_DATABASE_URL && masterDbName === defaultDbName)
+  ) {
     return getPool();
   }
 
@@ -285,7 +289,7 @@ function isDivisionOrTestAccount(schoolId) {
  * (Division test accounts / dummy accounts -> stagingPool; Real schools -> prodPool / default pool)
  */
 function getPoolForSchool(schoolId) {
-  if (isLoadTestMode) {
+  if (isLoadTestMode || isLocalHost) {
     return getPool();
   }
   if (isDivisionOrTestAccount(schoolId)) {
@@ -298,6 +302,7 @@ function getPoolForSchool(schoolId) {
  * Checks if any query parameter or SQL text targets a test account
  */
 function containsTestAccountIndicator(text, params) {
+  if (isLocalHost) return false;
   if (Array.isArray(params)) {
     for (const p of params) {
       if (typeof p === "string" || typeof p === "number") {
@@ -341,8 +346,8 @@ function dbMiddleware(req, res, next) {
       }
     }
 
-    const isTest = !isLoadTestMode && isDivisionOrTestAccount(schoolId);
-    const activePool = isLoadTestMode
+    const isTest = !isLoadTestMode && !isLocalHost && isDivisionOrTestAccount(schoolId);
+    const activePool = isLoadTestMode || isLocalHost
       ? getPool()
       : isTest
         ? getStagingPool()
@@ -362,8 +367,8 @@ function dbMiddleware(req, res, next) {
  * Runs a function within the context of a specific school ID
  */
 function runWithSchool(schoolId, callback) {
-  const isTest = !isLoadTestMode && isDivisionOrTestAccount(schoolId);
-  const activePool = isLoadTestMode
+  const isTest = !isLoadTestMode && !isLocalHost && isDivisionOrTestAccount(schoolId);
+  const activePool = isLoadTestMode || isLocalHost
     ? getPool()
     : isTest
       ? getStagingPool()
