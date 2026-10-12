@@ -1,34 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
-const { insightEdPool } = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const {
-  resolvePersonnelId,
-  convertExcelTimeToHHMM,
-  parseDays,
-  sanitizeGrade,
-  parseDateFromParts,
-  parsePostGraduateDiscipline,
-  sanitizeGradeLevel,
-  sanitizeGradeArray,
-  checkIsSchoolHead,
   sanitizeStepIncrement,
-  sanitizeAge,
-  isCanonicalPosition,
-  determinePositionCategory,
-  generateProfilingCode,
   calculateAge,
-  formatTrainingRecord,
-  formatDesignationRecord,
   formatWorkloadRecord,
-  formatAdminTaskRecord,
-  ensureDisabledYearsColumn,
   formatPersonnelRecord,
   fetchMasterPersonnelFromInsightEd,
   formatCanonicalPrn,
-  MONTH_NAME_MAP,
-  CANONICAL_POSITIONS_BY_CATEGORY,
 } = require("./common");
 
 

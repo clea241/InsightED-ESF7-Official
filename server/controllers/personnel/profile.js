@@ -1,35 +1,21 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
-const { insightEdPool } = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const { coerceDateField, isDatePlaceholder } = require("../../utils/dateInput");
 const {
   formatCanonicalPrn,
   resolvePersonnelId,
-  convertExcelTimeToHHMM,
-  parseDays,
-  sanitizeGrade,
-  parseDateFromParts,
   parsePostGraduateDiscipline,
-  sanitizeGradeLevel,
   sanitizeGradeArray,
-  checkIsSchoolHead,
   sanitizeStepIncrement,
   sanitizeAge,
-  isCanonicalPosition,
   determinePositionCategory,
-  generateProfilingCode,
   calculateAge,
-  formatTrainingRecord,
-  formatDesignationRecord,
   formatWorkloadRecord,
-  formatAdminTaskRecord,
   ensureDisabledYearsColumn,
   formatPersonnelRecord,
   fetchMasterPersonnelFromInsightEd,
-  MONTH_NAME_MAP,
-  CANONICAL_POSITIONS_BY_CATEGORY,
 } = require("./common");
 
 
@@ -51,7 +37,7 @@ router.get("/autofill-template", async (req, res) => {
 // POST /api/personnel/share — Share a clustered personnel to target satellite schools
 router.post("/share", async (req, res) => {
   try {
-    const { prn, target_school_ids, first_name, last_name } = req.body;
+    const { prn, target_school_ids } = req.body;
     const sourceSchoolId = getSchoolIdFromRequest(req) || "199998";
     const cleanSourceId = String(sourceSchoolId).replace("SCH-", "").trim();
 
@@ -716,11 +702,6 @@ router.post("/", async (req, res) => {
     }
 
     // Generate sequential numeric ID matching all existing personnel records
-    const isClientUuid =
-      req.body.id &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        req.body.id,
-      );
     let newId = req.body.id && /^\d+$/.test(req.body.id) ? req.body.id : null;
     if (!newId) {
       const maxIdRes = await client.query(
@@ -930,7 +911,7 @@ router.post("/", async (req, res) => {
       ),
     ];
 
-    const empRes = await client.query(insertEmpQuery, empValues);
+    await client.query(insertEmpQuery, empValues);
 
     //     // Upsert linked education
     const eduHighestAttainment = (
@@ -1055,7 +1036,7 @@ router.post("/", async (req, res) => {
       JSON.stringify(req.body),
     ];
 
-    const educRes = await client.query(insertEducQuery, educValues);
+    await client.query(insertEducQuery, educValues);
 
     // Sync training rows into esf7_personnel_ld_trainings
     await syncTrainingsInTransaction(
@@ -1176,7 +1157,6 @@ router.put("/:id", async (req, res) => {
     const {
       school_id,
       schoolId,
-      prn,
       type,
       salutation,
       first_name,
@@ -1310,13 +1290,7 @@ router.put("/:id", async (req, res) => {
 
     const resolvedId = await resolvePersonnelId(client, req.params.id);
     const currentRes = await client.query(
-      `SELECT * FROM esf7_personnel_profile 
-       WHERE id = $1 OR UPPER(id) = UPPER($1) 
-          OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) 
-          OR prn = $1 
-          OR id = $2 
-          OR id IN (SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1)
-       LIMIT 1`,
+      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) OR prn = $1 OR id = $2 OR id IN (SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1) LIMIT 1`,
       [req.params.id, resolvedId],
     );
 

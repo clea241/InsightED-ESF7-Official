@@ -788,9 +788,6 @@ router.post("/sned", async (req, res) => {
   const targetSchoolId = school_id || bodySchoolId || "108348";
   const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
   const targetGradeLevel = grade_level || gradeLevel || "SNED (NON-GRADED)";
-  const targetSectionName = (section_name || sectionName || "SNED SECTION 1")
-    .toUpperCase()
-    .trim();
   const targetProgramType = program_type || programType || null;
   const targetAdviserId =
     adviser_id || advisor_id || advisorId || adviserId || null;
@@ -910,9 +907,6 @@ router.post("/als", async (req, res) => {
   const targetSchoolId = school_id || bodySchoolId || "108348";
   const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
   const targetGradeLevel = grade_level || gradeLevel || "ALS";
-  const targetSectionName = (section_name || sectionName || "ALS SECTION 1")
-    .toUpperCase()
-    .trim();
   const targetDeliveryMode = delivery_mode || deliveryMode || null;
   const targetClcName = clc_name || clcName || null;
   const targetAdviserId =
@@ -1035,7 +1029,6 @@ router.post("/aral", async (req, res) => {
   const targetGrade = grade_level || gradeLevel || "Grade 3";
   const targetTool = assessment_tool || assessmentTool || null;
   const targetProfile = profile_level || profileLevel || null;
-  const targetName = section_name || sectionName || `ARAL Section`;
   const targetTutorId = tutor_id || tutorId || null;
 
   const mVal = Number(male_learners || maleLearners || 0);
@@ -1153,13 +1146,6 @@ router.post("/remedial-enrichment", async (req, res) => {
     sectionType ||
     "REMEDIAL";
   const targetGrade = grade_level || gradeLevel || "Grade 1";
-  const targetName = (
-    section_name ||
-    sectionName ||
-    `${targetIntervention} SECTION`
-  )
-    .toUpperCase()
-    .trim();
   const targetTeacherId =
     assigned_teacher_id || assignedTeacherId || adviser_id || adviserId || null;
 

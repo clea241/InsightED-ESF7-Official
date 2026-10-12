@@ -58,16 +58,10 @@ router.put("/curricular-config", async (req, res) => {
       has_shs_iped,
       has_shs_mad,
       // Array tags support for backward compatibility with frontend selectors
-      hasElemInclusive,
-      has_elem_inclusive,
       elemInclusivePrograms,
       elem_inclusive_programs,
-      hasJhsInclusive,
-      has_jhs_inclusive,
       jhsInclusivePrograms,
       jhs_inclusive_programs,
-      hasShsInclusive,
-      has_shs_inclusive,
       shsInclusivePrograms,
       shs_inclusive_programs,
       // Shifts configuration

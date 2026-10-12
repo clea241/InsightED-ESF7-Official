@@ -1313,21 +1313,7 @@ router.get("/personnel/:personnel_id/state", async (req, res) => {
   }
 });
 
-// Removes one term's rows from raw_payload.workloadRows (every other term is kept) and stamps the version marker.
-// $2 = term, $3 = new marker.
-const SQL_STRIP_TERM_FROM_PAYLOAD = `
-  jsonb_set(
-    jsonb_set(
-      COALESCE(raw_payload, '{}'::jsonb),
-      '{workloadRows}',
-      COALESCE((
-        SELECT jsonb_agg(e) FROM jsonb_array_elements(
-          CASE WHEN jsonb_typeof(raw_payload->'workloadRows') = 'array' THEN raw_payload->'workloadRows' ELSE '[]'::jsonb END
-        ) e WHERE COALESCE(e->>'term', '1st') <> $2
-      ), '[]'::jsonb)
-    ),
-    '{workloadSavedAt}', to_jsonb($3::text)
-  )`;
+
 
 // DELETE one teacher's rows for one term (workload rows, SHS rows, and the copy in the profile payload).
 router.delete("/personnel/:personnel_id/term/:term", async (req, res) => {
