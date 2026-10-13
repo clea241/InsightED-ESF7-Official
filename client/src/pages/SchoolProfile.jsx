@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useAuth } from "../context/AuthContext";
 import { getLocalDraft, setLocalDraft } from "../services/db";
@@ -24,6 +24,7 @@ import {
   FiCheckCircle,
   FiClock,
   FiX,
+  FiCheck,
 } from "react-icons/fi";
 
 const OFFERING_METADATA = {
@@ -83,6 +84,65 @@ export default function SchoolProfile() {
   const isJHSActive = currentOfferings.includes("JHS");
   const isSHSActive = currentOfferings.includes("SHS");
 
+  // Dynamic grade levels offered by the school based on curricular offerings
+  const offeredGradeLevels = useMemo(() => {
+    const offerings = (schoolInfo?.curricularOffering || []).map((o) =>
+      String(o).toUpperCase(),
+    );
+    const grades = [];
+    const hasElem =
+      offerings.some(
+        (o) =>
+          o.includes("ELEM") ||
+          o.includes("KINDER") ||
+          o === "PURELY ES" ||
+          o.includes("ES"),
+      ) || isElemActive;
+    const hasJHS =
+      offerings.some(
+        (o) => o.includes("JHS") || o.includes("JUNIOR"),
+      ) || isJHSActive;
+    const hasSHS =
+      offerings.some(
+        (o) => o.includes("SHS") || o.includes("SENIOR"),
+      ) || isSHSActive;
+
+    if (hasElem || (!hasJHS && !hasSHS && offerings.length === 0)) {
+      grades.push(
+        "Kinder",
+        "Grade 1",
+        "Grade 2",
+        "Grade 3",
+        "Grade 4",
+        "Grade 5",
+        "Grade 6",
+      );
+    }
+    if (hasJHS) {
+      grades.push("Grade 7", "Grade 8", "Grade 9", "Grade 10");
+    }
+    if (hasSHS) {
+      grades.push("Grade 11", "Grade 12");
+    }
+    return grades.length > 0
+      ? grades
+      : [
+          "Kinder",
+          "Grade 1",
+          "Grade 2",
+          "Grade 3",
+          "Grade 4",
+          "Grade 5",
+          "Grade 6",
+          "Grade 7",
+          "Grade 8",
+          "Grade 9",
+          "Grade 10",
+          "Grade 11",
+          "Grade 12",
+        ];
+  }, [schoolInfo?.curricularOffering, isElemActive, isJHSActive, isSHSActive]);
+
   // Form State separated by level
   const [hasElemSpecialPrograms, setHasElemSpecialPrograms] = useState("no"); // 'yes' | 'no'
   const [elemSpecialProgram, setElemSpecialProgram] = useState(false);
@@ -109,7 +169,37 @@ export default function SchoolProfile() {
   const [hasShifts, setHasShifts] = useState("no"); // 'yes' | 'no'
   const [shiftStartTime, setShiftStartTime] = useState("07:00");
   const [shiftEndTime, setShiftEndTime] = useState("18:00");
+  const [shiftsConfig, setShiftsConfig] = useState({}); // { [gradeLevel]: "Single Shift" | "Double Shift" | "Triple Shift" }
   const [isSaving, setIsSaving] = useState(false);
+
+  // Mutually exclusive shift selection per grade level
+  const handleGradeShiftChange = (grade, shiftType) => {
+    setShiftsConfig((prev) => {
+      const current = prev || {};
+      const next = { ...current };
+      if (next[grade] === shiftType) {
+        // Deselect if already active
+        delete next[grade];
+      } else {
+        // Automatically deselect previous option and select clicked shift
+        next[grade] = shiftType;
+      }
+      syncConfigDraft({ shiftsConfig: next });
+      return next;
+    });
+  };
+
+  // Bulk action helpers
+  const handleBulkGradeShift = (shiftType) => {
+    const updated = {};
+    if (shiftType) {
+      offeredGradeLevels.forEach((g) => {
+        updated[g] = shiftType;
+      });
+    }
+    setShiftsConfig(updated);
+    syncConfigDraft({ shiftsConfig: updated });
+  };
 
   // Confirmation Modal & Spotlight Glow State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -133,6 +223,7 @@ export default function SchoolProfile() {
     hasShifts,
     shiftStartTime,
     shiftEndTime,
+    shiftsConfig: JSON.stringify(shiftsConfig || {}),
   });
 
   const isDirty = Boolean(
@@ -159,6 +250,13 @@ export default function SchoolProfile() {
       setHasShifts(snap.hasShifts || "no");
       setShiftStartTime(snap.shiftStartTime || "07:00");
       setShiftEndTime(snap.shiftEndTime || "18:00");
+      setShiftsConfig(
+        snap.shiftsConfig
+          ? typeof snap.shiftsConfig === "string"
+            ? JSON.parse(snap.shiftsConfig)
+            : snap.shiftsConfig
+          : schoolInfo?.shiftsConfig || schoolInfo?.shifts_config || {},
+      );
     } catch (e) {}
   };
 
@@ -282,6 +380,16 @@ export default function SchoolProfile() {
           config?.shiftEndTime || schoolInfo?.shiftEndTime || "18:00",
         );
 
+        const initialShiftsConfig =
+          config?.shiftsConfig !== undefined
+            ? config.shiftsConfig
+            : schoolInfo?.shiftsConfig || schoolInfo?.shifts_config || {};
+        setShiftsConfig(
+          typeof initialShiftsConfig === "string"
+            ? JSON.parse(initialShiftsConfig)
+            : initialShiftsConfig || {},
+        );
+
         if (config) {
           setHasElemSpecialPrograms(
             config.hasElemSpecialPrograms ? "yes" : "no",
@@ -371,6 +479,13 @@ export default function SchoolProfile() {
                 setShiftStartTime(queued.shiftStartTime);
               if (queued.shiftEndTime != null)
                 setShiftEndTime(queued.shiftEndTime);
+              if (queued.shiftsConfig !== undefined) {
+                setShiftsConfig(
+                  typeof queued.shiftsConfig === "string"
+                    ? JSON.parse(queued.shiftsConfig)
+                    : queued.shiftsConfig || {},
+                );
+              }
             }
           },
         }).catch(() => {});
@@ -439,6 +554,10 @@ export default function SchoolProfile() {
         overrides.shiftEndTime !== undefined
           ? overrides.shiftEndTime
           : shiftEndTime;
+      const curShiftsConfig =
+        overrides.shiftsConfig !== undefined
+          ? overrides.shiftsConfig
+          : shiftsConfig;
 
       const selectedPrograms = [
         ...(curHasElemSpecial === "yes" && curElemSpecial
@@ -470,6 +589,7 @@ export default function SchoolProfile() {
         hasShifts: curHasShifts === "yes",
         shiftStartTime: curHasShifts === "yes" ? curShiftStart : "07:00",
         shiftEndTime: curHasShifts === "yes" ? curShiftEnd : "18:00",
+        shiftsConfig: curHasShifts === "yes" ? curShiftsConfig : {},
         schoolYear: schoolInfo.schoolYear || "SY 26-27",
       };
 
@@ -592,6 +712,7 @@ export default function SchoolProfile() {
         hasShifts: hasShifts === "yes",
         shiftStartTime: hasShifts === "yes" ? shiftStartTime : "07:00",
         shiftEndTime: hasShifts === "yes" ? shiftEndTime : "18:00",
+        shiftsConfig: hasShifts === "yes" ? shiftsConfig : {},
         schoolYear: schoolInfo.schoolYear || "SY 26-27",
       };
 
@@ -603,6 +724,7 @@ export default function SchoolProfile() {
           specialPrograms: selectedPrograms,
           shsCurriculumModel: configData.shsCurriculumModel,
           inclusivePrograms: selectedInclusive,
+          shiftsConfig: configData.shiftsConfig,
         }));
       }
 
@@ -897,50 +1019,6 @@ export default function SchoolProfile() {
                     >
                       {schoolInfo.schoolId || "—"}
                     </span>
-                  </div>
-
-                  <div
-                    style={{
-                      padding: "14px 18px",
-                      background: "#f8fafc",
-                      borderRadius: "14px",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <label
-                      style={{
-                        fontSize: "11px",
-                        textTransform: "uppercase",
-                        color: "#64748b",
-                        fontWeight: "800",
-                        letterSpacing: "0.04em",
-                        display: "block",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      IERN (Entity Ref No.)
-                    </label>
-                    <input
-                      type="text"
-                      value={iern}
-                      onChange={(e) => {
-                        setIern(e.target.value);
-                        syncConfigDraft({ iern: e.target.value });
-                      }}
-                      placeholder="Optional IERN..."
-                      style={{
-                        width: "100%",
-                        padding: "6px 10px",
-                        borderRadius: "8px",
-                        border: "1px solid #cbd5e1",
-                        fontSize: "14px",
-                        fontWeight: "700",
-                        color: "#0f172a",
-                        background: "#ffffff",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
                   </div>
 
                   <div
@@ -2423,7 +2501,7 @@ export default function SchoolProfile() {
                     color: "#64748b",
                   }}
                 >
-                  Declare custom institutional shift operating hours for
+                  Declare institutional shift schedules by grade level for
                   timetable scheduling and workload computations.
                 </p>
               </div>
@@ -2466,8 +2544,8 @@ export default function SchoolProfile() {
                       color: "#64748b",
                     }}
                   >
-                    If disabled, timetables default to DepEd standard
-                    operational bounds (7:00 AM – 6:00 PM).
+                    If disabled, timetables default to DepEd standard single
+                    shift schedule.
                   </p>
                 </div>
 
@@ -2528,120 +2606,325 @@ export default function SchoolProfile() {
                     border: "1.5px solid #bae6fd",
                     display: "flex",
                     flexDirection: "column",
-                    gap: "16px",
+                    gap: "12px",
                   }}
                 >
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fit, minmax(200px, 1fr))",
-                      gap: "16px",
-                    }}
-                  >
-                    <div>
-                      <label
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "800",
-                          color: "#0369a1",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.04em",
-                          display: "block",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        Shift Start Time
-                      </label>
-                      <input
-                        type="time"
-                        value={shiftStartTime}
-                        onChange={(e) => {
-                          setShiftStartTime(e.target.value);
-                          syncConfigDraft({ shiftStartTime: e.target.value });
-                        }}
-                        min="04:00"
-                        max="21:59"
-                        style={{
-                          width: "100%",
-                          padding: "10px 14px",
-                          borderRadius: "10px",
-                          border: "1.5px solid #7dd3fc",
-                          background: "#ffffff",
-                          fontSize: "14px",
-                          fontWeight: "700",
-                          color: "#0f172a",
-                          outline: "none",
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: "800",
-                          color: "#0369a1",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.04em",
-                          display: "block",
-                          marginBottom: "6px",
-                        }}
-                      >
-                        Shift End Time
-                      </label>
-                      <input
-                        type="time"
-                        value={shiftEndTime}
-                        onChange={(e) => {
-                          setShiftEndTime(e.target.value);
-                          syncConfigDraft({ shiftEndTime: e.target.value });
-                        }}
-                        min="04:01"
-                        max="22:00"
-                        style={{
-                          width: "100%",
-                          padding: "10px 14px",
-                          borderRadius: "10px",
-                          border: "1.5px solid #7dd3fc",
-                          background: "#ffffff",
-                          fontSize: "14px",
-                          fontWeight: "700",
-                          color: "#0f172a",
-                          outline: "none",
-                        }}
-                      />
-                    </div>
-                  </div>
-
+                  {/* DYNAMIC GRADE-LEVEL SHIFT SCHEDULE TABLE */}
                   <div
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: "10px",
-                      paddingTop: "8px",
-                      borderTop: "1px dashed #7dd3fc",
-                      fontSize: "12px",
-                      color: "#0369a1",
+                      flexDirection: "column",
+                      gap: "12px",
                     }}
                   >
-                    <span>
-                      Operational window: <strong>4:00 AM – 10:00 PM</strong>{" "}
-                      (e.g. 7:00 AM to 2:10 PM for 50-minute periods).
-                    </span>
-                    <span
+                    <div
                       style={{
-                        background: "#e0f2fe",
-                        padding: "4px 10px",
-                        borderRadius: "12px",
-                        fontWeight: "800",
-                        color: "#0284c7",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: "10px",
                       }}
                     >
-                      Active Window: {shiftStartTime} – {shiftEndTime}
-                    </span>
+                      <div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <h4
+                            style={{
+                              margin: 0,
+                              fontSize: "13px",
+                              fontWeight: "800",
+                              color: "#0f172a",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                            }}
+                          >
+                            Grade-Level Shift Distribution
+                          </h4>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                              background: "#e0f2fe",
+                              color: "#0284c7",
+                            }}
+                          >
+                            {Object.keys(shiftsConfig || {}).length} / {offeredGradeLevels.length} Configured
+                          </span>
+                        </div>
+                        <p
+                          style={{
+                            margin: "4px 0 0 0",
+                            fontSize: "12px",
+                            color: "#475569",
+                          }}
+                        >
+                          Select the operational shift for each offered grade level. Only one shift is permitted per grade level.
+                        </p>
+                      </div>
+
+                      {/* Quick Bulk Action Buttons */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            color: "#64748b",
+                          }}
+                        >
+                          Apply to all:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkGradeShift("Single Shift")}
+                          style={{
+                            padding: "4px 9px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            border: "1px solid #7dd3fc",
+                            background: "#ffffff",
+                            color: "#0369a1",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          Single Shift
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkGradeShift("Double Shift")}
+                          style={{
+                            padding: "4px 9px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            border: "1px solid #7dd3fc",
+                            background: "#ffffff",
+                            color: "#0369a1",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          Double Shift
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkGradeShift("Triple Shift")}
+                          style={{
+                            padding: "4px 9px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            border: "1px solid #7dd3fc",
+                            background: "#ffffff",
+                            color: "#0369a1",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          Triple Shift
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkGradeShift(null)}
+                          style={{
+                            padding: "4px 9px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            border: "1px solid #cbd5e1",
+                            background: "#f8fafc",
+                            color: "#64748b",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Responsive Table Container */}
+                    <div
+                      style={{
+                        width: "100%",
+                        overflowX: "auto",
+                        borderRadius: "12px",
+                        border: "1.5px solid #bae6fd",
+                        background: "#ffffff",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          minWidth: "560px",
+                          borderCollapse: "collapse",
+                          textAlign: "left",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background: "#f0f9ff",
+                              borderBottom: "1.5px solid #bae6fd",
+                            }}
+                          >
+                            <th
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#0369a1",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                              }}
+                            >
+                              Offered Grade Level
+                            </th>
+                            {["Single Shift", "Double Shift", "Triple Shift"].map(
+                              (shiftName) => (
+                                <th
+                                  key={shiftName}
+                                  style={{
+                                    padding: "12px 16px",
+                                    fontSize: "11px",
+                                    fontWeight: "800",
+                                    color: "#0369a1",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.05em",
+                                    textAlign: "center",
+                                    width: "24%",
+                                  }}
+                                >
+                                  {shiftName}
+                                </th>
+                              ),
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {offeredGradeLevels.map((grade, idx) => {
+                            const currentShift = shiftsConfig?.[grade];
+                            return (
+                              <tr
+                                key={grade}
+                                style={{
+                                  borderBottom:
+                                    idx === offeredGradeLevels.length - 1
+                                      ? "none"
+                                      : "1px solid #f1f5f9",
+                                  background: currentShift
+                                    ? "#fcfdff"
+                                    : idx % 2 === 0
+                                      ? "#ffffff"
+                                      : "#fafafa",
+                                  transition: "background 0.15s ease",
+                                }}
+                              >
+                                <td
+                                  style={{
+                                    padding: "11px 16px",
+                                    fontSize: "13px",
+                                    fontWeight: "700",
+                                    color: "#0f172a",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                    }}
+                                  >
+                                    <span>{grade}</span>
+                                    {currentShift && (
+                                      <span
+                                        style={{
+                                          fontSize: "10px",
+                                          fontWeight: "800",
+                                          padding: "1px 7px",
+                                          borderRadius: "6px",
+                                          background: "#e0f2fe",
+                                          color: "#0284c7",
+                                        }}
+                                      >
+                                        {currentShift}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {["Single Shift", "Double Shift", "Triple Shift"].map(
+                                  (shiftType) => {
+                                    const isChecked = currentShift === shiftType;
+                                    return (
+                                      <td
+                                        key={shiftType}
+                                        onClick={() =>
+                                          handleGradeShiftChange(grade, shiftType)
+                                        }
+                                        style={{
+                                          padding: "10px 16px",
+                                          textAlign: "center",
+                                          cursor: "pointer",
+                                          background: isChecked
+                                            ? "#f0f9ff"
+                                            : "transparent",
+                                          userSelect: "none",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            width: "22px",
+                                            height: "22px",
+                                            borderRadius: "6px",
+                                            border: isChecked
+                                              ? "2px solid #0284c7"
+                                              : "1.5px solid #cbd5e1",
+                                            background: isChecked
+                                              ? "#0284c7"
+                                              : "#ffffff",
+                                            color: "#ffffff",
+                                            transition: "all 0.15s ease",
+                                          }}
+                                        >
+                                          {isChecked && (
+                                            <FiCheck
+                                              size={14}
+                                              strokeWidth={3}
+                                            />
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  },
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2958,8 +3241,8 @@ export default function SchoolProfile() {
                     }}
                   >
                     {hasShifts === "yes"
-                      ? `${shiftStartTime} – ${shiftEndTime}`
-                      : "Standard (7:00 AM – 6:00 PM)"}
+                      ? `${Object.keys(shiftsConfig || {}).length} grade level(s) configured`
+                      : "Standard Single Shift"}
                   </span>
                 </div>
               </div>
