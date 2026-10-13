@@ -40,7 +40,7 @@ import {
 import { getEffectivePostGradDisciplines } from "./RoomProfiling";
 import { reportError } from "../services/errorAlert";
 
-export default function RoomQR() {
+export default function RoomQR({ isModal = false, onClose } = {}) {
   const {
     scannedRoom,
     setScannedRoom,
@@ -2952,7 +2952,7 @@ export default function RoomQR() {
   return (
     <div
       style={{
-        maxWidth: "1080px",
+        maxWidth: isModal ? "100%" : "1080px",
         margin: "0 auto",
         display: "grid",
         gap: "20px",
@@ -2967,11 +2967,13 @@ export default function RoomQR() {
           animation: spin 1s linear infinite;
         }
       `}</style>
-      <PortalHeader
-        title="Room QR Mobile Profiling Station"
-        description="Scan room QR codes to allow teachers to self-profile directly on mobile devices."
-        onBack={() => setActiveView && setActiveView("dashboard")}
-      />
+      {!isModal && (
+        <PortalHeader
+          title="Room QR Mobile Profiling Station"
+          description="Scan room QR codes to allow teachers to self-profile directly on mobile devices."
+          onBack={onClose || (() => setActiveView && setActiveView("nodemap"))}
+        />
+      )}
 
       {/* Prominent Top Notification Banner when Submissions are In Queue */}
       {pendingTeachers.length > 0 && (

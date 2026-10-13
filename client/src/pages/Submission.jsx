@@ -34,7 +34,7 @@ export default function Submission() {
       <PortalHeader
         title="Final Review & eSF7 Submission"
         description="Final sign-off, digital certification, and official eSF7 submission to division records."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={() => {
           if (completeNode) completeNode("submission", null);

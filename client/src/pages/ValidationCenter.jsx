@@ -613,7 +613,7 @@ export default function ValidationCenter() {
       <PortalHeader
         title="Validation Center & Digital Certification"
         description="Review data completeness, run compliance checks, and submit eSF7 with School Head E-Signature."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={() => {
           if (completeNode) completeNode("validation", null);

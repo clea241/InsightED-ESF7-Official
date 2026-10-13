@@ -109,3 +109,8 @@ This document serves as the authoritative blueprint for [Roster.jsx](file:///e:/
   * Commits pending drafts automatically upon valid School Head verification before transitioning to `'profile'`.
 * **Version 1.3 (2026-09-07)**: Redundant Designation Column Removal.
   * Removed the obsolete `DESIG.` (MR./MRS./MS.) column header and table cell from the Personnel Roster table, streamlining table real estate to start cleanly with `First Name`.
+* **Version 1.4 (2026-10-13)**: Newly Added Personnel Review & Validation Sidebar Modal Gate.
+  * Added session tracking for newly created personnel records (`newlyAddedPersonnelIds`).
+  * Clicking the green PortalHeader "Save" button checks if newly added personnel or uncommitted drafts exist.
+  * If new personnel exist, opens a sliding sidebar popup modal from the right showcasing all newly added personnel, their plantilla positions, appointment categories, birthdate/age verification, and email statuses for review before committing to PostgreSQL.
+  * Provides a direct "Confirm & Save to Database" action inside the sidebar that triggers bulk persistence and clears session tracking.

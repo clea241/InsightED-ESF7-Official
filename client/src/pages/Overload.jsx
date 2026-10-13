@@ -2395,7 +2395,7 @@ export default function Overload() {
       <PortalHeader
         title="Teaching Overload Pay Calculator"
         description="Calculate teaching overload hours, non-working days, tardiness deductions, and overload pay."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
       />
 
       {/* Dynamic Wizard Navigation Stepper */}

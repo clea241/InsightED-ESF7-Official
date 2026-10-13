@@ -65,10 +65,9 @@ export default function Sidebar() {
       items: [
         { view: "school", label: "01. School Profile", Icon: FiBookOpen },
         { view: "roster", label: "02. Personnel Roster", Icon: FiUsers },
-        { view: "room-qr", label: "03. Room QR Portal", Icon: FiMaximize },
         {
           view: "profile",
-          label: "04. Personnel Profiling",
+          label: "03. Personnel Profiling",
           Icon: FiUserCheck,
         },
       ],
@@ -77,15 +76,9 @@ export default function Sidebar() {
       key: "phase2",
       title: "Phase 2: Classes & Workload",
       items: [
-        {
-          view: "requests",
-          label: "05. Request Center",
-          Icon: FiMail,
-          badge: incomingRequests?.length > 0 ? incomingRequests.length : null,
-        },
-        { view: "classes", label: "06. Organized Classes", Icon: FiGrid },
-        { view: "designation", label: "07. Designations", Icon: FiBookmark },
-        { view: "workload", label: "08. Workload & Timetable", Icon: FiClock },
+        { view: "classes", label: "04. Organized Classes", Icon: FiGrid },
+        { view: "designation", label: "05. Designations", Icon: FiBookmark },
+        { view: "workload", label: "06. Workload & Timetable", Icon: FiClock },
       ],
     },
     {
@@ -94,12 +87,12 @@ export default function Sidebar() {
       items: [
         {
           view: "allowances",
-          label: "09. Allowances & Incentives",
+          label: "07. Allowances & Incentives",
           Icon: FiDollarSign,
           isLocked: !bypassNodeLocks,
         },
-        { view: "overload", label: "10. Overload Center", Icon: FiRepeat },
-        { view: "validation", label: "11. Validation Center", Icon: FiShield },
+        { view: "overload", label: "08. Overload Center", Icon: FiRepeat },
+        { view: "validation", label: "09. Validation Center", Icon: FiShield },
       ],
     },
   ];

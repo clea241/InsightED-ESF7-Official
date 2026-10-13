@@ -66,7 +66,7 @@ export default function NodeMap() {
           id: "roster",
           nodeNumber: "02",
           title: "Personnel Roster",
-          subtitle: "Master personnel list & appointment status",
+          subtitle: "Master personnel list, appointment status & Room QR",
           Icon: FiUsers,
           view: "roster",
           summary: !isInitialized
@@ -74,19 +74,11 @@ export default function NodeMap() {
             : `${personnel.length} Registered Personnel`,
         },
         {
-          id: "room-qr",
-          nodeNumber: "03",
-          title: "Room QR Portal",
-          subtitle: "Teacher passcode identity & self-profiling QR scanner",
-          Icon: FiMaximize,
-          view: "room-qr",
-          summary: "QR Posters & Teacher Self-Profiling",
-        },
-        {
           id: "profile",
-          nodeNumber: "04",
+          nodeNumber: "03",
           title: "Personnel Profiling",
-          subtitle: "Educational qualifications, LET & eligibility",
+          subtitle:
+            "Educational qualifications, LET eligibility & Inter-School Requests",
           Icon: FiUserCheck,
           view: "profile",
           summary: !isInitialized
@@ -123,22 +115,11 @@ export default function NodeMap() {
       key: "phase2",
       title: "Phase 2: Academic Structuring & Timetable",
       subtitle:
-        "Inter-school requests, class sections, ancillary designations, and teaching workloads",
+        "Class sections, ancillary designations, and teaching workloads",
       nodes: [
         {
-          id: "requests",
-          nodeNumber: "05",
-          title: "Request Center",
-          subtitle: "Incoming and outgoing personnel transfer requests",
-          Icon: FiMail,
-          view: "requests",
-          summary: !isInitialized
-            ? "Loading requests..."
-            : `${incomingRequests?.length || 0} Pending Inter-School Requests`,
-        },
-        {
           id: "classes",
-          nodeNumber: "06",
+          nodeNumber: "04",
           title: "Organized Classes",
           subtitle: "Section setup, advisers & learner counts",
           Icon: FiGrid,
@@ -149,7 +130,7 @@ export default function NodeMap() {
         },
         {
           id: "designation",
-          nodeNumber: "07",
+          nodeNumber: "05",
           title: "Designations & Duties",
           subtitle: "Ancillary roles, grade chairpersons & SDS approvals",
           Icon: FiBookmark,
@@ -160,7 +141,7 @@ export default function NodeMap() {
         },
         {
           id: "workload",
-          nodeNumber: "08",
+          nodeNumber: "06",
           title: "Workload & Timetable",
           subtitle: "Teaching schedules, period durations & timetable",
           Icon: FiClock,
@@ -179,7 +160,7 @@ export default function NodeMap() {
       nodes: [
         {
           id: "allowances",
-          nodeNumber: "09",
+          nodeNumber: "07",
           title: "Allowances & Incentives",
           subtitle:
             "Special Hardship Allowances, Honorarium & DepEd Compensation Incentives",
@@ -189,7 +170,7 @@ export default function NodeMap() {
         },
         {
           id: "overload",
-          nodeNumber: "10",
+          nodeNumber: "08",
           title: "Teaching Overload Center",
           subtitle: "Module temporarily locked for DepEd policy alignment",
           Icon: FiRepeat,
@@ -199,7 +180,7 @@ export default function NodeMap() {
         },
         {
           id: "validation",
-          nodeNumber: "11",
+          nodeNumber: "09",
           title: "Validation Center",
           subtitle: "Validation rules, error auditing & quality flags",
           Icon: FiShield,

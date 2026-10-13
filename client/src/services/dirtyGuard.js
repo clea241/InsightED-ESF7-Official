@@ -260,17 +260,10 @@ const openUnsavedChangesModal = async ({
 
   const title = "Unsaved Changes";
   const text = isLogout
-    ? "You have unsaved changes on this screen. If you log out now, your unsaved changes will be lost. Would you like to stay and save them, or discard and log out anyway?"
+    ? "You have unsaved changes on this screen. Would you like to save your changes before logging out, or discard them?"
     : isTab
-      ? "You have unsaved changes in this section. If you switch tabs, your unsaved changes will be lost. Would you like to stay and save them, or discard and switch anyway?"
-      : "You have unsaved changes on this screen that have not been saved to the database. Would you like to stay and save them, or discard and leave anyway?";
-
-  const confirmButtonText = isLogout ? "Discard & Log Out" : "Discard & Leave";
-  const saveButtonText = isLogout
-    ? "Save & Log Out"
-    : isTab
-      ? "Save & Switch"
-      : "Save & Leave";
+      ? "You have unsaved changes in this section. Would you like to save your changes before switching tabs, or discard them?"
+      : "You have unsaved changes on this screen that have not been saved to the database. Would you like to save your changes, or discard them?";
 
   const [{ default: Swal }] = await Promise.all([
     import("sweetalert2"),
@@ -282,14 +275,13 @@ const openUnsavedChangesModal = async ({
     text,
     icon: "warning",
     iconColor: "#D97706",
-    showCancelButton: true,
-    confirmButtonText,
-    cancelButtonText: "Stay & Save",
-    confirmButtonColor: "#DC2626",
-    cancelButtonColor: "#2563EB",
+    showCloseButton: true,
+    showCancelButton: false,
     showDenyButton: typeof onSave === "function",
-    denyButtonText: saveButtonText,
+    denyButtonText: "Save Changes",
     denyButtonColor: "#15803D",
+    confirmButtonText: "Discard Changes",
+    confirmButtonColor: "#DC2626",
     // Runs while the deny button shows its loader; returning false keeps the dialog open.
     preDeny: async () => {
       let result;
@@ -326,15 +318,14 @@ const openUnsavedChangesModal = async ({
       return "saved";
     },
     reverseButtons: true,
-    focusCancel: true,
+    focusDeny: true,
     allowOutsideClick: false,
-    allowEscapeKey: false,
+    allowEscapeKey: true,
     customClass: {
       popup: "insighted-swal-modal",
       title: "insighted-swal-title",
       htmlContainer: "insighted-swal-text",
       confirmButton: "insighted-swal-discard-btn",
-      cancelButton: "insighted-swal-stay-btn",
       denyButton: "insighted-swal-save-btn",
     },
   });

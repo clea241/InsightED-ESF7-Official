@@ -4172,7 +4172,7 @@ export default function OrganizedClasses() {
       <PortalHeader
         title="Organized Classes & Section Setup"
         description="Configure curriculum-level sections, assign class advisers, and manage active subjects offered."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={handleSave}
         continueText="Save"

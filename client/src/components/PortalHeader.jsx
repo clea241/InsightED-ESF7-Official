@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FiArrowLeft, FiLogOut, FiRotateCcw, FiMap } from "react-icons/fi";
+import { FiArrowLeft, FiLogOut, FiRotateCcw, FiMap, FiSave } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useApp } from "../context/AppContext";
 import { checkBeforeLeave, isAnyScreenDirty } from "../services/dirtyGuard";
@@ -11,7 +11,7 @@ export default function PortalHeader({
   title = "Registry Management Portal",
   description = "Access, audit, and organize personnel registries across regional divisions in a unified visual system.",
   onBack,
-  backText = "Back to Dashboard",
+  backText = "Back to Node Map",
   actionButton,
   onLogout,
   showLogout = false,
@@ -35,12 +35,28 @@ export default function PortalHeader({
   const schoolInfo = app?.schoolInfo || null;
   const appDiscardDraft = app?.discardLocalDraft || null;
   const appSetActiveView = app?.setActiveView || null;
+  const isSaveDisabled =
+    saveDisabled !== undefined ? saveDisabled : continueDisabled;
+
+  const rawSchoolId =
+    schoolInfo?.schoolId ||
+    schoolInfo?.school_id ||
+    auth?.user?.school_id ||
+    auth?.user?.schoolId ||
+    "";
+  const displaySchoolId = rawSchoolId
+    ? String(rawSchoolId).replace(/^SCH-/i, "").trim()
+    : "";
 
   const dynamicBureauText =
     bureauText ||
     (schoolInfo && schoolInfo.schoolName
-      ? `${String(schoolInfo.schoolName).toUpperCase()} • ${schoolInfo.schoolYear || "SY 2026-2027"}`
-      : "PURO INTEGRATED SCHOOL • SY 2026-2027");
+      ? (displaySchoolId
+          ? `${String(schoolInfo.schoolName).toUpperCase()} • ${displaySchoolId} • ${schoolInfo.schoolYear || "SY 2026-2027"}`
+          : `${String(schoolInfo.schoolName).toUpperCase()} • ${schoolInfo.schoolYear || "SY 2026-2027"}`)
+      : (displaySchoolId
+          ? `PURO INTEGRATED SCHOOL • ${displaySchoolId} • SY 2026-2027`
+          : "PURO INTEGRATED SCHOOL • SY 2026-2027"));
 
   const handleLogoutClick = async () => {
     if (isAnyScreenDirty()) {
@@ -161,12 +177,15 @@ export default function PortalHeader({
         {(onBack ||
           actionButton ||
           showDiscard ||
+          showNodeMap ||
+          onSave ||
+          onContinue ||
           (showLogout && (handleLogoutClick || onLogout || authLogout))) && (
           <div
             style={{
               width: "100%",
               display: "flex",
-              justify: "space-between",
+              justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: "12px",
@@ -180,13 +199,17 @@ export default function PortalHeader({
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
+                  justifyContent: "center",
+                  height: "38px",
+                  boxSizing: "border-box",
                   gap: "8px",
-                  padding: "9px 20px",
+                  padding: "0 18px",
                   borderRadius: "12px",
                   fontSize: "12px",
                   fontWeight: "900",
                   textTransform: "uppercase",
-                  letterSpacing: "0.12em",
+                  letterSpacing: "0.1em",
+                  lineHeight: 1,
                   color: "#FFFFFF",
                   background:
                     "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
@@ -196,7 +219,7 @@ export default function PortalHeader({
                   transition: "all 0.2s ease",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
                   e.currentTarget.style.boxShadow =
                     "0 6px 18px rgba(37, 99, 235, 0.45)";
                 }}
@@ -206,7 +229,7 @@ export default function PortalHeader({
                     "0 4px 12px rgba(37, 99, 235, 0.35)";
                 }}
               >
-                <FiArrowLeft style={{ fontSize: "16px", color: "#FFFFFF" }} />
+                <FiArrowLeft style={{ fontSize: "15px", color: "#FFFFFF", flexShrink: 0 }} />
                 <span>{backText}</span>
               </button>
             ) : showLogout ? (
@@ -216,13 +239,17 @@ export default function PortalHeader({
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
+                  justifyContent: "center",
+                  height: "38px",
+                  boxSizing: "border-box",
                   gap: "6px",
-                  padding: "8px 16px",
+                  padding: "0 16px",
                   borderRadius: "12px",
-                  fontSize: "11.5px",
+                  fontSize: "12px",
                   fontWeight: "800",
                   textTransform: "uppercase",
                   letterSpacing: "0.08em",
+                  lineHeight: 1,
                   color: "#DC2626",
                   background: "rgba(254, 226, 226, 0.7)",
                   border: "1px solid rgba(252, 165, 165, 0.8)",
@@ -247,7 +274,7 @@ export default function PortalHeader({
                 title="Log out of InsightED"
               >
                 <FiLogOut
-                  style={{ fontSize: "14px", transform: "scaleX(-1)" }}
+                  style={{ fontSize: "14px", transform: "scaleX(-1)", flexShrink: 0 }}
                 />
                 <span>Logout</span>
               </button>
@@ -255,7 +282,7 @@ export default function PortalHeader({
               <div />
             )}
 
-            {/* Right Side: Discard Changes, Node Map, Save & Continue, & Custom Action Buttons */}
+            {/* Right Side: Save, Discard Changes, Node Map, & Custom Action Buttons */}
             <div
               style={{
                 marginLeft: "auto",
@@ -265,6 +292,63 @@ export default function PortalHeader({
                 flexWrap: "wrap",
               }}
             >
+              {(onSave || onContinue) && (
+                <button
+                  type="button"
+                  onClick={onSave || onContinue}
+                  disabled={isSaveDisabled}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "38px",
+                    boxSizing: "border-box",
+                    gap: "7px",
+                    padding: "0 22px",
+                    borderRadius: "12px",
+                    fontSize: "12px",
+                    fontWeight: "900",
+                    letterSpacing: "0.04em",
+                    lineHeight: 1,
+                    color: "#FFFFFF",
+                    background: isSaveDisabled
+                      ? "linear-gradient(135deg, rgba(16, 185, 129, 0.55) 0%, rgba(5, 150, 105, 0.55) 100%)"
+                      : "linear-gradient(135deg, #10B981 0%, #059669 100%)",
+                    border: isSaveDisabled
+                      ? "1px solid rgba(16, 185, 129, 0.4)"
+                      : "none",
+                    cursor: isSaveDisabled ? "not-allowed" : "pointer",
+                    boxShadow: isSaveDisabled
+                      ? "0 2px 8px rgba(16, 185, 129, 0.18)"
+                      : "0 4px 14px rgba(16, 185, 129, 0.45)",
+                    opacity: isSaveDisabled ? 0.85 : 1,
+                    transition: "all 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSaveDisabled) {
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                      e.currentTarget.style.boxShadow =
+                        "0 6px 18px rgba(16, 185, 129, 0.55)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSaveDisabled) {
+                      e.currentTarget.style.transform = "none";
+                      e.currentTarget.style.boxShadow =
+                        "0 4px 14px rgba(16, 185, 129, 0.45)";
+                    }
+                  }}
+                >
+                  <FiSave style={{ fontSize: "14px", flexShrink: 0 }} />
+                  <span>
+                    {saveText ||
+                      (continueText === "Save & Continue ➔"
+                        ? "Save"
+                        : continueText)}
+                  </span>
+                </button>
+              )}
+
               {showDiscard && (
                 <button
                   type="button"
@@ -272,38 +356,61 @@ export default function PortalHeader({
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
+                    height: "38px",
+                    boxSizing: "border-box",
                     gap: "6px",
-                    padding: "8px 16px",
+                    padding: "0 15px",
                     borderRadius: "12px",
-                    fontSize: "11.5px",
-                    fontWeight: "800",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: "#DC2626",
-                    background: "rgba(254, 226, 226, 0.7)",
-                    border: "1px solid rgba(252, 165, 165, 0.8)",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    letterSpacing: "0.02em",
+                    lineHeight: 1,
+                    color: isSaveDisabled ? "#94A3B8" : "#DC2626",
+                    background: isSaveDisabled
+                      ? "rgba(248, 250, 252, 0.85)"
+                      : "#FFFFFF",
+                    border: isSaveDisabled
+                      ? "1px solid #E2E8F0"
+                      : "1px solid rgba(239, 68, 68, 0.35)",
                     cursor: "pointer",
                     transition: "all 0.2s ease",
-                    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.03)",
+                    boxShadow: isSaveDisabled
+                      ? "none"
+                      : "0 1px 3px rgba(0, 0, 0, 0.04)",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "#EF4444";
-                    e.currentTarget.style.color = "#FFFFFF";
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                    e.currentTarget.style.boxShadow =
-                      "0 4px 12px rgba(239, 68, 68, 0.3)";
+                    if (isSaveDisabled) {
+                      e.currentTarget.style.background = "#F1F5F9";
+                      e.currentTarget.style.borderColor = "#CBD5E1";
+                      e.currentTarget.style.color = "#64748B";
+                    } else {
+                      e.currentTarget.style.background = "#FEF2F2";
+                      e.currentTarget.style.borderColor =
+                        "rgba(239, 68, 68, 0.55)";
+                      e.currentTarget.style.color = "#B91C1C";
+                      e.currentTarget.style.boxShadow =
+                        "0 2px 8px rgba(239, 68, 68, 0.15)";
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background =
-                      "rgba(254, 226, 226, 0.7)";
-                    e.currentTarget.style.color = "#DC2626";
-                    e.currentTarget.style.transform = "none";
-                    e.currentTarget.style.boxShadow =
-                      "0 2px 6px rgba(0, 0, 0, 0.03)";
+                    if (isSaveDisabled) {
+                      e.currentTarget.style.background =
+                        "rgba(248, 250, 252, 0.85)";
+                      e.currentTarget.style.borderColor = "#E2E8F0";
+                      e.currentTarget.style.color = "#94A3B8";
+                    } else {
+                      e.currentTarget.style.background = "#FFFFFF";
+                      e.currentTarget.style.borderColor =
+                        "rgba(239, 68, 68, 0.35)";
+                      e.currentTarget.style.color = "#DC2626";
+                      e.currentTarget.style.boxShadow =
+                        "0 1px 3px rgba(0, 0, 0, 0.04)";
+                    }
                   }}
                   title="Discard unsaved local changes and reload template"
                 >
-                  <FiRotateCcw style={{ fontSize: "14px" }} />
+                  <FiRotateCcw style={{ fontSize: "13px", flexShrink: 0 }} />
                   <span>Discard Changes</span>
                 </button>
               )}
@@ -318,14 +425,18 @@ export default function PortalHeader({
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
+                    height: "38px",
+                    boxSizing: "border-box",
                     gap: "6px",
-                    padding: "8px 16px",
+                    padding: "0 16px",
                     borderRadius: "12px",
-                    fontSize: "11.5px",
+                    fontSize: "12px",
                     fontWeight: "800",
+                    lineHeight: 1,
                     color: "var(--navy, #08315F)",
                     background: "#FFFFFF",
-                    border: "1.5px solid var(--line, #BAE6FD)",
+                    border: "1px solid var(--line, #BAE6FD)",
                     cursor: "pointer",
                     boxShadow: "0 2px 6px rgba(0, 0, 0, 0.03)",
                     transition: "all 0.2s ease",
@@ -344,87 +455,8 @@ export default function PortalHeader({
                   }}
                   title="Return to Journey Node Map"
                 >
-                  <FiMap style={{ fontSize: "13px" }} />
+                  <FiMap style={{ fontSize: "13px", flexShrink: 0 }} />
                   <span>Node Map</span>
-                </button>
-              )}
-
-              {(onSave || onContinue) && (
-                <button
-                  type="button"
-                  onClick={onSave || onContinue}
-                  disabled={
-                    saveDisabled !== undefined ? saveDisabled : continueDisabled
-                  }
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "8px 18px",
-                    borderRadius: "12px",
-                    fontSize: "12px",
-                    fontWeight: "800",
-                    color: "#FFFFFF",
-                    background: (
-                      saveDisabled !== undefined
-                        ? saveDisabled
-                        : continueDisabled
-                    )
-                      ? "#94A3B8"
-                      : "linear-gradient(135deg, #10B981 0%, #059669 100%)",
-                    border: "none",
-                    cursor: (
-                      saveDisabled !== undefined
-                        ? saveDisabled
-                        : continueDisabled
-                    )
-                      ? "not-allowed"
-                      : "pointer",
-                    boxShadow: (
-                      saveDisabled !== undefined
-                        ? saveDisabled
-                        : continueDisabled
-                    )
-                      ? "none"
-                      : "0 4px 12px rgba(16, 185, 129, 0.35)",
-                    opacity: (
-                      saveDisabled !== undefined
-                        ? saveDisabled
-                        : continueDisabled
-                    )
-                      ? 0.65
-                      : 1,
-                    transition: "all 0.2s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    const isDisabled =
-                      saveDisabled !== undefined
-                        ? saveDisabled
-                        : continueDisabled;
-                    if (!isDisabled) {
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                      e.currentTarget.style.boxShadow =
-                        "0 6px 16px rgba(16, 185, 129, 0.45)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    const isDisabled =
-                      saveDisabled !== undefined
-                        ? saveDisabled
-                        : continueDisabled;
-                    if (!isDisabled) {
-                      e.currentTarget.style.transform = "none";
-                      e.currentTarget.style.boxShadow =
-                        "0 4px 12px rgba(16, 185, 129, 0.35)";
-                    }
-                  }}
-                >
-                  <span>
-                    {saveText ||
-                      (continueText === "Save & Continue ➔"
-                        ? "Save"
-                        : continueText)}
-                  </span>
                 </button>
               )}
 

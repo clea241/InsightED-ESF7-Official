@@ -51,7 +51,10 @@ import {
   FiTag,
   FiShield,
   FiRefreshCw,
+  FiMail,
+  FiUserCheck,
 } from "react-icons/fi";
+import RequestCenter from "./RequestCenter";
 
 import {
   useApp,
@@ -1329,8 +1332,8 @@ export const getTeachingPrerequisitesValidationErrors = (p) => {
   return errors;
 };
 
-export function calculatePersonCompletionPercentage(p, activePerson) {
-  if (!p) return 0;
+export function getPersonValidationDetails(p, activePerson) {
+  if (!p) return { percentage: 0, missingFields: [], errors: [] };
   let data = p;
   if (activePerson && String(activePerson.id) === String(p.id)) {
     data = activePerson;
@@ -1344,7 +1347,18 @@ export function calculatePersonCompletionPercentage(p, activePerson) {
   }
 
   const result = getPersonnelValidationChecklist(data);
-  return result.percentage;
+  const missingFields = Array.isArray(result.errors)
+    ? result.errors.map((err) => err.label || err.id)
+    : [];
+  return {
+    percentage: result.percentage || 0,
+    missingFields,
+    errors: result.errors || [],
+  };
+}
+
+export function calculatePersonCompletionPercentage(p, activePerson) {
+  return getPersonValidationDetails(p, activePerson).percentage;
 }
 
 const CURRICULUM_ERAS = [
@@ -2272,6 +2286,7 @@ export default function PersonnelProfile() {
     setHasUnsavedChanges,
     districtSchools,
     loadDistrictSchools,
+    incomingRequests,
     outgoingRequests,
     requestHistory,
     refreshRequests,
@@ -2281,6 +2296,7 @@ export default function PersonnelProfile() {
   } = useApp();
   const { user } = useAuth();
 
+  const [profileMode, setProfileMode] = useState("profiling"); // "profiling" | "requests"
   const [activeTab, setActiveTab] = useState("identity");
   const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
   const [isConfirmDiscrepancyModalOpen, setIsConfirmDiscrepancyModalOpen] =
@@ -3103,9 +3119,28 @@ export default function PersonnelProfile() {
   const handleYearsChange = async (eraKey, subjectKey, yearsVal) => {
     if (!currentPerson?.id || isReassignedOutInMotherSchool) return;
     const key = `${eraKey}||${subjectKey}`;
-    let cleanVal = String(yearsVal || "").replace(/\D/g, "");
-    if (cleanVal.length > 2) {
-      cleanVal = cleanVal.slice(0, 2);
+    const cleanVal = String(yearsVal ?? "").replace(/\D/g, "");
+
+    if (cleanVal === "") {
+      setLearningAreaMap((prev) => {
+        const updated = { ...prev, [key]: { checked: true, years: "" } };
+        localStorage.setItem(
+          `draft_learning_areas_${currentPerson.id}`,
+          JSON.stringify(updated),
+        );
+        if (typeof handleFieldChange === "function") {
+          handleFieldChange("learningAreaMap", updated);
+          handleFieldChange("matrix_data", updated);
+        }
+        return updated;
+      });
+      if (setHasUnsavedChanges) setHasUnsavedChanges(true);
+      return;
+    }
+
+    let trimmedVal = cleanVal;
+    if (trimmedVal.length > 2) {
+      trimmedVal = trimmedVal.slice(0, 2);
     }
     const cellMax = getCellMaxYears(
       eraKey,
@@ -3113,7 +3148,7 @@ export default function PersonnelProfile() {
       currentPerson,
       learningAreaMap,
     );
-    const inputVal = parseInt(cleanVal || "1", 10);
+    const inputVal = parseInt(trimmedVal, 10);
     const parsedYears = Math.min(cellMax, Math.max(1, inputVal));
 
     if (inputVal > cellMax && cellMax > 0) {
@@ -4242,18 +4277,368 @@ export default function PersonnelProfile() {
       : []),
   ];
 
+  const highlightTargetField = (fieldId, label) => {
+    const tryFocus = (attempts = 0) => {
+      let el = null;
+
+      // 1. Direct ID or data-field or name
+      if (fieldId) {
+        el =
+          document.getElementById(fieldId) ||
+          document.getElementById(`field-${fieldId}`) ||
+          document.querySelector(`[data-field="${fieldId}"]`) ||
+          document.querySelector(`[name="${fieldId}"]`);
+      }
+
+      // 2. Specialized field lookups
+      if (!el && fieldId) {
+        if (fieldId === "depedEmail") {
+          el =
+            document.querySelector(".deped-email-field") ||
+            document.getElementById("field-depedEmail") ||
+            document.querySelector('input[placeholder*="deped.gov.ph"]');
+        } else if (fieldId === "prcSpecialization") {
+          el =
+            document.getElementById("field-prcSpecialization") ||
+            document.querySelector('[data-field="prcSpecialization"]');
+          if (!el) {
+            const lbl = Array.from(document.querySelectorAll("label")).find(
+              (l) => /prc\s*specialization/i.test(l.textContent || ""),
+            );
+            el = lbl?.closest("div") || lbl?.parentElement;
+          }
+        } else if (fieldId === "tin") {
+          el =
+            document.querySelector('input[placeholder="123-456-789"]') ||
+            document.getElementById("field-tin");
+        } else if (fieldId === "employeeNumber") {
+          el =
+            document.querySelector('input[placeholder*="4250732"]') ||
+            document.getElementById("field-employeeNumber");
+        }
+      }
+
+      // 3. Fallback: match by label text
+      if (!el && label) {
+        const cleanTarget = label.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const allLabels = Array.from(
+          document.querySelectorAll(
+            "#profile label, .tab-pane label, form label, .profile-editor-layout label",
+          ),
+        );
+        const matched = allLabels.find((l) => {
+          const text = (l.textContent || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "");
+          return text && (text.includes(cleanTarget) || cleanTarget.includes(text));
+        });
+        if (matched) {
+          el = matched.closest(".form-group, div") || matched.parentElement;
+        }
+      }
+
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        const focusable = el.matches("input, select, textarea, button")
+          ? el
+          : el.querySelector(
+              "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), .searchable-select input",
+            );
+        if (focusable) {
+          try {
+            focusable.focus?.({ preventScroll: true });
+          } catch (_) {}
+        }
+
+        const targetBox =
+          el.classList.contains("deped-email-field")
+            ? el
+            : el.querySelector(".searchable-select, input, select, .deped-email-field") ||
+              el;
+        targetBox.classList.remove("missing-field-highlight-active");
+        void targetBox.offsetWidth; // Trigger reflow to restart animation
+        targetBox.classList.add("missing-field-highlight-active");
+        setTimeout(() => {
+          targetBox.classList.remove("missing-field-highlight-active");
+        }, 2500);
+        return;
+      }
+
+      if (attempts < 6) {
+        setTimeout(() => tryFocus(attempts + 1), 75);
+      }
+    };
+
+    setTimeout(() => tryFocus(0), 60);
+  };
+
+  const handleJumpToMissingField = (person, err) => {
+    if (!person || !err) return;
+    const targetTab =
+      err.tab === "personal"
+        ? "identity"
+        : err.tab || "identity";
+
+    const executeJump = () => {
+      if (String(activePersonnelId) !== String(person.id)) {
+        setActivePersonnelId(person.id);
+      }
+      setActiveTab(targetTab);
+      highlightTargetField(err.id, err.label);
+    };
+
+    if (isDirty && String(activePersonnelId) !== String(person.id)) {
+      confirmAction(executeJump, { actionType: "tab" });
+    } else {
+      executeJump();
+    }
+  };
+
+  const parseErrorLabel = (label = "") => {
+    const raw = String(label || "").trim();
+    const match = raw.match(/^(.*?)\s*(\(.*?\))$/);
+    if (match) {
+      return { title: match[1].trim(), subtitle: match[2].trim() };
+    }
+    return { title: raw, subtitle: null };
+  };
+
+  const getTabBadgeTheme = (tab) => {
+    switch (String(tab || "").toLowerCase()) {
+      case "employment":
+        return { bg: "#e0f2fe", color: "#0284c7", border: "#bae6fd" };
+      case "education":
+        return { bg: "#ede9fe", color: "#7c3aed", border: "#ddd6fe" };
+      case "identity":
+      case "personal":
+        return { bg: "#fef3c7", color: "#b45309", border: "#fde68a" };
+      case "teaching":
+        return { bg: "#dcfce7", color: "#15803d", border: "#bbf7d0" };
+      case "development":
+        return { bg: "#fae8ff", color: "#a21caf", border: "#f5d0fe" };
+      case "learning-area":
+        return { bg: "#ffedd5", color: "#c2410c", border: "#fed7aa" };
+      default:
+        return { bg: "#f1f5f9", color: "#475569", border: "#e2e8f0" };
+    }
+  };
+
   return (
     <section id="profile" className="view grid">
+      <style>{`
+        .completion-progress-container {
+          position: relative;
+        }
+        .missing-fields-tooltip {
+          display: none !important;
+          opacity: 0;
+          pointer-events: none;
+          transform: translateY(4px);
+          transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .completion-progress-container:hover .missing-fields-tooltip,
+        .missing-fields-tooltip:hover {
+          display: block !important;
+          opacity: 1 !important;
+          pointer-events: auto !important;
+          transform: translateY(0);
+        }
+        .missing-fields-tooltip::before {
+          content: "";
+          position: absolute;
+          top: -14px;
+          bottom: -14px;
+          left: -14px;
+          right: -14px;
+          z-index: -1;
+        }
+        .missing-fields-tooltip.tooltip-top::after {
+          content: "";
+          position: absolute;
+          bottom: -6px;
+          right: 22px;
+          width: 10px;
+          height: 10px;
+          background: #ffffff;
+          border-bottom: 1.5px solid #fcd34d;
+          border-right: 1.5px solid #fcd34d;
+          transform: rotate(45deg);
+        }
+        .missing-fields-tooltip.tooltip-bottom::after {
+          content: "";
+          position: absolute;
+          top: -6px;
+          right: 22px;
+          width: 10px;
+          height: 10px;
+          background: #fffbeb;
+          border-top: 1.5px solid #fcd34d;
+          border-left: 1.5px solid #fcd34d;
+          transform: rotate(45deg);
+        }
+        .missing-field-row {
+          transition: all 0.15s ease;
+          border-radius: 8px;
+          padding: 6px 9px;
+          background: #ffffff;
+          border: 1.5px solid #f1f5f9;
+        }
+        .missing-field-row:hover {
+          background-color: #fffbeb !important;
+          border-color: #fcd34d !important;
+          box-shadow: 0 3px 8px rgba(217, 119, 6, 0.14) !important;
+          transform: translateX(2px);
+        }
+        .missing-field-row:hover .missing-field-title {
+          color: #b45309 !important;
+        }
+        .missing-field-row:hover .missing-field-arrow {
+          color: #d97706 !important;
+          transform: translateX(2px);
+        }
+        @keyframes missingFieldPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.7);
+            border-color: #d97706 !important;
+            background-color: #fffbeb !important;
+          }
+          50% {
+            box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.35);
+            border-color: #f59e0b !important;
+            background-color: #fef3c7 !important;
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(217, 119, 6, 0);
+          }
+        }
+        .missing-field-highlight-active {
+          animation: missingFieldPulse 1.8s ease-in-out 2;
+          border-radius: 8px;
+          transition: all 0.2s ease;
+        }
+      `}</style>
       <PortalHeader
-        title="Personnel Profile & Specialization"
-        description="Detailed personnel identity, employment history, degree specializations, and Learning Area matrix."
-        onBack={() => setActiveView("dashboard")}
+        title={
+          profileMode === "requests"
+            ? "Inter-School Request Center"
+            : "Personnel Profile & Specialization"
+        }
+        description={
+          profileMode === "requests"
+            ? "Manage incoming teacher clustering requests, reassigned personnel, and school merger data transfers."
+            : "Detailed personnel identity, employment history, degree specializations, and Learning Area matrix."
+        }
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
-        onContinue={handleSave}
+        onContinue={profileMode === "profiling" ? handleSave : undefined}
         continueText="Save"
-        continueDisabled={!isDirty}
+        continueDisabled={profileMode === "profiling" ? !isDirty : true}
       />
-      <article className="card" style={{ overflow: "hidden" }}>
+
+      {/* Top Header Mode Switcher: Personnel Profiling vs Inter-School Request Center */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: "16px",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            background: "#FFFFFF",
+            padding: "4px",
+            borderRadius: "14px",
+            border: "1.5px solid var(--line, #E2E8F0)",
+            boxShadow: "0 2px 6px rgba(0, 0, 0, 0.04)",
+            gap: "4px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setProfileMode("profiling")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 18px",
+              borderRadius: "10px",
+              border: "none",
+              fontSize: "13px",
+              fontFamily: "var(--font-heading)",
+              fontWeight: "800",
+              cursor: "pointer",
+              transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+              background:
+                profileMode === "profiling"
+                  ? "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)"
+                  : "transparent",
+              color: profileMode === "profiling" ? "#FFFFFF" : "#64748B",
+              boxShadow:
+                profileMode === "profiling"
+                  ? "0 4px 12px rgba(37, 99, 235, 0.25)"
+                  : "none",
+            }}
+          >
+            <FiUserCheck size={16} />
+            <span>Personnel Profiling</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setProfileMode("requests")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 18px",
+              borderRadius: "10px",
+              border: "none",
+              fontSize: "13px",
+              fontFamily: "var(--font-heading)",
+              fontWeight: "800",
+              cursor: "pointer",
+              transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+              background:
+                profileMode === "requests"
+                  ? "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)"
+                  : "transparent",
+              color: profileMode === "requests" ? "#FFFFFF" : "#64748B",
+              boxShadow:
+                profileMode === "requests"
+                  ? "0 4px 12px rgba(37, 99, 235, 0.25)"
+                  : "none",
+            }}
+          >
+            <FiMail size={16} />
+            <span>Inter-School Request Center</span>
+            {incomingRequests && incomingRequests.length > 0 && (
+              <span
+                style={{
+                  background: profileMode === "requests" ? "#FFFFFF" : "#EF4444",
+                  color: profileMode === "requests" ? "#1D4ED8" : "#FFFFFF",
+                  padding: "1px 7px",
+                  borderRadius: "999px",
+                  fontSize: "11px",
+                  fontWeight: "900",
+                  marginLeft: "2px",
+                }}
+              >
+                {incomingRequests.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {profileMode === "requests" ? (
+        <RequestCenter embedded={true} />
+      ) : (
+        <article className="card" style={{ overflow: "hidden" }}>
         <div style={{ display: "flex", height: "100%", minHeight: "80vh" }}>
           {/* ── LEFT SIDEBAR ─────────────────────────────── */}
           <div
@@ -4429,7 +4814,7 @@ export default function PersonnelProfile() {
                           No personnel match your search.
                         </div>
                       )}
-                      {paginatedPeople.map((p) => {
+                      {paginatedPeople.map((p, pIdx) => {
                         const isActive = p.id === currentPerson.id;
                         const hasDraft = !!localStorage.getItem(
                           `draft_personnel_${p.id}`,
@@ -4442,8 +4827,12 @@ export default function PersonnelProfile() {
                         };
                         const initials =
                           `${(p.firstName || "")[0] || ""}${(p.lastName || "")[0] || ""}`.toUpperCase();
-                        const completionPct =
-                          calculatePersonCompletionPercentage(p, currentPerson);
+                        const {
+                          percentage: completionPct,
+                          missingFields,
+                          errors: missingErrors,
+                        } = getPersonValidationDetails(p, currentPerson);
+                        const isComplete = completionPct === 100;
                         return (
                           <div
                             key={p.id}
@@ -4571,11 +4960,14 @@ export default function PersonnelProfile() {
                               </p>
                               {/* Completion percentage progress bar */}
                               <div
+                                className="completion-progress-container"
                                 style={{
                                   marginTop: "4px",
                                   display: "flex",
                                   alignItems: "center",
                                   gap: "6px",
+                                  position: "relative",
+                                  cursor: !isComplete ? "help" : "default",
                                 }}
                               >
                                 <div
@@ -4591,26 +4983,298 @@ export default function PersonnelProfile() {
                                     style={{
                                       width: `${completionPct}%`,
                                       height: "100%",
-                                      background:
-                                        completionPct === 100
-                                          ? "#10b981"
-                                          : "#0284c7",
+                                      background: isComplete
+                                        ? "#10b981"
+                                        : "#0284c7",
                                       borderRadius: "2px",
                                       transition: "width 0.3s",
                                     }}
                                   />
                                 </div>
-                                <span
+                                <div
                                   style={{
-                                    fontSize: "10px",
-                                    fontWeight: "700",
-                                    color: "#64748b",
-                                    minWidth: "24px",
-                                    textAlign: "right",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                    flexShrink: 0,
                                   }}
                                 >
-                                  {completionPct}%
-                                </span>
+                                  {!isComplete && (
+                                    <FiAlertCircle
+                                      size={11}
+                                      style={{
+                                        color: "#f59e0b",
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                  )}
+                                  <span
+                                    style={{
+                                      fontSize: "10px",
+                                      fontWeight: "700",
+                                      color: isComplete ? "#10b981" : "#d97706",
+                                      minWidth: "24px",
+                                      textAlign: "right",
+                                    }}
+                                  >
+                                    {completionPct}%
+                                  </span>
+                                </div>
+
+                                {/* Floating Hover Marker Tooltip */}
+                                {!isComplete && missingFields.length > 0 && (
+                                  <div
+                                    className={`missing-fields-tooltip ${pIdx >= 6 ? "tooltip-top" : "tooltip-bottom"}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{
+                                      position: "absolute",
+                                      ...(pIdx >= 6
+                                        ? { bottom: "calc(100% + 10px)" }
+                                        : { top: "calc(100% + 10px)" }),
+                                      right: "-8px",
+                                      width: "272px",
+                                      maxWidth: "272px",
+                                      background: "#ffffff",
+                                      border: "1.5px solid #fcd34d",
+                                      borderRadius: "12px",
+                                      boxShadow:
+                                        "0 14px 34px -4px rgba(180, 83, 9, 0.22), 0 8px 16px -4px rgba(0,0,0,0.08)",
+                                      zIndex: 100,
+                                      pointerEvents: "auto",
+                                      textAlign: "left",
+                                    }}
+                                  >
+                                    {/* Tooltip Header */}
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        padding: "8px 10px",
+                                        background:
+                                          "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)",
+                                        borderBottom: "1px solid #fde68a",
+                                        borderRadius: "10.5px 10.5px 0 0",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                        }}
+                                      >
+                                        <FiAlertCircle
+                                          size={13}
+                                          style={{
+                                            color: "#d97706",
+                                            flexShrink: 0,
+                                          }}
+                                        />
+                                        <span
+                                          style={{
+                                            fontSize: "11px",
+                                            fontWeight: "800",
+                                            color: "#92400e",
+                                            letterSpacing: "-0.2px",
+                                          }}
+                                        >
+                                          Missing Fields
+                                        </span>
+                                        <span
+                                          style={{
+                                            background: "#f59e0b",
+                                            color: "#ffffff",
+                                            padding: "1px 6px",
+                                            borderRadius: "10px",
+                                            fontSize: "10px",
+                                            fontWeight: "800",
+                                            lineHeight: 1.2,
+                                          }}
+                                        >
+                                          {missingErrors.length}
+                                        </span>
+                                      </div>
+                                      <span
+                                        style={{
+                                          fontSize: "9.5px",
+                                          fontWeight: "700",
+                                          color: "#b45309",
+                                          opacity: 0.9,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "2px",
+                                        }}
+                                      >
+                                        Click to jump ⚡
+                                      </span>
+                                    </div>
+
+                                    {/* Tooltip Body Rows */}
+                                    <div
+                                      style={{
+                                        padding: "6px",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "4px",
+                                        maxHeight: "165px",
+                                        overflowY: "auto",
+                                      }}
+                                    >
+                                      {missingErrors.slice(0, 5).map((err, idx) => {
+                                        const parsed = parseErrorLabel(
+                                          err.label || err.id,
+                                        );
+                                        const badgeTheme = getTabBadgeTheme(
+                                          err.tab,
+                                        );
+                                        return (
+                                          <div
+                                            key={err.id || idx}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleJumpToMissingField(p, err);
+                                            }}
+                                            className="missing-field-row"
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "space-between",
+                                              gap: "6px",
+                                              cursor: "pointer",
+                                              userSelect: "none",
+                                            }}
+                                            title={`Jump to ${parsed.title} (${err.tab || "details"})`}
+                                          >
+                                            <div
+                                              style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "6px",
+                                                minWidth: 0,
+                                                flex: 1,
+                                              }}
+                                            >
+                                              <span
+                                                style={{
+                                                  width: "5px",
+                                                  height: "5px",
+                                                  borderRadius: "50%",
+                                                  background: "#f59e0b",
+                                                  flexShrink: 0,
+                                                }}
+                                              />
+                                              <div
+                                                style={{
+                                                  display: "flex",
+                                                  flexDirection: "column",
+                                                  minWidth: 0,
+                                                  lineHeight: "1.2",
+                                                }}
+                                              >
+                                                <span
+                                                  className="missing-field-title"
+                                                  style={{
+                                                    fontSize: "11px",
+                                                    fontWeight: "700",
+                                                    color: "#1e293b",
+                                                    whiteSpace: "nowrap",
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                  }}
+                                                >
+                                                  {parsed.title}
+                                                </span>
+                                                {parsed.subtitle && (
+                                                  <span
+                                                    style={{
+                                                      fontSize: "9px",
+                                                      fontWeight: "600",
+                                                      color: "#b45309",
+                                                      marginTop: "1px",
+                                                      whiteSpace: "nowrap",
+                                                      overflow: "hidden",
+                                                      textOverflow: "ellipsis",
+                                                    }}
+                                                  >
+                                                    {parsed.subtitle}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            <div
+                                              style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "4px",
+                                                flexShrink: 0,
+                                              }}
+                                            >
+                                              {err.tab && (
+                                                <span
+                                                  style={{
+                                                    fontSize: "9px",
+                                                    fontWeight: "700",
+                                                    color: badgeTheme.color,
+                                                    background: badgeTheme.bg,
+                                                    border: `1px solid ${badgeTheme.border}`,
+                                                    padding: "1px 6px",
+                                                    borderRadius: "4px",
+                                                    textTransform: "capitalize",
+                                                    letterSpacing: "-0.2px",
+                                                  }}
+                                                >
+                                                  {err.tab}
+                                                </span>
+                                              )}
+                                              <FiChevronRight
+                                                size={11}
+                                                className="missing-field-arrow"
+                                                style={{
+                                                  color: "#94a3b8",
+                                                  transition:
+                                                    "all 0.15s ease",
+                                                }}
+                                              />
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+
+                                      {missingErrors.length > 5 && (
+                                        <div
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleJumpToMissingField(
+                                              p,
+                                              missingErrors[5],
+                                            );
+                                          }}
+                                          style={{
+                                            fontSize: "10px",
+                                            fontWeight: "700",
+                                            color: "#b45309",
+                                            padding: "5px 8px",
+                                            textAlign: "center",
+                                            cursor: "pointer",
+                                            background: "#fffbeb",
+                                            borderRadius: "6px",
+                                            border: "1px dashed #fcd34d",
+                                            marginTop: "2px",
+                                          }}
+                                          title="Click to jump to next missing field"
+                                        >
+                                          +{missingErrors.length - 5} more field
+                                          {missingErrors.length - 5 > 1
+                                            ? "s"
+                                            : ""}{" "}
+                                          — click to inspect
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -5282,6 +5946,8 @@ export default function PersonnelProfile() {
                               >
                                 <input
                                   type="text"
+                                  id="field-tin"
+                                  data-field="tin"
                                   placeholder="123-456-789"
                                   disabled={currentPerson.noTin}
                                   value={currentPerson.tin || ""}
@@ -6144,6 +6810,8 @@ export default function PersonnelProfile() {
                               return (
                                 <input
                                   type="text"
+                                  id="field-employeeNumber"
+                                  data-field="employeeNumber"
                                   placeholder="e.g. 4250732"
                                   className={!cleanEmpNo ? "empty-field" : ""}
                                   value={cleanEmpNo}
@@ -6262,6 +6930,8 @@ export default function PersonnelProfile() {
 
                                   <div
                                     className="deped-email-field"
+                                    id="field-depedEmail"
+                                    data-field="depedEmail"
                                     style={{
                                       display: "flex",
                                       alignItems: "center",
@@ -8952,7 +9622,11 @@ export default function PersonnelProfile() {
                                 elStr.includes("PBET");
                               if (!isLetPbet) return null;
                               return (
-                                <div style={{ marginTop: "16px" }}>
+                                <div
+                                  id="field-prcSpecialization"
+                                  data-field="prcSpecialization"
+                                  style={{ marginTop: "16px" }}
+                                >
                                   <label>PRC Specialization</label>
                                   <SearchableDropdown
                                     options={PRC_SPECIALIZATION_OPTIONS}
@@ -10907,17 +11581,36 @@ export default function PersonnelProfile() {
                                                                 min="1"
                                                                 max={cellMax}
                                                                 value={
-                                                                  cellData.years ||
-                                                                  1
+                                                                  cellData.years !== undefined && cellData.years !== null
+                                                                    ? cellData.years
+                                                                    : ""
                                                                 }
-                                                                onInput={(
-                                                                  e,
-                                                                ) => {
+                                                                onFocus={(e) =>
+                                                                  e.target.select()
+                                                                }
+                                                                onBlur={(e) => {
+                                                                  const v = parseInt(
+                                                                    e.target
+                                                                      .value,
+                                                                    10,
+                                                                  );
+                                                                  if (
+                                                                    !v ||
+                                                                    isNaN(v) ||
+                                                                    v < 1
+                                                                  ) {
+                                                                    handleYearsChange(
+                                                                      era.key,
+                                                                      sub,
+                                                                      1,
+                                                                    );
+                                                                  }
+                                                                }}
+                                                                onInput={(e) => {
                                                                   if (
                                                                     e.target
                                                                       .value
-                                                                      .length >
-                                                                    2
+                                                                      .length > 2
                                                                   ) {
                                                                     e.target.value =
                                                                       e.target.value.slice(
@@ -10925,12 +11618,18 @@ export default function PersonnelProfile() {
                                                                         2,
                                                                       );
                                                                   }
-                                                                  if (
+                                                                  const num =
                                                                     parseInt(
                                                                       e.target
                                                                         .value,
                                                                       10,
-                                                                    ) > cellMax
+                                                                    );
+                                                                  if (
+                                                                    !isNaN(
+                                                                      num,
+                                                                    ) &&
+                                                                    num >
+                                                                      cellMax
                                                                   ) {
                                                                     e.target.value =
                                                                       String(
@@ -11075,6 +11774,7 @@ export default function PersonnelProfile() {
           </div>
         </div>
       </article>
+      )}
       {showRa1080Modal && (
         <div
           className="modal-backdrop"

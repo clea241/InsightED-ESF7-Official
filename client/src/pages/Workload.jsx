@@ -17000,7 +17000,7 @@ function WorkloadInner() {
       <PortalHeader
         title="Workload & Timetable Schedule"
         description="Manage teacher teaching loads, HGP advisory rules, relieving duties, and schedule conflict resolution."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         showDiscard={false}
         onContinue={handleSave}

@@ -1244,15 +1244,6 @@ th {
   text-transform: none;
 }
 
-.profile-subsection::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  flex: 0 0 auto;
-  border-radius: 3px;
-  background: linear-gradient(135deg, var(--gold), var(--amber));
-}
-
 .profile-subsection:first-of-type {
   margin-top: 0;
 }

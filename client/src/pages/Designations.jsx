@@ -1517,7 +1517,7 @@ export default function Designations() {
       <PortalHeader
         title="Official School Designations"
         description="Assign official faculty roles, Key Stage Department Heads, and school program coordinators."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={handleSave}
         continueText="Save"

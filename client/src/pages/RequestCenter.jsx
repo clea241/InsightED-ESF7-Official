@@ -5,7 +5,7 @@ import { api } from "../services/api";
 import SearchableDropdown from "../components/SearchableDropdown";
 import PortalHeader from "../components/PortalHeader";
 
-export default function RequestCenter() {
+export default function RequestCenter({ embedded = false } = {}) {
   const {
     incomingRequests,
     outgoingRequests,
@@ -75,12 +75,14 @@ export default function RequestCenter() {
   };
 
   return (
-    <section id="requests" className="view grid">
-      <PortalHeader
-        title="Inter-School Request Center"
-        description="Manage requests for clustered teachers, reassigned personnel, and school merger data transfers."
-        onBack={() => setActiveView("dashboard")}
-      />
+    <section id="requests" className={embedded ? "" : "view grid"}>
+      {!embedded && (
+        <PortalHeader
+          title="Inter-School Request Center"
+          description="Manage requests for clustered teachers, reassigned personnel, and school merger data transfers."
+          onBack={() => setActiveView("nodemap")}
+        />
+      )}
       <article className="card">
         <div className="card-inner">
           <h2>Request Center</h2>

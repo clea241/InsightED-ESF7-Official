@@ -2267,11 +2267,31 @@ export default function RoomProfiling() {
   const handleLearningAreaYearsChange = (eraKey, subjectKey, yearsVal) => {
     if (!formData?.id) return;
     const key = `${eraKey}||${subjectKey}`;
-    let cleanVal = String(yearsVal || "").replace(/\D/g, "");
-    if (cleanVal.length > 2) cleanVal = cleanVal.slice(0, 2);
+    const cleanVal = String(yearsVal ?? "").replace(/\D/g, "");
     const currentMap = formData.learningAreaMap || formData.matrix_data || {};
+
+    if (cleanVal === "") {
+      const updatedMap = {
+        ...currentMap,
+        [key]: { ...currentMap[key], checked: true, years: "" },
+      };
+      handleMultipleFieldsChange({
+        learningAreaMap: updatedMap,
+        matrix_data: updatedMap,
+      });
+      try {
+        localStorage.setItem(
+          `draft_learning_areas_${formData.id}`,
+          JSON.stringify(updatedMap),
+        );
+      } catch (e) {}
+      return;
+    }
+
+    let trimmedVal = cleanVal;
+    if (trimmedVal.length > 2) trimmedVal = trimmedVal.slice(0, 2);
     const cellMax = getCellMaxYears(eraKey, subjectKey, formData, currentMap);
-    const inputVal = parseInt(cleanVal || "1", 10);
+    const inputVal = parseInt(trimmedVal, 10);
     const parsed = Math.min(cellMax, Math.max(1, inputVal));
 
     const updatedMap = {
@@ -7280,24 +7300,53 @@ export default function RoomProfiling() {
                                                   type="number"
                                                   min="1"
                                                   max={cellMax}
-                                                  value={cell.years || 1}
+                                                  value={
+                                                    cell.years !== undefined &&
+                                                    cell.years !== null
+                                                      ? cell.years
+                                                      : ""
+                                                  }
+                                                  onFocus={(e) =>
+                                                    e.target.select()
+                                                  }
+                                                  onBlur={(e) => {
+                                                    const v = parseInt(
+                                                      e.target.value,
+                                                      10,
+                                                    );
+                                                    if (
+                                                      !v ||
+                                                      isNaN(v) ||
+                                                      v < 1
+                                                    ) {
+                                                      handleLearningAreaYearsChange(
+                                                        era.key,
+                                                        sub,
+                                                        1,
+                                                      );
+                                                    }
+                                                  }}
                                                   onInput={(e) => {
                                                     if (
                                                       e.target.value.length > 2
-                                                    )
+                                                    ) {
                                                       e.target.value =
                                                         e.target.value.slice(
                                                           0,
                                                           2,
                                                         );
+                                                    }
+                                                    const num = parseInt(
+                                                      e.target.value,
+                                                      10,
+                                                    );
                                                     if (
-                                                      parseInt(
-                                                        e.target.value,
-                                                        10,
-                                                      ) > cellMax
-                                                    )
+                                                      !isNaN(num) &&
+                                                      num > cellMax
+                                                    ) {
                                                       e.target.value =
                                                         String(cellMax);
+                                                    }
                                                   }}
                                                   onChange={(e) =>
                                                     handleLearningAreaYearsChange(

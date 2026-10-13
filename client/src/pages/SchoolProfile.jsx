@@ -744,7 +744,7 @@ export default function SchoolProfile() {
       <PortalHeader
         title="School Profile & Registry"
         description="Official administrative details, curricular offerings, and special programs setup."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={() => setIsConfirmModalOpen(true)}
         continueText="Save"

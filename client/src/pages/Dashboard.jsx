@@ -43,7 +43,7 @@ export default function Dashboard() {
     journeyState,
     isInitialized,
   } = useApp();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -74,6 +74,13 @@ export default function Dashboard() {
     stats?.school_overview?.school_name ||
     schoolInfo?.schoolName ||
     "DepEd Integrated School";
+  const schoolId =
+    (schoolInfo?.schoolId && String(schoolInfo.schoolId).replace(/^SCH-/i, "").trim()) ||
+    (schoolInfo?.school_id && String(schoolInfo.school_id).replace(/^SCH-/i, "").trim()) ||
+    (stats?.school_overview?.school_id && String(stats.school_overview.school_id).replace(/^SCH-/i, "").trim()) ||
+    (user?.school_id && String(user.school_id).replace(/^SCH-/i, "").trim()) ||
+    (user?.schoolId && String(user.schoolId).replace(/^SCH-/i, "").trim()) ||
+    "";
   const safePersonnel = Array.isArray(personnel) ? personnel : [];
   const safeClassSections = Array.isArray(classSections) ? classSections : [];
   const totalPersonnel = safePersonnel.length;
@@ -950,7 +957,11 @@ export default function Dashboard() {
       {/* 1. TYPOGRAPHIC PORTAL HEADER SYSTEM */}
       <PortalHeader
         departmentText="DEPARTMENT OF EDUCATION"
-        bureauText={`${schoolName} • ${termStatus.current_school_year}`}
+        bureauText={
+          schoolId
+            ? `${schoolName} • ${schoolId} • ${termStatus.current_school_year}`
+            : `${schoolName} • ${termStatus.current_school_year}`
+        }
         title="eSF7 Executive Dashboard"
         description="Real-time personnel analytics, specialization alignment, class section organization, and workload monitoring across regional divisions."
         showLogout={true}

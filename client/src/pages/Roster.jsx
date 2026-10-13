@@ -35,7 +35,10 @@ import {
   FiRefreshCw,
   FiCheckCircle,
   FiAlertCircle,
+  FiUserCheck,
+  FiMaximize,
 } from "react-icons/fi";
+import RoomQR from "./RoomQR";
 
 export const getAge = (dobString) => {
   if (!dobString) return null;
@@ -581,6 +584,32 @@ export default function Roster() {
   const [isCheckingHarvest, setIsCheckingHarvest] = useState(false);
   const [isHeadRequiredModalOpen, setIsHeadRequiredModalOpen] = useState(false);
   const [highlightHeadColumn, setHighlightHeadColumn] = useState(false);
+  const [newlyAddedPersonnelIds, setNewlyAddedPersonnelIds] = useState(
+    () => new Set(),
+  );
+  const [isNewPersonnelSidebarOpen, setIsNewPersonnelSidebarOpen] =
+    useState(false);
+  const [isClosingSidebar, setIsClosingSidebar] = useState(false);
+
+  const closeNewPersonnelSidebar = () => {
+    if (isClosingSidebar) return;
+    setIsClosingSidebar(true);
+    setTimeout(() => {
+      setIsNewPersonnelSidebarOpen(false);
+      setIsClosingSidebar(false);
+    }, 280);
+  };
+
+  useEffect(() => {
+    if (!isNewPersonnelSidebarOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        closeNewPersonnelSidebar();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isNewPersonnelSidebarOpen, isClosingSidebar]);
   // SDO-supplied school head (e.g. EPS II as OIC Principal): only offered while the roster has no designated head
   const [isSdoHeadModalOpen, setIsSdoHeadModalOpen] = useState(false);
   const [sdoHeadForm, setSdoHeadForm] = useState({
@@ -648,9 +677,16 @@ export default function Roster() {
   const hasPendingDrafts = Boolean((personnel || []).some((p) => p.isDraft));
   const isDirty = Boolean(
     hasPendingDrafts ||
+    newlyAddedPersonnelIds.size > 0 ||
     (savedRosterSnapshotRef.current &&
       JSON.stringify(getRosterSnapshot()) !== savedRosterSnapshotRef.current),
   );
+
+  const newlyAddedList = useMemo(() => {
+    return (personnel || []).filter(
+      (p) => newlyAddedPersonnelIds.has(p.id) || p.isDraft,
+    );
+  }, [personnel, newlyAddedPersonnelIds]);
 
   const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
   useDirtyGuard({
@@ -710,6 +746,28 @@ export default function Roster() {
       clearInterval(interval);
     };
   }, [schoolInfo?.schoolId, personnel.length]);
+
+  // Room QR Sidebar Modal State
+  const [isRoomQRDrawerOpen, setIsRoomQRDrawerOpen] = useState(false);
+  const [isClosingRoomQR, setIsClosingRoomQR] = useState(false);
+
+  const closeRoomQRDrawer = () => {
+    setIsClosingRoomQR(true);
+    setTimeout(() => {
+      setIsRoomQRDrawerOpen(false);
+      setIsClosingRoomQR(false);
+    }, 280);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && isRoomQRDrawerOpen) {
+        closeRoomQRDrawer();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isRoomQRDrawerOpen]);
 
   // Add Personnel Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -811,7 +869,7 @@ export default function Roster() {
   };
   runSaveRef.current = runRosterSave;
 
-  const handleSave = async () => {
+  const executeRosterSave = async () => {
     const result = await runRosterSave();
     if (result.ok === false) {
       if (result.needsHead) {
@@ -820,7 +878,30 @@ export default function Roster() {
       } else if (showToast) {
         showToast(result.message, "error");
       }
+      return false;
     }
+    setNewlyAddedPersonnelIds(new Set());
+    closeNewPersonnelSidebar();
+    return true;
+  };
+
+  const handleSave = async () => {
+    // 1. DepEd eSF7 School Head Verification Gate
+    const currentHead = findRosterSchoolHead(personnel);
+    if (!currentHead && !sdoSchoolHead) {
+      setIsHeadRequiredModalOpen(true);
+      setHighlightHeadColumn(true);
+      return;
+    }
+
+    // 2. Newly Added Personnel Confirmation & Review Gate
+    if (newlyAddedList.length > 0) {
+      setIsNewPersonnelSidebarOpen(true);
+      return;
+    }
+
+    // 3. Direct save if no newly added personnel
+    await executeRosterSave();
   };
 
   const handleAddSubmit = async (e) => {
@@ -867,6 +948,10 @@ export default function Roster() {
         : newPerson.hiringArrangement || "REGULAR",
       fundSource: isCook ? "SBFP" : newPerson.fundSource || "NATIONAL",
     });
+
+    if (addedId) {
+      setNewlyAddedPersonnelIds((prev) => new Set(prev).add(addedId));
+    }
 
     // Close modal & reset form
     setIsModalOpen(false);
@@ -984,11 +1069,39 @@ export default function Roster() {
           animation: headColumnPulse 1.8s infinite ease-in-out !important;
           box-shadow: 0 0 12px rgba(239, 68, 68, 0.6) !important;
         }
+        @keyframes slideInFromRight {
+          from {
+            transform: translate3d(100%, 0, 0);
+            opacity: 0.4;
+          }
+          to {
+            transform: translate3d(0, 0, 0);
+            opacity: 1;
+          }
+        }
+        @keyframes slideOutToRight {
+          from {
+            transform: translate3d(0, 0, 0);
+            opacity: 1;
+          }
+          to {
+            transform: translate3d(100%, 0, 0);
+            opacity: 0.4;
+          }
+        }
+        @keyframes fadeInBackdrop {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fadeOutBackdrop {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
       `}</style>
       <PortalHeader
         title="Personnel Roster & Profile Directory"
         description="Master roster of all registered school personnel, position items, and status tracking."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={handleSave}
         continueText="Save"
@@ -1003,7 +1116,28 @@ export default function Roster() {
                 View and manage all school staff members.
               </p>
             </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => setIsRoomQRDrawerOpen(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--blue-50, #eff6ff)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "white";
+                }}
+                title="Open Room QR Portal for teacher passcode identity & mobile self-profiling"
+              >
+                <FiMaximize size={15} /> <span>Room QR Portal</span>
+              </button>
               <button
                 className="btn"
                 type="button"
@@ -1012,6 +1146,8 @@ export default function Roster() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
                 }}
               >
                 <FiPlus size={15} /> <span>Add Personnel</span>
@@ -2426,6 +2562,632 @@ export default function Roster() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Newly Added Personnel Validation & Review Sidebar Popup Modal */}
+      {isNewPersonnelSidebarOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-personnel-sidebar-title"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.5)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            zIndex: 99999,
+            display: "flex",
+            justifyContent: "flex-end",
+            animation: isClosingSidebar
+              ? "fadeOutBackdrop 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards"
+              : "fadeInBackdrop 0.25s ease-out",
+          }}
+          onClick={closeNewPersonnelSidebar}
+        >
+          <aside
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(540px, 94vw)",
+              height: "100%",
+              background: "#FFFFFF",
+              boxShadow: "-8px 0 32px rgba(15, 23, 42, 0.2)",
+              display: "flex",
+              flexDirection: "column",
+              animation: isClosingSidebar
+                ? "slideOutToRight 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards"
+                : "slideInFromRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Top Emerald Accent Line */}
+            <div
+              style={{
+                height: "4px",
+                width: "100%",
+                background:
+                  "linear-gradient(90deg, #10B981 0%, #059669 50%, #047857 100%)",
+                flexShrink: 0,
+              }}
+            />
+
+            {/* Sidebar Header */}
+            <div
+              style={{
+                padding: "20px 24px",
+                borderBottom: "1px solid #E2E8F0",
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: "14px",
+                background: "#F8FAFC",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div
+                  style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "14px",
+                    background: "#ECFDF5",
+                    border: "1.5px solid #A7F3D0",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#059669",
+                    flexShrink: 0,
+                    boxShadow: "0 2px 8px rgba(16, 185, 129, 0.15)",
+                  }}
+                >
+                  <FiUserCheck size={24} />
+                </div>
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: "900",
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        color: "#059669",
+                        background: "#D1FAE5",
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                      }}
+                    >
+                      {newlyAddedList.length} New Personnel
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        color: "#64748B",
+                      }}
+                    >
+                      Pre-Save Validation
+                    </span>
+                  </div>
+                  <h2
+                    id="new-personnel-sidebar-title"
+                    style={{
+                      margin: 0,
+                      fontSize: "18px",
+                      fontWeight: "800",
+                      color: "#0F172A",
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    Review Newly Added Personnel
+                  </h2>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeNewPersonnelSidebar}
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  border: "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#64748B",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#F1F5F9";
+                  e.currentTarget.style.color = "#0F172A";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#FFFFFF";
+                  e.currentTarget.style.color = "#64748B";
+                }}
+                title="Close review panel"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+
+            {/* Scrollable Content Body */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "20px 24px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                background: "#F8FAFC",
+              }}
+            >
+              {/* Informational Guidance Alert */}
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid #A7F3D0",
+                  borderLeft: "4px solid #10B981",
+                  borderRadius: "12px",
+                  padding: "12px 16px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "12px",
+                  boxShadow: "0 2px 6px rgba(0, 0, 0, 0.03)",
+                }}
+              >
+                <FiCheckCircle
+                  size={18}
+                  style={{ color: "#059669", marginTop: "2px", flexShrink: 0 }}
+                />
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: "#334155",
+                    lineHeight: "1.5",
+                  }}
+                >
+                  <strong>Review Notice:</strong> Please check and confirm the newly added personnel below before saving.
+                </div>
+              </div>
+
+              {/* Personnel Cards List */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                }}
+              >
+                {newlyAddedList.map((person, index) => {
+                  const fullName = `${person.salutation || ""} ${person.firstName || ""} ${person.middleName && person.middleName !== "N/A" ? person.middleName + " " : ""}${person.lastName || ""} ${person.nameExtension || ""}`.trim();
+                  const age = getAge(person.birthdate);
+                  const isTeaching = person.type === "teaching";
+                  const isRelated = person.type === "teaching-related";
+                  const categoryColor = isTeaching
+                    ? "#2563EB"
+                    : isRelated
+                      ? "#7C3AED"
+                      : "#D97706";
+                  const categoryBg = isTeaching
+                    ? "#EFF6FF"
+                    : isRelated
+                      ? "#F5F3FF"
+                      : "#FEF3C7";
+
+                  const emailDisplay =
+                    person.depedEmail ||
+                    (person.noDepedEmail || person.no_deped_email
+                      ? "Pending ITO Google Workspace (N/A)"
+                      : "Pending Email Assignment");
+
+                  return (
+                    <div
+                      key={person.id || index}
+                      style={{
+                        background: "#FFFFFF",
+                        border: "1px solid #E2E8F0",
+                        borderRadius: "14px",
+                        padding: "16px",
+                        boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {/* Person Header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "36px",
+                              height: "36px",
+                              borderRadius: "10px",
+                              background: categoryBg,
+                              color: categoryColor,
+                              fontWeight: "900",
+                              fontSize: "13px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {index + 1}
+                          </div>
+                          <div>
+                            <div
+                              style={{
+                                fontSize: "14px",
+                                fontWeight: "800",
+                                color: "#0F172A",
+                                letterSpacing: "-0.01em",
+                              }}
+                            >
+                              {fullName || "Unnamed Personnel"}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                color: "#475569",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {person.position || "Position Unassigned"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "800",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            color: categoryColor,
+                            background: categoryBg,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {person.type || "teaching"}
+                        </span>
+                      </div>
+
+                      {/* Detail Chips Grid */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: "6px 12px",
+                          background: "#F8FAFC",
+                          padding: "10px 12px",
+                          borderRadius: "10px",
+                          border: "1px solid #F1F5F9",
+                          fontSize: "11.5px",
+                        }}
+                      >
+                        <div>
+                          <span style={{ color: "#64748B", fontWeight: "600" }}>
+                            Birthdate:{" "}
+                          </span>
+                          <span style={{ color: "#0F172A", fontWeight: "700" }}>
+                            {person.birthdate
+                              ? `${person.birthdate} (${age !== null ? `${age} yrs` : "Valid"})`
+                              : "Not provided"}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ color: "#64748B", fontWeight: "600" }}>
+                            Appointment:{" "}
+                          </span>
+                          <span style={{ color: "#0F172A", fontWeight: "700" }}>
+                            {person.natureOfAppointment || "REGULAR PERMANENT"}
+                          </span>
+                        </div>
+                        <div style={{ gridColumn: "span 2" }}>
+                          <span style={{ color: "#64748B", fontWeight: "600" }}>
+                            Email:{" "}
+                          </span>
+                          <span style={{ color: "#0F172A", fontWeight: "700" }}>
+                            {emailDisplay}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Sidebar Sticky Footer */}
+            <div
+              style={{
+                padding: "18px 24px",
+                background: "#FFFFFF",
+                borderTop: "1px solid #E2E8F0",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                flexShrink: 0,
+              }}
+            >
+              <button
+                type="button"
+                onClick={executeRosterSave}
+                disabled={isSavingDrafts}
+                style={{
+                  width: "100%",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  padding: "12px 20px",
+                  borderRadius: "12px",
+                  fontSize: "13.5px",
+                  fontWeight: "800",
+                  color: "#FFFFFF",
+                  background: isSavingDrafts
+                    ? "#94A3B8"
+                    : "linear-gradient(135deg, #10B981 0%, #059669 100%)",
+                  border: "none",
+                  cursor: isSavingDrafts ? "not-allowed" : "pointer",
+                  boxShadow: isSavingDrafts
+                    ? "none"
+                    : "0 4px 14px rgba(16, 185, 129, 0.35)",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSavingDrafts) {
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow =
+                      "0 6px 18px rgba(16, 185, 129, 0.45)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSavingDrafts) {
+                    e.currentTarget.style.transform = "none";
+                    e.currentTarget.style.boxShadow =
+                      "0 4px 14px rgba(16, 185, 129, 0.35)";
+                  }
+                }}
+              >
+                <FiSave size={16} />
+                <span>
+                  {isSavingDrafts
+                    ? "Saving changes..."
+                    : `Confirm & Save (${newlyAddedList.length})`}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={closeNewPersonnelSidebar}
+                disabled={isSavingDrafts}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px",
+                  borderRadius: "12px",
+                  fontSize: "12.5px",
+                  fontWeight: "700",
+                  color: "#475569",
+                  background: "#F8FAFC",
+                  border: "1px solid #CBD5E1",
+                  cursor: isSavingDrafts ? "not-allowed" : "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#F1F5F9";
+                  e.currentTarget.style.color = "#0F172A";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#F8FAFC";
+                  e.currentTarget.style.color = "#475569";
+                }}
+              >
+                Cancel / Return to Roster
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* Room QR Mobile Profiling Station Sidebar Popup Modal */}
+      {isRoomQRDrawerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="room-qr-sidebar-title"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.45)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            zIndex: 99999,
+            display: "flex",
+            justifyContent: "flex-end",
+            animation: isClosingRoomQR
+              ? "fadeOutBackdrop 0.24s cubic-bezier(0.4, 0, 0.2, 1) forwards"
+              : "fadeInBackdrop 0.28s ease-out",
+          }}
+          onClick={closeRoomQRDrawer}
+        >
+          <aside
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(1240px, 94vw)",
+              height: "100%",
+              background: "#F8FAFC",
+              boxShadow:
+                "-16px 0 48px rgba(15, 23, 42, 0.2), -4px 0 16px rgba(15, 23, 42, 0.06)",
+              display: "flex",
+              flexDirection: "column",
+              animation: isClosingRoomQR
+                ? "slideOutToRight 0.25s cubic-bezier(0.32, 0, 0.67, 0) forwards"
+                : "slideInFromRight 0.32s cubic-bezier(0.16, 1, 0.3, 1)",
+              willChange: "transform, opacity",
+              overflow: "hidden",
+            }}
+          >
+            {/* Top Royal Blue Accent Line */}
+            <div
+              style={{
+                height: "4px",
+                width: "100%",
+                background:
+                  "linear-gradient(90deg, #1D4ED8 0%, #2563EB 50%, #38BDF8 100%)",
+                flexShrink: 0,
+              }}
+            />
+
+            {/* Sidebar Header */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderBottom: "1px solid #E2E8F0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "14px",
+                background: "#FFFFFF",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div
+                  style={{
+                    width: "42px",
+                    height: "42px",
+                    borderRadius: "12px",
+                    background: "#EFF6FF",
+                    border: "1px solid #BFDBFE",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#1D4ED8",
+                    flexShrink: 0,
+                  }}
+                >
+                  <FiMaximize size={20} />
+                </div>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <h2
+                      id="room-qr-sidebar-title"
+                      style={{
+                        margin: 0,
+                        fontSize: "18px",
+                        fontWeight: "800",
+                        color: "#0F172A",
+                        letterSpacing: "-0.2px",
+                      }}
+                    >
+                      Room QR Portal
+                    </h2>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                        background: "#EFF6FF",
+                        color: "#1D4ED8",
+                        border: "1px solid #BFDBFE",
+                        fontSize: "10px",
+                        fontWeight: "800",
+                        letterSpacing: "0.5px",
+                      }}
+                    >
+                      POPUP MODAL
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      margin: "2px 0 0 0",
+                      fontSize: "12px",
+                      color: "#64748B",
+                      fontWeight: "500",
+                    }}
+                  >
+                    Teacher passcode identity, faculty room QR posters & mobile self-profiling
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeRoomQRDrawer}
+                style={{
+                  background: "#F1F5F9",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: "10px",
+                  width: "36px",
+                  height: "36px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#64748B",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#E2E8F0";
+                  e.currentTarget.style.color = "#0F172A";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#F1F5F9";
+                  e.currentTarget.style.color = "#64748B";
+                }}
+                title="Close Room QR Portal (Esc)"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+
+            {/* Scrollable Room QR Portal Content */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "20px 24px 40px",
+              }}
+            >
+              <RoomQR isModal={true} onClose={closeRoomQRDrawer} />
+            </div>
+          </aside>
         </div>
       )}
     </section>

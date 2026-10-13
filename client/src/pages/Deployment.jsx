@@ -174,7 +174,7 @@ export default function Deployment() {
       <PortalHeader
         title="Deployment & Cross-School Transfers"
         description="Manage deployment statuses, clustered school links, and cross-school personnel visibility."
-        onBack={() => setActiveView("dashboard")}
+        onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
         onContinue={handleSave}
         continueText="Save"
