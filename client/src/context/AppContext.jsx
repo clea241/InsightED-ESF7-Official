@@ -6803,9 +6803,10 @@ export const AppProvider = ({ children }) => {
           api.updatePersonnel(rawTargetId, {
             ...payloadToPersist,
             school_id:
+              resolveSchoolId(null) ||
               (schoolInfo && schoolInfo.schoolId) ||
               localStorage.getItem("activeSchoolId") ||
-              "300488",
+              "108348",
             school_year: (schoolInfo && schoolInfo.schoolYear) || "2026-2027",
           }),
         );
@@ -6827,12 +6828,18 @@ export const AppProvider = ({ children }) => {
       }
     }
 
-    setHasUnsavedChanges(true);
-    showToast(
-      options.skipApiUpdate
-        ? "Changes saved locally."
-        : "Changes saved locally & synced to database.",
-    );
+    if (options.markSaved) {
+      setHasUnsavedChanges(false);
+    } else {
+      setHasUnsavedChanges(true);
+    }
+    if (!options.silentToast && !options.silent) {
+      showToast(
+        options.skipApiUpdate
+          ? "Changes saved locally."
+          : (options.toastMessage || "Changes saved locally & synced to database."),
+      );
+    }
     return { ok: true };
   };
 

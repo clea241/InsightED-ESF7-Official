@@ -223,7 +223,7 @@ const parsePostGraduateDiscipline = (
 
 function formatEducRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || row.raw_payload || {};
   const elList = Array.isArray(row.eligibility) ? row.eligibility : [];
 
   const parsedPostDisc = parsePostGraduateDiscipline(
@@ -435,9 +435,9 @@ router.post("/:personnel_id", async (req, res) => {
       INSERT INTO esf7_perssonel_educ (
         id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
         college_degree, college_degrees, major, minor, post_graduate_degree,
-        post_graduate_discipline, eligibility, prc_specialization, raw_payload
+        post_graduate_discipline, eligibility, prc_specialization
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
       ON CONFLICT (personnel_id) DO UPDATE SET
         highest_educational_attainment = EXCLUDED.highest_educational_attainment,
         shs_track = EXCLUDED.shs_track,
@@ -451,7 +451,6 @@ router.post("/:personnel_id", async (req, res) => {
         post_graduate_discipline = EXCLUDED.post_graduate_discipline,
         eligibility = EXCLUDED.eligibility,
         prc_specialization = EXCLUDED.prc_specialization,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -471,7 +470,6 @@ router.post("/:personnel_id", async (req, res) => {
       postDisc || null,
       elJson,
       prcSpec || null,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

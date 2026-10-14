@@ -123,10 +123,10 @@ router.get("/", async (req, res) => {
         ed.post_graduate_discipline,
         ed.eligibility,
         ed.prc_specialization,
-        ed.raw_payload AS educ_raw_payload,
+        '{}'::jsonb AS educ_raw_payload,
         la.id AS la_id,
         la.matrix_data,
-        la.raw_payload AS la_raw_payload
+        '{}'::jsonb AS la_raw_payload
       FROM esf7_personnel_profile p
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
@@ -586,10 +586,10 @@ router.get("/", async (req, res) => {
         ed.post_graduate_discipline,
         ed.eligibility,
         ed.prc_specialization,
-        ed.raw_payload AS educ_raw_payload,
+        '{}'::jsonb AS educ_raw_payload,
         la.id AS la_id,
         la.matrix_data,
-        la.raw_payload AS la_raw_payload,
+        '{}'::jsonb AS la_raw_payload,
         p.id as master_profile_id,
         p.prn as master_prn,
         p.first_name as master_fn,
@@ -1053,6 +1053,97 @@ router.post("/bulk", async (req, res) => {
   }
 });
 
+// PUT /api/personnel/:id/school-head — Dedicated endpoint to toggle or designate a School Head
+router.put("/:id/school-head", async (req, res) => {
+  const targetId = String(req.params.id || "").trim();
+  const schoolId =
+    getSchoolIdFromRequest(req) ||
+    req.query.schoolId ||
+    req.query.school_id ||
+    req.body?.schoolId ||
+    req.body?.school_id ||
+    "";
+  const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+  const isSchoolHead = Boolean(req.body?.isSchoolHead);
+
+  try {
+    const sidPair = cleanSchoolId ? [cleanSchoolId, `SCH-${cleanSchoolId}`] : [];
+
+    const executeToggle = async (pool) => {
+      if (!pool || !pool.query) return;
+      try {
+        await pool.query("BEGIN");
+
+        // 1. If designating as School Head, unset any existing School Head for this school
+        if (isSchoolHead && sidPair.length > 0) {
+          await pool.query(
+            "UPDATE esf7_personnel_profile SET is_school_head = FALSE WHERE school_id = ANY($1)",
+            [sidPair],
+          );
+        }
+
+        // 2. Update the target personnel in esf7_personnel_profile
+        await pool.query(
+          "UPDATE esf7_personnel_profile SET is_school_head = $1 WHERE id = $2 OR legacy_id = $2 OR prn = $2",
+          [isSchoolHead, targetId],
+        );
+
+        // 3. Keep school_drafts in sync so drafts also reflect the School Head state
+        if (sidPair.length > 0) {
+          const draftRes = await pool.query(
+            "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)",
+            [sidPair],
+          );
+          for (const row of draftRes.rows) {
+            let pld = row.payload;
+            if (pld && Array.isArray(pld.personnel)) {
+              pld.personnel = pld.personnel.map((p) => {
+                const pId = String(p.id || "").trim();
+                const pLegacy = String(p.legacy_id || p.legacyId || "").trim();
+                const pPrn = String(p.prn || "").trim();
+                const isTarget =
+                  (pId && pId === targetId) ||
+                  (pLegacy && pLegacy === targetId) ||
+                  (pPrn && pPrn === targetId);
+
+                if (isTarget) {
+                  return { ...p, isSchoolHead, is_school_head: isSchoolHead };
+                }
+                if (isSchoolHead) {
+                  return { ...p, isSchoolHead: false, is_school_head: false };
+                }
+                return p;
+              });
+              await pool.query(
+                "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3",
+                [JSON.stringify(pld), row.school_id, row.school_year],
+              );
+            }
+          }
+        }
+
+        await pool.query("COMMIT");
+      } catch (err) {
+        await pool.query("ROLLBACK").catch(() => {});
+        throw err;
+      }
+    };
+
+    await executeToggle(db);
+    if (db.getStagingPool) await executeToggle(db.getStagingPool());
+    if (db.getProdPool) await executeToggle(db.getProdPool());
+
+    res.json({
+      success: true,
+      id: targetId,
+      isSchoolHead,
+      message: isSchoolHead ? "School Head designated." : "School Head designation removed.",
+    });
+  } catch (err) {
+    console.error("Error in PUT /api/personnel/:id/school-head:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.delete("/:id", async (req, res) => {
   const targetId = String(req.params.id || "").trim();

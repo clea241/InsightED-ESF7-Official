@@ -100,26 +100,45 @@ app.use(
   }),
 );
 
+// Default trusted origins for DepEd infrastructure and local development environments
+const defaultAllowedOrigins = [
+  "https://stride.deped.gov.ph",
+  "https://insighted.deped.gov.ph",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
+  "http://localhost:5000",
+  "http://localhost:3000",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
+  "http://127.0.0.1:5000",
+  "http://127.0.0.1:3000",
+];
+
 // CORS Configuration with origin allowlist from environment config
 const rawOrigins = process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS || "";
-const corsAllowlist = rawOrigins
+const configuredOrigins = rawOrigins
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
 
+const corsAllowlist = Array.from(new Set([...defaultAllowedOrigins, ...configuredOrigins]));
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // Non-browser / curl / internal
+  if (corsAllowlist.includes(origin)) return true;
+  // Allow all DepEd official subdomains
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)*deped\.gov\.ph(:\d+)?$/.test(origin)) return true;
+  // Allow localhost / 127.0.0.1 on any port
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  return false;
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow non-browser requests (e.g. mobile apps, curl, internal service calls)
-      if (!origin) return callback(null, true);
-      if (corsAllowlist.length === 0) {
-        if (process.env.NODE_ENV !== "production") return callback(null, true);
-        return callback(
-          new Error("CORS blocked: origin not allowed by configuration"),
-          false,
-        );
-      }
-      if (corsAllowlist.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
       return callback(
@@ -343,13 +362,19 @@ const stripServerPaths = (msg) =>
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   let status = Number(err.status || err.statusCode) || 500;
-  if (status < 400 || status > 599) status = 500;
+  if (err.message && err.message.includes("CORS blocked")) {
+    status = 403;
+  } else if (status < 400 || status > 599) {
+    status = 500;
+  }
   console.error(
     `[Error] ${req.method} ${req.originalUrl} -> ${status}:`,
     err && err.stack ? err.stack : err,
   );
   let message;
-  if (err.type === "entity.parse.failed") {
+  if (err.message && err.message.includes("CORS blocked")) {
+    message = err.message;
+  } else if (err.type === "entity.parse.failed") {
     status = 400;
     message = "Invalid JSON body";
   } else if (err.type === "entity.too.large") {

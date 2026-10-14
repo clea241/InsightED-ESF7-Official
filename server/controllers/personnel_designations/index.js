@@ -4,16 +4,18 @@ const db = require("../../db");
 
 function formatDesignationRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const extras = row.extras || {};
   return {
-    ...raw,
+    ...extras,
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
+    schoolId: row.school_id,
+    school_id: row.school_id,
     designationName: row.designation_name,
     designation_name: row.designation_name,
-    keyStage: row.key_stage || raw.keyStage || null,
-    key_stage: row.key_stage || raw.keyStage || null,
+    keyStage: row.key_stage || extras.keyStage || null,
+    key_stage: row.key_stage || extras.keyStage || null,
     gradeLevel: row.grade_level || "",
     grade_level: row.grade_level || "",
     subjectArea: row.subject_area || "",
@@ -25,7 +27,8 @@ function formatDesignationRecord(row) {
     sds_confirmed: !!row.sds_confirmed,
     serializedKey: row.serialized_key,
     serialized_key: row.serialized_key,
-    rawPayload: raw,
+    rawPayload: extras,
+    extras,
   };
 }
 
@@ -166,16 +169,17 @@ router.post("/", async (req, res) => {
 
     const query = `
       INSERT INTO esf7_personnel_designations (
-        id, personnel_id, designation_name, key_stage, grade_level, subject_area, track,
-        is_sds_approved, sds_confirmed, serialized_key, raw_payload
+        id, personnel_id, school_id, designation_name, key_stage, grade_level, subject_area, track,
+        is_sds_approved, sds_confirmed, serialized_key
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *;
     `;
 
     const values = [
       dsgId,
       targetPersonId,
+      String(schoolId).replace(/^SCH-/i, ""),
       name,
       finalKeyStage || null,
       grade_level || gradeLevel || null,
@@ -184,7 +188,6 @@ router.post("/", async (req, res) => {
       isApproved,
       isConfirmed,
       key,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

@@ -621,12 +621,12 @@ router.post("/accept", async (req, res) => {
         e.fund_source, e.hiring_arrangement, e.deployment_status,
         e.assigned_schools, e.grade_levels_taught, e.first_service_date,
         e.last_promotion_date, e.new_station_date, e.last_lateral_movement_date,
-        e.step_increment, e.raw_payload as emp_raw,
+        e.step_increment, '{}'::jsonb as emp_raw,
         ed.id as educ_id, ed.highest_educational_attainment, ed.shs_track,
         ed.vocational_course, ed.vocational_level, ed.college_degree,
         ed.major, ed.minor, ed.post_graduate_degree,
         ed.post_graduate_discipline, ed.eligibility, ed.prc_specialization,
-        ed.raw_payload as educ_raw
+        '{}'::jsonb as educ_raw
       FROM esf7_personnel_profile p
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
@@ -1190,7 +1190,6 @@ router.post("/accept", async (req, res) => {
         post_graduate_discipline: postDiscJson,
         eligibility: JSON.stringify(eligibility),
         prc_specialization: prcSpec || null,
-        raw_payload: JSON.stringify(fullRawPayload),
         updated_at: now,
       });
 
@@ -1215,7 +1214,6 @@ router.post("/accept", async (req, res) => {
           training_type: tr.type || tr.training_type || "NEAP",
           title: tr.title || tr.programTitle || "Training Program",
           total_hours: Number(tr.totalHours || tr.hours) || 0,
-          raw_payload: JSON.stringify(tr),
           created_at: now,
         });
       }
@@ -1510,7 +1508,6 @@ router.post("/accept", async (req, res) => {
           "post_graduate_discipline",
           "eligibility",
           "prc_specialization",
-          "raw_payload",
           "updated_at",
         ],
         "(personnel_id)",
@@ -1533,7 +1530,6 @@ router.post("/accept", async (req, res) => {
           END,
           eligibility = EXCLUDED.eligibility,
           prc_specialization = EXCLUDED.prc_specialization,
-          raw_payload = COALESCE(esf7_perssonel_educ.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
           updated_at = NOW()`,
         educUpsertRows,
       );
@@ -1559,7 +1555,6 @@ router.post("/accept", async (req, res) => {
             "training_type",
             "title",
             "total_hours",
-            "raw_payload",
             "created_at",
           ],
           "(id)",
@@ -2053,7 +2048,6 @@ router.post("/sync-roster", async (req, res) => {
         last_promotion_date: lastPromoDate,
         new_station_date: newStationDate,
         last_lateral_movement_date: lastLateralMovementDate,
-        raw_payload: JSON.stringify({ position: pos, stepIncrement: step }),
       });
 
       const safeSuffix = String(pId).replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -2072,7 +2066,6 @@ router.post("/sync-roster", async (req, res) => {
         post_graduate_discipline: postGradDisc ? JSON.stringify(postGradDisc) : null,
         eligibility: JSON.stringify(elig),
         prc_specialization: prcSpec,
-        raw_payload: JSON.stringify({ collegeDegree: collegeDeg, major }),
       });
 
       if (Array.isArray(p.designations) && p.designations.length > 0) {
@@ -2090,7 +2083,6 @@ router.post("/sync-roster", async (req, res) => {
             is_sds_approved: Boolean(dItem?.is_sds_approved || dItem?.isSdsApproved),
             sds_confirmed: Boolean(dItem?.sds_confirmed || dItem?.sdsConfirmed),
             serialized_key: `${cleanSchoolId}_${pId}_${dName.toUpperCase()}`,
-            raw_payload: JSON.stringify(typeof dItem === "object" ? dItem : { name: dName }),
           });
         }
       }
@@ -2258,7 +2250,6 @@ router.post("/sync-roster", async (req, res) => {
           "post_graduate_discipline",
           "eligibility",
           "prc_specialization",
-          "raw_payload",
         ],
         "(personnel_id)",
         `UPDATE SET
@@ -2286,7 +2277,6 @@ router.post("/sync-roster", async (req, res) => {
             ELSE esf7_perssonel_educ.eligibility 
           END,
           prc_specialization = EXCLUDED.prc_specialization,
-          raw_payload = COALESCE(esf7_perssonel_educ.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
           updated_at = NOW()`,
         educUpsertRows,
       );
@@ -2305,7 +2295,6 @@ router.post("/sync-roster", async (req, res) => {
             "is_sds_approved",
             "sds_confirmed",
             "serialized_key",
-            "raw_payload",
           ],
           "(id)",
           "NOTHING",

@@ -568,7 +568,7 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
 
   const existingPersRes = await safeDraftQuery(client, "sp_get_pers", () =>
     client.query(
-      "SELECT id, prn, legacy_id FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2",
+      "SELECT id, prn, legacy_id, first_name, last_name FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2",
       [cleanId, `SCH-${cleanId}`],
     )
   ).catch(() => ({ rows: [] }));
@@ -576,6 +576,7 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
   const existingByPrn = new Map();
   const existingById = new Map();
   const existingByLegacyId = new Map();
+  const existingByName = new Map();
   for (const r of (existingPersRes.rows || [])) {
     if (r.id) {
       existingById.set(r.id, r);
@@ -587,6 +588,10 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     if (r.legacy_id) {
       existingByLegacyId.set(r.legacy_id, r);
     }
+    if (r.first_name && r.last_name) {
+      const nameKey = `${String(r.first_name).trim().toUpperCase()}__${String(r.last_name).trim().toUpperCase()}`;
+      existingByName.set(nameKey, r);
+    }
   }
 
   if (Array.isArray(finalPayload.personnel) && finalPayload.personnel.length > 0) {
@@ -594,6 +599,9 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
       if (!p) continue;
       const rawId = p.id ? String(p.id).trim() : null;
       const rawPrn = p.prn ? String(p.prn).trim() : null;
+      const fName = String(p.firstName || p.first_name || p.first || "").trim().toUpperCase();
+      const lName = String(p.lastName || p.last_name || p.last || "").trim().toUpperCase();
+      const nameKey = fName && lName ? `${fName}__${lName}` : null;
 
       let finalId = null;
       let legacyId = null;
@@ -606,6 +614,9 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
         legacyId = rawId;
       } else if (rawPrn && existingByPrn.has(rawPrn)) {
         finalId = existingByPrn.get(rawPrn).id;
+        if (rawId && rawId !== finalId) legacyId = rawId;
+      } else if (nameKey && existingByName.has(nameKey)) {
+        finalId = existingByName.get(nameKey).id;
         if (rawId && rawId !== finalId) legacyId = rawId;
       } else if (rawId) {
         const mapRes = await safeDraftQuery(client, "sp_get_map", () =>
@@ -621,10 +632,24 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
         }
       }
 
-      const isUuid = finalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(finalId);
-      if (!isUuid) {
-        if (rawId && !legacyId) legacyId = rawId;
-        finalId = crypto.randomUUID();
+      if (!finalId) {
+        if (rawId && !rawId.startsWith("temp-") && !rawId.startsWith("local-p-")) {
+          finalId = rawId;
+        } else {
+          finalId = crypto.randomUUID();
+          if (rawId && !legacyId) legacyId = rawId;
+        }
+      }
+
+      if (legacyId && legacyId !== finalId) {
+        await safeDraftQuery(client, "sp_save_map", () =>
+          client.query(
+            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
+            [legacyId, finalId, pStatus || "canonical"],
+          )
+        ).catch(() => {});
       }
 
       if (!pStatus) {
@@ -639,6 +664,12 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
       if (!finalPrn || ["N/A", "NA", "NONE", "NULL", "0"].includes(finalPrn.toUpperCase())) {
         finalPrn = finalId;
       }
+
+      existingById.set(finalId, { id: finalId, prn: finalPrn, legacy_id: legacyId, first_name: fName, last_name: lName });
+      if (rawId) existingById.set(rawId, { id: finalId });
+      if (legacyId) existingByLegacyId.set(legacyId, { id: finalId });
+      if (finalPrn) existingByPrn.set(finalPrn, { id: finalId });
+      if (nameKey) existingByName.set(nameKey, { id: finalId });
 
       if (rawId) draftIdToFinalId.set(rawId, finalId);
       draftIdToFinalId.set(finalId, finalId);
@@ -813,9 +844,9 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           INSERT INTO esf7_perssonel_educ (
             id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
             college_degree, college_degrees, major, minor, post_graduate_degree, post_graduate_discipline,
-            eligibility, prc_specialization, raw_payload, updated_at
+            eligibility, prc_specialization, updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb, NOW())
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, NOW())
           ON CONFLICT (personnel_id) DO UPDATE SET
             highest_educational_attainment = EXCLUDED.highest_educational_attainment,
             shs_track = EXCLUDED.shs_track,
@@ -829,7 +860,6 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
             post_graduate_discipline = EXCLUDED.post_graduate_discipline,
             eligibility = EXCLUDED.eligibility,
             prc_specialization = EXCLUDED.prc_specialization,
-            raw_payload = EXCLUDED.raw_payload,
             updated_at = NOW()
           `,
           [
@@ -847,7 +877,6 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
             JSON.stringify(p.postGraduateDiscipline || p.post_graduate_discipline || {}),
             JSON.stringify(eligList),
             p.prcSpecialization || p.prc_specialization || null,
-            JSON.stringify(p),
           ],
         )
       ).catch((err) => {

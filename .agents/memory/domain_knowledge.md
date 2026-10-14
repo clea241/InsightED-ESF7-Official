@@ -17,6 +17,14 @@
 - Client: React with Vite/Webpack, Topbar, Blueprint backgrounds, Custom CSS modules.
 - Server: Node.js Express server running background jobs, worker threads for report processing, PostgreSQL / SQLite database controllers.
 
+### Added 2026-10-13 (Personnel Profiling Direct 1-by-1 Database Persistence Architecture)
+- **1-by-1 Atomic Save**:
+  - In `PersonnelProfile.jsx`, clicking **Save** (Header or Employment tab bottom) strictly saves the **currently active personnel record** one-by-one. It never batches or submits other teachers' local drafts together.
+  - Server route `PUT /api/personnel/:id` acts as an idempotent upsert: if the teacher does not exist in `esf7_personnel_profile` (e.g. historical `esf7_database` origin), it automatically inserts the canonical profile row and updates all identity fields, followed by an upsert into `esf7_personnel_employment`.
+- **Relational Tables as Primary Store**:
+  - Primary persistence is strictly relational in `esf7_personnel_profile` and `esf7_personnel_employment` with zero `raw_payload`.
+  - Client-side IndexedDB / `localStorage` (`draft_personnel_${id}`) serves purely as a transient write-buffer and secondary fallback. Upon confirmed server write (`confirmServerDraftSaved()`), the local draft keys and outbox entries are immediately purged.
+
 ### Added 2026-10-01 (Personnel Profiling 100% Completion Percentage Audit & Persistence)
 - **Root Cause of 75% Drop**:
   - `stepIncrementConfirmed`: Was stored as an ephemeral UI flag without being returned by `formatPersonnel` on reload, causing step validation to fail after saving.
@@ -496,4 +504,26 @@
 - **Sub-Path Routing & Media Asset Deployment Protocol**:
   - All staging API requests route through `API_BASE` (`/insighted-esf7-staging/api`).
   - All static media (GIFs, PNGs, badges) must use `import.meta.env.BASE_URL` paths.
-  - Staging deployment script (`deploy_esf7_staging.py`) automatically synchronizes media assets from root and client public directories to both `/mnt/insighted-esf7-staging/client/dist` and `/mnt/insighted-esf7-staging/dist`.
+  - Staging deployment script (`deploy_esf7_staging.py`) automatically synchronizes media assets from root and client public directories to both `/mnt/insighted-esf7-staging/client/dist` and `/mnt/insighted-esf7-staging/dist`.
+
+### Added 2026-10-13: Full Database Normalization & Disaggregation Architecture (`esf7_school_profile` ➔ `esf7_personnel_allowances`)
+- **Strategic Architecture Shift**:
+  - Eliminated monolithic `raw_payload` JSON blobs across all child tables to prevent database bloat and performance degradation under load.
+  - Replaced `raw_payload` with strongly-typed PostgreSQL columns plus a slim `extras JSONB NOT NULL DEFAULT '{}'::jsonb` column reserved exclusively for unmapped, non-standard extension keys.
+  - Strict preservation of RULE #1: All operations isolated to `insighted_esf7`. Official `esf7_database` and `salary_matrix` remain untouched.
+- **Normalized Tables Scope & Status**:
+  1. `esf7_school_profile`: Root school metadata and division routing.
+  2. `esf7_personnel_profile`: Core personnel identity and demographics for 351,762 personnel. Holds `legacy_id` for relational mapping.
+  3. `esf7_personnel_employment`: Plantilla positions, salary steps, service longevity, and deployment arrangement.
+  4. `esf7_personnel_educ`: Tertiary and graduate educational degrees, PRC licenses, RA 1080 eligibilities. `raw_payload` dropped; `extras` added.
+  5. `esf7_personnel_ld_trainings`: Learning & Development history (NEAP, TESDA, seminars). `raw_payload` dropped; `extras` added.
+  6. `esf7_personnel_learning_areas`: Subject competency grid across curriculum eras. `raw_payload` dropped; `extras` added.
+  7. `esf7_regular_sections`: 175,239 regular mono/multigrade sections. `raw_payload` dropped. Alias view `esf7_regualar_sections` created.
+  8. `esf7_als_sections` (655 rows), `esf7_aral_sections` (7,627 rows), `esf7_sned_sections` (1,044 rows): Specialized class offerings. `raw_payload` dropped.
+  9. `esf7_class_sections`: Unified compatibility view querying all section tables via `UNION ALL` with 0 `raw_payload` dependencies.
+  10. `esf7_personnel_designations`: Official designations (Department Head, TIC, Coordinator). Mapped to `esf7_personnel_profile(id)`. `raw_payload` dropped; alias view `esf7_personnel_designation` created.
+  11. `esf7_workload_rows`: 1,890,091 timetable rows. `raw_payload` dropped; `extras` added; alias view `esf7_workload_row` created. `section_id` connected to all 4 section tables (622,533 workloads linked via `esf7_class_sections`).
+  12. `esf7_personnel_allowances`: 351,762 records (100% 1-to-1 parity with personnel profile, 0 orphans). Mapped from legacy draft IDs to `esf7_personnel_profile(id)`. Teaching vs non-teaching supplies entitlement rules applied. `raw_payload` dropped; `extras` added; alias view `esf7_personnel_allowance` created.
+- **Master Agent Skill**:
+  - Full details, scripts, and verification rules are encapsulated in [esf7-normalization-architect](file:///e:/InsightED%20-%20ESF7%20Official/.agents/skills/esf7-normalization-architect/SKILL.md).
+

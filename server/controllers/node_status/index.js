@@ -20,6 +20,39 @@ const VALID_PERSONNEL_NODES = [
   "node_09_allowances",
 ];
 
+const PERSONNEL_NODE_ALIASES = {
+  profile: "node_04_profile",
+  node_04_profile: "node_04_profile",
+  room_qr: "node_03_room_qr",
+  roomqr: "node_03_room_qr",
+  qr: "node_03_room_qr",
+  node_03_room_qr: "node_03_room_qr",
+  designation: "node_07_designation",
+  designations: "node_07_designation",
+  node_07_designation: "node_07_designation",
+  workload: "node_08_workload",
+  workloads: "node_08_workload",
+  node_08_workload: "node_08_workload",
+  allowance: "node_09_allowances",
+  allowances: "node_09_allowances",
+  node_09_allowances: "node_09_allowances",
+};
+
+const SCHOOL_NODE_ALIASES = {
+  school: "node_01_school",
+  node_01_school: "node_01_school",
+  roster: "node_02_roster",
+  node_02_roster: "node_02_roster",
+  requests: "node_05_requests",
+  node_05_requests: "node_05_requests",
+  classes: "node_06_classes",
+  node_06_classes: "node_06_classes",
+  overload: "node_10_overload",
+  node_10_overload: "node_10_overload",
+  validation: "node_11_validation",
+  node_11_validation: "node_11_validation",
+};
+
 /**
  * Helper: Recalculate and update personnel_summary in esf7_school_node_status
  */
@@ -179,7 +212,8 @@ router.get("/school", async (req, res) => {
 // -----------------------------------------------------------------------------
 router.put("/school/:nodeId", async (req, res) => {
   try {
-    const { nodeId } = req.params;
+    const rawNodeId = req.params.nodeId;
+    const nodeId = SCHOOL_NODE_ALIASES[rawNodeId] || rawNodeId;
     if (!VALID_SCHOOL_NODES.includes(nodeId)) {
       return res.status(400).json({
         error: `Invalid school nodeId. Must be one of: ${VALID_SCHOOL_NODES.join(", ")}`,
@@ -296,7 +330,9 @@ router.get("/personnel", async (req, res) => {
 // -----------------------------------------------------------------------------
 router.put("/personnel/:personnelId/:nodeId", async (req, res) => {
   try {
-    const { personnelId, nodeId } = req.params;
+    const { personnelId } = req.params;
+    const rawNodeId = req.params.nodeId;
+    const nodeId = PERSONNEL_NODE_ALIASES[rawNodeId] || rawNodeId;
     if (!VALID_PERSONNEL_NODES.includes(nodeId)) {
       return res.status(400).json({
         error: `Invalid personnel nodeId. Must be one of: ${VALID_PERSONNEL_NODES.join(", ")}`,

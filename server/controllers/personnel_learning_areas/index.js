@@ -5,15 +5,13 @@ const { insightEdPool } = require("../../db");
 
 function formatLearningAreasRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
   return {
-    ...raw,
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
     learningAreaMap: row.matrix_data || {},
     matrix_data: row.matrix_data || {},
-    rawPayload: raw,
+    rawPayload: row.matrix_data || {},
   };
 }
 
@@ -124,11 +122,10 @@ router.post("/toggle", async (req, res) => {
     const laId = `LA-${schoolId.replace("SCH-", "")}-${seq}`;
 
     const query = `
-      INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, raw_payload, updated_at)
-      VALUES ($1, $2, $3::jsonb, $4::jsonb, NOW())
+      INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
+      VALUES ($1, $2, $3::jsonb, NOW())
       ON CONFLICT (personnel_id) DO UPDATE SET
         matrix_data = EXCLUDED.matrix_data,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -137,9 +134,6 @@ router.post("/toggle", async (req, res) => {
       laId,
       personnelId,
       JSON.stringify(matrix),
-      JSON.stringify({
-        lastToggle: { schoolYear, learningArea, checked, yearsTaught },
-      }),
     ]);
 
     res.json(formatLearningAreasRecord(result.rows[0]));
@@ -240,11 +234,10 @@ router.post("/:personnel_id", async (req, res) => {
     const laId = `LA-${schoolId.replace("SCH-", "")}-${seq}`;
 
     const query = `
-      INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, raw_payload, updated_at)
-      VALUES ($1, $2, $3::jsonb, $4::jsonb, NOW())
+      INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
+      VALUES ($1, $2, $3::jsonb, NOW())
       ON CONFLICT (personnel_id) DO UPDATE SET
         matrix_data = EXCLUDED.matrix_data,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -253,7 +246,6 @@ router.post("/:personnel_id", async (req, res) => {
       laId,
       personnel_id,
       JSON.stringify(targetMap),
-      JSON.stringify(req.body),
     ]);
 
     res.json(formatLearningAreasRecord(result.rows[0]));

@@ -119,10 +119,10 @@ router.get("/:id", async (req, res) => {
         ed.post_graduate_discipline,
         ed.eligibility,
         ed.prc_specialization,
-        ed.raw_payload AS educ_raw_payload,
+        '{}'::jsonb AS educ_raw_payload,
         la.id AS la_id,
         la.matrix_data,
-        la.raw_payload AS la_raw_payload
+        '{}'::jsonb AS la_raw_payload
       FROM esf7_personnel_profile p
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
@@ -220,8 +220,8 @@ async function syncTrainingsInTransaction(
 
     await client.query(
       `INSERT INTO esf7_personnel_ld_trainings (
-        id, personnel_id, training_type, title, conductor, start_date, end_date, days, total_hours, raw_payload
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+        id, personnel_id, training_type, title, conductor, start_date, end_date, days, total_hours
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         trnId,
         personnelId,
@@ -232,7 +232,6 @@ async function syncTrainingsInTransaction(
         endDate,
         days,
         totalHours,
-        JSON.stringify(t),
       ],
     );
   }
@@ -257,13 +256,12 @@ async function syncLearningAreasInTransaction(
   const laId = `LA-${targetSchoolId.replace("SCH-", "")}-${seq}`;
 
   await client.query(
-    `INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, raw_payload)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb)
+    `INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data)
+     VALUES ($1, $2, $3::jsonb)
      ON CONFLICT (personnel_id) DO UPDATE SET
        matrix_data = EXCLUDED.matrix_data,
-       raw_payload = EXCLUDED.raw_payload,
        updated_at = NOW()`,
-    [laId, personnelId, JSON.stringify(targetMap), JSON.stringify(reqBody)],
+    [laId, personnelId, JSON.stringify(targetMap)],
   );
 }
 
@@ -525,12 +523,13 @@ async function syncDesignationsInTransaction(
 
     await client.query(
       `INSERT INTO esf7_personnel_designations (
-        id, personnel_id, designation_name, key_stage, grade_level, subject_area, track,
-        is_sds_approved, sds_confirmed, serialized_key, raw_payload
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+        id, personnel_id, school_id, designation_name, key_stage, grade_level, subject_area, track,
+        is_sds_approved, sds_confirmed, serialized_key
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         dsgId,
         personnelId,
+        String(targetSchoolId).replace(/^SCH-/i, ""),
         dsgObj.designationName,
         dsgObj.keyStage || null,
         dsgObj.gradeLevel || null,
@@ -539,7 +538,6 @@ async function syncDesignationsInTransaction(
         !!dsgObj.isSdsApproved,
         !!dsgObj.sdsConfirmed,
         dsgObj.serializedKey || dsgObj.designationName,
-        JSON.stringify(dsgObj.rawPayload || dsgObj),
       ],
     );
   }
@@ -997,9 +995,9 @@ router.post("/", async (req, res) => {
       INSERT INTO esf7_perssonel_educ (
         id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
         college_degree, college_degrees, major, minor, post_graduate_degree,
-        post_graduate_discipline, eligibility, prc_specialization, raw_payload
+        post_graduate_discipline, eligibility, prc_specialization
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
       ON CONFLICT (personnel_id) DO UPDATE SET
         highest_educational_attainment = EXCLUDED.highest_educational_attainment,
         shs_track = EXCLUDED.shs_track,
@@ -1013,7 +1011,6 @@ router.post("/", async (req, res) => {
         post_graduate_discipline = EXCLUDED.post_graduate_discipline,
         eligibility = EXCLUDED.eligibility,
         prc_specialization = EXCLUDED.prc_specialization,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -1033,7 +1030,6 @@ router.post("/", async (req, res) => {
       eduPostDisc || null,
       JSON.stringify(eligibilityArray),
       eduPrcSpec || null,
-      JSON.stringify(req.body),
     ];
 
     await client.query(insertEducQuery, educValues);
@@ -1102,10 +1098,10 @@ router.post("/", async (req, res) => {
         ed.post_graduate_discipline,
         ed.eligibility,
         ed.prc_specialization,
-        ed.raw_payload AS educ_raw_payload,
+        '{}'::jsonb AS educ_raw_payload,
         la.id AS la_id,
         la.matrix_data,
-        la.raw_payload AS la_raw_payload
+        '{}'::jsonb AS la_raw_payload
       FROM esf7_personnel_profile p
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
@@ -1289,14 +1285,28 @@ router.put("/:id", async (req, res) => {
     }
 
     const resolvedId = await resolvePersonnelId(client, req.params.id);
-    const currentRes = await client.query(
+    let currentRes = await client.query(
       `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) OR prn = $1 OR id = $2 OR id IN (SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1) LIMIT 1`,
       [req.params.id, resolvedId],
     );
 
     if (currentRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Personnel profile not found" });
+      // Auto-insert initial record so PUT acts as a direct idempotent upsert into esf7_personnel_profile
+      const cleanSchoolId = String(targetSchoolId).replace(/^SCH-/i, "").trim();
+      const targetSchoolYear = req.body.school_year || req.body.schoolYear || "SY 26-27";
+      const pPrn = req.body.prn ? formatCanonicalPrn(req.body.prn) : `PRN-${req.params.id}`;
+      const fName = String(first_name || firstName || "TEACHER").toUpperCase().trim();
+      const lName = String(last_name || lastName || "STAFF").toUpperCase().trim();
+      const pType = String(type || "teaching").toLowerCase();
+      const insRes = await client.query(
+        `INSERT INTO esf7_personnel_profile (
+          id, prn, school_id, school_year, type, first_name, last_name, status, legacy_id, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'canonical', $8, NOW())
+        ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
+        RETURNING *`,
+        [req.params.id, pPrn, cleanSchoolId, targetSchoolYear, pType, fName, lName, req.params.id],
+      );
+      currentRes = insRes;
     }
 
     const current = currentRes.rows[0];
@@ -1703,9 +1713,9 @@ router.put("/:id", async (req, res) => {
       INSERT INTO esf7_perssonel_educ (
         id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
         college_degree, college_degrees, major, minor, post_graduate_degree,
-        post_graduate_discipline, eligibility, prc_specialization, raw_payload
+        post_graduate_discipline, eligibility, prc_specialization
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
       ON CONFLICT (personnel_id) DO UPDATE SET
         highest_educational_attainment = EXCLUDED.highest_educational_attainment,
         shs_track = EXCLUDED.shs_track,
@@ -1719,7 +1729,6 @@ router.put("/:id", async (req, res) => {
         post_graduate_discipline = EXCLUDED.post_graduate_discipline,
         eligibility = EXCLUDED.eligibility,
         prc_specialization = EXCLUDED.prc_specialization,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -1739,7 +1748,6 @@ router.put("/:id", async (req, res) => {
       eduPostDisc || null,
       JSON.stringify(eligibilityArray),
       eduPrcSpec || null,
-      JSON.stringify(req.body),
     ];
 
     const educRes = await client.query(upsertEducQuery, educValues);
@@ -1823,10 +1831,10 @@ router.put("/:id", async (req, res) => {
       post_graduate_discipline: educRes.rows[0].post_graduate_discipline,
       eligibility: educRes.rows[0].eligibility,
       prc_specialization: educRes.rows[0].prc_specialization,
-      educ_raw_payload: educRes.rows[0].raw_payload,
+      educ_raw_payload: {},
       la_id: laRow.id || null,
       matrix_data: laRow.matrix_data || {},
-      la_raw_payload: laRow.raw_payload || {},
+      la_raw_payload: {},
     };
 
     res.json(formatPersonnelRecord(combinedRow, trRes.rows, dsgRes.rows));

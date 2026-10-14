@@ -61,6 +61,15 @@ const isLoadTestMode =
   defaultDbName.includes("test") ||
   (process.env.DATABASE_URL && process.env.DATABASE_URL.includes("test"));
 
+// Staging environment detection: if APP_ENV is staging, IS_STAGING is true, or DB_NAME is insighted_esf7_staging,
+// all operations must be strictly confined to insighted_esf7_staging and NEVER route to production insighted_esf7.
+const isStagingEnv =
+  process.env.APP_ENV === "staging" ||
+  process.env.IS_STAGING === "true" ||
+  defaultDbName === "insighted_esf7_staging" ||
+  (primaryConnUrl && primaryConnUrl.includes("insighted_esf7_staging"));
+
+
 // Base configuration with bounded connection timeout and quick idle recovery
 const baseConfig = {
   ssl: dbSsl,
@@ -104,7 +113,7 @@ function getPool() {
 
 // 2. Explicit Staging Pool (for division test accounts & staging QA)
 function getStagingPool() {
-  if (isLoadTestMode || isLocalHost) {
+  if (isLoadTestMode || isLocalHost || isStagingEnv) {
     return getPool();
   }
   if (!_stagingPool) {
@@ -136,7 +145,7 @@ function getStagingPool() {
 
 // 3. Explicit Production Pool
 function getProdPool() {
-  if (isLoadTestMode || isLocalHost) {
+  if (isLoadTestMode || isLocalHost || isStagingEnv) {
     return getPool();
   }
   if (!_prodPool) {
@@ -289,7 +298,7 @@ function isDivisionOrTestAccount(schoolId) {
  * (Division test accounts / dummy accounts -> stagingPool; Real schools -> prodPool / default pool)
  */
 function getPoolForSchool(schoolId) {
-  if (isLoadTestMode || isLocalHost) {
+  if (isLoadTestMode || isLocalHost || isStagingEnv) {
     return getPool();
   }
   if (isDivisionOrTestAccount(schoolId)) {
@@ -302,7 +311,7 @@ function getPoolForSchool(schoolId) {
  * Checks if any query parameter or SQL text targets a test account
  */
 function containsTestAccountIndicator(text, params) {
-  if (isLocalHost) return false;
+  if (isLocalHost || isStagingEnv) return false;
   if (Array.isArray(params)) {
     for (const p of params) {
       if (typeof p === "string" || typeof p === "number") {
@@ -346,8 +355,8 @@ function dbMiddleware(req, res, next) {
       }
     }
 
-    const isTest = !isLoadTestMode && !isLocalHost && isDivisionOrTestAccount(schoolId);
-    const activePool = isLoadTestMode || isLocalHost
+    const isTest = !isLoadTestMode && !isLocalHost && !isStagingEnv && isDivisionOrTestAccount(schoolId);
+    const activePool = isLoadTestMode || isLocalHost || isStagingEnv
       ? getPool()
       : isTest
         ? getStagingPool()
@@ -367,8 +376,8 @@ function dbMiddleware(req, res, next) {
  * Runs a function within the context of a specific school ID
  */
 function runWithSchool(schoolId, callback) {
-  const isTest = !isLoadTestMode && !isLocalHost && isDivisionOrTestAccount(schoolId);
-  const activePool = isLoadTestMode || isLocalHost
+  const isTest = !isLoadTestMode && !isLocalHost && !isStagingEnv && isDivisionOrTestAccount(schoolId);
+  const activePool = isLoadTestMode || isLocalHost || isStagingEnv
     ? getPool()
     : isTest
       ? getStagingPool()
@@ -391,7 +400,7 @@ function query(text, params) {
   }
 
   // Fallback if called outside HTTP request context (e.g. background job, CLI scripts)
-  if (isLoadTestMode) {
+  if (isLoadTestMode || isStagingEnv) {
     return getPool().query(text, params);
   }
 
@@ -412,7 +421,7 @@ function getClient() {
   if (store && store.pool) {
     return store.pool.connect();
   }
-  if (isLoadTestMode) {
+  if (isLoadTestMode || isStagingEnv) {
     return getPool().connect();
   }
   const defaultActivePool =

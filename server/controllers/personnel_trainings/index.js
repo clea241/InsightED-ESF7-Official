@@ -4,9 +4,9 @@ const db = require("../../db");
 
 function formatTrainingRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const extras = row.extras || {};
   return {
-    ...raw,
+    ...extras,
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
@@ -28,7 +28,7 @@ function formatTrainingRecord(row) {
     days: row.days || 0,
     totalHours: Number(row.total_hours || 0),
     total_hours: Number(row.total_hours || 0),
-    rawPayload: raw,
+    rawPayload: extras,
   };
 }
 
@@ -112,8 +112,8 @@ router.put("/personnel/:personnel_id", async (req, res) => {
 
       const result = await client.query(
         `INSERT INTO esf7_personnel_ld_trainings (
-          id, personnel_id, training_type, title, conductor, start_date, end_date, days, total_hours, raw_payload
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb) RETURNING *`,
+          id, personnel_id, training_type, title, conductor, start_date, end_date, days, total_hours
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
         [
           trnId,
           personnel_id,
@@ -124,7 +124,6 @@ router.put("/personnel/:personnel_id", async (req, res) => {
           endDate,
           days,
           totalHours,
-          JSON.stringify(t),
         ],
       );
       inserted.push(formatTrainingRecord(result.rows[0]));

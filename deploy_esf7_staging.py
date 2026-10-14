@@ -53,8 +53,10 @@ def run_command(cmd, capture=False, timeout=90, retries=8, delay=5):
             prefix = f"[Attempt {attempt}/{max_attempts}] " if is_network else ""
             print(f"{CYAN}> {prefix}Running: {cmd_str}{NC}", flush=True)
         try:
+            use_shell = isinstance(cmd, str)
             result = subprocess.run(
-                cmd, shell=True, capture_output=capture, text=True, 
+                cmd, shell=use_shell, capture_output=capture, text=True, 
+                encoding='utf-8', errors='replace',
                 timeout=timeout, stdin=subprocess.DEVNULL
             )
             if result.returncode == 0:
@@ -125,12 +127,13 @@ def main():
         error("Client Build failed! Aborting.")
         sys.exit(1)
 
-    # 2. Archive essential files (skipping node_modules)
+    # 2. Archive essential files (skipping node_modules and sample uploads)
     print(f"\n{YELLOW}📦 [2/5] ARCHIVING deployment payload -> {ARCHIVE_NAME}...{NC}")
-    files_to_include = ["server", "client/dist", "client/public", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
+    files_to_include = ["server", "client/dist", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
     
     def exclude_node_modules(tarinfo):
-        if "node_modules" in tarinfo.name or ".git" in tarinfo.name:
+        name = tarinfo.name.lower()
+        if any(x in name for x in ["node_modules", ".git", "server/uploads", "server\\uploads", ".turbo"]):
             return None
         return tarinfo
 
@@ -151,7 +154,7 @@ def main():
     run_command(prep_cmd, retries=8, delay=5)
 
     scp_cmd = ["scp"] + SSH_OPTS + [ARCHIVE_NAME, f"{ssh_target}:{REMOTE_ROOT}/"]
-    upload_res = run_command(scp_cmd, retries=8, delay=5)
+    upload_res = run_command(scp_cmd, retries=8, delay=5, timeout=600)
     if upload_res.returncode != 0:
         error("Upload failed after 8 attempts! Check SSH key and connection.")
         sys.exit(1)
@@ -177,7 +180,7 @@ def main():
     )
     
     ssh_deploy_cmd = ["ssh"] + SSH_OPTS + [ssh_target, remote_script]
-    deploy_res = run_command(ssh_deploy_cmd, retries=8, delay=5, timeout=180)
+    deploy_res = run_command(ssh_deploy_cmd, retries=8, delay=5, timeout=300)
     if deploy_res.returncode != 0:
         error("Remote setup failed after retries.")
         sys.exit(1)

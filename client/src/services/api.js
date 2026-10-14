@@ -1235,6 +1235,14 @@ export const api = {
     return parseJsonOrThrow(res);
   },
   savePersonnelNode: async (personnelId, nodeId, data = {}) => {
+    const canonicalMap = {
+      profile: "node_04_profile",
+      room_qr: "node_03_room_qr",
+      designation: "node_07_designation",
+      workload: "node_08_workload",
+      allowances: "node_09_allowances",
+    };
+    const targetNodeId = canonicalMap[nodeId] || nodeId;
     const {
       payload = {},
       schoolYear = "SY 26-27",
@@ -1245,7 +1253,7 @@ export const api = {
       isComplete,
     } = data;
     const res = await fetchWithAuth(
-      `${API_BASE}/node-status/personnel/${encodeURIComponent(personnelId)}/${encodeURIComponent(nodeId)}`,
+      `${API_BASE}/node-status/personnel/${encodeURIComponent(personnelId)}/${encodeURIComponent(targetNodeId)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

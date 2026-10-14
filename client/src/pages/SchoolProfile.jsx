@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp } from "../context/AppContext";
 import { useAuth } from "../context/AuthContext";
-import { getLocalDraft, setLocalDraft } from "../services/db";
+import { getLocalDraft, setLocalDraft, deleteLocalDraft } from "../services/db";
 import { api } from "../services/api";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
@@ -285,10 +285,10 @@ export default function SchoolProfile() {
         const storedStr = localStorage.getItem(draftKey);
         const localConfig =
           localDraft || (storedStr ? JSON.parse(storedStr) : null);
-        // Database first: the browser copy only wins while it holds edits that were NOT saved to the server yet.
+        // Database first: when schoolInfo has been loaded from esf7_school_profile, database is authoritative.
+        // Local draft is strictly a secondary fallback if not yet stored on server.
         const config =
-          schoolInfo?.curricularConfigSaved &&
-          (!localConfig || localConfig.savedToServer)
+          schoolInfo?.curricularConfigSaved
             ? null
             : localConfig;
 
@@ -764,6 +764,17 @@ export default function SchoolProfile() {
         term: activeTerm,
         module: "school_profile",
       });
+
+      // Clear local draft caches now that data is safely stored in esf7_school_profile
+      try {
+        const draftKey = `insighted_school_curricular_config_${schoolInfo.schoolId || "default"}`;
+        localStorage.removeItem(draftKey);
+        if (typeof deleteLocalDraft === "function") {
+          await deleteLocalDraft(draftKey);
+        }
+      } catch (cleanErr) {
+        console.warn("[SchoolProfile] Error clearing local draft:", cleanErr);
+      }
 
       if (setSchoolInfo)
         setSchoolInfo((prev) => ({ ...prev, curricularConfigSaved: true }));

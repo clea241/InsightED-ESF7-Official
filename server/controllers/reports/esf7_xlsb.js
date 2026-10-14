@@ -95,8 +95,8 @@ const generateESF7Xlsb = async (req, res) => {
           ),
           db.query(
             `SELECT p.*, pe.position, pe.fund_source, pe.nature_of_appointment,
-                    pe.raw_payload as employment_raw,
-                    pq.college_degree, pq.major, pq.minor, pq.raw_payload as educ_raw
+                    '{}'::jsonb as employment_raw,
+                    pq.college_degree, pq.major, pq.minor, '{}'::jsonb as educ_raw
              FROM esf7_personnel_profile p
              LEFT JOIN esf7_personnel_employment pe ON pe.personnel_id = p.id
              LEFT JOIN esf7_perssonel_educ pq ON pq.personnel_id = p.id

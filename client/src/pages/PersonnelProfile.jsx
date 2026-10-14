@@ -23,6 +23,7 @@ import {
   writeWithLegacyCleanup,
 } from "../services/storageKeys";
 import { api } from "../services/api";
+import { deleteLocalDraft } from "../services/db";
 import {
   FiCreditCard,
   FiUser,
@@ -3614,7 +3615,11 @@ export default function PersonnelProfile() {
     try {
       const updated = { ...p, personalVerified: true, workloadVerified: true };
       setEditPerson(updated);
-      await savePersonnelChanges(p.id, updated);
+      await savePersonnelChanges(p.id, updated, {
+        markSaved: true,
+        silentToast: true,
+        skipWorkloadSync: true,
+      });
       localStorage.removeItem(`draft_personnel_${p.id}`);
       showToast(
         `✨ ${p.firstName || ""} ${p.lastName || ""}'s profile is 100% complete and validated!`,
@@ -3632,81 +3637,70 @@ export default function PersonnelProfile() {
   const handleSaveValidate = handleValidateOnly;
 
   // The one Personnel Profile save, used by the header Save button AND the unsaved-changes dialog's Save button.
-  // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
+  // Saves the active personnel record strictly one-by-one directly to the database.
+  // Secondary store is IndexedDB / localStorage which is cleared once the server confirms persistence.
   const runProfileSave = async () => {
     try {
-      const recordsToSave = [];
+      if (!currentPerson) return { ok: true };
 
-      // 1. If currentPerson is edited vs dbPerson, validate and add to recordsToSave
-      if (
-        currentPerson &&
-        (currentPersonDirty ||
-          (editPerson &&
-            JSON.stringify(editPerson) !== JSON.stringify(dbPerson)))
-      ) {
-        const conflict = checkSchoolHeadConflict(currentPerson);
-        if (conflict) {
-          return {
-            ok: false,
-            title: "School Head Conflict",
-            message: conflict,
-          };
-        }
-        recordsToSave.push(currentPerson);
+      const conflict = checkSchoolHeadConflict(currentPerson);
+      if (conflict) {
+        return {
+          ok: false,
+          title: "School Head Conflict",
+          message: conflict,
+        };
       }
 
-      // 2. Add other personnel with pending local drafts
-      (personnel || []).forEach((p) => {
-        if (p.id !== dbPerson?.id) {
-          const savedDraft = localStorage.getItem(`draft_personnel_${p.id}`);
-          if (savedDraft) {
-            try {
-              recordsToSave.push({ ...p, ...JSON.parse(savedDraft) });
-            } catch (e) {}
-          }
-        }
-      });
+      // 1. Prepare single personnel record (Identity + Employment + Educ + Training + Learning Areas)
+      const personToSave = {
+        ...currentPerson,
+        learningAreaMap,
+        matrix_data: learningAreaMap,
+      };
 
-      if (recordsToSave.length === 0) return { ok: true };
-
-      // 3. Save ONLY the changed records to database
-      for (const p of recordsToSave) {
-        if (typeof savePersonnelChanges === "function") {
-          await savePersonnelChanges(p.id, p);
-        }
-        if (api && api.savePersonnelNode) {
-          api
-            .savePersonnelNode(p.id, "profile", {
-              schoolYear: schoolInfo?.schoolYear || "SY 26-27",
-              personnelName: `${p.lastName || ""}, ${p.firstName || ""}`,
-              positionTitle: p.position || p.position_title || "",
-              category: p.positionCategory || p.position_category || "TEACHING",
-              isSchoolHead: !!p.isSchoolHead,
-              isComplete: true,
-              payload: {
-                status: "COMPLETED",
-                degrees: p.degreeRows || p.collegeDegrees || [],
-                highest_educational_attainment:
-                  p.highestEducationalAttainment ||
-                  p.highest_educational_attainment ||
-                  "",
-              },
-            })
-            .catch((err) =>
-              reportError(err, {
-                action: `Updating Node Map progress for ${p.id}`,
-                handler: "runProfileSave",
-                ids: { personnel_id: String(p.id) },
-              }),
-            );
-        }
+      // 2. Direct 1-by-1 write-through to PostgreSQL relational database
+      if (typeof savePersonnelChanges === "function") {
+        await savePersonnelChanges(personToSave.id, personToSave, {
+          markSaved: true,
+          silentToast: true,
+          skipWorkloadSync: true,
+        });
       }
 
-      // Success is reported, and the local drafts cleared, only after the server confirmed the database write.
+      // 3. Update Node Status tracking
+      if (api && api.savePersonnelNode) {
+        api
+          .savePersonnelNode(personToSave.id, "node_04_profile", {
+            schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+            personnelName: `${personToSave.lastName || ""}, ${personToSave.firstName || ""}`,
+            positionTitle: personToSave.position || personToSave.position_title || "",
+            category: personToSave.positionCategory || personToSave.position_category || "TEACHING",
+            isSchoolHead: !!personToSave.isSchoolHead,
+            isComplete: true,
+            payload: {
+              status: "COMPLETED",
+              degrees: personToSave.degreeRows || personToSave.collegeDegrees || [],
+              highest_educational_attainment:
+                personToSave.highestEducationalAttainment ||
+                personToSave.highest_educational_attainment ||
+                "",
+            },
+          })
+          .catch((err) =>
+            reportError(err, {
+              action: `Updating Node Map progress for ${personToSave.id}`,
+              handler: "runProfileSave",
+              ids: { personnel_id: String(personToSave.id) },
+            }),
+          );
+      }
+
+      // 4. Confirm server verified database persistence
       const confirmed = await confirmServerDraftSaved();
       if (!confirmed.ok) return confirmed;
 
-      // Remove outbox entry right away on verified success
+      // 5. Remove outbox entry right away on verified success
       await removeOutboxEntryByModule({
         schoolId: schoolInfo?.schoolId,
         user: user?.username || user?.email,
@@ -3714,22 +3708,23 @@ export default function PersonnelProfile() {
         module: "personnel_profile",
       });
 
-      for (const p of recordsToSave) {
-        const canonicalKey = getPersonnelDraftKey(
-          schoolInfo?.schoolId,
-          schoolInfo?.schoolYear,
-          p.id,
-        );
-        localStorage.removeItem(canonicalKey);
-        localStorage.removeItem(`draft_personnel_${p.id}`);
-        localStorage.removeItem(`draft_learning_areas_${p.id}`);
+      // 6. Clear secondary local drafts now that data is stored directly in database
+      const canonicalKey = getPersonnelDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+        personToSave.id,
+      );
+      localStorage.removeItem(canonicalKey);
+      localStorage.removeItem(`draft_personnel_${personToSave.id}`);
+      localStorage.removeItem(`draft_learning_areas_${personToSave.id}`);
+      if (typeof deleteLocalDraft === "function") {
+        await deleteLocalDraft(`draft_personnel_${personToSave.id}`).catch(() => {});
+        await deleteLocalDraft(canonicalKey).catch(() => {});
       }
 
-      if (currentPerson) {
-        setEditPerson(currentPerson);
-      }
+      setEditPerson(personToSave);
+      if (setHasUnsavedChanges) setHasUnsavedChanges(false);
 
-      // Complete Node without forcing navigation
       if (completeNode) {
         completeNode("profile", null);
       }
@@ -3782,254 +3777,7 @@ export default function PersonnelProfile() {
   };
 
   const handleSaveChangesDirectly = async () => {
-    if (!currentPerson) return;
-
-    const conflict = checkSchoolHeadConflict(currentPerson);
-    if (conflict) {
-      await showAlert("School Head Conflict", conflict);
-      return;
-    }
-
-    // 1-by-1 direct persistence to esf7_personnel_employment when saving on Employment tab
-    if (activeTab === "employment") {
-      try {
-        const empCat =
-          currentPerson.positionCategory ||
-          (currentPerson.type === "non-teaching"
-            ? "NON-TEACHING"
-            : currentPerson.type === "teaching-related"
-              ? "RELATED TEACHING"
-              : "TEACHING");
-
-        const empPayload = {
-          positionCategory: empCat,
-          position: currentPerson.position || "TEACHER I",
-          stepIncrement: Number(currentPerson.stepIncrement || currentPerson.step_increment || 1),
-          fundSource: currentPerson.fundSource || currentPerson.fund_source || "NATIONAL",
-          natureOfAppointment: currentPerson.natureOfAppointment || currentPerson.nature_of_appointment || "REGULAR PERMANENT",
-          hiringArrangement: currentPerson.hiringArrangement || currentPerson.hiring_arrangement || "PERMANENT",
-          deploymentStatus: currentPerson.deploymentStatus || currentPerson.deployment_status || "OWN STATION",
-          assignedSchools: currentPerson.assignedSchools || currentPerson.assigned_schools || [],
-          gradeLevelsTaught: currentPerson.gradeLevelsTaught || currentPerson.grade_levels_taught || currentPerson.assignedGradeLevels || [],
-          firstServiceDate: currentPerson.firstServiceDate || currentPerson.first_service_date || null,
-          lastPromotionDate: currentPerson.lastPromotionDate || currentPerson.last_promotion_date || null,
-          newStationDate: currentPerson.newStationDate || currentPerson.new_station_date || null,
-          lastLateralMovementDate: currentPerson.lastLateralMovementDate || currentPerson.last_lateral_movement_date || null,
-        };
-
-        // 1-by-1 direct write to esf7_personnel_employment
-        await api.updateEmployment(currentPerson.id, empPayload);
-
-        // Update in-memory state in AppContext
-        if (typeof savePersonnelChanges === "function") {
-          savePersonnelChanges(
-            currentPerson.id,
-            {
-              ...currentPerson,
-              ...empPayload,
-            },
-            { skipApiUpdate: true },
-          );
-        }
-
-        localStorage.removeItem(`draft_personnel_${currentPerson.id}`);
-        if (setHasUnsavedChanges) setHasUnsavedChanges(false);
-        showToast("Personnel employment saved to database successfully.", "success");
-        return;
-      } catch (err) {
-        console.error("Failed to save employment details:", err);
-        await showAlert("Error", "Failed to save employment details: " + (err.message || err));
-        return;
-      }
-    }
-
-    // If it's a draft, it MUST pass validation to be saved to the database!
-    if (String(currentPerson.id).startsWith("draft-")) {
-      const errors = [];
-      const p = currentPerson;
-      if (!p.firstName?.trim()) errors.push("FIRST NAME");
-      if (!p.middleName?.trim()) errors.push("MIDDLE NAME");
-      if (!p.lastName?.trim()) errors.push("LAST NAME");
-      if (!p.sexAtBirth) errors.push("SEX AT BIRTH");
-      if (!p.civilStatus) errors.push("CIVIL STATUS");
-      if (!p.religion) errors.push("RELIGION");
-      if (!p.ethnicGroup) errors.push("ETHNIC GROUP");
-      if (!p.birthdate) {
-        errors.push("BIRTHDATE");
-      } else {
-        const ageVal = getAge(p.birthdate);
-        if (ageVal !== null && ageVal < 15) {
-          errors.push(
-            "VALID BIRTHDATE (PERSONNEL MUST BE AT LEAST 15 YEARS OLD)",
-          );
-        }
-      }
-      const isPermAppt =
-        String(
-          p.natureOfAppointment || p.nature_of_appointment || "",
-        ).toUpperCase() === "REGULAR PERMANENT";
-      if (isPermAppt) {
-        if (
-          !p.depedEmail?.trim() ||
-          p.depedEmail === "N/A" ||
-          p.noDepedEmail ||
-          p.no_deped_email
-        ) {
-          errors.push("DEPED EMAIL (MANDATORY FOR REGULAR PERMANENT)");
-        }
-      } else {
-        if (!p.noDepedEmail && !p.no_deped_email && !p.depedEmail?.trim()) {
-          errors.push("DEPED EMAIL");
-        }
-      }
-      if (!p.noTin && !p.tin?.trim()) errors.push("TIN NUMBER");
-      if (!p.position) errors.push("PLANTILLA POSITION");
-      if (!p.fundSource) errors.push("FUND SOURCE");
-      if (!p.natureOfAppointment) errors.push("NATURE OF APPOINTMENT");
-      if (!p.hiringArrangement) errors.push("HIRING ARRANGEMENT");
-      if (!p.deploymentStatus) errors.push("STATUS OF DEPLOYMENT");
-      if (
-        [
-          "Clustered",
-          "Reassigned",
-          "Borrowed",
-          "CLUSTERED",
-          "REASSIGNED",
-          "BORROWED",
-        ].includes(p.deploymentStatus) &&
-        !p.clusteredSchools &&
-        (!Array.isArray(p.assignedSchools) || p.assignedSchools.length === 0)
-      ) {
-        errors.push("OTHER SCHOOL ASSIGNMENT");
-      }
-      if (!p.firstServiceDate) errors.push("DATE OF FIRST DAY OF SERVICE");
-      if (!p.lastPromotionDate) errors.push("DATE OF LAST PROMOTION");
-      if (!p.lastLateralMovementDate)
-        errors.push("DATE OF LAST LATERAL MOVEMENT");
-      if (!p.newStationDate)
-        errors.push("DATE OF FIRST DAY IN CURRENT STATION");
-
-      // Education / Qualifications
-      const draftPType =
-        detectPersonnelTypeFromPosition(
-          p.position || p.plantilla_position || p.position_title || "",
-        ) ||
-        p.type ||
-        "teaching";
-      const isDraftNonTeaching =
-        ["non-teaching", "NON-TEACHING"].includes(draftPType) ||
-        ["non-teaching", "NON-TEACHING"].includes(p.type) ||
-        ["NON-TEACHING"].includes(p.positionCategory);
-      const draftDegreeRows = getEffectiveDegreeRows(p);
-      const draftHasAnyDegree = draftDegreeRows.some((d) => d.collegeDegree);
-      const draftAttainment =
-        p.highestEducationalAttainment ||
-        (draftHasAnyDegree
-          ? "COLLEGE UNDERGRADUATE"
-          : isDraftNonTeaching
-            ? "N/A"
-            : "");
-      if (
-        !draftAttainment &&
-        !draftHasAnyDegree &&
-        !p.vocationalCourse &&
-        !isDraftNonTeaching
-      ) {
-        errors.push("HIGHEST EDUCATIONAL ATTAINMENT");
-      }
-      const isDraftSHS = draftAttainment === "SENIOR HIGH SCHOOL GRADUATE";
-      const isDraftVocational =
-        draftAttainment === "VOCATIONAL / TECH-VOC COURSE";
-      const isDraftCollegeOrPostGrad =
-        draftAttainment === "COLLEGE UNDERGRADUATE" || draftHasAnyDegree;
-
-      if (isDraftSHS && !p.shsTrack) {
-        errors.push("SENIOR HIGH SCHOOL TRACK");
-      }
-      if (isDraftVocational) {
-        if (!p.vocationalCourse?.trim())
-          errors.push("VOCATIONAL / TESDA COURSE");
-        if (!p.vocationalLevel?.trim())
-          errors.push("NC LEVEL / QUALIFICATION LEVEL");
-      }
-      if (
-        isDraftCollegeOrPostGrad &&
-        !(
-          draftDegreeRows.length > 0 &&
-          draftDegreeRows.every((d) => !!d.collegeDegree)
-        )
-      ) {
-        errors.push("COLLEGE DEGREE / BACCALAUREATE");
-      }
-      draftDegreeRows.forEach((d) => {
-        const isDraftEdu =
-          d.collegeDegree &&
-          d.level !== "MASTERS" &&
-          d.level !== "DOCTORATE" &&
-          String(d.collegeDegree).toUpperCase().includes("EDUCATION");
-        if (isDraftCollegeOrPostGrad && isDraftEdu && !d.major) {
-          errors.push("MAJOR IN EDUCATION");
-        }
-        if (
-          (d.level === "MASTERS" || d.level === "DOCTORATE") &&
-          !d.postGraduateDiscipline?.trim()
-        ) {
-          errors.push("POST-GRADUATE DISCIPLINE");
-        }
-      });
-      if (
-        !p.eligibility ||
-        (Array.isArray(p.eligibility) && p.eligibility.length === 0)
-      ) {
-        errors.push("ELIGIBILITY");
-      }
-      if (
-        ["let", "pbet"].includes(String(p.eligibility || "").toLowerCase()) &&
-        !p.prcSpecialization?.trim()
-      ) {
-        errors.push("PRC SPECIALIZATION");
-      }
-      const totalTrainingsCount =
-        (p.neapTrainingRows || []).length +
-        (p.certificationRows || []).length +
-        (p.otherTrainingRows || []).length;
-      if (totalTrainingsCount === 0) {
-        errors.push("AT LEAST ONE PROFESSIONAL DEVELOPMENT / TRAINING RECORD");
-      }
-      const allDraftTrainings = [
-        ...(p.neapTrainingRows || []),
-        ...(p.certificationRows || []),
-        ...(p.otherTrainingRows || []),
-      ];
-      if (
-        allDraftTrainings.some(
-          (tr) => !tr.totalHours || Number(tr.totalHours) <= 0,
-        )
-      ) {
-        errors.push("TOTAL HOURS FOR ALL L&D / TRAINING RECORDS (REQUIRED)");
-      }
-
-      if (errors.length > 0) {
-        await showAlert(
-          "Validation Checklist Needed",
-          `To save this draft personnel to the database, the following fields must not be empty:\n\n• ${errors.join("\n• ")}`,
-        );
-        return;
-      }
-    }
-
-    try {
-      await savePersonnelChanges(currentPerson.id, {
-        ...currentPerson,
-        learningAreaMap,
-        matrix_data: learningAreaMap,
-      });
-      localStorage.removeItem(`draft_personnel_${currentPerson.id}`);
-      localStorage.removeItem(`draft_learning_areas_${currentPerson.id}`);
-      showToast("Changes saved to database successfully.");
-    } catch (err) {
-      await showAlert("Error", "Failed to save changes: " + err.message);
-    }
+    return handleSave();
   };
 
   const handleDuplicate = () => {
@@ -11713,7 +11461,7 @@ export default function PersonnelProfile() {
                       <button
                         className="btn"
                         type="button"
-                        onClick={handleSaveChangesDirectly}
+                        onClick={handleSave}
                         style={{
                           background: "#0284c7",
                           borderColor: "#0284c7",

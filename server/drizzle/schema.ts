@@ -431,14 +431,15 @@ export const esf7PersonnelDesignations = pgTable(
   {
     id: varchar({ length: 50 }).primaryKey().notNull(),
     personnelId: varchar("personnel_id", { length: 50 }).notNull(),
+    schoolId: varchar("school_id", { length: 50 }),
     designationName: text("designation_name").notNull(),
+    keyStage: varchar("key_stage", { length: 50 }),
     gradeLevel: text("grade_level"),
     subjectArea: text("subject_area"),
     track: text(),
     isSdsApproved: boolean("is_sds_approved").default(false).notNull(),
     sdsConfirmed: boolean("sds_confirmed").default(false).notNull(),
     serializedKey: text("serialized_key").notNull(),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -450,6 +451,10 @@ export const esf7PersonnelDesignations = pgTable(
     index("idx_esf7_personnel_designations_personnel").using(
       "btree",
       table.personnelId.asc().nullsLast().op("text_ops"),
+    ),
+    index("idx_esf7_personnel_designations_school").using(
+      "btree",
+      table.schoolId.asc().nullsLast().op("text_ops"),
     ),
     foreignKey({
       columns: [table.personnelId],
