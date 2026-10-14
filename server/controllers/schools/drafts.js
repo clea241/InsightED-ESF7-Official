@@ -1716,6 +1716,7 @@ const handleSaveDraft = async (req, res) => {
     // 3. Atomic school_drafts write
     const client = await acquireClient();
     let saved = null;
+    const withVersion = await hasDraftVersionColumn();
 
     try {
       await client.query("BEGIN");
@@ -1783,10 +1784,12 @@ const handleSaveDraft = async (req, res) => {
       }
 
       await client.query("COMMIT");
-      saved = {
-        version: baseVersion ? Number(baseVersion) + 1 : 1,
-        updatedAt: new Date().toISOString(),
-      };
+      if (!saved) {
+        saved = {
+          version: baseVersion ? Number(baseVersion) + 1 : 1,
+          updatedAt: new Date().toISOString(),
+        };
+      }
     } catch (txErr) {
       await client.query("ROLLBACK").catch(() => {});
       throw txErr;
