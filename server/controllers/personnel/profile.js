@@ -1253,32 +1253,10 @@ router.put("/:id", async (req, res) => {
       designations = [],
     } = req.body;
 
-    // Check if updating to school head conflicts with another school head
     const targetSchoolId = (school_id || schoolId || "108348").replace(
       "SCH-",
       "",
     );
-    const isTargetHead =
-      is_school_head !== undefined
-        ? !!is_school_head
-        : isSchoolHead !== undefined
-          ? !!isSchoolHead
-          : false;
-
-    if (isTargetHead) {
-      const headCheck = await client.query(
-        `SELECT id, first_name, last_name, position FROM esf7_personnel_profile 
-         WHERE (school_id = $1 OR school_id = $2) AND is_school_head = TRUE AND id != $3 AND (legacy_id IS NULL OR legacy_id != $3) LIMIT 1`,
-        [targetSchoolId, `SCH-${targetSchoolId}`, req.params.id],
-      );
-      if (headCheck.rows.length > 0) {
-        await client.query("ROLLBACK");
-        const h = headCheck.rows[0];
-        return res.status(400).json({
-          error: `School head already designated (${h.first_name} ${h.last_name} - ${h.position}). A school can only have ONE School Head.`,
-        });
-      }
-    }
 
     const resolvedId = await resolvePersonnelId(client, req.params.id);
     let currentRes = await client.query(
@@ -1314,6 +1292,34 @@ router.put("/:id", async (req, res) => {
     }
 
     const current = currentRes.rows[0];
+
+    const isTargetHead =
+      is_school_head !== undefined
+        ? Boolean(is_school_head)
+        : isSchoolHead !== undefined
+          ? Boolean(isSchoolHead)
+          : Boolean(current.is_school_head);
+
+    const isTargetMain = isTargetHead
+      ? Boolean(
+          req.body.is_main_sh !== undefined
+            ? req.body.is_main_sh
+            : req.body.isMainSh !== undefined
+              ? req.body.isMainSh
+              : req.body.isMainSchoolHead !== undefined
+                ? req.body.isMainSchoolHead
+                : (current.is_main_sh ?? true),
+        )
+      : false;
+
+    if (isTargetHead && !req.body.hasMultipleHeads) {
+      await client.query(
+        `UPDATE esf7_personnel_profile 
+         SET is_school_head = FALSE, is_main_sh = FALSE, updated_at = NOW() 
+         WHERE (school_id = $1 OR school_id = $2) AND id != $3 AND (legacy_id IS NULL OR legacy_id != $3) AND (is_school_head = TRUE OR is_main_sh = TRUE)`,
+        [targetSchoolId, `SCH-${targetSchoolId}`, current.id],
+      );
+    }
 
     const finalFName = (
       first_name !== undefined
@@ -1470,10 +1476,11 @@ router.put("/:id", async (req, res) => {
         no_deped_email = $21,
         allow_email_discrepancy = $22,
         is_school_head = $23,
-        prn = COALESCE($24, esf7_personnel_profile.prn),
-        status = COALESCE($25, esf7_personnel_profile.status),
+        is_main_sh = $24,
+        prn = COALESCE($25, esf7_personnel_profile.prn),
+        status = COALESCE($26, esf7_personnel_profile.status),
         updated_at = NOW()
-      WHERE id = $26
+      WHERE id = $27
       RETURNING *;
     `;
 
@@ -1501,6 +1508,7 @@ router.put("/:id", async (req, res) => {
       finalNoEmail,
       finalAllowEmailDiscrepancy,
       isTargetHead,
+      isTargetMain,
       finalPrn,
       req.body.status || null,
       current.id,

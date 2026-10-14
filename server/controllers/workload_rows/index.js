@@ -1153,9 +1153,35 @@ router.put("/:id", async (req, res) => {
 router.delete("/personnel/:personnel_id", async (req, res) => {
   try {
     const { personnel_id } = req.params;
-    await db.query(`DELETE FROM esf7_workload_rows WHERE personnel_id = $1`, [
-      personnel_id,
-    ]);
+    const aliases = [personnel_id];
+    const profRes = await db
+      .query(
+        `SELECT id, legacy_id, prn, employee_no FROM esf7_personnel_profile WHERE id::text = $1 OR legacy_id = $1 OR prn = $1`,
+        [personnel_id],
+      )
+      .catch(() => ({ rows: [] }));
+    if (profRes.rows.length > 0) {
+      const r = profRes.rows[0];
+      if (r.id) aliases.push(String(r.id));
+      if (r.legacy_id) aliases.push(String(r.legacy_id));
+      if (r.prn) aliases.push(String(r.prn));
+      if (r.employee_no) aliases.push(String(r.employee_no));
+    }
+    const uniqueAliases = Array.from(new Set(aliases.filter(Boolean)));
+
+    const executeDelete = async (pool) => {
+      if (!pool || !pool.query) return;
+      await Promise.all([
+        pool.query(`DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[])`, [uniqueAliases]).catch(() => {}),
+        pool.query(`DELETE FROM esf7_workload_row WHERE personnel_id = ANY($1::text[])`, [uniqueAliases]).catch(() => {}),
+        pool.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = ANY($1::text[])`, [uniqueAliases]).catch(() => {}),
+      ]);
+    };
+
+    await executeDelete(db);
+    if (db.getStagingPool) await executeDelete(db.getStagingPool());
+    if (db.getProdPool) await executeDelete(db.getProdPool());
+
     res.json({
       success: true,
       message: `All workload rows for personnel ${personnel_id} deleted successfully.`,

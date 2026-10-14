@@ -430,11 +430,11 @@ export const api = {
     });
     return parseJsonOrThrow(res);
   },
-  toggleSchoolHead: async (id, isSchoolHead) => {
+  toggleSchoolHead: async (id, isSchoolHead, isMainSh = true, extra = {}) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/school-head`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isSchoolHead }),
+      body: JSON.stringify({ isSchoolHead, isMainSh, ...extra }),
     });
     return parseJsonOrThrow(res);
   },

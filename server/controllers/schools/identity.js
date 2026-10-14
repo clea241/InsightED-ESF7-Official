@@ -385,6 +385,7 @@ const handleGetSchool = async (req, res) => {
       schoolYear,
       numberOfShifts,
       curricularOffering,
+      mcoc: rawMCOC || (Array.isArray(curricularOffering) ? curricularOffering.join(", ") : null),
       certifiedBy,
       certifiedSignature,
       certifiedAt,

@@ -1331,7 +1331,67 @@ router.delete("/:id", async (req, res) => {
         dbPool
           .query(`DELETE FROM class_sections WHERE id = $1`, [id])
           .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_workload_rows WHERE section_id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_workload_row WHERE section_id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_shs_workload_rows WHERE section_id = $1`, [id])
+          .catch(() => {}),
       ]);
+
+      // Also clean up school_drafts in this pool
+      try {
+        const queryText =
+          schoolIds.length > 0
+            ? "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)"
+            : "SELECT school_id, school_year, payload FROM school_drafts WHERE payload::text LIKE $1";
+        const queryParams = schoolIds.length > 0 ? [schoolIds] : [`%${id}%`];
+        const draftRes = await dbPool.query(queryText, queryParams);
+        for (const r of draftRes.rows) {
+          if (r.payload) {
+            let modified = false;
+            if (Array.isArray(r.payload.classSections)) {
+              const origLen = r.payload.classSections.length;
+              r.payload.classSections = r.payload.classSections.filter(
+                (s) => String(s.id) !== String(id),
+              );
+              if (r.payload.classSections.length !== origLen) modified = true;
+            }
+            if (Array.isArray(r.payload.sections)) {
+              const origLen = r.payload.sections.length;
+              r.payload.sections = r.payload.sections.filter(
+                (s) => String(s.id) !== String(id),
+              );
+              if (r.payload.sections.length !== origLen) modified = true;
+            }
+            if (Array.isArray(r.payload.personnel)) {
+              for (const p of r.payload.personnel) {
+                if (Array.isArray(p.workloadRows)) {
+                  const bLen = p.workloadRows.length;
+                  p.workloadRows = p.workloadRows.filter(
+                    (rw) => String(rw.sectionId || rw.section_id) !== String(id),
+                  );
+                  if (p.workloadRows.length !== bLen) modified = true;
+                }
+              }
+            }
+            if (modified) {
+              const delList = Array.isArray(r.payload.deletedSectionIds)
+                ? r.payload.deletedSectionIds.map(String)
+                : [];
+              if (!delList.includes(String(id))) delList.push(String(id));
+              r.payload.deletedSectionIds = delList;
+              await dbPool.query(
+                "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3",
+                [r.payload, r.school_id, r.school_year],
+              );
+            }
+          }
+        }
+      } catch (e) {}
     };
 
     await executeDelete(db);

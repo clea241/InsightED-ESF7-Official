@@ -130,6 +130,7 @@ export const esf7PersonnelProfile = pgTable(
     employeeNo: text("employee_no"),
     depedEmail: text("deped_email"),
     isSchoolHead: boolean("is_school_head").default(false).notNull(),
+    isMainSh: boolean("is_main_sh").default(false).notNull(),
     rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
