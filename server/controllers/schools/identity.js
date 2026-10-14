@@ -366,8 +366,6 @@ const handleGetSchool = async (req, res) => {
           ];
 
       hasShifts = Boolean(pRow.has_shifts);
-      shiftStartTime = pRow.shift_start_time || null;
-      shiftEndTime = pRow.shift_end_time || null;
       shiftsConfig = pRow.shifts_config || {};
     }
 
@@ -385,6 +383,7 @@ const handleGetSchool = async (req, res) => {
       schoolYear,
       numberOfShifts,
       curricularOffering,
+      mcoc: rawMCOC || (Array.isArray(curricularOffering) ? curricularOffering.join(", ") : null),
       certifiedBy,
       certifiedSignature,
       certifiedAt,

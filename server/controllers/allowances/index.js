@@ -1,9 +1,17 @@
 const express = require("express");
 const router = express.Router();
+const crypto = require("crypto");
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const { loadAllowanceRules } = require("../../utils/sharedRules");
 const { codec } = require("../../utils/payloadExtras");
+
+function generateAllowanceId(schoolId, personnelId) {
+  const cleanSid = String(schoolId || "").replace(/^SCH-/i, "").trim().slice(0, 10);
+  const cleanPid = String(personnelId || "").replace(/^PER-/i, "").trim().slice(-12);
+  const rand = crypto.randomBytes(3).toString("hex");
+  return `ALW-${cleanSid}-${cleanPid}-${rand}`;
+}
 
 // esf7_personnel_allowances keeps typed columns plus a slim `extras` JSONB (keys without a typed column), not a copy of the request body.
 const payload = codec("esf7_personnel_allowances");
@@ -218,11 +226,7 @@ router.get("/", async (req, res) => {
     // Ensure EVERY personnel profile in DB also gets a record if missing
     for (const p of personnelRes.rows) {
       if (!existingMap[p.id]) {
-        const countRes = await db.query(
-          `SELECT COUNT(*) FROM esf7_personnel_allowances`,
-        );
-        const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-        const alwId = `ALW-${p.school_id.replace("SCH-", "")}-${seq}`;
+        const alwId = generateAllowanceId(p.school_id, p.id);
 
         const insertRes = await db.query(
           `INSERT INTO esf7_personnel_allowances (
@@ -340,11 +344,7 @@ router.post("/toggle", async (req, res) => {
         ? personRes.rows[0].school_id
         : headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : "108348");
 
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_personnel_allowances`,
-    );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const alwId = `ALW-${targetSchoolId.replace("SCH-", "")}-${seq}`;
+    const alwId = generateAllowanceId(targetSchoolId, personnelId);
 
     const targetAmount =
       amount !== undefined && amount !== null
@@ -427,10 +427,7 @@ router.post("/disable", async (req, res) => {
         .json({ success: false, error: "Personnel not found." });
     }
     const targetSchoolId = personRes.rows[0].school_id;
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_personnel_allowances`,
-    );
-    const alwId = `ALW-${String(targetSchoolId).replace("SCH-", "")}-${String(Number(countRes.rows[0].count) + 1).padStart(3, "0")}`;
+    const alwId = generateAllowanceId(targetSchoolId, personnelId);
 
     const result = await db.query(
       `INSERT INTO esf7_personnel_allowances (id, personnel_id, school_id, school_year, disabled_allowances)
@@ -497,11 +494,7 @@ router.post("/bulk", async (req, res) => {
         ? personRes.rows[0].school_id
         : headerSchoolId || (parsedIdMatch ? parsedIdMatch[1] : "108348");
 
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_personnel_allowances`,
-    );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const alwId = `ALW-${targetSchoolId.replace("SCH-", "")}-${seq}`;
+    const alwId = generateAllowanceId(targetSchoolId, personnelId);
 
     const hasPera = Boolean(allowances.pera || allowances.has_pera);
     const peraAmt = Number(

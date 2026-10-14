@@ -67,38 +67,12 @@ router.put("/curricular-config", async (req, res) => {
       // Shifts configuration
       hasShifts,
       has_shifts,
-      shiftStartTime,
-      shift_start_time,
-      shiftEndTime,
-      shift_end_time,
       shiftsConfig,
       shifts_config,
     } = req.body;
 
-    // Shift validation
     const shiftFlag = hasShifts === true || has_shifts === true;
-    const finalShiftStart =
-      (shiftStartTime || shift_start_time || "").trim() || null;
-    const finalShiftEnd = (shiftEndTime || shift_end_time || "").trim() || null;
     const finalShiftsConfig = shiftsConfig || shifts_config || {};
-
-    if (shiftFlag) {
-      const sMins = parseTimeToMins(finalShiftStart);
-      const eMins = parseTimeToMins(finalShiftEnd);
-      // Valid window: 4:00 AM (240 mins) to 10:00 PM (1320 mins)
-      if (
-        sMins === null ||
-        eMins === null ||
-        sMins < 240 ||
-        eMins > 1320 ||
-        eMins <= sMins
-      ) {
-        return res.status(400).json({
-          error:
-            "Shift times must be between 4:00 AM and 10:00 PM, and End Time must be later than Start Time.",
-        });
-      }
-    }
 
     // Special Programs
     const elemFlag =
@@ -214,7 +188,7 @@ router.put("/curricular-config", async (req, res) => {
         has_shs_sned, has_shs_iped, has_shs_mad,
         has_sned, has_als, has_iped, has_madrasah,
         inclusive_programs,
-        has_shifts, shift_start_time, shift_end_time, shifts_config,
+        has_shifts, shifts_config,
         updated_at
       )
       VALUES (
@@ -227,7 +201,7 @@ router.put("/curricular-config", async (req, res) => {
         $18, $19, $20,
         $21, $22, $23, $24,
         $25::jsonb,
-        $26, $27, $28, $29::jsonb,
+        $26, $27::jsonb,
         NOW()
       )
       ON CONFLICT (school_id, school_year) DO UPDATE
@@ -255,8 +229,6 @@ router.put("/curricular-config", async (req, res) => {
         has_madrasah = EXCLUDED.has_madrasah,
         inclusive_programs = EXCLUDED.inclusive_programs,
         has_shifts = EXCLUDED.has_shifts,
-        shift_start_time = EXCLUDED.shift_start_time,
-        shift_end_time = EXCLUDED.shift_end_time,
         shifts_config = EXCLUDED.shifts_config,
         updated_at = NOW()
       RETURNING *;
@@ -289,8 +261,6 @@ router.put("/curricular-config", async (req, res) => {
       final_has_madrasah,
       JSON.stringify(inclusiveProgs),
       shiftFlag,
-      finalShiftStart,
-      finalShiftEnd,
       JSON.stringify(finalShiftsConfig),
     ]);
 
@@ -325,8 +295,6 @@ router.put("/curricular-config", async (req, res) => {
         hasMadrasah: row.has_madrasah,
         inclusivePrograms: row.inclusive_programs,
         hasShifts: row.has_shifts,
-        shiftStartTime: row.shift_start_time,
-        shiftEndTime: row.shift_end_time,
         shiftsConfig: row.shifts_config,
         updatedAt: row.updated_at,
       },

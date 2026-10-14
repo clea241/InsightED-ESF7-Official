@@ -93,6 +93,42 @@ async function hasDraftVersionColumn() {
   return draftVersionColumn;
 }
 
+const schoolPersistenceQueues = new Map();
+
+function queueNormalizedPersistence(schoolId, schoolYear, payload) {
+  const key = `${schoolId}::${schoolYear}`;
+  const existing = schoolPersistenceQueues.get(key);
+  if (existing) {
+    existing.pendingPayload = payload;
+    return;
+  }
+
+  const queueEntry = {
+    pendingPayload: null,
+  };
+  schoolPersistenceQueues.set(key, queueEntry);
+
+  setImmediate(async () => {
+    let nextPayload = payload;
+    while (nextPayload) {
+      queueEntry.pendingPayload = null;
+      let client = null;
+      try {
+        client = await acquireClient();
+        await persistNormalizedDraft(client, schoolId, schoolYear, nextPayload);
+      } catch (err) {
+        console.warn(`[NormalizedDraftQueue] Error normalizing ${key}:`, err.message);
+      } finally {
+        if (client && typeof client.release === "function") {
+          client.release();
+        }
+      }
+      nextPayload = queueEntry.pendingPayload;
+    }
+    schoolPersistenceQueues.delete(key);
+  });
+}
+
 // Background helper: Synchronize school and personnel node status from draft payload
 async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
   try {
@@ -480,7 +516,7 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           has_shs_sned, has_shs_iped, has_shs_mad,
           has_sned, has_als, has_iped, has_madrasah,
           inclusive_programs,
-          has_shifts, shift_start_time, shift_end_time, shifts_config,
+          has_shifts, shifts_config,
           updated_at
         )
         VALUES (
@@ -493,7 +529,7 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           $18, $19, $20,
           $21, $22, $23, $24,
           $25::jsonb,
-          $26, $27, $28, $29::jsonb,
+          $26, $27::jsonb,
           NOW()
         )
         ON CONFLICT (school_id, school_year) DO UPDATE SET
@@ -520,8 +556,6 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           has_madrasah = COALESCE(EXCLUDED.has_madrasah, esf7_school_profile.has_madrasah),
           inclusive_programs = EXCLUDED.inclusive_programs,
           has_shifts = COALESCE(EXCLUDED.has_shifts, esf7_school_profile.has_shifts),
-          shift_start_time = COALESCE(EXCLUDED.shift_start_time, esf7_school_profile.shift_start_time),
-          shift_end_time = COALESCE(EXCLUDED.shift_end_time, esf7_school_profile.shift_end_time),
           shifts_config = COALESCE(EXCLUDED.shifts_config, esf7_school_profile.shifts_config),
           updated_at = NOW()
         `,
@@ -552,8 +586,6 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           final_has_madrasah,
           JSON.stringify(inclusiveProgs),
           sanitizeBoolean(sInfo.hasShifts || sInfo.has_shifts),
-          sInfo.shiftStartTime || sInfo.shift_start_time || null,
-          sInfo.shiftEndTime || sInfo.shift_end_time || null,
           JSON.stringify(sInfo.shiftsConfig || sInfo.shifts_config || {}),
         ],
       )
@@ -562,15 +594,13 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     });
   }
 
-  // 2. Personnel: Insert BEFORE sections so adviser FKs resolve!
+  // 2. Personnel: Resolution & Batch Inserts
   const validPersonnelIds = new Set();
   const draftIdToFinalId = new Map();
 
-  const existingPersRes = await safeDraftQuery(client, "sp_get_pers", () =>
-    client.query(
-      "SELECT id, prn, legacy_id, first_name, last_name FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2",
-      [cleanId, `SCH-${cleanId}`],
-    )
+  const existingPersRes = await client.query(
+    "SELECT id, prn, legacy_id, first_name, last_name FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2",
+    [cleanId, `SCH-${cleanId}`],
   ).catch(() => ({ rows: [] }));
 
   const existingByPrn = new Map();
@@ -594,305 +624,356 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     }
   }
 
-  if (Array.isArray(finalPayload.personnel) && finalPayload.personnel.length > 0) {
-    for (const p of finalPayload.personnel) {
-      if (!p) continue;
-      const rawId = p.id ? String(p.id).trim() : null;
-      const rawPrn = p.prn ? String(p.prn).trim() : null;
-      const fName = String(p.firstName || p.first_name || p.first || "").trim().toUpperCase();
-      const lName = String(p.lastName || p.last_name || p.last || "").trim().toUpperCase();
-      const nameKey = fName && lName ? `${fName}__${lName}` : null;
-
-      let finalId = null;
-      let legacyId = null;
-      let pStatus = p.status || null;
-
-      if (rawId && existingById.has(rawId)) {
-        finalId = existingById.get(rawId).id;
-      } else if (rawId && existingByLegacyId.has(rawId)) {
-        finalId = existingByLegacyId.get(rawId).id;
-        legacyId = rawId;
-      } else if (rawPrn && existingByPrn.has(rawPrn)) {
-        finalId = existingByPrn.get(rawPrn).id;
-        if (rawId && rawId !== finalId) legacyId = rawId;
-      } else if (nameKey && existingByName.has(nameKey)) {
-        finalId = existingByName.get(nameKey).id;
-        if (rawId && rawId !== finalId) legacyId = rawId;
-      } else if (rawId) {
-        const mapRes = await safeDraftQuery(client, "sp_get_map", () =>
-          client.query(
-            "SELECT new_id, status FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1",
-            [rawId],
-          )
-        ).catch(() => ({ rows: [] }));
-        if (mapRes.rows.length > 0) {
-          finalId = mapRes.rows[0].new_id;
-          legacyId = rawId;
-          if (!pStatus) pStatus = mapRes.rows[0].status;
-        }
-      }
-
-      if (!finalId) {
-        if (rawId && !rawId.startsWith("temp-") && !rawId.startsWith("local-p-")) {
-          finalId = rawId;
-        } else {
-          finalId = crypto.randomUUID();
-          if (rawId && !legacyId) legacyId = rawId;
-        }
-      }
-
-      if (legacyId && legacyId !== finalId) {
-        await safeDraftQuery(client, "sp_save_map", () =>
-          client.query(
-            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
-            [legacyId, finalId, pStatus || "canonical"],
-          )
-        ).catch(() => {});
-      }
-
-      if (!pStatus) {
-        pStatus = (legacyId && legacyId.startsWith("local-p-"))
-          ? "client-created"
-          : (legacyId && legacyId.startsWith("P-HARVEST-"))
-            ? "harvester-created"
-            : "canonical";
-      }
-
-      let finalPrn = rawPrn;
-      if (!finalPrn || ["N/A", "NA", "NONE", "NULL", "0"].includes(finalPrn.toUpperCase())) {
-        finalPrn = finalId;
-      }
-
-      existingById.set(finalId, { id: finalId, prn: finalPrn, legacy_id: legacyId, first_name: fName, last_name: lName });
-      if (rawId) existingById.set(rawId, { id: finalId });
-      if (legacyId) existingByLegacyId.set(legacyId, { id: finalId });
-      if (finalPrn) existingByPrn.set(finalPrn, { id: finalId });
-      if (nameKey) existingByName.set(nameKey, { id: finalId });
-
-      if (rawId) draftIdToFinalId.set(rawId, finalId);
-      draftIdToFinalId.set(finalId, finalId);
-      validPersonnelIds.add(finalId);
-
-      let pType = String(p.type || "teaching").toLowerCase().trim();
-      if (!["teaching", "teaching-related", "non-teaching"].includes(pType)) {
-        pType = "teaching";
-      }
-
-      let sex = String(p.sexAtBirth || p.sex_at_birth || p.gender || p.sex || "Male").trim();
-      if (!["Male", "Female", "MALE", "FEMALE"].includes(sex)) {
-        sex = "Male";
-      }
-
-      const birthDate = safeCoerceDate(p.birthdate, "birthdate");
-      const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
-
-      // Upsert esf7_personnel_profile
-      await safeDraftQuery(client, "sp_ins_pers", () =>
-        client.query(
-          `
-          INSERT INTO esf7_personnel_profile (
-            id, prn, status, legacy_id, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
-            tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-            philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head,
-            raw_payload, updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29::jsonb, NOW())
-          ON CONFLICT (id) DO UPDATE SET
-            prn = COALESCE(EXCLUDED.prn, esf7_personnel_profile.prn),
-            status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
-            legacy_id = COALESCE(esf7_personnel_profile.legacy_id, EXCLUDED.legacy_id),
-            school_id = EXCLUDED.school_id,
-            school_year = EXCLUDED.school_year,
-            type = EXCLUDED.type,
-            salutation = EXCLUDED.salutation,
-            first_name = EXCLUDED.first_name,
-            middle_name = EXCLUDED.middle_name,
-            last_name = EXCLUDED.last_name,
-            name_extension = EXCLUDED.name_extension,
-            tin = EXCLUDED.tin,
-            no_tin = EXCLUDED.no_tin,
-            sex_at_birth = EXCLUDED.sex_at_birth,
-            civil_status = EXCLUDED.civil_status,
-            solo_parent = EXCLUDED.solo_parent,
-            religion = EXCLUDED.religion,
-            ethnic_group = EXCLUDED.ethnic_group,
-            birthdate = EXCLUDED.birthdate,
-            age = EXCLUDED.age,
-            philsys_no = EXCLUDED.philsys_no,
-            no_philsys = EXCLUDED.no_philsys,
-            employee_no = EXCLUDED.employee_no,
-            deped_email = EXCLUDED.deped_email,
-            no_deped_email = EXCLUDED.no_deped_email,
-            allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
-            is_school_head = EXCLUDED.is_school_head,
-            raw_payload = EXCLUDED.raw_payload,
-            updated_at = NOW()
-          `,
-          [
-            finalId,
-            finalPrn,
-            pStatus,
-            legacyId,
-            cleanId,
-            schoolYear,
-            pType,
-            p.salutation || "MR.",
-            String(p.firstName || p.first_name || "UNKNOWN").trim(),
-            p.middleName || p.middle_name || null,
-            String(p.lastName || p.last_name || "UNKNOWN").trim(),
-            p.nameExtension || p.name_extension || null,
-            p.tin || null,
-            sanitizeBoolean(p.noTin || p.no_tin),
-            sex,
-            p.civilStatus || p.civil_status || null,
-            sanitizeBoolean(p.soloParent || p.solo_parent),
-            p.religion || null,
-            p.ethnicGroup || p.ethnic_group || null,
-            birthDate,
-            age,
-            p.philsysNo || p.philsys_no || null,
-            sanitizeBoolean(p.noPhilsys || p.no_philsys),
-            p.employeeNo || p.employee_no || null,
-            p.depedEmail || p.deped_email || null,
-            sanitizeBoolean(p.noDepedEmail || p.no_deped_email),
-            sanitizeBoolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
-            sanitizeBoolean(p.isSchoolHead || p.is_school_head),
-            JSON.stringify(p),
-          ],
-        )
-      ).catch((err) => {
-        console.warn(`[persistNormalizedDraft] personnel_profile warning (${finalId}):`, err.message);
-      });
-
-      if (legacyId && legacyId !== finalId) {
-        await safeDraftQuery(client, "sp_ins_map", () =>
-          client.query(
-            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
-            [legacyId, finalId, pStatus],
-          )
-        ).catch(() => {});
-      }
-
-      // Upsert esf7_personnel_employment
-      let posCat = String(p.positionCategory || p.position_category || "TEACHING").toUpperCase().trim();
-      if (posCat === "TEACHING-RELATED") posCat = "RELATED TEACHING";
-      if (!["TEACHING", "RELATED TEACHING", "NON-TEACHING"].includes(posCat)) {
-        posCat = "TEACHING";
-      }
-      const stepInc = Math.max(1, Math.min(8, Number(p.stepIncrement || p.step_increment) || 1));
-      const firstServiceDate = safeCoerceDate(p.firstServiceDate || p.first_service_date, "first_service_date");
-      const lastPromotionDate = safeCoerceDate(p.lastPromotionDate || p.last_promotion_date, "last_promotion_date");
-      const newStationDate = safeCoerceDate(p.newStationDate || p.new_station_date, "new_station_date");
-      const lastLateralMovementDate = safeCoerceDate(p.lastLateralMovementDate || p.last_lateral_movement_date, "last_lateral_movement_date");
-
-      await safeDraftQuery(client, "sp_ins_emp", () =>
-        client.query(
-          `
-          INSERT INTO esf7_personnel_employment (
-            id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
-            hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
-            first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date, updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, NOW())
-          ON CONFLICT (personnel_id) DO UPDATE SET
-            position_category = EXCLUDED.position_category,
-            position = EXCLUDED.position,
-            step_increment = EXCLUDED.step_increment,
-            fund_source = EXCLUDED.fund_source,
-            nature_of_appointment = EXCLUDED.nature_of_appointment,
-            hiring_arrangement = EXCLUDED.hiring_arrangement,
-            deployment_status = EXCLUDED.deployment_status,
-            assigned_schools = EXCLUDED.assigned_schools,
-            grade_levels_taught = EXCLUDED.grade_levels_taught,
-            first_service_date = EXCLUDED.first_service_date,
-            last_promotion_date = EXCLUDED.last_promotion_date,
-            new_station_date = EXCLUDED.new_station_date,
-            last_lateral_movement_date = EXCLUDED.last_lateral_movement_date,
-            updated_at = NOW()
-          `,
-          [
-            crypto.randomUUID(),
-            finalId,
-            posCat,
-            p.position || "TEACHER I",
-            stepInc,
-            p.fundSource || p.fund_source || "NATIONAL",
-            p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT",
-            p.hiringArrangement || p.hiring_arrangement || "PERMANENT",
-            p.deploymentStatus || p.deployment_status || "OWN STATION",
-            JSON.stringify(p.assignedSchools || []),
-            JSON.stringify(p.gradeLevelsTaught || p.grade_levels_taught || []),
-            firstServiceDate,
-            lastPromotionDate,
-            newStationDate,
-            lastLateralMovementDate,
-          ],
-        )
-      ).catch((err) => {
-        console.warn(`[persistNormalizedDraft] personnel_employment warning (${finalId}):`, err.message);
-      });
-
-      // Upsert esf7_perssonel_educ
-      const eligList = Array.isArray(p.eligibility) ? p.eligibility : (p.eligibility ? [p.eligibility] : []);
-      await safeDraftQuery(client, "sp_ins_edu", () =>
-        client.query(
-          `
-          INSERT INTO esf7_perssonel_educ (
-            id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
-            college_degree, college_degrees, major, minor, post_graduate_degree, post_graduate_discipline,
-            eligibility, prc_specialization, updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, NOW())
-          ON CONFLICT (personnel_id) DO UPDATE SET
-            highest_educational_attainment = EXCLUDED.highest_educational_attainment,
-            shs_track = EXCLUDED.shs_track,
-            vocational_course = EXCLUDED.vocational_course,
-            vocational_level = EXCLUDED.vocational_level,
-            college_degree = EXCLUDED.college_degree,
-            college_degrees = EXCLUDED.college_degrees,
-            major = EXCLUDED.major,
-            minor = EXCLUDED.minor,
-            post_graduate_degree = EXCLUDED.post_graduate_degree,
-            post_graduate_discipline = EXCLUDED.post_graduate_discipline,
-            eligibility = EXCLUDED.eligibility,
-            prc_specialization = EXCLUDED.prc_specialization,
-            updated_at = NOW()
-          `,
-          [
-            `EDU-${finalId}`,
-            finalId,
-            p.highestEducationalAttainment || p.highest_educational_attainment || "COLLEGE GRADUATE / BACCALAUREATE",
-            p.shsTrack || p.shs_track || null,
-            p.vocationalCourse || p.vocational_course || null,
-            p.vocationalLevel || p.vocational_level || null,
-            p.degree || p.collegeDegree || p.college_degree || null,
-            JSON.stringify(Array.isArray(p.collegeDegrees || p.college_degrees) ? (p.collegeDegrees || p.college_degrees) : []),
-            p.major || null,
-            p.minor || null,
-            p.postGraduateDegree || p.post_graduate_degree || "N/A",
-            JSON.stringify(p.postGraduateDiscipline || p.post_graduate_discipline || {}),
-            JSON.stringify(eligList),
-            p.prcSpecialization || p.prc_specialization || null,
-          ],
-        )
-      ).catch((err) => {
-        console.warn(`[persistNormalizedDraft] perssonel_educ warning (${finalId}):`, err.message);
-      });
-    }
+  const rawPersonnelList = Array.isArray(finalPayload.personnel) ? finalPayload.personnel : [];
+  const allRawIds = rawPersonnelList.map(p => p && p.id ? String(p.id).trim() : null).filter(Boolean);
+  const existingMappingRes = allRawIds.length > 0
+    ? await client.query(
+        "SELECT legacy_id, new_id, status FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1)",
+        [allRawIds],
+      ).catch(() => ({ rows: [] }))
+    : { rows: [] };
+  const existingMappings = new Map();
+  for (const m of existingMappingRes.rows || []) {
+    existingMappings.set(m.legacy_id, m);
   }
 
-  // 3. esf7_regular_sections: Insert AFTER personnel with adviser FK validated
+  const mappingsToUpsert = [];
+  const profileParams = [];
+  const empParams = [];
+  const educParams = [];
+
+  for (const p of rawPersonnelList) {
+    if (!p) continue;
+    const rawId = p.id ? String(p.id).trim() : null;
+    const rawPrn = p.prn ? String(p.prn).trim() : null;
+    const fName = String(p.firstName || p.first_name || p.first || "").trim().toUpperCase();
+    const lName = String(p.lastName || p.last_name || p.last || "").trim().toUpperCase();
+    const nameKey = fName && lName ? `${fName}__${lName}` : null;
+
+    let finalId = null;
+    let legacyId = null;
+    let pStatus = p.status || null;
+
+    if (rawId && existingById.has(rawId)) {
+      finalId = existingById.get(rawId).id;
+    } else if (rawId && existingByLegacyId.has(rawId)) {
+      finalId = existingByLegacyId.get(rawId).id;
+      legacyId = rawId;
+    } else if (rawPrn && existingByPrn.has(rawPrn)) {
+      finalId = existingByPrn.get(rawPrn).id;
+      if (rawId && rawId !== finalId) legacyId = rawId;
+    } else if (nameKey && existingByName.has(nameKey)) {
+      finalId = existingByName.get(nameKey).id;
+      if (rawId && rawId !== finalId) legacyId = rawId;
+    } else if (rawId && existingMappings.has(rawId)) {
+      const m = existingMappings.get(rawId);
+      finalId = m.new_id;
+      legacyId = rawId;
+      if (!pStatus) pStatus = m.status;
+    }
+
+    if (!finalId) {
+      if (rawId && !rawId.startsWith("temp-") && !rawId.startsWith("local-p-")) {
+        finalId = rawId;
+      } else {
+        finalId = crypto.randomUUID();
+        if (rawId && !legacyId) legacyId = rawId;
+      }
+    }
+
+    if (legacyId && legacyId !== finalId) {
+      mappingsToUpsert.push({ legacy_id: legacyId, new_id: finalId, status: pStatus || "canonical" });
+    }
+
+    if (!pStatus) {
+      pStatus = (legacyId && legacyId.startsWith("local-p-"))
+        ? "client-created"
+        : (legacyId && legacyId.startsWith("P-HARVEST-"))
+          ? "harvester-created"
+          : "canonical";
+    }
+
+    let finalPrn = rawPrn;
+    if (!finalPrn || ["N/A", "NA", "NONE", "NULL", "0"].includes(finalPrn.toUpperCase())) {
+      finalPrn = finalId;
+    }
+
+    existingById.set(finalId, { id: finalId, prn: finalPrn, legacy_id: legacyId, first_name: fName, last_name: lName });
+    if (rawId) existingById.set(rawId, { id: finalId });
+    if (legacyId) existingByLegacyId.set(legacyId, { id: finalId });
+    if (finalPrn) existingByPrn.set(finalPrn, { id: finalId });
+    if (nameKey) existingByName.set(nameKey, { id: finalId });
+
+    if (rawId) draftIdToFinalId.set(rawId, finalId);
+    draftIdToFinalId.set(finalId, finalId);
+    validPersonnelIds.add(finalId);
+
+    let pType = String(p.type || "teaching").toLowerCase().trim();
+    if (!["teaching", "teaching-related", "non-teaching"].includes(pType)) {
+      pType = "teaching";
+    }
+
+    let sex = String(p.sexAtBirth || p.sex_at_birth || p.gender || p.sex || "Male").trim();
+    if (!["Male", "Female", "MALE", "FEMALE"].includes(sex)) {
+      sex = "Male";
+    }
+
+    const birthDate = safeCoerceDate(p.birthdate, "birthdate");
+    const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
+
+    profileParams.push({
+      id: finalId,
+      prn: finalPrn,
+      status: pStatus,
+      legacy_id: legacyId,
+      school_id: cleanId,
+      school_year: schoolYear,
+      type: pType,
+      salutation: p.salutation || "MR.",
+      first_name: String(p.firstName || p.first_name || "UNKNOWN").trim(),
+      middle_name: p.middleName || p.middle_name || null,
+      last_name: String(p.lastName || p.last_name || "UNKNOWN").trim(),
+      name_extension: p.nameExtension || p.name_extension || null,
+      tin: p.tin || null,
+      no_tin: sanitizeBoolean(p.noTin || p.no_tin),
+      sex_at_birth: sex,
+      civil_status: p.civilStatus || p.civil_status || null,
+      solo_parent: sanitizeBoolean(p.soloParent || p.solo_parent),
+      religion: p.religion || null,
+      ethnic_group: p.ethnicGroup || p.ethnic_group || null,
+      birthdate: birthDate,
+      age,
+      philsys_no: p.philsysNo || p.philsys_no || null,
+      no_philsys: sanitizeBoolean(p.noPhilsys || p.no_philsys),
+      employee_no: p.employeeNo || p.employee_no || null,
+      deped_email: p.depedEmail || p.deped_email || null,
+      no_deped_email: sanitizeBoolean(p.noDepedEmail || p.no_deped_email),
+      allow_email_discrepancy: sanitizeBoolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
+      is_school_head: sanitizeBoolean(p.isSchoolHead || p.is_school_head),
+      is_main_sh: sanitizeBoolean(
+        p.isMainSchoolHead !== undefined
+          ? p.isMainSchoolHead
+          : (p.is_main_sh !== undefined
+            ? p.is_main_sh
+            : (p.isMainHead !== undefined
+              ? p.isMainHead
+              : (p.isSchoolHead || p.is_school_head)))
+      ),
+      raw_payload: JSON.stringify(p),
+    });
+
+    let posCat = String(p.positionCategory || p.position_category || "TEACHING").toUpperCase().trim();
+    if (posCat === "TEACHING-RELATED") posCat = "RELATED TEACHING";
+    if (!["TEACHING", "RELATED TEACHING", "NON-TEACHING"].includes(posCat)) {
+      posCat = "TEACHING";
+    }
+    const stepInc = Math.max(1, Math.min(8, Number(p.stepIncrement || p.step_increment) || 1));
+    const firstServiceDate = safeCoerceDate(p.firstServiceDate || p.first_service_date, "first_service_date");
+    const lastPromotionDate = safeCoerceDate(p.lastPromotionDate || p.last_promotion_date, "last_promotion_date");
+    const newStationDate = safeCoerceDate(p.newStationDate || p.new_station_date, "new_station_date");
+    const lastLateralMovementDate = safeCoerceDate(p.lastLateralMovementDate || p.last_lateral_movement_date, "last_lateral_movement_date");
+
+    empParams.push({
+      id: crypto.randomUUID(),
+      personnel_id: finalId,
+      position_category: posCat,
+      position: p.position || "TEACHER I",
+      step_increment: stepInc,
+      fund_source: p.fundSource || p.fund_source || "NATIONAL",
+      nature_of_appointment: p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT",
+      hiring_arrangement: p.hiringArrangement || p.hiring_arrangement || "PERMANENT",
+      deployment_status: p.deploymentStatus || p.deployment_status || "OWN STATION",
+      assigned_schools: JSON.stringify(p.assignedSchools || []),
+      grade_levels_taught: JSON.stringify(p.gradeLevelsTaught || p.grade_levels_taught || []),
+      first_service_date: firstServiceDate,
+      last_promotion_date: lastPromotionDate,
+      new_station_date: newStationDate,
+      last_lateral_movement_date: lastLateralMovementDate,
+    });
+
+    const eligList = Array.isArray(p.eligibility) ? p.eligibility : (p.eligibility ? [p.eligibility] : []);
+    educParams.push({
+      id: `EDU-${finalId}`,
+      personnel_id: finalId,
+      highest_educational_attainment: p.highestEducationalAttainment || p.highest_educational_attainment || "COLLEGE GRADUATE / BACCALAUREATE",
+      shs_track: p.shsTrack || p.shs_track || null,
+      vocational_course: p.vocationalCourse || p.vocational_course || null,
+      vocational_level: p.vocationalLevel || p.vocational_level || null,
+      college_degree: p.degree || p.collegeDegree || p.college_degree || null,
+      college_degrees: JSON.stringify(Array.isArray(p.collegeDegrees || p.college_degrees) ? (p.collegeDegrees || p.college_degrees) : []),
+      major: p.major || null,
+      minor: p.minor || null,
+      post_graduate_degree: p.postGraduateDegree || p.post_graduate_degree || "N/A",
+      post_graduate_discipline: JSON.stringify(p.postGraduateDiscipline || p.post_graduate_discipline || {}),
+      eligibility: JSON.stringify(eligList),
+      prc_specialization: p.prcSpecialization || p.prc_specialization || null,
+    });
+  }
+
+  // Batch insert mapping
+  if (mappingsToUpsert.length > 0) {
+    const leg = mappingsToUpsert.map(m => m.legacy_id);
+    const nid = mappingsToUpsert.map(m => m.new_id);
+    const st = mappingsToUpsert.map(m => m.status);
+    await client.query(`
+      INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
+      SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[])
+      ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status
+    `, [leg, nid, st]).catch(() => {});
+  }
+
+  // Batch insert personnel profiles in chunks of 50
+  for (let i = 0; i < profileParams.length; i += 50) {
+    const chunk = profileParams.slice(i, i + 50);
+    const vals = [];
+    const pars = [];
+    let idx = 1;
+    for (const pr of chunk) {
+      vals.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9}, $${idx+10}, $${idx+11}, $${idx+12}, $${idx+13}, $${idx+14}, $${idx+15}, $${idx+16}, $${idx+17}, $${idx+18}, $${idx+19}, $${idx+20}, $${idx+21}, $${idx+22}, $${idx+23}, $${idx+24}, $${idx+25}, $${idx+26}, $${idx+27}, $${idx+28}, $${idx+29}::jsonb, NOW())`);
+      pars.push(
+        pr.id, pr.prn, pr.status, pr.legacy_id, pr.school_id, pr.school_year, pr.type, pr.salutation,
+        pr.first_name, pr.middle_name, pr.last_name, pr.name_extension, pr.tin, pr.no_tin,
+        pr.sex_at_birth, pr.civil_status, pr.solo_parent, pr.religion, pr.ethnic_group,
+        pr.birthdate, pr.age, pr.philsys_no, pr.no_philsys, pr.employee_no, pr.deped_email,
+        pr.no_deped_email, pr.allow_email_discrepancy, pr.is_school_head, pr.is_main_sh, pr.raw_payload
+      );
+      idx += 30;
+    }
+    await client.query(`
+      INSERT INTO esf7_personnel_profile (
+        id, prn, status, legacy_id, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
+        tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
+        philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, is_main_sh,
+        raw_payload, updated_at
+      )
+      VALUES ${vals.join(", ")}
+      ON CONFLICT (id) DO UPDATE SET
+        prn = COALESCE(EXCLUDED.prn, esf7_personnel_profile.prn),
+        status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
+        legacy_id = COALESCE(esf7_personnel_profile.legacy_id, EXCLUDED.legacy_id),
+        school_id = EXCLUDED.school_id,
+        school_year = EXCLUDED.school_year,
+        type = EXCLUDED.type,
+        salutation = EXCLUDED.salutation,
+        first_name = EXCLUDED.first_name,
+        middle_name = EXCLUDED.middle_name,
+        last_name = EXCLUDED.last_name,
+        name_extension = EXCLUDED.name_extension,
+        tin = EXCLUDED.tin,
+        no_tin = EXCLUDED.no_tin,
+        sex_at_birth = EXCLUDED.sex_at_birth,
+        civil_status = EXCLUDED.civil_status,
+        solo_parent = EXCLUDED.solo_parent,
+        religion = EXCLUDED.religion,
+        ethnic_group = EXCLUDED.ethnic_group,
+        birthdate = EXCLUDED.birthdate,
+        age = EXCLUDED.age,
+        philsys_no = EXCLUDED.philsys_no,
+        no_philsys = EXCLUDED.no_philsys,
+        employee_no = EXCLUDED.employee_no,
+        deped_email = EXCLUDED.deped_email,
+        no_deped_email = EXCLUDED.no_deped_email,
+        allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
+        is_school_head = EXCLUDED.is_school_head,
+        is_main_sh = EXCLUDED.is_main_sh,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+    `, pars).catch((err) => {
+      console.warn("[persistNormalizedDraft] personnel_profile batch warning:", err.message);
+    });
+  }
+
+  // Batch insert employment in chunks of 50
+  for (let i = 0; i < empParams.length; i += 50) {
+    const chunk = empParams.slice(i, i + 50);
+    const vals = [];
+    const pars = [];
+    let idx = 1;
+    for (const em of chunk) {
+      vals.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9}::jsonb, $${idx+10}::jsonb, $${idx+11}, $${idx+12}, $${idx+13}, $${idx+14}, NOW())`);
+      pars.push(
+        em.id, em.personnel_id, em.position_category, em.position, em.step_increment,
+        em.fund_source, em.nature_of_appointment, em.hiring_arrangement, em.deployment_status,
+        em.assigned_schools, em.grade_levels_taught, em.first_service_date, em.last_promotion_date,
+        em.new_station_date, em.last_lateral_movement_date
+      );
+      idx += 15;
+    }
+    await client.query(`
+      INSERT INTO esf7_personnel_employment (
+        id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
+        hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
+        first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date, updated_at
+      )
+      VALUES ${vals.join(", ")}
+      ON CONFLICT (personnel_id) DO UPDATE SET
+        position_category = EXCLUDED.position_category,
+        position = EXCLUDED.position,
+        step_increment = EXCLUDED.step_increment,
+        fund_source = EXCLUDED.fund_source,
+        nature_of_appointment = EXCLUDED.nature_of_appointment,
+        hiring_arrangement = EXCLUDED.hiring_arrangement,
+        deployment_status = EXCLUDED.deployment_status,
+        assigned_schools = EXCLUDED.assigned_schools,
+        grade_levels_taught = EXCLUDED.grade_levels_taught,
+        first_service_date = EXCLUDED.first_service_date,
+        last_promotion_date = EXCLUDED.last_promotion_date,
+        new_station_date = EXCLUDED.new_station_date,
+        last_lateral_movement_date = EXCLUDED.last_lateral_movement_date,
+        updated_at = NOW()
+    `, pars).catch((err) => {
+      console.warn("[persistNormalizedDraft] personnel_employment batch warning:", err.message);
+    });
+  }
+
+  // Batch insert education in chunks of 50
+  for (let i = 0; i < educParams.length; i += 50) {
+    const chunk = educParams.slice(i, i + 50);
+    const vals = [];
+    const pars = [];
+    let idx = 1;
+    for (const ed of chunk) {
+      vals.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, $${idx+6}, $${idx+7}::jsonb, $${idx+8}, $${idx+9}, $${idx+10}, $${idx+11}::jsonb, $${idx+12}::jsonb, $${idx+13}, NOW())`);
+      pars.push(
+        ed.id, ed.personnel_id, ed.highest_educational_attainment, ed.shs_track, ed.vocational_course, ed.vocational_level,
+        ed.college_degree, ed.college_degrees, ed.major, ed.minor, ed.post_graduate_degree, ed.post_graduate_discipline,
+        ed.eligibility, ed.prc_specialization
+      );
+      idx += 14;
+    }
+    await client.query(`
+      INSERT INTO esf7_perssonel_educ (
+        id, personnel_id, highest_educational_attainment, shs_track, vocational_course, vocational_level,
+        college_degree, college_degrees, major, minor, post_graduate_degree, post_graduate_discipline,
+        eligibility, prc_specialization, updated_at
+      )
+      VALUES ${vals.join(", ")}
+      ON CONFLICT (personnel_id) DO UPDATE SET
+        highest_educational_attainment = EXCLUDED.highest_educational_attainment,
+        shs_track = EXCLUDED.shs_track,
+        vocational_course = EXCLUDED.vocational_course,
+        vocational_level = EXCLUDED.vocational_level,
+        college_degree = EXCLUDED.college_degree,
+        college_degrees = EXCLUDED.college_degrees,
+        major = EXCLUDED.major,
+        minor = EXCLUDED.minor,
+        post_graduate_degree = EXCLUDED.post_graduate_degree,
+        post_graduate_discipline = EXCLUDED.post_graduate_discipline,
+        eligibility = EXCLUDED.eligibility,
+        prc_specialization = EXCLUDED.prc_specialization,
+        updated_at = NOW()
+    `, pars).catch((err) => {
+      console.warn("[persistNormalizedDraft] perssonel_educ batch warning:", err.message);
+    });
+  }
+
+  // 3. Sections: Batch Upsert
   const incomingSections = Array.isArray(finalPayload.classSections)
     ? finalPayload.classSections
-    : Array.isArray(finalPayload.sections)
-      ? finalPayload.sections
-      : [];
+    : (Array.isArray(finalPayload.sections) ? finalPayload.sections : []);
 
   if (incomingSections.length > 0) {
+    const sectionParams = [];
     for (const s of incomingSections) {
       if (!s) continue;
       const secId = s.id ? String(s.id).trim() : `sec-draft-${cleanId}-${Math.random().toString(36).substring(2, 7)}`;
@@ -909,16 +990,8 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           resolvedAdviserId = draftIdToFinalId.get(rawAdv);
         } else if (existingByLegacyId.has(rawAdv)) {
           resolvedAdviserId = existingByLegacyId.get(rawAdv).id;
-        } else {
-          const advMap = await safeDraftQuery(client, "sp_get_adv", () =>
-            client.query(
-              "SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1",
-              [rawAdv],
-            )
-          ).catch(() => ({ rows: [] }));
-          if (advMap.rows.length > 0) {
-            resolvedAdviserId = advMap.rows[0].new_id;
-          }
+        } else if (existingMappings.has(rawAdv)) {
+          resolvedAdviserId = existingMappings.get(rawAdv).new_id;
         }
       }
 
@@ -926,70 +999,63 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
       const femaleLearners = sanitizeNumber(s.femaleLearners || s.female_learners, 0);
       const numLearners = sanitizeNumber(s.numberOfLearners || s.number_of_learners, maleLearners + femaleLearners);
       const sizeStatus = s.sizeStatus || s.size_status || "WITHIN STANDARD";
+      const extras = JSON.stringify(regularSectionPayload.buildExtras(s, {
+        id: secId, school_id: cleanId, school_year: schoolYear, grade_level: gradeLevel,
+        section_name: sectionName, section_type: secType, adviser_id: resolvedAdviserId,
+        male_learners: maleLearners, female_learners: femaleLearners, number_of_learners: numLearners,
+        size_status: sizeStatus
+      }));
 
-      await safeDraftQuery(client, "sp_ins_sec", () =>
-        client.query(
-          `
-          INSERT INTO esf7_regular_sections (
-            id, school_id, school_year, grade_level, section_name, section_type, adviser_id,
-            male_learners, female_learners, number_of_learners, size_status, extras, updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, NOW())
-          ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
-            section_type = EXCLUDED.section_type,
-            adviser_id = EXCLUDED.adviser_id,
-            male_learners = CASE WHEN EXCLUDED.male_learners IS NOT NULL THEN EXCLUDED.male_learners ELSE esf7_regular_sections.male_learners END,
-            female_learners = CASE WHEN EXCLUDED.female_learners IS NOT NULL THEN EXCLUDED.female_learners ELSE esf7_regular_sections.female_learners END,
-            number_of_learners = CASE WHEN EXCLUDED.number_of_learners > 0 THEN EXCLUDED.number_of_learners ELSE esf7_regular_sections.number_of_learners END,
-            size_status = COALESCE(EXCLUDED.size_status, esf7_regular_sections.size_status),
-            extras = EXCLUDED.extras,
-            updated_at = NOW()
-          `,
-          [
-            secId,
-            cleanId,
-            schoolYear,
-            gradeLevel,
-            sectionName,
-            secType,
-            resolvedAdviserId,
-            maleLearners,
-            femaleLearners,
-            numLearners,
-            sizeStatus,
-            JSON.stringify(
-              regularSectionPayload.buildExtras(s, {
-                id: secId,
-                school_id: cleanId,
-                school_year: schoolYear,
-                grade_level: gradeLevel,
-                section_name: sectionName,
-                section_type: secType,
-                adviser_id: resolvedAdviserId,
-                male_learners: maleLearners,
-                female_learners: femaleLearners,
-                number_of_learners: numLearners,
-                size_status: sizeStatus,
-              }),
-            ),
-          ],
+      sectionParams.push({
+        id: secId, school_id: cleanId, school_year: schoolYear, grade_level: gradeLevel,
+        section_name: sectionName, section_type: secType, adviser_id: resolvedAdviserId,
+        male_learners: maleLearners, female_learners: femaleLearners, number_of_learners: numLearners,
+        size_status: sizeStatus, extras
+      });
+    }
+
+    for (let i = 0; i < sectionParams.length; i += 50) {
+      const chunk = sectionParams.slice(i, i + 50);
+      const vals = [];
+      const pars = [];
+      let idx = 1;
+      for (const sc of chunk) {
+        vals.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9}, $${idx+10}, $${idx+11}::jsonb, NOW())`);
+        pars.push(
+          sc.id, sc.school_id, sc.school_year, sc.grade_level, sc.section_name, sc.section_type,
+          sc.adviser_id, sc.male_learners, sc.female_learners, sc.number_of_learners, sc.size_status, sc.extras
+        );
+        idx += 12;
+      }
+      await client.query(`
+        INSERT INTO esf7_regular_sections (
+          id, school_id, school_year, grade_level, section_name, section_type, adviser_id,
+          male_learners, female_learners, number_of_learners, size_status, extras, updated_at
         )
-      ).catch((err) => {
-        console.warn(`[persistNormalizedDraft] regular_sections warning (${secId}):`, err.message);
+        VALUES ${vals.join(", ")}
+        ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
+          section_type = EXCLUDED.section_type,
+          adviser_id = EXCLUDED.adviser_id,
+          male_learners = CASE WHEN EXCLUDED.male_learners IS NOT NULL THEN EXCLUDED.male_learners ELSE esf7_regular_sections.male_learners END,
+          female_learners = CASE WHEN EXCLUDED.female_learners IS NOT NULL THEN EXCLUDED.female_learners ELSE esf7_regular_sections.female_learners END,
+          number_of_learners = CASE WHEN EXCLUDED.number_of_learners > 0 THEN EXCLUDED.number_of_learners ELSE esf7_regular_sections.number_of_learners END,
+          size_status = COALESCE(EXCLUDED.size_status, esf7_regular_sections.size_status),
+          extras = EXCLUDED.extras,
+          updated_at = NOW()
+      `, pars).catch((err) => {
+        console.warn("[persistNormalizedDraft] regular_sections batch warning:", err.message);
       });
     }
   }
 
-  // 4. esf7_workload_rows
+  // 4. Workloads: Batch Upsert
   const allWorkloadRows = [];
-  if (Array.isArray(finalPayload.personnel)) {
-    for (const p of finalPayload.personnel) {
-      if (!p) continue;
-      const targetPId = draftIdToFinalId.get(p.id) || p.id;
-      const rows = Array.isArray(p.workloadRows) ? p.workloadRows : (Array.isArray(p.workload_rows) ? p.workload_rows : []);
-      for (const w of rows) {
-        if (w) allWorkloadRows.push({ ...w, personnel_id: targetPId });
-      }
+  for (const p of rawPersonnelList) {
+    if (!p) continue;
+    const targetPId = draftIdToFinalId.get(p.id) || p.id;
+    const rows = Array.isArray(p.workloadRows) ? p.workloadRows : (Array.isArray(p.workload_rows) ? p.workload_rows : []);
+    for (const w of rows) {
+      if (w) allWorkloadRows.push({ ...w, personnel_id: targetPId });
     }
   }
   if (Array.isArray(finalPayload.workloadRows)) {
@@ -1001,22 +1067,52 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     }
   }
 
-  for (const w of allWorkloadRows) {
-    const pId = w.personnel_id;
-    if (!pId || !validPersonnelIds.has(pId)) continue;
-    const wId = w.id ? String(w.id).trim() : `WKL-${pId}-${Math.random().toString(36).substring(2, 7)}`;
-    const startTime = sanitizeTime(w.startTime || w.start_time);
-    const endTime = sanitizeTime(w.endTime || w.end_time);
-    const days = Array.isArray(w.days) ? w.days : ["M", "T", "W", "TH", "F"];
+  for (let i = 0; i < allWorkloadRows.length; i += 50) {
+    const chunk = allWorkloadRows.slice(i, i + 50);
+    const vals = [];
+    const pars = [];
+    let idx = 1;
 
-    await safeDraftQuery(client, "sp_ins_wkl", () =>
-      client.query(
-        `
+    for (const w of chunk) {
+      const pId = w.personnel_id;
+      if (!pId || !validPersonnelIds.has(pId)) continue;
+      const wId = w.id ? String(w.id).trim() : `WKL-${pId}-${Math.random().toString(36).substring(2, 7)}`;
+      const startTime = sanitizeTime(w.startTime || w.start_time);
+      const endTime = sanitizeTime(w.endTime || w.end_time);
+      const days = Array.isArray(w.days) ? w.days : ["M", "T", "W", "TH", "F"];
+      const extras = JSON.stringify(buildWorkloadExtras(w, {
+        id: wId, personnel_id: pId, school_id: cleanId, school_year: schoolYear,
+        grade_level: w.gradeLevel || w.grade_level || null,
+        section_id: null, section_name: w.sectionName || w.section_name || null,
+        subject: w.subject || "GENERAL", subject_id: w.subjectId || w.subject_id || null,
+        remediation_subject: w.remediationSubject || w.remediation_subject || null,
+        start_time: startTime, end_time: endTime, days, term: w.term || "1st"
+      }));
+
+      vals.push(`($${idx}, $${idx+1}, $${idx+2}, $${idx+3}, $${idx+4}, $${idx+5}, $${idx+6}, $${idx+7}, $${idx+8}, $${idx+9}, $${idx+10}, $${idx+11}, $${idx+12}::jsonb, $${idx+13}, $${idx+14}::jsonb, NOW())`);
+      pars.push(
+        wId, pId, cleanId, schoolYear,
+        w.gradeLevel || w.grade_level || null,
+        null,
+        w.sectionName || w.section_name || null,
+        w.subject || "GENERAL",
+        w.subjectId || w.subject_id || null,
+        w.remediationSubject || w.remediation_subject || null,
+        startTime, endTime,
+        JSON.stringify(days),
+        w.term || "1st",
+        extras
+      );
+      idx += 15;
+    }
+
+    if (vals.length > 0) {
+      await client.query(`
         INSERT INTO esf7_workload_rows (
           id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
           subject, subject_id, remediation_subject, start_time, end_time, days, term, extras, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15::jsonb, NOW())
+        VALUES ${vals.join(", ")}
         ON CONFLICT (id) DO UPDATE SET
           personnel_id = EXCLUDED.personnel_id,
           school_id = EXCLUDED.school_id,
@@ -1033,46 +1129,10 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
           term = EXCLUDED.term,
           extras = EXCLUDED.extras,
           updated_at = NOW()
-        `,
-        [
-          wId,
-          pId,
-          cleanId,
-          schoolYear,
-          w.gradeLevel || w.grade_level || null,
-          null,
-          w.sectionName || w.section_name || null,
-          w.subject || "GENERAL",
-          w.subjectId || w.subject_id || null,
-          w.remediationSubject || w.remediation_subject || null,
-          startTime,
-          endTime,
-          JSON.stringify(days),
-          w.term || "1st",
-          JSON.stringify(
-            buildWorkloadExtras(w, {
-              id: wId,
-              personnel_id: pId,
-              school_id: cleanId,
-              school_year: schoolYear,
-              grade_level: w.gradeLevel || w.grade_level || null,
-              section_id: null,
-              section_name: w.sectionName || w.section_name || null,
-              subject: w.subject || "GENERAL",
-              subject_id: w.subjectId || w.subject_id || null,
-              remediation_subject:
-                w.remediationSubject || w.remediation_subject || null,
-              start_time: startTime,
-              end_time: endTime,
-              days,
-              term: w.term || "1st",
-            }),
-          ),
-        ],
-      )
-    ).catch((err) => {
-      console.warn(`[persistNormalizedDraft] workload_rows warning (${wId}):`, err.message);
-    });
+      `, pars).catch((err) => {
+        console.warn("[persistNormalizedDraft] workload_rows batch warning:", err.message);
+      });
+    }
   }
 }
 
@@ -1490,7 +1550,7 @@ const handleSaveDraft = async (req, res) => {
       finalPayload.personnel = dedupePersonnel(finalPayload.personnel);
     }
 
-    // 3. Normalized Relational Persistence & Atomic school_drafts write
+    // 3. Atomic school_drafts write
     const client = await acquireClient();
     let saved = null;
     const withVersion = await hasDraftVersionColumn();
@@ -1498,9 +1558,6 @@ const handleSaveDraft = async (req, res) => {
     try {
       await client.query("BEGIN");
 
-      await persistNormalizedDraft(client, schoolId, schoolYear, finalPayload);
-
-      await client.query("SAVEPOINT sp_school_drafts");
       try {
         if (withVersion) {
           const sql =
@@ -1556,8 +1613,7 @@ const handleSaveDraft = async (req, res) => {
         }
       } catch (draftErr) {
         if (draftErr.code === "42P01") {
-          console.warn("[DraftSave] school_drafts table not found or deprecated; normalized tables persisted.");
-          await client.query("ROLLBACK TO SAVEPOINT sp_school_drafts");
+          console.warn("[DraftSave] school_drafts table not found or deprecated; skipping draft cache write.");
           saved = { version: baseVersion ? Number(baseVersion) + 1 : 1, updatedAt: new Date().toISOString() };
         } else {
           throw draftErr;
@@ -1583,6 +1639,21 @@ const handleSaveDraft = async (req, res) => {
       syncDraftToNodeStatus(schoolId, schoolYear, finalPayload).catch((e) => {
         console.warn("[SyncDraftToNodeStatus Background Warning]:", e.message);
       });
+    }
+
+    // Persist normalized relational tables
+    if (req.headers["x-sync-normalize"] === "true") {
+      let normClient = null;
+      try {
+        normClient = await acquireClient();
+        await persistNormalizedDraft(normClient, schoolId, schoolYear, finalPayload);
+      } finally {
+        if (normClient && typeof normClient.release === "function") {
+          normClient.release();
+        }
+      }
+    } else {
+      queueNormalizedPersistence(schoolId, schoolYear, finalPayload);
     }
 
     res.json({

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS esf7_personnel_profile (
     no_deped_email BOOLEAN NOT NULL DEFAULT FALSE,
     allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE,
     is_school_head BOOLEAN NOT NULL DEFAULT FALSE,
+    is_main_sh BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(32) NOT NULL DEFAULT 'canonical',
     legacy_id VARCHAR(128),
     
@@ -705,9 +706,7 @@ CREATE TABLE IF NOT EXISTS esf7_school_profile (
 
     -- School Shift Declaration (Optional, within 4:00 AM - 10:00 PM)
     has_shifts BOOLEAN NOT NULL DEFAULT FALSE,
-    shift_start_time TEXT,
-    shift_end_time TEXT,
-    shifts_config JSONB DEFAULT '{}'::jsonb,
+        shifts_config JSONB DEFAULT '{}'::jsonb,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

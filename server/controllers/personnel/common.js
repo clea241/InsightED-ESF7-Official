@@ -1488,6 +1488,11 @@ function formatPersonnelRecord(
     allow_email_discrepancy: !!row.allow_email_discrepancy,
     isSchoolHead: !!row.is_school_head,
     is_school_head: !!row.is_school_head,
+    isMainSchoolHead: !!row.is_main_sh,
+    is_main_school_head: !!row.is_main_sh,
+    is_main_sh: !!row.is_main_sh,
+    schoolHeadLevel: row.school_head_level || null,
+    school_head_level: row.school_head_level || null,
     disabledServiceYears: Number(row.disabled_service_years || 0),
     disabled_service_years: Number(row.disabled_service_years || 0),
 

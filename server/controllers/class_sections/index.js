@@ -1407,6 +1407,15 @@ router.delete("/:id", async (req, res) => {
         dbPool
           .query(`DELETE FROM class_sections WHERE id = $1`, [id])
           .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_workload_rows WHERE section_id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_workload_row WHERE section_id = $1`, [id])
+          .catch(() => {}),
+        dbPool
+          .query(`DELETE FROM esf7_shs_workload_rows WHERE section_id = $1`, [id])
+          .catch(() => {}),
       ]);
 
       // Also clean up school_drafts in this pool
@@ -1433,6 +1442,17 @@ router.delete("/:id", async (req, res) => {
                 (s) => String(s.id) !== String(id),
               );
               if (r.payload.sections.length !== origLen) modified = true;
+            }
+            if (Array.isArray(r.payload.personnel)) {
+              for (const p of r.payload.personnel) {
+                if (Array.isArray(p.workloadRows)) {
+                  const bLen = p.workloadRows.length;
+                  p.workloadRows = p.workloadRows.filter(
+                    (rw) => String(rw.sectionId || rw.section_id) !== String(id),
+                  );
+                  if (p.workloadRows.length !== bLen) modified = true;
+                }
+              }
             }
             if (modified) {
               const delList = Array.isArray(r.payload.deletedSectionIds)

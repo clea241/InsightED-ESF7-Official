@@ -822,7 +822,7 @@ async function processJobById(targetJobId, specificClient = null) {
          has_shs_inclusive, shs_inclusive_programs,
          has_als, has_sned, has_iped, has_madrasah,
          inclusive_programs,
-         has_shifts, shift_start_time, shift_end_time, shifts_config,
+         has_shifts, shifts_config,
          extras, created_at, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
        ON CONFLICT (school_id, school_year) DO UPDATE SET
@@ -843,9 +843,7 @@ async function processJobById(targetJobId, specificClient = null) {
          has_madrasah = EXCLUDED.has_madrasah,
          inclusive_programs = EXCLUDED.inclusive_programs,
          has_shifts = EXCLUDED.has_shifts,
-         shift_start_time = EXCLUDED.shift_start_time,
-         shift_end_time = EXCLUDED.shift_end_time,
-         shifts_config = EXCLUDED.shifts_config,
+                  shifts_config = EXCLUDED.shifts_config,
          extras = EXCLUDED.extras,
          updated_at = NOW()`,
       [
@@ -871,8 +869,6 @@ async function processJobById(targetJobId, specificClient = null) {
         hasMadrasah,
         JSON.stringify(incProgs),
         Boolean(schoolInfo.hasShifts ?? schoolInfo.has_shifts),
-        schoolInfo.shiftStartTime || schoolInfo.shift_start_time || null,
-        schoolInfo.shiftEndTime || schoolInfo.shift_end_time || null,
         JSON.stringify(
           schoolInfo.shiftsConfig || schoolInfo.shifts_config || {},
         ),
@@ -901,10 +897,6 @@ async function processJobById(targetJobId, specificClient = null) {
             has_madrasah: hasMadrasah,
             inclusive_programs: incProgs,
             has_shifts: Boolean(schoolInfo.hasShifts ?? schoolInfo.has_shifts),
-            shift_start_time:
-              schoolInfo.shiftStartTime || schoolInfo.shift_start_time || null,
-            shift_end_time:
-              schoolInfo.shiftEndTime || schoolInfo.shift_end_time || null,
             shifts_config:
               schoolInfo.shiftsConfig || schoolInfo.shifts_config || {},
           }),
@@ -1044,6 +1036,15 @@ async function processJobById(targetJobId, specificClient = null) {
             p.allowEmailDiscrepancy === true ||
             p.allow_email_discrepancy === true,
           is_school_head: isHead,
+          is_main_sh: Boolean(
+            p.isMainSchoolHead !== undefined
+              ? p.isMainSchoolHead
+              : (p.is_main_sh !== undefined
+                ? p.is_main_sh
+                : (p.isMainHead !== undefined
+                  ? p.isMainHead
+                  : isHead))
+          ),
           raw_payload: JSON.stringify(p.rawPayload || p),
         });
 
@@ -1862,6 +1863,7 @@ async function processJobById(targetJobId, specificClient = null) {
           no_deped_email = EXCLUDED.no_deped_email,
           allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
           is_school_head = EXCLUDED.is_school_head,
+          is_main_sh = EXCLUDED.is_main_sh,
           raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
       `,

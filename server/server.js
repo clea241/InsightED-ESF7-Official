@@ -663,8 +663,6 @@ const initDB = async () => {
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_madrasah BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS inclusive_programs JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN NOT NULL DEFAULT FALSE;
-        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shift_start_time TEXT;
-        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shift_end_time TEXT;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shifts_config JSONB DEFAULT '{}'::jsonb;
 
         ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE;

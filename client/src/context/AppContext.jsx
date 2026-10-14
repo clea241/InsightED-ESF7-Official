@@ -6994,17 +6994,37 @@ export const AppProvider = ({ children }) => {
   const deletePersonnel = async (id) => {
     if (!id) return;
     const target = personnel.find(
-      (p) => String(p.id) === String(id) || String(p.prn) === String(id),
+      (p) =>
+        String(p.id) === String(id) ||
+        String(p.prn) === String(id) ||
+        String(p.legacy_id || p.legacyId) === String(id),
     );
     const targetId = target ? target.id : id;
     const targetPrn = target ? target.prn : null;
+    const targetLegacy = target ? (target.legacy_id || target.legacyId) : null;
+    const targetEmpNo = target?.employeeNo || target?.employee_no || "";
+
+    const allTargetKeys = Array.from(
+      new Set(
+        [
+          String(id),
+          String(targetId),
+          targetPrn ? String(targetPrn) : "",
+          targetLegacy ? String(targetLegacy) : "",
+          targetEmpNo ? String(targetEmpNo) : "",
+        ].filter(Boolean),
+      ),
+    );
 
     const updatedPersonnel = personnel.filter(
-      (p) => String(p.id) !== String(id) && String(p.prn) !== String(id),
+      (p) =>
+        !allTargetKeys.includes(String(p.id)) &&
+        !allTargetKeys.includes(String(p.prn)) &&
+        !allTargetKeys.includes(String(p.legacy_id || p.legacyId)),
     );
     setPersonnel(updatedPersonnel);
 
-    if (activePersonnelId === targetId || activePersonnelId === id) {
+    if (allTargetKeys.includes(String(activePersonnelId))) {
       setActivePersonnelId(
         updatedPersonnel.length > 0 ? updatedPersonnel[0].id : "",
       );
@@ -7012,40 +7032,52 @@ export const AppProvider = ({ children }) => {
 
     // Clean up advisor role in class sections
     const updatedSections = classSections.map((sec) => {
-      if (
-        String(sec.advisorId) === String(targetId) ||
-        String(sec.advisorId) === String(id)
-      ) {
+      if (allTargetKeys.includes(String(sec.advisorId))) {
         return { ...sec, advisorId: null };
       }
       return sec;
     });
     setClassSections(updatedSections);
 
+    // Clean up School Head config if deleted personnel was assigned as School Head
+    let updatedSchoolInfo = schoolInfo;
+    if (schoolInfo?.schoolHeadConfig) {
+      const shc = { ...schoolInfo.schoolHeadConfig };
+      let shChanged = false;
+      if (allTargetKeys.includes(String(shc.mainHeadId))) {
+        shc.mainHeadId = null;
+        shChanged = true;
+      }
+      if (shc.assignments && typeof shc.assignments === "object") {
+        const nextAssign = { ...shc.assignments };
+        for (const [lvl, assignedId] of Object.entries(nextAssign)) {
+          if (allTargetKeys.includes(String(assignedId))) {
+            delete nextAssign[lvl];
+            shChanged = true;
+          }
+        }
+        shc.assignments = nextAssign;
+      }
+      if (shChanged) {
+        updatedSchoolInfo = { ...schoolInfo, schoolHeadConfig: shc };
+        setSchoolInfo(updatedSchoolInfo);
+      }
+    }
+
     // Track deleted IDs in tombstone list (strictly unique keys: ID, PRN, employeeNo — NEVER full name)
-    const targetEmpNo = target?.employeeNo || target?.employee_no || "";
     const newDeletedIds = Array.from(
-      new Set(
-        [
-          ...deletedPersonnelIds,
-          String(id),
-          String(targetId),
-          targetPrn ? String(targetPrn) : "",
-          targetEmpNo ? String(targetEmpNo) : "",
-        ].filter(Boolean),
-      ),
+      new Set([...deletedPersonnelIds, ...allTargetKeys]),
     );
     setDeletedPersonnelIds(newDeletedIds);
 
-    // Clean up local storage
+    // Clean up local storage across all alias keys
     try {
-      localStorage.removeItem(`draft_personnel_${targetId}`);
-      localStorage.removeItem(`draft_learning_areas_${targetId}`);
-      localStorage.removeItem(`esf7_workload_draft_${targetId}`);
-      if (targetPrn) {
-        localStorage.removeItem(`draft_personnel_${targetPrn}`);
-        localStorage.removeItem(`draft_learning_areas_${targetPrn}`);
-      }
+      allTargetKeys.forEach((key) => {
+        localStorage.removeItem(`draft_personnel_${key}`);
+        localStorage.removeItem(`draft_learning_areas_${key}`);
+        localStorage.removeItem(`esf7_workload_draft_${key}`);
+        localStorage.removeItem(`draft_workload_${key}`);
+      });
     } catch (e) {}
 
     // Persist deleted state to IndexedDB and Cloud Draft
@@ -7054,6 +7086,7 @@ export const AppProvider = ({ children }) => {
       const currentDraft = (await getLocalDraft(draftKey)) || {};
       const newDraftData = {
         ...currentDraft,
+        schoolInfo: updatedSchoolInfo,
         personnel: updatedPersonnel,
         classSections: updatedSections,
         deletedPersonnelIds: newDeletedIds,
@@ -7141,7 +7174,7 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const toggleSchoolHead = async (id, isSchoolHead) => {
+  const toggleSchoolHead = async (id, isSchoolHead, isMainSh = isSchoolHead) => {
     const targetPerson = personnel.find(
       (item) => String(item.id) === String(id),
     );
@@ -7164,30 +7197,38 @@ export const AppProvider = ({ children }) => {
             ...item,
             isSchoolHead: Boolean(isSchoolHead),
             is_school_head: Boolean(isSchoolHead),
+            isMainSchoolHead: Boolean(isMainSh),
+            is_main_school_head: Boolean(isMainSh),
+            is_main_sh: Boolean(isMainSh),
           };
         }
         if (isSchoolHead) {
-          return { ...item, isSchoolHead: false, is_school_head: false };
+          return {
+            ...item,
+            isSchoolHead: false,
+            is_school_head: false,
+            isMainSchoolHead: false,
+            is_main_school_head: false,
+            is_main_sh: false,
+          };
         }
         return item;
       }),
     );
     setHasUnsavedChanges(true);
 
-    if (targetPerson) {
-      savePersonnelChanges(id, {
-        ...targetPerson,
-        isSchoolHead: Boolean(isSchoolHead),
-        is_school_head: Boolean(isSchoolHead),
-      }).catch((e) => showToast(e.message, "error"));
-      if (typeof api !== "undefined" && api.toggleSchoolHead) {
-        api.toggleSchoolHead(id, Boolean(isSchoolHead)).catch((e) =>
-          reportError(e, {
-            action: `Updating the School Head flag for ${id}`,
-            handler: "toggleSchoolHead",
-            ids: { personnel_id: String(id) },
-          }),
-        );
+    if (targetPerson && typeof api !== "undefined" && api.toggleSchoolHead) {
+      try {
+        await api.toggleSchoolHead(id, Boolean(isSchoolHead), Boolean(isMainSh), {
+          schoolId: schoolInfo?.schoolId || schoolInfo?.school_id,
+        });
+      } catch (e) {
+        reportError(e, {
+          action: `Updating the School Head flag for ${id}`,
+          handler: "toggleSchoolHead",
+          ids: { personnel_id: String(id) },
+        });
+        showToast(e.message, "error");
       }
     }
 
@@ -7196,6 +7237,130 @@ export const AppProvider = ({ children }) => {
         ? "School Head designated."
         : "School Head designation removed.",
     );
+  };
+
+  const designateSchoolHeadsConfig = async ({ hasMultipleHeads, mainHeadId, assignments }) => {
+    const assignedIds = new Set(Object.values(assignments || {}).filter(Boolean).map(String));
+
+    // Validate that none of the assigned personnel are non-teaching
+    for (const [lvl, pId] of Object.entries(assignments || {})) {
+      if (!pId) continue;
+      const target = personnel.find((item) => String(item.id) === String(pId));
+      if (target) {
+        const typeStr = String(target.type || target.category || "")
+          .toLowerCase()
+          .replace(/[^a-z]/g, "");
+        if (typeStr === "nonteaching") {
+          showToast(
+            `⚠️ ${target.firstName || ''} ${target.lastName || ''} is Non-Teaching and cannot be designated as School Head.`,
+            "error"
+          );
+          return false;
+        }
+      }
+    }
+
+    const idToLevelMap = {};
+    for (const [lvl, pId] of Object.entries(assignments || {})) {
+      if (pId) idToLevelMap[String(pId)] = lvl;
+    }
+
+    setPersonnel((prev) =>
+      prev.map((item) => {
+        const itemId = String(item.id);
+        const isAssigned = assignedIds.has(itemId);
+        if (isAssigned) {
+          const isMain = String(mainHeadId) === itemId;
+          const assignedLevel = idToLevelMap[itemId] || null;
+          return {
+            ...item,
+            isSchoolHead: true,
+            is_school_head: true,
+            isMainSchoolHead: isMain,
+            is_main_school_head: isMain,
+            is_main_sh: isMain,
+            schoolHeadLevel: assignedLevel,
+            school_head_level: assignedLevel,
+          };
+        } else {
+          return {
+            ...item,
+            isSchoolHead: false,
+            is_school_head: false,
+            isMainSchoolHead: false,
+            is_main_school_head: false,
+            is_main_sh: false,
+            schoolHeadLevel: null,
+            school_head_level: null,
+          };
+        }
+      }),
+    );
+
+    setSchoolInfo((prev) => ({
+      ...prev,
+      schoolHeadConfig: {
+        hasMultipleHeads: Boolean(hasMultipleHeads),
+        mainHeadId: mainHeadId ? String(mainHeadId) : null,
+        assignments: assignments || {},
+      },
+    }));
+
+    setHasUnsavedChanges(true);
+
+    const targetSchoolId = schoolInfo?.schoolId || schoolInfo?.school_id;
+
+    const previouslyAssigned = (personnel || []).filter(
+      (p) => p.isSchoolHead || p.is_school_head,
+    );
+    const removedHeads = previouslyAssigned.filter(
+      (p) =>
+        !assignedIds.has(String(p.id)) &&
+        !assignedIds.has(String(p.prn)) &&
+        !assignedIds.has(String(p.legacy_id || p.legacyId)),
+    );
+
+    // 1. Toggle off all removed heads across backend
+    for (const p of removedHeads) {
+      if (typeof api !== "undefined" && api.toggleSchoolHead) {
+        await api
+          .toggleSchoolHead(p.id, false, false, {
+            hasMultipleHeads: Boolean(hasMultipleHeads),
+            schoolId: targetSchoolId,
+          })
+          .catch((err) =>
+            console.error(
+              "[designateSchoolHeadsConfig] Remove error for",
+              p.id,
+              err,
+            ),
+          );
+      }
+    }
+
+    // 2. Toggle on all newly assigned heads across backend
+    for (const pId of assignedIds) {
+      if (typeof api !== "undefined" && api.toggleSchoolHead) {
+        const isMain = String(mainHeadId) === String(pId);
+        await api
+          .toggleSchoolHead(pId, true, isMain, {
+            hasMultipleHeads: Boolean(hasMultipleHeads),
+            schoolId: targetSchoolId,
+            schoolHeadLevel: idToLevelMap[String(pId)] || null,
+            school_head_level: idToLevelMap[String(pId)] || null,
+          })
+          .catch((err) =>
+            console.error(
+              "[designateSchoolHeadsConfig] Assign error for",
+              pId,
+              err,
+            ),
+          );
+      }
+    }
+
+    showToast("School Head configuration updated successfully.", "success");
+    return true;
   };
 
   const addClassSection = async (
@@ -10651,6 +10816,7 @@ export const AppProvider = ({ children }) => {
           }
         },
         toggleSchoolHead,
+        designateSchoolHeadsConfig,
         addClassSection,
         updateSectionDetails,
         updateSectionAdviser,

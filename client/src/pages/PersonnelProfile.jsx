@@ -3240,6 +3240,25 @@ export default function PersonnelProfile() {
         }
       }
 
+      if (key === "deploymentStatus") {
+        updated.deploymentStatus = value;
+        updated.deployment_status = value;
+        if (value === "Stationed" || value === "Stationed (Own Station)") {
+          updated.isShared = false;
+          updated.is_shared = false;
+          updated.isClustered = false;
+          updated.is_clustered = false;
+          updated.partnerSchoolId = null;
+          updated.partner_school_id = null;
+          updated.partnerSchoolName = null;
+          updated.partner_school_name = null;
+          updated.reassignedSchoolId = null;
+          updated.reassigned_school_id = null;
+          updated.reassignedSchoolName = null;
+          updated.reassigned_school_name = null;
+        }
+      }
+
       if (key === "natureOfAppointment") {
         const pType =
           detectPersonnelTypeFromPosition(updated.position) ||
@@ -5325,9 +5344,17 @@ export default function PersonnelProfile() {
                           "Revert to the saved database version?",
                         )
                       ) {
-                        localStorage.removeItem(
-                          `draft_personnel_${dbPerson.id}`,
-                        );
+                        const targetKeys = [
+                          dbPerson.id,
+                          dbPerson.legacy_id,
+                          dbPerson.prn,
+                        ].filter(Boolean);
+                        targetKeys.forEach((k) => {
+                          localStorage.removeItem(`draft_personnel_${k}`);
+                          localStorage.removeItem(`draft_learning_areas_${k}`);
+                          localStorage.removeItem(`esf7_workload_draft_${k}`);
+                          localStorage.removeItem(`draft_workload_${k}`);
+                        });
                         setEditPerson(dbPerson);
                       }
                     }}
