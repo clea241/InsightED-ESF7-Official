@@ -624,44 +624,6 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     }
   }
 
-  // If school already has normalized personnel in esf7_personnel_profile, skip legacy draft personnel loop
-  if (existingPersRes.rows.length === 0 && Array.isArray(finalPayload.personnel) && finalPayload.personnel.length > 0) {
-    for (const p of finalPayload.personnel) {
-      if (!p) continue;
-      const rawId = p.id ? String(p.id).trim() : null;
-      const rawPrn = p.prn ? String(p.prn).trim() : null;
-      const fName = String(p.firstName || p.first_name || p.first || "").trim().toUpperCase();
-      const lName = String(p.lastName || p.last_name || p.last || "").trim().toUpperCase();
-      const nameKey = fName && lName ? `${fName}__${lName}` : null;
-
-      let finalId = null;
-      let legacyId = null;
-      let pStatus = p.status || null;
-
-      if (rawId && existingById.has(rawId)) {
-        finalId = existingById.get(rawId).id;
-      } else if (rawId && existingByLegacyId.has(rawId)) {
-        finalId = existingByLegacyId.get(rawId).id;
-        legacyId = rawId;
-      } else if (rawPrn && existingByPrn.has(rawPrn)) {
-        finalId = existingByPrn.get(rawPrn).id;
-        if (rawId && rawId !== finalId) legacyId = rawId;
-      } else if (nameKey && existingByName.has(nameKey)) {
-        finalId = existingByName.get(nameKey).id;
-        if (rawId && rawId !== finalId) legacyId = rawId;
-      } else if (rawId) {
-        const mapRes = await safeDraftQuery(client, "sp_get_map", () =>
-          client.query(
-            "SELECT new_id, status FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1",
-            [rawId],
-          )
-        ).catch(() => ({ rows: [] }));
-        if (mapRes.rows.length > 0) {
-          finalId = mapRes.rows[0].new_id;
-          legacyId = rawId;
-          if (!pStatus) pStatus = mapRes.rows[0].status;
-        }
-      }
   const rawPersonnelList = Array.isArray(finalPayload.personnel) ? finalPayload.personnel : [];
   const allRawIds = rawPersonnelList.map(p => p && p.id ? String(p.id).trim() : null).filter(Boolean);
   const existingMappingRes = allRawIds.length > 0
@@ -751,84 +713,10 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
       pType = "teaching";
     }
 
-      const birthDate = safeCoerceDate(p.birthdate, "birthdate");
-      const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
-
-      // Upsert esf7_personnel_profile
-      await safeDraftQuery(client, "sp_ins_pers", () =>
-        client.query(
-          `
-          INSERT INTO esf7_personnel_profile (
-            id, prn, status, legacy_id, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
-            tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-            philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, NOW())
-          ON CONFLICT (id) DO UPDATE SET
-            prn = COALESCE(EXCLUDED.prn, esf7_personnel_profile.prn),
-            status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
-            legacy_id = COALESCE(esf7_personnel_profile.legacy_id, EXCLUDED.legacy_id),
-            school_id = EXCLUDED.school_id,
-            school_year = EXCLUDED.school_year,
-            type = EXCLUDED.type,
-            salutation = EXCLUDED.salutation,
-            first_name = EXCLUDED.first_name,
-            middle_name = EXCLUDED.middle_name,
-            last_name = EXCLUDED.last_name,
-            name_extension = EXCLUDED.name_extension,
-            tin = EXCLUDED.tin,
-            no_tin = EXCLUDED.no_tin,
-            sex_at_birth = EXCLUDED.sex_at_birth,
-            civil_status = EXCLUDED.civil_status,
-            solo_parent = EXCLUDED.solo_parent,
-            religion = EXCLUDED.religion,
-            ethnic_group = EXCLUDED.ethnic_group,
-            birthdate = EXCLUDED.birthdate,
-            age = EXCLUDED.age,
-            philsys_no = EXCLUDED.philsys_no,
-            no_philsys = EXCLUDED.no_philsys,
-            employee_no = EXCLUDED.employee_no,
-            deped_email = EXCLUDED.deped_email,
-            no_deped_email = EXCLUDED.no_deped_email,
-            allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
-            is_school_head = EXCLUDED.is_school_head,
-            updated_at = NOW()
-          `,
-          [
-            finalId,
-            finalPrn,
-            pStatus,
-            legacyId,
-            cleanId,
-            schoolYear,
-            pType,
-            p.salutation || "MR.",
-            String(p.firstName || p.first_name || "UNKNOWN").trim(),
-            p.middleName || p.middle_name || null,
-            String(p.lastName || p.last_name || "UNKNOWN").trim(),
-            p.nameExtension || p.name_extension || null,
-            p.tin || null,
-            sanitizeBoolean(p.noTin || p.no_tin),
-            sex,
-            p.civilStatus || p.civil_status || null,
-            sanitizeBoolean(p.soloParent || p.solo_parent),
-            p.religion || null,
-            p.ethnicGroup || p.ethnic_group || null,
-            birthDate,
-            age,
-            p.philsysNo || p.philsys_no || null,
-            sanitizeBoolean(p.noPhilsys || p.no_philsys),
-            p.employeeNo || p.employee_no || null,
-            p.depedEmail || p.deped_email || null,
-            sanitizeBoolean(p.noDepedEmail || p.no_deped_email),
-            sanitizeBoolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
-            sanitizeBoolean(p.isSchoolHead || p.is_school_head),
-          ],
-        )
-      ).catch((err) => {
-        console.warn(`[persistNormalizedDraft] personnel_profile warning (${finalId}):`, err.message);
-      });
+    let sex = String(p.sexAtBirth || p.sex_at_birth || p.gender || p.sex || "Male").trim();
+    if (!["Male", "Female", "MALE", "FEMALE"].includes(sex)) {
+      sex = "Male";
+    }
 
     const birthDate = safeCoerceDate(p.birthdate, "birthdate");
     const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
@@ -1247,6 +1135,7 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     }
   }
 }
+
 
 // Helper: Assemble complete draft payload directly from normalized relational tables (ZERO reads from school_drafts)
 async function loadNormalizedDraft(schoolId, schoolYear) {
