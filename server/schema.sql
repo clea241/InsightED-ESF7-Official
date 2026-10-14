@@ -705,8 +705,6 @@ CREATE TABLE IF NOT EXISTS esf7_school_profile (
 
     -- School Shift Declaration (Optional, within 4:00 AM - 10:00 PM)
     has_shifts BOOLEAN NOT NULL DEFAULT FALSE,
-    shift_start_time TEXT,
-    shift_end_time TEXT,
     shifts_config JSONB DEFAULT '{}'::jsonb,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

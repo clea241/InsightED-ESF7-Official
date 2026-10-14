@@ -34,7 +34,7 @@ function calculateMinutesExcludingLunch(startTime, endTime) {
 
 function formatWorkImmersionRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const vDate = row.visit_date
     ? row.visit_date instanceof Date
       ? row.visit_date.toISOString().split("T")[0]
@@ -63,7 +63,6 @@ function formatWorkImmersionRecord(row) {
     durationMinutes: durMins,
     duration_minutes: durMins,
     hours: (durMins / 60).toFixed(1),
-    rawPayload: raw,
   };
 }
 
@@ -160,14 +159,13 @@ router.post("/", async (req, res) => {
 
     const query = `
       INSERT INTO esf7_work_immersion (
-        id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes, raw_payload
+        id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (personnel_id, school_year, visit_date) DO UPDATE SET
         start_time = EXCLUDED.start_time,
         end_time = EXCLUDED.end_time,
         duration_minutes = EXCLUDED.duration_minutes,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -181,7 +179,6 @@ router.post("/", async (req, res) => {
       targetStart,
       targetEnd,
       durationMins,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);
@@ -231,14 +228,13 @@ router.post("/batch", async (req, res) => {
 
       const result = await db.query(
         `INSERT INTO esf7_work_immersion (
-          id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes, raw_payload
+          id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (personnel_id, school_year, visit_date) DO UPDATE SET
           start_time = EXCLUDED.start_time,
           end_time = EXCLUDED.end_time,
           duration_minutes = EXCLUDED.duration_minutes,
-          raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
         RETURNING *;`,
         [
@@ -250,7 +246,6 @@ router.post("/batch", async (req, res) => {
           sTime,
           eTime,
           durationMins,
-          JSON.stringify(sched),
         ],
       );
       if (result.rows.length > 0) {

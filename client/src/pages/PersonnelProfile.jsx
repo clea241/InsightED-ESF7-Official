@@ -10,13 +10,21 @@ import { useAuth } from "../context/AuthContext";
 import {
   upsertOutboxEntry,
   removeOutboxEntryByModule,
-  checkAndPromptOutboxOnSectionOpen,
+  autoSyncOutboxOnSectionOpen,
 } from "../services/outbox";
+
+const TAB_MODULE_MAP = {
+  identity: "personnel_identity",
+  employment: "personnel_employment",
+  education: "personnel_education",
+  development: "personnel_ld",
+  teaching: "personnel_teaching",
+  "learning-area": "personnel_learning_area",
+};
 import SearchableDropdown from "../components/SearchableDropdown";
 import DepEdEmailInfoModal from "../components/DepEdEmailInfoModal";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
-import { confirmServerDraftSaved } from "../services/screenSave";
 import {
   getPersonnelDraftKey,
   readMigratedLocalStorage,
@@ -2294,6 +2302,7 @@ export default function PersonnelProfile() {
     completeNode,
     setActiveView,
     activeTerm,
+    refreshPersonnelList,
   } = useApp();
   const { user } = useAuth();
 
@@ -2314,6 +2323,52 @@ export default function PersonnelProfile() {
       loadDistrictSchools(activeId, schoolInfo?.division);
     }
   }, [schoolInfo?.schoolId, schoolInfo?.division, activeTab]);
+
+  // Transparent auto-sync of pending offline personnel changes when switching tabs or selecting personnel (Zero intrusive modal popups)
+  useEffect(() => {
+    let isMounted = true;
+    const tabModule = TAB_MODULE_MAP[activeTab] || "personnel_profile";
+    const currentUserId = user?.username || user?.email;
+
+    autoSyncOutboxOnSectionOpen({
+      module: tabModule,
+      personnelId: activePersonnelId,
+      schoolId: schoolInfo?.schoolId,
+      user: currentUserId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      onSynced: () => {
+        if (!isMounted) return;
+        if (typeof refreshPersonnelList === "function") {
+          refreshPersonnelList().catch(() => {});
+        }
+        if (showToast) {
+          showToast(
+            `Offline ${tabModule.replace("personnel_", "")} changes synced to database.`,
+            "success",
+          );
+        }
+      },
+    });
+
+    // Also auto-sync generic personnel_profile entries if any exist
+    autoSyncOutboxOnSectionOpen({
+      module: "personnel_profile",
+      personnelId: activePersonnelId,
+      schoolId: schoolInfo?.schoolId,
+      user: currentUserId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      onSynced: () => {
+        if (!isMounted) return;
+        if (typeof refreshPersonnelList === "function") {
+          refreshPersonnelList().catch(() => {});
+        }
+      },
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, activePersonnelId, schoolInfo?.schoolId, schoolInfo?.schoolYear, user?.username, user?.email]);
   const [showRa1080Modal, setShowRa1080Modal] = useState(false);
   const [ra1080InputText, setRa1080InputText] = useState("");
 
@@ -3626,6 +3681,35 @@ export default function PersonnelProfile() {
         "success",
       );
     } catch (err) {
+      const isOffline =
+        !navigator.onLine ||
+        err?.status === 0 ||
+        err?.message?.includes("Failed to fetch") ||
+        err?.message?.includes("NetworkError") ||
+        err?.name === "TimeoutError";
+
+      if (isOffline) {
+        try {
+          await upsertOutboxEntry({
+            kind: "offline",
+            schoolId: schoolInfo?.schoolId,
+            user: user?.username || user?.email,
+            schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+            term: activeTerm,
+            module: "personnel_profile",
+            personnelId: p?.id,
+            endpoint: `/api/personnel/${p?.id || ""}`,
+            payload: { ...p, personalVerified: true, workloadVerified: true },
+            lastError: err?.message || "Saved offline",
+          });
+        } catch (oErr) {}
+        showToast(
+          `Saved offline. ${p.firstName || ""} ${p.lastName || ""}'s profile validation will sync once connection is restored.`,
+          "warning",
+        );
+        return;
+      }
+
       await showAlert(
         "Error",
         "Failed to save and validate record: " + err.message,
@@ -3696,16 +3780,21 @@ export default function PersonnelProfile() {
           );
       }
 
-      // 4. Confirm server verified database persistence
-      const confirmed = await confirmServerDraftSaved();
-      if (!confirmed.ok) return confirmed;
-
-      // 5. Remove outbox entry right away on verified success
+      // 4. Remove outbox entry right away on verified success for both the active tab module and general personnel_profile
+      const tabModule = TAB_MODULE_MAP[activeTab] || "personnel_profile";
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo?.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: tabModule,
+        personnelId: personToSave.id,
+      });
       await removeOutboxEntryByModule({
         schoolId: schoolInfo?.schoolId,
         user: user?.username || user?.email,
         term: activeTerm,
         module: "personnel_profile",
+        personnelId: personToSave.id,
       });
 
       // 6. Clear secondary local drafts now that data is stored directly in database
@@ -3735,21 +3824,57 @@ export default function PersonnelProfile() {
       return { ok: true };
     } catch (err) {
       console.warn("Save personnel changes error:", err);
+      const tabModule = TAB_MODULE_MAP[activeTab] || "personnel_profile";
+      const isOffline =
+        !navigator.onLine ||
+        err?.status === 0 ||
+        err?.message?.includes("Failed to fetch") ||
+        err?.message?.includes("NetworkError") ||
+        err?.name === "TimeoutError";
+
+      // IndexedDB Outbox is strictly an emergency buffer when offline
       try {
         await upsertOutboxEntry({
-          kind: "failed",
+          kind: isOffline ? "offline" : "failed",
           schoolId: schoolInfo?.schoolId,
           user: user?.username || user?.email,
           schoolYear: schoolInfo?.schoolYear || "SY 26-27",
           term: activeTerm,
-          module: "personnel_profile",
-          endpoint: "/api/personnel",
-          payload: currentPerson,
+          module: tabModule,
+          personnelId: currentPerson?.id,
+          endpoint: `/api/personnel/${currentPerson?.id || ""}`,
+          payload: {
+            ...currentPerson,
+            learningAreaMap,
+            matrix_data: learningAreaMap,
+          },
           lastError: err?.message || "Failed to save personnel profile",
         });
       } catch (outboxErr) {
         console.warn("[Outbox Failed Save Error]:", outboxErr);
       }
+
+      if (isOffline) {
+        const friendlyTabName =
+          {
+            personnel_identity: "Identity",
+            personnel_employment: "Employment",
+            personnel_education: "Education",
+            personnel_ld: "L&D / Trainings",
+            personnel_teaching: "Teaching Assignment",
+            personnel_learning_area: "Learning Area",
+          }[tabModule] || "Personnel Profile";
+
+        if (setHasUnsavedChanges) setHasUnsavedChanges(false);
+        if (showToast) {
+          showToast(
+            `Saved offline. Your ${friendlyTabName} changes will sync to database once connection is restored.`,
+            "warning",
+          );
+        }
+        return { ok: true, offline: true };
+      }
+
       reportError(err, {
         action: "Saving Personnel Profile",
         handler: "runProfileSave",

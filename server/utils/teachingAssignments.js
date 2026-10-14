@@ -30,7 +30,7 @@ function parseGrades(raw) {
 
 function getAssignedGrades(profileRow) {
   if (!profileRow) return [];
-  const raw = profileRow.raw_payload || {};
+  const raw = profileRow.extras || {};
   const candidates = [
     profileRow.grade_levels_taught,
     raw.assignedGradeLevels,
@@ -46,7 +46,7 @@ function getAssignedGrades(profileRow) {
 }
 
 function isNonTeaching(profileRow) {
-  const raw = (profileRow && profileRow.raw_payload) || {};
+  const raw = (profileRow && profileRow.extras) || {};
   const type = String(raw.type || "")
     .toLowerCase()
     .trim();

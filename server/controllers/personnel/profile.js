@@ -16,6 +16,7 @@ const {
   ensureDisabledYearsColumn,
   formatPersonnelRecord,
   fetchMasterPersonnelFromInsightEd,
+  resolvePersonnelIdentity,
 } = require("./common");
 
 
@@ -658,33 +659,24 @@ router.post("/", async (req, res) => {
       school_id || bodySchoolId || (req.auth && req.auth.schoolId) || "108348";
     const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
 
-    // Match existing records by PRN, ID/legacy_id, or First + Last Name in this school
-    const checkFName = (first_name || firstName || "").toUpperCase().trim();
-    const checkLName = (last_name || lastName || "").toUpperCase().trim();
-    const cleanTargetSchool = String(targetSchoolId).replace("SCH-", "").trim();
+    const cleanTargetSchool = String(targetSchoolId).replace(/^SCH-/i, "").trim();
 
-    const dup = await client.query(
-      `SELECT id, prn, school_id, status FROM esf7_personnel_profile 
-       WHERE ($1::text IS NOT NULL AND (id = $1 OR legacy_id = $1)) 
-          OR ($2::text IS NOT NULL AND prn = $2) 
-          OR (REPLACE(school_id, 'SCH-', '') = $3 AND $4 <> '' AND $5 <> '' AND first_name = $4 AND last_name = $5)
-       LIMIT 1`,
-      [req.body.id || null, inputPrn || null, cleanTargetSchool, checkFName, checkLName],
-    );
-    if (dup.rows.length > 0) {
+    // Deterministic Identity Match: Check if teacher already exists in this school
+    const dup = await resolvePersonnelIdentity(client, cleanTargetSchool, req.body);
+    if (dup) {
       await client.query("ROLLBACK");
       return res.status(200).json({
-        id: dup.rows[0].id,
-        prn: dup.rows[0].prn,
-        schoolId: dup.rows[0].school_id,
-        status: dup.rows[0].status,
+        id: dup.id,
+        prn: dup.prn,
+        schoolId: dup.school_id,
+        status: dup.status,
         existing: true,
       });
     }
 
     // A school can have several Principals but only ONE designated school head
     if (is_school_head === true || isSchoolHead === true) {
-      const bare = String(targetSchoolId).replace("SCH-", "");
+      const bare = cleanTargetSchool;
       const headCheck = await client.query(
         `SELECT first_name, last_name, position FROM esf7_personnel_profile
           WHERE REPLACE(school_id, 'SCH-', '') = $1 AND is_school_head = TRUE LIMIT 1`,
@@ -713,14 +705,18 @@ router.post("/", async (req, res) => {
     const customId = newId;
 
     let finalPrn = null;
-    if (inputPrn || employee_no || employeeNo) {
-      finalPrn = formatCanonicalPrn(inputPrn || employee_no || employeeNo);
+    if (inputPrn && inputPrn !== "N/A" && inputPrn !== "NONE" && inputPrn.length > 2) {
+      finalPrn = formatCanonicalPrn(inputPrn);
+    } else if (employee_no || employeeNo) {
+      finalPrn = formatCanonicalPrn(employee_no || employeeNo);
     } else {
-      const countRes = await client.query(
-        "SELECT COUNT(*)::int AS cnt FROM esf7_personnel_profile WHERE REPLACE(school_id, 'SCH-', '') = $1",
-        [String(targetSchoolId).replace("SCH-", "")]
+      const maxPrnRes = await client.query(
+        `SELECT COALESCE(MAX(SUBSTRING(prn FROM 5)::integer), 0) AS max_prn 
+         FROM esf7_personnel_profile 
+         WHERE school_id = ANY($1) AND prn ~ '^PRN-[0-9]+$'`,
+        [[cleanTargetSchool, `SCH-${cleanTargetSchool}`]]
       );
-      const nextSeq = (countRes.rows[0]?.cnt || 0) + 1;
+      const nextSeq = (maxPrnRes.rows[0]?.max_prn || 0) + 1;
       finalPrn = `PRN-${nextSeq}`;
     }
     const finalFirstName = (first_name || firstName || "").toUpperCase();
@@ -1289,6 +1285,14 @@ router.put("/:id", async (req, res) => {
       `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) OR prn = $1 OR id = $2 OR id IN (SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1) LIMIT 1`,
       [req.params.id, resolvedId],
     );
+
+    if (currentRes.rows.length === 0) {
+      const cleanSchoolId = String(targetSchoolId).replace(/^SCH-/i, "").trim();
+      const byIdent = await resolvePersonnelIdentity(client, cleanSchoolId, { ...req.body, id: req.params.id });
+      if (byIdent) {
+        currentRes = await client.query(`SELECT * FROM esf7_personnel_profile WHERE id = $1 LIMIT 1`, [byIdent.id]);
+      }
+    }
 
     if (currentRes.rows.length === 0) {
       // Auto-insert initial record so PUT acts as a direct idempotent upsert into esf7_personnel_profile

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const redisQueue = require("../../services/redisQueue");
-const queueWorker = require("../../queue_worker");
+// queueWorker removed
 
 // Ensure table exists on first hit if not already initialized
 let tableEnsured = false;
@@ -146,12 +146,7 @@ router.post("/resubmit", async (req, res) => {
         console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
       });
 
-    // 3. Trigger immediate worker execution asynchronously (instant processing)
-    setImmediate(() => {
-      queueWorker.processNextJob().catch((err) => {
-        console.warn(`[Queue Immediate Trigger Notice]: ${err.message}`);
-      });
-    });
+    // 3. Worker execution disabled
 
     // 4. Atomic Upsert to esf7_validation: mark status as RESUBMITTED
     await db.query(

@@ -5,7 +5,7 @@ const { getSchoolIdFromRequest } = require("../../utils/auth");
 
 function formatExtraTaskRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -27,7 +27,6 @@ function formatExtraTaskRecord(row) {
     start_time: row.start_time || "08:00",
     endTime: row.end_time || "09:00",
     end_time: row.end_time || "09:00",
-    rawPayload: raw,
   };
 }
 
@@ -105,8 +104,8 @@ router.post("/batch", async (req, res) => {
 
         const insertRes = await db.query(
           `INSERT INTO esf7_personnel_extra_tasks 
-           (id, personnel_id, school_id, school_year, task_category, task_name, calendar_dates, start_time, end_time, raw_payload)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb)
+           (id, personnel_id, school_id, school_year, task_category, task_name, calendar_dates, start_time, end_time)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
            RETURNING *`,
           [
             taskId,
@@ -118,7 +117,6 @@ router.post("/batch", async (req, res) => {
             cDates,
             sTime,
             eTime,
-            JSON.stringify(t),
           ],
         );
         insertedRows.push(formatExtraTaskRecord(insertRes.rows[0]));

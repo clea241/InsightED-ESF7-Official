@@ -366,9 +366,9 @@ const handleGetSchool = async (req, res) => {
           ];
 
       hasShifts = Boolean(pRow.has_shifts);
-      shiftStartTime = pRow.shift_start_time || null;
-      shiftEndTime = pRow.shift_end_time || null;
       shiftsConfig = pRow.shifts_config || {};
+      shiftStartTime = shiftsConfig.shiftStartTime || shiftsConfig.shift_start_time || pRow.shift_start_time || null;
+      shiftEndTime = shiftsConfig.shiftEndTime || shiftsConfig.shift_end_time || pRow.shift_end_time || null;
     }
 
     specialPrograms = [

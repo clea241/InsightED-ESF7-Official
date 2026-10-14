@@ -5,7 +5,7 @@ const { getSchoolIdFromRequest } = require("../../utils/auth");
 
 function formatSchoolSubjectRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -27,7 +27,6 @@ function formatSchoolSubjectRecord(row) {
     is_custom: !!row.is_custom,
     isActive: !!row.is_active,
     is_active: !!row.is_active,
-    rawPayload: raw,
   };
 }
 
@@ -91,14 +90,13 @@ router.post("/", async (req, res) => {
     const query = `
       INSERT INTO esf7_school_subjects (
         id, school_id, school_year, subject_name, key_stage, grade_level, shs_category,
-        is_custom, is_active, raw_payload
+        is_custom, is_active
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, TRUE, $8::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, TRUE)
       ON CONFLICT (school_id, school_year, key_stage, subject_name) DO UPDATE SET
         grade_level = EXCLUDED.grade_level,
         shs_category = EXCLUDED.shs_category,
         is_active = TRUE,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -111,7 +109,6 @@ router.post("/", async (req, res) => {
       targetKeyStage,
       grade_level || gradeLevel || "All",
       shs_category || shsCategory || null,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

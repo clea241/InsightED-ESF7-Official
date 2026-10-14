@@ -4,7 +4,7 @@ const db = require("../../db");
 
 function formatRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const formattedDate = row.log_date
     ? row.log_date instanceof Date
       ? row.log_date.toISOString().split("T")[0]
@@ -57,7 +57,6 @@ function formatRecord(row) {
     reason: row.reason || "",
     isExcused: !!row.is_excused,
     is_excused: !!row.is_excused,
-    rawPayload: raw,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -183,8 +182,6 @@ router.post("/", async (req, res) => {
       reason,
       is_excused,
       isExcused,
-      raw_payload,
-      rawPayload,
     } = body;
 
     const targetPersonnelId = personnel_id || personnelId;
@@ -234,7 +231,6 @@ router.post("/", async (req, res) => {
     const lType = log_type || logType || leaveType || "TARDINESS";
     const rReason = reason || "";
     const excused = Boolean(is_excused ?? isExcused ?? false);
-    const payload = raw_payload || rawPayload || body;
 
     const recordId =
       id ||
@@ -245,13 +241,13 @@ router.post("/", async (req, res) => {
         id, school_id, school_year, term, month, personnel_id,
         log_date, time_in, time_out, late_minutes, undertime_minutes, total_dtr_deficit_minutes,
         scheduled_teaching_minutes, missed_teaching_minutes, actual_rendered_minutes,
-        missed_slot_ids, log_type, reason, is_excused, raw_payload, updated_at
+        missed_slot_ids, log_type, reason, is_excused, updated_at
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9, $10, $11, $12,
         $13, $14, $15,
-        $16::jsonb, $17, $18, $19, $20::jsonb, NOW()
+        $16::jsonb, $17, $18, $19, NOW()
       )
       ON CONFLICT (school_id, school_year, personnel_id, log_date) DO UPDATE SET
         term = EXCLUDED.term,
@@ -268,7 +264,6 @@ router.post("/", async (req, res) => {
         log_type = EXCLUDED.log_type,
         reason = EXCLUDED.reason,
         is_excused = EXCLUDED.is_excused,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -293,7 +288,6 @@ router.post("/", async (req, res) => {
       lType,
       rReason,
       excused,
-      JSON.stringify(payload),
     ];
 
     const result = await db.query(query, values);

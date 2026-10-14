@@ -15,12 +15,11 @@ import { api } from "../services/api";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
 import { useAuth } from "../context/AuthContext";
-import { confirmServerDraftSaved } from "../services/screenSave";
 import { diffSections } from "../services/sectionMerge";
 import {
   upsertOutboxEntry,
   removeOutboxEntryByModule,
-  checkAndPromptOutboxOnSectionOpen,
+  autoSyncOutboxOnSectionOpen,
 } from "../services/outbox";
 import { reportError } from "../services/errorAlert";
 import SortableTableHead from "../components/SortableTableHead";
@@ -1758,9 +1757,9 @@ export default function OrganizedClasses() {
     classSectionsRef.current = classSections;
   }, [classSections]);
 
-  // Prompt user if outbox contains queued unsent changes for organized_classes
+  // Seamlessly auto-apply and sync queued offline changes for organized_classes (No blocking modal)
   useEffect(() => {
-    checkAndPromptOutboxOnSectionOpen({
+    autoSyncOutboxOnSectionOpen({
       schoolId: schoolInfo?.schoolId,
       user: user?.username || user?.email,
       term: activeTerm,
@@ -3993,6 +3992,31 @@ export default function OrganizedClasses() {
       );
       const saveYear = schoolInfo?.schoolYear || "SY 26-27";
 
+      // 1. Offline emergency buffer check
+      if (!navigator.onLine) {
+        await upsertOutboxEntry({
+          kind: "failed",
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: saveYear,
+          term: activeTerm,
+          module: "organized_classes",
+          endpoint: "/api/sections/regular/sync",
+          payload: classSectionsRef.current,
+          lastError: "Offline - saved locally",
+        });
+        savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+        if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
+        if (completeNode) completeNode("classes", null);
+        if (showToast) {
+          showToast(
+            "Saved offline. Your class sections will sync to the database when connection is restored.",
+            "info",
+          );
+        }
+        return { ok: true, offline: true };
+      }
+
       if (regularChanged.length > 0 || regularDeleted.length > 0) {
         const resp = await api.syncRegularSections({
           schoolId: schoolInfo?.schoolId,
@@ -4094,10 +4118,6 @@ export default function OrganizedClasses() {
         }
       }
 
-      // Success is reported only after the server confirmed the database write.
-      const confirmed = await confirmServerDraftSaved();
-      if (!confirmed.ok) return confirmed;
-
       // Remove outbox entry right away on verified success
       await removeOutboxEntryByModule({
         schoolId: schoolInfo?.schoolId,
@@ -4124,6 +4144,12 @@ export default function OrganizedClasses() {
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save class sections:", err);
+      const isNetworkErr =
+        !navigator.onLine ||
+        /network|offline|failed to fetch|timeout|networkerror/i.test(
+          err?.message || "",
+        );
+
       try {
         await upsertOutboxEntry({
           kind: "failed",
@@ -4132,13 +4158,27 @@ export default function OrganizedClasses() {
           schoolYear: schoolInfo?.schoolYear || "SY 26-27",
           term: activeTerm,
           module: "organized_classes",
-          endpoint: "/api/sections/bulk",
+          endpoint: "/api/sections/regular/sync",
           payload: classSectionsRef.current,
           lastError: err?.message || "Failed to save class sections",
         });
       } catch (outboxErr) {
         console.warn("[Outbox Failed Save Error]:", outboxErr);
       }
+
+      if (isNetworkErr) {
+        savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+        if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
+        if (completeNode) completeNode("classes", null);
+        if (showToast) {
+          showToast(
+            "Saved offline. Your class sections will sync to the database when connection is restored.",
+            "info",
+          );
+        }
+        return { ok: true, offline: true };
+      }
+
       reportError(err, {
         action: "Saving Organized Classes",
         handler: "runClassesSave",

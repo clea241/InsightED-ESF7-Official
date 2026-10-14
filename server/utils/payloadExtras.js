@@ -75,8 +75,6 @@ const TABLES = {
       has_iped: "bool",
       has_madrasah: "bool",
       has_shifts: "bool",
-      shift_start_time: "text",
-      shift_end_time: "text",
       shifts_config: "json",
     },
     extraAliases: {},

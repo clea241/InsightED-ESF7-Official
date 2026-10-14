@@ -5,11 +5,10 @@ import { getLocalDraft, setLocalDraft, deleteLocalDraft } from "../services/db";
 import { api } from "../services/api";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
-import { confirmServerDraftSaved } from "../services/screenSave";
 import {
   upsertOutboxEntry,
   removeOutboxEntryByModule,
-  checkAndPromptOutboxOnSectionOpen,
+  autoSyncOutboxOnSectionOpen,
 } from "../services/outbox";
 import { reportError } from "../services/errorAlert";
 import {
@@ -443,8 +442,8 @@ export default function SchoolProfile() {
           savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
         }, 50);
 
-        // Prompt user if outbox contains queued unsent changes for school_profile
-        checkAndPromptOutboxOnSectionOpen({
+        // Seamlessly auto-apply and sync queued offline changes for school_profile (No blocking modal)
+        autoSyncOutboxOnSectionOpen({
           schoolId: schoolInfo?.schoolId,
           user: user?.username || user?.email,
           term: activeTerm,
@@ -778,10 +777,6 @@ export default function SchoolProfile() {
 
       if (setSchoolInfo)
         setSchoolInfo((prev) => ({ ...prev, curricularConfigSaved: true }));
-
-      // Success is reported only after the server confirmed the database write.
-      const confirmed = await confirmServerDraftSaved();
-      if (!confirmed.ok) return confirmed;
 
       savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
       setIsConfirmModalOpen(false);

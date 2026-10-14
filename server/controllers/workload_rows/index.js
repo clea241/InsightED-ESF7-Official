@@ -7,7 +7,6 @@ const { loadTimeAllotment } = require("../../utils/sharedRules");
 const { validateWorkloadSchedules } = require("../../utils/scheduleValidator");
 const {
   buildExtras,
-  splitLegacyPayload,
   reconstructPayload,
 } = require("../../utils/workloadPayload");
 const { codec } = require("../../utils/payloadExtras");
@@ -554,7 +553,7 @@ const saveWorkloadBatchHandler = async (req, res) => {
       personRes.rows[0] ? personRes.rows[0].id : targetPersonnelId,
       rowsToSave,
       personRes.rows[0]
-        ? (personRes.rows[0].raw_payload || {}).workloadRows || []
+        ? (personRes.rows[0].extras || {}).workloadRows || []
         : [],
     );
     if (timeViolations.length > 0) {
@@ -785,11 +784,11 @@ const saveWorkloadBatchHandler = async (req, res) => {
           INSERT INTO esf7_shs_workload_rows (
             id, personnel_id, school_id, school_year, term, semester, grade_level,
             track_strand, shs_subject_category, section_id, section_name,
-            subject, subject_id, remediation_subject, start_time, end_time, days, raw_payload, created_at, updated_at
+            subject, subject_id, remediation_subject, start_time, end_time, days, created_at, updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, NOW(), NOW())
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, NOW(), NOW())
           ON CONFLICT (id) DO UPDATE SET
-            start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, days = EXCLUDED.days, raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
+            start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, days = EXCLUDED.days, updated_at = NOW()
         `,
           [
             shsId,
@@ -812,7 +811,6 @@ const saveWorkloadBatchHandler = async (req, res) => {
             sr.startTime || sr.start_time || null,
             sr.endTime || sr.end_time || null,
             JSON.stringify(sr.days || ["M", "T", "W", "TH", "F"]),
-            JSON.stringify(sr),
           ],
         );
       }
@@ -1089,26 +1087,19 @@ router.put("/:id", async (req, res) => {
     }
 
     const current = existingRes.rows[0];
-    // Rows not yet backfilled still carry the old payload: fold it into extras first so nothing is lost on this update.
-    const legacy =
-      current.raw_payload && Object.keys(current.raw_payload).length > 0
-        ? splitLegacyPayload(current.raw_payload, current)
-        : null;
-    const baseExtras = legacy ? legacy.extras : current.extras || {};
-    const fill = legacy ? legacy.fills : {};
+    const baseExtras = current.extras || {};
     const nextColumns = {
-      grade_level: grade_level || gradeLevel || fill.grade_level || null,
-      section_id: section_id || sectionId || fill.section_id || null,
-      section_name: section_name || sectionName || fill.section_name || null,
-      subject: subject || fill.subject || null,
-      subject_id: subject_id || subjectId || fill.subject_id || null,
+      grade_level: grade_level || gradeLevel || null,
+      section_id: section_id || sectionId || null,
+      section_name: section_name || sectionName || null,
+      subject: subject || null,
+      subject_id: subject_id || subjectId || null,
       remediation_subject:
         remediation_subject ||
         remediationSubject ||
-        fill.remediation_subject ||
         null,
-      start_time: start_time || startTime || fill.start_time || null,
-      end_time: end_time || endTime || fill.end_time || null,
+      start_time: start_time || startTime || null,
+      end_time: end_time || endTime || null,
       days: days || null,
     };
     // typed values as they will be stored (same COALESCE rule as the UPDATE below)
@@ -1151,18 +1142,6 @@ router.put("/:id", async (req, res) => {
     ];
 
     const result = await db.query(query, values);
-    if (legacy) {
-      // Before the raw_payload column is dropped: the old payload now lives in extras, so clear it (the verification
-      // would otherwise compare a stale payload). A missing column (already dropped) is fine.
-      try {
-        await db.query(
-          "UPDATE esf7_workload_rows SET raw_payload = '{}'::jsonb WHERE id = $1",
-          [id],
-        );
-      } catch (clearErr) {
-        if (clearErr.code !== "42703") throw clearErr;
-      }
-    }
     res.json(formatWorkloadRecord(result.rows[0]));
   } catch (err) {
     console.error("Error updating esf7_workload_rows:", err);

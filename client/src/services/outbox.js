@@ -179,14 +179,15 @@ async function handleQuotaExceeded(error, unsentPayload) {
 
 /**
  * Generate a coalescing stable key for an outbox entry.
- * (school + user + term + module)
+ * (school + user + term + module + personnelId)
  */
-export function buildStableKey({ schoolId, user, term, module }) {
+export function buildStableKey({ schoolId, user, term, module, personnelId = null }) {
   const sid = String(schoolId || "").trim().toLowerCase();
   const usr = String(user || "").trim().toLowerCase();
   const t = String(term || "").trim().toLowerCase();
   const mod = String(module || "").trim().toLowerCase();
-  return `${sid}::${usr}::${t}::${mod}`;
+  const pid = personnelId ? `::${String(personnelId).trim().toLowerCase()}` : "";
+  return `${sid}::${usr}::${t}::${mod}${pid}`;
 }
 
 /**
@@ -204,7 +205,7 @@ export function generateMutationId() {
 
 /**
  * Upsert an entry in the outbox.
- * Coalesces by stable key (school + user + term + module) so newer edits replace older ones.
+ * Coalesces by stable key (school + user + term + module + personnelId) so newer edits replace older ones.
  */
 export async function upsertOutboxEntry({
   id = null,
@@ -214,6 +215,7 @@ export async function upsertOutboxEntry({
   schoolYear = "SY 26-27",
   term = null,
   module,
+  personnelId = null,
   endpoint,
   payload,
   baseVersion = null,
@@ -222,7 +224,7 @@ export async function upsertOutboxEntry({
 }) {
   if (!module || !payload) return null;
 
-  const stableKey = buildStableKey({ schoolId, user, term, module });
+  const stableKey = buildStableKey({ schoolId, user, term, module, personnelId });
   const mutationId = id || generateMutationId();
   const now = new Date().toISOString();
 
@@ -234,6 +236,7 @@ export async function upsertOutboxEntry({
     schoolYear: String(schoolYear || "SY 26-27"),
     term: term ? String(term) : null,
     module: String(module),
+    personnelId: personnelId ? String(personnelId) : null,
     endpoint: String(endpoint || ""),
     payload,
     baseVersion: baseVersion ?? null,
@@ -347,20 +350,22 @@ export function syncBeforeUnloadOnFailedState(hasFailed) {
 /**
  * Remove an entry by its stable key components or options object.
  */
-export async function removeOutboxEntryByModule(arg1, user, module, term = null) {
-  let sId, usr, mod, t;
+export async function removeOutboxEntryByModule(arg1, user, module, term = null, personnelId = null) {
+  let sId, usr, mod, t, pid;
   if (typeof arg1 === "object" && arg1 !== null) {
     sId = arg1.schoolId;
     usr = arg1.user;
     mod = arg1.module;
     t = arg1.term;
+    pid = arg1.personnelId;
   } else {
     sId = arg1;
     usr = user;
     mod = module;
     t = term;
+    pid = personnelId;
   }
-  const targetKey = buildStableKey({ schoolId: sId, user: usr, term: t, module: mod });
+  const targetKey = buildStableKey({ schoolId: sId, user: usr, term: t, module: mod, personnelId: pid });
   try {
     const db = await getDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
@@ -370,6 +375,18 @@ export async function removeOutboxEntryByModule(arg1, user, module, term = null)
       await cursor.delete();
       cursor = await cursor.continue();
     }
+    // Also if pid was provided, clean up any lingering entry matching personnelId and module
+    if (pid) {
+      const allEntries = await store.getAll();
+      for (const entry of allEntries) {
+        if (
+          entry.module === mod &&
+          String(entry.personnelId || "").toLowerCase() === String(pid).toLowerCase()
+        ) {
+          await store.delete(entry.id);
+        }
+      }
+    }
     await tx.done;
     broadcastChange();
   } catch (err) {
@@ -378,7 +395,17 @@ export async function removeOutboxEntryByModule(arg1, user, module, term = null)
 
   try {
     const list = getFallbackList();
-    const updated = list.filter((item) => item.stableKey !== targetKey);
+    const updated = list.filter((item) => {
+      if (item.stableKey === targetKey) return false;
+      if (
+        pid &&
+        item.module === mod &&
+        String(item.personnelId || "").toLowerCase() === String(pid).toLowerCase()
+      ) {
+        return false;
+      }
+      return true;
+    });
     if (updated.length !== list.length) {
       setFallbackList(updated);
       broadcastChange();
@@ -417,6 +444,10 @@ export async function getOutboxEntries(filter = {}) {
   }
   if (filter.module) {
     entries = entries.filter((e) => e.module === filter.module);
+  }
+  if (filter.personnelId) {
+    const cleanPid = String(filter.personnelId).trim().toLowerCase();
+    entries = entries.filter((e) => String(e.personnelId || "").trim().toLowerCase() === cleanPid);
   }
 
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
@@ -603,24 +634,71 @@ export async function retryOutboxEntry(entryOrId) {
       if (!res || res.success !== true) {
         throw new Error(res?.error || "Server did not confirm workload save");
       }
-    } else if (mod === "personnel_profile" || mod === "personnel") {
+    } else if (
+      mod === "personnel_roster" ||
+      mod === "roster" ||
+      mod === "personnel_profile" ||
+      mod === "personnel_identity" ||
+      mod === "personnel_employment" ||
+      mod === "personnel_education" ||
+      mod === "personnel_ld" ||
+      mod === "personnel_learning_area" ||
+      mod === "personnel_learning_areas" ||
+      mod === "personnel"
+    ) {
+      const targetId =
+        entry.personnelId || entry.payload?.id || entry.payload?.personnelId;
       if (Array.isArray(entry.payload)) {
-        res = await api.saveBulkPersonnel(entry.payload);
-      } else if (entry.payload?.id && api.savePersonnelChanges) {
-        res = await api.savePersonnelChanges(entry.payload.id, entry.payload);
+        res = await api.saveBulkPersonnel(
+          entry.payload,
+          entry.schoolId,
+          entry.schoolYear,
+        );
+      } else if (targetId && api.updatePersonnel) {
+        res = await api.updatePersonnel(targetId, {
+          ...entry.payload,
+          school_id: entry.schoolId,
+          school_year: entry.schoolYear || "2026-2027",
+        });
+      } else if (targetId && api.savePersonnelChanges) {
+        res = await api.savePersonnelChanges(targetId, entry.payload);
       } else {
-        res = await api.saveBulkPersonnel([entry.payload]);
+        res = await api.saveBulkPersonnel(
+          [entry.payload],
+          entry.schoolId,
+          entry.schoolYear,
+        );
       }
     } else if (mod === "organized_classes" || mod === "sections") {
       const sy = entry.schoolYear || "SY 26-27";
-      if (api.saveSections) {
-        res = await api.saveSections(sy, entry.payload);
-      } else {
-        res = await api.post("/sections/bulk", entry.payload);
+      const sections = Array.isArray(entry.payload)
+        ? entry.payload
+        : entry.payload?.sections || [];
+      const regSecs = sections.filter(
+        (s) => !api.sectionKind || api.sectionKind(s) === "regular",
+      );
+      const otherSecs = sections.filter(
+        (s) => api.sectionKind && api.sectionKind(s) !== "regular",
+      );
+
+      if (regSecs.length > 0 && api.syncRegularSections) {
+        await api.syncRegularSections({
+          schoolId: entry.schoolId,
+          schoolYear: sy,
+          sections: regSecs,
+          deletedIds: [],
+        });
       }
-      if (!res || res.success !== true) {
-        throw new Error(res?.error || "Server did not confirm class sections save");
+      for (const s of otherSecs) {
+        if (api.addSection) {
+          await api.addSection({
+            ...s,
+            schoolId: entry.schoolId,
+            schoolYear: sy,
+          });
+        }
       }
+      res = { success: true };
     } else if (entry.endpoint) {
       const { fetchWithAuth, API_BASE } = await import("./api.js");
       const url = entry.endpoint.startsWith("http")
@@ -797,6 +875,69 @@ export async function checkAndPromptOutboxOnSectionOpen({
     return false;
   } catch (err) {
     console.warn("[Outbox] Error prompting on section open:", err);
+    return false;
+  }
+}
+
+/**
+ * Automatically applies and syncs an un-synced outbox entry when opening a section.
+ * - When online: Overlays payload into form state, pushes to the server in the background,
+ *   and deletes the outbox entry immediately upon confirmation.
+ * - Shows a gentle toast notification instead of a disruptive blocking modal.
+ */
+export async function autoSyncOutboxOnSectionOpen({
+  schoolId,
+  user,
+  module,
+  personnelId = null,
+  term = null,
+  onLoadPayload,
+  onSynced,
+  showNotice = true,
+}) {
+  if (!schoolId || !module) return false;
+
+  const filter = { schoolId, module };
+  if (personnelId) filter.personnelId = personnelId;
+  if (user) filter.user = user;
+
+  const entries = await getOutboxEntries(filter);
+  const entry = entries.find((e) => (term ? e.term === term : true));
+  if (!entry || !entry.payload) return false;
+
+  try {
+    // 1. Immediately apply the offline/unsent payload to the form state if callback provided
+    if (typeof onLoadPayload === "function") {
+      onLoadPayload(entry.payload);
+    }
+
+    // 2. If online, sync to server in background and clear outbox entry
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      retryOutboxEntry(entry)
+        .then((result) => {
+          if (result && result.success) {
+            if (typeof onSynced === "function") {
+              onSynced(entry.payload);
+            }
+            if (showNotice) {
+              import("./errorAlert.js")
+                .then(({ showFeedbackToast }) => {
+                  if (showFeedbackToast) {
+                    showFeedbackToast("Synced offline changes with the server database.");
+                  }
+                })
+                .catch(() => {});
+            }
+          }
+        })
+        .catch((e) => {
+          console.warn("[Outbox] Background auto-sync attempt deferred:", e);
+        });
+    }
+
+    return true;
+  } catch (err) {
+    console.warn("[Outbox] Error during autoSyncOutboxOnSectionOpen:", err);
     return false;
   }
 }

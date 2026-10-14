@@ -4,7 +4,7 @@ const db = require("../../db");
 
 function formatNoWorkRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -27,7 +27,6 @@ function formatNoWorkRecord(row) {
     eventType: row.event_type,
     event_type: row.event_type,
     title: row.title,
-    rawPayload: raw,
   };
 }
 
@@ -119,13 +118,12 @@ router.post("/", async (req, res) => {
 
     const query = `
       INSERT INTO overload_no_work (
-        id, region, division, school_id, school_year, no_work_date, event_type, title, raw_payload
+        id, region, division, school_id, school_year, no_work_date, event_type, title
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (region, division, school_id, school_year, no_work_date) DO UPDATE SET
         event_type = EXCLUDED.event_type,
         title = EXCLUDED.title,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -139,7 +137,6 @@ router.post("/", async (req, res) => {
       targetDate,
       targetEventType,
       targetTitle,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

@@ -2,6 +2,24 @@ const db = require("../../db");
 const { insightEdPool } = require("../../db");
 const { reconstructPayload } = require("../../utils/workloadPayload");
 const { codec } = require("../../utils/payloadExtras");
+const { coerceDateField, isDatePlaceholder } = require("../../utils/dateInput");
+
+function safeCoerceDate(val, fieldName = "date") {
+  if (isDatePlaceholder(val)) return null;
+  const str = String(val).trim();
+  if (/^(n\/?a|none|null|undefined|-|--|—|not applicable|tbd)$/i.test(str)) {
+    return null;
+  }
+  try {
+    return coerceDateField(str, fieldName);
+  } catch (e) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().slice(0, 10);
+    }
+    return null;
+  }
+}
 
 const adminTaskPayload = codec("esf7_admin_task");
 
@@ -25,6 +43,71 @@ async function resolvePersonnelId(dbClient, rawId) {
     if (mapRes.rows.length > 0) return mapRes.rows[0].new_id;
   } catch (e) {}
   return trimmed;
+}
+
+async function resolvePersonnelIdentity(dbClient, schoolId, p) {
+  if (!p) return null;
+  const poolOrClient = dbClient || db;
+  const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+  const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+
+  const rawId = p.id ? String(p.id).trim() : null;
+  const rawLegacyId = (p.legacy_id || p.legacyId) ? String(p.legacy_id || p.legacyId).trim() : null;
+  const rawPrn = p.prn ? String(p.prn).trim() : null;
+  const empNo = (p.employeeNo || p.employee_no) ? String(p.employeeNo || p.employee_no).trim() : null;
+  const fName = String(p.firstName || p.first_name || p.first || "").toUpperCase().trim();
+  const lName = String(p.lastName || p.last_name || p.last || "").toUpperCase().trim();
+
+  // 1. Direct match by ID in this school
+  if (rawId) {
+    const byId = await poolOrClient.query(
+      `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND (id = $2 OR legacy_id = $2) LIMIT 1`,
+      [sidPair, rawId]
+    );
+    if (byId.rows.length > 0) return byId.rows[0];
+  }
+
+  // 2. Match by legacy_id in this school
+  if (rawLegacyId) {
+    const byLeg = await poolOrClient.query(
+      `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND (legacy_id = $2 OR id = $2) LIMIT 1`,
+      [sidPair, rawLegacyId]
+    );
+    if (byLeg.rows.length > 0) return byLeg.rows[0];
+  }
+
+  // 3. Match by canonical PRN in this school (ignore placeholders)
+  if (rawPrn && rawPrn !== "N/A" && rawPrn !== "NONE" && rawPrn.length > 2) {
+    const byPrn = await poolOrClient.query(
+      `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND UPPER(TRIM(prn)) = UPPER(TRIM($2)) LIMIT 1`,
+      [sidPair, rawPrn]
+    );
+    if (byPrn.rows.length > 0) return byPrn.rows[0];
+  }
+
+  // 4. Match by Employee Number in this school
+  if (empNo && empNo !== "N/A" && empNo !== "NONE" && empNo.length > 2) {
+    const byEmp = await poolOrClient.query(
+      `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND TRIM(employee_no) = $2 LIMIT 1`,
+      [sidPair, empNo]
+    );
+    if (byEmp.rows.length > 0) return byEmp.rows[0];
+  }
+
+  // 5. Match by Normalized First Name + Last Name in this school
+  if (fName && lName) {
+    const byName = await poolOrClient.query(
+      `SELECT id, prn, school_id, status FROM esf7_personnel_profile 
+       WHERE school_id = ANY($1) 
+         AND UPPER(TRIM(first_name)) = $2 
+         AND UPPER(TRIM(last_name)) = $3 
+       LIMIT 1`,
+      [sidPair, fName, lName]
+    );
+    if (byName.rows.length > 0) return byName.rows[0];
+  }
+
+  return null;
 }
 
 function formatCanonicalPrn(rawPrn, seq) {
@@ -1222,7 +1305,7 @@ const calculateAge = (dobString) => {
 
 function formatTrainingRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -1247,7 +1330,7 @@ function formatTrainingRecord(row) {
 
 function formatDesignationRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -1387,7 +1470,7 @@ function formatPersonnelRecord(
   adminTaskList = [],
 ) {
   if (!row) return null;
-  const rawProfile = row.raw_payload || {};
+  const rawProfile = row.extras || {};
   const rawEmp = row.employment_raw_payload || {};
   const rawEduc = row.educ_raw_payload || {};
   const rawLA = row.la_raw_payload || {};
@@ -1655,8 +1738,10 @@ function formatPersonnelRecord(
 
 
 module.exports = {
+  safeCoerceDate,
   formatCanonicalPrn,
   resolvePersonnelId,
+  resolvePersonnelIdentity,
   convertExcelTimeToHHMM,
   parseDays,
   sanitizeGrade,
