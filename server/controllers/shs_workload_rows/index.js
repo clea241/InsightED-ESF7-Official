@@ -4,7 +4,7 @@ const db = require("../../db");
 
 function formatShsWorkloadRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -36,7 +36,6 @@ function formatShsWorkloadRecord(row) {
     endTime: row.end_time ? String(row.end_time).substring(0, 5) : null,
     end_time: row.end_time ? String(row.end_time).substring(0, 5) : null,
     days: row.days || ["M", "T", "W", "TH", "F"],
-    rawPayload: raw,
   };
 }
 
@@ -141,9 +140,9 @@ router.post("/", async (req, res) => {
       INSERT INTO esf7_shs_workload_rows (
         id, personnel_id, school_id, school_year, term, semester, grade_level,
         track_strand, shs_subject_category, section_id, section_name,
-        subject, subject_id, remediation_subject, start_time, end_time, days, raw_payload
+        subject, subject_id, remediation_subject, start_time, end_time, days
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
       RETURNING *;
     `;
 
@@ -165,7 +164,6 @@ router.post("/", async (req, res) => {
       start_time || startTime || null,
       end_time || endTime || null,
       JSON.stringify(days || ["M", "T", "W", "TH", "F"]),
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

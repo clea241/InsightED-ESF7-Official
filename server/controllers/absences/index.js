@@ -5,7 +5,7 @@ const { getSchoolIdFromRequest } = require("../../utils/auth");
 
 function formatAbsenceRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -39,7 +39,6 @@ function formatAbsenceRecord(row) {
     leave_type: row.leave_type,
     totalDays: row.total_days || 1,
     total_days: row.total_days || 1,
-    rawPayload: raw,
   };
 }
 
@@ -135,12 +134,12 @@ router.post("/", async (req, res) => {
 
     const query = `
       INSERT INTO overload_absences (
-        id, personnel_id, school_id, school_year, start_date, end_date, leave_type, total_days, raw_payload
+        id, personnel_id, school_id, school_year, start_date, end_date, leave_type, total_days
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (id) DO UPDATE SET
         start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, leave_type = EXCLUDED.leave_type,
-        total_days = EXCLUDED.total_days, raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
+        total_days = EXCLUDED.total_days, updated_at = NOW()
       RETURNING *;
     `;
 
@@ -153,7 +152,6 @@ router.post("/", async (req, res) => {
       eDate,
       leave_type || leaveType || "SICK_LEAVE",
       total_days || totalDays || 1,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

@@ -9,7 +9,7 @@ router.get("/", async (req, res) => {
       .query(
         `
       SELECT t.*, 
-             COALESCE(t.relieving_personnel_id, t.raw_payload->>'substituteTeacherId') as substitute_personnel_id,
+             COALESCE(t.relieving_personnel_id, t.extras->>'substituteTeacherId', '') as substitute_personnel_id,
              COALESCE(w.subject, t.subject) as subject_name, 
              w.start_time, w.end_time, w.days
       FROM esf7_workload_transfer t
@@ -34,9 +34,9 @@ router.get("/", async (req, res) => {
         workloadRowId: row.workload_id || row.workload_row_id,
         startDate: row.start_date,
         endDate: row.end_date,
-        reason: row.reason || row.raw_payload?.reason || "",
+        reason: row.reason || row.extras?.reason || "",
         status: row.status || "active",
-        loggedBy: row.logged_by || row.raw_payload?.loggedBy || "School Head",
+        loggedBy: row.logged_by || row.extras?.loggedBy || "School Head",
         workloadRows:
           row.subject_name || row.subject
             ? [

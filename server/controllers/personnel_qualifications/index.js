@@ -223,7 +223,7 @@ const parsePostGraduateDiscipline = (
 
 function formatEducRecord(row) {
   if (!row) return null;
-  const raw = row.extras || row.raw_payload || {};
+  const raw = row.extras || {};
   const elList = Array.isArray(row.eligibility) ? row.eligibility : [];
 
   const parsedPostDisc = parsePostGraduateDiscipline(

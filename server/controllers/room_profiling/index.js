@@ -616,7 +616,7 @@ router.post("/accept", async (req, res) => {
         p.birthdate, p.sex_at_birth, p.civil_status, p.solo_parent,
         p.religion, p.ethnic_group, p.philsys_no, p.no_philsys,
         p.employee_no, p.tin, p.no_tin, p.deped_email, p.no_deped_email,
-        p.allow_email_discrepancy, p.is_school_head, p.disabled_service_years, p.raw_payload as profile_raw,
+        p.allow_email_discrepancy, p.is_school_head, p.disabled_service_years, '{}'::jsonb as profile_raw,
         e.id as emp_id, e.position, e.position_category, e.nature_of_appointment,
         e.fund_source, e.hiring_arrangement, e.deployment_status,
         e.assigned_schools, e.grade_levels_taught, e.first_service_date,
@@ -1149,7 +1149,6 @@ router.post("/accept", async (req, res) => {
           sub.allowEmailDiscrepancy === true ||
           existing?.allow_email_discrepancy === true,
         is_school_head: isHead,
-        raw_payload: JSON.stringify(fullRawPayload),
         updated_at: now,
       });
 
@@ -1417,7 +1416,6 @@ router.post("/accept", async (req, res) => {
           "no_deped_email",
           "allow_email_discrepancy",
           "is_school_head",
-          "raw_payload",
           "updated_at",
         ],
         "(id)",
@@ -1443,7 +1441,6 @@ router.post("/accept", async (req, res) => {
           no_deped_email = EXCLUDED.no_deped_email,
           allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
           is_school_head = EXCLUDED.is_school_head,
-          raw_payload = COALESCE(esf7_personnel_profile.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
           updated_at = NOW()`,
         profileUpsertRows,
       );
@@ -2023,13 +2020,6 @@ router.post("/sync-roster", async (req, res) => {
         no_deped_email: noDepedEmail,
         allow_email_discrepancy: Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
         is_school_head: isHead,
-        raw_payload: JSON.stringify({
-          position: pos,
-          positionCategory: posCat,
-          stepIncrement: step,
-          profilingCode: p.profilingCode || "",
-          learningAreaMap: p.learningAreaMap || p.matrix_data || {},
-        }),
       });
 
       employmentUpsertRows.push({
@@ -2132,7 +2122,6 @@ router.post("/sync-roster", async (req, res) => {
           "no_deped_email",
           "allow_email_discrepancy",
           "is_school_head",
-          "raw_payload",
         ],
         "(id)",
         `UPDATE SET
@@ -2169,7 +2158,6 @@ router.post("/sync-roster", async (req, res) => {
           no_deped_email = EXCLUDED.no_deped_email,
           allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
           is_school_head = EXCLUDED.is_school_head,
-          raw_payload = COALESCE(esf7_personnel_profile.raw_payload, '{}'::jsonb) || EXCLUDED.raw_payload,
           updated_at = NOW()`,
         profileUpsertRows,
       );
@@ -2345,7 +2333,7 @@ router.get("/roster", async (req, res) => {
         p.sex_at_birth AS "sexAtBirth", p.civil_status AS "civilStatus", p.solo_parent AS "soloParent",
         p.religion, p.ethnic_group AS "ethnicGroup", p.birthdate, p.age, p.employee_no AS "employeeNo",
         p.deped_email AS "depedEmail", p.no_deped_email AS "noDepedEmail", p.is_school_head AS "isSchoolHead",
-        p.type, p.raw_payload,
+        p.type,
         e.position, e.position_category AS "positionCategory", e.step_increment AS "stepIncrement",
         e.fund_source AS "fundSource", e.nature_of_appointment AS "natureOfAppointment",
         e.hiring_arrangement AS "hiringArrangement", e.deployment_status AS "deploymentStatus",
@@ -2376,7 +2364,6 @@ router.get("/roster", async (req, res) => {
           : "";
         const bYear = bDateStr ? bDateStr.substring(0, 4) : "";
         return {
-          ...(r.raw_payload || {}),
           id: r.id,
           prn: r.prn || "",
           status: r.status || "canonical",
@@ -2401,7 +2388,7 @@ router.get("/roster", async (req, res) => {
           depedEmail: r.depedEmail || "",
           noDepedEmail: Boolean(r.noDepedEmail),
           isSchoolHead: Boolean(r.isSchoolHead),
-          position: r.position || r.raw_payload?.position || "TEACHER I",
+          position: r.position || "TEACHER I",
           positionCategory: r.positionCategory || "TEACHING",
           stepIncrement: r.stepIncrement || 1,
           fundSource: r.fundSource || "DEPED",
@@ -2421,7 +2408,7 @@ router.get("/roster", async (req, res) => {
           ],
           prcSpecialization: r.prcSpecialization || r.major || "",
           type: r.type || "teaching",
-          profilingCode: r.raw_payload?.profilingCode || "",
+          profilingCode: "",
           sourceConfirmed: true,
           isFallback: false,
         };
@@ -2506,7 +2493,7 @@ router.post(
           `
         SELECT 
           p.id, p.prn, p.first_name AS "firstName", p.last_name AS "lastName", p.middle_name AS "middleName",
-          p.birthdate, p.age, p.raw_payload,
+          p.birthdate, p.age,
           e.position, e.position_category AS "positionCategory"
         FROM esf7_personnel_profile p
         LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
@@ -2537,8 +2524,8 @@ router.post(
             middleName: r.middleName || "",
             birthdate: bDateStr,
             birthYear: bYear,
-            position: r.position || r.raw_payload?.position || "Teacher",
-            profilingCode: r.raw_payload?.profilingCode || "",
+            position: r.position || "Teacher",
+            profilingCode: "",
             sourceConfirmed: true,
             isFallback: false,
           };

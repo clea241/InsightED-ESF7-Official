@@ -12,7 +12,7 @@ const VALID_REASONS = [
 
 function formatOverloadPayRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -31,7 +31,6 @@ function formatOverloadPayRecord(row) {
     netTermPay: Number(row.net_term_pay || 0),
     net_term_pay: Number(row.net_term_pay || 0),
     reasons: Array.isArray(row.reasons) ? row.reasons : ["Teacher Shortage"],
-    rawPayload: raw,
   };
 }
 
@@ -139,16 +138,15 @@ router.post("/save", async (req, res) => {
     const sql = `
       INSERT INTO overload_pay_and_reason (
         id, personnel_id, school_id, school_year, term, month,
-        overload_hours, overload_pay, net_term_pay, reasons, raw_payload, updated_at
+        overload_hours, overload_pay, net_term_pay, reasons, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
       ON CONFLICT (personnel_id, school_year, term, month)
       DO UPDATE SET
         overload_hours = CASE WHEN EXCLUDED.overload_hours > 0 THEN EXCLUDED.overload_hours ELSE overload_pay_and_reason.overload_hours END,
         overload_pay = CASE WHEN EXCLUDED.overload_pay > 0 THEN EXCLUDED.overload_pay ELSE overload_pay_and_reason.overload_pay END,
         net_term_pay = CASE WHEN EXCLUDED.net_term_pay > 0 THEN EXCLUDED.net_term_pay ELSE overload_pay_and_reason.net_term_pay END,
         reasons = EXCLUDED.reasons,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -189,7 +187,6 @@ router.post("/save", async (req, res) => {
       numOverloadPay,
       numNetTermPay,
       JSON.stringify(cleanedReasons),
-      JSON.stringify(req.body),
     ]);
 
     res.json({
@@ -259,16 +256,15 @@ router.post("/batch", async (req, res) => {
         INSERT INTO overload_pay_and_reason (
           id, personnel_id, school_id, school_year, term, month,
           overload_hours, overload_pay, net_term_pay,
-          reasons, raw_payload, updated_at
+          reasons, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
         ON CONFLICT (personnel_id, school_year, term, month)
         DO UPDATE SET
           overload_hours = CASE WHEN EXCLUDED.overload_hours > 0 THEN EXCLUDED.overload_hours ELSE overload_pay_and_reason.overload_hours END,
           overload_pay = CASE WHEN EXCLUDED.overload_pay > 0 THEN EXCLUDED.overload_pay ELSE overload_pay_and_reason.overload_pay END,
           net_term_pay = CASE WHEN EXCLUDED.net_term_pay > 0 THEN EXCLUDED.net_term_pay ELSE overload_pay_and_reason.net_term_pay END,
           reasons = EXCLUDED.reasons,
-          raw_payload = EXCLUDED.raw_payload,
           updated_at = NOW()
         RETURNING *;
       `;
@@ -284,7 +280,6 @@ router.post("/batch", async (req, res) => {
         numOverloadPay,
         numNetTermPay,
         JSON.stringify(reasons.length > 0 ? reasons : ["Teacher Shortage"]),
-        JSON.stringify(item),
       ]);
 
       savedRecords.push(formatOverloadPayRecord(result.rows[0]));

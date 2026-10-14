@@ -3604,9 +3604,14 @@ export const AppProvider = ({ children }) => {
       };
       try {
         await setLocalDraft(draftKey, draftData);
-        markDraftDirty();
-        await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
-        clearDraftError();
+        // School profile, personnel roster, personnel profile, and organized classes save directly to normalized tables;
+        // remove the connection and write to school_drafts for these nodes.
+        const isNormalizedNode = ["school", "roster", "profile", "classes"].includes(nodeId);
+        if (!isNormalizedNode) {
+          markDraftDirty();
+          await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
+          clearDraftError();
+        }
 
         // Milestone Sync to esf7_school_node_status
         const nodeMap = {
@@ -4864,57 +4869,13 @@ export const AppProvider = ({ children }) => {
             (p) => !checkIfTombstoned(p),
           );
 
-          // Only initialize from DB list if the draft is empty
-          if (draftPersonnel.length === 0 && filteredDbList.length > 0) {
+          // Database is the authoritative source of truth: load personnel directly from database tables
+          if (filteredDbList.length > 0) {
             console.log(
-              `[Draft Sync] Initializing draft personnel from master list (${filteredDbList.length} personnel)...`,
+              `[Personnel Load] Loaded ${filteredDbList.length} personnel directly from database table...`,
             );
             draftPersonnel = filteredDbList;
             activeDraft.personnel = draftPersonnel;
-          } else if (filteredDbList.length > 0) {
-            const draftKeys = new Set(
-              draftPersonnel
-                .flatMap((p) => [
-                  String(p.id || "")
-                    .trim()
-                    .toLowerCase(),
-                  String(p.prn || "")
-                    .trim()
-                    .toLowerCase(),
-                  String(p.employeeNo || p.employee_no || "")
-                    .trim()
-                    .toLowerCase(),
-                  `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase(),
-                ])
-                .filter(isNonGenericKey),
-            );
-            const missingMasterPersonnel = filteredDbList.filter((p) => {
-              const idKey = String(p.id || "")
-                .trim()
-                .toLowerCase();
-              const prnKey = String(p.prn || "")
-                .trim()
-                .toLowerCase();
-              const empKey = String(p.employeeNo || p.employee_no || "")
-                .trim()
-                .toLowerCase();
-              const nameKey =
-                `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-              const isTombstoned = checkIfTombstoned(p);
-              const isInDraft =
-                (isNonGenericKey(idKey) && draftKeys.has(idKey)) ||
-                (isNonGenericKey(prnKey) && draftKeys.has(prnKey)) ||
-                (isNonGenericKey(nameKey) && draftKeys.has(nameKey)) ||
-                (isNonGenericKey(empKey) && draftKeys.has(empKey));
-              return !isInDraft && !isTombstoned;
-            });
-            if (missingMasterPersonnel.length > 0) {
-              console.log(
-                `[Draft Sync] Merging ${missingMasterPersonnel.length} master personnel from official database into draft...`,
-              );
-              draftPersonnel = [...draftPersonnel, ...missingMasterPersonnel];
-              activeDraft.personnel = draftPersonnel;
-            }
           }
 
           // Database is the source of truth: overlay DB master profiling fields onto draft personnel where draft has placeholder or missing profiling info
@@ -7099,19 +7060,8 @@ export const AppProvider = ({ children }) => {
         data: newDraftData,
       };
       await setLocalDraft(draftKey, newDraftData);
-      if (!loadIncompleteRef.current && schoolInfo?.schoolId) {
-        markDraftDirty();
-        saveDraft(
-          schoolInfo.schoolId,
-          schoolInfo.schoolYear || "SY 26-27",
-          newDraftData,
-        ).catch((e) =>
-          reportError(e, {
-            action: "Saving your draft after removing a personnel record",
-            handler: "deletePersonnel",
-          }),
-        );
-      }
+      // Personnel deletions are persisted directly to backend DB (api.deletePersonnel);
+      // bypass writing to school_drafts.
     } catch (err) {
       console.warn("Error saving draft after delete:", err);
     }

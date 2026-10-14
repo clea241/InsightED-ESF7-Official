@@ -1,3 +1,4 @@
+/* eslint-disable no-unreachable */
 const db = require("./db");
 const redisQueue = require("./services/redisQueue");
 const { buildExtras: buildWorkloadExtras } = require("./utils/workloadPayload");
@@ -529,6 +530,8 @@ let isRedisWorkerActive = false;
 let currentProcessingJobId = null;
 
 async function processJobById(targetJobId, specificClient = null) {
+  console.log("ℹ️ [Queue Worker] processJobById bypassed: worker is deactivated.");
+  return false;
   let client = specificClient;
   let shouldRelease = false;
   let jobId = targetJobId;
@@ -3215,6 +3218,7 @@ async function processJobById(targetJobId, specificClient = null) {
 }
 
 async function processNextJob() {
+  return false;
   if (activeWorkersCount >= MAX_CONCURRENT_WORKERS) return false;
   activeWorkersCount++;
 
@@ -3314,6 +3318,7 @@ async function drainBacklog(consumerName) {
 async function startRedisStreamWorker(
   consumerName = `worker-${process.pid || "1"}`,
 ) {
+  return;
   if (isRedisWorkerActive) return;
   isRedisWorkerActive = true;
 
@@ -3417,6 +3422,8 @@ function setPollInterval(ms) {
 }
 
 async function startWorker(intervalMs = 2000) {
+  console.log("ℹ️ [Queue Worker] Submissions queue worker is deactivated per user instructions.");
+  return;
   if (workerInterval || isRedisWorkerActive) return;
 
   console.log(

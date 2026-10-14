@@ -94,7 +94,7 @@ function formatRegularRecord(row) {
 
 function formatSnedRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const m = Number(row.male_learners || 0);
   const f = Number(row.female_learners || 0);
   const total =
@@ -129,13 +129,12 @@ function formatSnedRecord(row) {
     number_of_learners: total,
     sizeStatus: row.size_status || "WITHIN STANDARD",
     size_status: row.size_status || "WITHIN STANDARD",
-    rawPayload: raw,
   };
 }
 
 function formatAlsRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const m = Number(row.male_learners || 0);
   const f = Number(row.female_learners || 0);
   const total =
@@ -172,13 +171,12 @@ function formatAlsRecord(row) {
     number_of_learners: total,
     sizeStatus: row.size_status || "WITHIN STANDARD",
     size_status: row.size_status || "WITHIN STANDARD",
-    rawPayload: raw,
   };
 }
 
 function formatAralRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const m = Number(row.male_learners || 0);
   const f = Number(row.female_learners || 0);
   const total =
@@ -214,13 +212,12 @@ function formatAralRecord(row) {
     totalLearners: total,
     total_learners: total,
     numberOfLearners: total,
-    rawPayload: raw,
   };
 }
 
 function formatRemedialRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   const m = Number(row.male_learners || 0);
   const f = Number(row.female_learners || 0);
   const total =
@@ -260,7 +257,6 @@ function formatRemedialRecord(row) {
     totalLearners: total,
     total_learners: total,
     numberOfLearners: total,
-    rawPayload: raw,
   };
 }
 
@@ -525,18 +521,7 @@ async function upsertRegularSection(client, body) {
   // `extras` keeps what the UI sent that no typed column holds (including the adviser id for people without a profile row
   // yet). A partial update is merged over the stored extras, so fields it does not mention (like the adviser) survive.
   // A row not yet backfilled still carries the old raw_payload: fold it into extras first so nothing is lost.
-  const hasLegacyPayload = Boolean(
-    existing &&
-    existing.raw_payload &&
-    Object.keys(existing.raw_payload).length > 0,
-  );
-  const baseExtras = !existing
-    ? {}
-    : hasLegacyPayload
-      ? regularPayload.buildExtras(existing.raw_payload, existing, {
-          dropEcho: false,
-        })
-      : existing.extras || {};
+  const baseExtras = !existing ? {} : existing.extras || {};
   const payloadJson = JSON.stringify(
     regularPayload.buildExtras(
       adviserProvided ? body : { ...baseExtras, ...body },
@@ -559,18 +544,7 @@ async function upsertRegularSection(client, body) {
       },
     ),
   );
-  const clearLegacyPayload = async (rowId) => {
-    // before the raw_payload column is dropped: the old payload now lives in extras; a missing column (already dropped) is fine
-    if (!hasLegacyPayload) return;
-    try {
-      await client.query(
-        "UPDATE esf7_regular_sections SET raw_payload = '{}'::jsonb WHERE id = $1",
-        [rowId],
-      );
-    } catch (e) {
-      if (e.code !== "42703") throw e;
-    }
-  };
+  const clearLegacyPayload = async () => {};
 
   if (existing) {
     const r = await client.query(
@@ -697,45 +671,6 @@ router.post("/regular/sync", async (req, res) => {
                 [delArr, schoolIds],
               )
               .catch(() => {});
-
-            const draftRes = await dbPool.query(
-              "SELECT school_year, payload FROM school_drafts WHERE school_id = $1 OR school_id = $2",
-              schoolIds,
-            );
-            for (const r of draftRes.rows) {
-              if (r.payload) {
-                let modified = false;
-                const delSet = new Set(delArr);
-                if (Array.isArray(r.payload.classSections)) {
-                  const origLen = r.payload.classSections.length;
-                  r.payload.classSections = r.payload.classSections.filter(
-                    (s) => !delSet.has(String(s.id)),
-                  );
-                  if (r.payload.classSections.length !== origLen)
-                    modified = true;
-                }
-                if (Array.isArray(r.payload.sections)) {
-                  const origLen = r.payload.sections.length;
-                  r.payload.sections = r.payload.sections.filter(
-                    (s) => !delSet.has(String(s.id)),
-                  );
-                  if (r.payload.sections.length !== origLen) modified = true;
-                }
-                if (modified) {
-                  const curDel = Array.isArray(r.payload.deletedSectionIds)
-                    ? r.payload.deletedSectionIds.map(String)
-                    : [];
-                  delArr.forEach((id) => {
-                    if (!curDel.includes(id)) curDel.push(id);
-                  });
-                  r.payload.deletedSectionIds = curDel;
-                  await dbPool.query(
-                    "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE (school_id = $2 OR school_id = $3) AND school_year = $4",
-                    [r.payload, schoolId, "SCH-" + schoolId, r.school_year],
-                  );
-                }
-              }
-            }
           } catch (e) {}
         };
 
@@ -833,9 +768,9 @@ router.post("/sned", async (req, res) => {
     const query = `
       INSERT INTO esf7_sned_sections (
         id, school_id, school_year, section_type, grade_level, section_name, program_type,
-        adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
+        adviser_id, male_learners, female_learners, number_of_learners, size_status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
         section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
@@ -845,7 +780,6 @@ router.post("/sned", async (req, res) => {
         female_learners = EXCLUDED.female_learners,
         number_of_learners = EXCLUDED.number_of_learners,
         size_status = EXCLUDED.size_status,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -863,7 +797,6 @@ router.post("/sned", async (req, res) => {
       fVal,
       totalLearners,
       targetSizeStatus,
-      JSON.stringify(req.body),
     ]);
     res.status(201).json(formatSnedRecord(result.rows[0]));
   } catch (err) {
@@ -952,9 +885,9 @@ router.post("/als", async (req, res) => {
     const query = `
       INSERT INTO esf7_als_sections (
         id, school_id, school_year, section_type, grade_level, section_name, delivery_mode, clc_name,
-        adviser_id, male_learners, female_learners, number_of_learners, size_status, raw_payload
+        adviser_id, male_learners, female_learners, number_of_learners, size_status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (school_id, school_year, section_name) DO UPDATE SET
         section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
@@ -965,7 +898,6 @@ router.post("/als", async (req, res) => {
         female_learners = EXCLUDED.female_learners,
         number_of_learners = EXCLUDED.number_of_learners,
         size_status = EXCLUDED.size_status,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -984,7 +916,6 @@ router.post("/als", async (req, res) => {
       fVal,
       totalLearners,
       targetSizeStatus,
-      JSON.stringify(req.body),
     ]);
     res.status(201).json(formatAlsRecord(result.rows[0]));
   } catch (err) {
@@ -1067,9 +998,9 @@ router.post("/aral", async (req, res) => {
     const query = `
       INSERT INTO esf7_aral_sections (
         id, school_id, school_year, basis_type, section_type, grade_level, assessment_tool,
-        profile_level, section_name, tutor_id, male_learners, female_learners, total_learners, raw_payload
+        profile_level, section_name, tutor_id, male_learners, female_learners, total_learners
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (id) DO UPDATE SET
         basis_type = EXCLUDED.basis_type,
         section_type = EXCLUDED.section_type,
@@ -1081,7 +1012,6 @@ router.post("/aral", async (req, res) => {
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         total_learners = EXCLUDED.total_learners,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -1100,7 +1030,6 @@ router.post("/aral", async (req, res) => {
       mVal,
       fVal,
       computedTotal,
-      JSON.stringify(req.body),
     ]);
     res.status(201).json(formatAralRecord(result.rows[0]));
   } catch (err) {
@@ -1188,9 +1117,9 @@ router.post("/remedial-enrichment", async (req, res) => {
     const query = `
       INSERT INTO esf7_remedial_enrichment_sections (
         id, school_id, school_year, intervention_type, section_type, grade_level, section_name,
-        assigned_teacher_id, male_learners, female_learners, total_learners, raw_payload
+        assigned_teacher_id, male_learners, female_learners, total_learners
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       ON CONFLICT (id) DO UPDATE SET
         intervention_type = EXCLUDED.intervention_type,
         section_type = EXCLUDED.section_type,
@@ -1200,7 +1129,6 @@ router.post("/remedial-enrichment", async (req, res) => {
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         total_learners = EXCLUDED.total_learners,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
       RETURNING *;
     `;
@@ -1217,7 +1145,6 @@ router.post("/remedial-enrichment", async (req, res) => {
       mVal,
       fVal,
       computedTotal,
-      JSON.stringify(req.body),
     ]);
     res.status(201).json(formatRemedialRecord(result.rows[0]));
   } catch (err) {
@@ -1376,9 +1303,6 @@ router.delete("/:id", async (req, res) => {
     const cleanSchoolId = schoolId
       ? String(schoolId).replace(/^SCH-/i, "").trim()
       : null;
-    const schoolIds = [schoolId, cleanSchoolId, "SCH-" + cleanSchoolId].filter(
-      Boolean,
-    );
 
     const executeDelete = async (dbPool) => {
       if (!dbPool || !dbPool.query) return;

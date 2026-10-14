@@ -133,14 +133,15 @@ router.get("/incoming", async (req, res) => {
 
     let result = await db.query(queryText, params);
 
-    // Fallback: If 0 rows found in active pool, check the alternative pool
-    if (result.rows.length === 0) {
-      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId)
-        ? db.prodPool
-        : db.stagingPool;
-      const fallbackRes = await fallbackPool
-        .query(queryText, params)
-        .catch(() => ({ rows: [] }));
+    // Fallback: If 0 rows found in active pool, check the alternative pool (bounded to 3s)
+    if (result.rows.length === 0 && db.isDivisionOrTestAccount(cleanSchoolId)) {
+      const fallbackPool = db.prodPool;
+      const fallbackRes = await Promise.race([
+        fallbackPool.query(queryText, params),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error("fallback timeout")), 3000),
+        ),
+      ]).catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
       }
@@ -182,14 +183,15 @@ router.get("/outgoing", async (req, res) => {
 
     let result = await db.query(queryText, params);
 
-    // Fallback: If 0 rows found in active pool, check alternative pool
-    if (result.rows.length === 0) {
-      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId)
-        ? db.prodPool
-        : db.stagingPool;
-      const fallbackRes = await fallbackPool
-        .query(queryText, params)
-        .catch(() => ({ rows: [] }));
+    // Fallback: If 0 rows found in active pool, check alternative pool (bounded to 3s)
+    if (result.rows.length === 0 && db.isDivisionOrTestAccount(cleanSchoolId)) {
+      const fallbackPool = db.prodPool;
+      const fallbackRes = await Promise.race([
+        fallbackPool.query(queryText, params),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error("fallback timeout")), 3000),
+        ),
+      ]).catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
       }
@@ -228,16 +230,13 @@ router.get("/history", async (req, res) => {
 
     let result = await db.query(queryText, params);
 
-    // Fallback: If 0 rows found in active pool, check alternative pool
-    if (result.rows.length === 0) {
-      const fallbackPool = db.isDivisionOrTestAccount(cleanSchoolId)
-        ? db.prodPool
-        : db.stagingPool;
-      // Bounded so a slow secondary pool can never push the request past the gateway timeout.
+    // Fallback: If 0 rows found in active pool, check alternative pool (for division/test accounts only, bounded to 3s)
+    if (result.rows.length === 0 && db.isDivisionOrTestAccount(cleanSchoolId)) {
+      const fallbackPool = db.prodPool;
       const fallbackRes = await Promise.race([
         fallbackPool.query(queryText, params),
         new Promise((_, rej) =>
-          setTimeout(() => rej(new Error("fallback timeout")), 5000),
+          setTimeout(() => rej(new Error("fallback timeout")), 3000),
         ),
       ]).catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {

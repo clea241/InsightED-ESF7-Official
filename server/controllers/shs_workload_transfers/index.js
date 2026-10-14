@@ -4,7 +4,7 @@ const db = require("../../db");
 
 function formatWorkloadTransferRecord(row) {
   if (!row) return null;
-  const raw = row.raw_payload || {};
+  const raw = row.extras || {};
   return {
     ...raw,
     id: row.id,
@@ -45,7 +45,6 @@ function formatWorkloadTransferRecord(row) {
       : null,
     relievingHours: Number(row.relieving_hours || 1.0),
     relieving_hours: Number(row.relieving_hours || 1.0),
-    rawPayload: raw,
   };
 }
 
@@ -155,9 +154,9 @@ router.post("/", async (req, res) => {
     const query = `
       INSERT INTO esf7_workload_transfer (
         id, school_id, school_year, absent_personnel_id, relieving_personnel_id,
-        absence_id, workload_id, workload_type, subject, start_date, end_date, relieving_hours, raw_payload
+        absence_id, workload_id, workload_type, subject, start_date, end_date, relieving_hours
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *;
     `;
 
@@ -174,7 +173,6 @@ router.post("/", async (req, res) => {
       sDate,
       eDate,
       relieving_hours || relievingHours || 1.0,
-      JSON.stringify(req.body),
     ];
 
     const result = await db.query(query, values);

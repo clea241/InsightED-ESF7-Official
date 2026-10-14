@@ -333,7 +333,7 @@ app.use("/api/dev", require("./controllers/dev_snapshot"));
 app.use("/api/node-status", require("./controllers/node_status"));
 app.use("/api/nodes", require("./controllers/node_status"));
 
-const queueWorker = require("./queue_worker");
+// queueWorker removed (automated background writes disabled)
 
 app.get("/api/salary-matrix", async (req, res) => {
   try {
@@ -506,18 +506,35 @@ const initDB = async () => {
   }
 
   try {
-    const schemaPath = path.join(__dirname, "schema.sql");
-    if (fs.existsSync(schemaPath)) {
-      const sql = fs.readFileSync(schemaPath, "utf8");
-      await db.query(sql);
-      console.log("✅ Database schema initialized successfully.");
+    const tableCheck = await db
+      .query(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'esf7_school_profile' LIMIT 1",
+      )
+      .catch(() => ({ rows: [] }));
+
+    if (tableCheck.rows.length === 0 || process.env.FORCE_INIT_SCHEMA === "true") {
+      const schemaPath = path.join(__dirname, "schema.sql");
+      if (fs.existsSync(schemaPath)) {
+        const sql = fs.readFileSync(schemaPath, "utf8");
+        await db.query(sql);
+        console.log("✅ Database schema initialized successfully.");
+      }
+    } else {
+      console.log("ℹ️ Database schema already verified (skipping redundant DDL).");
     }
 
-    // Ensure master table schema (esf7_database, esf7_database_dummy, unit1_school_identity) in active DB
-    await db
+    const esf7DbCheck = await db
       .query(
-        `
-      CREATE TABLE IF NOT EXISTS esf7_database (
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'esf7_database' LIMIT 1",
+      )
+      .catch(() => ({ rows: [] }));
+
+    if (esf7DbCheck.rows.length === 0) {
+      // Ensure master table schema (esf7_database, esf7_database_dummy, unit1_school_identity) in active DB
+      await db
+        .query(
+          `
+        CREATE TABLE IF NOT EXISTS esf7_database (
         id TEXT PRIMARY KEY,
         schoool_id TEXT,
         school_id TEXT,
@@ -587,7 +604,6 @@ const initDB = async () => {
         degree_rows JSONB,
         grade_levels_taught JSONB,
         assigned_schools JSONB,
-        raw_payload JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -596,7 +612,16 @@ const initDB = async () => {
       CREATE INDEX IF NOT EXISTS idx_esf7_database_schoool_id ON esf7_database (schoool_id);
       CREATE INDEX IF NOT EXISTS idx_esf7_database_prn ON esf7_database (prn);
       CREATE INDEX IF NOT EXISTS idx_esf7_database_employee_no ON esf7_database (employee_no);
+    `,
+        )
+        .catch((err) =>
+          console.warn("[Master tables check warning]:", err.message),
+        );
+    }
 
+    await db
+      .query(
+        `
       CREATE TABLE IF NOT EXISTS esf7_database_dummy (LIKE esf7_database INCLUDING ALL);
 
       DO $$
@@ -617,6 +642,7 @@ const initDB = async () => {
     await db.query(`
       DO $$ 
       BEGIN
+        SET LOCAL lock_timeout = '2s';
         ALTER TABLE esf7_submission_queue ALTER COLUMN error_message TYPE TEXT;
         ALTER TABLE esf7_submission_queue ALTER COLUMN status TYPE TEXT;
         ALTER TABLE esf7_submission_queue ALTER COLUMN school_id TYPE TEXT;
@@ -668,7 +694,6 @@ const initDB = async () => {
         ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'canonical';
         ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS legacy_id VARCHAR(128);
-        ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS raw_payload JSONB DEFAULT '{}'::jsonb;
 
         ALTER TABLE school_drafts ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
 
@@ -747,14 +772,7 @@ const startServer = (port) => {
     await initDB();
     redisQueue.startMonitor(); // so queue mode / Redis reachability are accurate in /api/health even without a local worker
 
-    if (process.env.START_LOCAL_WORKER !== "false") {
-      console.log("🌱 Starting local submissions queue worker thread...");
-      queueWorker.startWorker();
-    } else {
-      console.log(
-        "ℹ️ Local queue worker thread disabled (VM/separate daemon execution mode).",
-      );
-    }
+    console.log('ℹ️ Submissions queue worker permanently deactivated.');
 
     if (process.send) {
       process.send("ready");
@@ -781,9 +799,7 @@ const startServer = (port) => {
     console.log(
       `🛑 Graceful shutdown signal received. In-flight requests: ${activeRequests}. Stopping new connections...`,
     );
-    try {
-      queueWorker.stopWorker();
-    } catch (e) {}
+    // queueWorker.stopWorker() removed
 
     server.close(() => {
       console.log(
@@ -813,7 +829,6 @@ const startServer = (port) => {
   };
 
   process.once("SIGUSR2", () => {
-    queueWorker.stopWorker();
     server.close(() => {
       process.kill(process.pid, "SIGUSR2");
     });

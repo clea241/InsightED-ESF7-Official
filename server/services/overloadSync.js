@@ -57,16 +57,6 @@ async function syncAllOverloadPayAndReasons(
       : await db
           .query(`SELECT * FROM esf7_workload_transfer`)
           .catch(() => ({ rows: [] }));
-    const absRes = cleanId
-      ? await db
-          .query(
-            `SELECT * FROM overload_absences WHERE school_id = $1 OR school_id = 'SCH-' || $1`,
-            [cleanId],
-          )
-          .catch(() => ({ rows: [] }))
-      : await db
-          .query(`SELECT * FROM overload_absences`)
-          .catch(() => ({ rows: [] }));
     const draftsRes = cleanId
       ? await db
           .query(
@@ -77,12 +67,6 @@ async function syncAllOverloadPayAndReasons(
       : await db
           .query(`SELECT * FROM school_drafts LIMIT 50`)
           .catch(() => ({ rows: [] }));
-    const smRes = await db
-      .query(
-        `SELECT position_title, step_number, basic_salary FROM salary_matrix`,
-      )
-      .catch(() => ({ rows: [] }));
-    const smRows = smRes.rows || [];
 
     const fallbackSalaries = {
       "TEACHER I": 31705,
@@ -161,7 +145,6 @@ async function syncAllOverloadPayAndReasons(
 
     const dayShortMap = { 1: "M", 2: "T", 3: "W", 4: "TH", 5: "F" };
     let updatedCount = 0;
-    let seq = existingOprRes.rows.length + 1;
 
     for (const p of pRes.rows) {
       const pId = p.id;
@@ -203,7 +186,6 @@ async function syncAllOverloadPayAndReasons(
         savedWorkloads.length > 0 ? savedWorkloads : draftWorkloads;
 
       let netOverloadHours = 0;
-      let totalWeeklyMins = 0;
 
       term1Dates.forEach((d) => {
         const dateStr = d.toISOString().split("T")[0];
@@ -345,10 +327,6 @@ async function syncAllOverloadPayAndReasons(
 
         let oprId = existingRow ? existingRow.id : null;
         if (!oprId) {
-          const countRes = await db.query(
-            `SELECT COUNT(*) FROM overload_pay_and_reason`,
-          );
-          const seqNum = Number(countRes.rows[0].count) + 1;
           const pSuffix = pId.split("-").pop();
           oprId = `OPR-${schoolId}-${pSuffix}`;
         }
@@ -357,16 +335,15 @@ async function syncAllOverloadPayAndReasons(
           INSERT INTO overload_pay_and_reason (
             id, personnel_id, school_id, school_year, term, month,
             overload_hours, overload_pay, net_term_pay,
-            reasons, raw_payload, updated_at
+            reasons, updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, NOW())
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
           ON CONFLICT (personnel_id, school_year, term, month)
           DO UPDATE SET
             overload_hours = EXCLUDED.overload_hours,
             overload_pay = EXCLUDED.overload_pay,
             net_term_pay = EXCLUDED.net_term_pay,
             reasons = EXCLUDED.reasons,
-            raw_payload = EXCLUDED.raw_payload,
             updated_at = NOW()
           RETURNING *;
         `;
@@ -382,11 +359,6 @@ async function syncAllOverloadPayAndReasons(
           overloadPay,
           overloadPay,
           JSON.stringify(reasons),
-          JSON.stringify({
-            termOverloadHours,
-            phtr,
-            overloadPay,
-          }),
         ]);
 
         updatedCount++;

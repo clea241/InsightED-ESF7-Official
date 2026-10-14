@@ -624,6 +624,44 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
     }
   }
 
+  // If school already has normalized personnel in esf7_personnel_profile, skip legacy draft personnel loop
+  if (existingPersRes.rows.length === 0 && Array.isArray(finalPayload.personnel) && finalPayload.personnel.length > 0) {
+    for (const p of finalPayload.personnel) {
+      if (!p) continue;
+      const rawId = p.id ? String(p.id).trim() : null;
+      const rawPrn = p.prn ? String(p.prn).trim() : null;
+      const fName = String(p.firstName || p.first_name || p.first || "").trim().toUpperCase();
+      const lName = String(p.lastName || p.last_name || p.last || "").trim().toUpperCase();
+      const nameKey = fName && lName ? `${fName}__${lName}` : null;
+
+      let finalId = null;
+      let legacyId = null;
+      let pStatus = p.status || null;
+
+      if (rawId && existingById.has(rawId)) {
+        finalId = existingById.get(rawId).id;
+      } else if (rawId && existingByLegacyId.has(rawId)) {
+        finalId = existingByLegacyId.get(rawId).id;
+        legacyId = rawId;
+      } else if (rawPrn && existingByPrn.has(rawPrn)) {
+        finalId = existingByPrn.get(rawPrn).id;
+        if (rawId && rawId !== finalId) legacyId = rawId;
+      } else if (nameKey && existingByName.has(nameKey)) {
+        finalId = existingByName.get(nameKey).id;
+        if (rawId && rawId !== finalId) legacyId = rawId;
+      } else if (rawId) {
+        const mapRes = await safeDraftQuery(client, "sp_get_map", () =>
+          client.query(
+            "SELECT new_id, status FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1",
+            [rawId],
+          )
+        ).catch(() => ({ rows: [] }));
+        if (mapRes.rows.length > 0) {
+          finalId = mapRes.rows[0].new_id;
+          legacyId = rawId;
+          if (!pStatus) pStatus = mapRes.rows[0].status;
+        }
+      }
   const rawPersonnelList = Array.isArray(finalPayload.personnel) ? finalPayload.personnel : [];
   const allRawIds = rawPersonnelList.map(p => p && p.id ? String(p.id).trim() : null).filter(Boolean);
   const existingMappingRes = allRawIds.length > 0
@@ -713,10 +751,84 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
       pType = "teaching";
     }
 
-    let sex = String(p.sexAtBirth || p.sex_at_birth || p.gender || p.sex || "Male").trim();
-    if (!["Male", "Female", "MALE", "FEMALE"].includes(sex)) {
-      sex = "Male";
-    }
+      const birthDate = safeCoerceDate(p.birthdate, "birthdate");
+      const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
+
+      // Upsert esf7_personnel_profile
+      await safeDraftQuery(client, "sp_ins_pers", () =>
+        client.query(
+          `
+          INSERT INTO esf7_personnel_profile (
+            id, prn, status, legacy_id, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
+            tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
+            philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            prn = COALESCE(EXCLUDED.prn, esf7_personnel_profile.prn),
+            status = COALESCE(EXCLUDED.status, esf7_personnel_profile.status),
+            legacy_id = COALESCE(esf7_personnel_profile.legacy_id, EXCLUDED.legacy_id),
+            school_id = EXCLUDED.school_id,
+            school_year = EXCLUDED.school_year,
+            type = EXCLUDED.type,
+            salutation = EXCLUDED.salutation,
+            first_name = EXCLUDED.first_name,
+            middle_name = EXCLUDED.middle_name,
+            last_name = EXCLUDED.last_name,
+            name_extension = EXCLUDED.name_extension,
+            tin = EXCLUDED.tin,
+            no_tin = EXCLUDED.no_tin,
+            sex_at_birth = EXCLUDED.sex_at_birth,
+            civil_status = EXCLUDED.civil_status,
+            solo_parent = EXCLUDED.solo_parent,
+            religion = EXCLUDED.religion,
+            ethnic_group = EXCLUDED.ethnic_group,
+            birthdate = EXCLUDED.birthdate,
+            age = EXCLUDED.age,
+            philsys_no = EXCLUDED.philsys_no,
+            no_philsys = EXCLUDED.no_philsys,
+            employee_no = EXCLUDED.employee_no,
+            deped_email = EXCLUDED.deped_email,
+            no_deped_email = EXCLUDED.no_deped_email,
+            allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
+            is_school_head = EXCLUDED.is_school_head,
+            updated_at = NOW()
+          `,
+          [
+            finalId,
+            finalPrn,
+            pStatus,
+            legacyId,
+            cleanId,
+            schoolYear,
+            pType,
+            p.salutation || "MR.",
+            String(p.firstName || p.first_name || "UNKNOWN").trim(),
+            p.middleName || p.middle_name || null,
+            String(p.lastName || p.last_name || "UNKNOWN").trim(),
+            p.nameExtension || p.name_extension || null,
+            p.tin || null,
+            sanitizeBoolean(p.noTin || p.no_tin),
+            sex,
+            p.civilStatus || p.civil_status || null,
+            sanitizeBoolean(p.soloParent || p.solo_parent),
+            p.religion || null,
+            p.ethnicGroup || p.ethnic_group || null,
+            birthDate,
+            age,
+            p.philsysNo || p.philsys_no || null,
+            sanitizeBoolean(p.noPhilsys || p.no_philsys),
+            p.employeeNo || p.employee_no || null,
+            p.depedEmail || p.deped_email || null,
+            sanitizeBoolean(p.noDepedEmail || p.no_deped_email),
+            sanitizeBoolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
+            sanitizeBoolean(p.isSchoolHead || p.is_school_head),
+          ],
+        )
+      ).catch((err) => {
+        console.warn(`[persistNormalizedDraft] personnel_profile warning (${finalId}):`, err.message);
+      });
 
     const birthDate = safeCoerceDate(p.birthdate, "birthdate");
     const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
@@ -1136,7 +1248,281 @@ async function persistNormalizedDraft(client, schoolId, schoolYear, finalPayload
   }
 }
 
-// GET /api/school/draft
+// Helper: Assemble complete draft payload directly from normalized relational tables (ZERO reads from school_drafts)
+async function loadNormalizedDraft(schoolId, schoolYear) {
+  const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+  const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+
+  const [profileRes, schoolMasterRes, personnelRes, workloadRes, sectionsRes, nodeStatusRes, deletedRes] =
+    await Promise.all([
+      db
+        .query(
+          "SELECT * FROM esf7_school_profile WHERE school_id = ANY($1) ORDER BY updated_at DESC LIMIT 1",
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query("SELECT * FROM schools WHERE school_id = ANY($1) LIMIT 1", [
+          sidPair,
+        ])
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          `SELECT 
+            p.*,
+            e.position_category,
+            e.position,
+            e.step_increment,
+            e.fund_source,
+            e.nature_of_appointment,
+            e.hiring_arrangement,
+            e.deployment_status,
+            e.assigned_schools,
+            e.grade_levels_taught,
+            e.first_service_date,
+            e.last_promotion_date,
+            e.new_station_date,
+            e.last_lateral_movement_date,
+            ed.highest_educational_attainment,
+            ed.shs_track,
+            ed.vocational_course,
+            ed.vocational_level,
+            ed.college_degree,
+            ed.college_degrees,
+            ed.major,
+            ed.minor,
+            ed.post_graduate_degree,
+            ed.post_graduate_discipline,
+            ed.eligibility,
+            ed.prc_specialization,
+            la.matrix_data
+          FROM esf7_personnel_profile p
+          LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+          LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
+          LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
+          WHERE p.school_id = ANY($1)
+          ORDER BY p.last_name ASC, p.first_name ASC`,
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          "SELECT * FROM esf7_workload_rows WHERE school_id = ANY($1) ORDER BY created_at ASC",
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          "SELECT * FROM esf7_regular_sections WHERE school_id = ANY($1) ORDER BY grade_level ASC, section_name ASC",
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          "SELECT * FROM esf7_school_node_status WHERE school_id = ANY($1) LIMIT 1",
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+      db
+        .query(
+          "SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)",
+          [sidPair],
+        )
+        .catch(() => ({ rows: [] })),
+    ]);
+
+  const prof = profileRes.rows[0] || {};
+  const master = schoolMasterRes.rows[0] || {};
+
+  const schoolInfo = {
+    schoolId: cleanSchoolId,
+    schoolName: master.school_name || `School ${cleanSchoolId}`,
+    region: master.region || "",
+    division: master.division || "",
+    district: master.district || "",
+    municipality: master.municipality || "",
+    schoolYear: prof.school_year || schoolYear || "SY 26-27",
+    iern: prof.iern || null,
+    hasElemSpecialPrograms: Boolean(prof.has_elem_special_programs),
+    elemSpecialPrograms: Array.isArray(prof.elem_special_programs)
+      ? prof.elem_special_programs
+      : [],
+    hasJhsSpecialPrograms: Boolean(prof.has_jhs_special_programs),
+    jhsSpecialPrograms: Array.isArray(prof.jhs_special_programs)
+      ? prof.jhs_special_programs
+      : [],
+    shsCurriculumModel:
+      prof.shs_curriculum_model || "Standard K-12 SHS Curriculum",
+    has_es_sned: Boolean(prof.has_es_sned),
+    has_es_als: Boolean(prof.has_es_als),
+    has_es_iped: Boolean(prof.has_es_iped),
+    has_es_mad: Boolean(prof.has_es_mad),
+    has_jhs_sned: Boolean(prof.has_jhs_sned),
+    has_jhs_als: Boolean(prof.has_jhs_als),
+    has_jhs_iped: Boolean(prof.has_jhs_iped),
+    has_jhs_mad: Boolean(prof.has_jhs_mad),
+    has_shs_sned: Boolean(prof.has_shs_sned),
+    has_shs_iped: Boolean(prof.has_shs_iped),
+    has_shs_mad: Boolean(prof.has_shs_mad),
+    hasSned: Boolean(prof.has_sned),
+    hasAls: Boolean(prof.has_als),
+    hasIped: Boolean(prof.has_iped),
+    hasMadrasah: Boolean(prof.has_madrasah),
+    inclusivePrograms: Array.isArray(prof.inclusive_programs)
+      ? prof.inclusive_programs
+      : [],
+    hasShifts: Boolean(prof.has_shifts),
+    shiftsConfig: prof.shifts_config || master.shifts_config || {},
+    curricularConfigSaved: profileRes.rows.length > 0,
+    certifiedBy: master.certified_by || null,
+    certifiedSignature: master.certified_signature || null,
+    certifiedAt: master.certified_at || null,
+  };
+
+  // Group workloads by personnel_id
+  const workloadsByPerson = new Map();
+  for (const w of workloadRes.rows) {
+    const pId = String(w.personnel_id || "").trim();
+    if (!pId) continue;
+    if (!workloadsByPerson.has(pId)) workloadsByPerson.set(pId, []);
+    workloadsByPerson.get(pId).push({
+      id: w.id,
+      sectionId: w.section_id,
+      sectionName: w.section_name,
+      gradeLevel: w.grade_level,
+      subject: w.subject,
+      subjectId: w.subject_id,
+      remediationSubject: w.remediation_subject,
+      startTime: w.start_time,
+      endTime: w.end_time,
+      days: Array.isArray(w.days)
+        ? w.days
+        : typeof w.days === "string"
+          ? w.days.split(",")
+          : [],
+      term: w.term,
+      schoolYear: w.school_year,
+    });
+  }
+
+  // Build deleted set
+  const delKeys = new Set();
+  for (const d of deletedRes.rows) {
+    if (d.personnel_id) delKeys.add(String(d.personnel_id).trim().toLowerCase());
+    if (d.prn) delKeys.add(String(d.prn).trim().toLowerCase());
+    if (d.employee_no) delKeys.add(String(d.employee_no).trim().toLowerCase());
+    if (d.full_name_clean)
+      delKeys.add(String(d.full_name_clean).trim().toLowerCase());
+  }
+
+  // Format personnel
+  const personnel = [];
+  for (const p of personnelRes.rows) {
+    const idKey = String(p.id || "").trim().toLowerCase();
+    const prnKey = String(p.prn || "").trim().toLowerCase();
+    const empKey = String(p.employee_no || "").trim().toLowerCase();
+    const nameKey =
+      `${String(p.first_name || "").trim()} ${String(p.last_name || "").trim()}`.toLowerCase();
+    if (
+      delKeys.has(idKey) ||
+      delKeys.has(prnKey) ||
+      (empKey && delKeys.has(empKey)) ||
+      (nameKey && delKeys.has(nameKey))
+    ) {
+      continue;
+    }
+
+    const wkl =
+      workloadsByPerson.get(String(p.id)) ||
+      workloadsByPerson.get(String(p.prn)) ||
+      [];
+
+    personnel.push({
+      id: p.id,
+      prn: p.prn,
+      legacyId: p.legacy_id,
+      schoolId: p.school_id,
+      schoolYear: p.school_year || schoolYear,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      middleName: p.middle_name,
+      extName: p.ext_name,
+      gender: p.gender,
+      birthDate: p.birth_date,
+      depedEmail: p.deped_email,
+      personalEmail: p.personal_email,
+      contactNumber: p.contact_number,
+      employeeNo: p.employee_no,
+      isSchoolHead: Boolean(p.is_school_head),
+      position: p.position || "",
+      positionCategory: p.position_category || "",
+      stepIncrement: p.step_increment,
+      fundSource: p.fund_source,
+      natureOfAppointment: p.nature_of_appointment,
+      hiringArrangement: p.hiring_arrangement,
+      deploymentStatus: p.deployment_status,
+      assignedSchools: p.assigned_schools,
+      gradeLevelsTaught: p.grade_levels_taught,
+      firstServiceDate: p.first_service_date,
+      lastPromotionDate: p.last_promotion_date,
+      newStationDate: p.new_station_date,
+      lastLateralMovementDate: p.last_lateral_movement_date,
+      highestEducationalAttainment: p.highest_educational_attainment,
+      collegeDegree: p.college_degree,
+      collegeDegrees: Array.isArray(p.college_degrees) ? p.college_degrees : [],
+      degreeRows: Array.isArray(p.college_degrees) ? p.college_degrees : [],
+      major: p.major,
+      minor: p.minor,
+      postGraduateDegree: p.post_graduate_degree,
+      postGraduateDiscipline: p.post_graduate_discipline,
+      eligibility: Array.isArray(p.eligibility) ? p.eligibility : [],
+      prcSpecialization: p.prc_specialization,
+      matrixData: p.matrix_data || {},
+      workloadRows: wkl,
+      is_db_saved: true,
+    });
+  }
+
+  // Format sections
+  let classSections = sectionsRes.rows.map((s) => ({
+    id: s.id,
+    schoolId: s.school_id,
+    schoolYear: s.school_year,
+    gradeLevel: s.grade_level,
+    sectionName: s.section_name,
+    sectionType: s.section_type || "MONO GRADE",
+    advisorId:
+      s.adviser_id || s.advisor_id ? String(s.adviser_id || s.advisor_id) : null,
+    numberOfLearners: s.number_of_learners,
+    maleLearners: s.male_learners,
+    femaleLearners: s.female_learners,
+    advisoryMinutes:
+      s.extras?.advisoryMinutes || s.advisory_minutes || 300,
+    hgpMinutes: s.extras?.hgpMinutes || s.hgp_minutes || 60,
+  }));
+
+  // Journey state from node status
+  const nodeStatus = nodeStatusRes.rows[0];
+  const journeyState = nodeStatus?.nodes
+    ? {
+        completedNodes: Object.keys(nodeStatus.nodes)
+          .filter((k) => nodeStatus.nodes[k]?.status === "COMPLETED")
+          .map((k) => k.replace(/^node_\d+_/, "")),
+        currentNode: "school",
+      }
+    : { completedNodes: [], currentNode: "school" };
+
+  return {
+    schoolInfo,
+    personnel: dedupePersonnel(personnel),
+    classSections: dedupeSections(classSections),
+    deletedPersonnelIds: Array.from(delKeys),
+    journey_state: journeyState,
+    lastUpdated: prof.updated_at || new Date().toISOString(),
+  };
+}
+
+// GET /api/school/draft - Reads directly from normalized relational tables (ZERO reads from school_drafts)
 const handleGetDraft = async (req, res) => {
   try {
     const rawSchoolId =
@@ -1148,116 +1534,14 @@ const handleGetDraft = async (req, res) => {
       "123456";
     const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
     const schoolYear = req.query.schoolYear || "SY 26-27";
-    const withVersion = await hasDraftVersionColumn();
 
-    let result = { rows: [] };
-    try {
-      result = await db.query(
-        `SELECT payload, updated_at${withVersion ? ", version" : ""} FROM school_drafts WHERE school_id = $1 AND school_year = $2`,
-        [schoolId, schoolYear],
-      );
-    } catch (tblErr) {
-      if (tblErr.code === "42P01") {
-        console.warn("[DraftLoad] school_drafts table not found or deprecated, returning empty draft.");
-      } else {
-        throw tblErr;
-      }
-    }
+    const payload = await loadNormalizedDraft(schoolId, schoolYear);
 
     res.set("Cache-Control", "no-store");
-    if (result.rows.length === 0) {
-      return res.json({ payload: null, updatedAt: null, version: 0 });
-    }
-    const row = result.rows[0];
-    let payload = row.payload;
-
-    if (payload && typeof payload === "object") {
-      try {
-        const sidPair = [schoolId, `SCH-${schoolId}`];
-        const [r1, r2] = await Promise.all([
-          db
-            .query(
-              `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-              [sidPair],
-            )
-            .catch(() => ({ rows: [] })),
-          db.getStagingPool
-            ? db
-                .getStagingPool()
-                .query(
-                  `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-                  [sidPair],
-                )
-                .catch(() => ({ rows: [] }))
-            : Promise.resolve({ rows: [] }),
-        ]);
-        const delRows = [...(r1.rows || []), ...(r2.rows || [])];
-        if (delRows.length > 0) {
-          const delKeys = new Set();
-          for (const d of delRows) {
-            if (d.personnel_id)
-              delKeys.add(String(d.personnel_id).trim().toLowerCase());
-            if (d.prn) delKeys.add(String(d.prn).trim().toLowerCase());
-            if (d.employee_no)
-              delKeys.add(String(d.employee_no).trim().toLowerCase());
-            if (d.full_name_clean)
-              delKeys.add(String(d.full_name_clean).trim().toLowerCase());
-          }
-          if (Array.isArray(payload.personnel)) {
-            payload.personnel = payload.personnel.filter((p) => {
-              const idK = String(p.id || "")
-                .trim()
-                .toLowerCase();
-              const prnK = String(p.prn || "")
-                .trim()
-                .toLowerCase();
-              const empK = String(p.employeeNo || p.employee_no || "")
-                .trim()
-                .toLowerCase();
-              const nameK =
-                `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-              const stripId = idK.replace(/^per-/, "").replace(/^prn-/, "");
-              const stripPrn = prnK.replace(/^prn-/, "");
-              return (
-                !delKeys.has(idK) &&
-                !delKeys.has(prnK) &&
-                (!empK || !delKeys.has(empK)) &&
-                (!nameK || !delKeys.has(nameK)) &&
-                (!stripId || !delKeys.has(stripId)) &&
-                (!stripPrn || !delKeys.has(stripPrn))
-              );
-            });
-          }
-          payload.deletedPersonnelIds = Array.from(
-            new Set([
-              ...(Array.isArray(payload.deletedPersonnelIds)
-                ? payload.deletedPersonnelIds
-                : []),
-              ...delKeys,
-            ]),
-          );
-        }
-      } catch (e) {
-        console.warn(
-          "[handleGetDraft] Deletion filter check warning:",
-          e.message,
-        );
-      }
-    }
-
-    if (payload && typeof payload === "object") {
-      if (Array.isArray(payload.classSections))
-        payload.classSections = dedupeSections(payload.classSections);
-      if (Array.isArray(payload.sections))
-        payload.sections = dedupeSections(payload.sections);
-      if (Array.isArray(payload.personnel))
-        payload.personnel = dedupePersonnel(payload.personnel);
-    }
-
     res.json({
       payload: payload,
-      updatedAt: row.updated_at,
-      version: withVersion ? Number(row.version) : undefined,
+      updatedAt: payload.lastUpdated || new Date().toISOString(),
+      version: 1,
     });
   } catch (err) {
     console.error("[DraftLoad][FAIL]", err.message);
@@ -1297,24 +1581,14 @@ const handleSaveDraft = async (req, res) => {
       "123456";
     schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
 
-    let existing = { rows: [] };
-    try {
-      existing = await db.query(
-        "SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2",
-        [schoolId, schoolYear],
-      );
-    } catch (e) {
-      if (e.code !== "42P01") throw e;
-    }
-    const existingPayload = existing.rows[0] && existing.rows[0].payload;
+    // Load baseline from normalized tables instead of reading from school_drafts
+    const existingPayload = await loadNormalizedDraft(schoolId, schoolYear).catch(() => null);
     const oldPersonnel = Array.isArray(existingPayload?.personnel)
       ? existingPayload.personnel
       : [];
     const oldSections = Array.isArray(existingPayload?.classSections)
       ? existingPayload.classSections
-      : Array.isArray(existingPayload?.sections)
-        ? existingPayload.sections
-        : [];
+      : [];
 
     const finalPayload = { ...payload };
 
@@ -1553,7 +1827,6 @@ const handleSaveDraft = async (req, res) => {
     // 3. Atomic school_drafts write
     const client = await acquireClient();
     let saved = null;
-    const withVersion = await hasDraftVersionColumn();
 
     try {
       await client.query("BEGIN");
@@ -1621,6 +1894,10 @@ const handleSaveDraft = async (req, res) => {
       }
 
       await client.query("COMMIT");
+      saved = {
+        version: baseVersion ? Number(baseVersion) + 1 : 1,
+        updatedAt: new Date().toISOString(),
+      };
     } catch (txErr) {
       await client.query("ROLLBACK").catch(() => {});
       throw txErr;

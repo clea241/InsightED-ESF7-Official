@@ -24,9 +24,13 @@ import DepEdEmailInfoModal from "../components/DepEdEmailInfoModal";
 import ESF7UploadModal from "../components/ESF7UploadModal";
 import PortalHeader from "../components/PortalHeader";
 import useDirtyGuard from "../hooks/useDirtyGuard";
-import { confirmServerDraftSaved } from "../services/screenSave";
 import { cleanPersonnelDates } from "../services/dateFields";
 import { api } from "../services/api";
+import {
+  upsertOutboxEntry,
+  removeOutboxEntryByModule,
+  autoSyncOutboxOnSectionOpen,
+} from "../services/outbox";
 import {
   FiPlus,
   FiSave,
@@ -601,6 +605,10 @@ export default function Roster() {
     completeNode,
     outgoingRequests,
     requestHistory,
+    user,
+    activeTerm,
+    refreshPersonnelList,
+    deleteLocalDraft,
   } = useApp();
 
   const [typeFilter, setTypeFilter] = useState("all");
@@ -642,6 +650,32 @@ export default function Roster() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isNewPersonnelSidebarOpen, isClosingSidebar]);
+
+  // Transparent auto-sync of pending offline personnel changes on section open (Zero intrusive modal popups)
+  useEffect(() => {
+    let isMounted = true;
+    autoSyncOutboxOnSectionOpen({
+      module: "personnel_roster",
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      onSynced: () => {
+        if (!isMounted) return;
+        if (typeof refreshPersonnelList === "function") {
+          refreshPersonnelList().catch(() => {});
+        }
+        if (showToast) {
+          showToast(
+            "Offline personnel changes synced to database.",
+            "success",
+          );
+        }
+      },
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [schoolInfo?.schoolId, schoolInfo?.schoolYear]);
+
   // SDO-supplied school head (e.g. EPS II as OIC Principal): only offered while the roster has no designated head
   const [isSdoHeadModalOpen, setIsSdoHeadModalOpen] = useState(false);
   const [sdoHeadForm, setSdoHeadForm] = useState({
@@ -952,12 +986,31 @@ export default function Roster() {
         await commitDraftPersonnel();
       }
 
-      // 2b. Save all personnel on this roster to esf7_personnel_profile (strictly without raw_payload)
-      await api.saveBulkPersonnel(personnel, schoolInfo?.schoolId, schoolInfo?.schoolYear);
+      // 2b. Save all personnel on this roster directly to esf7_personnel_profile
+      await api.saveBulkPersonnel(
+        personnel,
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+      );
 
-      // Success is reported only after the server confirmed the database write.
-      const confirmed = await confirmServerDraftSaved();
-      if (!confirmed.ok) return confirmed;
+      // Remove outbox entry right away on verified success
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo?.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: "personnel_roster",
+      });
+
+      // Clear local draft caches now that data is safely stored in database
+      try {
+        const draftKey = `insighted_personnel_roster_${schoolInfo?.schoolId || "default"}`;
+        localStorage.removeItem(draftKey);
+        if (typeof deleteLocalDraft === "function") {
+          await deleteLocalDraft(draftKey);
+        }
+      } catch (cleanErr) {
+        console.warn("[Roster] Error clearing local draft:", cleanErr);
+      }
 
       // 3. Mark completed node without forcing navigation
       if (completeNode) {
@@ -975,6 +1028,40 @@ export default function Roster() {
       return { ok: true };
     } catch (err) {
       console.warn("Save roster error:", err);
+      // Upsert failed payload into outbox as offline/pending buffer
+      try {
+        await upsertOutboxEntry({
+          kind: "failed",
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+          term: activeTerm,
+          module: "personnel_roster",
+          endpoint: "/api/personnel/bulk",
+          payload: personnel,
+          lastError: err?.message || "Failed to save personnel roster",
+        });
+      } catch (outboxErr) {
+        console.warn("[Outbox Failed Save Error]:", outboxErr);
+      }
+
+      const isOffline =
+        !navigator.onLine ||
+        err?.message?.toLowerCase().includes("network") ||
+        err?.message?.toLowerCase().includes("failed to fetch") ||
+        err?.message?.toLowerCase().includes("timed out");
+
+      if (isOffline) {
+        savedRosterSnapshotRef.current = JSON.stringify(getRosterSnapshot());
+        if (showToast) {
+          showToast(
+            "Saved offline. Your personnel roster will sync to the database when connection is restored.",
+            "info",
+          );
+        }
+        return { ok: true, offline: true };
+      }
+
       return {
         ok: false,
         title: "Roster Not Saved",
@@ -1084,8 +1171,8 @@ export default function Roster() {
     });
 
     // Save all active personnel in the roster to esf7_personnel_profile
+    let fullList = [...personnel];
     try {
-      const fullList = [...personnel];
       const newlyAddedObj = {
         id: addedId,
         salutation: newPerson.salutation,
@@ -1124,8 +1211,27 @@ export default function Roster() {
         schoolInfo?.schoolId,
         schoolInfo?.schoolYear,
       );
+      await removeOutboxEntryByModule({
+        schoolId: schoolInfo?.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: "personnel_roster",
+      });
     } catch (e) {
       console.warn("Auto-save roster on add personnel notice:", e.message);
+      try {
+        await upsertOutboxEntry({
+          kind: "failed",
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+          term: activeTerm,
+          module: "personnel_roster",
+          endpoint: "/api/personnel/bulk",
+          payload: fullList,
+          lastError: e?.message || "Failed to auto-save added personnel",
+        });
+      } catch (outboxErr) {}
     }
 
     showToast("Personnel successfully added and saved to roster.");
