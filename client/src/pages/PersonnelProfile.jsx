@@ -5528,45 +5528,79 @@ export default function PersonnelProfile() {
                       )}
                   </div>
                 </div>
-                {/* Discard Draft button in header area */}
-                {dbPerson &&
-                  localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
-                    <button
-                      className="btn secondary"
-                      style={{
-                        minHeight: "32px",
-                        padding: "0 12px",
-                        fontSize: "12px",
-                        whiteSpace: "nowrap",
-                      }}
-                      type="button"
-                      onClick={async () => {
-                        if (
-                          await showConfirm(
-                            "Discard Draft?",
-                            "Revert to the saved database version?",
-                          )
-                        ) {
-                          const targetKeys = [
-                            dbPerson.id,
-                            dbPerson.legacy_id,
-                            dbPerson.prn,
-                          ].filter(Boolean);
-                          targetKeys.forEach((k) => {
-                            localStorage.removeItem(`draft_personnel_${k}`);
-                            localStorage.removeItem(
-                              `draft_learning_areas_${k}`,
-                            );
-                            localStorage.removeItem(`esf7_workload_draft_${k}`);
-                            localStorage.removeItem(`draft_workload_${k}`);
-                          });
-                          setEditPerson(dbPerson);
-                        }
-                      }}
-                    >
-                      Discard Draft
-                    </button>
-                  )}
+                {/* Upper Right Action Buttons at Same Level as Name */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    flexShrink: 0,
+                  }}
+                >
+                  {/* Discard Draft button in header area */}
+                  {dbPerson &&
+                    localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
+                      <button
+                        className="btn secondary"
+                        style={{
+                          minHeight: "34px",
+                          padding: "0 12px",
+                          fontSize: "12px",
+                          whiteSpace: "nowrap",
+                        }}
+                        type="button"
+                        onClick={async () => {
+                          if (
+                            await showConfirm(
+                              "Discard Draft?",
+                              "Revert to the saved database version?",
+                            )
+                          ) {
+                            const targetKeys = [
+                              dbPerson.id,
+                              dbPerson.legacy_id,
+                              dbPerson.prn,
+                            ].filter(Boolean);
+                            targetKeys.forEach((k) => {
+                              localStorage.removeItem(`draft_personnel_${k}`);
+                              localStorage.removeItem(
+                                `draft_learning_areas_${k}`,
+                              );
+                              localStorage.removeItem(
+                                `esf7_workload_draft_${k}`,
+                              );
+                              localStorage.removeItem(`draft_workload_${k}`);
+                            });
+                            setEditPerson(dbPerson);
+                          }
+                        }}
+                      >
+                        Discard Draft
+                      </button>
+                    )}
+
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={handleSave}
+                    style={{
+                      background: "#0284c7",
+                      borderColor: "#0284c7",
+                      color: "white",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      boxShadow: "0 1px 3px rgba(2, 132, 199, 0.25)",
+                    }}
+                  >
+                    <FiSave size={14} /> <span>Save Changes</span>
+                  </button>
+                </div>
               </div>
 
               {/* Borrowed Personnel Notice Banner */}
@@ -11817,75 +11851,6 @@ export default function PersonnelProfile() {
                               )}
                             </div>
                           )}
-                      </div>
-
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "8px",
-                          flexWrap: "wrap",
-                          marginTop: "20px",
-                          borderTop: "1.5px solid var(--line)",
-                          paddingTop: "15px",
-                          alignItems: "center",
-                        }}
-                      >
-                        <button
-                          className="btn"
-                          type="button"
-                          onClick={handleSave}
-                          style={{
-                            background: "#0284c7",
-                            borderColor: "#0284c7",
-                            color: "white",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                          }}
-                        >
-                          <FiSave size={14} /> <span>Save Changes</span>
-                        </button>
-                        <button
-                          className="btn secondary"
-                          type="button"
-                          onClick={handleValidateOnly}
-                          style={{
-                            borderColor: "var(--blue)",
-                            color: "var(--blue)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            fontWeight: "800",
-                          }}
-                        >
-                          <FiCheckCircle size={14} /> <span>Validate</span>
-                        </button>
-                        <button
-                          className="btn secondary"
-                          type="button"
-                          onClick={handleDuplicate}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                          }}
-                        >
-                          <FiCopy size={14} /> <span>Duplicate</span>
-                        </button>
-                        <div style={{ marginLeft: "auto" }}>
-                          <button
-                            className="btn danger"
-                            type="button"
-                            onClick={handleDelete}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                            }}
-                          >
-                            <FiTrash2 size={14} /> <span>Delete</span>
-                          </button>
-                        </div>
                       </div>
                     </div>
                   </div>

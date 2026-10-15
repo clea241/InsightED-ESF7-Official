@@ -3704,12 +3704,9 @@ export const AppProvider = ({ children }) => {
       }
     }
 
-    if (nextNodeId) {
+    if (nextNodeId && typeof nextNodeId === "string") {
       setActiveView(nextNodeId);
       showToast(`Step completed! Proceeding to next step.`);
-    } else {
-      setActiveView("dashboard");
-      showToast(`All journey steps completed!`);
     }
   };
 
@@ -7183,7 +7180,7 @@ export const AppProvider = ({ children }) => {
       console.warn("Backend deletePersonnel notice:", err.message);
     }
 
-    setHasUnsavedChanges(true);
+    setHasUnsavedChanges(false);
     showToast("Personnel deleted successfully.");
   };
 
@@ -7262,8 +7259,6 @@ export const AppProvider = ({ children }) => {
         return item;
       }),
     );
-    setHasUnsavedChanges(true);
-
     if (targetPerson && typeof api !== "undefined" && api.toggleSchoolHead) {
       try {
         await api.toggleSchoolHead(
@@ -7274,7 +7269,9 @@ export const AppProvider = ({ children }) => {
             schoolId: schoolInfo?.schoolId || schoolInfo?.school_id,
           },
         );
+        setHasUnsavedChanges(false);
       } catch (e) {
+        setHasUnsavedChanges(true);
         reportError(e, {
           action: `Updating the School Head flag for ${id}`,
           handler: "toggleSchoolHead",
@@ -7282,6 +7279,8 @@ export const AppProvider = ({ children }) => {
         });
         showToast(e.message, "error");
       }
+    } else {
+      setHasUnsavedChanges(false);
     }
 
     showToast(
@@ -7366,8 +7365,6 @@ export const AppProvider = ({ children }) => {
       },
     }));
 
-    setHasUnsavedChanges(true);
-
     const targetSchoolId = schoolInfo?.schoolId || schoolInfo?.school_id;
 
     const previouslyAssigned = (personnel || []).filter(
@@ -7419,6 +7416,7 @@ export const AppProvider = ({ children }) => {
       }
     }
 
+    setHasUnsavedChanges(false);
     showToast("School Head configuration updated successfully.", "success");
     return true;
   };

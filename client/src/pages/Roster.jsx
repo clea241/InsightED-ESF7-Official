@@ -602,6 +602,7 @@ export default function Roster() {
     showConfirm,
     showToast,
     hasUnsavedChanges,
+    setHasUnsavedChanges,
     completeNode,
     outgoingRequests,
     requestHistory,
@@ -811,19 +812,63 @@ export default function Roster() {
   };
 
   const savedRosterSnapshotRef = useRef(null);
+  const lastSchoolIdRef = useRef(schoolInfo?.schoolId);
+
+  useEffect(() => {
+    if (
+      schoolInfo?.schoolId &&
+      schoolInfo.schoolId !== lastSchoolIdRef.current
+    ) {
+      lastSchoolIdRef.current = schoolInfo.schoolId;
+      savedRosterSnapshotRef.current = null;
+    }
+  }, [schoolInfo?.schoolId]);
 
   const getRosterSnapshot = useCallback(
     () =>
       (personnel || []).map((p) => ({
-        id: p.id,
-        isDraft: !!p.isDraft,
-        isSchoolHead: !!(p.isSchoolHead || p.is_school_head),
-        position: p.position || p.plantilla_position,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        depedEmail: p.depedEmail || p.email,
+        id: String(p.id || "").trim(),
+        isDraft: Boolean(p.isDraft),
+        isSchoolHead: Boolean(p.isSchoolHead || p.is_school_head),
+        position: String(p.position || p.plantilla_position || "").trim(),
+        firstName: String(p.firstName || p.first_name || "")
+          .trim()
+          .toUpperCase(),
+        lastName: String(p.lastName || p.last_name || "")
+          .trim()
+          .toUpperCase(),
+        depedEmail: String(p.depedEmail || p.email || p.deped_email || "")
+          .trim()
+          .toLowerCase(),
       })),
     [personnel],
+  );
+
+  const syncCleanRosterSnapshot = useCallback(
+    (cleanList = null) => {
+      const list = cleanList || personnel || [];
+      const snapshot = list.map((p) => ({
+        id: String(p.id || "").trim(),
+        isDraft: false,
+        isSchoolHead: Boolean(p.isSchoolHead || p.is_school_head),
+        position: String(p.position || p.plantilla_position || "").trim(),
+        firstName: String(p.firstName || p.first_name || "")
+          .trim()
+          .toUpperCase(),
+        lastName: String(p.lastName || p.last_name || "")
+          .trim()
+          .toUpperCase(),
+        depedEmail: String(p.depedEmail || p.email || p.deped_email || "")
+          .trim()
+          .toLowerCase(),
+      }));
+      savedRosterSnapshotRef.current = JSON.stringify(snapshot);
+      setNewlyAddedPersonnelIds(new Set());
+      if (typeof setHasUnsavedChanges === "function") {
+        setHasUnsavedChanges(false);
+      }
+    },
+    [personnel, setHasUnsavedChanges],
   );
 
   useEffect(() => {
@@ -854,8 +899,31 @@ export default function Roster() {
   useDirtyGuard({
     screenId: "roster",
     isDirty,
+    getDirtyReasons: () => {
+      const reasons = [];
+      if (hasPendingDrafts) {
+        reasons.push("There are pending draft personnel.");
+      }
+      if (newlyAddedPersonnelIds.size > 0) {
+        reasons.push(
+          `${newlyAddedPersonnelIds.size} newly added personnel not yet committed.`,
+        );
+      }
+      if (
+        savedRosterSnapshotRef.current &&
+        JSON.stringify(getRosterSnapshot()) !== savedRosterSnapshotRef.current
+      ) {
+        reasons.push("Roster snapshot differs from saved baseline.");
+      }
+      return reasons;
+    },
     onDiscard: () => {
-      // Discard dirty state
+      // Discard dirty state and synchronize snapshot to clean baseline
+      syncCleanRosterSnapshot();
+      try {
+        const draftKey = `insighted_personnel_roster_${schoolInfo?.schoolId || "default"}`;
+        localStorage.removeItem(draftKey);
+      } catch (cleanErr) {}
     },
     onSave: () => runSaveRef.current(),
   });
@@ -883,6 +951,7 @@ export default function Roster() {
               const pData = Array.isArray(rawRes) ? rawRes : rawRes?.data || [];
               if (Array.isArray(pData) && pData.length > 0 && isMounted) {
                 setPersonnel(pData);
+                syncCleanRosterSnapshot(pData);
                 if (showToast)
                   showToast(
                     "Auto-populated faculty roster from harvested eSF7!",
@@ -991,15 +1060,24 @@ export default function Roster() {
 
     setIsSavingDrafts(true);
     try {
+      // 1b. Clean personnel list where draft flags are normalized
+      const cleanPersonnel = (personnel || []).map((p) => ({
+        ...p,
+        isDraft: false,
+      }));
+
       // 2. Commit any pending auto-fill drafts
       const drafts = personnel.filter((p) => p.isDraft);
       if (drafts.length > 0) {
         await commitDraftPersonnel();
       }
+      if (typeof setPersonnel === "function") {
+        setPersonnel(cleanPersonnel);
+      }
 
       // 2b. Save all personnel on this roster directly to esf7_personnel_profile
       await api.saveBulkPersonnel(
-        personnel,
+        cleanPersonnel,
         schoolInfo?.schoolId,
         schoolInfo?.schoolYear,
       );
@@ -1028,7 +1106,7 @@ export default function Roster() {
         completeNode("roster", null);
       }
 
-      savedRosterSnapshotRef.current = JSON.stringify(getRosterSnapshot());
+      syncCleanRosterSnapshot(cleanPersonnel);
 
       if (showToast) {
         showToast(
@@ -1063,7 +1141,7 @@ export default function Roster() {
         err?.message?.toLowerCase().includes("timed out");
 
       if (isOffline) {
-        savedRosterSnapshotRef.current = JSON.stringify(getRosterSnapshot());
+        syncCleanRosterSnapshot();
         if (showToast) {
           showToast(
             "Saved offline. Your personnel roster will sync to the database when connection is restored.",
@@ -1095,7 +1173,7 @@ export default function Roster() {
       }
       return false;
     }
-    setNewlyAddedPersonnelIds(new Set());
+    syncCleanRosterSnapshot();
     closeNewPersonnelSidebar();
     return true;
   };
@@ -1228,6 +1306,7 @@ export default function Roster() {
         term: activeTerm,
         module: "personnel_roster",
       });
+      syncCleanRosterSnapshot(fullList);
     } catch (e) {
       console.warn("Auto-save roster on add personnel notice:", e.message);
       try {
@@ -4263,6 +4342,19 @@ export default function Roster() {
                                         mainHeadId: null,
                                         assignments: {},
                                       });
+                                      const updatedList = (personnel || []).map(
+                                        (item) => ({
+                                          ...item,
+                                          isSchoolHead: false,
+                                          is_school_head: false,
+                                          isMainSchoolHead: false,
+                                          is_main_school_head: false,
+                                          is_main_sh: false,
+                                          schoolHeadLevel: null,
+                                          school_head_level: null,
+                                        }),
+                                      );
+                                      syncCleanRosterSnapshot(updatedList);
                                       if (showToast)
                                         showToast(
                                           "School Head designation removed.",
@@ -4389,6 +4481,23 @@ export default function Roster() {
                       });
                       if (success) {
                         setIsChangeHeadModalOpen(false);
+                        const assignedIds = new Set(
+                          Object.values(modalHeadAssignments || {}).map(String),
+                        );
+                        const updatedList = (personnel || []).map((item) => {
+                          const isHead = assignedIds.has(String(item.id));
+                          const isMain =
+                            String(modalMainHeadId) === String(item.id);
+                          return {
+                            ...item,
+                            isSchoolHead: isHead,
+                            is_school_head: isHead,
+                            isMainSchoolHead: isMain,
+                            is_main_school_head: isMain,
+                            is_main_sh: isMain,
+                          };
+                        });
+                        syncCleanRosterSnapshot(updatedList);
                       }
                     }}
                     style={{
@@ -4626,6 +4735,18 @@ export default function Roster() {
                     assignments: { All: target.id },
                   });
                   setIsChangeHeadModalOpen(false);
+                  const updatedList = (personnel || []).map((item) => {
+                    const isHead = String(item.id) === String(target.id);
+                    return {
+                      ...item,
+                      isSchoolHead: isHead,
+                      is_school_head: isHead,
+                      isMainSchoolHead: isHead,
+                      is_main_school_head: isHead,
+                      is_main_sh: isHead,
+                    };
+                  });
+                  syncCleanRosterSnapshot(updatedList);
                   if (showToast) {
                     showToast(
                       `${formatPersonnelName(target)} designated as School Head.`,
