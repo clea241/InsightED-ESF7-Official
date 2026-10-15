@@ -1,4 +1,3 @@
-/* eslint-disable no-unreachable */
 const db = require("./db");
 const redisQueue = require("./services/redisQueue");
 const { buildExtras: buildWorkloadExtras } = require("./utils/workloadPayload");
