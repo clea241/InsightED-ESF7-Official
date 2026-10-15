@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "notes": "Each command is an exact argument list ('forms'). Tokens: literal text, {PATH} (under LOG_PATHS, RELEASE_ROOT or BACKUP_DIR), {LOGPATH} (under LOG_PATHS only), {MARKER} (RELEASE_MARKER_FILE), {INT}, {NAME}, {TIME}, {PATTERN} (grep expression, '|' allowed), {DB_HOST} {DB_PORT} {DB_NAME} {DB_READONLY_USER}. Large reads are prefixed with 'nice -n 19 ionice -c3' by remote-readonly.sh. Do not edit to make a command pass: guard-incident-env.js rejects anything that can change state.",
+  "commands": [
+    {
+      "exe": "ls",
+      "forms": [
+        ["ls", "-la", "--time-style=full-iso", "{PATH}"],
+        ["ls", "-1", "{PATH}"]
+      ]
+    },
+    { "exe": "stat", "forms": [["stat", "{PATH}"]] },
+    { "exe": "du", "forms": [["du", "-sh", "{PATH}"]] },
+    { "exe": "df", "forms": [["df", "-h"]] },
+    { "exe": "uptime", "forms": [["uptime"]] },
+    {
+      "exe": "date",
+      "forms": [
+        ["date", "+%z"],
+        ["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]
+      ]
+    },
+    { "exe": "free", "forms": [["free", "-m"]] },
+    { "exe": "ps", "forms": [["ps", "-eo", "pid,etime,rss,comm"]] },
+    { "exe": "tail", "forms": [["tail", "-n", "{INT}", "{LOGPATH}"]] },
+    { "exe": "head", "forms": [["head", "-n", "{INT}", "{LOGPATH}"]] },
+    {
+      "exe": "grep",
+      "forms": [
+        ["grep", "-n", "-E", "{PATTERN}", "{LOGPATH}"],
+        ["grep", "-c", "-E", "{PATTERN}", "{LOGPATH}"]
+      ]
+    },
+    {
+      "exe": "zgrep",
+      "forms": [
+        ["zgrep", "-n", "-E", "{PATTERN}", "{LOGPATH}"],
+        ["zgrep", "-c", "-E", "{PATTERN}", "{LOGPATH}"]
+      ]
+    },
+    {
+      "exe": "cat",
+      "forms": [
+        ["cat", "{LOGPATH}"],
+        ["cat", "{MARKER}"]
+      ]
+    },
+    { "exe": "sha256sum", "forms": [["sha256sum", "{LOGPATH}"]] },
+    {
+      "exe": "journalctl",
+      "forms": [
+        [
+          "journalctl",
+          "--no-pager",
+          "-u",
+          "{NAME}",
+          "--since",
+          "{TIME}",
+          "--until",
+          "{TIME}"
+        ]
+      ]
+    },
+    {
+      "exe": "pm2",
+      "forms": [
+        ["pm2", "jlist"],
+        ["pm2", "describe", "{NAME}"],
+        ["pm2", "logs", "--nostream", "--lines", "{INT}"],
+        ["pm2", "logs", "{NAME}", "--nostream", "--lines", "{INT}"]
+      ]
+    },
+    { "exe": "nginx", "forms": [["nginx", "-V"]] },
+    {
+      "exe": "psql",
+      "readonlyWrapper": true,
+      "forms": [
+        [
+          "psql",
+          "-X",
+          "-w",
+          "-q",
+          "--csv",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-h",
+          "{DB_HOST}",
+          "-p",
+          "{DB_PORT}",
+          "-U",
+          "{DB_READONLY_USER}",
+          "-d",
+          "{DB_NAME}",
+          "-f",
+          "-"
+        ]
+      ]
+    }
+  ]
+}
