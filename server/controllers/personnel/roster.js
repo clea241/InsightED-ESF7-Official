@@ -1037,12 +1037,15 @@ router.post("/bulk", async (req, res) => {
       const age = p.age ? Number(p.age) : calculateAge(bDate) || null;
       const tin = p.tin || null;
       const noTin = Boolean(p.noTin || p.no_tin);
-      const civilStatus = p.civilStatus || p.civil_status || null;
+      const rawCivil = String(p.civilStatus || p.civil_status || "").trim();
+      const civilStatus = rawCivil ? rawCivil.toUpperCase() : "SINGLE";
       const soloParent = Boolean(p.soloParent || p.solo_parent);
       const religion = p.religion || null;
-      const ethnic = p.ethnicGroup || p.ethnic_group || null;
-      const philsys = p.philsysNo || p.philsys_no || null;
-      const noPhilsys = Boolean(p.noPhilsys || p.no_philsys);
+      const rawEth = String(p.ethnicGroup || p.ethnic_group || "").trim();
+      const ethnic = rawEth ? rawEth.toUpperCase() : null;
+      const rawPhilSys = String(p.philsysNo || p.philsys_no || "").trim();
+      const noPhilsys = Boolean(p.noPhilsys || p.no_philsys) || !rawPhilSys;
+      const philsys = noPhilsys ? null : rawPhilSys || null;
       const empNo = p.employeeNo || p.employee_no || null;
       const depedEmail = p.depedEmail || p.deped_email || null;
       const noEmail = Boolean(p.noDepedEmail || p.no_deped_email);
@@ -1272,101 +1275,116 @@ router.put("/:id/school-head", async (req, res) => {
         ],
       );
 
-      // 3. Keep school_drafts in sync so drafts also reflect the School Head state
+      // 3. Keep school_drafts in sync only if legacy school_drafts table exists
       if (sidPair.length > 0) {
-        const draftRes = await client.query(
-          "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)",
-          [sidPair],
-        );
-        for (const row of draftRes.rows) {
-          let pld = row.payload;
-          if (pld && Array.isArray(pld.personnel)) {
-            pld.personnel = pld.personnel.map((p) => {
-              const pId = String(p.id || "").trim();
-              const pLegacy = String(p.legacy_id || p.legacyId || "").trim();
-              const pPrn = String(p.prn || "").trim();
-              const isTarget =
-                (pId && pId === targetId) ||
-                (pLegacy && pLegacy === targetId) ||
-                (pPrn && pPrn === targetId);
+        try {
+          const tblCheck = await client.query(
+            "SELECT to_regclass('school_drafts') AS tbl",
+          );
+          if (tblCheck.rows[0]?.tbl) {
+            const draftRes = await client.query(
+              "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)",
+              [sidPair],
+            );
+            for (const row of draftRes.rows) {
+              let pld = row.payload;
+              if (pld && Array.isArray(pld.personnel)) {
+                pld.personnel = pld.personnel.map((p) => {
+                  const pId = String(p.id || "").trim();
+                  const pLegacy = String(
+                    p.legacy_id || p.legacyId || "",
+                  ).trim();
+                  const pPrn = String(p.prn || "").trim();
+                  const isTarget =
+                    (pId && pId === targetId) ||
+                    (pLegacy && pLegacy === targetId) ||
+                    (pPrn && pPrn === targetId);
 
-              if (isTarget) {
-                return {
-                  ...p,
-                  isSchoolHead,
-                  is_school_head: isSchoolHead,
-                  isMainSchoolHead: isMainSh,
-                  is_main_school_head: isMainSh,
-                  is_main_sh: isMainSh,
-                  schoolHeadLevel: isSchoolHead ? schoolHeadLevel : null,
-                  school_head_level: isSchoolHead ? schoolHeadLevel : null,
-                };
-              }
-              if (isSchoolHead) {
-                if (!hasMultipleHeads) {
-                  return {
-                    ...p,
-                    isSchoolHead: false,
-                    is_school_head: false,
-                    isMainSchoolHead: false,
-                    is_main_school_head: false,
-                    is_main_sh: false,
-                    schoolHeadLevel: null,
-                    school_head_level: null,
-                  };
-                } else if (isMainSh) {
-                  return {
-                    ...p,
-                    isMainSchoolHead: false,
-                    is_main_school_head: false,
-                    is_main_sh: false,
-                  };
-                }
-              }
-              return p;
-            });
+                  if (isTarget) {
+                    return {
+                      ...p,
+                      isSchoolHead,
+                      is_school_head: isSchoolHead,
+                      isMainSchoolHead: isMainSh,
+                      is_main_school_head: isMainSh,
+                      is_main_sh: isMainSh,
+                      schoolHeadLevel: isSchoolHead ? schoolHeadLevel : null,
+                      school_head_level: isSchoolHead ? schoolHeadLevel : null,
+                    };
+                  }
+                  if (isSchoolHead) {
+                    if (!hasMultipleHeads) {
+                      return {
+                        ...p,
+                        isSchoolHead: false,
+                        is_school_head: false,
+                        isMainSchoolHead: false,
+                        is_main_school_head: false,
+                        is_main_sh: false,
+                        schoolHeadLevel: null,
+                        school_head_level: null,
+                      };
+                    } else if (isMainSh) {
+                      return {
+                        ...p,
+                        isMainSchoolHead: false,
+                        is_main_school_head: false,
+                        is_main_sh: false,
+                      };
+                    }
+                  }
+                  return p;
+                });
 
-            if (pld.schoolInfo) {
-              if (!pld.schoolInfo.schoolHeadConfig)
-                pld.schoolInfo.schoolHeadConfig = {};
-              pld.schoolInfo.schoolHeadConfig.hasMultipleHeads =
-                hasMultipleHeads;
-              if (!hasMultipleHeads) {
-                pld.schoolInfo.schoolHeadConfig.mainHeadId = isSchoolHead
-                  ? targetId
-                  : null;
-                pld.schoolInfo.schoolHeadConfig.assignments = isSchoolHead
-                  ? { All: targetId }
-                  : {};
-              } else if (isMainSh) {
-                pld.schoolInfo.schoolHeadConfig.mainHeadId = targetId;
-              } else if (!isSchoolHead) {
-                if (
-                  String(pld.schoolInfo.schoolHeadConfig.mainHeadId) ===
-                  String(targetId)
-                ) {
-                  pld.schoolInfo.schoolHeadConfig.mainHeadId = null;
-                }
-                if (pld.schoolInfo.schoolHeadConfig.assignments) {
-                  for (const k of Object.keys(
-                    pld.schoolInfo.schoolHeadConfig.assignments,
-                  )) {
+                if (pld.schoolInfo) {
+                  if (!pld.schoolInfo.schoolHeadConfig)
+                    pld.schoolInfo.schoolHeadConfig = {};
+                  pld.schoolInfo.schoolHeadConfig.hasMultipleHeads =
+                    hasMultipleHeads;
+                  if (!hasMultipleHeads) {
+                    pld.schoolInfo.schoolHeadConfig.mainHeadId = isSchoolHead
+                      ? targetId
+                      : null;
+                    pld.schoolInfo.schoolHeadConfig.assignments = isSchoolHead
+                      ? { All: targetId }
+                      : {};
+                  } else if (isMainSh) {
+                    pld.schoolInfo.schoolHeadConfig.mainHeadId = targetId;
+                  } else if (!isSchoolHead) {
                     if (
-                      String(pld.schoolInfo.schoolHeadConfig.assignments[k]) ===
+                      String(pld.schoolInfo.schoolHeadConfig.mainHeadId) ===
                       String(targetId)
                     ) {
-                      delete pld.schoolInfo.schoolHeadConfig.assignments[k];
+                      pld.schoolInfo.schoolHeadConfig.mainHeadId = null;
+                    }
+                    if (pld.schoolInfo.schoolHeadConfig.assignments) {
+                      for (const k of Object.keys(
+                        pld.schoolInfo.schoolHeadConfig.assignments,
+                      )) {
+                        if (
+                          String(
+                            pld.schoolInfo.schoolHeadConfig.assignments[k],
+                          ) === String(targetId)
+                        ) {
+                          delete pld.schoolInfo.schoolHeadConfig.assignments[k];
+                        }
+                      }
                     }
                   }
                 }
+
+                await client.query(
+                  "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3",
+                  [JSON.stringify(pld), row.school_id, row.school_year],
+                );
               }
             }
-
-            await client.query(
-              "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3",
-              [JSON.stringify(pld), row.school_id, row.school_year],
-            );
           }
+        } catch (draftSyncErr) {
+          console.warn(
+            "[PUT /api/personnel/:id/school-head] Legacy school_drafts sync skipped:",
+            draftSyncErr.message,
+          );
         }
       }
 

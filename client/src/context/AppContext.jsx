@@ -6288,9 +6288,62 @@ export const AppProvider = ({ children }) => {
           mergedSnapshot = merged;
 
           // Bidirectional normalization for all profile fields
-          if (merged.ethnicGroup) merged.ethnic_group = merged.ethnicGroup;
-          if (merged.ethnic_group && !merged.ethnicGroup)
+          if (updatedPerson.civilStatus !== undefined) {
+            merged.civilStatus = updatedPerson.civilStatus;
+            merged.civil_status = updatedPerson.civilStatus;
+          } else if (updatedPerson.civil_status !== undefined) {
+            merged.civilStatus = updatedPerson.civil_status;
+            merged.civil_status = updatedPerson.civil_status;
+          } else if (merged.civilStatus) {
+            merged.civil_status = merged.civilStatus;
+          } else if (merged.civil_status) {
+            merged.civilStatus = merged.civil_status;
+          }
+
+          if (updatedPerson.ethnicGroup !== undefined) {
+            merged.ethnicGroup = updatedPerson.ethnicGroup;
+            merged.ethnic_group = updatedPerson.ethnicGroup;
+          } else if (updatedPerson.ethnic_group !== undefined) {
+            merged.ethnicGroup = updatedPerson.ethnic_group;
+            merged.ethnic_group = updatedPerson.ethnic_group;
+          } else if (merged.ethnicGroup) {
+            merged.ethnic_group = merged.ethnicGroup;
+          } else if (merged.ethnic_group) {
             merged.ethnicGroup = merged.ethnic_group;
+          }
+
+          if (updatedPerson.philsysNo !== undefined) {
+            merged.philsysNo = updatedPerson.philsysNo;
+            merged.philsys_no = updatedPerson.philsysNo;
+          } else if (updatedPerson.philsys_no !== undefined) {
+            merged.philsysNo = updatedPerson.philsys_no;
+            merged.philsys_no = updatedPerson.philsys_no;
+          }
+          if (updatedPerson.noPhilsys !== undefined) {
+            merged.noPhilsys = !!updatedPerson.noPhilsys;
+            merged.no_philsys = !!updatedPerson.noPhilsys;
+          } else if (updatedPerson.no_philsys !== undefined) {
+            merged.noPhilsys = !!updatedPerson.no_philsys;
+            merged.no_philsys = !!updatedPerson.no_philsys;
+          }
+
+          if (updatedPerson.isSchoolHead !== undefined) {
+            merged.isSchoolHead = !!updatedPerson.isSchoolHead;
+            merged.is_school_head = !!updatedPerson.isSchoolHead;
+          } else if (updatedPerson.is_school_head !== undefined) {
+            merged.isSchoolHead = !!updatedPerson.is_school_head;
+            merged.is_school_head = !!updatedPerson.is_school_head;
+          }
+          if (updatedPerson.isMainSchoolHead !== undefined) {
+            merged.isMainSchoolHead = !!updatedPerson.isMainSchoolHead;
+            merged.is_main_school_head = !!updatedPerson.isMainSchoolHead;
+            merged.is_main_sh = !!updatedPerson.isMainSchoolHead;
+          } else if (updatedPerson.is_main_sh !== undefined) {
+            merged.isMainSchoolHead = !!updatedPerson.is_main_sh;
+            merged.is_main_school_head = !!updatedPerson.is_main_sh;
+            merged.is_main_sh = !!updatedPerson.is_main_sh;
+          }
+
           if (merged.prcSpecialization)
             merged.prc_specialization = merged.prcSpecialization;
           if (merged.prc_specialization && !merged.prcSpecialization)
