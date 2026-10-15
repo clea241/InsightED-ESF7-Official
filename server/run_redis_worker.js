@@ -31,6 +31,7 @@ async function main() {
   console.log(`• Group Name:  ${redisQueue.GROUP_NAME}`);
   console.log("----------------------------------------------------");
 
+  require("./queue_worker").logConsumerStatus();
   const initialized = await redisQueue.initRedisStream();
   if (!initialized) {
     console.warn(

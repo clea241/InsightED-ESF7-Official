@@ -58,7 +58,7 @@ router.post("/", async (req, res) => {
         console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
       });
 
-    // 3. Worker execution disabled per user instructions
+    // 3. Processing happens in the queue worker process (see QUEUE_CONSUMER_ENABLED in server/queue_worker.js), not here.
 
     // 4. Fetch initial queue position
     const posRes = await db.query(
