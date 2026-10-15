@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // READ-ONLY report of duplicate groups per proposed natural key (see utils/naturalKeys.js).
 //   node scripts/audit_duplicates.js                 whole database
 //   node scripts/audit_duplicates.js --school=300488 one school

@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // STEP 4 of the esf7_workload_rows payload change: prove that nothing in the legacy raw_payload is lost before the column is dropped.
 // For every row it checks that each payload key and value is held by a typed column (same value) or by `extras` (deep-equal value),
 // that the eight keys every old payload carried are rebuilt exactly by reconstructPayload(), and that row counts match.

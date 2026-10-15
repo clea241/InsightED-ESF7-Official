@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // ADDITIVE ONLY: adds retry bookkeeping to esf7_submission_queue (attempts, next_attempt_at). Nothing is dropped,
 // rewritten or truncated. Not run automatically.
 //

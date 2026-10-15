@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // READ-ONLY recovery report: finds drafts and submissions that were likely affected by the lost-edit bug.
 // Runs inside a READ ONLY transaction with a statement timeout; it cannot modify data.
 //

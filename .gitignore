@@ -47,3 +47,6 @@ verify.json
 
 # e2e-failure-path-tests: keep the example env file, ignore the real one
 !.env.test.example
+
+# .env.staging.example documents the PgBouncer / queue settings; keep it, ignore the real file
+!.env.staging.example

@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * High-Performance Migration & Rebuild of esf7_personnel_allowances
  *

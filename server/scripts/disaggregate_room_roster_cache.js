@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Data Migration: esf7_room_roster_cache -> normalized esf7_* tables
  *

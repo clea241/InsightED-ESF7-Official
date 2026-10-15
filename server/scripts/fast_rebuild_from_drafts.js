@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Fast Pure-SQL Clean Slate Rebuild of esf7_personnel_profile, employment, educ, and workloads
  *

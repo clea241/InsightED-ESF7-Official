@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Additive, idempotent migration: index for keyset pagination of GET /api/workloads (ORDER BY created_at, id).
 // Safe to re-run. Built CONCURRENTLY so writes to esf7_workload_rows are not blocked.
 // Run with the target database set in the environment (server/.env or DB_* vars); the target is printed first.

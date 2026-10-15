@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * High-Speed Wire Copy: insightEd.esf7_database -> insighted_esf7_staging.esf7_database
  *

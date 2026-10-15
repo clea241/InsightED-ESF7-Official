@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Cleanup for duplicated records of one school (default 300488).
 //
 //   node scripts/dedupe_school_300488.js                    REPORT ONLY - reads, never writes

@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // STEP 5 of 5 (contract) for esf7_workload_rows: drop the legacy raw_payload column. SEPARATE and LATER than the expand/backfill steps.
 // It refuses to run unless ALL of these hold:
 //   - docs/orm-optimizer/workload-rows-payload-verification.json says PASS, for this database, no older than --max-age-hours (default 24),

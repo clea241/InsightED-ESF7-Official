@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const path = require("path");
 const root = "e:\\InsightED - ESF7 Official";
 const { Pool } = require(path.join(root, "node_modules", "pg"));

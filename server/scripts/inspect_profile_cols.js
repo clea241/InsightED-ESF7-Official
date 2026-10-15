@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { stagingPool } = require("../db");
 
 async function inspectProfileCols() {

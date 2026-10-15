@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Removes DUPLICATE rows (same natural key, see utils/naturalKeys.js), keeping the oldest copy of each group.
 //   node scripts/dedupe_natural_keys.js --table=esf7_workload_rows                       REPORT ONLY
 //   node scripts/dedupe_natural_keys.js --table=esf7_workload_rows --school=300488        REPORT ONLY for one school

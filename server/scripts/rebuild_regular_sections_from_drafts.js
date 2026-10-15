@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Clean Slate Rebuild of esf7_regular_sections from authentic school_drafts
  *

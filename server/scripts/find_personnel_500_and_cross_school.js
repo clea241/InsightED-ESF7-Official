@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // READ-ONLY report. Changes nothing: log files are only read, and the database part runs inside a READ ONLY
 // transaction with a statement timeout.
 //

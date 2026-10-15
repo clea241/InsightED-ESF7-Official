@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Additive migration for Rows 14/16.
 //  1. esf7_school_head_sdo: SDO-supplied school head (fallback when the roster has none).
 //  2. One designated school head per school, enforced by the database (partial unique index).

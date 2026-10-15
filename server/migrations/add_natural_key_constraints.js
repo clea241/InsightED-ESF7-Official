@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Adds the UNIQUE indexes from utils/naturalKeys.js so duplicates can never be inserted again.
 //   node migrations/add_natural_key_constraints.js            CHECK ONLY (default): lists what blocks each index
 //   node migrations/add_natural_key_constraints.js --apply --confirm=YES
