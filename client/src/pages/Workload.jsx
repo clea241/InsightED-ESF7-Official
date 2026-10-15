@@ -31,6 +31,8 @@ import {
 import { showWorkloadRestoreModal } from "../services/dirtyGuard";
 import {
   getWorkloadDraftKey,
+  cleanSchoolId,
+  canonicalSchoolYear,
   readMigratedLocalStorage,
   writeWithLegacyCleanup,
 } from "../services/storageKeys";
@@ -12158,12 +12160,29 @@ function WorkloadInner() {
   const removeTeacherWorkloadDraft = useCallback(
     (personId, term = activeTerm) => {
       const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
+      const sId = schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
       try {
         localStorage.removeItem(canonicalKey);
         localStorage.removeItem(`draft_workload_${personId}`);
+        localStorage.removeItem(
+          `draft_workload_${schoolInfo?.schoolId}_${personId}`,
+        );
+        removeOutboxEntryByModule({
+          schoolId: sId,
+          user: user?.username || user?.email || "anonymous",
+          term: term || activeTerm || "1st",
+          module: "workload",
+          recordId: personId,
+        });
       } catch (e) {}
     },
-    [getTeacherWorkloadDraftKey],
+    [
+      getTeacherWorkloadDraftKey,
+      schoolInfo?.schoolId,
+      user?.username,
+      user?.email,
+      activeTerm,
+    ],
   );
 
   useEffect(() => {
@@ -12563,6 +12582,13 @@ function WorkloadInner() {
         advisorySections.length > 0 ? String(advisorySections[0].id) : "";
 
       // Keep ADVISORY and HGP rows strictly 1 per active advisory section, clean up obsolete / duplicate rows (scoped per term)
+      const isSavedRow = (r) =>
+        Boolean(
+          r &&
+          r.id &&
+          !String(r.id).startsWith("local-") &&
+          !String(r.id).startsWith("temp-"),
+        );
       const seenAdvisorySecs = new Map();
       const seenHgpSecs = new Map();
       const seenSnedSecs = new Map();
@@ -12578,6 +12604,10 @@ function WorkloadInner() {
           .trim();
         const rTerm = r.term || "1st";
         if (subUpper === "CUSTOM" || subUpper.startsWith("CUSTOM (")) {
+          if (isSavedRow(r)) {
+            otherCleanedRows.push(r);
+            return;
+          }
           didClean = true;
           return;
         }
@@ -12608,6 +12638,10 @@ function WorkloadInner() {
 
         if (subUpper === "ADVISORY") {
           if (isSnedRow || isAlsRow || isAralRow || isRemRow) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return;
           }
@@ -12621,6 +12655,10 @@ function WorkloadInner() {
                     String(r.sectionName).toUpperCase()),
             ) || (advisorySections.length === 1 ? advisorySections[0] : null);
           if (!matchingAdvSec) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return;
           }
@@ -12636,19 +12674,27 @@ function WorkloadInner() {
               term: rTerm,
             });
           } else {
-            // Deduplicate multiple advisory rows for this section: merge days into single row
-            const existingAdv = seenAdvisorySecs.get(secKey);
-            const rDays =
-              Array.isArray(r.days) && r.days.length > 0 ? r.days : ["M"];
-            const mergedDays = Array.from(
-              new Set([...(existingAdv.days || []), ...rDays]),
-            );
-            existingAdv.days = mergedDays;
-            didClean = true;
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+            } else {
+              // Deduplicate multiple advisory rows for this section: merge days into single row
+              const existingAdv = seenAdvisorySecs.get(secKey);
+              const rDays =
+                Array.isArray(r.days) && r.days.length > 0 ? r.days : ["M"];
+              const mergedDays = Array.from(
+                new Set([...(existingAdv.days || []), ...rDays]),
+              );
+              existingAdv.days = mergedDays;
+              didClean = true;
+            }
           }
         } else if (subUpper === "HGP") {
           // Verify this HGP section actually belongs to this teacher in advisorySections (never SNED, ALS, ARAL, or Remedial)
           if (isSnedRow || isAlsRow || isAralRow || isRemRow) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return; // No HGP for SNED, ALS, ARAL, or Remedial
           }
@@ -12661,6 +12707,10 @@ function WorkloadInner() {
                     String(r.sectionName).toUpperCase()),
             ) || (advisorySections.length === 1 ? advisorySections[0] : null);
           if (!matchingAdvSec) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return;
           }
@@ -12676,7 +12726,11 @@ function WorkloadInner() {
               term: rTerm,
             });
           } else {
-            didClean = true;
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+            } else {
+              didClean = true;
+            }
           }
         } else if (isSnedRow) {
           const isOwn =
@@ -12688,6 +12742,10 @@ function WorkloadInner() {
                     String(r.sectionName).toUpperCase()),
             ) || snedSections.length > 0;
           if (!isOwn) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return;
           }
@@ -12712,7 +12770,11 @@ function WorkloadInner() {
               term: rTerm,
             });
           } else {
-            didClean = true;
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+            } else {
+              didClean = true;
+            }
           }
         } else if (isAlsRow) {
           const isOwn =
@@ -12724,6 +12786,10 @@ function WorkloadInner() {
                     String(r.sectionName).toUpperCase()),
             ) || alsSections.length > 0;
           if (!isOwn) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return;
           }
@@ -12747,7 +12813,11 @@ function WorkloadInner() {
               term: rTerm,
             });
           } else {
-            didClean = true;
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+            } else {
+              didClean = true;
+            }
           }
         } else if (isAralRow) {
           const isOwn =
@@ -12759,6 +12829,10 @@ function WorkloadInner() {
                     String(r.sectionName).toUpperCase()),
             ) || aralSections.length > 0;
           if (!isOwn) {
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+              return;
+            }
             didClean = true;
             return;
           }
@@ -12782,7 +12856,11 @@ function WorkloadInner() {
               term: rTerm,
             });
           } else {
-            didClean = true;
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+            } else {
+              didClean = true;
+            }
           }
         } else if (isRemRow) {
           const targetSec =
@@ -12820,7 +12898,11 @@ function WorkloadInner() {
               term: rTerm,
             });
           } else {
-            didClean = true;
+            if (isSavedRow(r)) {
+              otherCleanedRows.push(r);
+            } else {
+              didClean = true;
+            }
           }
         } else {
           // Keep all assigned workload rows intact (including admin duties, immersion, and standard/custom subjects)
@@ -12877,9 +12959,12 @@ function WorkloadInner() {
         const initialLen = updatedRows.length;
         updatedRows = updatedRows.filter(
           (r) =>
-            r.subject !== "ADVISORY" &&
-            r.subject !== "HGP" &&
-            r.subject !== "HOMEROOM GUIDANCE",
+            isSavedRow(r) ||
+            (r.subject !== "ADVISORY" &&
+              normalizeSubjectName(r.subject) !== "HGP" &&
+              r.subject !== "HGP" &&
+              r.subject !== "HOMEROOM GUIDANCE" &&
+              r.subject !== "HOMEROOM GUIDANCE PROGRAM"),
         );
         if (updatedRows.length !== initialLen) rowsChanged = true;
       } else {
@@ -12887,7 +12972,9 @@ function WorkloadInner() {
         const secIdStr = String(primarySec.id);
 
         let advisoryIdx = updatedRows.findIndex(
-          (r) => (r.term || "1st") === "1st" && r.subject === "ADVISORY",
+          (r) =>
+            (r.term || "1st") === "1st" &&
+            String(r.subject || "").toUpperCase() === "ADVISORY",
         );
         if (advisoryIdx === -1) {
           const newAdv = {
@@ -12922,7 +13009,13 @@ function WorkloadInner() {
         }
 
         let hgpIdx = updatedRows.findIndex(
-          (r) => (r.term || "1st") === "1st" && r.subject === "HGP",
+          (r) =>
+            (r.term || "1st") === "1st" &&
+            (normalizeSubjectName(r.subject) === "HGP" ||
+              r.subject === "HGP" ||
+              String(r.subject || "")
+                .toUpperCase()
+                .includes("HOMEROOM GUIDANCE")),
         );
         const advRow = updatedRows[advisoryIdx];
         const defaultStartTime = advRow?.startTime || "07:30";
@@ -13167,8 +13260,6 @@ function WorkloadInner() {
           JSON.stringify(currentNorm) === JSON.stringify(savedNorm)
         ) {
           removeTeacherWorkloadDraft(dbPerson.id, activeTerm);
-        } else {
-          writeTeacherWorkloadDraft(dbPerson.id, activeTerm, updatedPerson);
         }
       }
     } else {
@@ -13600,7 +13691,16 @@ function WorkloadInner() {
       // Store baseline from esf7_workload_rows per school, teacher, and term
       setTeacherTermSavedSnapshot(personId, term, dbRows);
 
-      const draftKey = `draft_workload_${personId}`;
+      const sid = cleanSchoolId(
+        schoolInfo?.schoolId || schoolInfo?.id || resolveSchoolId(),
+      );
+      const sy = canonicalSchoolYear(schoolInfo?.schoolYear || "SY 26-27");
+      const canonicalDraftKey = getWorkloadDraftKey(sid, sy, personId, term);
+      const legacyDraftKeys = [
+        `draft_workload_${personId}`,
+        `draft_workload_${sid}_${personId}`,
+        getWorkloadDraftKey(sid, sy, personId),
+      ];
       const key = resolutionKey(personId, term);
       const prior = restoreResolutions.get(key);
       const teacherName =
@@ -13611,19 +13711,38 @@ function WorkloadInner() {
           (r) => (r.term || "1st") !== term,
         );
 
+      const clearAllDrafts = () => {
+        try {
+          localStorage.removeItem(canonicalDraftKey);
+          for (const lk of legacyDraftKeys) {
+            localStorage.removeItem(lk);
+          }
+          removeOutboxEntryByModule({
+            schoolId: sid,
+            user: user?.username || user?.email || "anonymous",
+            term: term || activeTerm || "1st",
+            module: "workload",
+            recordId: personId,
+          });
+        } catch (e) {}
+      };
+
       let draftObj = null;
       try {
-        const rawDraft = localStorage.getItem(draftKey);
+        const rawDraft = readMigratedLocalStorage(
+          canonicalDraftKey,
+          legacyDraftKeys,
+        );
         if (rawDraft) draftObj = JSON.parse(rawDraft);
       } catch (e) {
-        localStorage.removeItem(draftKey);
+        clearAllDrafts();
       }
       const draftRowsAll =
-        draftObj && Array.isArray(draftObj.workloadRows)
+        draftObj &&
+        Array.isArray(draftObj.workloadRows) &&
+        draftObj.workloadRows.length > 0
           ? draftObj.workloadRows
           : null;
-      // The local copy is the browser draft when there is one; otherwise the rows the roster currently holds.
-      const localCopy = draftRowsAll || localRows;
 
       const adoptSaved = () =>
         applyWorkloadToPerson(personId, {
@@ -13635,19 +13754,16 @@ function WorkloadInner() {
       if (afterSave) {
         // A confirmed save (or an explicit discard): show exactly what is saved.
         adoptSaved();
-        if (draftObj && outsideTerm(draftRowsAll).length === 0)
-          localStorage.removeItem(draftKey);
+        clearAllDrafts();
+        restoreResolutions.set(key, "clean");
+      } else if (!draftRowsAll) {
+        // Database is authoritative baseline on load; no user draft exists. Adopt database rows silently without prompt.
+        adoptSaved();
+        clearAllDrafts();
         restoreResolutions.set(key, "clean");
       } else if (prior && prior !== "unreachable") {
         // Already checked in this page load: never ask again.
-        if (prior === "declined" && restoreDeclined.has(String(personId))) {
-          applyWorkloadToPerson(personId, {
-            termRows: { term, rows: dbRows },
-            baseVersion: version,
-            baseRows: { term, rows: dbRows },
-            skipDraft: true,
-          });
-        } else if (prior === "clean") {
+        if (prior === "declined" || prior === "clean") {
           adoptSaved();
         } else {
           // restored / edited: the editor's rows are the user's; only move the baseline to what is saved now.
@@ -13659,7 +13775,7 @@ function WorkloadInner() {
         }
       } else {
         const identical =
-          JSON.stringify(normalizeRowsForComparison(localCopy, term)) ===
+          JSON.stringify(normalizeRowsForComparison(draftRowsAll, term)) ===
           JSON.stringify(normalizeRowsForComparison(dbRows, term));
         const comparison = identical
           ? { action: "clean", reason: "identical" }
@@ -13668,7 +13784,7 @@ function WorkloadInner() {
               term,
               dbRows,
               dbVersion: state.version,
-              localRows: localCopy,
+              localRows: draftRowsAll,
               baseRows: Array.isArray(person.workloadBaseRows)
                 ? person.workloadBaseRows
                 : undefined,
@@ -13680,8 +13796,7 @@ function WorkloadInner() {
         if (comparison.action === "clean") {
           // Identical, or older with nothing extra: discard silently, no prompt, no unsaved-changes banner.
           adoptSaved();
-          if (draftObj && outsideTerm(draftRowsAll).length === 0)
-            localStorage.removeItem(draftKey);
+          clearAllDrafts();
           restoreResolutions.set(key, "clean");
         } else {
           restoreResolutions.set(key, "prompting");
@@ -13691,7 +13806,7 @@ function WorkloadInner() {
             summary: comparison.summary,
           });
           if (choice === "restore") {
-            // Only now does the draft go into the editor: its differences on top of the saved rows, as unsaved changes.
+            // Keep My Changes: user chooses to restore local draft into editor
             restoreDeclined.delete(String(personId));
             restoreResolutions.set(key, "restored");
             applyWorkloadToPerson(personId, {
@@ -13700,26 +13815,11 @@ function WorkloadInner() {
               baseRows: { term, rows: dbRows },
             });
           } else {
-            // Declined: user explicitly chose not to restore; clear the draft from localStorage and outbox.
-            restoreDeclined.add(String(personId));
-            restoreResolutions.set(key, "declined");
-            try {
-              localStorage.removeItem(draftKey);
-              removeOutboxEntryByModule({
-                schoolId:
-                  schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
-                user: user?.username || user?.email || "anonymous",
-                term: activeTerm || "1st",
-                module: "workload",
-                recordId: personId,
-              });
-            } catch (e) {}
-            applyWorkloadToPerson(personId, {
-              termRows: { term, rows: dbRows },
-              baseVersion: version,
-              baseRows: { term, rows: dbRows },
-              skipDraft: true,
-            });
+            // Use Database Version: discard local/outbox draft for that teacher+term and reset snapshot
+            restoreDeclined.delete(String(personId));
+            restoreResolutions.set(key, "clean");
+            clearAllDrafts();
+            adoptSaved();
           }
         }
       }
@@ -13857,10 +13957,6 @@ function WorkloadInner() {
   ]);
 
   const isDirty = Boolean(isCurrentTeacherDirty || hasLocalDrafts);
-  // A draft the user declined to restore stays in the browser; leaving the page still offers it through the unsaved-changes alert.
-  const hasDeclinedDraft = [...restoreDeclined].some((id) =>
-    Boolean(readTeacherWorkloadDraft(id)),
-  );
 
   const handleDiscard = useCallback(() => {
     (personnel || []).forEach((p) => {
@@ -13879,6 +13975,7 @@ function WorkloadInner() {
 
   const isSavingRef = useRef(false);
   const runWorkloadSaveRef = useRef(() => Promise.resolve({ ok: true }));
+  const markCleanRef = useRef(null);
 
   const flushWorkloadToContext = useCallback(() => {
     const cur =
@@ -13895,9 +13992,9 @@ function WorkloadInner() {
     }
   }, [setPersonnel]);
 
-  const { confirmAction } = useDirtyGuard({
+  const { confirmAction, markClean } = useDirtyGuard({
     screenId: "workload",
-    isDirty: isDirty || hasDeclinedDraft,
+    isDirty: isDirty,
     onDiscard: handleDiscard,
     onSave: () => runWorkloadSaveRef.current(),
     onFlush: flushWorkloadToContext,
@@ -13924,15 +14021,10 @@ function WorkloadInner() {
           from: "saved snapshot",
           to: "draft differs",
         });
-      if (hasDeclinedDraft)
-        reasons.push({
-          section: "declined draft still in browser",
-          from: "-",
-          to: "-",
-        });
       return reasons;
     },
   });
+  markCleanRef.current = markClean;
 
   const currentPersonRef = useRef(currentPerson);
   useEffect(() => {
@@ -16989,6 +17081,7 @@ function WorkloadInner() {
         completeNode("workload", null);
       }
 
+      markCleanRef.current?.();
       showToast("Workload schedule saved to database successfully.", "success");
       return { ok: true };
     } catch (err) {

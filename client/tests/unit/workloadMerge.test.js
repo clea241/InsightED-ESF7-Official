@@ -7,6 +7,8 @@ import {
   dedupeWorkloadRows,
   rowsFingerprint,
   decideWorkloadMerge,
+  normalizeSubjectName,
+  compareDraftToDatabase,
 } from "../../src/services/workloadMerge.js";
 
 const P = "PER-1";
@@ -361,7 +363,6 @@ test('"8:00", "08:00" and "08:00:00" are the same time in a block key (formattin
 
 // ── restore prompt: draft vs saved rows ──
 import {
-  compareDraftToDatabase,
   isDraftNewer,
   summarizeWorkloadDiff,
 } from "../../src/services/workloadMerge.js";
@@ -553,5 +554,65 @@ describe("overlayDatabaseWorkload (login)", () => {
       dbRows: [row("s1", "MATH"), row("s2", "MATH")],
     });
     expect(out).toHaveLength(1);
+  });
+});
+
+describe("HGP and Subject Name Normalization", () => {
+  test("normalizeSubjectName normalizes all HGP variations to 'HGP'", () => {
+    expect(normalizeSubjectName("HOMEROOM GUIDANCE PROGRAM")).toBe("HGP");
+    expect(normalizeSubjectName("HOMEROOM GUIDANCE")).toBe("HGP");
+    expect(normalizeSubjectName("HGP (Grade 7)")).toBe("HGP");
+    expect(normalizeSubjectName("hgp")).toBe("HGP");
+    expect(normalizeSubjectName("SCIENCE")).toBe("SCIENCE");
+  });
+
+  test("compareDraftToDatabase treats HOMEROOM GUIDANCE PROGRAM and HGP as identical", () => {
+    const dbRows = [
+      block({
+        id: "db-hgp",
+        subject: "HOMEROOM GUIDANCE PROGRAM",
+        startTime: "07:30",
+        endTime: "08:30",
+        days: ["F"],
+        sectionName: "DIAMOND",
+      }),
+      block({
+        id: "db-sci",
+        subject: "SCIENCE",
+        startTime: "08:30",
+        endTime: "09:30",
+        days: ["M", "T"],
+        sectionName: "DIAMOND",
+      }),
+    ];
+    const draftRows = [
+      block({
+        id: "local-hgp",
+        subject: "HGP",
+        startTime: "07:30",
+        endTime: "08:30",
+        days: ["F"],
+        sectionName: "DIAMOND",
+      }),
+      block({
+        id: "db-sci",
+        subject: "SCIENCE",
+        startTime: "08:30",
+        endTime: "09:30",
+        days: ["M", "T"],
+        sectionName: "DIAMOND",
+      }),
+    ];
+
+    const res = compareDraftToDatabase({
+      personId: "P-1",
+      term: "1st",
+      dbRows,
+      localRows: draftRows,
+    });
+    expect(res.action).toBe("clean");
+    expect(res.summary.changed).toBe(0);
+    expect(res.summary.added).toBe(0);
+    expect(res.summary.removed).toBe(0);
   });
 });

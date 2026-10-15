@@ -15,6 +15,20 @@ const upper = (value) =>
     .trim()
     .toUpperCase();
 
+export const normalizeSubjectName = (sub) => {
+  if (!sub || typeof sub !== "string") return "";
+  const upper = sub.trim().toUpperCase();
+  if (
+    upper.includes("HOMEROOM GUIDANCE") ||
+    upper.startsWith("HOMEROOM GUIDANCE") ||
+    upper.startsWith("HGP (") ||
+    upper === "HGP"
+  ) {
+    return "HGP";
+  }
+  return upper;
+};
+
 // "8:00", "08:00" and "08:00:00" are the same time.
 const timeOf = (value) => {
   const text = String(value == null ? "" : value).trim();
@@ -35,10 +49,10 @@ const daysOf = (row) => {
 // Identity of a block that does not depend on its id: teacher + term + days + time + section/grade + subject.
 export const compositeRowKey = (personId, row) => {
   const place = upper(
-    row.sectionId ||
-      row.section_id ||
-      row.sectionName ||
+    row.sectionName ||
       row.section_name ||
+      row.sectionId ||
+      row.section_id ||
       row.gradeLevel ||
       row.grade_level,
   );
@@ -49,7 +63,7 @@ export const compositeRowKey = (personId, row) => {
     timeOf(row.startTime || row.start_time),
     timeOf(row.endTime || row.end_time),
     place,
-    upper(row.subject || row.subject_name || row.task),
+    normalizeSubjectName(row.subject || row.subject_name || row.task),
   ].join("|");
 };
 
