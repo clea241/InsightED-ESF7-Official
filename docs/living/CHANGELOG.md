@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-10-15 (PgBouncer + Redis readiness: queue consumer, pool config, direct port, idempotent submit)
+- Queue worker: the four hard-coded early returns (added in 8f0352c, "per user instructions") are replaced by `QUEUE_CONSUMER_ENABLED` (default `false`: nothing changes until it is set). Claiming is one atomic statement (`claimNextPendingJob`); failed jobs retry with exponential jittered backoff up to `QUEUE_MAX_ATTEMPTS` (5) then stay `failed`; stream pointers of permanently failed jobs are acknowledged. Fixed the worker's school-profile insert (26 values for 24 columns), which made every job fail at step 1.
+- DB: pool sizes and connect timeout read from `PG_POOL_MAX_*` / `PG_CONNECT_TIMEOUT_MS` (defaults equal the old values); pool-acquire timeouts answer 503 + jittered `Retry-After`.
+- Scripts, migrations and `migrate_*.js` load `db/directPort.js` so they use `DB_DIRECT_PORT` (default 5432), not the PgBouncer port. Docs: `docs/ops/pgbouncer.md`, `.env.staging.example`.
+- Submit: `POST /api/submissions` and `POST /api/validation/resubmit` accept an optional UUID `submissionId`; a repeat returns the same job. Needs the manual migrations `add_queue_retry_columns.js` and `add_queue_submission_id.js` (both reversible with `--down`); without them behaviour is unchanged.
+
 ## 2026-10-15 (fix: School Profile "Unsaved Changes" modal with no edits)
 - `SchoolProfile.jsx`: the clean baseline was captured in the same tick as the hydrating `setState` calls, so it held the pre-load defaults and the guard saw 4 phantom differences. The baseline is now captured in an effect after the hydrated state has rendered (initial load and outbox sync), and the dirty check recomputes after every baseline reset (including save). Modal, buttons and normalization are unchanged; real edits still trigger the guard. The field/from/to table is already logged by `dirtyGuard.js` in dev.
 
