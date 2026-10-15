@@ -2058,7 +2058,13 @@ const handleSaveDraft = async (req, res) => {
       await client.query("BEGIN");
 
       try {
-        if (withVersion) {
+        if (process.env.DISABLE_BLOB_DRAFT_WRITES === "true") {
+          // Legacy blob archive is read-only: the normalized tables below are the only write target.
+          saved = {
+            version: baseVersion ? Number(baseVersion) + 1 : 1,
+            updatedAt: new Date().toISOString(),
+          };
+        } else if (withVersion) {
           const sql =
             baseVersion === null
               ? `INSERT INTO school_drafts (school_id, school_year, payload, version, updated_at)
@@ -2127,17 +2133,9 @@ const handleSaveDraft = async (req, res) => {
       }
 
       // Persist to normalized relational tables (source of truth)
-      await persistNormalizedDraft(
-        client,
-        schoolId,
-        schoolYear,
-        finalPayload,
-      ).catch((normErr) => {
-        console.warn(
-          "[handleSaveDraft] Normalized persistence warning:",
-          normErr.message,
-        );
-      });
+      // A failure here must roll the whole save back and reach the client as a 500 (it keeps its local draft and retries),
+      // never be reported as saved.
+      await persistNormalizedDraft(client, schoolId, schoolYear, finalPayload);
 
       await client.query("COMMIT");
       if (!saved) {
