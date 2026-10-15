@@ -1347,6 +1347,16 @@ router.delete("/:id", async (req, res) => {
           .catch(() => {}),
       ]);
 
+      // Update normalized school node status for sections
+      if (schoolIds.length > 0) {
+        await dbPool
+          .query(
+            `UPDATE esf7_school_node_status SET updated_at = NOW() WHERE school_id = ANY($1)`,
+            [schoolIds],
+          )
+          .catch(() => {});
+      }
+
       // Also clean up school_drafts in this pool
       try {
         const queryText =

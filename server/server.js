@@ -272,7 +272,13 @@ app.use("/api/allowances", require("./controllers/allowances"));
 app.use("/api/school-head-sdo", require("./controllers/school_head_sdo"));
 app.use("/api/extra-tasks", require("./controllers/personnel_extra_tasks"));
 app.get("/api/room-profiling/snapshots/:id", (req, res, next) => {
-  if (!/^[\w.:-]{1,128}$/.test(req.params.id))
+  const cleanId = String(req.params.id || "").trim();
+  const isSnapFormat = /^SNAP-\d+-[A-Za-z0-9]+$/i.test(cleanId);
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      cleanId,
+    );
+  if (!isSnapFormat && !isUuid)
     return res.status(400).json({ error: "Invalid snapshot id" });
   next();
 });

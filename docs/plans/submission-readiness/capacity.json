@@ -13,7 +13,7 @@
       "source": "default"
     },
     "queriesPerSubmission": {
-      "value": 30,
+      "value": 27,
       "source": "inventory"
     },
     "payloadBytes": {
@@ -45,7 +45,7 @@
     "normalAvgRps": 1,
     "worstAvgRps": 10,
     "peakRps": 30,
-    "queriesPerSecondAtPeak": 900,
+    "queriesPerSecondAtPeak": 810,
     "connectionsAvailableFromPools": 85,
     "dbMaxConnections": null,
     "poolsExceedDbLimit": null,
@@ -88,7 +88,7 @@
     "normalAvgRps": "1.00",
     "worstAvgRps": "10.00",
     "peakRps": "30.00",
-    "queriesPerSecondAtPeak": "900.00",
+    "queriesPerSecondAtPeak": "810.00",
     "connectionsAvailable": "85",
     "redisBacklogSubmissions": "54000",
     "redisBacklogMiB": "51498.4",

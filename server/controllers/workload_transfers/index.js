@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
+const { generateTransferId } = require("../../db/idGenerator");
 
 // Get all transfers
 router.get("/", async (req, res) => {
@@ -59,8 +60,6 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-const { generateTransferId } = require("../../db/idGenerator");
 
 // Create workload transfers (creates a batch of transfers based on frontend array structure)
 router.post("/batch", async (req, res) => {

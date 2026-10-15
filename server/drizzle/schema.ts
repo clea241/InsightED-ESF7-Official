@@ -360,22 +360,35 @@ export const esf7RemedialEnrichmentSections = pgTable(
   ],
 );
 
-export const esf7Link = pgTable("esf7_link", {
-  schoolId: text("school_id").primaryKey().notNull(),
-  link: text().notNull(),
-  rowCount: integer("row_count"),
-  previewData: jsonb("preview_data"),
-  summary: jsonb(),
-  status: text().default("PENDING_SDO"),
-  uploadedAt: timestamp("uploaded_at", {
-    withTimezone: true,
-    mode: "string",
-  }).default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: timestamp("updated_at", {
-    withTimezone: true,
-    mode: "string",
-  }).default(sql`CURRENT_TIMESTAMP`),
-});
+export const esf7Link = pgTable(
+  "esf7_link",
+  {
+    schoolId: text("school_id").notNull(),
+    semester: text("semester").default("REGULAR").notNull(),
+    iern: text("iern"),
+    link: text("link").notNull(),
+    filePath: text("file_path"),
+    rowCount: integer("row_count"),
+    previewData: jsonb("preview_data"),
+    summary: jsonb("summary"),
+    status: text("status").default("PENDING_SDO"),
+    auditRemarks: text("audit_remarks"),
+    uploadedAt: timestamp("uploaded_at", {
+      withTimezone: true,
+      mode: "string",
+    }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.schoolId, table.semester],
+      name: "esf7_link_pkey",
+    }),
+  ],
+);
 
 export const esf7PersonnelLearningAreas = pgTable(
   "esf7_personnel_learning_areas",
@@ -1348,4 +1361,110 @@ export const overloadPayTest = pgView("overload_pay_test", {
   }),
 }).as(
   sql`SELECT id, personnel_id, school_id, school_year, term, month, overload_hours, overload_pay, net_term_pay, reasons, raw_payload, created_at, updated_at, is_confirmed, actual_amount, confirmed_at FROM overload_pay_and_reason`,
+);
+
+export const esf7ClusteredGhostSync = pgTable(
+  "esf7_clustered_ghost_sync",
+  {
+    roomKey: text("room_key").notNull(),
+    schoolId: text("school_id").notNull(),
+    schoolName: text("school_name"),
+    slots: jsonb().default([]).notNull(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.roomKey, table.schoolId],
+      name: "esf7_clustered_ghost_sync_pkey",
+    }),
+    index("idx_clustered_ghost_room").on(table.roomKey),
+  ],
+);
+
+export const esf7PasscodeLockout = pgTable(
+  "esf7_passcode_lockout",
+  {
+    lockoutKey: varchar("lockout_key", { length: 128 }).primaryKey().notNull(),
+    schoolId: varchar("school_id", { length: 64 }).notNull(),
+    failedAttempts: integer("failed_attempts").default(0),
+    lockoutUntil: bigint("lockout_until", { mode: "number" }).default(0),
+    lastAttemptAt: timestamp("last_attempt_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [index("idx_passcode_lockout_school").on(table.schoolId)],
+);
+
+export const esf7PersonnelSubmissionArchive = pgTable(
+  "esf7_personnel_submission_archive",
+  {
+    id: varchar({ length: 128 }).primaryKey().notNull(),
+    schoolId: varchar("school_id", { length: 64 }).notNull(),
+    personnelId: varchar("personnel_id", { length: 64 }).notNull(),
+    personnelName: varchar("personnel_name", { length: 255 }),
+    roomName: varchar("room_name", { length: 255 }),
+    status: varchar({ length: 32 }).default("APPROVED"),
+    payloadJson: jsonb("payload_json").notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+    createdTimestamp: bigint("created_timestamp", { mode: "number" }),
+  },
+  (table) => [
+    index("idx_pers_archive_school").on(table.schoolId),
+    index("idx_pers_archive_personnel").on(table.schoolId, table.personnelId),
+  ],
+);
+
+export const esf7ProfilingSnapshots = pgTable(
+  "esf7_profiling_snapshots",
+  {
+    id: varchar({ length: 128 }).primaryKey().notNull(),
+    schoolId: varchar("school_id", { length: 64 }).notNull(),
+    snapshotName: varchar("snapshot_name", { length: 255 }),
+    personnelCount: integer("personnel_count").default(0),
+    verifiedCount: integer("verified_count").default(0),
+    snapshotJson: jsonb("snapshot_json").notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [index("idx_pers_snapshots_school").on(table.schoolId)],
+);
+
+export const esf7Validation = pgTable(
+  "esf7_validation",
+  {
+    id: serial().primaryKey().notNull(),
+    schoolId: varchar("school_id", { length: 50 }).notNull().unique(),
+    schoolYear: varchar("school_year", { length: 50 }).default("SY 26-27"),
+    po3Validation: text("po3_validation").default("PENDING"),
+    hrmoValidation: text("hrmo_validation").default("PENDING"),
+    specialProgramValidation: text("special_program_validation").default(
+      "PENDING",
+    ),
+    sectionsDensityValidation: text("sections_density_validation").default(
+      "PENDING",
+    ),
+    staffingCompositionValidation: text(
+      "staffing_composition_validation",
+    ).default("PENDING"),
+    validationDetails: jsonb("validation_details").default({}),
+    validatedBy: jsonb("validated_by").default({}),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [index("idx_esf7_validation_school_id").on(table.schoolId)],
 );
