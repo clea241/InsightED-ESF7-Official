@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-10-15 (follow-up: startup DDL, root scripts, worker schema, school from login)
+- Server start: the schema checks in `initDB` run on a direct connection (`db/directPool.js`, `DB_DIRECT_PORT`) with a warned fallback to the pooled one; `RUN_STARTUP_SCHEMA_INIT=false` skips them (default: unchanged). The startup reset of all `processing` jobs is skipped when `QUEUE_CONSUMER_ENABLED=true`.
+- 107 older scripts in `server/` load `db/directPort.js`; app/worker runtime files and database-free scripts are left alone (listed in `docs/ops/pgbouncer.md`).
+- Worker schema: new manifest `services/workerSchema.js`, read-only check `docs/ops/worker-schema-check.sql`, boot warning when the consumer is on, and the manual, reversible migration `migrations/add_worker_schema_columns.js` (`esf7_personnel_employment.raw_payload` and six inclusive columns on `esf7_school_profile`). Nothing was applied anywhere.
+- `POST /api/submissions` and `POST /api/validation/resubmit`: the school now comes from the logged-in user. A different school in the body or payload gets 403; a login with no school gets 403 (the old literal fallback school `123456` is gone). Valid requests behave as before.
+
 ## 2026-10-15 (PgBouncer + Redis readiness: queue consumer, pool config, direct port, idempotent submit)
 - Queue worker: the four hard-coded early returns (added in 8f0352c, "per user instructions") are replaced by `QUEUE_CONSUMER_ENABLED` (default `false`: nothing changes until it is set). Claiming is one atomic statement (`claimNextPendingJob`); failed jobs retry with exponential jittered backoff up to `QUEUE_MAX_ATTEMPTS` (5) then stay `failed`; stream pointers of permanently failed jobs are acknowledged. Fixed the worker's school-profile insert (26 values for 24 columns), which made every job fail at step 1.
 - DB: pool sizes and connect timeout read from `PG_POOL_MAX_*` / `PG_CONNECT_TIMEOUT_MS` (defaults equal the old values); pool-acquire timeouts answer 503 + jittered `Retry-After`.

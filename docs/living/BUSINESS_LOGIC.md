@@ -84,3 +84,4 @@ Sections live in `esf7_regular_sections` (and sibling sned/als/aral/remedial tab
 - If the client sends a `submissionId` (UUID, created once per certify click and reused on every retry), the same school and `submissionId` always map to one job; a repeat returns that job's current status.
 - A failed job is retried with a growing, randomised delay up to `QUEUE_MAX_ATTEMPTS` (default 5); after that it stays `failed` for a person to look at. Jobs are never deleted by the worker.
 - If no database connection is free in time, the API answers 503 with `Retry-After` (1 to 5 seconds), not 500.
+- A submission is always for the logged-in user's own school. If the request names a different school (in the body or inside the payload) it is refused with 403; if the login has no school it is refused with 403. There is no default school.

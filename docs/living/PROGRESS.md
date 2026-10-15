@@ -1,5 +1,10 @@
 # PROGRESS
 
+## 2026-10-15 (follow-up on branch feat/startup-schema-and-tenant-guards)
+- Done: startup DDL on a direct connection behind `RUN_STARTUP_SCHEMA_INIT`; root scripts on the direct-port helper; worker schema check, SQL and migration; school-from-login for both submit routes; boot schema warning. Unit 281 pass, queue/worker-schema integration 48 pass, lint at its cap; the 17 older drafts/workload integration failures are unchanged.
+- Not done: nothing applied; consumer still off; the 3 Redis stream tests need `TEST_REDIS_URL` (no Redis here). `GET /api/submissions/status/:job_id` does not check the job belongs to the caller's school; the step and queue status routes were out of scope.
+- Open: SHS workload rows are inserted inside `.catch(() => {})` in the worker, so a failure there is silent; columns arriving through the `...record` spread in the workload batches are not in the manifest.
+
 ## 2026-10-15 (PgBouncer + Redis readiness, branch feat/pgbouncer-redis-readiness)
 - Done: steps 1, 3, 5 and 6 of `docs/pgbouncer-redis-plan.md` as code and templates; unit (269) and queue integration tests (36) pass; lint at its cap (342).
 - Not done: nothing applied anywhere. Migrations not run; PgBouncer not installed; `QUEUE_CONSUMER_ENABLED` is still `false` everywhere; client does not send `submissionId` yet; Redis cache/buffer split (plan step 7) not started.

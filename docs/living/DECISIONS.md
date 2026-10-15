@@ -1,5 +1,11 @@
 # DECISIONS
 
+## 2026-10-15 School comes from the login, no default
+Both submit routes use `utils/requestSchool.js`: the verified token's school, a body or payload school only if it equals it (else 403), and no literal fallback. A login with no school (office or admin accounts) can no longer submit through these routes; they never certify a school, and the global gate had let them through with the old fallback.
+
+## 2026-10-15 Migration down only drops what it added
+`add_worker_schema_columns.js` records the columns it created in `schema_migration_log` and `--down` drops only those, so running it against a database where a column already existed can never delete that column or its data.
+
 ## 2026-10-15 Consumer switch is an env flag, default off
 Re-enabling a consumer that someone deliberately turned off must not happen on deploy, so `QUEUE_CONSUMER_ENABLED` defaults to `false` and staging opts in. Claiming uses one `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED)` statement instead of a separate pick and claim, so it needs no surrounding transaction and is safe behind PgBouncer transaction mode. Retry columns and `submission_id` are separate additive migrations; the code detects the columns and falls back to the old behaviour without them.
 
