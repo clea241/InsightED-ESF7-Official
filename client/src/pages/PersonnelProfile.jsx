@@ -2280,6 +2280,7 @@ function diffNormalized(base, current, onlyDraftKeys = false) {
 export default function PersonnelProfile() {
   const {
     personnel,
+    setPersonnel,
     activePersonnelId,
     setActivePersonnelId,
     updatePersonnelInfo,
@@ -3261,6 +3262,45 @@ export default function PersonnelProfile() {
       const base = prev || dbPerson;
       if (!base) return base;
       let updated = { ...base, [key]: value };
+
+      if (key === "civilStatus" || key === "civil_status") {
+        updated.civilStatus = value;
+        updated.civil_status = value;
+      }
+      if (key === "ethnicGroup" || key === "ethnic_group") {
+        updated.ethnicGroup = value;
+        updated.ethnic_group = value;
+      }
+      if (key === "philsysNo" || key === "philsys_no") {
+        updated.philsysNo = value;
+        updated.philsys_no = value;
+        if (value) {
+          updated.noPhilsys = false;
+          updated.no_philsys = false;
+        }
+      }
+      if (key === "noPhilsys" || key === "no_philsys") {
+        updated.noPhilsys = !!value;
+        updated.no_philsys = !!value;
+        if (value) {
+          updated.philsysNo = "";
+          updated.philsys_no = "";
+        }
+      }
+      if (key === "isSchoolHead" || key === "is_school_head") {
+        updated.isSchoolHead = !!value;
+        updated.is_school_head = !!value;
+      }
+      if (
+        key === "isMainSchoolHead" ||
+        key === "is_main_sh" ||
+        key === "isMainSh"
+      ) {
+        updated.isMainSchoolHead = !!value;
+        updated.is_main_school_head = !!value;
+        updated.is_main_sh = !!value;
+        updated.isMainSh = !!value;
+      }
 
       if (key === "assignedGradeLevels" || key === "gradeLevelsTaught") {
         const rawGrades = Array.isArray(value)

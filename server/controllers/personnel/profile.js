@@ -745,14 +745,33 @@ router.post("/", async (req, res) => {
           ? allowEmailDiscrepancy === true || allowEmailDiscrepancy === "true"
           : false;
 
+    const isHead = is_school_head === true || isSchoolHead === true;
+    const isMainSh = isHead
+      ? !req.body.hasMultipleHeads
+        ? true
+        : Boolean(
+            req.body.is_main_sh ??
+            req.body.isMainSh ??
+            req.body.isMainSchoolHead ??
+            true,
+          )
+      : false;
+
+    const rawPhilSys = String(philsys_no || philsysNo || "").trim();
+    const isNoPhilSys = no_philsys === true || noPhilsys === true;
+    const finalPhilSys = isNoPhilSys ? null : rawPhilSys || null;
+    const finalNoPhilSys = isNoPhilSys || !finalPhilSys;
+    const rawEth = String(ethnic_group || ethnicGroup || "").trim();
+    const finalEth = rawEth ? rawEth.toUpperCase() : null;
+
     const insertProfileQuery = `
       INSERT INTO esf7_personnel_profile (
         id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
         tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-        philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head,
+        philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, is_main_sh,
         status, legacy_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
       RETURNING *;
     `;
 
@@ -773,11 +792,11 @@ router.post("/", async (req, res) => {
       (civil_status || civilStatus || "").toUpperCase() || null,
       solo_parent === true || soloParent === "YES" || soloParent === true,
       (religion || "").toUpperCase() || null,
-      (ethnic_group || ethnicGroup || "").toUpperCase() || null,
+      finalEth,
       coerceDateField(birthdate, "birthdate"),
       computedAge,
-      philsys_no || philsysNo || null,
-      no_philsys === true || noPhilsys === true,
+      finalPhilSys,
+      finalNoPhilSys,
       employee_no || employeeNo || null,
       (() => {
         const rawAppt = (nature_of_appointment || natureOfAppointment || "")
@@ -800,7 +819,8 @@ router.post("/", async (req, res) => {
         );
       })(),
       finalAllowEmailDiscrepancy,
-      is_school_head === true || isSchoolHead === true,
+      isHead,
+      isMainSh,
       personnelStatus,
       legacyId,
     ];
@@ -1335,15 +1355,17 @@ router.put("/:id", async (req, res) => {
           : Boolean(current.is_school_head);
 
     const isTargetMain = isTargetHead
-      ? Boolean(
-          req.body.is_main_sh !== undefined
-            ? req.body.is_main_sh
-            : req.body.isMainSh !== undefined
-              ? req.body.isMainSh
-              : req.body.isMainSchoolHead !== undefined
-                ? req.body.isMainSchoolHead
-                : (current.is_main_sh ?? true),
-        )
+      ? !req.body.hasMultipleHeads
+        ? true
+        : Boolean(
+            req.body.is_main_sh !== undefined
+              ? req.body.is_main_sh
+              : req.body.isMainSh !== undefined
+                ? req.body.isMainSh
+                : req.body.isMainSchoolHead !== undefined
+                  ? req.body.isMainSchoolHead
+                  : (current.is_main_sh ?? true),
+          )
       : false;
 
     if (isTargetHead && !req.body.hasMultipleHeads) {
@@ -1397,13 +1419,17 @@ router.put("/:id", async (req, res) => {
           ? sexAtBirth
           : current.sex_at_birth || "FEMALE"
     ).toUpperCase();
-    const finalCivil = (
-      civil_status !== undefined
+    const incomingCivil =
+      civil_status !== undefined && civil_status !== current.civil_status
         ? civil_status
-        : civilStatus !== undefined
+        : civilStatus !== undefined && civilStatus !== current.civil_status
           ? civilStatus
-          : current.civil_status || "SINGLE"
-    ).toUpperCase();
+          : civil_status !== undefined
+            ? civil_status
+            : civilStatus !== undefined
+              ? civilStatus
+              : current.civil_status || "SINGLE";
+    const finalCivil = (incomingCivil || "SINGLE").toUpperCase();
     const finalSolo =
       solo_parent !== undefined
         ? solo_parent === "YES" || solo_parent === true
@@ -1413,13 +1439,20 @@ router.put("/:id", async (req, res) => {
     const finalRel = (
       religion !== undefined ? religion : current.religion || "CHRISTIANITY"
     ).toUpperCase();
-    const rawEth =
-      ethnic_group !== undefined
+    const incomingEth =
+      ethnic_group !== undefined && ethnic_group !== current.ethnic_group
         ? ethnic_group
-        : ethnicGroup !== undefined
+        : ethnicGroup !== undefined && ethnicGroup !== current.ethnic_group
           ? ethnicGroup
-          : current.ethnic_group || "";
-    const finalEth = (rawEth === "OTHERS" ? "" : rawEth).toUpperCase();
+          : ethnic_group !== undefined
+            ? ethnic_group
+            : ethnicGroup !== undefined
+              ? ethnicGroup
+              : current.ethnic_group || null;
+    const finalEth =
+      incomingEth && String(incomingEth).trim()
+        ? String(incomingEth).trim().toUpperCase()
+        : null;
     const finalBDate =
       birthdate !== undefined
         ? isDatePlaceholder(birthdate) && birthdate !== null && birthdate !== ""
@@ -1428,19 +1461,26 @@ router.put("/:id", async (req, res) => {
         : current.birthdate;
     const finalAge =
       age !== undefined ? age : sanitizeAge(current.age, finalBDate);
-    const finalPhilSys = (
-      philsys_no !== undefined
+    const incomingPhilSys =
+      philsys_no !== undefined && philsys_no !== current.philsys_no
         ? philsys_no
-        : philsysNo !== undefined
+        : philsysNo !== undefined && philsysNo !== current.philsys_no
           ? philsysNo
-          : current.philsys_no || ""
-    ).trim();
+          : philsys_no !== undefined
+            ? philsys_no
+            : philsysNo !== undefined
+              ? philsysNo
+              : current.philsys_no || "";
+    const cleanPhilSys = String(incomingPhilSys || "").trim();
     const finalNoPhilSys =
       no_philsys !== undefined
         ? no_philsys === true || no_philsys === "true"
         : noPhilsys !== undefined
           ? noPhilsys === true || noPhilsys === "true"
-          : current.no_philsys;
+          : !cleanPhilSys
+            ? !!current.no_philsys
+            : false;
+    const finalPhilSys = finalNoPhilSys ? null : cleanPhilSys || null;
     const finalEmpNo = (
       employee_no !== undefined
         ? employee_no

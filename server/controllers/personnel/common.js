@@ -1048,16 +1048,14 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
         row.gender ||
         "FEMALE"
       ).toUpperCase(),
-      civilStatus: (
-        row.civil_status ||
-        row.civilStatus ||
-        "SINGLE"
-      ).toUpperCase(),
-      civil_status: (
-        row.civil_status ||
-        row.civilStatus ||
-        "SINGLE"
-      ).toUpperCase(),
+      civilStatus:
+        String(row.civil_status || row.civilStatus || "SINGLE")
+          .trim()
+          .toUpperCase() || "SINGLE",
+      civil_status:
+        String(row.civil_status || row.civilStatus || "SINGLE")
+          .trim()
+          .toUpperCase() || "SINGLE",
       soloParent:
         row.solo_parent === "YES" ||
         row.soloParent === "YES" ||
@@ -1067,22 +1065,32 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       religion: (
         (row.religion === "OTHERS" ? "" : row.religion) || "CHRISTIANITY"
       ).toUpperCase(),
-      ethnicGroup: (
-        (row.ehtinic_group === "OTHERS" ||
-        row.ethnic_group === "OTHERS" ||
-        row.ethnicGroup === "OTHERS"
-          ? ""
-          : row.ehtinic_group || row.ethnic_group || row.ethnicGroup) || ""
-      ).toUpperCase(),
-      ethnic_group: (
-        (row.ehtinic_group === "OTHERS" ||
-        row.ethnic_group === "OTHERS" ||
-        row.ethnicGroup === "OTHERS"
-          ? ""
-          : row.ehtinic_group || row.ethnic_group || row.ethnicGroup) || ""
-      ).toUpperCase(),
+      ethnicGroup: String(
+        row.ehtinic_group || row.ethnic_group || row.ethnicGroup || "",
+      )
+        .trim()
+        .toUpperCase(),
+      ethnic_group: String(
+        row.ehtinic_group || row.ethnic_group || row.ethnicGroup || "",
+      )
+        .trim()
+        .toUpperCase(),
       birthdate: bDate,
       age: computedAge,
+      philsysNo: String(
+        row.phylsys_num || row.philsys_no || row.philsysNo || "",
+      ).trim(),
+      philsys_no: String(
+        row.phylsys_num || row.philsys_no || row.philsysNo || "",
+      ).trim(),
+      noPhilsys:
+        !(row.phylsys_num || row.philsys_no || row.philsysNo) ||
+        String(row.phylsys_num || row.philsys_no || row.philsysNo).trim() ===
+          "",
+      no_philsys:
+        !(row.phylsys_num || row.philsys_no || row.philsysNo) ||
+        String(row.phylsys_num || row.philsys_no || row.philsysNo).trim() ===
+          "",
       employeeNo: cleanEmpNo,
       employee_no: cleanEmpNo,
       depedEmail: depedEmail,
@@ -1097,6 +1105,9 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
 
       isSchoolHead: isSchoolHead,
       is_school_head: isSchoolHead,
+      isMainSchoolHead: isSchoolHead,
+      is_main_school_head: isSchoolHead,
+      is_main_sh: isSchoolHead,
 
       // Employment Fields
       employmentId: empId,
@@ -1555,8 +1566,8 @@ function formatPersonnelRecord(
     age: row.age || (row.birthdate ? calculateAge(row.birthdate) : null),
     philsysNo: row.philsys_no || "",
     philsys_no: row.philsys_no || "",
-    noPhilsys: !!row.no_philsys,
-    no_philsys: !!row.no_philsys,
+    noPhilsys: !!row.no_philsys || !row.philsys_no,
+    no_philsys: !!row.no_philsys || !row.philsys_no,
     employeeNo:
       row.employee_no &&
       !String(row.employee_no).toUpperCase().startsWith("PRN")
@@ -1574,9 +1585,18 @@ function formatPersonnelRecord(
     allow_email_discrepancy: !!row.allow_email_discrepancy,
     isSchoolHead: !!row.is_school_head,
     is_school_head: !!row.is_school_head,
-    isMainSchoolHead: !!row.is_main_sh,
-    is_main_school_head: !!row.is_main_sh,
-    is_main_sh: !!row.is_main_sh,
+    isMainSchoolHead:
+      row.is_main_sh !== undefined && row.is_main_sh !== null
+        ? !!row.is_main_sh
+        : !!row.is_school_head,
+    is_main_school_head:
+      row.is_main_sh !== undefined && row.is_main_sh !== null
+        ? !!row.is_main_sh
+        : !!row.is_school_head,
+    is_main_sh:
+      row.is_main_sh !== undefined && row.is_main_sh !== null
+        ? !!row.is_main_sh
+        : !!row.is_school_head,
     schoolHeadLevel: row.school_head_level || null,
     school_head_level: row.school_head_level || null,
     disabledServiceYears: Number(row.disabled_service_years || 0),
