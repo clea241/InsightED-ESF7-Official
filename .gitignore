@@ -44,3 +44,6 @@ security/targets.json
 # Migration outputs & verification runs (contain large DB dumps and personnel data)
 migration-output/
 verify.json
+
+# e2e-failure-path-tests: keep the example env file, ignore the real one
+!.env.test.example

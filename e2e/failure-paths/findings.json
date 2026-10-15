@@ -1,0 +1,42 @@
+{
+  "findings": [
+    {
+      "id": "FP-08",
+      "test": "refused with the real current version",
+      "classification": "real app bug",
+      "dataLost": "No row is lost directly. A client that rebases on the reported version resubmits on the wrong number and is refused again, so the user cannot save and is pushed into the 'two versions' prompt (keep mine / use database) where one side is discarded.",
+      "notes": "server/controllers/schools/drafts.js, the 409 branch of handleSaveDraft: conflictVersion is computed as baseVersion + 1 instead of the stored version. Stored version 3, stale base 1: the response says currentVersion 2."
+    },
+    {
+      "id": "FP-08",
+      "test": "loads the draft and saves on the version it was given",
+      "classification": "real app bug",
+      "dataLost": "No row is lost directly. After any reload every save carries base version 1 while the stored version is higher, so the server answers 409 and the user is asked to choose between their version and the database version (one is discarded).",
+      "notes": "server/controllers/schools/drafts.js, handleGetDraft: the normalized load path answers `version: 1` unconditionally. Stored version 2, load reports 1."
+    },
+    {
+      "id": "FP-04",
+      "test": "forced 401",
+      "classification": "real app bug",
+      "dataLost": "The unsaved School Profile edit. On a 401 the user is not sent to login: they get the 'School Profile Not Saved' alert, then a 'Something went wrong' dialog, then 'Unsaved Changes - save before logging out or discard'. Saving cannot succeed (the session is invalid), so the only way out is Discard Changes, and Discard removes the local copy as well (verified with a failed save: after Discard Changes the edit is gone from IndexedDB/localStorage).",
+      "notes": "AuthContext.onSessionExpired -> pauseForAuth() then logout(), and logout() runs the dirty-screen guard, which blocks it while a screen is dirty. A session-expiry logout should skip the guard (keep the local copy in the outbox) and go to login without an error popup."
+    },
+    {
+      "id": "FP-11",
+      "test": "update or delete tenant B's personnel record by id",
+      "classification": "suspected app bug (no ownership check on the route; no data change observed in this scenario)",
+      "dataLost": "None observed: after tenant A's DELETE /api/personnel/:id answered 200, tenant B's profile row, roster listing, child rows (employment, education, node status) and deletion tombstones were unchanged. The route still answers success to another school's request instead of 403/404, and its source looks up the record by id alone and runs unfiltered cascade deletes keyed by personnel id, so it needs an owner review.",
+      "notes": "server/controllers/personnel/roster.js router.delete('/:id'): the record is found with `WHERE id = $1 OR legacy_id = $1 OR prn = $1` and the school is taken from the found record, not checked against the caller's token."
+    }
+  ],
+  "notApplicable": [
+    {
+      "id": "FP-13",
+      "reason": "Partly covered. The queue worker is deactivated in code (server/queue_worker.js startWorker() returns immediately; server.js logs 'Submissions queue worker permanently deactivated'), so killed-worker and retry-forever behaviour cannot be exercised. The accept side is tested (job row committed before the response, nothing completed without a worker). Observation for the owner: submissions are accepted and stay 'pending' forever while the worker is off."
+    },
+    {
+      "id": "FP-14",
+      "reason": "Redis-down half is tested. The Redis-recovery half is skipped because no local Redis is available (REDIS_URL empty in .env.test); it needs a Redis you can stop and start locally."
+    }
+  ]
+}
