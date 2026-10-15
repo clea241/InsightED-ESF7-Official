@@ -29,10 +29,14 @@ describe.skipIf(!TEST_DATABASE_URL)("submission_id idempotency", () => {
   let queueModule;
   const originalPublish = () => redisQueue.__original;
 
-  const post = (path, body) =>
+  // `school` stands in for the verified login: undefined = a school-head of 302261, "" = a login with no school.
+  const post = (path, body, school) =>
     fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(school === undefined ? {} : { "x-test-school": school }),
+      },
       body: JSON.stringify(body),
     });
   const rows = async () =>
@@ -57,6 +61,12 @@ describe.skipIf(!TEST_DATABASE_URL)("submission_id idempotency", () => {
     const express = nodeRequire("express");
     const app = express();
     app.use(express.json({ limit: "5mb" }));
+    // Stand-in for middleware/auth.js, which sets req.auth from the verified token.
+    app.use((req, res, next) => {
+      const h = req.headers["x-test-school"];
+      req.auth = { schoolId: h === undefined ? "302261" : h || null };
+      next();
+    });
     app.use(
       "/api/submissions",
       nodeRequire("../../controllers/submissions/index.js"),
@@ -151,7 +161,12 @@ describe.skipIf(!TEST_DATABASE_URL)("submission_id idempotency", () => {
       await post("/api/submissions", body({ submissionId: ID_A }));
       await post(
         "/api/submissions",
-        body({ schoolId: "100005", submissionId: ID_A }),
+        body({
+          schoolId: "100005",
+          payload: { schoolInfo: { schoolId: "100005" } },
+          submissionId: ID_A,
+        }),
+        "100005",
       );
       expect(await rows()).toHaveLength(2);
     });
@@ -272,6 +287,83 @@ describe.skipIf(!TEST_DATABASE_URL)("submission_id idempotency", () => {
       await resubmit({});
       expect(await rows()).toHaveLength(4);
       expect((await resubmit({ submissionId: "nope" })).status).toBe(400);
+    });
+
+    describe("which school is submitted for", () => {
+      test("a matching school (also with the SCH- prefix) is accepted; the stored school is the login's own", async () => {
+        const res = await post(
+          "/api/submissions",
+          body({ schoolId: "SCH-302261" }),
+        );
+        expect(res.status).toBe(202);
+        const all = await rows();
+        expect(all).toHaveLength(1);
+        expect(all[0].school_id).toBe("302261");
+      });
+
+      test("a body without any school uses the login's school", async () => {
+        const b = body();
+        delete b.schoolId;
+        const res = await post("/api/submissions", b);
+        expect(res.status).toBe(202);
+        expect((await rows())[0].school_id).toBe("302261");
+      });
+
+      test("a different school in the body is refused with 403 and nothing is queued", async () => {
+        const res = await post(
+          "/api/submissions",
+          body({ schoolId: "100005" }),
+        );
+        expect(res.status).toBe(403);
+        expect(await rows()).toHaveLength(0);
+      });
+
+      test("a different school only inside the payload is refused too", async () => {
+        const b = body();
+        b.payload = { schoolInfo: { schoolId: "100005" } };
+        expect((await post("/api/submissions", b)).status).toBe(403);
+        expect(await rows()).toHaveLength(0);
+      });
+
+      test("a login with no school is refused with 403 (no default school)", async () => {
+        const res = await post("/api/submissions", body(), "");
+        expect(res.status).toBe(403);
+        const none = body();
+        delete none.schoolId;
+        expect((await post("/api/submissions", none, "")).status).toBe(403);
+        expect(await rows()).toHaveLength(0);
+      });
+
+      test("an unauthenticated request (no req.auth) is refused with 401", async () => {
+        const { resolveRequestSchool } = nodeRequire(
+          "../../utils/requestSchool.js",
+        );
+        expect(resolveRequestSchool({ body: body() })).toMatchObject({
+          status: 401,
+        });
+      });
+
+      test("validation resubmit applies the same rule", async () => {
+        const ok = await post("/api/validation/resubmit", body());
+        expect(ok.status).toBe(200);
+        expect((await ok.json()).status).toBe("RESUBMITTED");
+        const noBody = body();
+        delete noBody.schoolId;
+        expect((await post("/api/validation/resubmit", noBody)).status).toBe(
+          200,
+        );
+        expect(
+          (await post("/api/validation/resubmit", body({ schoolId: "100005" })))
+            .status,
+        ).toBe(403);
+        expect(
+          (await post("/api/validation/resubmit", body(), "")).status,
+        ).toBe(403);
+        expect(await rows()).toHaveLength(2);
+        expect((await rows()).every((r) => r.school_id === "302261")).toBe(
+          true,
+        );
+      });
     });
 
     test("the migration is reversible", async () => {

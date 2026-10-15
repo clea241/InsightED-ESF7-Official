@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
+const { resolveRequestSchool } = require("../../utils/requestSchool");
 const {
   enqueueSubmission,
   InvalidSubmissionIdError,
@@ -10,8 +11,12 @@ const {
 // POST /api/submissions - Queue a new certified submission
 router.post("/", async (req, res) => {
   try {
-    const schoolId =
-      getSchoolIdFromRequest(req) || req.body.schoolId || "123456";
+    // The school comes from the verified login. A school id in the body must match it (403 otherwise); there is no default.
+    const resolved = resolveRequestSchool(req);
+    if (resolved.error) {
+      return res.status(resolved.status).json({ error: resolved.error });
+    }
+    const schoolId = resolved.schoolId;
     const { schoolYear, payload, signature, certifiedBy, submissionId } =
       req.body;
 

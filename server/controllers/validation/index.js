@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
+const { resolveRequestSchool } = require("../../utils/requestSchool");
 const {
   enqueueSubmission,
   InvalidSubmissionIdError,
@@ -107,7 +108,6 @@ router.post("/resubmit", async (req, res) => {
   try {
     await ensureValidationTable();
     const {
-      schoolId,
       schoolYear = "SY 26-27",
       payload,
       signature,
@@ -115,13 +115,12 @@ router.post("/resubmit", async (req, res) => {
       submissionId,
     } = req.body;
 
-    if (!schoolId) {
-      return res
-        .status(400)
-        .json({ error: "Missing schoolId in resubmission payload" });
+    // Same rule as POST /api/submissions: the school is the logged-in user's own; a different one in the body is a 403.
+    const resolved = resolveRequestSchool(req);
+    if (resolved.error) {
+      return res.status(resolved.status).json({ error: resolved.error });
     }
-
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/, "").trim();
+    const cleanSchoolId = resolved.schoolId;
 
     // 1. Enqueue into esf7_submission_queue
     // ARCHITECTURAL NOTE: esf7_submission_queue.payload is INTENTIONALLY an asynchronous job envelope (Outbox Pattern).
