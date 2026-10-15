@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Create a new pilot school with exactly 2 personnel for testing
  */

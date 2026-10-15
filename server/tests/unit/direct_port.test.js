@@ -88,3 +88,30 @@ test("every script, migration and migrate_*.js loads db/directPort", () => {
   );
   expect(missing).toEqual([]);
 });
+
+// Same guard for the older one-off scripts in server/ itself. Only the app and worker runtime stay on the pooled
+// connection (they must go through PgBouncer); files that never touch the database need nothing.
+test("every database-touching root script loads db/directPort, except the runtime files", () => {
+  const serverDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../..",
+  );
+  const runtime = new Set([
+    "db.js",
+    "drizzle.config.js",
+    "loadEnv.js",
+    "queue_worker.js",
+    "run_redis_worker.js",
+    "run_worker.js",
+    "server.js",
+  ]);
+  const touchesDb =
+    /require\(["']\.\/db|require\(["']pg["']|new Pool|new Client|DB_PORT|DATABASE_URL|loadEnv/;
+  const missing = readdirSync(serverDir)
+    .filter((f) => f.endsWith(".js") && !runtime.has(f))
+    .filter((f) => {
+      const text = readFileSync(path.join(serverDir, f), "utf8");
+      return touchesDb.test(text) && !text.includes("db/directPort");
+    });
+  expect(missing).toEqual([]);
+});

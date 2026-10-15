@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Truncate all tables in insighted_esf7 database and re-seed 199999 with ALL OFFERINGS (K-12)
  */

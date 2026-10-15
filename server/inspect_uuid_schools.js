@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { usersDbPool, prodPool } = require("./db");
 
 async function inspect() {

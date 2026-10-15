@@ -399,6 +399,11 @@ app.use((err, req, res, next) => {
 });
 
 // Initialize DB schema & ensure zero VARCHAR character-length restrictions
+const {
+  startupSchemaInitEnabled,
+  openStartupDdlRunner,
+} = require("./db/startupSchema");
+
 const initDB = async () => {
   const dbHost =
     process.env.DB_HOST || "stride-posgre-prod-01.postgres.database.azure.com";
@@ -517,8 +522,18 @@ const initDB = async () => {
     );
   }
 
+  if (!startupSchemaInitEnabled()) {
+    console.log(
+      "ℹ️ Startup schema init skipped (RUN_STARTUP_SCHEMA_INIT=false). Apply schema changes with the migrations instead.",
+    );
+    return;
+  }
+
+  // Schema changes must not run through PgBouncer in transaction mode, so they use a direct connection
+  // (DB_DIRECT_PORT). If that connection cannot be made, fall back to the pooled one, as before.
+  const ddl = await openStartupDdlRunner((...a) => db.query(...a));
   try {
-    const tableCheck = await db
+    const tableCheck = await ddl
       .query(
         "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'esf7_school_profile' LIMIT 1",
       )
@@ -531,7 +546,7 @@ const initDB = async () => {
       const schemaPath = path.join(__dirname, "schema.sql");
       if (fs.existsSync(schemaPath)) {
         const sql = fs.readFileSync(schemaPath, "utf8");
-        await db.query(sql);
+        await ddl.query(sql);
         console.log("✅ Database schema initialized successfully.");
       }
     } else {
@@ -540,7 +555,7 @@ const initDB = async () => {
       );
     }
 
-    const esf7DbCheck = await db
+    const esf7DbCheck = await ddl
       .query(
         "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'esf7_database' LIMIT 1",
       )
@@ -548,7 +563,7 @@ const initDB = async () => {
 
     if (esf7DbCheck.rows.length === 0) {
       // Ensure master table schema (esf7_database, esf7_database_dummy, unit1_school_identity) in active DB
-      await db
+      await ddl
         .query(
           `
         CREATE TABLE IF NOT EXISTS esf7_database (
@@ -636,7 +651,7 @@ const initDB = async () => {
         );
     }
 
-    await db
+    await ddl
       .query(
         `
       CREATE TABLE IF NOT EXISTS esf7_database_dummy (LIKE esf7_database INCLUDING ALL);
@@ -656,7 +671,7 @@ const initDB = async () => {
       );
 
     // Self-healing: expand critical VARCHAR columns to TEXT so ID and error strings never truncate
-    await db.query(`
+    await ddl.query(`
       DO $$ 
       BEGIN
         SET LOCAL lock_timeout = '2s';
@@ -741,21 +756,26 @@ const initDB = async () => {
       END $$;
     `);
 
-    // Reset any stuck processing jobs in queue
-    await db
-      .query(
-        `
+    // Reset any stuck processing jobs in queue. Skipped when the queue consumer is on: the worker process may be
+    // mid-job, and queueClaims.recoverStaleJobs already returns jobs stuck for over a minute.
+    if (!require("./services/queueClaims").isConsumerEnabled()) {
+      await ddl
+        .query(
+          `
       UPDATE esf7_submission_queue
       SET status = 'pending', error_message = NULL, updated_at = NOW()
       WHERE status = 'processing'
     `,
-      )
-      .catch(() => {});
+        )
+        .catch(() => {});
+    }
   } catch (err) {
     console.error(
       `\n❌ [Database Initialization Error]: Could not initialize database "${process.env.DB_NAME || "insighted_esf7"}" on ${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || "5432"}`,
     );
     console.error(`   Error details: ${err.message}\n`);
+  } finally {
+    await ddl.close();
   }
 };
 
@@ -789,7 +809,9 @@ const startServer = (port) => {
     await initDB();
     redisQueue.startMonitor(); // so queue mode / Redis reachability are accurate in /api/health even without a local worker
 
-    console.log("ℹ️ Submissions queue worker permanently deactivated.");
+    console.log(
+      "ℹ️ Submissions are processed by the separate queue worker process (see QUEUE_CONSUMER_ENABLED).",
+    );
 
     if (process.send) {
       process.send("ready");

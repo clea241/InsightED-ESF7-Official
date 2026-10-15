@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Seed Salary Matrix (DepEd SSL Salary Grades 1-33, Steps 1-8)
  */

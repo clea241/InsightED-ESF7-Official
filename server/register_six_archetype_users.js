@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { Pool } = require("pg");
 const path = require("path");
 const bcrypt = require("bcryptjs"); // declared in server/package.json
