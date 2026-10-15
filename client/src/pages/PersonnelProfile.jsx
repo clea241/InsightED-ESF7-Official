@@ -11,6 +11,7 @@ import {
   upsertOutboxEntry,
   removeOutboxEntryByModule,
   autoSyncOutboxOnSectionOpen,
+  checkAndPromptOutboxOnSectionOpen,
 } from "../services/outbox";
 
 const TAB_MODULE_MAP = {

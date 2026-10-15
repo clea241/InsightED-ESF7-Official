@@ -327,7 +327,36 @@ router.get("/", async (req, res) => {
       return false;
     };
 
-    const dbMap = new Map();
+    const normalizePrnKey = (prn) => {
+      if (!prn) return "";
+      const s = String(prn).trim().toUpperCase();
+      const m = s.match(/^PRN-0*(\d+)$/);
+      if (m) return `PRN-${parseInt(m[1], 10)}`;
+      const mDigits = s.match(/^0*(\d+)$/);
+      if (mDigits) return `PRN-${parseInt(mDigits[1], 10)}`;
+      return s;
+    };
+
+    const normalizeNameKey = (first, last) => {
+      const f = String(first || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, " ");
+      const l = String(last || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, " ");
+      if (!f && !l) return "";
+      return `${f}__${l}`;
+    };
+
+    const dbById = new Map();
+    const dbByLegacyId = new Map();
+    const dbByPrn = new Map();
+    const dbByEmpNo = new Map();
+    const dbByName = new Map();
+    const dbList = [];
+
     for (const row of result.rows) {
       const pNameUpper =
         `${String(row.first_name || "").trim()} ${String(row.last_name || "").trim()}`
@@ -347,7 +376,12 @@ router.get("/", async (req, res) => {
         designationsMap.get(String(row.id).toUpperCase()) ||
         (row.prn ? designationsMap.get(String(row.prn).toUpperCase()) : []) ||
         [];
-      const wklList = getWorkloadForTeacher(row.id, row.prn, row.employee_no);
+      const wklList = getWorkloadForTeacher(
+        row.id,
+        row.prn,
+        row.employee_no,
+        row.legacy_id,
+      );
       const admList =
         adminTaskMap.get(String(row.id).toUpperCase()) ||
         (row.prn ? adminTaskMap.get(String(row.prn).toUpperCase()) : []) ||
@@ -359,10 +393,38 @@ router.get("/", async (req, res) => {
         wklList,
         admList,
       );
-      if (formatted.id)
-        dbMap.set(String(formatted.id).toUpperCase(), formatted);
-      if (formatted.prn)
-        dbMap.set(String(formatted.prn).toUpperCase(), formatted);
+
+      dbList.push(formatted);
+      if (formatted.id) {
+        dbById.set(String(formatted.id).trim().toUpperCase(), formatted);
+      }
+      if (row.legacy_id || formatted.legacy_id || formatted.legacyId) {
+        const leg = String(
+          row.legacy_id || formatted.legacy_id || formatted.legacyId,
+        )
+          .trim()
+          .toUpperCase();
+        dbByLegacyId.set(leg, formatted);
+      }
+      if (formatted.prn) {
+        dbByPrn.set(String(formatted.prn).trim().toUpperCase(), formatted);
+        dbByPrn.set(normalizePrnKey(formatted.prn), formatted);
+      }
+      if (row.employee_no || formatted.employeeNo || formatted.employee_no) {
+        const emp = String(
+          row.employee_no || formatted.employeeNo || formatted.employee_no,
+        )
+          .trim()
+          .toUpperCase();
+        dbByEmpNo.set(emp, formatted);
+      }
+      const nKey = normalizeNameKey(
+        formatted.firstName || formatted.first_name,
+        formatted.lastName || formatted.last_name,
+      );
+      if (nKey) {
+        dbByName.set(nKey, formatted);
+      }
     }
 
     // Filter master list against persistent tombstones
@@ -380,16 +442,35 @@ router.get("/", async (req, res) => {
     });
 
     const mergedList = [];
-    const usedDbKeys = new Set();
+    const usedDbIds = new Set();
 
     // Overlay master records with DB saved records where available
     for (const m of filteredMasterList) {
-      const idKey = String(m.id || "").toUpperCase();
-      const prnKey = String(m.prn || "").toUpperCase();
+      const idKey = String(m.id || "")
+        .trim()
+        .toUpperCase();
+      const prnKey = String(m.prn || "")
+        .trim()
+        .toUpperCase();
+      const normPrn = normalizePrnKey(m.prn);
+      const empKey = String(m.employee_no || m.employeeNo || "")
+        .trim()
+        .toUpperCase();
+      const nameKey = normalizeNameKey(
+        m.firstName || m.first_name,
+        m.lastName || m.last_name,
+      );
+
       const dbMatch =
-        (idKey && dbMap.get(idKey)) || (prnKey && dbMap.get(prnKey));
+        (idKey && (dbById.get(idKey) || dbByLegacyId.get(idKey))) ||
+        (prnKey && dbByPrn.get(prnKey)) ||
+        (normPrn && dbByPrn.get(normPrn)) ||
+        (empKey && dbByEmpNo.get(empKey)) ||
+        (nameKey && dbByName.get(nameKey));
 
       if (dbMatch) {
+        usedDbIds.add(String(dbMatch.id).trim().toUpperCase());
+
         const isDbMatchPlaceholder =
           (!dbMatch.position && m.position) ||
           (dbMatch.firstName === "TEACHER" &&
@@ -400,6 +481,7 @@ router.get("/", async (req, res) => {
           dbMatch.id || m.id,
           dbMatch.prn || m.prn,
           dbMatch.employee_no || m.employee_no || m.employeeNo,
+          dbMatch.legacy_id || m.legacyId || m.id,
         );
         const resolvedWkl =
           Array.isArray(dbMatch.workloadRows) && dbMatch.workloadRows.length > 0
@@ -527,13 +609,12 @@ router.get("/", async (req, res) => {
             };
 
         mergedList.push(mergedRecord);
-        if (dbMatch.id) usedDbKeys.add(String(dbMatch.id).toUpperCase());
-        if (dbMatch.prn) usedDbKeys.add(String(dbMatch.prn).toUpperCase());
       } else {
         const mWkl = getWorkloadForTeacher(
           m.id,
           m.prn,
           m.employee_no || m.employeeNo,
+          m.legacyId || m.legacy_id || m.id,
         );
         if (mWkl && mWkl.length > 0) {
           m.workloadRows = mWkl;
@@ -543,11 +624,11 @@ router.get("/", async (req, res) => {
     }
 
     // Append any DB rows that were not part of the master list (e.g. manually added teachers)
-    for (const [key, dbRec] of dbMap.entries()) {
-      if (!usedDbKeys.has(key)) {
+    for (const dbRec of dbList) {
+      const recId = String(dbRec.id).trim().toUpperCase();
+      if (!usedDbIds.has(recId)) {
         mergedList.push(dbRec);
-        if (dbRec.id) usedDbKeys.add(String(dbRec.id).toUpperCase());
-        if (dbRec.prn) usedDbKeys.add(String(dbRec.prn).toUpperCase());
+        usedDbIds.add(recId);
       }
     }
 
@@ -804,7 +885,24 @@ router.get("/", async (req, res) => {
       );
     }
 
-    const total = mergedList.length;
+    // Final defensive deduplication pass by unique ID and normalized full name
+    const dedupedMergedList = [];
+    const seenFinalIds = new Set();
+    const seenFinalNames = new Set();
+    for (const p of mergedList) {
+      const pId = p.id ? String(p.id).trim().toUpperCase() : null;
+      const nKey = normalizeNameKey(
+        p.firstName || p.first_name,
+        p.lastName || p.last_name,
+      );
+      if (pId && seenFinalIds.has(pId)) continue;
+      if (nKey && seenFinalNames.has(nKey)) continue;
+      if (pId) seenFinalIds.add(pId);
+      if (nKey) seenFinalNames.add(nKey);
+      dedupedMergedList.push(p);
+    }
+
+    const total = dedupedMergedList.length;
     if (req.query.page || req.query.limit) {
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const limit = Math.max(
@@ -813,7 +911,10 @@ router.get("/", async (req, res) => {
       );
       const totalPages = Math.ceil(total / limit) || 1;
       const startIndex = (page - 1) * limit;
-      const paginatedList = mergedList.slice(startIndex, startIndex + limit);
+      const paginatedList = dedupedMergedList.slice(
+        startIndex,
+        startIndex + limit,
+      );
 
       return res.json({
         data: paginatedList,
@@ -825,7 +926,7 @@ router.get("/", async (req, res) => {
     }
 
     res.json({
-      data: mergedList,
+      data: dedupedMergedList,
       total,
       page: 1,
       limit: total,

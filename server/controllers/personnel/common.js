@@ -1461,19 +1461,8 @@ function formatAdminTaskRecord(row) {
 // Formatter to standardize database rows into frontend-compatible objects
 // Years of service the user excluded from the Learning Area total (e.g. non-teaching years before becoming a teacher).
 // Additive, idempotent; existing records default to 0 so their counts do not change.
-let disabledYearsColumnReady;
 function ensureDisabledYearsColumn() {
-  if (!disabledYearsColumnReady) {
-    disabledYearsColumnReady = db
-      .query(
-        `ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS disabled_service_years INTEGER NOT NULL DEFAULT 0`,
-      )
-      .catch((e) => {
-        disabledYearsColumnReady = null;
-        throw e;
-      });
-  }
-  return disabledYearsColumnReady;
+  return Promise.resolve();
 }
 
 function formatPersonnelRecord(

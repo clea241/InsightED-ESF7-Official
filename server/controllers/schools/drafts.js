@@ -681,15 +681,21 @@ async function persistNormalizedDraft(
       existingByName.set(nameKey, r);
     }
   }
-
-  const rawPersonnelList = Array.isArray(finalPayload.personnel) ? finalPayload.personnel : [];
-  const allRawIds = rawPersonnelList.map(p => p && p.id ? String(p.id).trim() : null).filter(Boolean);
-  const existingMappingRes = allRawIds.length > 0
-    ? await client.query(
-        "SELECT legacy_id, new_id, status FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1)",
-        [allRawIds],
-      ).catch(() => ({ rows: [] }))
-    : { rows: [] };
+  const rawPersonnelList = Array.isArray(finalPayload.personnel)
+    ? finalPayload.personnel
+    : [];
+  const allRawIds = rawPersonnelList
+    .map((p) => (p && p.id ? String(p.id).trim() : null))
+    .filter(Boolean);
+  const existingMappingRes =
+    allRawIds.length > 0
+      ? await client
+          .query(
+            "SELECT legacy_id, new_id, status FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1)",
+            [allRawIds],
+          )
+          .catch(() => ({ rows: [] }))
+      : { rows: [] };
   const existingMappings = new Map();
   for (const m of existingMappingRes.rows || []) {
     existingMappings.set(m.legacy_id, m);
@@ -795,13 +801,18 @@ async function persistNormalizedDraft(
       pType = "teaching";
     }
 
-    let sex = String(p.sexAtBirth || p.sex_at_birth || p.gender || p.sex || "Male").trim();
+    let sex = String(
+      p.sexAtBirth || p.sex_at_birth || p.gender || p.sex || "Male",
+    ).trim();
     if (!["Male", "Female", "MALE", "FEMALE"].includes(sex)) {
       sex = "Male";
     }
 
     const birthDate = safeCoerceDate(p.birthdate, "birthdate");
-    const age = Number.isInteger(Number(p.age)) && Number(p.age) > 0 ? Number(p.age) : null;
+    const age =
+      Number.isInteger(Number(p.age)) && Number(p.age) > 0
+        ? Number(p.age)
+        : null;
 
     profileParams.push({
       id: finalId,
@@ -843,7 +854,6 @@ async function persistNormalizedDraft(
               ? p.isMainHead
               : p.isSchoolHead || p.is_school_head,
       ),
-      raw_payload: JSON.stringify(p),
     });
 
     let posCat = String(p.positionCategory || p.position_category || "TEACHING")
@@ -955,7 +965,7 @@ async function persistNormalizedDraft(
     let idx = 1;
     for (const pr of chunk) {
       vals.push(
-        `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5}, $${idx + 6}, $${idx + 7}, $${idx + 8}, $${idx + 9}, $${idx + 10}, $${idx + 11}, $${idx + 12}, $${idx + 13}, $${idx + 14}, $${idx + 15}, $${idx + 16}, $${idx + 17}, $${idx + 18}, $${idx + 19}, $${idx + 20}, $${idx + 21}, $${idx + 22}, $${idx + 23}, $${idx + 24}, $${idx + 25}, $${idx + 26}, $${idx + 27}, $${idx + 28}, $${idx + 29}::jsonb, NOW())`,
+        `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5}, $${idx + 6}, $${idx + 7}, $${idx + 8}, $${idx + 9}, $${idx + 10}, $${idx + 11}, $${idx + 12}, $${idx + 13}, $${idx + 14}, $${idx + 15}, $${idx + 16}, $${idx + 17}, $${idx + 18}, $${idx + 19}, $${idx + 20}, $${idx + 21}, $${idx + 22}, $${idx + 23}, $${idx + 24}, $${idx + 25}, $${idx + 26}, $${idx + 27}, $${idx + 28}, NOW())`,
       );
       pars.push(
         pr.id,
@@ -987,9 +997,8 @@ async function persistNormalizedDraft(
         pr.allow_email_discrepancy,
         pr.is_school_head,
         pr.is_main_sh,
-        pr.raw_payload,
       );
-      idx += 30;
+      idx += 29;
     }
     await client
       .query(
@@ -998,7 +1007,7 @@ async function persistNormalizedDraft(
         id, prn, status, legacy_id, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
         tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
         philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, is_main_sh,
-        raw_payload, updated_at
+        updated_at
       )
       VALUES ${vals.join(", ")}
       ON CONFLICT (id) DO UPDATE SET
@@ -1030,7 +1039,6 @@ async function persistNormalizedDraft(
         allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
         is_school_head = EXCLUDED.is_school_head,
         is_main_sh = EXCLUDED.is_main_sh,
-        raw_payload = EXCLUDED.raw_payload,
         updated_at = NOW()
     `,
         pars,
@@ -1427,7 +1435,6 @@ async function persistNormalizedDraft(
     }
   }
 }
-
 
 // Helper: Assemble complete draft payload directly from normalized relational tables (ZERO reads from school_drafts)
 async function loadNormalizedDraft(schoolId, schoolYear) {

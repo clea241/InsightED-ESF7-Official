@@ -294,8 +294,7 @@ export const api = {
     const query = simulatedDate
       ? `?simulated_date=${encodeURIComponent(simulatedDate)}`
       : "";
-    const res = await fetchWithAuth(`${API_BASE}/dashboard/stats${query}`);
-    return parseJsonOrThrow(res);
+    return await fetchJsonWithRetry(`${API_BASE}/dashboard/stats${query}`);
   },
 
   // School Profile
@@ -303,10 +302,9 @@ export const api = {
     const activeId = resolveSchoolId(targetSchoolId);
     const customHeaders = activeId ? { "x-school-id": String(activeId) } : {};
     const query = activeId ? `?school_id=${encodeURIComponent(activeId)}` : "";
-    const res = await fetchWithAuth(`${API_BASE}/school${query}`, {
+    return await fetchJsonWithRetry(`${API_BASE}/school${query}`, {
       headers: customHeaders,
     });
-    return parseJsonOrThrow(res);
   },
   updateSchool: async (data) => {
     const res = await fetchWithAuth(`${API_BASE}/school`, {
@@ -1154,11 +1152,10 @@ export const api = {
     const cleanId = rawId ? String(rawId).replace(/^SCH-/i, "").trim() : "";
     const query = cleanId ? `&schoolId=${encodeURIComponent(cleanId)}` : "";
     const customHeaders = cleanId ? { "x-school-id": cleanId } : {};
-    const res = await fetchWithAuth(
+    return await fetchJsonWithRetry(
       `${API_BASE}/school/draft?schoolYear=${encodeURIComponent(schoolYear)}${query}`,
       { headers: customHeaders },
     );
-    return parseJsonOrThrow(res);
   },
   // Never aborted: a save may already be committing on the server. Ordering/supersession is handled by draftSaver.
   // Resolves { success, version, updatedAt }, or { conflict: true, currentVersion } on HTTP 409.

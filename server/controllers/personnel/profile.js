@@ -1485,6 +1485,20 @@ router.put("/:id", async (req, res) => {
 
     const finalPrn = req.body.prn ? formatCanonicalPrn(req.body.prn) : null;
 
+    const rawDisabled =
+      req.body.disabledServiceYears ?? req.body.disabled_service_years;
+    let finalDisabledYears = null;
+    if (
+      rawDisabled !== undefined &&
+      rawDisabled !== null &&
+      rawDisabled !== ""
+    ) {
+      const n = Number(rawDisabled);
+      if (Number.isInteger(n) && n >= 0 && n <= 70) {
+        finalDisabledYears = n;
+      }
+    }
+
     const updateProfileQuery = `
       UPDATE esf7_personnel_profile SET
         school_id = $1,
@@ -1513,8 +1527,9 @@ router.put("/:id", async (req, res) => {
         is_main_sh = $24,
         prn = COALESCE($25, esf7_personnel_profile.prn),
         status = COALESCE($26, esf7_personnel_profile.status),
+        disabled_service_years = COALESCE($27, esf7_personnel_profile.disabled_service_years, 0),
         updated_at = NOW()
-      WHERE id = $27
+      WHERE id = $28
       RETURNING *;
     `;
 
@@ -1545,34 +1560,12 @@ router.put("/:id", async (req, res) => {
       isTargetMain,
       finalPrn,
       req.body.status || null,
+      finalDisabledYears,
       current.id,
     ];
 
     const profileRes = await client.query(updateProfileQuery, profileValues);
     let updatedProfile = profileRes.rows[0];
-
-    // Disabled service years (Learning Area tab). Validated whole number, never more than the years since first service.
-    const rawDisabled =
-      req.body.disabledServiceYears ?? req.body.disabled_service_years;
-    if (
-      rawDisabled !== undefined &&
-      rawDisabled !== null &&
-      rawDisabled !== ""
-    ) {
-      const n = Number(rawDisabled);
-      if (!Number.isInteger(n) || n < 0 || n > 70) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({
-          error: "Disabled service years must be a whole number from 0 to 70.",
-        });
-      }
-      await ensureDisabledYearsColumn();
-      const upd = await client.query(
-        `UPDATE esf7_personnel_profile SET disabled_service_years = $1 WHERE id = $2 RETURNING *`,
-        [n, updatedProfile.id],
-      );
-      if (upd.rows[0]) updatedProfile = upd.rows[0];
-    }
 
     let empPos = (position || "TEACHER I").toUpperCase();
     const isCook = empPos === "COOK";
