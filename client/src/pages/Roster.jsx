@@ -23,6 +23,12 @@ import SearchableDropdown from "../components/SearchableDropdown";
 import DepEdEmailInfoModal from "../components/DepEdEmailInfoModal";
 import ESF7UploadModal from "../components/ESF7UploadModal";
 import PortalHeader from "../components/PortalHeader";
+import {
+  GulpTrashIcon,
+  GulpFlyingText,
+  GulpFlyingItem,
+  GulpGlobalStyles,
+} from "../components/GulpTrashRow";
 import useDirtyGuard from "../hooks/useDirtyGuard";
 import { cleanPersonnelDates } from "../services/dateFields";
 import { api } from "../services/api";
@@ -50,6 +56,10 @@ import {
   FiStar,
   FiCheck,
   FiEdit2,
+  FiChevronLeft,
+  FiChevronRight,
+  FiChevronsLeft,
+  FiChevronsRight,
 } from "react-icons/fi";
 import RoomQR from "./RoomQR";
 
@@ -618,6 +628,8 @@ export default function Roster() {
     key: "name",
     direction: "asc",
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isSavingDrafts, setIsSavingDrafts] = useState(false);
   const [isEmailInfoOpen, setIsEmailInfoOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -631,6 +643,98 @@ export default function Roster() {
   const [isNewPersonnelSidebarOpen, setIsNewPersonnelSidebarOpen] =
     useState(false);
   const [isClosingSidebar, setIsClosingSidebar] = useState(false);
+  const [gulpDeleteState, setGulpDeleteState] = useState(null);
+  const nameRefs = useRef({});
+  const categoryRefs = useRef({});
+  const positionRefs = useRef({});
+  const emailRefs = useRef({});
+  const trashRefs = useRef({});
+
+  const handleGulpDelete = async (p) => {
+    if (gulpDeleteState) return;
+    const confirmed = await showConfirm(
+      "Delete Personnel?",
+      `Are you sure you want to delete ${p.firstName} ${p.lastName}?`,
+    );
+    if (!confirmed) return;
+
+    const trashEl = trashRefs.current[p.id];
+    let vectorName = { deltaX: 520, deltaY: 0 };
+    let vectorCategory = { deltaX: 240, deltaY: 0 };
+    let vectorPosition = { deltaX: 110, deltaY: 0 };
+    let vectorEmail = { deltaX: 380, deltaY: 0 };
+
+    if (trashEl) {
+      const tRect = trashEl.getBoundingClientRect();
+      const tMidX = tRect.left + tRect.width / 2;
+      const tMidY = tRect.top + tRect.height / 2;
+
+      const nameEl = nameRefs.current[p.id];
+      if (nameEl) {
+        const nRect = nameEl.getBoundingClientRect();
+        vectorName = {
+          deltaX: tMidX - (nRect.left + 15),
+          deltaY: tMidY - (nRect.top + 8),
+        };
+      }
+
+      const catEl = categoryRefs.current[p.id];
+      if (catEl) {
+        const cRect = catEl.getBoundingClientRect();
+        vectorCategory = {
+          deltaX: tMidX - (cRect.left + cRect.width / 2),
+          deltaY: tMidY - (cRect.top + cRect.height / 2),
+        };
+      }
+
+      const posEl = positionRefs.current[p.id];
+      if (posEl) {
+        const pRect = posEl.getBoundingClientRect();
+        vectorPosition = {
+          deltaX: tMidX - (pRect.left + pRect.width / 2),
+          deltaY: tMidY - (pRect.top + pRect.height / 2),
+        };
+      }
+
+      const emailEl = emailRefs.current[p.id];
+      if (emailEl) {
+        const eRect = emailEl.getBoundingClientRect();
+        vectorEmail = {
+          deltaX: tMidX - (eRect.left + 20),
+          deltaY: tMidY - (eRect.top + 8),
+        };
+      }
+    }
+
+    setGulpDeleteState({
+      id: p.id,
+      stage: "eating",
+      vectors: {
+        name: vectorName,
+        category: vectorCategory,
+        position: vectorPosition,
+        email: vectorEmail,
+      },
+    });
+  };
+
+  const handleGulpComplete = (pId) => {
+    setGulpDeleteState((curr) =>
+      curr?.id === pId ? { ...curr, stage: "chomped" } : curr,
+    );
+
+    // After lid snaps shut with crunch & puff, collapse row then delete
+    setTimeout(() => {
+      setGulpDeleteState((curr) =>
+        curr?.id === pId ? { ...curr, stage: "collapsing" } : curr,
+      );
+
+      setTimeout(() => {
+        deletePersonnel(pId);
+        setGulpDeleteState(null);
+      }, 360);
+    }, 400);
+  };
 
   const closeNewPersonnelSidebar = () => {
     if (isClosingSidebar) return;
@@ -774,7 +878,8 @@ export default function Roster() {
         ) ||
         p.type ||
         "";
-      if (pType === "non-teaching") return false;
+      const isNonTeaching = pType === "non-teaching";
+      if (isNonTeaching) return false;
       if (!headSearchQuery.trim()) return true;
       const name = formatPersonnelName(p).toLowerCase();
       const pos = (p.position || "").toLowerCase();
@@ -1328,51 +1433,140 @@ export default function Roster() {
   };
 
   // Filter & Search Logic
-  const filteredPersonnel = personnel
-    .filter((p) => {
+  const filteredPersonnel = useMemo(() => {
+    return personnel
+      .filter((p) => {
+        const pType =
+          detectPersonnelTypeFromPosition(
+            p.position || p.plantilla_position || p.position_title || "",
+          ) ||
+          p.type ||
+          "teaching";
+        const matchesType = typeFilter === "all" || pType === typeFilter;
+
+        const fullName =
+          `${p.firstName || ""} ${p.middleName || ""} ${p.lastName || ""} ${p.nameExtension || ""}`.toLowerCase();
+        const email = (p.depedEmail || "").toLowerCase();
+        const pos = (p.position || "").toLowerCase();
+        const query = searchQuery.toLowerCase();
+        const matchesSearch =
+          fullName.includes(query) ||
+          email.includes(query) ||
+          pos.includes(query);
+
+        return matchesType && matchesSearch;
+      })
+      .sort((a, b) => {
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+        if (sortConfig.key === "name" || sortConfig.key === "lastName") {
+          aValue =
+            `${a.lastName || ""}, ${a.firstName || ""} ${a.middleName || ""}`
+              .trim()
+              .toLowerCase();
+          bValue =
+            `${b.lastName || ""}, ${b.firstName || ""} ${b.middleName || ""}`
+              .trim()
+              .toLowerCase();
+        } else if (typeof aValue === "boolean") {
+          aValue = aValue ? 1 : 0;
+          bValue = bValue ? 1 : 0;
+        } else {
+          aValue = (aValue || "").toString().toLowerCase();
+          bValue = (bValue || "").toString().toLowerCase();
+        }
+        if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
+        return 0;
+      });
+  }, [personnel, typeFilter, searchQuery, sortConfig]);
+
+  // Category Counts for Roster Tabs
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      all: personnel.length,
+      teaching: 0,
+      "teaching-related": 0,
+      "non-teaching": 0,
+    };
+    for (const p of personnel) {
       const pType =
         detectPersonnelTypeFromPosition(
           p.position || p.plantilla_position || p.position_title || "",
         ) ||
         p.type ||
         "teaching";
-      const matchesType = typeFilter === "all" || pType === typeFilter;
-
-      const fullName =
-        `${p.firstName || ""} ${p.middleName || ""} ${p.lastName || ""} ${p.nameExtension || ""}`.toLowerCase();
-      const email = (p.depedEmail || "").toLowerCase();
-      const pos = (p.position || "").toLowerCase();
-      const query = searchQuery.toLowerCase();
-      const matchesSearch =
-        fullName.includes(query) ||
-        email.includes(query) ||
-        pos.includes(query);
-
-      return matchesType && matchesSearch;
-    })
-    .sort((a, b) => {
-      let aValue = a[sortConfig.key];
-      let bValue = b[sortConfig.key];
-      if (sortConfig.key === "name" || sortConfig.key === "lastName") {
-        aValue =
-          `${a.lastName || ""}, ${a.firstName || ""} ${a.middleName || ""}`
-            .trim()
-            .toLowerCase();
-        bValue =
-          `${b.lastName || ""}, ${b.firstName || ""} ${b.middleName || ""}`
-            .trim()
-            .toLowerCase();
-      } else if (typeof aValue === "boolean") {
-        aValue = aValue ? 1 : 0;
-        bValue = bValue ? 1 : 0;
-      } else {
-        aValue = (aValue || "").toString().toLowerCase();
-        bValue = (bValue || "").toString().toLowerCase();
+      if (counts[pType] !== undefined) {
+        counts[pType]++;
       }
-      if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
-      if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
+    }
+    return counts;
+  }, [personnel]);
+
+  // Pagination Computations
+  const totalItems = filteredPersonnel.length;
+  const effectivePerPage =
+    pageSize === "all" ? (totalItems > 0 ? totalItems : 1) : Number(pageSize);
+  const totalPages = Math.max(1, Math.ceil(totalItems / effectivePerPage));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  // Keep currentPage valid when filtering, deleting, or switching page size
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  // Sliced personnel for current page
+  const paginatedPersonnel = useMemo(() => {
+    if (pageSize === "all") return filteredPersonnel;
+    const sliceStart = (safeCurrentPage - 1) * effectivePerPage;
+    return filteredPersonnel.slice(sliceStart, sliceStart + effectivePerPage);
+  }, [filteredPersonnel, safeCurrentPage, effectivePerPage, pageSize]);
+
+  const startIndex =
+    totalItems === 0 ? 0 : (safeCurrentPage - 1) * effectivePerPage + 1;
+  const endIndex =
+    pageSize === "all"
+      ? totalItems
+      : Math.min(safeCurrentPage * effectivePerPage, totalItems);
+
+  // Helper for generating page numbers (up to 3 pages)
+  const getPageNumbers = (current, total) => {
+    if (total <= 3) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    let start = Math.max(1, current - 1);
+    let end = Math.min(total, start + 2);
+    if (end - start < 2) {
+      start = Math.max(1, end - 2);
+    }
+    const pages = [];
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
+  // If a new personnel was recently added, jump to the page that contains them
+  useEffect(() => {
+    if (
+      newlyAddedPersonnelIds &&
+      newlyAddedPersonnelIds.size > 0 &&
+      pageSize !== "all"
+    ) {
+      const latestId = Array.from(newlyAddedPersonnelIds).pop();
+      const index = filteredPersonnel.findIndex(
+        (p) => String(p.id) === String(latestId),
+      );
+      if (index !== -1) {
+        const targetPage = Math.floor(index / effectivePerPage) + 1;
+        if (targetPage !== currentPage) {
+          setCurrentPage(targetPage);
+        }
+      }
+    }
+  }, [newlyAddedPersonnelIds, filteredPersonnel, effectivePerPage, pageSize]);
 
   return (
     <section id="roster" className="view grid">
@@ -1915,19 +2109,105 @@ export default function Roster() {
             </div>
           )}
 
-          <div className="tabs" style={{ margin: "12px 0" }}>
+          <div
+            className="tabs"
+            style={{
+              margin: "12px 0",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              flexWrap: "wrap",
+            }}
+          >
             {["all", "teaching", "teaching-related", "non-teaching"].map(
               (type) => (
                 <button
                   key={type}
                   className={`tab ${typeFilter === type ? "active" : ""}`}
-                  onClick={() => setTypeFilter(type)}
+                  onClick={() => {
+                    setTypeFilter(type);
+                    setCurrentPage(1);
+                  }}
                   type="button"
                 >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                  {type === "teaching-related"
+                    ? "Teaching-Related"
+                    : type === "non-teaching"
+                      ? "Non-Teaching"
+                      : type.charAt(0).toUpperCase() + type.slice(1)}
                 </button>
               ),
             )}
+
+            {/* Small badge beside Non-Teaching showing Total of active tab */}
+            {(() => {
+              const activeCategoryTotal =
+                categoryCounts[typeFilter] ?? personnel.length;
+              const activeCategoryLabel =
+                typeFilter === "teaching"
+                  ? "Teaching"
+                  : typeFilter === "teaching-related"
+                    ? "Teaching-Related"
+                    : typeFilter === "non-teaching"
+                      ? "Non-Teaching"
+                      : "Personnel";
+              const isSearchFiltered =
+                Boolean(searchQuery.trim()) &&
+                filteredPersonnel.length !== activeCategoryTotal;
+
+              return (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
+                    background: "#EFF6FF",
+                    color: "#1E40AF",
+                    border: "1.5px solid #BFDBFE",
+                    borderRadius: "999px",
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    marginLeft: "4px",
+                    userSelect: "none",
+                    boxShadow: "0 1px 3px rgba(37, 99, 235, 0.08)",
+                    cursor: isSearchFiltered ? "pointer" : "default",
+                    transition: "all 0.15s ease",
+                  }}
+                  title={
+                    isSearchFiltered
+                      ? `Click to clear search query and show all ${activeCategoryTotal} ${activeCategoryLabel.toLowerCase()}`
+                      : `Total registered ${activeCategoryLabel.toLowerCase()} in roster`
+                  }
+                  onClick={() => {
+                    if (isSearchFiltered) {
+                      setSearchQuery("");
+                      setCurrentPage(1);
+                    }
+                  }}
+                >
+                  <FiUser size={13} style={{ color: "#2563EB" }} />
+                  <span>
+                    Total {activeCategoryLabel}:{" "}
+                    <strong style={{ color: "#1E3A8A", fontWeight: "800" }}>
+                      {activeCategoryTotal}
+                    </strong>
+                    {isSearchFiltered && (
+                      <span
+                        style={{
+                          color: "#3B82F6",
+                          fontWeight: "600",
+                          fontSize: "11px",
+                          marginLeft: "5px",
+                        }}
+                      >
+                        ({filteredPersonnel.length} shown)
+                      </span>
+                    )}
+                  </span>
+                </span>
+              );
+            })()}
           </div>
 
           <div className="roster-search-row">
@@ -1935,7 +2215,10 @@ export default function Roster() {
             <input
               placeholder="Search name, DepEd email, category, or plantilla position…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
             />
           </div>
 
@@ -2050,7 +2333,8 @@ export default function Roster() {
               </div>
             </div>
           ) : (
-            <div className="table-wrap">
+            <>
+              <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -2130,43 +2414,117 @@ export default function Roster() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPersonnel.map((p) => {
+                  {paginatedPersonnel.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        style={{
+                          textAlign: "center",
+                          padding: "48px 16px",
+                          color: "#64748B",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "44px",
+                              height: "44px",
+                              borderRadius: "50%",
+                              background: "#F1F5F9",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#64748B",
+                            }}
+                          >
+                            <FiSearch size={22} />
+                          </div>
+                          <span style={{ fontWeight: 600, color: "#334155" }}>
+                            No personnel match your search or filter criteria.
+                          </span>
+                          {(searchQuery || typeFilter !== "all") && (
+                            <button
+                              type="button"
+                              className="btn secondary"
+                              style={{
+                                marginTop: "4px",
+                                padding: "6px 14px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                              }}
+                              onClick={() => {
+                                setSearchQuery("");
+                                setTypeFilter("all");
+                                setCurrentPage(1);
+                              }}
+                            >
+                              Reset Search & Filters
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedPersonnel.map((p) => {
                     const isHead = Boolean(
                       p.isSchoolHead === true || p.is_school_head === true,
                     );
+                    const isGulping = gulpDeleteState?.id === p.id;
+                    const gulpStage = isGulping ? gulpDeleteState.stage : null;
                     return (
                       <tr
                         key={p.id}
-                        className="roster-row"
-                        style={
-                          isHead
+                        className={`roster-row ${gulpStage === "collapsing" ? "roster-row-gulp-collapsing" : ""}`}
+                        style={{
+                          ...(isHead
                             ? { background: "rgba(240, 253, 244, 0.75)" }
-                            : undefined
-                        }
+                            : undefined),
+                          ...(isGulping
+                            ? { background: "rgba(254, 242, 242, 0.65)" }
+                            : undefined),
+                          position: "relative",
+                        }}
                       >
                         <td>
-                          <span
-                            onClick={() => {
-                              setActivePersonnelId(p.id);
-                              setActiveView("profile");
-                            }}
-                            style={{
-                              fontWeight: 600,
-                              color: "#0f172a",
-                              cursor: "pointer",
-                              transition: "color 0.15s ease",
-                            }}
-                            title="Click to view Personnel Profile"
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.color = "#0284c7")
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.color = "#0f172a")
-                            }
-                          >
-                            {formatPersonnelName(p)}
-                          </span>
-                          {isHead &&
+                          {isGulping ? (
+                            <GulpFlyingText
+                              text={formatPersonnelName(p)}
+                              targetVector={gulpDeleteState.vectors?.name}
+                              onComplete={() => handleGulpComplete(p.id)}
+                            />
+                          ) : (
+                            <span
+                              ref={(el) => (nameRefs.current[p.id] = el)}
+                              onClick={() => {
+                                setActivePersonnelId(p.id);
+                                setActiveView("profile");
+                              }}
+                              style={{
+                                fontWeight: 600,
+                                color: "#0f172a",
+                                cursor: "pointer",
+                                transition: "color 0.15s ease",
+                              }}
+                              title="Click to view Personnel Profile"
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.color = "#0284c7")
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.color = "#0f172a")
+                              }
+                            >
+                              {formatPersonnelName(p)}
+                            </span>
+                          )}
+                          {!isGulping && isHead &&
                             (allRosterHeads.length <= 1 ||
                               p.isMainSchoolHead ||
                               p.is_main_school_head ||
@@ -2402,7 +2760,28 @@ export default function Roster() {
                             return null;
                           })()}
                         </td>
-                        <td>{p.depedEmail}</td>
+                        <td>
+                          {isGulping && p.depedEmail ? (
+                            <GulpFlyingItem
+                              targetVector={gulpDeleteState.vectors?.email}
+                              delayMs={70}
+                            >
+                              <span
+                                style={{
+                                  color: "#0F172A",
+                                  fontWeight: 500,
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {p.depedEmail}
+                              </span>
+                            </GulpFlyingItem>
+                          ) : (
+                            <span ref={(el) => (emailRefs.current[p.id] = el)}>
+                              {p.depedEmail}
+                            </span>
+                          )}
+                        </td>
                         <td>
                           {(() => {
                             const isCanon = isCanonicalPosition(p.position);
@@ -2426,22 +2805,57 @@ export default function Roster() {
                               ) ||
                               p.type ||
                               "teaching";
-                            return (
+                            const label =
+                              pType === "teaching"
+                                ? "Teaching"
+                                : pType === "teaching-related"
+                                  ? "Related"
+                                  : "Non-Teaching";
+                            return isGulping ? (
+                              <GulpFlyingItem
+                                targetVector={gulpDeleteState.vectors?.category}
+                                delayMs={35}
+                              >
+                                <span
+                                  className={`category-badge category-${pType}`}
+                                >
+                                  {label}
+                                </span>
+                              </GulpFlyingItem>
+                            ) : (
                               <span
+                                ref={(el) => (categoryRefs.current[p.id] = el)}
                                 className={`category-badge category-${pType}`}
                               >
-                                {pType === "teaching"
-                                  ? "Teaching"
-                                  : pType === "teaching-related"
-                                    ? "Related"
-                                    : "Non-Teaching"}
+                                {label}
                               </span>
                             );
                           })()}
                         </td>
                         <td>
                           {isCanonicalPosition(p.position) ? (
-                            p.position
+                            isGulping ? (
+                              <GulpFlyingItem
+                                targetVector={gulpDeleteState.vectors?.position}
+                                delayMs={10}
+                              >
+                                <span
+                                  style={{
+                                    fontWeight: 600,
+                                    color: "#0F172A",
+                                    fontSize: "13px",
+                                  }}
+                                >
+                                  {p.position}
+                                </span>
+                              </GulpFlyingItem>
+                            ) : (
+                              <span
+                                ref={(el) => (positionRefs.current[p.id] = el)}
+                              >
+                                {p.position}
+                              </span>
+                            )
                           ) : (
                             <span
                               style={{
@@ -2462,7 +2876,7 @@ export default function Roster() {
                               justifyContent: "center",
                             }}
                           >
-                            {p.isDraft && (
+                            {p.isDraft && !isGulping && (
                               <button
                                 className="btn"
                                 style={{
@@ -2481,7 +2895,9 @@ export default function Roster() {
                               </button>
                             )}
                             <button
+                              ref={(el) => (trashRefs.current[p.id] = el)}
                               className="btn danger"
+                              disabled={Boolean(gulpDeleteState)}
                               style={{
                                 minHeight: "34px",
                                 padding: "6px 10px",
@@ -2489,29 +2905,327 @@ export default function Roster() {
                                 display: "inline-flex",
                                 alignItems: "center",
                                 justifyContent: "center",
+                                background: isGulping ? "#B91C1C" : undefined,
+                                borderColor: isGulping ? "#991B1B" : undefined,
+                                boxShadow: isGulping
+                                  ? "0 0 14px rgba(220, 38, 38, 0.45)"
+                                  : undefined,
+                                transform:
+                                  isGulping && gulpStage === "eating"
+                                    ? "scale(1.08)"
+                                    : undefined,
+                                transition:
+                                  "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
                               }}
                               title="Delete Personnel"
-                              onClick={async () => {
-                                if (
-                                  await showConfirm(
-                                    "Delete Personnel?",
-                                    `Are you sure you want to delete ${p.firstName} ${p.lastName}?`,
-                                  )
-                                ) {
-                                  deletePersonnel(p.id);
-                                }
-                              }}
+                              onClick={() => handleGulpDelete(p)}
                             >
-                              <FiTrash2 size={13} />
+                              <GulpTrashIcon
+                                isOpen={isGulping && gulpStage === "eating"}
+                                isEating={isGulping && gulpStage === "eating"}
+                                isChomped={
+                                  isGulping &&
+                                  (gulpStage === "chomped" ||
+                                    gulpStage === "collapsing")
+                                }
+                                size={14}
+                                color="white"
+                              />
                             </button>
                           </div>
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
+              <GulpGlobalStyles />
             </div>
+
+            {/* Pagination Controls */}
+            {totalItems > 0 && (
+              <div
+                className="roster-pagination"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                  marginTop: "16px",
+                  padding: "12px 16px",
+                  backgroundColor: "#FFFFFF",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: "10px",
+                  fontSize: "12px",
+                  color: "#64748B",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+                }}
+              >
+                {/* Left side: Range Info & Page Size Selector */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    flexWrap: "nowrap",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  <span style={{ whiteSpace: "nowrap" }}>
+                    Showing{" "}
+                    <strong style={{ color: "#0F172A", fontWeight: "700" }}>
+                      {startIndex}–{endIndex}
+                    </strong>{" "}
+                    of{" "}
+                    <strong style={{ color: "#0F172A", fontWeight: "700" }}>
+                      {totalItems}
+                    </strong>{" "}
+                    personnel
+                    {totalItems !== personnel.length && (
+                      <span style={{ color: "#94A3B8", marginLeft: "4px" }}>
+                        (filtered from {personnel.length})
+                      </span>
+                    )}
+                  </span>
+
+                  <span style={{ color: "#CBD5E1", userSelect: "none" }}>|</span>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <label
+                      htmlFor="roster-page-size"
+                      style={{
+                        margin: 0,
+                        color: "#64748B",
+                        fontWeight: "500",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Per page:
+                    </label>
+                    <select
+                      id="roster-page-size"
+                      value={pageSize}
+                      onChange={(e) => {
+                        const val =
+                          e.target.value === "all"
+                            ? "all"
+                            : Number(e.target.value);
+                        setPageSize(val);
+                        setCurrentPage(1);
+                      }}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        border: "1px solid #CBD5E1",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        background: "white",
+                        color: "#0F172A",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value="all">All</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Right side: Page Navigation Buttons */}
+                {totalPages > 1 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    {/* First Page */}
+                    <button
+                      type="button"
+                      disabled={safeCurrentPage <= 1}
+                      onClick={() => setCurrentPage(1)}
+                      title="First Page"
+                      style={{
+                        minWidth: "32px",
+                        height: "32px",
+                        padding: "0 6px",
+                        borderRadius: "6px",
+                        border: "1px solid #CBD5E1",
+                        background: safeCurrentPage <= 1 ? "#F8FAFC" : "white",
+                        color: safeCurrentPage <= 1 ? "#94A3B8" : "#0F172A",
+                        fontWeight: "700",
+                        cursor:
+                          safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <FiChevronsLeft size={14} />
+                    </button>
+
+                    {/* Previous Page */}
+                    <button
+                      type="button"
+                      disabled={safeCurrentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      title="Previous Page"
+                      style={{
+                        minWidth: "32px",
+                        height: "32px",
+                        padding: "0 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #CBD5E1",
+                        background: safeCurrentPage <= 1 ? "#F8FAFC" : "white",
+                        color: safeCurrentPage <= 1 ? "#94A3B8" : "#0F172A",
+                        fontWeight: "700",
+                        cursor:
+                          safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontSize: "12px",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <FiChevronLeft size={13} />
+                      <span>Prev</span>
+                    </button>
+
+                    {/* Numeric Pages with smart ellipsis */}
+                    {getPageNumbers(safeCurrentPage, totalPages).map(
+                      (pageNum, idx) => {
+                        if (pageNum === "...") {
+                          return (
+                            <span
+                              key={`ellipsis-${idx}`}
+                              style={{
+                                minWidth: "24px",
+                                textAlign: "center",
+                                color: "#94A3B8",
+                                fontWeight: "700",
+                                fontSize: "12px",
+                                userSelect: "none",
+                              }}
+                            >
+                              …
+                            </span>
+                          );
+                        }
+
+                        const isActive = pageNum === safeCurrentPage;
+                        return (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setCurrentPage(pageNum)}
+                            style={{
+                              minWidth: "32px",
+                              height: "32px",
+                              padding: "0 8px",
+                              borderRadius: "6px",
+                              border: isActive
+                                ? "1.5px solid #2563EB"
+                                : "1px solid #CBD5E1",
+                              background: isActive ? "#EFF6FF" : "white",
+                              color: isActive ? "#1D4ED8" : "#334155",
+                              fontWeight: isActive ? "800" : "600",
+                              fontSize: "12px",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                              boxShadow: isActive
+                                ? "0 1px 3px rgba(37, 99, 235, 0.15)"
+                                : "none",
+                            }}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      },
+                    )}
+
+                    {/* Next Page */}
+                    <button
+                      type="button"
+                      disabled={safeCurrentPage >= totalPages}
+                      onClick={() =>
+                        setCurrentPage((p) => Math.min(totalPages, p + 1))
+                      }
+                      title="Next Page"
+                      style={{
+                        minWidth: "32px",
+                        height: "32px",
+                        padding: "0 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #CBD5E1",
+                        background:
+                          safeCurrentPage >= totalPages ? "#F8FAFC" : "white",
+                        color:
+                          safeCurrentPage >= totalPages ? "#94A3B8" : "#0F172A",
+                        fontWeight: "700",
+                        cursor:
+                          safeCurrentPage >= totalPages
+                            ? "not-allowed"
+                            : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontSize: "12px",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <span>Next</span>
+                      <FiChevronRight size={13} />
+                    </button>
+
+                    {/* Last Page */}
+                    <button
+                      type="button"
+                      disabled={safeCurrentPage >= totalPages}
+                      onClick={() => setCurrentPage(totalPages)}
+                      title="Last Page"
+                      style={{
+                        minWidth: "32px",
+                        height: "32px",
+                        padding: "0 6px",
+                        borderRadius: "6px",
+                        border: "1px solid #CBD5E1",
+                        background:
+                          safeCurrentPage >= totalPages ? "#F8FAFC" : "white",
+                        color:
+                          safeCurrentPage >= totalPages ? "#94A3B8" : "#0F172A",
+                        fontWeight: "700",
+                        cursor:
+                          safeCurrentPage >= totalPages
+                            ? "not-allowed"
+                            : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <FiChevronsRight size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            </>
           )}
         </div>
       </article>

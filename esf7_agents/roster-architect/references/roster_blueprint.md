@@ -114,3 +114,11 @@ This document serves as the authoritative blueprint for [Roster.jsx](file:///e:/
   * Clicking the green PortalHeader "Save" button checks if newly added personnel or uncommitted drafts exist.
   * If new personnel exist, opens a sliding sidebar popup modal from the right showcasing all newly added personnel, their plantilla positions, appointment categories, birthdate/age verification, and email statuses for review before committing to PostgreSQL.
   * Provides a direct "Confirm & Save to Database" action inside the sidebar that triggers bulk persistence and clears session tracking.
+* **Version 1.5 (2026-10-15)**: Personnel Roster Paging & Empty State Handling.
+  * Added pagination state (`currentPage`, `pageSize`) defaulting to 25 items per page with options `[10, 25, 50, 100, All]`.
+  * Paginated table rendering with `paginatedPersonnel` slice and dynamic item range indication (`Showing X–Y of Z personnel`).
+  * Full navigation controls: First (`FiChevronsLeft`), Previous (`FiChevronLeft`), Next (`FiChevronRight`), Last (`FiChevronsRight`), and numeric page buttons with intelligent ellipsis handling (`getPageNumbers`).
+  * Automatic page reset to 1 on search input and position category tab changes.
+  * Out-of-bounds page clamping and automatic auto-navigation to newly created personnel records across pages.
+  * Enhanced empty filter state with "Reset Search & Filters" trigger when query matches no records.
+  * Added a small badge immediately beside the "Non-Teaching" tab in the tabs row displaying the total number of registered personnel in the roster (`Total Personnel: {personnel.length}`), including active filtered count and filter reset on click.

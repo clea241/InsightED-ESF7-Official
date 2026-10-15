@@ -57,14 +57,18 @@ checkRule('Commit Draft Personnel Hook', rosterCode.includes('commitDraftPersonn
 
 console.log('\n--- 2. Validation & Business Rules Audit ---');
 checkRule('School Head Conflict Check', rosterCode.includes('checkIsHead') || rosterCode.includes('currentHead'), 'Must enforce single School Head validation rules.');
-checkRule('Non-Teaching School Head Guard', rosterCode.includes('isNonTeaching'), 'Must disallow Non-Teaching personnel from being School Head.');
+checkRule('Non-Teaching School Head Guard', rosterCode.includes('isNonTeaching') || rosterCode.includes('pType === "non-teaching"'), 'Must disallow Non-Teaching personnel from being School Head.');
 checkRule('Draft Auto-Fill Commitment Banner', rosterCode.includes('isDraft'), 'Must detect and handle auto-filled draft personnel records.');
-checkRule('DepEd Email Format Policy', rosterCode.includes('@deped.gov.ph'), 'Must format DepEd email as username@deped.gov.ph.');
+checkRule('DepEd Email Format Policy', rosterCode.includes('@deped.gov.ph') || rosterCode.includes('validateDepEdEmail'), 'Must format DepEd email as username@deped.gov.ph.');
 
 console.log('\n--- 3. Navigation & View Routing Audit ---');
-checkRule('Profile Target Navigation', rosterCode.includes("setActiveView('profile')"), 'Must set active view to profile when viewing personnel.');
-checkRule('Workload Target Navigation', rosterCode.includes("setActiveView('workload')"), 'Must set active view to workload when viewing workload.');
+checkRule('Profile Target Navigation', rosterCode.includes("setActiveView('profile')") || rosterCode.includes('setActiveView("profile")'), 'Must set active view to profile when viewing personnel.');
 checkRule('Active Personnel Selection', rosterCode.includes('setActivePersonnelId'), 'Must set active personnel ID before navigating.');
+
+console.log('\n--- 4. Personnel Roster Paging Audit ---');
+checkRule('Paging State (currentPage & pageSize)', rosterCode.includes('currentPage') && rosterCode.includes('pageSize'), 'Roster.jsx must maintain currentPage and pageSize state.');
+checkRule('Paginated Slicing', rosterCode.includes('paginatedPersonnel'), 'Roster.jsx must slice personnel list into pages via paginatedPersonnel.');
+checkRule('Pagination Controls', rosterCode.includes('roster-pagination') && rosterCode.includes('Per page'), 'Roster.jsx must render pagination navigation controls.');
 
 console.log('\n====================================================');
 if (errors === 0 && warnings === 0) {

@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { FiChevronDown, FiEdit3, FiSearch, FiX } from "react-icons/fi";
 
 export default function SearchableDropdown({
+  id,
+  name,
+  dataField,
   options = [],
   value = "",
   onChange,
@@ -164,8 +167,16 @@ export default function SearchableDropdown({
   return (
     <div
       ref={wrapperRef}
+      id={id}
+      name={name}
+      data-field={dataField || name || id}
       className="searchable-dropdown-container"
-      style={{ position: "relative", width: "100%", ...style }}
+      style={{
+        position: "relative",
+        width: "100%",
+        minWidth: 0,
+        ...style,
+      }}
     >
       <div
         className={`searchable-dropdown-toggle ${isOpen ? "active" : ""}`}
@@ -174,6 +185,8 @@ export default function SearchableDropdown({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          width: "100%",
+          minWidth: 0,
           padding: compact ? "4px 8px" : "10px 14px",
           background: disabled ? "#f1f5f9" : "white",
           border: isRed
@@ -195,11 +208,14 @@ export default function SearchableDropdown({
         }}
       >
         <span
+          title={displayLabel || placeholder}
           style={{
+            flex: 1,
+            minWidth: 0,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            marginRight: "4px",
+            marginRight: "6px",
           }}
         >
           {displayLabel || placeholder}

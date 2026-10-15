@@ -3191,3 +3191,92 @@ th {
   transform: translateY(-1px) !important;
   box-shadow: 0 6px 16px rgba(220, 38, 38, 0.45) !important;
 }
+
+/* ── Warning Smooth Christmas Light Glowing Animation (Pure Red Glow, Zero Movement) ── */
+@keyframes christmasLightGlow {
+  0%, 100% {
+    opacity: 0.72;
+    filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.35));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.95)) drop-shadow(0 0 12px rgba(220, 38, 38, 0.55));
+  }
+}
+
+@keyframes warningBadgeChristmasGlow {
+  0%, 100% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 8px 3px rgba(239, 68, 68, 0.55);
+  }
+}
+
+.warning-heartbeat,
+.warning-christmas-glow {
+  display: inline-block;
+  animation: christmasLightGlow 2s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+.warning-badge-heartbeat,
+.warning-badge-glow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: warningBadgeChristmasGlow 2s ease-in-out infinite;
+  will-change: box-shadow, opacity;
+}
+
+.warning-dot-heartbeat,
+.warning-dot-glow {
+  display: inline-block;
+  animation: warningBadgeChristmasGlow 2s ease-in-out infinite;
+}
+
+.warning-number-heartbeat,
+.warning-number-glow {
+  display: inline-block;
+  animation: christmasLightGlow 2s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+.warning-heartbeat-group,
+.warning-christmas-glow-group {
+  display: inline-flex !important;
+  align-items: center;
+  animation: christmasLightGlow 2s ease-in-out infinite;
+  will-change: filter, opacity;
+}
+
+/* ── Unsaved Target Field Pulse & Highlight ── */
+@keyframes unsavedFieldPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+    outline: 2px solid #f59e0b !important;
+  }
+  35% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.3);
+    outline: 2.5px solid #d97706 !important;
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+    outline: 2px solid #f59e0b !important;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    outline: 2px solid transparent !important;
+  }
+}
+
+.unsaved-field-target-pulse {
+  animation: unsavedFieldPulse 1.8s ease-in-out 2 !important;
+  transition: all 0.25s ease !important;
+}
+
+
+
+

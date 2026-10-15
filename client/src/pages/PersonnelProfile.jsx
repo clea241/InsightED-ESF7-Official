@@ -2261,20 +2261,209 @@ function canonicalValue(v) {
   return String(v);
 }
 
+const toCamelCase = (str) =>
+  String(str).replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+
+// System/metadata fields, internal aliases, and derived flags that must NEVER trigger dirty guard / unsaved changes warnings
+const IGNORED_DIFF_FIELDS = new Set([
+  // Derived teaching flags & aliases (assignedGradeLevels is the only canonical UI control)
+  "gradelevelstaught",
+  "grade_levels_taught",
+  "hasnoteachingload",
+  "has_no_teaching_load",
+  "teachesshs",
+  "teaches_shs",
+
+  // Position / Head aliases
+  "plantillaposition",
+  "plantilla_position",
+  "positioncategory",
+  "position_category",
+  "type", // mirrored with position / position category
+  "ismainschoolhead",
+  "is_main_school_head",
+  "ismainsh",
+  "is_main_sh",
+  "isschoolhead",
+  "is_school_head",
+
+  // Deployment derived flags
+  "isshared",
+  "is_shared",
+  "isclustered",
+  "is_clustered",
+  "isreassigned",
+  "is_reassigned",
+  "partnerschoolname",
+  "partner_school_name",
+  "reassignedschoolname",
+  "reassigned_school_name",
+
+  // Derived metrics / maps / aliases
+  "fullname",
+  "full_name",
+  "formattedname",
+  "formatted_name",
+  "age",
+  "yearsofservice",
+  "years_of_service",
+  "yearsservice",
+  "years_service",
+  "totalexperienceyears",
+  "total_experience_years",
+  "learningareamap",
+  "appointmentnature",
+  "firstdayofservice",
+  "employeeid",
+
+  // System/metadata fields that must NEVER trigger dirty guard / unsaved changes warnings
+  "isdraft",
+  "is_draft",
+  "personalverified",
+  "personal_verified",
+  "workloadverified",
+  "workload_verified",
+  "lastverifiedat",
+  "last_verified_at",
+  "verifiedat",
+  "verified_at",
+  "createdat",
+  "created_at",
+  "updatedat",
+  "updated_at",
+  "savedat",
+  "saved_at",
+  "timestamp",
+  "source",
+  "_id",
+  "id",
+  "schoolid",
+  "school_id",
+  "schoolyear",
+  "school_year",
+  "term",
+  "activeterm",
+  "active_term",
+  "nodestatus",
+  "node_status",
+  "rawpayload",
+  "raw_payload",
+  "matrix_data",
+  "matrixdata",
+  "extras",
+]);
+
 // Lists the fields whose normalized value differs: [{ field, from, to }]. `onlyDraftKeys` ignores keys the other side lacks.
 function diffNormalized(base, current, onlyDraftKeys = false) {
-  const diffs = [];
-  const keys = new Set(
-    onlyDraftKeys
-      ? Object.keys(current || {})
-      : [...Object.keys(base || {}), ...Object.keys(current || {})],
+  const rawKeys = onlyDraftKeys
+    ? Object.keys(current || {})
+    : [...Object.keys(base || {}), ...Object.keys(current || {})];
+
+  const seenCanonical = new Set();
+  const fieldDiffMap = new Map();
+
+  for (const k of rawKeys) {
+    const camel = toCamelCase(k);
+    const cleanLower = camel.toLowerCase();
+    if (IGNORED_DIFF_FIELDS.has(cleanLower)) continue;
+    if (seenCanonical.has(camel)) continue;
+    seenCanonical.add(camel);
+
+    const valBase = base?.[camel] !== undefined ? base[camel] : base?.[k];
+    const valCurr = current?.[camel] !== undefined ? current[camel] : current?.[k];
+
+    const a = JSON.stringify(canonicalValue(valBase));
+    const b = JSON.stringify(canonicalValue(valCurr));
+    if (a !== b) {
+      fieldDiffMap.set(camel, { field: camel, from: a, to: b });
+    }
+  }
+
+  // Handle assignedGradeLevels (canonical UI control for grade level selections)
+  const valBaseGrades = Array.isArray(base?.assignedGradeLevels)
+    ? base.assignedGradeLevels
+    : Array.isArray(base?.gradeLevelsTaught)
+      ? base.gradeLevelsTaught
+      : [];
+  const valCurrGrades = Array.isArray(current?.assignedGradeLevels)
+    ? current.assignedGradeLevels
+    : Array.isArray(current?.gradeLevelsTaught)
+      ? current.gradeLevelsTaught
+      : [];
+
+  const baseNoLoad = Boolean(
+    base?.hasNoTeachingLoad || base?.has_no_teaching_load,
   );
-  keys.forEach((k) => {
-    const a = JSON.stringify(canonicalValue(base?.[k]));
-    const b = JSON.stringify(canonicalValue(current?.[k]));
-    if (a !== b) diffs.push({ field: k, from: a, to: b });
-  });
-  return diffs;
+  const currNoLoad = Boolean(
+    current?.hasNoTeachingLoad || current?.has_no_teaching_load,
+  );
+
+  const gradesDiffer =
+    JSON.stringify(valBaseGrades) !== JSON.stringify(valCurrGrades);
+  const noLoadDiffer = baseNoLoad !== currNoLoad;
+
+  if (gradesDiffer || noLoadDiffer) {
+    const fromStr =
+      valBaseGrades.length > 0
+        ? valBaseGrades.join(", ")
+        : baseNoLoad
+          ? "No Teaching Assignment (0 Load)"
+          : "None";
+    const toStr =
+      valCurrGrades.length > 0
+        ? valCurrGrades.join(", ")
+        : currNoLoad
+          ? "No Teaching Assignment (0 Load)"
+          : "None";
+
+    if (fromStr !== toStr) {
+      fieldDiffMap.set("assignedGradeLevels", {
+        field: "assignedGradeLevels",
+        from: fromStr,
+        to: toStr,
+      });
+    } else {
+      fieldDiffMap.delete("assignedGradeLevels");
+    }
+  } else {
+    fieldDiffMap.delete("assignedGradeLevels");
+  }
+
+  // Consolidate companion fields (e.g. tin & noTin, philsysNo & noPhilsys) so a single user action produces exactly 1 item
+  const COMPANIONS = [
+    { valueKey: "tin", naKey: "noTin", label: "TIN" },
+    { valueKey: "philsysNo", naKey: "noPhilsys", label: "PhilSys" },
+    { valueKey: "gsisBpn", naKey: "noGsis", label: "GSIS BP" },
+    { valueKey: "depedEmail", naKey: "noDepedEmail", label: "DepEd Email" },
+  ];
+
+  for (const { valueKey, naKey, label } of COMPANIONS) {
+    const hasValueDiff = fieldDiffMap.has(valueKey);
+    const hasNaDiff = fieldDiffMap.has(naKey);
+
+    if (hasValueDiff && hasNaDiff) {
+      // Both value and N/A changed (e.g. checked No TIN which cleared TIN): merge into single entry
+      fieldDiffMap.delete(naKey);
+      const isNaNow = Boolean(current?.[naKey]);
+      const wasNa = Boolean(base?.[naKey]);
+      fieldDiffMap.set(valueKey, {
+        field: valueKey,
+        from: wasNa ? `No ${label}` : base?.[valueKey] || "None",
+        to: isNaNow ? `No ${label} (N/A)` : current?.[valueKey] || "None",
+      });
+    } else if (hasNaDiff && !hasValueDiff) {
+      // Only N/A flag toggled: express under the main value field
+      fieldDiffMap.delete(naKey);
+      const isNaNow = Boolean(current?.[naKey]);
+      fieldDiffMap.set(valueKey, {
+        field: valueKey,
+        from: isNaNow ? "None" : `No ${label}`,
+        to: isNaNow ? `No ${label} (N/A)` : current?.[valueKey] || "Provided",
+      });
+    }
+  }
+
+  return Array.from(fieldDiffMap.values());
 }
 
 export default function PersonnelProfile() {
@@ -2503,6 +2692,92 @@ export default function PersonnelProfile() {
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
     onFlush: flushCurrentPersonToContext,
+    onFocusField: (fieldName) => {
+      const fn = String(fieldName || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      if (
+        [
+          "ethnicgroup",
+          "civilstatus",
+          "soloparent",
+          "religion",
+          "gender",
+          "sex",
+          "firstname",
+          "lastname",
+          "middlename",
+          "birthdate",
+          "birthplace",
+          "philsysno",
+          "nophilsys",
+          "tinno",
+          "notin",
+          "gsisbpn",
+          "nogsis",
+          "contactno",
+          "depedemail",
+          "personalemail",
+          "residentialaddress",
+          "permanentaddress",
+          "bloodtype",
+          "height",
+          "weight",
+          "nameextension",
+        ].some((k) => fn.includes(k))
+      ) {
+        setActiveTab("identity");
+      } else if (
+        [
+          "position",
+          "category",
+          "fundsource",
+          "appointmentstatus",
+          "employeeno",
+          "salarygrade",
+          "stepincrement",
+          "monthlysalary",
+          "dailyrate",
+          "natureofappointment",
+          "plantillano",
+          "firstservicedate",
+          "firstdepeddate",
+          "originalappointmentdate",
+          "currentstationdate",
+          "newstationdate",
+          "lastpromotiondate",
+          "lastlateralmovementdate",
+        ].some((k) => fn.includes(k))
+      ) {
+        setActiveTab("employment");
+      } else if (
+        ["degree", "education", "course", "school", "graduat"].some((k) =>
+          fn.includes(k),
+        )
+      ) {
+        setActiveTab("education");
+      } else if (
+        ["training", "ld", "development", "seminar"].some((k) => fn.includes(k))
+      ) {
+        setActiveTab("development");
+      } else if (
+        [
+          "teaching",
+          "subject",
+          "major",
+          "minor",
+          "specialization",
+          "grade",
+          "assignedgrade",
+          "gradelevel",
+          "taught",
+        ].some((k) => fn.includes(k))
+      ) {
+        setActiveTab("teaching");
+      } else if (["learning", "area", "matrix"].some((k) => fn.includes(k))) {
+        setActiveTab("learning-area");
+      }
+    },
     getDirtyReasons: () => [...diffCurrentPerson(), ...otherDraftDiffs()],
     getPayload: () => currentPerson,
     getMetadata: () => ({
@@ -3885,6 +4160,9 @@ export default function PersonnelProfile() {
         await deleteLocalDraft(canonicalKey).catch(() => {});
       }
 
+      if (typeof updatePersonnelInfo === "function") {
+        updatePersonnelInfo(personToSave.id, personToSave);
+      }
       setEditPerson(personToSave);
       if (setHasUnsavedChanges) setHasUnsavedChanges(false);
 
@@ -4464,6 +4742,66 @@ export default function PersonnelProfile() {
           border-radius: 8px;
           transition: all 0.2s ease;
         }
+
+        /* ── Warning Smooth Christmas Light Glowing Animation (Pure Red Glow, Zero Movement) ── */
+        @keyframes christmasLightGlow {
+          0%, 100% {
+            opacity: 0.72;
+            filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.35));
+          }
+          50% {
+            opacity: 1;
+            filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.95)) drop-shadow(0 0 12px rgba(220, 38, 38, 0.55));
+          }
+        }
+
+        @keyframes warningBadgeChristmasGlow {
+          0%, 100% {
+            opacity: 0.8;
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+          }
+          50% {
+            opacity: 1;
+            box-shadow: 0 0 8px 3px rgba(239, 68, 68, 0.55);
+          }
+        }
+
+        .warning-heartbeat,
+        .warning-christmas-glow {
+          display: inline-block;
+          animation: christmasLightGlow 2s ease-in-out infinite;
+          will-change: filter, opacity;
+        }
+
+        .warning-badge-heartbeat,
+        .warning-badge-glow {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          animation: warningBadgeChristmasGlow 2s ease-in-out infinite;
+          will-change: box-shadow, opacity;
+        }
+
+        .warning-dot-heartbeat,
+        .warning-dot-glow {
+          display: inline-block;
+          animation: warningBadgeChristmasGlow 2s ease-in-out infinite;
+        }
+
+        .warning-number-heartbeat,
+        .warning-number-glow {
+          display: inline-block;
+          animation: christmasLightGlow 2s ease-in-out infinite;
+          will-change: filter, opacity;
+        }
+
+        .warning-heartbeat-group,
+        .warning-christmas-glow-group {
+          display: inline-flex !important;
+          align-items: center;
+          animation: christmasLightGlow 2s ease-in-out infinite;
+          will-change: filter, opacity;
+        }
       `}</style>
       <PortalHeader
         title={
@@ -4625,28 +4963,6 @@ export default function PersonnelProfile() {
                   >
                     Personnel Profiling
                   </h2>
-                  <button
-                    type="button"
-                    onClick={handleAutoPopulateMissingInfo}
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "6px",
-                      padding: "3px 8px",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                    title="Auto-fill missing profile details & classifications for all personnel"
-                  >
-                    <FiZap size={12} />
-                    <span>Auto-Populate</span>
-                  </button>
                 </div>
                 <p
                   style={{
@@ -4943,6 +5259,7 @@ export default function PersonnelProfile() {
                                     />
                                   </div>
                                   <div
+                                    className={!isComplete ? "warning-christmas-glow-group" : ""}
                                     style={{
                                       display: "inline-flex",
                                       alignItems: "center",
@@ -4954,7 +5271,7 @@ export default function PersonnelProfile() {
                                       <FiAlertCircle
                                         size={11}
                                         style={{
-                                          color: "#f59e0b",
+                                          color: "#EF4444",
                                           flexShrink: 0,
                                         }}
                                       />
@@ -4965,7 +5282,7 @@ export default function PersonnelProfile() {
                                         fontWeight: "700",
                                         color: isComplete
                                           ? "#10b981"
-                                          : "#d97706",
+                                          : "#DC2626",
                                         minWidth: "24px",
                                         textAlign: "right",
                                       }}
@@ -5019,6 +5336,7 @@ export default function PersonnelProfile() {
                                         >
                                           <FiAlertCircle
                                             size={13}
+                                            className="warning-heartbeat"
                                             style={{
                                               color: "#d97706",
                                               flexShrink: 0,
@@ -5035,6 +5353,7 @@ export default function PersonnelProfile() {
                                             Missing Fields
                                           </span>
                                           <span
+                                            className="warning-badge-heartbeat"
                                             style={{
                                               background: "#f59e0b",
                                               color: "#ffffff",
@@ -5115,6 +5434,7 @@ export default function PersonnelProfile() {
                                                   }}
                                                 >
                                                   <span
+                                                    className="warning-dot-heartbeat"
                                                     style={{
                                                       width: "5px",
                                                       height: "5px",
@@ -6135,6 +6455,8 @@ export default function PersonnelProfile() {
                                   "WIDOWED",
                                   "LEGALLY SEPARATED",
                                 ]}
+                                id="civilStatus"
+                                name="civilStatus"
                                 value={currentPerson.civilStatus || ""}
                                 onChange={(val) =>
                                   handleFieldChange("civilStatus", val)
@@ -6146,6 +6468,8 @@ export default function PersonnelProfile() {
                             <div>
                               <label>Solo Parent</label>
                               <SearchableDropdown
+                                id="soloParent"
+                                name="soloParent"
                                 options={["NO", "YES"]}
                                 value={currentPerson.soloParent || "NO"}
                                 onChange={(val) =>
@@ -6157,6 +6481,8 @@ export default function PersonnelProfile() {
                             <div>
                               <label>Religion</label>
                               <SearchableDropdown
+                                id="religion"
+                                name="religion"
                                 options={RELIGION_OPTIONS.map((r) =>
                                   r.toUpperCase(),
                                 )}
@@ -6171,6 +6497,8 @@ export default function PersonnelProfile() {
                             <div>
                               <label>Ethnic Group</label>
                               <SearchableDropdown
+                                id="ethnicGroup"
+                                name="ethnicGroup"
                                 options={ETHNIC_GROUP_OPTIONS}
                                 value={currentPerson.ethnicGroup || ""}
                                 onChange={(val) =>
@@ -9800,7 +10128,7 @@ export default function PersonnelProfile() {
                                       style={{
                                         display: "grid",
                                         gridTemplateColumns:
-                                          "1.2fr 1fr 1fr 80px 80px 40px",
+                                          "minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 80px 80px 40px",
                                         gap: "8px",
                                         padding: "10px",
                                         background: "#fff",
@@ -10026,7 +10354,7 @@ export default function PersonnelProfile() {
                                       style={{
                                         display: "grid",
                                         gridTemplateColumns:
-                                          "1.2fr 1fr 1fr 80px 80px 40px",
+                                          "minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 80px 80px 40px",
                                         gap: "8px",
                                         padding: "10px",
                                         background: "#fff",
@@ -10214,7 +10542,7 @@ export default function PersonnelProfile() {
                                       style={{
                                         display: "grid",
                                         gridTemplateColumns:
-                                          "1.2fr 1fr 1fr 80px 80px 40px",
+                                          "minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 80px 80px 40px",
                                         gap: "8px",
                                         padding: "10px",
                                         background: "#fff",
@@ -10603,6 +10931,8 @@ export default function PersonnelProfile() {
                               })()}
 
                               <div
+                                id="assignedGradeLevels"
+                                data-field="assignedGradeLevels"
                                 className="full"
                                 style={{
                                   gridColumn: "1 / -1",
@@ -12179,6 +12509,7 @@ export default function PersonnelProfile() {
                   }}
                 >
                   <span
+                    className="warning-heartbeat"
                     style={{
                       width: "8px",
                       height: "8px",

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import BlueprintBackground from "../components/BlueprintBackground";
 import PinLogin from "../components/PinLogin";
+import PasscodeDeck from "../components/PasscodeDeck";
 import PageTransition from "../components/PageTransition";
 import { FiAlertCircle, FiMail, FiLock, FiKey } from "react-icons/fi";
 import { api } from "../services/api";
@@ -13,6 +14,7 @@ export default function Login() {
   const [passcode, setPasscode] = useState(["", "", "", "", "", ""]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [loginMode, setLoginMode] = useState("passcode"); // 'passcode' | 'password'
   const [rememberedUser, setRememberedUser] = useState(() => {
     const stored = localStorage.getItem("remembered_user");
@@ -64,7 +66,10 @@ export default function Login() {
         });
 
         if (data.ok && data.success && data.user && data.token) {
-          login(data.user, data.token);
+          setIsSuccess(true);
+          setTimeout(() => {
+            login(data.user, data.token);
+          }, 900);
         } else {
           setError(data.error || "Incorrect passcode.");
         }
@@ -480,48 +485,19 @@ export default function Login() {
                       >
                         6-Digit Passcode
                       </label>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "center",
-                          gap: "8px",
-                          marginTop: "6px",
+                      <PasscodeDeck
+                        length={6}
+                        value={passcode}
+                        onChange={(newArr) => {
+                          setPasscode(newArr);
+                          if (error) setError("");
                         }}
-                      >
-                        {passcode.map((digit, index) => (
-                          <input
-                            key={index}
-                            id={`passcode-${index}`}
-                            type="password"
-                            maxLength="1"
-                            value={digit}
-                            onChange={(e) =>
-                              handlePasscodeChange(index, e.target.value)
-                            }
-                            onKeyDown={(e) => handlePasscodeKeyDown(index, e)}
-                            style={{
-                              width: "46px",
-                              height: "52px",
-                              fontSize: "22px",
-                              textAlign: "center",
-                              fontWeight: "800",
-                              borderRadius: "12px",
-                              border: "2px solid var(--line, #e2e8f0)",
-                              outline: "none",
-                              background: "#f8fafc",
-                              transition: "border-color 0.2s",
-                            }}
-                            onFocus={(e) =>
-                              (e.target.style.borderColor =
-                                "var(--blue, #2563eb)")
-                            }
-                            onBlur={(e) =>
-                              (e.target.style.borderColor =
-                                "var(--line, #e2e8f0)")
-                            }
-                          />
-                        ))}
-                      </div>
+                        isError={Boolean(error && loginMode === "passcode")}
+                        isLoading={loading && loginMode === "passcode"}
+                        isSuccess={isSuccess}
+                        disabled={loading || isSuccess}
+                        masked={true}
+                      />
                     </div>
                   ) : (
                     <div

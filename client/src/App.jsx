@@ -24,7 +24,6 @@ import Login from "./pages/Login";
 import Landing from "./pages/Landing";
 import LoadingScreen from "./components/LoadingScreen";
 import ServerHealthModal from "./components/ServerHealthModal";
-import SaveStatusIndicator from "./components/SaveStatusIndicator";
 import { subscribeHealth } from "./services/serverHealth";
 import { FiAlertTriangle, FiCheckCircle } from "react-icons/fi";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -427,8 +426,6 @@ function MainAppContent() {
 
       {/* Global Custom Modal Pop-up */}
       {renderCustomModal()}
-
-      <SaveStatusIndicator />
 
       {/* Floating Chat Widget for School Head */}
       <SchoolHeadChatWidget />

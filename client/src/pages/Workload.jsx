@@ -7359,6 +7359,7 @@ function WorkloadGanttScheduleView({
 
   return (
     <div
+      id="workload-timetable-grid"
       className="gantt-schedule-container"
       style={{
         background: "#F8FAFC",
@@ -14009,18 +14010,26 @@ function WorkloadInner() {
     }),
     getDirtyReasons: () => {
       const reasons = [];
-      if (isCurrentTeacherDirty)
+      const teacherName = currentPerson
+        ? `${currentPerson.firstName || ""} ${currentPerson.lastName || currentPerson.name || ""}`.trim() || String(currentPerson.id)
+        : "Selected Personnel";
+      if (isCurrentTeacherDirty) {
+        const rowsCount = Array.isArray(currentPerson?.workloadRows) ? currentPerson.workloadRows.length : 0;
         reasons.push({
-          section: `workload rows of ${currentPerson?.id} (${activeTerm})`,
-          from: "saved snapshot",
-          to: "edited rows differ",
+          field: "workload-grid",
+          title: `${teacherName} — Timetable (${activeTerm || "1st"} Term)`,
+          subtitle: `Unsaved schedule changes (${rowsCount} class/task blocks)`,
+          targetId: "workload-timetable-grid",
         });
-      if (hasLocalDrafts)
+      }
+      if (hasLocalDrafts) {
         reasons.push({
-          section: "another teacher's browser draft",
-          from: "saved snapshot",
-          to: "draft differs",
+          field: "workload-draft-banner",
+          title: "Browser Drafts Pending",
+          subtitle: "Other teacher timetable edits saved locally in this browser",
+          targetId: "workload-draft-banner",
         });
+      }
       return reasons;
     },
   });
@@ -20417,6 +20426,7 @@ function WorkloadInner() {
                   {/* Draft Banner if real unsaved changes exist */}
                   {isCurrentTeacherDirty && (
                     <div
+                      id="workload-draft-banner"
                       style={{
                         padding: "12px 16px",
                         background: "#FFFBEB",

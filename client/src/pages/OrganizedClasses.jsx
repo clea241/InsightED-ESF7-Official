@@ -4443,11 +4443,11 @@ export default function OrganizedClasses() {
                           fontWeight: "700",
                           color: "#166534",
                           background: "#DCFCE7",
-                          padding: "1px 7px",
+                          padding: "2px 8px",
                           borderRadius: "10px",
                         }}
                       >
-                        {totalMale} M
+                        {totalMale} Male
                       </span>
                       <span
                         style={{
@@ -4455,11 +4455,11 @@ export default function OrganizedClasses() {
                           fontWeight: "700",
                           color: "#9D174D",
                           background: "#FCE7F3",
-                          padding: "1px 7px",
+                          padding: "2px 8px",
                           borderRadius: "10px",
                         }}
                       >
-                        {totalFemale} F
+                        {totalFemale} Female
                       </span>
                     </div>
                   </div>
@@ -6037,18 +6037,29 @@ export default function OrganizedClasses() {
                 }}
               >
                 <div
-                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    flexWrap: "nowrap",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
                 >
-                  <span>
+                  <span style={{ whiteSpace: "nowrap" }}>
                     Showing{" "}
-                    <strong style={{ color: "#0F172A" }}>
+                    <strong style={{ color: "#0F172A", fontWeight: "700" }}>
                       {startIdx}–{endIdx}
                     </strong>{" "}
                     of{" "}
-                    <strong style={{ color: "#0F172A" }}>{totalItems}</strong>
+                    <strong style={{ color: "#0F172A", fontWeight: "700" }}>
+                      {totalItems}
+                    </strong>
                   </span>
-                  <span style={{ color: "#CBD5E1" }}>|</span>
-                  <span>Per page:</span>
+                  <span style={{ color: "#CBD5E1", userSelect: "none" }}>|</span>
+                  <span style={{ whiteSpace: "nowrap", fontWeight: "500" }}>
+                    Per page:
+                  </span>
                   <select
                     value={perPage}
                     onChange={(e) => {
@@ -6067,6 +6078,8 @@ export default function OrganizedClasses() {
                       fontWeight: "700",
                       background: "white",
                       color: "#0F172A",
+                      cursor: "pointer",
+                      flexShrink: 0,
                     }}
                   >
                     <option value={10}>10</option>
@@ -6100,8 +6113,17 @@ export default function OrganizedClasses() {
                     >
                       ‹ Prev
                     </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                      (p) => (
+                    {(() => {
+                      let start = Math.max(1, currentPage - 1);
+                      let end = Math.min(totalPages, start + 2);
+                      if (end - start < 2) {
+                        start = Math.max(1, end - 2);
+                      }
+                      const pages = [];
+                      for (let i = start; i <= end; i++) {
+                        pages.push(i);
+                      }
+                      return pages.map((p) => (
                         <button
                           key={p}
                           type="button"
@@ -6122,8 +6144,8 @@ export default function OrganizedClasses() {
                         >
                           {p}
                         </button>
-                      ),
-                    )}
+                      ));
+                    })()}
                     <button
                       type="button"
                       disabled={currentPage >= totalPages}
