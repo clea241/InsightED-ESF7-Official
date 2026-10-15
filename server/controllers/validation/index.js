@@ -119,7 +119,9 @@ router.post("/resubmit", async (req, res) => {
 
     const cleanSchoolId = String(schoolId).replace(/^SCH-/, "").trim();
 
-    // 1. Enqueue into esf7_submission_queue for master data overwrite
+    // 1. Enqueue into esf7_submission_queue
+    // ARCHITECTURAL NOTE: esf7_submission_queue.payload is INTENTIONALLY an asynchronous job envelope (Outbox Pattern).
+    // It stages certified/resubmitted school payloads for transactional normalization into 20+ tables by server/queue_worker.js.
     const queueInsertRes = await db.query(
       `INSERT INTO esf7_submission_queue (school_id, school_year, payload, signature, certified_by, status)
        VALUES ($1, $2, $3, $4, $5, 'pending')

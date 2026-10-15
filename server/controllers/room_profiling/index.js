@@ -469,12 +469,29 @@ async function executeMultiRowUpsert(
       ? "DO NOTHING"
       : `DO ${updateClause}`;
 
-    const sql = `
-      INSERT INTO ${tableName} (${columns.join(", ")})
-      VALUES ${valueClauses.join(", ")}
-      ON CONFLICT ${conflictTarget} ${doClause}
-      ${updateClause.startsWith("NOTHING") ? "" : "RETURNING *"}
-    `;
+    const retClause = updateClause.startsWith("NOTHING") ? "" : "RETURNING *";
+    let sql;
+    switch (tableName) {
+      case "esf7_personnel_profile":
+        sql = `INSERT INTO esf7_personnel_profile (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
+      case "esf7_personnel_employment":
+        sql = `INSERT INTO esf7_personnel_employment (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
+      case "esf7_perssonel_educ":
+        sql = `INSERT INTO esf7_perssonel_educ (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
+      case "esf7_personnel_learning_areas":
+        sql = `INSERT INTO esf7_personnel_learning_areas (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
+      case "esf7_personnel_submission_archive":
+        sql = `INSERT INTO esf7_personnel_submission_archive (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
+      default:
+        throw new Error(
+          `Unsupported table for executeMultiRowUpsert: ${tableName}`,
+        );
+    }
 
     const res = await client.query(sql, flatParams);
     totalCount += res.rowCount || 0;
@@ -1816,11 +1833,22 @@ router.post("/snapshots", async (req, res) => {
 // GET /api/room-profiling/snapshots/:id — Fetch specific snapshot content
 router.get("/snapshots/:id", async (req, res) => {
   try {
-    if (!isTableInitialized) await initQueueTable();
     const { id } = req.params;
+    const cleanId = String(id || "").trim();
+    // Validate id format: SNAP-<timestamp>-<token> or standard UUID
+    const isSnapFormat = /^SNAP-\d+-[A-Za-z0-9]+$/i.test(cleanId);
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        cleanId,
+      );
+    if (!isSnapFormat && !isUuid) {
+      return res.status(400).json({ error: "Invalid snapshot id" });
+    }
+
+    if (!isTableInitialized) await initQueueTable();
     const { rows } = await db.query(
       `SELECT * FROM esf7_profiling_snapshots WHERE id = $1`,
-      [id],
+      [cleanId],
     );
     if (!rows || rows.length === 0) {
       return res.status(404).json({ error: "Snapshot not found" });

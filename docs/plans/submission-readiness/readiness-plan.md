@@ -18,7 +18,7 @@ Not verified: worker job duration, payload size, PgBouncer presence and mode, ng
 
 ## 2. Current-state findings
 
-**Data path.** Client `submitSchoolWorkload` posts the certified payload (`client/src/services/api.js:1127`) to `POST /api/submissions` (`server/controllers/submissions/index.js:9`): one `INSERT` into `esf7_submission_queue` (JSONB `payload`), one `SELECT` for queue position, a fire-and-forget Redis `XADD` (`server/controllers/submissions/index.js:47`), then `202` (`server/controllers/submissions/index.js:72`). A worker later claims the job (`server/services/queueClaims.js:11`) and rewrites about twenty normalized tables in one transaction. Routes, tables, and the field-to-column mapping are in `dataflow.md` Sections 3 to 5. Autosave of drafts goes through `PUT /api/school/draft` (`server/controllers/schools/index.js:920`), which carries a `baseVersion` field (optimistic version check) and writes `school_drafts`.
+**Data path.** Client `submitSchoolWorkload` posts the certified payload (`client/src/services/api.js:1127`) to `POST /api/submissions` (`server/controllers/submissions/index.js:9`): one `INSERT` into `esf7_submission_queue` (JSONB `payload`), one `SELECT` for queue position, a fire-and-forget Redis `XADD` (`server/controllers/submissions/index.js:47`), then `202` (`server/controllers/submissions/index.js:72`). A worker later claims the job (`server/services/queueClaims.js:11`) and rewrites about twenty normalized tables in one transaction. Routes, tables, and the field-to-column mapping are in `dataflow.md` Sections 3 to 5. Autosave of drafts goes through `PUT /api/school/draft` (`server/controllers/schools/drafts.js:1875`), which carries a `baseVersion` field (optimistic version check) and writes `school_drafts`.
 
 | Finding | Evidence | Why it matters under a burst |
 |---|---|---|
@@ -39,7 +39,7 @@ Not verified: worker job duration, payload size, PgBouncer presence and mode, ng
 | Normal average requests per second | 1.00 |
 | Worst-case average requests per second | 10.00 |
 | Peak requests per second (worst x spike factor 3) | 30.00 |
-| Database queries per second at peak (30 per submission, a lower bound including the 28 worker queries the scanner reached) | 900.00 |
+| Database queries per second at peak (27 per submission, from inventory draft/submit route metrics) | 810.00 |
 | Connections available from pools (5 processes x 17) | 85 |
 | Connections needed at 5 ms per transaction (scenario) | 0.15 |
 | Connections needed at 20 ms per transaction (scenario) | 0.60 |

@@ -392,12 +392,21 @@ router.post("/import-converted", async (req, res) => {
       const vals = Object.values(cloned);
       const placeholders = vals.map((_, i) => `$${i + 1}`);
 
-      await pool
-        .query(
-          `INSERT INTO ${targetTable} (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) ON CONFLICT DO NOTHING`,
-          vals,
-        )
-        .catch((e) => console.warn("Row clone warning:", e.message));
+      if (isTest) {
+        await pool
+          .query(
+            `INSERT INTO esf7_database_dummy (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) ON CONFLICT DO NOTHING`,
+            vals,
+          )
+          .catch((e) => console.warn("Row clone warning:", e.message));
+      } else {
+        await pool
+          .query(
+            `INSERT INTO esf7_database (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) ON CONFLICT DO NOTHING`,
+            vals,
+          )
+          .catch((e) => console.warn("Row clone warning:", e.message));
+      }
       importedCount++;
     }
 

@@ -5,15 +5,42 @@
     { "route": "PUT /api/qualifications/:personnel_id", "delegatesTo": "POST /api/qualifications/:personnel_id", "note": "PUT re-dispatches to the POST handler (same pattern as employment); verified by the PUT handler body being a single router.handle call." }
   ],
   "routeNotes": [
-    { "route": "POST /api/allowances/toggle", "note": "The INSERT at server/controllers/allowances/index.js:348 picks its flag and amount columns at runtime (${hasCol}, ${amtCol}); the fixed columns are id, personnel_id, school_id, school_year, raw_payload." },
+    { "route": "POST /api/allowances/toggle", "note": "The INSERT at server/controllers/allowances/index.js:376 picks its flag and amount columns at runtime (${hasCol}, ${amtCol}); the fixed columns are id, personnel_id, school_id, school_year, extras." },
     { "route": "PUT /api/school", "note": "server/controllers/schools/index.js:1615 always answers 403 (read-only); it performs no write." }
   ],
   "dismissUnresolved": [
     { "id": "unresolved:dynamic-sql:server/db/index.js:367", "reason": "db.query is a wrapper that forwards the caller's SQL to the context-selected pool; it is not a write path of its own." },
-    { "id": "unresolved:unlinked-write:server/queue_worker.js:3344", "reason": "Background consumer of esf7_submission_queue (marks jobs). It is reached from POST /api/submissions through setImmediate when START_LOCAL_WORKER is not 'false' and otherwise runs in the separate worker process; reviewed as part of the submissions route." },
-    { "id": "unresolved:unlinked-write:server/services/queueClaims.js:11", "reason": "Claim/recover SQL used by queue_worker.js (UPDATE ... status = 'processing'); background path, not an HTTP route." },
-    { "id": "unresolved:column-mapping:server/controllers/node_status/index.js:226", "reason": "Dynamic column is a node id chosen from a fixed list; the other columns are listed in the SQL (school_id, school_year, overall_status, overall_percentage)." },
-    { "id": "unresolved:column-mapping:server/controllers/node_status/index.js:349", "reason": "Same node-id pattern for personnel node status; fixed columns visible in the SQL." }
+    { "id": "unresolved:column-mapping:server/controllers/allowances/index.js:376", "reason": "Dynamic column is chosen at runtime (${hasCol}, ${amtCol}); other columns are id, personnel_id, school_id, school_year, extras." },
+    { "id": "unresolved:column-mapping:server/controllers/esf7_upload/index.js:397", "reason": "Dynamic row cloning helper columns for test accounts into esf7_database_dummy." },
+    { "id": "unresolved:column-mapping:server/controllers/esf7_upload/index.js:404", "reason": "Dynamic row cloning helper columns for non-test accounts into esf7_database." },
+    { "id": "unresolved:column-mapping:server/controllers/node_status/index.js:260", "reason": "Dynamic column is a node id chosen from a fixed list; the other columns are listed in the SQL (school_id, school_year, overall_status, overall_percentage)." },
+    { "id": "unresolved:column-mapping:server/controllers/node_status/index.js:385", "reason": "Same node-id pattern for personnel node status; fixed columns visible in the SQL (school_id, school_year, personnel_id, personnel_name, position_title, category, is_school_head, is_complete)." },
+    { "id": "unresolved:column-mapping:server/controllers/schools/drafts.js:951", "reason": "Batch insert into esf7_personnel_id_mapping via UNNEST($1::text[], $2::text[], $3::text[]) with fixed columns legacy_id, new_id, status." },
+    { "id": "unresolved:dynamic-sql:server/controllers/room_profiling/index.js:494", "reason": "Switch/case static SQL execution helper for multi-row upsert operations across allowlisted tables." },
+    { "id": "unresolved:dynamic-sql:server/controllers/schools/drafts.js:2205", "reason": "Optimistic concurrency SQL for school_drafts version incrementing (INSERT ON CONFLICT DO UPDATE WHERE school_drafts.version = $4)." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:607", "reason": "Background consumer of esf7_submission_queue updating queue item status." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:819", "reason": "Background consumer normalizing school profile." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:1886", "reason": "Background consumer upserting legacy-to-new personnel ID mappings." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:1975", "reason": "Background consumer upserting personnel L&D trainings." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:1991", "reason": "Background consumer upserting personnel designations." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2007", "reason": "Background consumer upserting related tasks." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2023", "reason": "Background consumer upserting admin tasks." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2047", "reason": "Background consumer upserting regular sections." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2051", "reason": "Background consumer upserting sned sections." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2055", "reason": "Background consumer upserting als sections." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2059", "reason": "Background consumer upserting aral sections." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2063", "reason": "Background consumer upserting remedial enrichment sections." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2518", "reason": "Background consumer upserting elementary/JHS workload rows." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2529", "reason": "Background consumer upserting SHS workload rows." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2542", "reason": "Background consumer upserting elementary/JHS workload rows fallback." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2553", "reason": "Background consumer upserting SHS workload rows fallback." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2596", "reason": "Background consumer upserting personnel allowances." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:2798", "reason": "Background consumer recording workload transfers." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:3166", "reason": "Background consumer marking job completed." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:3209", "reason": "Background consumer marking job failed." },
+    { "id": "unresolved:unlinked-write:server/queue_worker.js:3494", "reason": "Background consumer of esf7_submission_queue. Reached from POST /api/submissions through setImmediate or separate worker process." },
+    { "id": "unresolved:unlinked-write:server/services/queueClaims.js:11", "reason": "Claim SQL used by queue_worker.js (UPDATE ... status = 'processing'); background path, not an HTTP route." },
+    { "id": "unresolved:unlinked-write:server/services/queueClaims.js:26", "reason": "Stale recovery SQL used by queue_worker.js; background path, not an HTTP route." }
   ],
   "judgmentFindings": [
     {

@@ -1275,7 +1275,56 @@ router.put("/:id/school-head", async (req, res) => {
         ],
       );
 
-      // 3. Keep school_drafts in sync only if legacy school_drafts table exists
+      // 2b. Sync normalized esf7_personnel_node_status and esf7_school_profile
+      if (isSchoolHead && sidPair.length > 0 && !hasMultipleHeads) {
+        await client
+          .query(
+            "UPDATE esf7_personnel_node_status SET is_school_head = FALSE, updated_at = NOW() WHERE school_id = ANY($1) AND is_school_head = TRUE",
+            [sidPair],
+          )
+          .catch(() => {});
+      }
+      await client
+        .query(
+          "UPDATE esf7_personnel_node_status SET is_school_head = $1, updated_at = NOW() WHERE (personnel_id = $2 OR legacy_id = $2)",
+          [isSchoolHead, targetId],
+        )
+        .catch(() => {});
+
+      if (sidPair.length > 0) {
+        const pRow = await client
+          .query(
+            "SELECT first_name, last_name, full_name_clean FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1",
+            [targetId],
+          )
+          .catch(() => ({ rows: [] }));
+        const headName = pRow.rows[0]
+          ? pRow.rows[0].full_name_clean ||
+            `${pRow.rows[0].first_name || ""} ${pRow.rows[0].last_name || ""}`.trim()
+          : null;
+
+        if (isSchoolHead) {
+          await client
+            .query(
+              `UPDATE esf7_school_profile 
+               SET school_head_id = $1, school_head_name = COALESCE($2, school_head_name), school_head_level = $3, updated_at = NOW() 
+               WHERE school_id = ANY($4)`,
+              [targetId, headName, schoolHeadLevel, sidPair],
+            )
+            .catch(() => {});
+        } else {
+          await client
+            .query(
+              `UPDATE esf7_school_profile 
+               SET school_head_id = NULL, school_head_name = NULL, school_head_level = NULL, updated_at = NOW() 
+               WHERE school_id = ANY($1) AND school_head_id = $2`,
+              [sidPair, targetId],
+            )
+            .catch(() => {});
+        }
+      }
+
+      // 3. Keep school_drafts in sync so drafts also reflect the School Head state
       if (sidPair.length > 0) {
         try {
           const tblCheck = await client.query(
@@ -1458,13 +1507,20 @@ router.delete("/:id", async (req, res) => {
     if ((!fName || !lName) && sid) {
       const isTest =
         db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(sid);
-      const tbl = isTest ? "esf7_database_dummy" : "esf7_database";
-      const mRes = await (db.insightEdPool || db)
-        .query(
-          `SELECT * FROM ${tbl} WHERE (school_id = $1 OR schoool_id = $1) AND (id::text = $2 OR employee_no = $2)`,
-          [sid, targetId],
-        )
-        .catch(() => ({ rows: [] }));
+      const mPool = db.insightEdPool || db;
+      const mRes = isTest
+        ? await mPool
+            .query(
+              `SELECT * FROM esf7_database_dummy WHERE (school_id = $1 OR schoool_id = $1) AND (id::text = $2 OR employee_no = $2)`,
+              [sid, targetId],
+            )
+            .catch(() => ({ rows: [] }))
+        : await mPool
+            .query(
+              `SELECT * FROM esf7_database WHERE (school_id = $1 OR schoool_id = $1) AND (id::text = $2 OR employee_no = $2)`,
+              [sid, targetId],
+            )
+            .catch(() => ({ rows: [] }));
 
       if (mRes.rows.length > 0) {
         const mRow = mRes.rows[0];
@@ -1713,22 +1769,10 @@ router.delete("/:id", async (req, res) => {
         pCounter += 2;
       }
 
-      if (matchCriteria.length > 0) {
-        const updateSql =
-          "UPDATE esf7_database SET deleted = true WHERE (school_id = $1 OR schoool_id = $1) AND (" +
-          matchCriteria.join(" OR ") +
-          ")";
-        await (db.insightEdPool || db)
-          .query(updateSql, matchParams)
-          .catch(() => {});
-        await db.query(updateSql, matchParams).catch(() => {});
-        console.log(
-          "[Roster Delete] Flagged deleted = true in esf7_database for " +
-            (cleanFullName || targetId),
-        );
-      }
+      // Note: Historical master records in insightEdPool are read-only per DepEd business rules.
+      // Deletions are canonically tombstoned in esf7_deleted_personnel.
     } catch (e) {
-      console.warn("[esf7_database update warning]:", e.message);
+      console.warn("[Tombstone cleanup warning]:", e.message);
     }
 
     // Execute cascade cleanups across ALL pools

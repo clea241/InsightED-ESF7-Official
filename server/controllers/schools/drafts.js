@@ -51,13 +51,15 @@ async function acquireClient() {
         return client;
       }
     } catch (e) {
-      // Stubbed pool fallback
+      // Fall through to pool acquisition
     }
   }
-  return {
-    query: (text, params) => db.query(text, params),
-    release: () => {},
-  };
+  const pool =
+    db.pool || (typeof db.getPool === "function" ? db.getPool() : null);
+  if (pool && typeof pool.connect === "function") {
+    return await pool.connect();
+  }
+  throw new Error("Database client could not be acquired");
 }
 
 let spDraftCounter = 0;
@@ -1756,10 +1758,11 @@ const handleGetDraft = async (req, res) => {
     }
 
     res.set("Cache-Control", "no-store");
+    const normPayload = await loadNormalizedDraft(schoolId, schoolYear).catch(
+      () => null,
+    );
+
     if (result.rows.length === 0) {
-      const normPayload = await loadNormalizedDraft(schoolId, schoolYear).catch(
-        () => null,
-      );
       if (
         normPayload &&
         (normPayload.schoolInfo ||
@@ -1774,8 +1777,36 @@ const handleGetDraft = async (req, res) => {
       }
       return res.json({ payload: null, updatedAt: null, version: 0 });
     }
+
     const row = result.rows[0];
-    let payload = row.payload;
+    let payload =
+      row.payload && typeof row.payload === "object" ? { ...row.payload } : {};
+
+    // Overlay normalized relational tables as source of truth
+    if (normPayload) {
+      if (
+        normPayload.schoolInfo &&
+        Object.keys(normPayload.schoolInfo).length > 0
+      ) {
+        payload.schoolInfo = {
+          ...(payload.schoolInfo || {}),
+          ...normPayload.schoolInfo,
+        };
+      }
+      if (
+        Array.isArray(normPayload.personnel) &&
+        normPayload.personnel.length > 0
+      ) {
+        payload.personnel = normPayload.personnel;
+      }
+      if (
+        Array.isArray(normPayload.classSections) &&
+        normPayload.classSections.length > 0
+      ) {
+        payload.classSections = normPayload.classSections;
+        payload.sections = normPayload.classSections;
+      }
+    }
 
     if (payload && typeof payload === "object") {
       try {
@@ -2240,6 +2271,19 @@ const handleSaveDraft = async (req, res) => {
           throw draftErr;
         }
       }
+
+      // Persist to normalized relational tables (source of truth)
+      await persistNormalizedDraft(
+        client,
+        schoolId,
+        schoolYear,
+        finalPayload,
+      ).catch((normErr) => {
+        console.warn(
+          "[handleSaveDraft] Normalized persistence warning:",
+          normErr.message,
+        );
+      });
 
       await client.query("COMMIT");
       if (!saved) {

@@ -19,6 +19,11 @@ router.post("/", async (req, res) => {
     const cleanSchoolYear = schoolYear || "SY 26-27";
 
     // 1. Insert into esf7_submission_queue
+    // ARCHITECTURAL NOTE: The payload in esf7_submission_queue is INTENTIONALLY an asynchronous job envelope
+    // (Outbox Pattern), NOT a persistence shortcut. Ingesting certified school submissions during deadline peaks
+    // requires rapid 2-round-trip acceptance (HTTP 202) into an atomic queue. The heavy multi-table normalization
+    // across 20+ tables is executed asynchronously by server/queue_worker.js to protect web processes from lock
+    // contention and connection pool exhaustion.
     // Avoid double serialization if payload is already a string
     const payloadJson =
       typeof payload === "string" ? payload : JSON.stringify(payload);
