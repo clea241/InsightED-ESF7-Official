@@ -2,15 +2,18 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
-const redisQueue = require("../../services/redisQueue");
-// queueWorker removed
+const {
+  enqueueSubmission,
+  InvalidSubmissionIdError,
+} = require("../../services/submissionQueue");
 
 // POST /api/submissions - Queue a new certified submission
 router.post("/", async (req, res) => {
   try {
     const schoolId =
       getSchoolIdFromRequest(req) || req.body.schoolId || "123456";
-    const { schoolYear, payload, signature, certifiedBy } = req.body;
+    const { schoolYear, payload, signature, certifiedBy, submissionId } =
+      req.body;
 
     if (!payload) {
       return res.status(400).json({ error: "Missing submission payload data" });
@@ -28,52 +31,45 @@ router.post("/", async (req, res) => {
     const payloadJson =
       typeof payload === "string" ? payload : JSON.stringify(payload);
 
-    const result = await db.query(
-      `INSERT INTO esf7_submission_queue (school_id, school_year, payload, signature, certified_by, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id`,
-      [
-        schoolId,
-        cleanSchoolYear,
-        payloadJson,
-        signature || null,
-        certifiedBy || null,
-      ],
-    );
-
-    const jobId = result.rows[0].id;
+    // Commit the row first, then publish the Redis pointer (a failed publish is only a delay; the row is durable).
+    // A client-supplied submissionId (UUID, reused on every retry) makes a repeat call return the same job.
+    const queued = await enqueueSubmission(db, {
+      schoolId,
+      schoolYear: cleanSchoolYear,
+      payloadJson,
+      signature: signature || null,
+      certifiedBy: certifiedBy || null,
+      submissionId,
+    });
+    const jobId = queued.jobId;
 
     // Allow V8 GC to reclaim the large payload buffers immediately
     if (req.body) {
       req.body.payload = null;
     }
 
-    // 2. Publish lightweight job pointer to Redis Stream (non-blocking, falls back to DB worker if offline)
-    redisQueue
-      .publishSubmissionJob({
-        jobId,
-        schoolId,
-        schoolYear: cleanSchoolYear,
-      })
-      .catch((err) => {
-        console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
-      });
+    // Processing happens in the queue worker process (see QUEUE_CONSUMER_ENABLED in server/queue_worker.js), not here.
 
-    // 3. Processing happens in the queue worker process (see QUEUE_CONSUMER_ENABLED in server/queue_worker.js), not here.
-
-    // 4. Fetch initial queue position
-    const posRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_submission_queue WHERE status = 'pending' AND id < $1`,
-      [jobId],
-    );
-    const queuePosition = parseInt(posRes.rows[0].count, 10) + 1;
+    // Fetch initial queue position (only meaningful while the job is still waiting)
+    let queuePosition = 0;
+    if (queued.status === "pending") {
+      const posRes = await db.query(
+        `SELECT COUNT(*) FROM esf7_submission_queue WHERE status = 'pending' AND id < $1`,
+        [jobId],
+      );
+      queuePosition = parseInt(posRes.rows[0].count, 10) + 1;
+    }
 
     res.status(202).json({
       success: true,
       jobId,
-      status: "pending",
+      status: queued.status,
       queuePosition,
     });
   } catch (err) {
+    if (err instanceof InvalidSubmissionIdError) {
+      return res.status(400).json({ error: err.message });
+    }
     console.error("Failed to queue submission:", err);
     res.status(500).json({ error: err.message });
   }

@@ -1,7 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
-const redisQueue = require("../../services/redisQueue");
+const {
+  enqueueSubmission,
+  InvalidSubmissionIdError,
+} = require("../../services/submissionQueue");
 // queueWorker removed
 
 // Ensure table exists on first hit if not already initialized
@@ -109,6 +112,7 @@ router.post("/resubmit", async (req, res) => {
       payload,
       signature,
       certifiedBy,
+      submissionId,
     } = req.body;
 
     if (!schoolId) {
@@ -122,35 +126,21 @@ router.post("/resubmit", async (req, res) => {
     // 1. Enqueue into esf7_submission_queue
     // ARCHITECTURAL NOTE: esf7_submission_queue.payload is INTENTIONALLY an asynchronous job envelope (Outbox Pattern).
     // It stages certified/resubmitted school payloads for transactional normalization into 20+ tables by server/queue_worker.js.
-    const queueInsertRes = await db.query(
-      `INSERT INTO esf7_submission_queue (school_id, school_year, payload, signature, certified_by, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')
-       RETURNING id, status, created_at`,
-      [
-        cleanSchoolId,
-        schoolYear,
+    // Row is committed first, then the Redis pointer is published; same idempotency rules as POST /api/submissions.
+    const queued = await enqueueSubmission(db, {
+      schoolId: cleanSchoolId,
+      schoolYear,
+      payloadJson:
         typeof payload === "string" ? payload : JSON.stringify(payload || {}),
-        signature || null,
-        certifiedBy || "School Head",
-      ],
-    );
+      signature: signature || null,
+      certifiedBy: certifiedBy || "School Head",
+      submissionId,
+    });
+    const jobId = queued.jobId;
 
-    const jobId = queueInsertRes.rows[0]?.id;
+    // Processing happens in the queue worker process (see QUEUE_CONSUMER_ENABLED in server/queue_worker.js).
 
-    // 2. Publish lightweight job pointer to Redis Stream (non-blocking, falls back to DB worker if offline)
-    redisQueue
-      .publishSubmissionJob({
-        jobId,
-        schoolId: cleanSchoolId,
-        schoolYear,
-      })
-      .catch((err) => {
-        console.warn(`[Redis Queue Stream Dispatch Warn]: ${err.message}`);
-      });
-
-    // 3. Worker execution disabled
-
-    // 4. Atomic Upsert to esf7_validation: mark status as RESUBMITTED
+    // Atomic Upsert to esf7_validation: mark status as RESUBMITTED
     await db.query(
       `INSERT INTO esf7_validation (
         school_id, school_year,
@@ -177,6 +167,9 @@ router.post("/resubmit", async (req, res) => {
         "eSF7 resubmission enqueued successfully and status updated to RESUBMITTED.",
     });
   } catch (err) {
+    if (err instanceof InvalidSubmissionIdError) {
+      return res.status(400).json({ error: err.message });
+    }
     console.error("Error during validation resubmit:", err);
     res.status(500).json({ error: err.message });
   }
