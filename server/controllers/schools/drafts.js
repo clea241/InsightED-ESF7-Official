@@ -2052,6 +2052,7 @@ const handleSaveDraft = async (req, res) => {
     // 3. Atomic school_drafts write
     const client = await acquireClient();
     let saved = null;
+    let entityCounts = null;
     const withVersion = await hasDraftVersionColumn();
 
     try {
@@ -2137,6 +2138,23 @@ const handleSaveDraft = async (req, res) => {
       // never be reported as saved.
       await persistNormalizedDraft(client, schoolId, schoolYear, finalPayload);
 
+      // Read back what the database now holds for this school (same transaction) so the client gets server-verified counts.
+      const sidPair = [schoolId, `SCH-${schoolId}`];
+      const countOf = async (table) => {
+        const r = await safeDraftQuery(client, "cnt", () =>
+          client.query(
+            `SELECT COUNT(*)::int AS n FROM ${table} WHERE school_id = ANY($1)`,
+            [sidPair],
+          ),
+        ).catch(() => null);
+        return r && r.rows && r.rows[0] ? r.rows[0].n : null;
+      };
+      entityCounts = {
+        personnel: await countOf("esf7_personnel_profile"),
+        regularSections: await countOf("esf7_regular_sections"),
+        workloadRows: await countOf("esf7_workload_rows"),
+      };
+
       await client.query("COMMIT");
       if (!saved) {
         saved = {
@@ -2188,6 +2206,9 @@ const handleSaveDraft = async (req, res) => {
       success: true,
       version: saved.version,
       updatedAt: saved.updatedAt,
+      school_id: schoolId,
+      entity_counts: entityCounts,
+      verified_at: new Date().toISOString(),
     });
   } catch (err) {
     console.error(
