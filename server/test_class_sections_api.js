@@ -23,10 +23,10 @@ async function testClassSectionsFlow() {
   await db.query(`
     INSERT INTO esf7_class_sections (
       id, school_id, school_year, grade_level, section_name, section_type,
-      advisor_id, advisory_minutes, male_learners, female_learners, number_of_learners, standard, raw_payload
+      advisor_id, advisory_minutes, male_learners, female_learners, number_of_learners, standard
     ) VALUES (
       'SEC-108348-007', '108348', '2026-2027', 'Grade 1', 'SAMPLE SECTION', 'MONO GRADE',
-      'PER-TEST-007', 300, 20, 20, 40, 'ABOVE STANDARD', '{"sectionName": "SAMPLE SECTION"}'::jsonb
+      'PER-TEST-007', 300, 20, 20, 40, 'ABOVE STANDARD'
     )
   `);
 

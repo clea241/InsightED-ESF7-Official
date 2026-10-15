@@ -81,7 +81,6 @@ export const esf7PersonnelExtraTasks = pgTable(
     calendarDates: jsonb("calendar_dates").default([]),
     startTime: varchar("start_time", { length: 10 }),
     endTime: varchar("end_time", { length: 10 }),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "string",
@@ -131,7 +130,6 @@ export const esf7PersonnelProfile = pgTable(
     depedEmail: text("deped_email"),
     isSchoolHead: boolean("is_school_head").default(false).notNull(),
     isMainSh: boolean("is_main_sh").default(false).notNull(),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -203,7 +201,6 @@ export const esf7PerssonelEduc = pgTable(
     postGraduateDiscipline: text("post_graduate_discipline"),
     eligibility: jsonb().default([]),
     prcSpecialization: text("prc_specialization"),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -291,7 +288,6 @@ export const esf7PersonnelLdTrainings = pgTable(
     endDate: date("end_date"),
     days: integer(),
     totalHours: numeric("total_hours"),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -333,7 +329,6 @@ export const esf7RemedialEnrichmentSections = pgTable(
     maleLearners: integer("male_learners").default(0),
     femaleLearners: integer("female_learners").default(0),
     totalLearners: integer("total_learners").default(0),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -396,7 +391,6 @@ export const esf7PersonnelLearningAreas = pgTable(
     id: varchar({ length: 50 }).primaryKey().notNull(),
     personnelId: varchar("personnel_id", { length: 50 }).notNull(),
     matrixData: jsonb("matrix_data").default({}),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -619,7 +613,6 @@ export const esf7ShsWorkloadRows = pgTable(
     startTime: time("start_time"),
     endTime: time("end_time"),
     days: jsonb().default(["M", "T", "W", "TH", "F"]),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -665,7 +658,6 @@ export const esf7AralSections = pgTable(
     maleLearners: integer("male_learners").default(0),
     femaleLearners: integer("female_learners").default(0),
     totalLearners: integer("total_learners").default(0),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -827,7 +819,6 @@ export const esf7WorkloadTransfer = pgTable(
       precision: 4,
       scale: 2,
     }).default("1.00"),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -877,7 +868,6 @@ export const overloadAbsences = pgTable(
     endDate: date("end_date").notNull(),
     leaveType: text("leave_type").default("SICK_LEAVE").notNull(),
     totalDays: integer("total_days").default(1),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -970,7 +960,6 @@ export const overloadPayAndReason = pgTable(
       "0.00",
     ),
     reasons: jsonb().default([]),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1027,7 +1016,6 @@ export const esf7SchoolSubjects = pgTable(
     shsCategory: text("shs_category"),
     isCustom: boolean("is_custom").default(true).notNull(),
     isActive: boolean("is_active").default(true).notNull(),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1061,7 +1049,6 @@ export const overloadNoWork = pgTable(
     noWorkDate: date("no_work_date").notNull(),
     eventType: text("event_type").notNull(),
     title: text().notNull(),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1150,7 +1137,6 @@ export const esf7SubmissionQueue = pgTable(
     certifiedBy: text("certified_by"),
     status: text().default("pending").notNull(),
     errorMessage: text("error_message"),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1287,7 +1273,6 @@ export const esf7WorkImmersion = pgTable(
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),
     durationMinutes: integer("duration_minutes").default(0),
-    rawPayload: jsonb("raw_payload").default({}),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
@@ -1350,7 +1335,6 @@ export const overloadPayTest = pgView("overload_pay_test", {
   overloadPay: numeric("overload_pay", { precision: 10, scale: 2 }),
   netTermPay: numeric("net_term_pay", { precision: 10, scale: 2 }),
   reasons: jsonb(),
-  rawPayload: jsonb("raw_payload"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }),
   isConfirmed: boolean("is_confirmed"),
@@ -1360,7 +1344,7 @@ export const overloadPayTest = pgView("overload_pay_test", {
     mode: "string",
   }),
 }).as(
-  sql`SELECT id, personnel_id, school_id, school_year, term, month, overload_hours, overload_pay, net_term_pay, reasons, raw_payload, created_at, updated_at, is_confirmed, actual_amount, confirmed_at FROM overload_pay_and_reason`,
+  sql`SELECT id, personnel_id, school_id, school_year, term, month, overload_hours, overload_pay, net_term_pay, reasons, created_at, updated_at, is_confirmed, actual_amount, confirmed_at FROM overload_pay_and_reason`,
 );
 
 export const esf7ClusteredGhostSync = pgTable(

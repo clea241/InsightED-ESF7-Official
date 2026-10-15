@@ -18,11 +18,10 @@ async function testEmploymentFlow() {
   await db.query(`
     INSERT INTO esf7_personnel_employment (
       id, personnel_id, position_category, position, step_increment, fund_source,
-      nature_of_appointment, hiring_arrangement, assigned_schools, grade_levels_taught, raw_payload
+      nature_of_appointment, hiring_arrangement, assigned_schools, grade_levels_taught
     ) VALUES (
       'EMP-108348-001', 'PER-TEST-001', 'TEACHING', 'TEACHER I', 2, 'NATIONAL',
-      'REGULAR PERMANENT', 'PERMANENT', '["School A", "School B"]'::jsonb, '["Grade 7", "Grade 8"]'::jsonb,
-      '{"positionCategory": "TEACHING", "assignedSchools": ["School A", "School B"]}'::jsonb
+      'REGULAR PERMANENT', 'PERMANENT', '["School A", "School B"]'::jsonb, '["Grade 7", "Grade 8"]'::jsonb
     )
   `);
 

@@ -22,11 +22,10 @@ async function testDesignationsFlow() {
   await db.query(`
     INSERT INTO esf7_personnel_designations (
       id, personnel_id, designation_name, grade_level, subject_area, track,
-      is_sds_approved, sds_confirmed, serialized_key, raw_payload
+      is_sds_approved, sds_confirmed, serialized_key
     ) VALUES (
       'DSG-108348-006', 'PER-TEST-006', 'DEPARTMENT HEAD', 'Grade 7', 'Mathematics', 'ACADEMIC',
-      true, true, 'DEPARTMENT HEAD - Grade 7 - Mathematics::APPROVED_SDS',
-      '{"designationName": "DEPARTMENT HEAD", "sdsConfirmed": true}'::jsonb
+      true, true, 'DEPARTMENT HEAD - Grade 7 - Mathematics::APPROVED_SDS'
     )
   `);
 

@@ -13,11 +13,10 @@ async function testJoinedFlow() {
   const profileRes = await db.query(`
     INSERT INTO esf7_personnel_profile (
       id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name,
-      tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age, raw_payload
+      tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age
     ) VALUES (
       'PER-108348-001', 'PRN-100200300400', '108348', '2026-2027', 'teaching', 'MR.', 'MARIA', 'CLARA', 'SANTOS',
-      '987-654-321', false, 'FEMALE', 'SINGLE', false, 'ROMAN CATHOLIC', 'TAGALOG', '1992-03-20', 34,
-      '{"firstName": "MARIA", "lastName": "SANTOS"}'::jsonb
+      '987-654-321', false, 'FEMALE', 'SINGLE', false, 'ROMAN CATHOLIC', 'TAGALOG', '1992-03-20', 34
     )
     RETURNING *;
   `);
@@ -26,11 +25,10 @@ async function testJoinedFlow() {
   const empRes = await db.query(`
     INSERT INTO esf7_personnel_employment (
       id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
-      hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught, raw_payload
+      hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught
     ) VALUES (
       'EMP-108348-001', 'PER-108348-001', 'TEACHING', 'MASTER TEACHER I', 3, 'NATIONAL', 'REGULAR PERMANENT',
-      'PERMANENT', 'OWN STATION', '["Majayjay ES"]'::jsonb, '["Grade 5", "Grade 6"]'::jsonb,
-      '{"positionCategory": "TEACHING", "position": "MASTER TEACHER I"}'::jsonb
+      'PERMANENT', 'OWN STATION', '["Majayjay ES"]'::jsonb, '["Grade 5", "Grade 6"]'::jsonb
     )
     RETURNING *;
   `);
@@ -52,8 +50,7 @@ async function testJoinedFlow() {
       e.first_service_date,
       e.last_promotion_date,
       e.new_station_date,
-      e.last_lateral_movement_date,
-      e.raw_payload AS employment_raw_payload
+      e.last_lateral_movement_date
     FROM esf7_personnel_profile p
     LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
     WHERE p.id = 'PER-108348-001'

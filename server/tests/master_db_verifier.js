@@ -108,7 +108,7 @@ async function runMasterVerifier() {
       "last_name",
       "deped_email",
       "no_philsys",
-      "raw_payload",
+      "extras",
     ];
     const missing = required.filter((c) => !cols.includes(c));
     if (missing.length > 0)

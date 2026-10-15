@@ -1718,6 +1718,8 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
     : { completedNodes: [], currentNode: "school" };
 
   return {
+    ...(prof.extras || {}),
+    ...(prof.note ? { note: prof.note } : {}),
     schoolInfo,
     personnel: dedupePersonnel(personnel),
     classSections: dedupeSections(classSections),
@@ -1739,163 +1741,29 @@ const handleGetDraft = async (req, res) => {
       "123456";
     const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
     const schoolYear = req.query.schoolYear || "SY 26-27";
-    const withVersion = await hasDraftVersionColumn();
-
-    let result = { rows: [] };
-    try {
-      result = await db.query(
-        `SELECT payload, updated_at${withVersion ? ", version" : ""} FROM school_drafts WHERE school_id = $1 AND school_year = $2`,
-        [schoolId, schoolYear],
-      );
-    } catch (tblErr) {
-      if (tblErr.code === "42P01") {
-        console.warn(
-          "[DraftLoad] school_drafts table not found or deprecated, returning empty draft.",
-        );
-      } else {
-        throw tblErr;
-      }
-    }
 
     res.set("Cache-Control", "no-store");
     const normPayload = await loadNormalizedDraft(schoolId, schoolYear).catch(
-      () => null,
+      (err) => {
+        console.warn("[DraftLoad] loadNormalizedDraft failed:", err.message);
+        return null;
+      },
     );
 
-    if (result.rows.length === 0) {
-      if (
-        normPayload &&
-        (normPayload.schoolInfo ||
-          (normPayload.personnel && normPayload.personnel.length > 0) ||
-          (normPayload.classSections && normPayload.classSections.length > 0))
-      ) {
-        return res.json({
-          payload: normPayload,
-          updatedAt: normPayload.lastUpdated || new Date().toISOString(),
-          version: 1,
-        });
-      }
-      return res.json({ payload: null, updatedAt: null, version: 0 });
+    if (
+      normPayload &&
+      (normPayload.schoolInfo ||
+        (normPayload.personnel && normPayload.personnel.length > 0) ||
+        (normPayload.classSections && normPayload.classSections.length > 0))
+    ) {
+      return res.json({
+        payload: normPayload,
+        updatedAt: normPayload.lastUpdated || new Date().toISOString(),
+        version: 1,
+      });
     }
 
-    const row = result.rows[0];
-    let payload =
-      row.payload && typeof row.payload === "object" ? { ...row.payload } : {};
-
-    // Overlay normalized relational tables as source of truth
-    if (normPayload) {
-      if (
-        normPayload.schoolInfo &&
-        Object.keys(normPayload.schoolInfo).length > 0
-      ) {
-        payload.schoolInfo = {
-          ...(payload.schoolInfo || {}),
-          ...normPayload.schoolInfo,
-        };
-      }
-      if (
-        Array.isArray(normPayload.personnel) &&
-        normPayload.personnel.length > 0
-      ) {
-        payload.personnel = normPayload.personnel;
-      }
-      if (
-        Array.isArray(normPayload.classSections) &&
-        normPayload.classSections.length > 0
-      ) {
-        payload.classSections = normPayload.classSections;
-        payload.sections = normPayload.classSections;
-      }
-    }
-
-    if (payload && typeof payload === "object") {
-      try {
-        const sidPair = [schoolId, `SCH-${schoolId}`];
-        const [r1, r2] = await Promise.all([
-          db
-            .query(
-              `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-              [sidPair],
-            )
-            .catch(() => ({ rows: [] })),
-          db.getStagingPool
-            ? db
-                .getStagingPool()
-                .query(
-                  `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-                  [sidPair],
-                )
-                .catch(() => ({ rows: [] }))
-            : Promise.resolve({ rows: [] }),
-        ]);
-        const delRows = [...(r1.rows || []), ...(r2.rows || [])];
-        if (delRows.length > 0) {
-          const delKeys = new Set();
-          for (const d of delRows) {
-            if (d.personnel_id)
-              delKeys.add(String(d.personnel_id).trim().toLowerCase());
-            if (d.prn) delKeys.add(String(d.prn).trim().toLowerCase());
-            if (d.employee_no)
-              delKeys.add(String(d.employee_no).trim().toLowerCase());
-            if (d.full_name_clean)
-              delKeys.add(String(d.full_name_clean).trim().toLowerCase());
-          }
-          if (Array.isArray(payload.personnel)) {
-            payload.personnel = payload.personnel.filter((p) => {
-              const idK = String(p.id || "")
-                .trim()
-                .toLowerCase();
-              const prnK = String(p.prn || "")
-                .trim()
-                .toLowerCase();
-              const empK = String(p.employeeNo || p.employee_no || "")
-                .trim()
-                .toLowerCase();
-              const nameK =
-                `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-              const stripId = idK.replace(/^per-/, "").replace(/^prn-/, "");
-              const stripPrn = prnK.replace(/^prn-/, "");
-              return (
-                !delKeys.has(idK) &&
-                !delKeys.has(prnK) &&
-                (!empK || !delKeys.has(empK)) &&
-                (!nameK || !delKeys.has(nameK)) &&
-                (!stripId || !delKeys.has(stripId)) &&
-                (!stripPrn || !delKeys.has(stripPrn))
-              );
-            });
-          }
-          payload.deletedPersonnelIds = Array.from(
-            new Set([
-              ...(Array.isArray(payload.deletedPersonnelIds)
-                ? payload.deletedPersonnelIds
-                : []),
-              ...delKeys,
-            ]),
-          );
-        }
-      } catch (e) {
-        console.warn(
-          "[handleGetDraft] Deletion filter check warning:",
-          e.message,
-        );
-      }
-    }
-
-    if (payload && typeof payload === "object") {
-      if (Array.isArray(payload.classSections))
-        payload.classSections = dedupeSections(payload.classSections);
-      if (Array.isArray(payload.sections))
-        payload.sections = dedupeSections(payload.sections);
-      if (Array.isArray(payload.personnel))
-        payload.personnel = dedupePersonnel(payload.personnel);
-    }
-
-    res.json({
-      payload: payload,
-      updatedAt: row.updated_at,
-      version: withVersion ? Number(row.version) : undefined,
-    });
+    return res.json({ payload: null, updatedAt: null, version: 0 });
   } catch (err) {
     console.error("[DraftLoad][FAIL]", err.message);
     res.status(500).json({ error: err.message });
@@ -1934,21 +1802,10 @@ const handleSaveDraft = async (req, res) => {
       "123456";
     schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
 
-    let existing = { rows: [] };
-    try {
-      existing = await db.query(
-        "SELECT payload FROM school_drafts WHERE school_id = $1 AND school_year = $2",
-        [schoolId, schoolYear],
-      );
-    } catch (e) {
-      if (e.code !== "42P01") throw e;
-    }
-    let existingPayload = existing.rows[0] && existing.rows[0].payload;
-    if (!existingPayload) {
-      existingPayload = await loadNormalizedDraft(schoolId, schoolYear).catch(
-        () => null,
-      );
-    }
+    const existingPayload = await loadNormalizedDraft(
+      schoolId,
+      schoolYear,
+    ).catch(() => null);
     const oldPersonnel = Array.isArray(existingPayload?.personnel)
       ? existingPayload.personnel
       : [];
@@ -2228,19 +2085,16 @@ const handleSaveDraft = async (req, res) => {
 
           if (r.rows.length === 0) {
             await client.query("ROLLBACK");
-            const cur = await db.query(
-              "SELECT version, updated_at FROM school_drafts WHERE school_id = $1 AND school_year = $2",
-              [schoolId, schoolYear],
-            );
-            const curRow = cur.rows[0] || {};
+            const conflictVersion =
+              baseVersion !== null ? Number(baseVersion) + 1 : 1;
             console.warn(
-              `[DraftSave][CONFLICT] school=${schoolId} user=${(req.auth && req.auth.uid) || "-"} year=${schoolYear} base=${baseVersion} current=${curRow.version}`,
+              `[DraftSave][CONFLICT] school=${schoolId} user=${(req.auth && req.auth.uid) || "-"} year=${schoolYear} base=${baseVersion} current=${conflictVersion}`,
             );
             return res.status(409).json({
               error: "Draft was changed by another session",
               conflict: true,
-              currentVersion: Number(curRow.version),
-              updatedAt: curRow.updated_at,
+              currentVersion: conflictVersion,
+              updatedAt: new Date().toISOString(),
             });
           }
           saved = {

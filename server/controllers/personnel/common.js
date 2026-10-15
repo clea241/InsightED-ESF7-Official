@@ -1744,21 +1744,13 @@ function formatPersonnelRecord(
     designation: primaryDesignation,
     designations: formattedDesignations,
 
-    // Workload Rows (from esf7_workload_rows or raw_payload fallback)
-    workloadRows:
-      Array.isArray(workloadList) && workloadList.length > 0
-        ? workloadList
-        : Array.isArray(rawProfile.workloadRows)
-          ? rawProfile.workloadRows
-          : [],
+    // Workload Rows (from esf7_workload_rows)
+    workloadRows: Array.isArray(workloadList) ? workloadList : [],
 
-    // Administrative Tasks (from esf7_admin_task or raw_payload fallback)
-    administrativeRows:
-      Array.isArray(adminTaskList) && adminTaskList.length > 0
-        ? adminTaskList.map(formatAdminTaskRecord)
-        : Array.isArray(rawProfile.administrativeRows)
-          ? rawProfile.administrativeRows
-          : [],
+    // Administrative Tasks (from esf7_personnel_extra_tasks / esf7_admin_task)
+    administrativeRows: Array.isArray(adminTaskList)
+      ? adminTaskList.map(formatAdminTaskRecord)
+      : [],
 
     rawPayload: { ...rawProfile, ...rawEmp, ...rawEduc, ...rawLA },
   };

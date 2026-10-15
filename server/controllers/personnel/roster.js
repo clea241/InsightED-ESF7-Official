@@ -705,11 +705,7 @@ router.get("/", async (req, res) => {
     }
 
     for (const reqRow of targetReqs.rows) {
-      const targetPrn =
-        reqRow.master_prn ||
-        reqRow.personnel_id ||
-        reqRow.raw_payload?.prn ||
-        reqRow.raw_payload?.personnelId;
+      const targetPrn = reqRow.master_prn || reqRow.personnel_id;
       const targetId =
         reqRow.personnel_id ||
         reqRow.master_prn ||
@@ -718,7 +714,7 @@ router.get("/", async (req, res) => {
         reqRow.personnel_name ||
         (reqRow.master_fn
           ? `${reqRow.master_fn} ${reqRow.master_ln}`
-          : reqRow.raw_payload?.personnelName || "SHARED TEACHER");
+          : "SHARED TEACHER");
       const isClustered = String(reqRow.request_type || "")
         .toLowerCase()
         .includes("cluster");
@@ -1324,118 +1320,7 @@ router.put("/:id/school-head", async (req, res) => {
         }
       }
 
-      // 3. Keep school_drafts in sync so drafts also reflect the School Head state
-      if (sidPair.length > 0) {
-        try {
-          const tblCheck = await client.query(
-            "SELECT to_regclass('school_drafts') AS tbl",
-          );
-          if (tblCheck.rows[0]?.tbl) {
-            const draftRes = await client.query(
-              "SELECT school_id, school_year, payload FROM school_drafts WHERE school_id = ANY($1)",
-              [sidPair],
-            );
-            for (const row of draftRes.rows) {
-              let pld = row.payload;
-              if (pld && Array.isArray(pld.personnel)) {
-                pld.personnel = pld.personnel.map((p) => {
-                  const pId = String(p.id || "").trim();
-                  const pLegacy = String(
-                    p.legacy_id || p.legacyId || "",
-                  ).trim();
-                  const pPrn = String(p.prn || "").trim();
-                  const isTarget =
-                    (pId && pId === targetId) ||
-                    (pLegacy && pLegacy === targetId) ||
-                    (pPrn && pPrn === targetId);
-
-                  if (isTarget) {
-                    return {
-                      ...p,
-                      isSchoolHead,
-                      is_school_head: isSchoolHead,
-                      isMainSchoolHead: isMainSh,
-                      is_main_school_head: isMainSh,
-                      is_main_sh: isMainSh,
-                      schoolHeadLevel: isSchoolHead ? schoolHeadLevel : null,
-                      school_head_level: isSchoolHead ? schoolHeadLevel : null,
-                    };
-                  }
-                  if (isSchoolHead) {
-                    if (!hasMultipleHeads) {
-                      return {
-                        ...p,
-                        isSchoolHead: false,
-                        is_school_head: false,
-                        isMainSchoolHead: false,
-                        is_main_school_head: false,
-                        is_main_sh: false,
-                        schoolHeadLevel: null,
-                        school_head_level: null,
-                      };
-                    } else if (isMainSh) {
-                      return {
-                        ...p,
-                        isMainSchoolHead: false,
-                        is_main_school_head: false,
-                        is_main_sh: false,
-                      };
-                    }
-                  }
-                  return p;
-                });
-
-                if (pld.schoolInfo) {
-                  if (!pld.schoolInfo.schoolHeadConfig)
-                    pld.schoolInfo.schoolHeadConfig = {};
-                  pld.schoolInfo.schoolHeadConfig.hasMultipleHeads =
-                    hasMultipleHeads;
-                  if (!hasMultipleHeads) {
-                    pld.schoolInfo.schoolHeadConfig.mainHeadId = isSchoolHead
-                      ? targetId
-                      : null;
-                    pld.schoolInfo.schoolHeadConfig.assignments = isSchoolHead
-                      ? { All: targetId }
-                      : {};
-                  } else if (isMainSh) {
-                    pld.schoolInfo.schoolHeadConfig.mainHeadId = targetId;
-                  } else if (!isSchoolHead) {
-                    if (
-                      String(pld.schoolInfo.schoolHeadConfig.mainHeadId) ===
-                      String(targetId)
-                    ) {
-                      pld.schoolInfo.schoolHeadConfig.mainHeadId = null;
-                    }
-                    if (pld.schoolInfo.schoolHeadConfig.assignments) {
-                      for (const k of Object.keys(
-                        pld.schoolInfo.schoolHeadConfig.assignments,
-                      )) {
-                        if (
-                          String(
-                            pld.schoolInfo.schoolHeadConfig.assignments[k],
-                          ) === String(targetId)
-                        ) {
-                          delete pld.schoolInfo.schoolHeadConfig.assignments[k];
-                        }
-                      }
-                    }
-                  }
-                }
-
-                await client.query(
-                  "UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3",
-                  [JSON.stringify(pld), row.school_id, row.school_year],
-                );
-              }
-            }
-          }
-        } catch (draftSyncErr) {
-          console.warn(
-            "[PUT /api/personnel/:id/school-head] Legacy school_drafts sync skipped:",
-            draftSyncErr.message,
-          );
-        }
-      }
+      // Normalized relational tables are the single source of truth
 
       await client.query("COMMIT");
     } catch (err) {
@@ -1614,126 +1499,6 @@ router.delete("/:id", async (req, res) => {
       await recordTombstone(db);
       if (db.getStagingPool) await recordTombstone(db.getStagingPool());
       if (db.getProdPool) await recordTombstone(db.getProdPool());
-
-      // B2. Scrub deleted personnel from school_drafts across BOTH pools
-      const scrubDraft = async (pool) => {
-        if (!pool || !pool.query) return;
-        try {
-          const dRes = await pool.query(
-            `SELECT payload, school_year, school_id FROM school_drafts WHERE school_id = $1 OR school_id = $2`,
-            [sid, `SCH-${sid}`],
-          );
-          for (const row of dRes.rows) {
-            let pld = row.payload;
-            if (pld && typeof pld === "object") {
-              let changed = false;
-              if (Array.isArray(pld.personnel)) {
-                const beforeLen = pld.personnel.length;
-                pld.personnel = pld.personnel.filter((p) => {
-                  const pId = String(p.id || "")
-                    .trim()
-                    .toLowerCase();
-                  const pPrn = String(p.prn || "")
-                    .trim()
-                    .toLowerCase();
-                  const pEmp = String(p.employeeNo || p.employee_no || "")
-                    .trim()
-                    .toLowerCase();
-                  const pName =
-                    `${String(p.firstName || "").trim()} ${String(p.lastName || "").trim()}`.toLowerCase();
-                  const tId = validTargetId
-                    ? String(validTargetId).toLowerCase()
-                    : "";
-                  const tPrn = validPrn ? String(validPrn).toLowerCase() : "";
-                  const tEmp = validEmpNo
-                    ? String(validEmpNo).toLowerCase()
-                    : "";
-                  const tName = validName ? validName.toLowerCase() : "";
-                  const matchesAlias = allPersonnelIds.some((k) => {
-                    const lk = String(k).trim().toLowerCase();
-                    return pId === lk || pPrn === lk || pEmp === lk;
-                  });
-                  return (
-                    !matchesAlias &&
-                    (!tId || (pId !== tId && pPrn !== tId)) &&
-                    (!tPrn || pPrn !== tPrn) &&
-                    (!tEmp || pEmp !== tEmp) &&
-                    (!tName || pName !== tName)
-                  );
-                });
-                if (pld.personnel.length !== beforeLen) changed = true;
-              }
-              if (Array.isArray(pld.classSections)) {
-                pld.classSections = pld.classSections.map((sec) => {
-                  const secAdv = String(sec.advisorId || "")
-                    .trim()
-                    .toLowerCase();
-                  const matchesAdv = allPersonnelIds.some(
-                    (k) => String(k).trim().toLowerCase() === secAdv,
-                  );
-                  if (matchesAdv) {
-                    changed = true;
-                    return { ...sec, advisorId: null };
-                  }
-                  return sec;
-                });
-              }
-              if (pld.schoolInfo && pld.schoolInfo.schoolHeadConfig) {
-                const shc = pld.schoolInfo.schoolHeadConfig;
-                if (
-                  shc.mainHeadId &&
-                  allPersonnelIds.some(
-                    (k) =>
-                      String(shc.mainHeadId).trim().toLowerCase() ===
-                      String(k).trim().toLowerCase(),
-                  )
-                ) {
-                  shc.mainHeadId = null;
-                  changed = true;
-                }
-                if (shc.assignments && typeof shc.assignments === "object") {
-                  for (const level of Object.keys(shc.assignments)) {
-                    if (
-                      allPersonnelIds.some(
-                        (k) =>
-                          String(shc.assignments[level])
-                            .trim()
-                            .toLowerCase() === String(k).trim().toLowerCase(),
-                      )
-                    ) {
-                      delete shc.assignments[level];
-                      changed = true;
-                    }
-                  }
-                }
-              }
-              const existingDel = Array.isArray(pld.deletedPersonnelIds)
-                ? pld.deletedPersonnelIds
-                : [];
-              const newKeys = [
-                ...allPersonnelIds,
-                validName ? validName.toLowerCase() : null,
-              ].filter(Boolean);
-              pld.deletedPersonnelIds = Array.from(
-                new Set([...existingDel, ...newKeys]),
-              );
-              changed = true;
-              if (changed) {
-                await pool.query(
-                  `UPDATE school_drafts SET payload = $1, updated_at = NOW() WHERE school_id = $2 AND school_year = $3`,
-                  [JSON.stringify(pld), row.school_id, row.school_year],
-                );
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[Draft scrub notice]:", e.message);
-        }
-      };
-
-      await scrubDraft(db);
-      if (db.getStagingPool) await scrubDraft(db.getStagingPool());
-      if (db.getProdPool) await scrubDraft(db.getProdPool());
     }
 
     // Flag deleted = true in esf7_database for old personnel

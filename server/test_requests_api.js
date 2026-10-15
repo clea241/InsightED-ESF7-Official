@@ -12,9 +12,9 @@ async function testRequestsFlow() {
   // 1. Create Request
   const reqRes = await db.query(`
     INSERT INTO esf7_requests (
-      id, requester_school_id, target_school_id, school_year, request_type, personnel_name, status, raw_payload
+      id, requester_school_id, target_school_id, school_year, request_type, personnel_name, status
     ) VALUES (
-      'REQ-108348-099', '108348', '108349', '2026-2027', 'clustered_teacher', 'MARCELO H. DEL PILAR', 'pending', '{"test": true}'::jsonb
+      'REQ-108348-099', '108348', '108349', '2026-2027', 'clustered_teacher', 'MARCELO H. DEL PILAR', 'pending'
     ) RETURNING *
   `);
 

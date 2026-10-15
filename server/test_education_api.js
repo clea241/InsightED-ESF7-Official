@@ -33,12 +33,11 @@ async function testEducationFlow() {
     `
     INSERT INTO esf7_perssonel_educ (
       id, personnel_id, college_degree, major, minor, post_graduate_degree,
-      post_graduate_discipline, eligibility, prc_specialization, raw_payload
+      post_graduate_discipline, eligibility, prc_specialization
     ) VALUES (
       'EDU-108348-002', 'PER-TEST-002', 'BACHELOR OF SECONDARY EDUCATION', 'ENGLISH', 'N/A',
       'MASTER OF ARTS IN EDUCATION', 'EDUCATIONAL MANAGEMENT',
-      $1::jsonb, 'ENGLISH',
-      $2::jsonb
+      $1::jsonb, 'ENGLISH'
     )
   `,
     [

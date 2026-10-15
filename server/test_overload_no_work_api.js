@@ -12,20 +12,20 @@ async function testOverloadNoWorkFlow() {
   // 1. Insert Division Level Holiday
   await db.query(`
     INSERT INTO overload_no_work (
-      id, region, division, school_id, school_year, no_work_date, event_type, title, raw_payload
+      id, region, division, school_id, school_year, no_work_date, event_type, title
     ) VALUES (
       'NWK-TEST-001', 'REGION VIII', 'SAMAR (WESTERN SAMAR)', 'ALL', '2026-2027',
-      '2026-09-15', 'DIVISION_HOLIDAY', 'Division Founding Charter Day', '{"title": "Division Founding Charter Day"}'::jsonb
+      '2026-09-15', 'DIVISION_HOLIDAY', 'Division Founding Charter Day'
     )
   `);
 
   // 2. Insert School Specific Suspension
   await db.query(`
     INSERT INTO overload_no_work (
-      id, region, division, school_id, school_year, no_work_date, event_type, title, raw_payload
+      id, region, division, school_id, school_year, no_work_date, event_type, title
     ) VALUES (
       'NWK-TEST-002', 'REGION VIII', 'SAMAR (WESTERN SAMAR)', '108348', '2026-2027',
-      '2026-10-12', 'TYPHOON_SUSPENSION', 'Local Typhoon Class Suspension', '{"title": "Local Typhoon Class Suspension"}'::jsonb
+      '2026-10-12', 'TYPHOON_SUSPENSION', 'Local Typhoon Class Suspension'
     )
   `);
 

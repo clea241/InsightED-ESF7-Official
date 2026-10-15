@@ -27,9 +27,9 @@ async function testWorkImmersionFlow() {
   const wimRes = await db.query(
     `
     INSERT INTO esf7_work_immersion (
-      id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes, raw_payload
+      id, personnel_id, school_id, school_year, visit_date, start_time, end_time, duration_minutes
     ) VALUES (
-      'WIM-108348-013', 'PER-TEST-013', '108348', '2026-2027', '2026-09-22', '08:00:00', '17:00:00', $1, '{"test": "full_day"}'::jsonb
+      'WIM-108348-013', 'PER-TEST-013', '108348', '2026-2027', '2026-09-22', '08:00:00', '17:00:00', $1
     ) RETURNING *
   `,
     [dur],

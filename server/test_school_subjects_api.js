@@ -12,10 +12,10 @@ async function testSchoolSubjectsFlow() {
   // 1. Insert Custom Subject
   await db.query(`
     INSERT INTO esf7_school_subjects (
-      id, school_id, school_year, subject_name, key_stage, grade_level, shs_category, is_custom, is_active, raw_payload
+      id, school_id, school_year, subject_name, key_stage, grade_level, shs_category, is_custom, is_active
     ) VALUES (
       'SUB-108348-001', '108348', '2026-2027', 'ROBOTICS & ARTIFICIAL INTELLIGENCE', 'Junior High School', 'Grade 7', NULL,
-      TRUE, TRUE, '{"subjectName": "ROBOTICS & ARTIFICIAL INTELLIGENCE", "keyStage": "Junior High School"}'::jsonb
+      TRUE, TRUE
     )
   `);
 

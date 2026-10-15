@@ -19,10 +19,10 @@ async function testOverloadPayAndReasonFlow() {
   const oprRes = await db.query(`
     INSERT INTO overload_pay_and_reason (
       id, personnel_id, school_id, school_year, term, month,
-      overload_hours, overload_pay, net_term_pay, reasons, raw_payload
+      overload_hours, overload_pay, net_term_pay, reasons
     ) VALUES (
       'OPR-108348-014', 'PER-TEST-014', '108348', '2026-2027', 'Term 1', 'September',
-      24.00, 7500.50, 6800.00, '["Teacher Shortage", "Relieving Duty"]'::jsonb, '{"saved": true}'::jsonb
+      24.00, 7500.50, 6800.00, '["Teacher Shortage", "Relieving Duty"]'::jsonb
     ) RETURNING *
   `);
 

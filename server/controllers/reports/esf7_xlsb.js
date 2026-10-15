@@ -76,7 +76,6 @@ const generateESF7Xlsb = async (req, res) => {
     };
     let personnelList = [];
 
-    // 1. Check school_drafts for active payload
     // 1. Load school and personnel from normalized esf7 tables
     try {
       const reqSchool = String(

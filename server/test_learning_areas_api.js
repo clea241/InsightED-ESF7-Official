@@ -28,9 +28,9 @@ async function testLearningAreasFlow() {
   await db.query(
     `
     INSERT INTO esf7_personnel_learning_areas (
-      id, personnel_id, matrix_data, raw_payload
+      id, personnel_id, matrix_data
     ) VALUES (
-      'LA-108348-004', 'PER-TEST-004', $1::jsonb, $2::jsonb
+      'LA-108348-004', 'PER-TEST-004', $1::jsonb
     )
   `,
     [JSON.stringify(sampleMatrix), JSON.stringify({ sampleMatrix })],

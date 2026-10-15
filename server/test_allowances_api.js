@@ -26,16 +26,14 @@ async function testAllowancesTablesFlow() {
       has_uniform, uniform_amount,
       has_supplies, supplies_amount,
       has_medical, medical_amount,
-      has_hardship, hardship_amount,
-      raw_payload
+      has_hardship, hardship_amount
     ) VALUES (
       'ALW-108348-009', 'PER-TEST-009', '108348', '2026-2027',
       false, 2000.00,
       false, 7000.00,
       false, 10000.00,
       false, 7000.00,
-      false, 0.00,
-      '{"status": "all_false"}'::jsonb
+      false, 0.00
     )
   `);
 

@@ -18,23 +18,62 @@ db.query = async (sql, params = []) => {
   const text = String(sql);
   if (/information_schema\.columns/.test(text))
     return { rows: [{ "?column?": 1 }] };
-  if (/^\s*SELECT payload FROM school_drafts/.test(text)) {
-    const r = rows.get(`${params[0]}|${params[1]}`);
-    return { rows: r ? [{ payload: r.payload }] : [] };
+  if (/FROM esf7_regular_sections/.test(text)) {
+    const r = rows.get("302261|SY 26-27");
+    const sections = (
+      r?.payload?.classSections ||
+      r?.payload?.sections ||
+      []
+    ).map((s) => ({
+      id: s.id,
+      school_id: "302261",
+      school_year: "SY 26-27",
+      grade_level: s.gradeLevel || s.grade_level || "Grade 7",
+      section_name: s.sectionName || s.section_name || "Section A",
+      section_type: s.sectionType || "MONO GRADE",
+      number_of_learners: s.numberOfLearners || 0,
+      male_learners: s.maleLearners || 0,
+      female_learners: s.femaleLearners || 0,
+    }));
+    return { rows: sections };
   }
-  if (/SELECT version, updated_at FROM school_drafts/.test(text)) {
-    const r = rows.get(`${params[0]}|${params[1]}`);
-    return {
-      rows: r ? [{ version: r.version, updated_at: r.updated_at }] : [],
-    };
+  if (/FROM esf7_personnel_profile/.test(text)) {
+    const r = rows.get("302261|SY 26-27");
+    const pers = (r?.payload?.personnel || []).map((p) => ({
+      id: p.id,
+      school_id: "302261",
+      school_year: "SY 26-27",
+      prn: p.prn || p.id,
+      first_name: p.firstName || p.first_name || "First",
+      last_name: p.lastName || p.last_name || "Last",
+    }));
+    return { rows: pers };
   }
-  if (/SELECT payload, updated_at/.test(text)) {
-    const r = rows.get(`${params[0]}|${params[1]}`);
+  if (/FROM esf7_school_profile/.test(text)) {
+    const r = rows.get("302261|SY 26-27");
     return {
       rows: r
-        ? [{ payload: r.payload, updated_at: r.updated_at, version: r.version }]
+        ? [
+            {
+              school_id: "302261",
+              school_year: "SY 26-27",
+              updated_at: r.updated_at,
+              note: r.payload.note,
+              ...(r.payload.schoolInfo || {}),
+            },
+          ]
         : [],
     };
+  }
+  if (/FROM schools/.test(text)) {
+    return { rows: [{ school_id: "302261", school_name: "School 302261" }] };
+  }
+  if (
+    /FROM esf7_deleted_personnel/.test(text) ||
+    /FROM esf7_school_node_status/.test(text) ||
+    /FROM esf7_workload_rows/.test(text)
+  ) {
+    return { rows: [] };
   }
   if (/INSERT INTO school_drafts/.test(text)) {
     if (failWrites) throw new Error("simulated database failure");

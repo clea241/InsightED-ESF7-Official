@@ -17,7 +17,7 @@ const TABLES_SQL = `
   DROP TABLE IF EXISTS esf7_shs_workload_rows, esf7_workload_rows, esf7_personnel_employment, esf7_personnel_profile CASCADE;
   CREATE TABLE esf7_personnel_profile (
     id VARCHAR(50) PRIMARY KEY, legacy_id VARCHAR(128), status VARCHAR(32) NOT NULL DEFAULT 'canonical', prn TEXT UNIQUE NOT NULL, school_id TEXT NOT NULL, school_year TEXT NOT NULL,
-    first_name TEXT, last_name TEXT, raw_payload JSONB DEFAULT '{}'::jsonb,
+    first_name TEXT, last_name TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   );
   CREATE TABLE esf7_personnel_employment (
@@ -32,7 +32,6 @@ const TABLES_SQL = `
     school_id TEXT NOT NULL, school_year TEXT NOT NULL, grade_level TEXT, section_id VARCHAR(50), section_name TEXT,
     subject TEXT NOT NULL, subject_id VARCHAR(50), remediation_subject TEXT, start_time TIME, end_time TIME,
     days JSONB DEFAULT '["M","T","W","TH","F"]'::jsonb, term TEXT DEFAULT '1st', extras JSONB NOT NULL DEFAULT '{}'::jsonb,
-    raw_payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   );
   CREATE TABLE esf7_shs_workload_rows (
@@ -59,8 +58,8 @@ describe.skipIf(!enabled)(
         ["PER-B-1", "222222"],
       ]) {
         await pool.query(
-          `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name, raw_payload)
-         VALUES ($1, $2, $3, 'SY 26-27', 'T', $2, '{"assignedGradeLevels":["Grade 1"],"type":"teaching"}'::jsonb)`,
+          `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name)
+         VALUES ($1, $2, $3, 'SY 26-27', 'T', $2)`,
           [id, `PRN-${id}`, school],
         );
       }
@@ -189,12 +188,6 @@ describe.skipIf(!enabled)(
       expect(await count("PER-A-1", "1st")).toBe(0);
       expect(await count("PER-A-1", "2nd")).toBe(1);
 
-      const payload = (
-        await pool.query(
-          "SELECT raw_payload FROM esf7_personnel_profile WHERE id = 'PER-A-1'",
-        )
-      ).rows[0].raw_payload;
-      expect(payload.workloadRows.map((r) => r.id)).toEqual(["r-3"]);
       expect(body.workloadSavedAt).not.toBe(before);
       expect(
         (await (await state("PER-A-1", "111111", "1st")).json()).version,
@@ -245,12 +238,6 @@ describe.skipIf(!enabled)(
       expect(await count("PER-A-2", "2nd")).toBe(1);
       expect(await count("PER-B-1", "1st")).toBe(1); // other school untouched
 
-      const payloadA2 = (
-        await pool.query(
-          "SELECT raw_payload FROM esf7_personnel_profile WHERE id = 'PER-A-2'",
-        )
-      ).rows[0].raw_payload;
-      expect(payloadA2.workloadRows.map((r) => r.id)).toEqual(["a2-2"]);
       // it can no longer reappear from the database on the next load
       expect(
         (await (await state("PER-A-2", "111111", "1st")).json()).rows,

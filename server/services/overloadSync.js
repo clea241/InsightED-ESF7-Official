@@ -57,16 +57,6 @@ async function syncAllOverloadPayAndReasons(
       : await db
           .query(`SELECT * FROM esf7_workload_transfer`)
           .catch(() => ({ rows: [] }));
-    const draftsRes = cleanId
-      ? await db
-          .query(
-            `SELECT * FROM school_drafts WHERE school_id = $1 OR school_id = 'SCH-' || $1`,
-            [cleanId],
-          )
-          .catch(() => ({ rows: [] }))
-      : await db
-          .query(`SELECT * FROM school_drafts LIMIT 50`)
-          .catch(() => ({ rows: [] }));
 
     const fallbackSalaries = {
       "TEACHER I": 31705,
@@ -151,39 +141,15 @@ async function syncAllOverloadPayAndReasons(
       const schoolId = (p.school_id || "108348").replace("SCH-", "");
       const schoolYear = p.school_year || targetSchoolYear || "SY 26-27";
 
-      // Find any draft data for this school
-      const schoolDraft =
-        draftsRes.rows.find(
-          (d) => String(d.school_id).replace("SCH-", "") === schoolId,
-        )?.payload || {};
-      const draftPersonnel = (schoolDraft.personnel || []).find(
-        (dp) => dp.id === pId,
+      const allTransfers = tfrRes.rows.filter(
+        (t) => t.school_id === schoolId || t.school_id === `SCH-${schoolId}`,
       );
-      const draftTransfers = schoolDraft.workloadTransfers || [];
-      const allTransfers = [
-        ...tfrRes.rows.filter(
-          (t) => t.school_id === schoolId || t.school_id === `SCH-${schoolId}`,
-        ),
-        ...draftTransfers,
-      ];
 
-      // Workload rows: the saved rows (esf7_workload_rows / SHS) are the source of truth. The draft is only a fallback for a
-      // teacher with no saved rows at all, and that is logged so the overload figure is known to rest on unsaved data.
-      const savedWorkloads = [
+      // Workload rows: the canonical saved rows (esf7_workload_rows / SHS) are the single source of truth.
+      const pWorkloads = [
         ...wRes.rows.filter((w) => w.personnel_id === pId),
         ...(shsRes.rows || []).filter((w) => w.personnel_id === pId),
       ];
-      const draftWorkloads =
-        draftPersonnel && Array.isArray(draftPersonnel.workloadRows)
-          ? draftPersonnel.workloadRows
-          : [];
-      if (savedWorkloads.length === 0 && draftWorkloads.length > 0) {
-        console.warn(
-          `[OverloadSync] ${pId}: no saved workload rows, using ${draftWorkloads.length} unsaved draft row(s) - NOT confirmed saved.`,
-        );
-      }
-      const pWorkloads =
-        savedWorkloads.length > 0 ? savedWorkloads : draftWorkloads;
 
       let netOverloadHours = 0;
 

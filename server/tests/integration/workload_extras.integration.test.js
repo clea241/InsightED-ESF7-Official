@@ -16,7 +16,7 @@ const TABLES_SQL = `
   DROP TABLE IF EXISTS esf7_shs_workload_rows, esf7_workload_rows, esf7_personnel_employment, esf7_personnel_profile CASCADE;
   CREATE TABLE esf7_personnel_profile (
     id VARCHAR(50) PRIMARY KEY, legacy_id VARCHAR(128), status VARCHAR(32) NOT NULL DEFAULT 'canonical', prn TEXT UNIQUE NOT NULL, school_id TEXT NOT NULL, school_year TEXT NOT NULL,
-    first_name TEXT, last_name TEXT, raw_payload JSONB DEFAULT '{}'::jsonb,
+    first_name TEXT, last_name TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   );
   CREATE TABLE esf7_personnel_employment (
@@ -31,7 +31,6 @@ const TABLES_SQL = `
     school_id TEXT NOT NULL, school_year TEXT NOT NULL, grade_level TEXT, section_id VARCHAR(50), section_name TEXT,
     subject TEXT NOT NULL, subject_id VARCHAR(50), remediation_subject TEXT, start_time TIME, end_time TIME,
     days JSONB DEFAULT '["M","T","W","TH","F"]'::jsonb, term TEXT DEFAULT '1st', extras JSONB NOT NULL DEFAULT '{}'::jsonb,
-    raw_payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   );
   CREATE TABLE esf7_shs_workload_rows (
@@ -54,8 +53,8 @@ describe.skipIf(!enabled)(
       pool = new Pool({ connectionString: TEST_DATABASE_URL });
       await pool.query(TABLES_SQL);
       await pool.query(
-        `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name, raw_payload)
-       VALUES ('PER-X-1', 'PRN-X-1', $1, 'SY 26-27', 'T', 'X', '{"assignedGradeLevels":["Grade 1"],"type":"teaching"}'::jsonb)`,
+        `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name)
+       VALUES ('PER-X-1', 'PRN-X-1', $1, 'SY 26-27', 'T', 'X')`,
         [school],
       );
       const router = nodeRequire("../../controllers/workload_rows/index.js");
@@ -118,7 +117,6 @@ describe.skipIf(!enabled)(
       expect(body.subject_name).toBe("MATHEMATICS");
       expect(body.gradeLevel).toBe("Grade 1");
       const r = await dbRow("p-1");
-      expect(r.raw_payload).toEqual({});
       expect(r.extras).toEqual({
         task: "Advisory",
         rowType: "teaching",
@@ -154,28 +152,8 @@ describe.skipIf(!enabled)(
           "SELECT * FROM esf7_workload_rows WHERE personnel_id = 'PER-X-1' AND subject = 'SCIENCE'",
         )
       ).rows[0];
-      expect(r.raw_payload).toEqual({});
       expect(r.extras).toEqual({ daySchedule: "Tue", category: "core" });
       expect(r.subject).toBe("SCIENCE");
-    });
-
-    test("PUT /:id on a legacy row folds the old payload into extras and clears raw_payload", async () => {
-      await pool.query(
-        `INSERT INTO esf7_workload_rows (id, personnel_id, school_id, school_year, grade_level, subject, start_time, end_time, raw_payload)
-       VALUES ('legacy-9', 'PER-X-1', $1, 'SY 26-27', 'Grade 3', 'ENGLISH', '07:00', '08:00',
-               '{"id":"legacy-9","subject":"ENGLISH","gradeLevel":"Grade 3","startTime":"07:00","task":"Reading","trackStrand":"STEM","sectionName":"Daisy"}'::jsonb)`,
-        [school],
-      );
-      const res = await call("PUT", "/legacy-9", { subject: "FILIPINO" });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.task).toBe("Reading");
-      const r = await dbRow("legacy-9");
-      expect(r.raw_payload).toEqual({});
-      expect(r.subject).toBe("FILIPINO");
-      expect(r.section_name).toBe("Daisy"); // empty typed column filled from the legacy payload
-      // subject / gradeLevel / sectionName live in typed columns now, so only the payload-only keys remain
-      expect(r.extras).toEqual({ task: "Reading", trackStrand: "STEM" });
     });
 
     test("GET / returns rows including payload-only keys, paged, without raw_payload", async () => {
@@ -189,10 +167,7 @@ describe.skipIf(!enabled)(
       expect(res.headers.get("x-page-limit")).toBe("2");
     });
 
-    test("after raw_payload is dropped (contract step) POST, bulk save, PUT and GET still work", async () => {
-      await pool.query(
-        "ALTER TABLE esf7_workload_rows DROP COLUMN raw_payload",
-      );
+    test("POST, bulk save, PUT and GET work with canonical tables and extras", async () => {
       const post = await call("POST", "/", {
         id: "c-1",
         personnel_id: "PER-X-1",

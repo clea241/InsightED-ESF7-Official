@@ -24,20 +24,20 @@ async function testTeachingTabConnection() {
     `
     INSERT INTO esf7_personnel_employment (
       id, personnel_id, position_category, position, fund_source, nature_of_appointment, hiring_arrangement,
-      grade_levels_taught, raw_payload
+      grade_levels_taught
     ) VALUES (
       'EMP-108348-005', 'PER-TEST-005', 'TEACHING', 'TEACHER II', 'NATIONAL', 'REGULAR PERMANENT', 'PERMANENT',
-      $1::jsonb, $2::jsonb
+      $1::jsonb
     )
   `,
-    [JSON.stringify(assignedGrades), JSON.stringify({ teachesShs: true })],
+    [JSON.stringify(assignedGrades)],
   );
 
   // 3. Query Joined Record
   const res = await db.query(`
     SELECT 
       p.id, p.first_name, p.last_name,
-      e.position_category, e.position, e.grade_levels_taught, e.raw_payload AS emp_raw
+      e.position_category, e.position, e.grade_levels_taught
     FROM esf7_personnel_profile p
     JOIN esf7_personnel_employment e ON p.id = e.personnel_id
     WHERE p.id = 'PER-TEST-005'

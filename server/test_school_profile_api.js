@@ -9,10 +9,10 @@ async function testSchoolProfileFlow() {
   const res = await db.query(`
     INSERT INTO esf7_school_profile (
       id, school_id, school_year, has_elem_special_programs, has_jhs_special_programs,
-      jhs_special_programs, shs_curriculum_model, raw_payload
+      jhs_special_programs, shs_curriculum_model
     ) VALUES (
       'SCH-PROFILE-108348', '108348', '2026-2027', true, true,
-      '["SPA", "STE", "SPJ"]'::jsonb, 'Standard K-12 SHS Curriculum', '{"test": true}'::jsonb
+      '["SPA", "STE", "SPJ"]'::jsonb, 'Standard K-12 SHS Curriculum'
     ) RETURNING *
   `);
 

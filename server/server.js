@@ -807,57 +807,65 @@ const startServer = (port) => {
     }
   });
 
-  const gracefulShutdown = () => {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
-    console.log(
-      `🛑 Graceful shutdown signal received. In-flight requests: ${activeRequests}. Stopping new connections...`,
-    );
-    // queueWorker.stopWorker() removed
+  currentServer = server;
+};
 
-    server.close(() => {
+const gracefulShutdown = () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(
+    `🛑 Graceful shutdown signal received. In-flight requests: ${activeRequests}. Stopping new connections...`,
+  );
+
+  if (currentServer) {
+    currentServer.close(() => {
       console.log(
         "✅ HTTP server closed to new connections. Waiting for in-flight saves to complete...",
       );
     });
 
-    if (server.closeIdleConnections) {
-      server.closeIdleConnections();
+    if (currentServer.closeIdleConnections) {
+      currentServer.closeIdleConnections();
     }
+  }
 
-    const checkDrain = setInterval(() => {
-      if (activeRequests === 0) {
-        clearInterval(checkDrain);
-        console.log("✅ All in-flight saves and requests completed cleanly.");
-        db.closeAllPools().finally(() => process.exit(0));
-      }
-    }, 150);
-
-    setTimeout(() => {
+  const checkDrain = setInterval(() => {
+    if (activeRequests === 0) {
       clearInterval(checkDrain);
-      console.warn(
-        `⚠️ Force exiting after timeout with ${activeRequests} remaining in-flight requests.`,
-      );
-      process.exit(0); // Postgres rolls back any open transaction when the connection drops
-    }, 18000);
-  };
+      console.log("✅ All in-flight saves and requests completed cleanly.");
+      db.closeAllPools().finally(() => process.exit(0));
+    }
+  }, 150);
 
-  process.once("SIGUSR2", () => {
-    server.close(() => {
-      process.kill(process.pid, "SIGUSR2");
-    });
-  });
-
-  process.on("SIGINT", gracefulShutdown);
-  process.on("SIGTERM", gracefulShutdown);
-
-  process.on("uncaughtException", (err) => {
-    console.error("[Server Uncaught Exception (Handled)]:", err.message);
-  });
-
-  process.on("unhandledRejection", (reason, promise) => {
-    console.error("[Server Unhandled Rejection (Handled)]:", reason);
-  });
+  setTimeout(() => {
+    clearInterval(checkDrain);
+    console.warn(
+      `⚠️ Force exiting after timeout with ${activeRequests} remaining in-flight requests.`,
+    );
+    process.exit(0); // Postgres rolls back any open transaction when the connection drops
+  }, 18000);
 };
 
+process.once("SIGUSR2", () => {
+  if (currentServer) {
+    currentServer.close(() => {
+      process.kill(process.pid, "SIGUSR2");
+    });
+  } else {
+    process.kill(process.pid, "SIGUSR2");
+  }
+});
+
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
+
+process.on("uncaughtException", (err) => {
+  console.error("[Server Uncaught Exception (Handled)]:", err.message);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[Server Unhandled Rejection (Handled)]:", reason);
+});
+
+let currentServer = null;
 verifyDatabaseOrExit().then(() => startServer(PORT));

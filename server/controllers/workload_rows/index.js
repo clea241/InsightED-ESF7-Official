@@ -7,7 +7,6 @@ const { loadTimeAllotment } = require("../../utils/sharedRules");
 const { validateWorkloadSchedules } = require("../../utils/scheduleValidator");
 const {
   buildExtras,
-  splitLegacyPayload,
   reconstructPayload,
 } = require("../../utils/workloadPayload");
 const { codec } = require("../../utils/payloadExtras");
@@ -502,7 +501,7 @@ const saveWorkloadBatchHandler = async (req, res) => {
     // 1. Locate or create personnel profile record to satisfy FK
     const resolvedId = await resolvePersonnelId(client, targetPersonnelId);
     let personRes = await client.query(
-      `SELECT id, school_id, school_year, raw_payload FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR id = $2 LIMIT 1`,
+      `SELECT id, school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR id = $2 LIMIT 1`,
       [targetPersonnelId, resolvedId],
     );
 
@@ -608,64 +607,9 @@ const saveWorkloadBatchHandler = async (req, res) => {
         personRes.rows[0].school_year ||
         targetSchoolYear;
 
-      const termsInPayload = replaceTerms();
-
-      // Update raw_payload in esf7_personnel_profile with term preservation
-      const existingRaw = personRes.rows[0].raw_payload || {};
-      const existingWorkloadRows = Array.isArray(existingRaw.workloadRows)
-        ? existingRaw.workloadRows
-        : [];
-      let mergedWorkloadRows = rowsToSave;
-      if (termsInPayload.length > 0) {
-        const otherTermsRows = existingWorkloadRows.filter(
-          (r) => !termsInPayload.includes(r.term || "1st"),
-        );
-        mergedWorkloadRows = [...otherTermsRows, ...rowsToSave];
-      } else if (targetTerm) {
-        const otherTermsRows = existingWorkloadRows.filter(
-          (r) => (r.term || "1st") !== targetTerm,
-        );
-        mergedWorkloadRows = [...otherTermsRows, ...rowsToSave];
-      }
-
-      const existingAdminRows = Array.isArray(existingRaw.administrativeRows)
-        ? existingRaw.administrativeRows
-        : [];
-      let mergedAdminRows =
-        administrativeRows !== undefined
-          ? administrativeRows
-          : existingAdminRows;
-      if (
-        termsInPayload.length > 0 &&
-        Array.isArray(administrativeRows) &&
-        administrativeRows.length > 0
-      ) {
-        const otherTermsAdmin = existingAdminRows.filter(
-          (r) => !termsInPayload.includes(r.term || "1st"),
-        );
-        mergedAdminRows = [...otherTermsAdmin, ...administrativeRows];
-      } else if (targetTerm && Array.isArray(administrativeRows)) {
-        const otherTermsAdmin = existingAdminRows.filter(
-          (r) => (r.term || "1st") !== targetTerm,
-        );
-        mergedAdminRows = [...otherTermsAdmin, ...administrativeRows];
-      }
-
-      const updatedRaw = {
-        ...existingRaw,
-        workloadRows: mergedWorkloadRows,
-        teachingRelatedRows:
-          teachingRelatedRows !== undefined
-            ? teachingRelatedRows
-            : existingRaw.teachingRelatedRows ||
-              existingRaw.teaching_related_rows ||
-              [],
-        administrativeRows: mergedAdminRows,
-        workloadSavedAt,
-      };
       await client.query(
-        `UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`,
-        [JSON.stringify(updatedRaw), targetPersonId],
+        `UPDATE esf7_personnel_profile SET updated_at = NOW() WHERE id = $1`,
+        [targetPersonId],
       );
     } else {
       const generatedPrn = String(targetPersonId).startsWith("PRN-")
@@ -674,22 +618,11 @@ const saveWorkloadBatchHandler = async (req, res) => {
       // Baseline profile fallback so foreign key constraint does not fail
       await client.query(
         `
-        INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name, raw_payload, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, 'TEACHER', 'STAFF', $5::jsonb, NOW(), NOW())
-        ON CONFLICT (id) DO UPDATE SET raw_payload = EXCLUDED.raw_payload, updated_at = NOW()
+        INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, first_name, last_name, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 'TEACHER', 'STAFF', NOW(), NOW())
+        ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
       `,
-        [
-          targetPersonId,
-          generatedPrn,
-          targetSchoolId,
-          targetSchoolYear,
-          JSON.stringify({
-            workloadRows: rowsToSave,
-            teachingRelatedRows,
-            administrativeRows,
-            workloadSavedAt,
-          }),
-        ],
+        [targetPersonId, generatedPrn, targetSchoolId, targetSchoolYear],
       );
     }
 
@@ -1153,12 +1086,8 @@ router.put("/:id", async (req, res) => {
     }
 
     const current = existingRes.rows[0];
-    const legacy =
-      current.raw_payload && Object.keys(current.raw_payload).length > 0
-        ? splitLegacyPayload(current.raw_payload, current)
-        : null;
-    const baseExtras = legacy ? legacy.extras : current.extras || {};
-    const fill = legacy ? legacy.fills : {};
+    const baseExtras = current.extras || {};
+    const fill = {};
     const nextColumns = {
       grade_level: grade_level || gradeLevel || fill.grade_level || null,
       section_id: section_id || sectionId || fill.section_id || null,
@@ -1214,16 +1143,6 @@ router.put("/:id", async (req, res) => {
     ];
 
     const result = await db.query(query, values);
-    if (legacy) {
-      try {
-        await db.query(
-          "UPDATE esf7_workload_rows SET raw_payload = '{}'::jsonb WHERE id = $1",
-          [id],
-        );
-      } catch (clearErr) {
-        if (clearErr.code !== "42703") throw clearErr;
-      }
-    }
     res.json(formatWorkloadRecord(result.rows[0]));
   } catch (err) {
     console.error("Error updating esf7_workload_rows:", err);
@@ -1332,23 +1251,10 @@ router.delete("/:id", async (req, res) => {
     const workloadSavedAt = new Date().toISOString();
 
     if (pId) {
-      const pRes = await db.query(
-        `SELECT raw_payload FROM esf7_personnel_profile WHERE id = $1`,
+      await db.query(
+        `UPDATE esf7_personnel_profile SET updated_at = NOW() WHERE id = $1`,
         [pId],
       );
-      if (pRes.rows.length > 0 && pRes.rows[0].raw_payload) {
-        const raw = pRes.rows[0].raw_payload;
-        if (Array.isArray(raw.workloadRows)) {
-          raw.workloadRows = raw.workloadRows.filter(
-            (r) => String(r.id) !== String(req.params.id),
-          );
-          raw.workloadSavedAt = workloadSavedAt;
-          await db.query(
-            `UPDATE esf7_personnel_profile SET raw_payload = $1::jsonb, updated_at = NOW() WHERE id = $2`,
-            [JSON.stringify(raw), pId],
-          );
-        }
-      }
     }
 
     res.json({
@@ -1381,7 +1287,7 @@ function requireSchoolQuery(req, res) {
 async function loadTeacherInSchool(runner, res, personnelId, schoolId) {
   const resolvedId = await resolvePersonnelId(runner, personnelId);
   const r = await runner.query(
-    `SELECT id, school_id, raw_payload FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR id = $2 LIMIT 1`,
+    `SELECT id, school_id, updated_at FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR id = $2 LIMIT 1`,
     [personnelId, resolvedId],
   );
   if (r.rows.length === 0) {
@@ -1419,11 +1325,19 @@ router.get("/personnel/:personnel_id/state", async (req, res) => {
           `SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
           [teacher.id],
         );
-    const raw = teacher.raw_payload || {};
+    const maxRowUpdated = result.rows.reduce((latest, r) => {
+      const rowDate = r.updated_at || r.created_at;
+      if (!rowDate) return latest;
+      return !latest || new Date(rowDate) > new Date(latest) ? rowDate : latest;
+    }, null);
+    const latestVersion = maxRowUpdated || teacher.updated_at || null;
+    const version = latestVersion
+      ? new Date(latestVersion).toISOString()
+      : null;
     res.json({
       personnelId: teacher.id,
       term,
-      version: raw.workloadSavedAt || null,
+      version,
       rows: result.rows.map(formatWorkloadRecord),
     });
   } catch (err) {
@@ -1431,22 +1345,6 @@ router.get("/personnel/:personnel_id/state", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// Removes one term's rows from raw_payload.workloadRows (every other term is kept) and stamps the version marker.
-// $2 = term, $3 = new marker.
-const SQL_STRIP_TERM_FROM_PAYLOAD = `
-  jsonb_set(
-    jsonb_set(
-      COALESCE(raw_payload, '{}'::jsonb),
-      '{workloadRows}',
-      COALESCE((
-        SELECT jsonb_agg(e) FROM jsonb_array_elements(
-          CASE WHEN jsonb_typeof(raw_payload->'workloadRows') = 'array' THEN raw_payload->'workloadRows' ELSE '[]'::jsonb END
-        ) e WHERE COALESCE(e->>'term', '1st') <> $2
-      ), '[]'::jsonb)
-    ),
-    '{workloadSavedAt}', to_jsonb($3::text)
-  )`;
 
 // DELETE one teacher's rows for one term (workload rows, SHS rows, and the copy in the profile payload).
 router.delete("/personnel/:personnel_id/term/:term", async (req, res) => {
@@ -1476,8 +1374,8 @@ router.delete("/personnel/:personnel_id/term/:term", async (req, res) => {
       [teacher.id, term],
     );
     await client.query(
-      `UPDATE esf7_personnel_profile SET raw_payload = ${SQL_STRIP_TERM_FROM_PAYLOAD}, updated_at = NOW() WHERE id = $1`,
-      [teacher.id, term, workloadSavedAt],
+      `UPDATE esf7_personnel_profile SET updated_at = NOW() WHERE id = $1`,
+      [teacher.id],
     );
     await client.query("COMMIT");
     res.json({
@@ -1519,8 +1417,8 @@ router.delete("/term-clear/school", async (req, res) => {
       [ids, term],
     );
     const upd = await client.query(
-      `UPDATE esf7_personnel_profile SET raw_payload = ${SQL_STRIP_TERM_FROM_PAYLOAD}, updated_at = NOW() WHERE school_id = ANY($1::text[])`,
-      [ids, term, workloadSavedAt],
+      `UPDATE esf7_personnel_profile SET updated_at = NOW() WHERE school_id = ANY($1::text[])`,
+      [ids],
     );
     await client.query("COMMIT");
     res.json({

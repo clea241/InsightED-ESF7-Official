@@ -22,10 +22,10 @@ async function testWorkloadTablesFlow() {
   await db.query(`
     INSERT INTO esf7_workload_rows (
       id, personnel_id, school_id, school_year, grade_level, section_name,
-      subject, start_time, end_time, days, raw_payload
+      subject, start_time, end_time, days
     ) VALUES (
       'WKL-108348-008', 'PER-TEST-008', '108348', '2026-2027', 'Grade 7', 'ROSE',
-      'MATHEMATICS', '08:00:00', '09:00:00', '["M","T","W","TH","F"]'::jsonb, '{"subject": "MATHEMATICS"}'::jsonb
+      'MATHEMATICS', '08:00:00', '09:00:00', '["M","T","W","TH","F"]'::jsonb
     )
   `);
 
@@ -33,10 +33,10 @@ async function testWorkloadTablesFlow() {
   await db.query(`
     INSERT INTO esf7_shs_workload_rows (
       id, personnel_id, school_id, school_year, term, grade_level, track_strand, shs_subject_category, section_name,
-      subject, start_time, end_time, days, raw_payload
+      subject, start_time, end_time, days
     ) VALUES (
       'SHS-WKL-108348-008', 'PER-TEST-008', '108348', '2026-2027', '1st', 'Grade 11', 'ACADEMIC - STEM', 'SHS-CORE SUBJECTS', 'EAGLE',
-      'GENERAL MATHEMATICS', '09:00:00', '11:00:00', '["M","W","F"]'::jsonb, '{"subject": "GENERAL MATHEMATICS", "term": "1st"}'::jsonb
+      'GENERAL MATHEMATICS', '09:00:00', '11:00:00', '["M","W","F"]'::jsonb
     )
   `);
 

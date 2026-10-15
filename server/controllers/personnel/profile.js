@@ -13,7 +13,6 @@ const {
   determinePositionCategory,
   calculateAge,
   formatWorkloadRecord,
-  ensureDisabledYearsColumn,
   formatPersonnelRecord,
   fetchMasterPersonnelFromInsightEd,
   resolvePersonnelIdentity,

@@ -12,7 +12,7 @@ async function syncWorkloadRows() {
     await client.query("DELETE FROM esf7_workload_rows");
 
     const pRes = await client.query(
-      "SELECT id, school_id, school_year, first_name, last_name, raw_payload FROM esf7_personnel_profile ORDER BY id ASC",
+      "SELECT id, school_id, school_year, first_name, last_name FROM esf7_personnel_profile ORDER BY id ASC",
     );
     let totalInserted = 0;
 
@@ -20,8 +20,7 @@ async function syncWorkloadRows() {
       const pId = p.id;
       const schoolId = String(p.school_id || "100115").replace("SCH-", "");
       const schoolYear = p.school_year || "SY 26-27";
-      const raw = p.raw_payload || {};
-      const wkList = Array.isArray(raw.workloadRows) ? raw.workloadRows : [];
+      const wkList = [];
 
       let counter = 1;
       for (const wk of wkList) {

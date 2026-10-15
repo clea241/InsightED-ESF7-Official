@@ -20,10 +20,10 @@ async function testAbsencesAndTransferFlow() {
   // 2. Insert Absence Record for Juan Luna (Absent)
   const absRes = await db.query(`
     INSERT INTO overload_absences (
-      id, personnel_id, school_id, school_year, start_date, end_date, leave_type, total_days, raw_payload
+      id, personnel_id, school_id, school_year, start_date, end_date, leave_type, total_days
     ) VALUES (
       'ABS-108348-010', 'PER-TEST-010', '108348', '2026-2027',
-      '2026-09-14', '2026-09-15', 'SICK_LEAVE', 2, '{"reason": "Sick Leave"}'::jsonb
+      '2026-09-14', '2026-09-15', 'SICK_LEAVE', 2
     ) RETURNING *
   `);
   console.log("✅ Created Absence Record:");
@@ -40,10 +40,10 @@ async function testAbsencesAndTransferFlow() {
   const trfRes = await db.query(`
     INSERT INTO esf7_workload_transfer (
       id, school_id, school_year, absent_personnel_id, relieving_personnel_id, absence_id,
-      workload_id, workload_type, subject, start_date, end_date, relieving_hours, raw_payload
+      workload_id, workload_type, subject, start_date, end_date, relieving_hours
     ) VALUES (
       'TRF-108348-010', '108348', '2026-2027', 'PER-TEST-010', 'PER-TEST-011', 'ABS-108348-010',
-      'WKL-108348-001', 'ELEM_JHS', 'MATHEMATICS', '2026-09-14', '2026-09-15', 1.00, '{"subject": "MATHEMATICS"}'::jsonb
+      'WKL-108348-001', 'ELEM_JHS', 'MATHEMATICS', '2026-09-14', '2026-09-15', 1.00
     ) RETURNING *
   `);
   console.log("✅ Created Workload Transfer Record (Relieving Duty):");
